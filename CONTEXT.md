@@ -24,7 +24,9 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
 
-**Thread working copy.** The folder in which a thread's provider works, either a separate Git worktree or a deliberately shared folder. Separate working copies can belong to the same project and share its project memory scope. A separate worktree starts on its own `sotto/thread-<id>` branch and then follows whatever branch is checked out in it: Sotto records the branch it sees, none for a detached HEAD, and never switches one itself (ADR-0014). A send is refused only when the folder is no longer the thread's registered worktree.
+**Thread working copy.** The folder in which a thread's provider works, either a separate Git worktree or a deliberately shared folder. Separate working copies can belong to the same project and share its project memory scope. A separate worktree starts on its own `sotto/thread-<id>` branch and then follows whatever branch is checked out in it: Sotto records the branch it sees, none for a detached HEAD, and never switches one on its own (ADR-0014). It re-reads the folder on every send, after work that could have moved HEAD, when a draft begins and when the window regains focus, so the pane's label follows a switch made in a terminal without a send. A folder that was deleted is put back on the branch Sotto recorded, before the turn and without touching anything else; a send is refused only when the folder is no longer the thread's registered worktree and cannot be put back, or when its branch is checked out in another folder.
+
+**Branch-changed notice.** The line above a thread pane's composer when the thread's worktree is on a different branch from the one its last send went to. It is information, not a refusal: the next send goes to the branch the folder is on either way, so the notice waits until the composer has text and can be dismissed. **Restore branch** switches the worktree back to the branch of the last send, and asks first when the folder has uncommitted changes to carry along; it is the only branch switch Sotto makes, and only because the user pressed it.
 
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
 
@@ -53,7 +55,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 | Verb | Meaning | In code (`AgentHost`) |
 |---|---|---|
 | create | open a new thread in a project with a model | `execute({ type: 'create-thread' })` |
-| resume | observe an existing thread's detail so events arrive for it | `observeThreads` (optional for adapters that always deliver detail) then `snapshot` |
+| resume | observe an existing thread's detail so its history and later events arrive for it | `observeThreads` (optional for adapters that always deliver detail) then `snapshot` |
 | prompt | send a user message to a thread | `execute({ type: 'send' })` |
 | cancel | interrupt the agent's current turn | `execute({ type: 'interrupt' })` |
 | status | read every project, model and thread the provider knows | `snapshot` |
@@ -66,6 +68,8 @@ Answering a question or permission request and creating a project are also part 
 **Codex provider session alias.** The adapter-owned record in `codex-threads.json` that maps the provider session ID Sotto chose at creation to the thread ID the Codex App Server assigned, plus the working directory, title, model and the digests of dispatched messages. The thread registry holds only the Sotto-chosen provider session ID; the Codex thread ID never leaves the adapter (ADR-0005).
 
 **Codex session log.** Codex's own persisted transcript of a provider session (`rollout-*.jsonl` under `$CODEX_HOME/sessions`). Sotto reads only its user-authored entries to tell its own dispatched messages from text typed directly in Codex: a dispatched message's digest suppresses every consecutive log entry with the same digest, and any other authored entry is a takeover. Sotto never copies or logs the log's content.
+
+**Transcript cursor.** How far a thread's provider transcript had been read when Sotto last stopped, stored by the adapter beside the thread's alias: the byte after the last complete line, the identity of the file it was read from, and what the reader had already matched there. Reconnecting seeks to it instead of reading the file again, and it is only trusted beside the messages it accounts for, which `WorkspaceHost` hands back through `restoreThreadHistory` before anything connects (ADR-0015). Claude has one; a thread whose history is not handed back is read from its first byte. Avoid: "bookmark", "watermark".
 
 **Takeover.** The user sends a message to an assigned thread directly through the provider (for example `codex resume` in the Codex CLI). The adapter reports that message as a user message with no command ID, so the coordinator switches the assignment to manual mode and keeps watching. Opening or reading a thread is not a takeover.
 
@@ -87,7 +91,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
-**Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart; accepting one submitted revision does not clear a newer revision.
+**Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart. Sending ends a draft: the press starts a fresh empty revision, and what was sent is a sent message from then on. Accepting one submitted revision never clears a newer revision.
+
+**Sent message.** What the user sent from this window, drawn in the transcript where it will be read from the press onwards, with the state of its delivery beside it: queued, sending, unconfirmed or not sent. It becomes an ordinary message when the provider's own history carries it. A refused one comes back to an empty composer, or is offered back when something newer is written there; an unconfirmed one stays in its message, because Sotto will not send it twice. Avoid: "optimistic message", "ghost message".
 
 **Answer draft.** Saved choices and text for a particular provider question in its original conversation, recoverable even if the provider closes or changes that question. Retaining or copying an answer does not recreate the question, confirm delivery, or grant authority to send it.
 

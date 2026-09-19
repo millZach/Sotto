@@ -143,6 +143,9 @@ export const agentWorktreeSchema = z.object({
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
   baseCommit: z.string().optional(), error: z.string().optional(), dirty: z.boolean().optional(),
   projectRelativePath: z.string().optional(),
+  /** The branch this worktree was on when Sotto last sent to the thread. Absent before the first send,
+   * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
+  sentBranch: z.string().optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentThreadSchema = z.object({
@@ -192,6 +195,9 @@ export const agentProviderStatusSchema = z.object({
   name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
 })
 export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
+/** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
+export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
+
 export const agentHostSnapshotSchema = z.object({
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
@@ -473,6 +479,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
+  /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
+   * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
+  z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),

@@ -85,6 +85,8 @@ export class ThreadWorktrees {
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('The working-copy allocation is outside Sotto’s reserved folder.')
     await existingWorkingDirectory(repositoryRoot)
+    // A checkout Sotto already made and then lost is recreated from its recorded branch (ADR-0014).
+    if (metadata.status !== 'pending') await this.restore(metadata)
     const entries = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
     const registered = entries.find(entry => pathKey(entry.path) === pathKey(metadata.path!))
     if (registered) {
@@ -103,6 +105,58 @@ export class ThreadWorktrees {
     if (pathKey(await realpath(allocationRoot)) !== pathKey(allocationRoot)) throw new Error('The reserved worktree parent folder was redirected. Nothing was changed.')
     await this.git(repositoryRoot, ['worktree', 'add', '-b', branch, '--', metadata.path, baseCommit])
     return this.inspect({ ...metadata, status: 'ready', error: undefined })
+  }
+
+  /**
+   * Puts back a checkout Sotto made and then lost, on the branch it recorded (ADR-0014). Best effort: a
+   * folder that is still there, a thread with no recorded branch and a branch that no longer exists are
+   * all returned unchanged, so the caller reports the real problem. Never resets a branch, never removes
+   * a checkout, and never takes a branch another folder has.
+   */
+  async restore(metadata: AgentWorktree): Promise<AgentWorktree> {
+    const { path, repositoryRoot, branch } = metadata
+    if (metadata.mode !== 'independent' || !path || !repositoryRoot || !branch) return metadata
+    if (await lstat(path).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error })) return metadata
+    let allocationRoot: string
+    // Sotto's own data folder and the repository have to be there before anything is put back.
+    try { allocationRoot = join(await realpath(this.directory), this.home.folder); await existingWorkingDirectory(repositoryRoot) }
+    catch { return metadata }
+    if (pathKey(dirname(path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(path))) return metadata
+    try { await this.git(repositoryRoot, ['rev-parse', '--verify', `refs/heads/${branch}`]) }
+    catch { return metadata }
+    const refuseAnotherFolder = async () => {
+      const entries = registeredWorktrees(await this.git(repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
+      const occupant = entries.find(entry => entry.branch === `refs/heads/${branch}` && pathKey(entry.path) !== pathKey(path))
+      if (occupant) throw new Error(`The branch ${branch} is checked out in ${occupant.path}, so this thread’s folder cannot be put back on it. Nothing was lost or changed. Close that folder’s checkout or move it to another branch, then retry.`)
+    }
+    await refuseAnotherFolder()
+    // Prune drops only the registry entry for the folder that is gone; it never touches files or branches.
+    await this.git(repositoryRoot, ['worktree', 'prune'])
+    await refuseAnotherFolder()
+    await mkdir(allocationRoot, { recursive: true })
+    if (pathKey(await realpath(allocationRoot)) !== pathKey(allocationRoot)) throw new Error('The reserved worktree parent folder was redirected. Nothing was changed.')
+    // No -b and no -B: the recorded branch is checked out as it stands, with its commits.
+    try { await this.git(repositoryRoot, ['worktree', 'add', '--', path, branch]) }
+    catch (error) { throw new Error(`This thread’s working folder was missing and Sotto could not put it back on ${branch}. Nothing was lost; the branch still has its commits. ${error instanceof Error ? error.message : ''}`.trim(), { cause: error }) }
+    return { ...metadata, status: 'ready', error: undefined }
+  }
+
+  /**
+   * Switches the thread's own worktree back to `branch`, which the user asked for by hand: Sotto never
+   * switches a branch on its own (ADR-0014). The folder is verified first, the branch must already exist,
+   * and uncommitted work is left where it is for Git to carry across or refuse.
+   */
+  async switchBranch(metadata: AgentWorktree, branch: string): Promise<AgentWorktree> {
+    if (metadata.mode !== 'independent') throw new Error('A shared working copy keeps the branch its folder is on. Switch it where you opened it.')
+    // The name came from Git itself; refuse anything that could read as an option or a path.
+    if (!/^(?!-)(?!.*\.\.)[^\s:?*~^[\]\\]+$/u.test(branch)) throw new Error('That branch name cannot be restored. Switch it in the folder itself.')
+    const inspected = await this.inspect(metadata)
+    if (inspected.branch === branch) return inspected
+    try { await this.git(inspected.path!, ['rev-parse', '--verify', `refs/heads/${branch}`]) }
+    catch { throw new Error(`The branch ${branch} no longer exists in this repository. Nothing was changed.`) }
+    // --no-guess never creates a branch from a remote; a conflicting change makes Git refuse and nothing moves.
+    await this.git(inspected.path!, ['switch', '--no-guess', branch])
+    return this.inspect(inspected)
   }
 
   async inspect(metadata: AgentWorktree): Promise<AgentWorktree> {

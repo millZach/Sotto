@@ -126,3 +126,34 @@ replaces it. Only what a row draws is kept: no transcript, no activity, no attac
 no attention queue — attention is live state, and a restored queue would let the review speak and navigate
 before main has said anything. Nothing is written at all while Keep local history is off, and the cache is
 cleared when it is turned off.
+
+## A flood from one adapter
+
+The coalescing above lives in the coordinator. Below it, `WorkspaceHost` still copied the whole workspace
+and queued a `workspace.json` write for every publish any adapter made, so one chatty provider set the cost
+for everything. Measured with `npx vitest run tests/unit/main/workspacePublishCoalescing.test.ts`: a fake
+adapter emits 2,000 snapshots over about 100 ms, yielding to the event loop every 20, and the test counts
+the host's publishes (one copy of the workspace each) and the store's writes. Three runs, Windows 11.
+
+| | before | after |
+| --- | ---: | ---: |
+| workspace copies | 2,000 | 10-13 |
+| `workspace.json` writes | 48-53 | 1 |
+
+Provider publishes are now gathered into a 16 ms window and provider writes into a 250 ms one; the first
+publish of a burst still goes out at once, so a reply appearing is as immediate as it was. The fixture
+workspace is small, so each copy costs about 13 us here; on the folder measured above, where one copy is
+4.5 ms, the same burst is the difference between roughly 9 s of copying and 60 ms.
+
+The counts in the table are the burst at its measured length. On a loaded CI runner the same burst has taken
+long enough for the 250 ms write window to fire forty times, so the test asserts the shape on every run (at
+most one publish per 16 ms window and one write per 250 ms window of the time the burst actually took) and
+the absolute counts only under `SOTTO_PERF_ASSERT=1`, as `docs/ci.md` describes for stopwatch budgets.
+
+The runner also showed a second cost the first measurement missed: a state dirtied again during a slow write
+was written again as soon as that write finished, so a flood over a slow disk became a run of back-to-back
+writes with no window between them. A write in flight is now followed at once only for a caller who asked
+for the state to be on disk; a provider that kept publishing during it waits for the next window.
+
+A user command is unchanged: it writes through `flush()`, which takes over any waiting provider write, and
+publishes directly, so the command still returns after its own write.

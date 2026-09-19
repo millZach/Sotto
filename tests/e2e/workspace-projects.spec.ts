@@ -86,6 +86,8 @@ test('Enter shows the local pending message within 100 ms, measured apart from p
       await page.keyboard.press('Enter')
       await expect(page.getByLabel('Thread transcript')).toContainText(`Round ${round} check`)
       await expect(prompt).toHaveValue('')
+      // The press is the feedback; the provider holds the prompt a moment later, and a reply before that would answer nothing.
+      await expect.poll(() => userMessageTexts(page, 'workshop')).toContain(`Round ${round} check`)
       await page.evaluate(async index => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: `Done with round ${index}.` }), round)
       await expect(page.getByLabel('Thread transcript')).toContainText(`Done with round ${round}.`)
     }
@@ -213,9 +215,7 @@ test('project folders hold several threads, settle and restore threads and proje
     await expect(reopened.getByRole('button', { name: new RegExp(`^${title}`) })).toBeVisible()
 
     // The 760 px minimum recomposes the same page without shrinking type or clipping status and navigation.
-    await resize(launched, 760, 740)
-    await expectNoHorizontalOverflow(page)
-    const sizes = await page.evaluate(() => {
+    const typeSizes = () => page.evaluate(() => {
       // The status sentence is read-only text for assistive technology now. What a row still shows on its right is the
       // working clock or the words "needs you", and only while the thread is working or waiting.
       const slot = document.querySelector('.thread-nav__time, .thread-nav__attention')
@@ -225,9 +225,11 @@ test('project folders hold several threads, settle and restore threads and proje
         slot: slot === null ? null : getComputedStyle(slot).fontSize,
       }
     })
-    expect(sizes.message).toBe('16px')
-    expect(sizes.row).toBe('14px')
-    if (sizes.slot !== null) expect(sizes.slot).toBe('12px')
+    const wide = await typeSizes()
+    await resize(launched, 760, 740)
+    await expectNoHorizontalOverflow(page)
+    // The scale is the theme's business (ADR-0011); what the minimum width must not do is shrink it.
+    expect(await typeSizes()).toEqual(wide)
     // The page switch keeps its place in the sidebar foot at the minimum width.
     await expect(page.getByRole('tab', { name: 'Threads', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeInViewport()
@@ -249,6 +251,8 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await prompt.fill('First, delivered.')
     await page.keyboard.press('Enter')
     await expect(prompt).toHaveValue('')
+    // The composer empties on the press; the provider holds the prompt a moment later, and the reply has to follow it.
+    await expect.poll(() => userMessageTexts(page, 'docs')).toContain('First, delivered.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Delivered reply.' }))
     // The reply has to reach the window before the next prompt, or Enter queues it behind the turn instead of sending.
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
@@ -258,7 +262,9 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     const pending = page.getByLabel('Pending message')
     await expect(pending).toContainText('Unconfirmed')
     await expect(pending.getByRole('button', { name: 'Check again' })).toBeVisible()
-    await expect(prompt).toHaveValue('Maybe delivered.')
+    // The prompt left the composer on the press and is read in its own message while it is unconfirmed.
+    await expect(pending).toContainText('Maybe delivered.')
+    await expect(prompt).toHaveValue('')
     await prompt.fill('Edited while unconfirmed.')
     // Sending or queuing: nothing new leaves while the earlier prompt is unconfirmed.
     await expect(page.getByRole('button', { name: /^(Send|Queue) prompt$/ })).toBeDisabled()

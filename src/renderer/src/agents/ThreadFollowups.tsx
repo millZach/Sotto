@@ -7,7 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
 import { retainFileReferences } from './composerFiles'
 import { retainSkillReferences, skillSigils } from './composerSkills'
-import { queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
+import { hasDraftContent, queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 
 type Command = AgentConnection['command']
@@ -104,20 +104,26 @@ function FollowupEditor({ item, current, saving, error, onSave, onClose }: {
   </dialog>
 }
 
-function AdmissionRow({ submission, state, holdsRevision, onRetry, onDismiss }: {
-  readonly submission: Submission; readonly state: AgentState; readonly holdsRevision: boolean
-  readonly onRetry: () => void; readonly onDismiss: () => void
+function AdmissionRow({ submission, state, restored, replaces, onRetry, onRestore, onDismiss }: {
+  readonly submission: Submission; readonly state: AgentState
+  /** The composer holds this prompt again, so it is not offered back a second time. */
+  readonly restored: boolean
+  /** Something else is written in the composer, which restoring would replace. */
+  readonly replaces: boolean
+  readonly onRetry: () => void; readonly onRestore: () => void; readonly onDismiss: () => void
 }): ReactNode {
-  const failed = submissionStatus(submission, state).status === 'failed'
+  const status = submissionStatus(submission, state).status
   // No answer from main is not a refusal: the queue may own it, and asking again cannot add it twice.
-  const unconfirmed = submission.error === UNCONFIRMED_SUBMISSION.queue
+  const unconfirmed = status === 'uncertain'
+  const failed = status === 'failed' || unconfirmed
   return <li className="thread-followup" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : 'admitting'}>
     <p className="thread-followup__text">{submission.text || submission.attachments.map(item => item.name).join(', ')}</p>
     <span className="thread-followup__state" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : undefined} role="status">{failed ? (unconfirmed ? 'Unconfirmed' : 'Not queued') : 'Queuing…'}</span>
     {failed ? <div className="thread-followup__detail">
-      <span>{submission.error ?? UNCONFIRMED_SUBMISSION.queue}{holdsRevision ? '' : ' Your newer draft is in the composer.'}</span>
+      <span>{submission.error ?? UNCONFIRMED_SUBMISSION.queue}{restored ? ' It is back in the composer.' : !unconfirmed && replaces ? ' Restoring it replaces the draft in the composer.' : ''}</span>
       <span className="thread-followup__actions">
-        {holdsRevision ? <Button variant="secondary" onClick={onRetry}>Try again</Button> : null}
+        <Button variant="secondary" onClick={onRetry}>Try again</Button>
+        {!restored && !unconfirmed ? <Button variant="secondary" onClick={onRestore}>Restore prompt</Button> : null}
         <Button variant="ghost" onClick={onDismiss}>Dismiss</Button>
       </span>
     </div> : null}
@@ -135,8 +141,8 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   readonly state: AgentState
   readonly command: Command
   readonly store: ThreadDraftStore
-  /** Queue the composer's revision again; the queue ignores a revision it already owns. */
-  readonly onRetryAdmission: () => void
+  /** Queue that submitted revision again; the queue ignores a revision it already owns. */
+  readonly onRetryAdmission: (draftId: string) => void
 }): ReactNode {
   const threadId = row.thread.id
   const items = followupsFor(state, threadId)
@@ -313,8 +319,9 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
           </div> : null}
         </li>
       })}
-      {listedAdmissions.map(submission => <AdmissionRow key={submission.draftId} submission={submission} state={state} holdsRevision={draft.draftId === submission.draftId}
-        onRetry={onRetryAdmission} onDismiss={() => { store.dismiss(threadId, submission.draftId); refocus.current = toggle }} />)}
+      {listedAdmissions.map(submission => <AdmissionRow key={submission.draftId} submission={submission} state={state} restored={draft.draftId === submission.restoredAs} replaces={hasDraftContent(draft)}
+        onRetry={() => onRetryAdmission(submission.draftId)} onRestore={() => store.restore(threadId, submission.draftId)}
+        onDismiss={() => { store.dismiss(threadId, submission.draftId); refocus.current = toggle }} />)}
     </ol> : null}
     {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)}
       saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={closeEditor}

@@ -1,6 +1,6 @@
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
-import type { AgentAttachment, AgentHostSnapshot, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
@@ -13,6 +13,8 @@ export type AgentHostCommand =
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
+/** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
+export interface RestoredThreadHistory { readonly threadId: string; readonly messages: readonly AgentMessage[] }
 /**
  * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
@@ -26,6 +28,12 @@ export interface AgentHost {
   listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean
   initialize?(): Promise<void>
+  /**
+   * Hand a connection the messages the workspace still holds for its threads, before it connects.
+   * An adapter that reads a provider's own transcript may then continue from where it stopped instead
+   * of reading the whole history again. Messages the caller does not hand back are read afresh.
+   */
+  restoreThreadHistory?(threads: readonly RestoredThreadHistory[]): Promise<void>
   /** Local organization/history; available without a provider connection. */
   workspaceSnapshot?(): AgentHostSnapshot
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
@@ -33,6 +41,7 @@ export interface AgentHost {
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
+  restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string

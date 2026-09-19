@@ -53,7 +53,7 @@ describe('composer Enter intent', () => {
 })
 
 describe('Threads manual composer', () => {
-  it.each(['edited', 'rejected'] as const)('does not admit the captured prompt when stopping old management is %s', async outcome => {
+  it.each(['edited', 'rejected'] as const)('sends the prompt it captured once old management stops, and gives it back when stopping is %s', async outcome => {
     const state = threadsStateFixture()
     const thread = state.host.threads.find(item => item.id === 'footer-links')!
     thread.settledAt = SETTLED_AT
@@ -67,8 +67,9 @@ describe('Threads manual composer', () => {
     if (outcome === 'edited') store.edit(thread.id, { text: 'Newer text while stopping management' })
     release(outcome === 'rejected' ? null : state)
     await sending
-    expect(command.mock.calls.some(([request]) => request.type === 'manual-send')).toBe(false)
-    expect(submissionStatus(store.submissions()[0]!, state).status).toBe('failed')
+    // The prompt left the composer on the press, so typing since then is a draft of its own and never the send.
+    expect(command.mock.calls.some(([request]) => request.type === 'manual-send')).toBe(outcome === 'edited')
+    expect(submissionStatus(store.submissions()[0]!, state).status).toBe(outcome === 'edited' ? 'uncertain' : 'failed')
     expect(store.draft(thread.id).text).toBe(outcome === 'edited' ? 'Newer text while stopping management' : 'Captured before management stops')
     store.flushAll()
   })
@@ -176,32 +177,38 @@ describe('Threads manual composer', () => {
     expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('First prompt')
   })
 
-  it('clears the composer when its own revision is accepted', async () => {
+  it('empties the composer on the press and leaves it empty when the revision is accepted', async () => {
     const { live, prompt } = mount(manualState())
     fireEvent.change(prompt(), { target: { value: 'Only prompt' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
-    expect(prompt()).toHaveValue('Only prompt')
+    expect(prompt()).toHaveValue('')
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Only prompt')
     act(() => live.deliver('grok-previews', 'accepted', 'Only prompt'))
-    await waitFor(() => expect(prompt()).toHaveValue(''))
+    await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
+    expect(prompt()).toHaveValue('')
   })
 
-  it('offers Retry for a failed send only while the composer still holds that revision', async () => {
+  it('offers Retry for a failed send under its own revision, whatever the composer holds', async () => {
     const { live, prompt } = mount(manualState())
     fireEvent.change(prompt(), { target: { value: 'Try this' } })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const draftId = live.sentDraftId('grok-previews')
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Not sent'))
+    // The refusal put the prompt back in the composer, and retrying takes it out again.
+    expect(prompt()).toHaveValue('Try this')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(prompt()).toHaveValue('')
     expect(live.manualSends()).toBe(2)
     expect(live.sentDraftId('grok-previews')).toBe(draftId)
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible())
     fireEvent.change(prompt(), { target: { value: 'Try this instead' } })
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Your newer draft is in the composer.')
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Restoring it replaces the draft in the composer.')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
+    expect(prompt()).toHaveValue('Try this instead')
   })
 
   it('never resends an unconfirmed prompt: it offers Check again, or Reconnect when disconnected', async () => {

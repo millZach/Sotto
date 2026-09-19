@@ -62,12 +62,34 @@ describe('Codex App Server provider adapter', () => {
     await expect(f.adapter.refreshThread(threadId)).rejects.toThrow('Codex rejected the operation')
     expect((await f.driver.requests()).filter(request => request.method === 'thread/read')).toHaveLength(1)
   })
+  it('resumes no saved thread and reads no turn at connect, then opens one thread once', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    await create(f)
+    await f.host.execute({ type: 'send', commandId: 'send', threadId, messageId: 'message', text: 'Synthetic prompt' })
+    f.host.disconnect(); await f.adapter.closed()
+    const before = (await f.driver.requests()).length
+    const connected = await f.host.connect()
+    const onConnect = (await f.driver.requests()).slice(before)
+    expect(onConnect.filter(request => request.method === 'thread/read')).toEqual([])
+    expect(onConnect.filter(request => request.method === 'thread/resume')).toEqual([])
+    expect(connected.threads.every(thread => thread.messages.length === 0)).toBe(true)
+    f.host.observeThreads?.([threadId])
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === threadId)!.messages.length).toBe(1)
+    const onOpen = (await f.driver.requests()).slice(before)
+    expect(onOpen.filter(request => request.method === 'thread/resume').map(request => request.params?.excludeTurns)).toEqual([true])
+    expect(onOpen.filter(request => request.method === 'thread/read')).toHaveLength(1)
+    // A thread nobody opened still costs nothing, however long its history is.
+    const opened = await f.realId(threadId)
+    expect(onOpen.filter(request => request.params?.threadId !== undefined && request.params.threadId !== opened)).toEqual([])
+  })
   it('keeps a missing saved session unavailable without blocking connection or creating a replacement', async () => {
     const f = await fixture()
     const { threadId } = await create(f)
     const nativeId = await f.realId(threadId)
     f.host.disconnect(); await f.adapter.closed()
     await f.script({ reject: 'thread/resume', rejection: { code: -32600, message: `no rollout found for thread id ${nativeId}` } })
+    f.host.observeThreads?.([threadId])
     const connected = await f.host.connect()
     expect(connected.connected).toBe(true)
     expect(connected.threads[0]).toMatchObject({ id: threadId, status: 'error', historyStatus: 'error', historyError: expect.stringContaining('saved session') })
@@ -266,7 +288,7 @@ describe('Codex App Server provider adapter', () => {
     await f.script({})
     const before = (await f.host.snapshot()).threads[0]!
     const restarted = await f.driver.restart(); fixtures.push(restarted)
-    await restarted.host.connect()
+    restarted.host.observeThreads?.([threadId]); await restarted.host.connect()
     const restored = (await restarted.host.snapshot()).threads[0]!
     // Live observation times belong to WorkspaceHost's privacy-aware cache;
     // this bare native adapter can restore only timing present in native history.

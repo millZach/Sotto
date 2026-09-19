@@ -48,7 +48,7 @@ Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by defa
 - `npm run design:verify` compares captures against committed baselines. Regenerate with `npm run design:capture` only when the look changed on purpose, and say so in the PR.
 - Worktrees go under `.worktrees/` or `.claude/worktrees/`, and a new generated `artifacts/` folder gets a line in `.gitignore` and `eslint.config.mjs`. Anywhere else, lint and the suite go red on the copies.
 - Never link `node_modules` into a throwaway worktree on Windows. `git worktree remove --force` and `rm -rf` both follow a junction and empty the real folder; it happened while reproducing a failure on `main` and cost a full reinstall. Run `npm ci` in the worktree, or use `git stash` in place.
-- A Sotto thread's worktree starts on `sotto/thread-<id>` and then follows whatever branch is checked out in it, so making a `feat/` or `prototype/` branch there is fine (ADR-0014). What Sotto refuses is a folder that stopped being the thread's registered worktree: deleted, moved, replaced or locked.
+- A Sotto thread's worktree starts on `sotto/thread-<id>` and then follows whatever branch is checked out in it, so making a `feat/` or `prototype/` branch there is fine (ADR-0014). A deleted folder is put back on the recorded branch before the next send. What Sotto refuses is a folder that stopped being the thread's registered worktree another way: moved, replaced, locked, or on a branch another folder has checked out.
 - Files are UTF-8 without a byte order mark. A BOM has broken the build before.
 
 ## Before opening a pull request

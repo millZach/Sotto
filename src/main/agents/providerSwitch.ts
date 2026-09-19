@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -166,6 +166,10 @@ export class ConfiguredProviderHost implements AgentHost {
     const catalog = await host.listThreadSkills(threadId, forceReload, scope)
     if (epoch !== this.slots.get(id)!.epoch) throw new Error('The thread provider changed while loading skills.')
     return catalog
+  }
+  /** Every provider sees the whole offer and keeps the threads it owns; no binding is needed here. */
+  async restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
+    await Promise.all(providerIdSchema.options.map(id => this.options.hosts[id].restoreThreadHistory?.(threads)))
   }
   async refreshThread(threadId: string): Promise<AgentHostSnapshot> {
     const id = this.owner(threadId); this.requireConnected(id)

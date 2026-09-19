@@ -47,29 +47,26 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
 }
 
 /**
- * Send, queue or steer one revision of a thread's manual prompt. The pending message (or queue row)
- * renders before the command leaves the renderer.
+ * Send, queue or steer one revision of a thread's manual prompt. The echo in the transcript (or the
+ * queue row) renders before the command leaves the renderer, and the composer is already empty.
+ * With `retryDraftId` the prompt is sent again from its own copy, under the revision it already has.
  */
-export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send'): Promise<void> {
+export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string): Promise<void> {
   const threadId = row.thread.id
-  const draft = store.submit(threadId, submittedAt, mode)
+  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode) : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
   let attempted = false
   try {
     if (row.assignment?.mode === 'managed' && isThreadClosed(row.thread)) {
       const released = await command({ type: 'unassign', threadId })
       if (released === null || released.error !== null) { store.resolve(threadId, draft.draftId, released?.error ?? 'Could not release this thread from management.', true); return }
-      if (store.draft(threadId).draftId !== draft.draftId) {
-        store.resolve(threadId, draft.draftId, 'Your draft changed while stopping management. Send the newer draft when ready.', true)
-        return
-      }
     }
     attempted = true
     const payload = {
       threadId, draftId: draft.draftId, text: draft.text,
       ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}),
       ...(draft.skills.length ? { skills: [...draft.skills] } : {}),
-      ...(draft.files.length ? { files: [...draft.files] } : {}),
+      ...(draft.files?.length ? { files: [...draft.files] } : {}),
     }
     const result = await command(mode === 'queue' ? { type: 'queue-followup', ...payload } : mode === 'steer' ? { type: 'steer', ...payload } : { type: 'manual-send', ...payload })
     store.resolve(threadId, draft.draftId, result === null ? UNCONFIRMED_SUBMISSION[mode] : result.error)
@@ -106,10 +103,10 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
 
 /**
  * The manual prompt (or answer) composer for one thread. Content is the thread's durable draft:
- * every edit is a new revision, Enter sends, Shift+Enter adds a line, and an unsent or unconfirmed
- * prompt stays in the composer until the provider (or the thread's queue) owns that exact revision.
- * While a turn runs, Enter queues; Steer now is the separate, explicit way into the running turn, and Stop
- * takes the send button's place until there is something to queue.
+ * every edit is a new revision, Enter sends, Shift+Enter adds a line. The press empties the composer
+ * and starts the next revision; what was sent is shown in the transcript, which says how it went and
+ * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
+ * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
 export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false }: {
   readonly row: ThreadRow
@@ -149,15 +146,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
   // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
   const queueing = !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
-  const submission = submissions.find(item => item.threadId === threadId && item.draftId === draft.draftId)
-  const delivery = submission === undefined ? deliveryFor(state, threadId, draft.draftId) : undefined
-  const admitting = submission?.mode === 'queue' && !submission.resolved
   const reason = (handingOff ? 'Handing this draft to Sotto…' : null) ?? blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
   const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? `${row.provider} is working. Write a follow-up to queue it.` : 'What would you like to do next?'
   const content = hasDraftContent(draft)
-  const canSend = reason === null && content && !readingImages && !answerState.sending && !admitting
+  const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
@@ -204,13 +198,17 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       if (answer === null) return
       store.dismiss(threadId, answer.draftId)
       setAnswerState({ sending: true, error: null })
+      // The composer emptied on the press, so a refused answer comes back to it unless something newer is written.
+      const failed = (error: string): void => {
+        const restored = store.restoreDraft(threadId, answer, true) !== null
+        setAnswerState({ sending: false, error: `${error}${restored ? ' It is back in the composer.' : ' Your newer draft is in the composer.'}` })
+      }
       void command({ type: 'answer', threadId, requestId: question.requestId, answer: answer.text })
-        .then(result => setAnswerState({ sending: false, error: result === null ? 'Sotto could not confirm this answer. It is still in the composer.' : result.error }),
-          () => setAnswerState({ sending: false, error: 'Sotto could not confirm this answer. It is still in the composer.' }))
+        .then(result => { if (result === null) failed('Sotto could not confirm this answer.'); else if (result.error !== null) failed(result.error); else setAnswerState({ sending: false, error: null }) },
+          () => failed('Sotto could not confirm this answer.'))
       return
     }
-    // A queued revision stays out of the transcript, so only a delivery moves the reader to the end.
-    if (mode !== 'queue') onSend()
+    onSend()
     void sendThreadRevision(store, row, command, submittedAt, mode)
   }
   const selectSkill = (index: number): void => {
@@ -239,14 +237,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     ? <span className="thread-prompt__status" data-tone="warning" role="alert">Draft not saved. <button type="button" className="thread-prompt__link tt-focusable" onClick={() => store.flush(threadId, true)}>Save again</button></span>
     : answerState.error ? <span className="thread-prompt__status" data-tone="warning" role="alert">{answerState.error}</span>
       : answerState.sending ? <span className="thread-prompt__status" role="status">Sending answer…</span>
-        // A blocked composer states only why, and not again when its empty prompt already says it; the transcript explains an unconfirmed prompt.
-        : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span>
-          // Saving, queueing and a working agent get no caption: the placeholder and buttons already show them.
-          : delivery?.status === 'failed' ? <span className="thread-prompt__status" data-tone="warning">Your last send of this prompt did not go through. Send it again when ready.</span> : null
+        // A blocked composer states only why, and not again when its empty prompt already says it. Saving,
+        // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
+        : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
 
   return <>
-    <ThreadFollowups row={row} state={state} command={command} store={store} onRetryAdmission={() => send(performance.now(), 'queue')} />
+    <ThreadFollowups row={row} state={state} command={command} store={store}
+      onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
     <form className="thread-prompt" data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { picker.leave(); files.leave() } }}>

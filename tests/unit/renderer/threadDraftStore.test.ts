@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
-import { ThreadDraftStore, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
+import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 
 type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
 
@@ -188,30 +188,85 @@ describe('ThreadDraftStore sending', () => {
     const draft = store.submit('thread', 12)
     expect(draft?.draftId).toBe(held.saves()[0]!.draftId)
     expect(store.submissions()).toEqual([expect.objectContaining({ threadId: 'thread', draftId: draft!.draftId, text: 'Ship it', submittedAt: 12, resolved: false })])
+    // The press empties the composer under a revision of its own, which is saved after the debounce.
+    expect(store.draft('thread')).toMatchObject({ text: '', attachments: [] })
+    expect(store.draft('thread').draftId).not.toBe(draft!.draftId)
     vi.advanceTimersByTime(500)
-    expect(held.saves()).toHaveLength(1)
+    expect(held.saves()).toEqual([expect.objectContaining({ text: '  Ship it  ' }), expect.objectContaining({ draftId: store.draft('thread').draftId, text: '', attachments: [] })])
     expect(store.submit('empty', 1)).toBeNull()
   })
 
-  it('clears the composer only for the accepted revision and keeps edits made while it was pending', () => {
+  it('empties the composer on the press and leaves later typing alone when the send is accepted', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())
     store.edit('thread', { text: 'first prompt' })
     const sent = store.submit('thread', 0)!
+    expect(store.draft('thread').text).toBe('')
+    // The state that still carries the sent revision cannot put it back: the empty revision is newer.
     store.receive(published(held.saves()[0]!, { deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'queued', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))
+    expect(store.draft('thread').text).toBe('')
     store.edit('thread', { text: 'written while sending' })
     store.receive(baseState({ deliveredDrafts: [{ threadId: 'thread', draftId: sent.draftId }], deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'accepted', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))
     expect(store.draft('thread').text).toBe('written while sending')
+  })
 
-    const other = new ThreadDraftStore(heldCommand().command, 250, uuids())
-    other.edit('thread', { text: 'only prompt' })
-    const only = other.submit('thread', 0)!
-    other.receive(baseState({ deliveredDrafts: [{ threadId: 'thread', draftId: only.draftId }] }))
-    expect(other.draft('thread').text).toBe('')
+  it('brings a refused prompt back to an empty composer, and offers it back when newer text is in the way', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    const refused = (draftId: string): AgentState => baseState({ deliveries: [{ threadId: 'thread', draftId, status: 'failed', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] })
+    store.edit('thread', { text: 'Refuse me' })
+    const sent = store.submit('thread', 0)!
+    store.resolve('thread', sent.draftId, 'The provider rejected this action.')
+    // An error in the reply is not the evidence; the delivery record is what says nothing was sent.
+    expect(store.draft('thread').text).toBe('')
+    store.receive(refused(sent.draftId))
+    expect(store.draft('thread').text).toBe('Refuse me')
+    expect(store.draft('thread').draftId).toBe(store.submissions()[0]!.restoredAs)
+    // Sending it again is the same revision, and the composer holding it back empties again.
+    const again = store.retry('thread', sent.draftId, 5)!
+    expect(again).toMatchObject({ draftId: sent.draftId, text: 'Refuse me', submittedAt: 5, resolved: false, error: null })
+    expect(store.draft('thread').text).toBe('')
+
+    const busy = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    busy.edit('thread', { text: 'Refuse me too' })
+    const rejected = busy.submit('thread', 0)!
+    busy.edit('thread', { text: 'A newer thought' })
+    busy.resolve('thread', rejected.draftId, 'The provider rejected this action.')
+    busy.receive(refused(rejected.draftId))
+    expect(busy.draft('thread').text).toBe('A newer thought')
+    expect(busy.submissions()[0]!.restoredAs).toBeUndefined()
+    busy.restore('thread', rejected.draftId)
+    expect(busy.draft('thread').text).toBe('Refuse me too')
+  })
+
+  it('leaves an unanswered send in its pending message rather than writing it back over the composer', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    store.edit('thread', { text: 'May have gone' })
+    const sent = store.submit('thread', 0)!
+    store.resolve('thread', sent.draftId, UNCONFIRMED_SUBMISSION.send)
+    expect(store.draft('thread').text).toBe('')
+    expect(store.submissions()[0]).toMatchObject({ resolved: true, text: 'May have gone' })
+    expect(store.submissions()[0]!.restoredAs).toBeUndefined()
+  })
+
+  it('leaves an unanswered queue admission in its row rather than writing it back over the composer', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    store.edit('thread', { text: 'May be queued' })
+    const queued = store.submit('thread', 0, 'queue')!
+    store.resolve('thread', queued.draftId, UNCONFIRMED_SUBMISSION.queue)
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'uncertain', visible: true })
+    // The next published state re-derives every status; an unconfirmed admission is still not a refusal.
+    store.receive(baseState())
+    expect(store.draft('thread').text).toBe('')
+    expect(store.submissions()[0]).toMatchObject({ resolved: true, text: 'May be queued' })
+    expect(store.submissions()[0]!.restoredAs).toBeUndefined()
+    // A refusal main did answer is what brings the prompt back.
+    store.resolve('thread', queued.draftId, 'The queue is closed.')
+    expect(store.draft('thread').text).toBe('May be queued')
   })
 
   it('derives pending message status from the delivery record, not from the command result', () => {
-    const submission = { threadId: 'thread', draftId: '33333333-3333-4333-8333-333333333333', text: 'hi', attachments: [], skills: [], mode: 'send' as const, submittedAt: 0, resolved: false, error: null }
+    const submission = { threadId: 'thread', draftId: '33333333-3333-4333-8333-333333333333', text: 'hi', attachments: [], skills: [], mode: 'send' as const, submittedAt: 0, startedAt: new Date().toISOString(), resolved: false, error: null }
     const at = new Date().toISOString()
     const delivery = (status: 'queued' | 'submitting' | 'failed' | 'uncertain' | 'accepted', messageId?: string) => [{ threadId: 'thread', draftId: submission.draftId, status, createdAt: at, updatedAt: at, ...(messageId ? { messageId } : {}) }]
     expect(submissionStatus(submission, baseState())).toEqual({ status: 'queued', visible: true })
@@ -248,8 +303,9 @@ describe('ThreadDraftStore skills and follow-up queue ownership', () => {
     const store = new ThreadDraftStore(held.command, 250, uuids())
     store.edit('thread', { text: 'Queue me' })
     const queued = store.submit('thread', 1, 'queue')!
-    // Until the queue owns it, the submission stays with the queue list and never shows in the transcript.
-    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'queued', visible: false })
+    // The transcript echoes it from the press, and the composer is already empty behind it.
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'queued', visible: true })
+    expect(store.draft('thread').text).toBe('')
     expect(queueAdmissionOpen(store.submissions()[0]!, baseState())).toBe(true)
     store.receive(baseState())
     expect(store.submissions()).toHaveLength(1)
@@ -260,7 +316,7 @@ describe('ThreadDraftStore skills and follow-up queue ownership', () => {
     expect(store.draft('thread').text).toBe('Newer typing')
     expect(store.submissions()).toHaveLength(0)
     // A manual send that main queued instead is not a delivery the transcript waits on.
-    expect(submissionStatus({ threadId: 'thread', draftId: queued.draftId, mode: 'send', text: 'Queue me', attachments: [], skills: [], submittedAt: 1, resolved: true, error: null }, receipt).visible).toBe(false)
+    expect(submissionStatus({ threadId: 'thread', draftId: queued.draftId, mode: 'send', text: 'Queue me', attachments: [], skills: [], submittedAt: 1, startedAt: new Date().toISOString(), resolved: true, error: null }, receipt).visible).toBe(false)
     expect(receipt.deliveredDrafts).toEqual([])
 
     const exact = new ThreadDraftStore(held.command, 250, uuids())
@@ -272,14 +328,16 @@ describe('ThreadDraftStore skills and follow-up queue ownership', () => {
     expect(exact.submissions()).toHaveLength(0)
   })
 
-  it('reports a rejected queue admission as failed while keeping it out of the transcript and the draft in place', () => {
+  it('reports a rejected queue admission as failed and puts the prompt back in the composer', () => {
     const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
     store.edit('thread', { text: 'Queue me' })
     const draft = store.submit('thread', 1, 'queue')!
+    expect(store.draft('thread').text).toBe('')
     store.resolve('thread', draft.draftId, 'Could not save this follow-up.')
-    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'failed', visible: false })
+    expect(submissionStatus(store.submissions()[0]!, baseState())).toEqual({ status: 'failed', visible: true })
     store.receive(baseState())
     expect(store.submissions()).toHaveLength(1)
     expect(store.draft('thread').text).toBe('Queue me')
+    expect(store.draft('thread').draftId).toBe(store.submissions()[0]!.restoredAs)
   })
 })

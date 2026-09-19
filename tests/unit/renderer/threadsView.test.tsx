@@ -175,7 +175,8 @@ describe('ThreadsView workspace', () => {
     act(() => live.deliver('grok-previews', 'uncertain'))
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Unconfirmed'))
     expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Show this pending message immediately.')
+    // The prompt is in its message, not the composer: an unconfirmed send is never written twice.
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep my replacement draft.' } })
     // Another revision's receipt is not this message's receipt.
@@ -204,7 +205,7 @@ describe('ThreadsView workspace', () => {
     expect(state.draft).toBe('Keep the saved draft')
   })
 
-  for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'replacement images preserved' : 'the unchanged draft cleared'}`, async () => {
+  for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'a newer draft and its images preserved' : 'the composer left empty'}`, async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     state.host.models.forEach(model => { model.supportsImages = true })
     let draftId = ''
@@ -220,15 +221,17 @@ describe('ThreadsView workspace', () => {
     await screen.findByRole('img', { name: 'same-name.png' })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     await screen.findByRole('button', { name: 'Check again' })
+    // The press emptied the composer; the prompt and its image are in the message below the conversation.
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     if (edited) {
-      fireEvent.click(screen.getByRole('button', { name: 'Remove same-name.png' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'And review this too' } })
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [imageFile()] } })
-      await screen.findByRole('img', { name: 'same-name.png' })
+      await screen.findAllByRole('img', { name: 'same-name.png' })
     }
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
     rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'Review this' : ''))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'And review this too' : ''))
     expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
   })
@@ -334,7 +337,7 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('button', { name: 'Open draft thread', exact: true })).toBeVisible()
   })
 
-  it('retains an edited manual prompt when a retry only reconciles an earlier action', async () => {
+  it('keeps an unconfirmed manual prompt in its message, with the composer empty and blocked', async () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     const { command } = renderThreads(state)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt', exact: true }), { target: { value: 'An edited unsent prompt' } })
@@ -342,7 +345,8 @@ describe('ThreadsView workspace', () => {
     await screen.findByRole('button', { name: 'Check again' })
     expect(screen.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
     expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'An edited unsent prompt' })
-    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('An edited unsent prompt')
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('An edited unsent prompt')
+    expect(screen.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
   })
 
   it('offers New thread without submitting or assigning any work', () => {

@@ -94,8 +94,11 @@ export class CodexAppServerHost implements AgentHost {
   private readonly providerSessionIds = new Map<string, string>()
   private readonly threads = new Map<string, NativeConversation>()
   private readonly live = new Set<string>()
+  /** Threads whose turns have been read on this connection; history is read once per open. */
+  private readonly histories = new Set<string>()
   private readonly observed = new Set<string>()
   private readonly resuming = new Map<string, Promise<void>>()
+  private readonly opening = new Map<string, Promise<void>>()
   private readonly threadReads = new Map<string, Promise<void>>()
   private readonly revisions = new Map<string, number>()
   private readonly dispatching = new Set<string>()
@@ -140,7 +143,7 @@ export class CodexAppServerHost implements AgentHost {
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
-    this.threads.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
+    this.threads.clear(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear()
     this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
@@ -208,7 +211,11 @@ export class CodexAppServerHost implements AgentHost {
       }).catch(() => { this.state.models = []; this.state.error = 'Codex models could not be listed. Check Codex and reconnect.' })
       if (this.child !== child) throw new Error('Codex disconnected while connecting.')
       this.state.connected = true
-      await Promise.all(Object.keys(this.aliases).map(id => this.resume(id).catch(error => {
+      // Connecting costs the same whatever Sotto has saved: a thread resumes, and its
+      // history is read, when it is opened. Personal chats own their own native request
+      // channel and have no other opening step, so they are opened here.
+      for (const [id, alias] of Object.entries(this.aliases)) if (alias.kind === 'personal') this.observed.add(id)
+      await Promise.all([...this.observed].filter(id => this.aliases[id]).map(id => this.open(id).catch(error => {
         if (!(error instanceof Rejected) || error.missingThreadId !== this.aliases[id]!.codexThreadId) throw error
         // An unavailable saved thread must not take the whole provider offline.
         // Its alias remains intact; never replace the native session implicitly.
@@ -304,7 +311,7 @@ export class CodexAppServerHost implements AgentHost {
       const alias = this.aliases[id]!
       await this.watcher?.pollThread(alias.codexThreadId)
       // Read an uncertain settings save without replaying its overrides.
-      if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: false }, value => this.applySettings(id, value))
+      if (alias.pendingSettings) await this.rpc('thread/resume', { threadId: alias.codexThreadId, excludeTurns: true }, value => this.applySettings(id, value))
       let applied = false
       for (let attempt = 0; attempt < 3 && !applied; attempt++) {
         const revision = this.revisions.get(id)
@@ -314,6 +321,8 @@ export class CodexAppServerHost implements AgentHost {
             // A late read must not overwrite streamed text, a completion, or a permission.
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
             this.applyThread(id, threadResponse.parse(value).thread, z.object({ thread: z.object({ turns: z.array(z.unknown()) }) }).safeParse(value).success); await this.persist(); applied = true
+            this.histories.add(id)
+            const read = this.ensureThread(id); delete read.historyStatus; delete read.historyError
           }
           try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
           catch (error) {
@@ -336,7 +345,26 @@ export class CodexAppServerHost implements AgentHost {
   private touch(id: string): void { this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1) }
   observeThreads(sessionIds: readonly string[]): void {
     for (const id of sessionIds) this.observed.add(id)
-    if (this.state.connected) for (const id of this.observed) void this.resume(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
+    if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
+  }
+  /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
+  private open(id: string): Promise<void> {
+    const pending = this.opening.get(id)
+    if (pending) return pending
+    const operation = this.openThread(id).finally(() => { if (this.opening.get(id) === operation) this.opening.delete(id) })
+    this.opening.set(id, operation)
+    return operation
+  }
+  private async openThread(id: string): Promise<void> {
+    if (!this.aliases[id]) return
+    await this.resume(id)
+    if (this.histories.has(id) || !this.state.connected) return
+    try { await this.refreshThread(id) }
+    catch (error) {
+      const thread = this.ensureThread(id)
+      thread.historyStatus = 'error'; thread.historyError = 'Codex history could not be read. Refresh this thread before replying.'
+      this.emit(); throw error
+    }
   }
   private resume(id: string): Promise<void> {
     if (!this.aliases[id] || this.live.has(id)) return Promise.resolve()
@@ -346,11 +374,13 @@ export class CodexAppServerHost implements AgentHost {
     const generation = this.generation
     const operation = (async () => {
       await this.watcher?.pollThread(alias.codexThreadId)
-      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: false } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: false }, async value => {
+      // Resume restores the conversation, never its transcript: turns are read when the
+      // thread is opened, so resuming costs the same for a long thread and a short one.
+      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
+      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: true }, async value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id)
-      const thread = this.ensureThread(id); delete thread.historyStatus; delete thread.historyError
+      // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
       this.emit()
       })
     })().catch(error => {
@@ -608,7 +638,7 @@ export class CodexAppServerHost implements AgentHost {
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId)
-          await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
+          await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
           this.watcher?.observe(response.thread.id); this.applyThread(command.threadId, response.thread); this.emit()
         }, () => { this.creating.delete(command.threadId) })
       } else {
@@ -649,7 +679,7 @@ export class CodexAppServerHost implements AgentHost {
           alias.pendingSettings = { modelId, reasoningEffort, runtimeMode: mode }
           await this.persist()
           await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, model: modelId, modelProvider: 'openai',
-            ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: false }, value => this.applySettings(id, value), async () => {
+            ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: true }, value => this.applySettings(id, value), async () => {
             delete alias.pendingSettings; await this.persist()
           })
         } else if (command.type === 'steer') {
@@ -900,7 +930,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   private reset(): void {
     this.skillsRevision++; this.loadedSkillCwds.clear()
-    this.child = undefined; this.state.connected = false; this.live.clear(); this.resuming.clear(); this.pendingLogMessages.clear()
+    this.child = undefined; this.state.connected = false; this.live.clear(); this.histories.clear(); this.resuming.clear(); this.opening.clear(); this.pendingLogMessages.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
     this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()
     for (const thread of this.threads.values()) thread.requests = []

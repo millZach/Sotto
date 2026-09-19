@@ -54,7 +54,7 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
  */
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'manual-send', 'steer', 'answer', 'configure-thread', 'compact-thread',
-  'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder',
+  'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
 ])
 
 const savedSchema = z.object({
@@ -1340,6 +1340,12 @@ export class AgentControl {
       case 'refresh-thread-worktree': {
         if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
         this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
+        return
+      }
+      case 'restore-thread-branch': {
+        if (!this.dependencies.host.restoreThreadBranch) throw new Error('Switching this thread’s branch is unavailable.')
+        this.acceptSnapshot(await this.dependencies.host.restoreThreadBranch(command.threadId, command.withUncommittedChanges === true))
+        this.state.notice = 'Branch restored.'
         return
       }
       case 'open-thread-folder': {

@@ -75,6 +75,7 @@ describe('Codex activity through native transport and workspace persistence', ()
     cleanup.push(async () => { restored.disconnect(); await restarted.adapter.closed(); await restored.privacyChanged() })
     await restored.initialize()
     expect(restored.workspaceSnapshot().threads[0]?.activities).toEqual(before.activities)
+    restarted.host.observeThreads?.(['thread'])
     await restored.connect()
     const after = (await restored.snapshot()).threads[0]!
     expect(after.activities?.map(record => record.id)).toEqual(before.activities?.map(record => record.id))

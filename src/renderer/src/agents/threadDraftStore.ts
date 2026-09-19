@@ -38,23 +38,30 @@ export const UNCONFIRMED_SUBMISSION: Record<SubmissionMode, string> = {
   queue: 'Sotto could not confirm this was queued.',
 }
 
-/** A revision the user sent from this window; the text is kept only in memory for the pending message. */
+/**
+ * A revision the user sent from this window. The composer empties on the press, so this is the only
+ * copy of what was sent: it holds the images' own bytes so a refused prompt can be sent or written again.
+ */
 export interface Submission {
   readonly threadId: string
   readonly draftId: string
   readonly mode: SubmissionMode
   readonly text: string
-  readonly attachments: readonly { readonly id: string; readonly name: string }[]
+  readonly attachments: readonly AgentAttachment[]
   readonly skills: readonly AgentSkillReference[]
   /** Files this revision mentioned, when it mentioned any. */
   readonly files?: readonly AgentFileReference[]
   /** performance.now() at the keydown or click that sent it. */
   readonly submittedAt: number
+  /** The same moment on the wall clock, which is where the thread's working line starts counting. */
+  readonly startedAt: string
   /** The manual-send command promise settled; delivery truth still comes from state.deliveries. */
   readonly resolved: boolean
   readonly error: string | null
   /** A local prerequisite failed before manual-send was invoked. */
   readonly notSent?: boolean
+  /** The revision this prompt went back to the composer as, when it was refused and nothing newer was written. */
+  readonly restoredAs?: string
 }
 
 export type SubmissionStatus = AgentDelivery['status']
@@ -102,9 +109,13 @@ export function deliveryFor(state: AgentState, threadId: string, draftId: string
  * a settled command promise without delivery evidence leaves the outcome uncertain.
  */
 export function submissionStatus(submission: Submission, state: AgentState): { readonly status: SubmissionStatus; readonly visible: boolean } {
-  // A queued revision belongs to the follow-up queue, which shows it; the transcript never repeats it.
+  // A queued revision is echoed in the transcript from the press, until the durable queue owns it and echoes it itself.
   if (submission.mode === 'queue' || queuedRevision(state, submission.threadId, submission.draftId)) {
-    return { status: submission.notSent || (submission.resolved && submission.error !== null) ? 'failed' : 'queued', visible: false }
+    // A queue admission main never answered proves nothing either way, so it is unconfirmed rather than
+    // refused: refused is what puts the prompt back in the composer, and main may already own this one.
+    const unconfirmed = submission.resolved && submission.error === UNCONFIRMED_SUBMISSION.queue && !submission.notSent
+    return { status: submission.notSent || (submission.resolved && submission.error !== null && !unconfirmed) ? 'failed' : unconfirmed ? 'uncertain' : 'queued',
+      visible: !queuedRevision(state, submission.threadId, submission.draftId) }
   }
   const delivery = deliveryFor(state, submission.threadId, submission.draftId)
   const receipt = state.deliveredDrafts?.some(item => item.threadId === submission.threadId && item.draftId === submission.draftId) === true
@@ -143,6 +154,8 @@ export class ThreadDraftStore {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly listeners = new Set<() => void>()
   private readonly accepted = new Set<string>()
+  /** Prompts already offered back to their composer after a refusal; a second offer is the user's to ask for. */
+  private readonly returnedPrompts = new Set<string>()
   private readonly legacyIds = new Map<string, string>()
   private readonly pendingSaves = new Map<string, Set<Promise<void>>>()
   private readonly handoffs = new Map<string, Promise<AgentState | null>>()
@@ -234,13 +247,26 @@ export class ThreadDraftStore {
       changed.add(threadId)
     }
     const pruned = this.submissionList.filter(item => item.mode === 'queue' ? queueAdmissionOpen(item, state) : submissionStatus(item, state).visible)
-    const submissionsChanged = pruned.length !== this.submissionList.length
-    if (submissionsChanged) this.submissionList = pruned
+    // Refused is the one outcome that proves nothing was sent, so the prompt comes back to an empty
+    // composer. It is offered back once; typing since the press is never replaced without being asked.
+    const returned = pruned.map(item => submissionStatus(item, state).status === 'failed' ? this.returnPrompt(item, changed) : item)
+    const submissionsChanged = pruned.length !== this.submissionList.length || returned.some((item, index) => item !== pruned[index])
+    if (submissionsChanged) this.submissionList = returned
     if (changed.size || submissionsChanged) this.emit(changed)
   }
 
   /** A new revision of the thread's composer. */
   edit(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachment[]; readonly skills?: readonly AgentSkillReference[]; readonly files?: readonly AgentFileReference[]; readonly requestId?: string | null }): void {
+    this.revise(threadId, patch)
+    this.emit(new Set([threadId]))
+  }
+
+  /**
+   * Replace the thread's composer content with a new revision, saved after the debounce.
+   * Sending uses it too: the composer starts a fresh empty revision on the press, so an older
+   * published state can never put the sent text back (the new revision has not been observed).
+   */
+  private revise(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachment[]; readonly skills?: readonly AgentSkillReference[]; readonly files?: readonly AgentFileReference[]; readonly requestId?: string | null }): string {
     const entry = this.entries.get(threadId) ?? { draft: EMPTY, observed: true, saved: true, saving: null, error: null, superseded: [] }
     this.entries.set(threadId, entry)
     if (entry.draft.draftId) entry.superseded = [...entry.superseded.slice(-15), entry.draft.draftId]
@@ -258,7 +284,7 @@ export class ThreadDraftStore {
     const pending = this.timers.get(threadId)
     if (pending !== undefined) clearTimeout(pending)
     this.timers.set(threadId, setTimeout(() => this.flush(threadId), this.debounceMs))
-    this.emit(new Set([threadId]))
+    return entry.draft.draftId
   }
 
   /** Save the thread's latest unsaved revision now (navigation, unmount, explicit retry). */
@@ -332,8 +358,9 @@ export class ThreadDraftStore {
   flushAll(): void { for (const threadId of [...this.timers.keys()]) this.flush(threadId) }
 
   /**
-   * Capture the current revision for sending. The pending debounce is replaced by an
-   * immediate save of this same revision, so nothing older can be saved after it.
+   * Take the current revision out of the composer for sending. The pending debounce is replaced by an
+   * immediate save of this same revision, so nothing older can be saved after it, and the composer
+   * starts a fresh empty revision at once: the press empties it, not the provider's acknowledgement.
    */
   submit(threadId: string, submittedAt: number, mode: SubmissionMode = 'send'): ComposerDraft | null {
     const entry = this.entries.get(threadId)
@@ -341,22 +368,87 @@ export class ThreadDraftStore {
     this.flush(threadId)
     const draft = entry.draft
     const submission: Submission = {
-      threadId, draftId: draft.draftId, mode, text: draft.text.trim(), submittedAt, resolved: false, error: null,
-      attachments: draft.attachments.map(({ id, name }) => ({ id, name })), skills: [...draft.skills], files: [...draft.files],
+      threadId, draftId: draft.draftId, mode, text: draft.text.trim(), submittedAt, startedAt: new Date().toISOString(), resolved: false, error: null,
+      attachments: draft.attachments.map(attachment => ({ ...attachment })), skills: [...draft.skills], files: [...draft.files],
     }
     this.submissionList = [...this.submissionList.filter(item => key(item.threadId, item.draftId) !== key(threadId, draft.draftId)), submission].slice(-MAX_DELIVERED_DRAFTS)
-    this.emit(new Set())
+    this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })
+    this.emit(new Set([threadId]))
     return draft
+  }
+
+  /**
+   * Send a submitted prompt again from its own copy, with the same revision, so the provider can
+   * never take it twice. A composer still holding the restored prompt empties again on the press.
+   */
+  retry(threadId: string, draftId: string, submittedAt: number): Submission | null {
+    const submission = this.submissionList.find(item => item.threadId === threadId && item.draftId === draftId)
+    if (submission === undefined) return null
+    if (submission.restoredAs !== undefined && this.draft(threadId).draftId === submission.restoredAs) {
+      this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })
+    }
+    // Sending it again is a fresh outcome: a second refusal may offer it back again.
+    this.returnedPrompts.delete(key(threadId, draftId))
+    // It is on its way, so it is no longer the prompt sitting in the composer.
+    const { restoredAs, ...carried } = submission
+    void restoredAs
+    const next: Submission = { ...carried, submittedAt, startedAt: new Date().toISOString(), resolved: false, error: null, notSent: false }
+    this.submissionList = this.submissionList.map(item => item === submission ? next : item)
+    this.emit(new Set([threadId]))
+    return next
+  }
+
+  /**
+   * Write content back into the composer as a new revision. With `onlyWhenEmpty`, typing that
+   * happened since the press is kept instead and the caller offers the restore as a choice.
+   */
+  restoreDraft(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments' | 'skills' | 'files' | 'requestId'>, onlyWhenEmpty = false): string | null {
+    const draftId = this.putBack(threadId, content, onlyWhenEmpty)
+    if (draftId !== null) this.emit(new Set([threadId]))
+    return draftId
+  }
+
+  private putBack(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments' | 'skills' | 'files' | 'requestId'>, onlyWhenEmpty: boolean): string | null {
+    if (onlyWhenEmpty && hasDraftContent(this.draft(threadId))) return null
+    return this.revise(threadId, { text: content.text, attachments: [...content.attachments], skills: [...content.skills], files: [...content.files], requestId: content.requestId })
+  }
+
+  /** Put a submitted prompt back in the composer, replacing whatever is written there. */
+  restore(threadId: string, draftId: string): void {
+    const submission = this.submissionList.find(item => item.threadId === threadId && item.draftId === draftId)
+    if (submission === undefined) return
+    this.returnedPrompts.add(key(threadId, draftId))
+    const restoredAs = this.putBack(threadId, { ...submission, files: submission.files ?? [], requestId: null }, false)
+    this.submissionList = this.submissionList.map(item => item === submission ? { ...item, ...(restoredAs === null ? {} : { restoredAs }) } : item)
+    this.emit(new Set([threadId]))
   }
 
   resolve(threadId: string, draftId: string, error: string | null, notSent = false): void {
     let found = false
+    const changed = new Set<string>()
     this.submissionList = this.submissionList.map(item => {
       if (item.threadId !== threadId || item.draftId !== draftId) return item
       found = true
-      return { ...item, resolved: true, error, notSent }
+      const settled: Submission = { ...item, resolved: true, error, notSent }
+      // A prompt that never left the window is refused on this evidence alone, and so is a queue
+      // admission main answered: the queue writes no delivery record. A direct send waits for its
+      // record, which is what tells a refusal from silence.
+      const refused = notSent || item.mode === 'queue' && error !== null && error !== UNCONFIRMED_SUBMISSION.queue
+      return refused ? this.returnPrompt(settled, changed) : settled
     })
-    if (found) this.emit(new Set())
+    if (found) this.emit(changed)
+  }
+
+  /** Offer a refused prompt back to its composer, once, and only while nothing newer is written there. */
+  private returnPrompt(submission: Submission, changed: Set<string>): Submission {
+    const id = key(submission.threadId, submission.draftId)
+    if (this.returnedPrompts.has(id)) return submission
+    this.returnedPrompts.add(id)
+    if (this.returnedPrompts.size > MAX_DELIVERED_DRAFTS * 4) this.returnedPrompts.delete(this.returnedPrompts.values().next().value!)
+    const restoredAs = this.putBack(submission.threadId, { ...submission, files: submission.files ?? [], requestId: null }, true)
+    if (restoredAs === null) return submission
+    changed.add(submission.threadId)
+    return { ...submission, restoredAs }
   }
 
   dismiss(threadId: string, draftId: string): void {

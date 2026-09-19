@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Columns2, Pencil, Plug, Shrink, Sparkles, Square, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
@@ -15,7 +15,8 @@ import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './reques
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
-import { submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
+import { hasDraftContent, submissionStatus, useSubmissions, useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
+import { ThreadBranchNotice } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
@@ -89,6 +90,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
   const handoff = useRef<{ readonly managed: boolean; readonly focused?: true; readonly until: number } | null>(null)
   const submissions = useSubmissions(store)
+  const paneDraft = useThreadComposer(store, row.thread.id)
   // Management is the voice coordinator's own work, so with it hidden a managed thread still composes by hand.
   const coordinated = useVoiceCoordinatorEnabled()
   const thread = row.thread
@@ -102,6 +104,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const assigned = coordinated ? row.assignment : undefined
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
+  // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
+  const composing = hasDraftContent(paneDraft.draft)
+    || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))
   const capabilities = capabilitiesForThread(state.host, thread)
   /** This thread's own lane. Work on another thread leaves every control here live. */
   const threadBusy = isThreadBusy(state, thread.id)
@@ -129,6 +134,23 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     handoff.current = null
     target.focus()
   })
+  /** A branch switched in a terminal leaves no activity behind, so a draft that begins re-reads the folder once. */
+  const branchRead = useRef<string | null>(null)
+  const worktreeReady = thread.worktree?.mode === 'independent' && thread.worktree.status === 'ready'
+  useEffect(() => {
+    if (!composing) { branchRead.current = null; return }
+    if (!worktreeReady || branchRead.current === thread.id) return
+    branchRead.current = thread.id
+    void command({ type: 'refresh-thread-worktree', threadId: thread.id })
+  }, [composing, worktreeReady, thread.id, command])
+  // Coming back from a terminal is the other moment a switch made elsewhere can show; the window regaining
+  // focus re-reads the folder once, so the label follows without a keystroke or a send.
+  useEffect(() => {
+    if (!worktreeReady) return
+    const onFocus = (): void => { void command({ type: 'refresh-thread-worktree', threadId: thread.id }) }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [worktreeReady, thread.id, command])
   const writeHere = (): void => { handoff.current = { managed: true, focused: true, until: performance.now() + 5000 } }
   /** Focus the composer once management is `managed`; a refused command leaves focus where it was. */
   const handOff = (managedNext: boolean, request: () => Promise<AgentState | null>): void => {
@@ -207,8 +229,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </ThreadTranscript></ThreadWebLinks>
     <div className="thread-workspace__compose" ref={compose}>
       {notice}
+      {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
+      <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
-        onRetryAdmission={() => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue') }} /> : null}
+        onRetryAdmission={draftId => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue', draftId) }} /> : null}
       {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
         // The pane takes the selection in the capture pass of pointerdown or focus, and that update lands before the event
         // reaches this button, which it would replace. So both are handled in the same capture pass: a pointer arms the
