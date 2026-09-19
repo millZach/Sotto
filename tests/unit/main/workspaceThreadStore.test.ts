@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../../src/shared/agents'
-import type { RestoredThreadHistory } from '../../../src/main/agents/host'
+import type { RestoredThreadHistory, ThreadHostEvent } from '../../../src/main/agents/host'
+import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 
@@ -205,5 +206,56 @@ describe('thread messages in the store rather than the workspace cache', () => {
     expect(written).toContain('desktop-window')
     // The event has no answer field at all: an answer can read like a prompt, so it is never written.
     expect(written).not.toContain('"answer"')
+  })
+})
+
+/** A provider that says what changed rather than publishing a whole history to be compared (issue #120). */
+class EventProviderHost extends FakeProviderHost {
+  private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
+  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void {
+    this.eventListeners.add(listener)
+    return () => { this.eventListeners.delete(listener) }
+  }
+  publish(threadId: string, event: ThreadEvent): void {
+    for (const listener of this.eventListeners) listener({ threadId, event })
+  }
+}
+
+describe('a provider host that appends events instead of rebuilding a history', () => {
+  it('writes what the events said, serves the window from the store, and ignores the published arrays', async () => {
+    const directory = await root()
+    const adapter = new EventProviderHost()
+    const host = await opened(directory, adapter)
+    await host.connect()
+    host.observeThreads(['session-workshop'])
+
+    for (const message of conversation('events', 2)) adapter.publish('session-workshop', { kind: 'message-added', at: message.createdAt, message })
+    adapter.publish('session-workshop', { kind: 'message-text-appended', at: at(9), messageId: 'events-a1', appendText: ' and more' })
+    // The snapshots carry no messages at all; only the events say what this thread holds.
+    adapter.emit()
+    await host.snapshot()
+
+    const watched = host.workspaceSnapshot().threads.find(thread => thread.id === 'session-workshop')!
+    expect(watched.messages.map(message => message.id)).toEqual(['events-u0', 'events-a0', 'events-u1', 'events-a1'])
+    expect(watched.messages.at(-1)?.text).toBe('Reply events 1 and more')
+    expect(host.threadMessages('session-workshop')).toHaveLength(4)
+
+    // A confirmed rewind is a reset, and the thread starts again from what the events add after it.
+    adapter.publish('session-workshop', { kind: 'messages-reset', at: at(10), historyEpoch: 'second' })
+    adapter.publish('session-workshop', { kind: 'message-added', at: at(11), message: { id: 'after', role: 'user', text: 'Kept', createdAt: at(11) } })
+    adapter.emit()
+    await host.snapshot()
+    expect(host.threadMessages('session-workshop').map(message => message.id)).toEqual(['after'])
+
+    // A thread nobody is looking at keeps its summary, and the store still answers for it in full.
+    host.observeThreads([])
+    const away = host.workspaceSnapshot().threads.find(thread => thread.id === 'session-workshop')!
+    expect(away.messages).toEqual([])
+    expect(away.summary?.messageCount).toBe(1)
+    expect(host.threadMessages('session-workshop').map(message => message.text)).toEqual(['Kept'])
+
+    const saved = await readFile(join(directory, 'workspace.json'), 'utf8')
+    expect(saved).not.toContain('Prompt events 0')
+    expect(await onDisk(directory)).toContain('Kept')
   })
 })

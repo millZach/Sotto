@@ -192,6 +192,13 @@ export class ThreadStore {
     return { messages: rows.map(messageOf), earlierAvailable: firstPosition > 0, firstPosition, lastPosition }
   }
 
+  /** Every message this thread holds, by ID and role, oldest first: what an adapter needs to recognise
+   * a message the store already has without reading the words back out of it. */
+  messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant' }[] {
+    return this.requireOpen().prepare('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
+      .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant' }))
+  }
+
   messageCount(threadId: string): number {
     return Number(this.requireOpen().prepare('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
   }

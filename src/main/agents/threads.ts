@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -102,14 +102,26 @@ export class ThreadRegistry {
 
 /** Sotto-owned thread IDs around a provider adapter; provider session IDs never cross this boundary. */
 export class SottoThreadHost implements AgentHost {
-  private observed: readonly string[] = []
+  /** Undefined until something says what it is looking at; a connection never invents a watched set. */
+  private observed: readonly string[] | undefined
+
+  /** Thread events cross this boundary the way snapshots do: under Sotto's own thread ID (ADR-0002).
+   * Absent when the adapter inside publishes none, so the host above knows to read its arrays instead. */
+  readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
 
   constructor(private readonly provider: string, private readonly inner: AgentHost,
-    private readonly registry: ThreadRegistry) {}
+    private readonly registry: ThreadRegistry) {
+    const events = inner.subscribeEvents?.bind(inner)
+    if (events) this.subscribeEvents = listener => events(({ threadId, event }) => {
+      if (!this.registry.loaded) return
+      const binding = this.registry.bySession(this.provider, threadId)
+      if (binding) listener({ threadId: binding.threadId, event })
+    })
+  }
 
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
-    this.observeThreads(this.observed)
+    if (this.observed) this.observeThreads(this.observed)
     return this.read(() => this.inner.connect())
   }
 
@@ -172,6 +184,16 @@ export class SottoThreadHost implements AgentHost {
     // An event before the durable bindings are loaded would mint IDs the disk then contradicts.
     // Nothing is lost: connect and snapshot deliver the same state once loaded.
     return this.inner.subscribe(snapshot => { if (this.registry.loaded) listener(this.mapSnapshot(snapshot)) })
+  }
+
+  /** The store answers about Sotto's thread; the adapter inside asks about its own session. */
+  useThreadHistory(source: ThreadHistorySource): void {
+    this.inner.useThreadHistory?.({
+      messageIdentities: sessionId => {
+        const binding = this.registry.bySession(this.provider, sessionId)
+        return binding ? source.messageIdentities(binding.threadId) : []
+      },
+    })
   }
 
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {

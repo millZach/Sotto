@@ -7,7 +7,8 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
+import { ThreadMessageLog } from './threadMessageLog'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -128,6 +129,10 @@ export class GrokAcpHost implements AgentHost {
   private polling: Promise<void> | undefined
   private readonly historyReads = new Map<string, Promise<void>>()
   private readonly histories = new Map<string, HistoryRead>()
+  /** This adapter's append path: every change to what a thread said leaves through it as an event. */
+  private readonly log = new ThreadMessageLog()
+  /** What the host's event store already holds, so a session read from its start is not added twice. */
+  private history: ThreadHistorySource | undefined
   /** Watched set: the threads the coordinator asked for. Their sessions are loaded eagerly, never reaped. */
   private readonly observed = new Set<string>()
   /** The sessions this connection has loaded; only these are polled for history. */
@@ -175,7 +180,7 @@ export class GrokAcpHost implements AgentHost {
       this.confirmLoad(id, alias, value); await this.persist()
     }).then(() => {
       if (rpc !== this.rpc) return
-      this.loaded.add(id); this.reaper.touch(id)
+      this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
     }).finally(() => { if (this.loading.get(id) === work) this.loading.delete(id) })
     this.loading.set(id, work)
     return work
@@ -190,11 +195,17 @@ export class GrokAcpHost implements AgentHost {
     this.loaded.delete(id)
     // The history cursor is a read position in a session Sotto no longer holds; the next load reads afresh.
     this.histories.delete(id)
+    this.log.release(id)
     await this.closeSession(rpc, alias)
   }
-  private current(): AgentHostSnapshot { return structuredClone({ ...this.state, threads: [...this.threads.values()].filter((thread): thread is AgentThread => 'projectId' in thread) }) }
+  private current(): AgentHostSnapshot {
+    return structuredClone({ ...this.state, threads: [...this.threads.values()]
+      .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) })
+  }
   private emit(): void { for (const listener of this.listeners) listener(this.current()) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
+  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
+  useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
   private thread(id: string): NativeConversation {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
@@ -238,7 +249,13 @@ export class GrokAcpHost implements AgentHost {
       await rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } }, value => { z.object({}).parse(value) })
       // Lazy sessions: a known thread is in the snapshot from its alias, idle, and loads when it is
       // watched or acted on. Personal chats own their own native request channel, so they load here.
-      for (const [id, alias] of Object.entries(this.aliases)) { this.thread(id); if (alias.kind === 'personal') this.observed.add(id) }
+      // A fresh connection reads each session from its start again, so what the store already holds is
+      // recognised here: the same message read twice is not a second message.
+      this.log.forgetAll()
+      for (const [id, alias] of Object.entries(this.aliases)) {
+        this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
+        if (alias.kind === 'personal') this.observed.add(id)
+      }
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
       this.state.connected = true; delete this.state.error
       for (const [id, alias] of Object.entries(this.aliases)) {
@@ -262,6 +279,7 @@ export class GrokAcpHost implements AgentHost {
     const watched = new Set(ids)
     for (const [id, alias] of Object.entries(this.aliases)) if (alias.kind === 'personal') watched.add(id)
     this.observed.clear(); for (const id of watched) this.observed.add(id)
+    this.log.observe([...this.observed])
     if (!this.state.connected) return
     for (const id of this.observed) {
       if (!this.aliases[id]?.grokSessionId) continue
@@ -371,9 +389,6 @@ export class GrokAcpHost implements AgentHost {
     if (generation !== this.generation || rpc !== this.rpc || !this.state.connected) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
     if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
-    // The durable rail stays as Sotto read it. The live tail below is merged into the copy the thread shows,
-    // so a stream that is ahead of native writes never edits the history the cursor has already accepted.
-    const messages = history.messages.map(message => ({ ...message }))
     let status = history.status; let lastTurn = history.lastTurn
     // A live native turn may belong to the CLI, not activePrompts. Older durable
     // status cannot supersede it until its event has entered the persisted timeline.
@@ -382,6 +397,18 @@ export class GrokAcpHost implements AgentHost {
       if (history.statusEvents.has(liveStatus.eventKey)) this.liveStatus.delete(id)
       else { status = liveStatus.status; lastTurn = thread.lastTurn }
     }
+    if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn
+    this.record(id, status)
+    thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
+    this.emit()
+  }
+  /**
+   * Grok's append path. The durable rail stays as Sotto read it; the live tail is merged into a copy of
+   * it, and the whole is handed to the log, which works out what is new and publishes it as events. No
+   * other place in this adapter changes what a thread said.
+   */
+  private record(id: string, status: AgentThread['status']): void {
+    const messages = (this.histories.get(id)?.messages ?? []).map(message => ({ ...message }))
     // Native writes may lag behind live notifications. Keep their tail until the durable rail catches up.
     for (const live of [...[...this.authored.values()].filter(entry => entry.threadId === id).map(entry => entry.message), ...[...this.streams.values()].filter(stream => stream.threadId === id).map(stream => stream.message)]) {
       if (live.role === 'user') {
@@ -405,12 +432,11 @@ export class GrokAcpHost implements AgentHost {
         } else if (live.text.startsWith(persisted.text)) persisted.text = live.text
       }
     }
-    if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn
-    thread.messages = messages; thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
-    this.emit()
+    this.log.set(id, messages)
   }
   personalSnapshot(): PersonalConversation[] {
-    return structuredClone([...this.threads.values()].filter((thread): thread is PersonalConversation => 'kind' in thread && thread.kind === 'personal'))
+    return structuredClone([...this.threads.values()].filter((thread): thread is PersonalConversation => 'kind' in thread && thread.kind === 'personal')
+      .map(thread => this.log.publishedThread(thread)))
   }
   async createPersonalConversation(command: PersonalCreateCommand, memories: readonly PersonalMemory[] = []): Promise<AgentHostResult> {
     this.personalContexts.set(command.threadId, personalContext(memories))
@@ -486,7 +512,7 @@ export class GrokAcpHost implements AgentHost {
           try { await this.refreshThread(command.threadId) }
           catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error }
           const thread = this.thread(command.threadId)
-          if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
+          if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
           const previous = alias.origins.find(origin => origin.messageId === command.messageId || origin.commandId === command.commandId)
           if (previous) return previous.entryKey ? { accepted: true } : { accepted: false, uncertain: true }
           if (this.activePrompts.has(command.threadId) || thread.status === 'running') throw new Error('Grok is already running a prompt in this thread.')
@@ -506,7 +532,7 @@ export class GrokAcpHost implements AgentHost {
             await this.persist()
             // Saving the origin is an async boundary at which native CLI input can revoke authority.
             await this.refreshThread(command.threadId)
-            if (command.expectedLastUserMessageId !== undefined && (thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
+            if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
             if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
             if (generation !== this.generation || !this.state.connected || !this.activePrompts.has(command.threadId)) throw new Error('The Grok prompt was cancelled before dispatch.')
           } catch (error) {
@@ -585,16 +611,16 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: thread.messages.at(-1)?.id, cwd: this.aliases[id]!.cwd }, thread.activities)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
         const key = eventKey(parsed.data, Date.now())
         const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
         const messageId = origin?.messageId ?? key
-        if (messageId && !thread.messages.some(message => message.id === messageId)) {
+        if (messageId && !this.authored.has(messageId) && !this.log.has(id, messageId)) {
           const message: AgentMessage = { id: messageId, role: 'user', text: origin && this.aliases[id]!.kind === 'personal' ? personalAuthoredText(content.text) : content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
-          this.authored.set(messageId, { threadId: id, message }); thread.messages.push(message)
+          this.authored.set(messageId, { threadId: id, message })
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
         this.liveStatus.set(id, { eventKey: eventKey(parsed.data, 0), status: 'running' })
@@ -602,13 +628,13 @@ export class GrokAcpHost implements AgentHost {
         this.markTurn(id, 'running', messageId)
       }
       if (update.sessionUpdate === 'agent_message_chunk' && content?.type === 'text') {
-        const userId = thread.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history'
+        const userId = this.log.lastUserMessageId(id) ?? 'native-history'
         const streamId = assistantKey(id, parsed.data, userId, lastReportedId(thread.activities))
         const previous = this.streams.get(streamId)?.message
         if (previous) previous.text += content.text ?? ''
         else {
           const message: AgentMessage = { id: streamId, role: 'assistant', text: typeof content.text === 'string' ? content.text : '', createdAt: new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString() }
-          this.streams.set(streamId, { threadId: id, userId, message }); thread.messages.push(message)
+          this.streams.set(streamId, { threadId: id, userId, message })
         }
       }
       if (update.sessionUpdate === 'turn_completed') {
@@ -618,6 +644,7 @@ export class GrokAcpHost implements AgentHost {
         this.markTurn(id, turnOutcome(update.stop_reason ?? update.stopReason))
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
+      this.record(id, thread.status)
       this.emit()
     }
   }
@@ -627,11 +654,11 @@ export class GrokAcpHost implements AgentHost {
    */
   private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
     const thread = this.threads.get(id); if (!thread) return
-    const last = thread.messages.filter(message => message.role === 'user').at(-1)
-    const turn = turnId ?? last?.id
+    const last = this.log.lastUserMessageId(id)
+    const turn = turnId ?? last
     if (turn === undefined) return
     thread.activities = markTurnActivity(thread.activities, { provider: 'grok', turnId: turn, status,
-      ...(last?.id === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
+      ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
   }
   private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.emit() }
   private refusal(pending: Pending): unknown { return pending.permission ? { outcome: { outcome: 'cancelled' } } : { outcome: 'cancelled' } }
