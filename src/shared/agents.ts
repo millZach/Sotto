@@ -195,6 +195,9 @@ export const agentProviderStatusSchema = z.object({
   name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
 })
 export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
+/** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
+export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
+
 export const agentHostSnapshotSchema = z.object({
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),

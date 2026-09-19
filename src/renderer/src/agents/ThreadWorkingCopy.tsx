@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
-import type { AgentProject, AgentThread } from '../../../shared/agents'
+import { RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread } from '../../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
@@ -56,19 +56,21 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
   // Busy buttons use aria-disabled, not disabled: a disabled button would drop keyboard focus to the page.
   const [running, setRunning] = useState<Action | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const lastError = useRef<string | null>(null)
   const inFlight = useRef(false)
   const run = async (type: Action, withUncommittedChanges?: boolean): Promise<boolean> => {
     if (inFlight.current) return false
     inFlight.current = true
-    setRunning(type); setError(null)
+    setRunning(type); setError(null); lastError.current = null
+    const fail = (message: string): false => { lastError.current = message; setError(message); return false }
     try {
       const result = await command(type === 'restore-thread-branch' ? { type, threadId, withUncommittedChanges } : { type, threadId })
-      if (!result || result.error) { setError(result?.error ?? 'Could not confirm this action. Try again.'); return false }
+      if (!result || result.error) return fail(result?.error ?? 'Could not confirm this action. Try again.')
       return true
-    } catch { setError('Could not confirm this action. Try again.'); return false }
+    } catch { return fail('Could not confirm this action. Try again.') }
     finally { inFlight.current = false; setRunning(null) }
   }
-  return { running, error, run }
+  return { running, error, lastError, run }
 }
 
 /** Pane header chip: the actual branch or folder, with its details and folder actions. */
@@ -156,17 +158,18 @@ export function ThreadBranchNotice({ thread, project, command, composing }: Thre
   const sent = thread.worktree?.sentBranch
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const { running, error, run } = useWorkingCopyAction(thread.id, command)
+  const { running, error, lastError, run } = useWorkingCopyAction(thread.id, command)
   const trigger = useRef<HTMLButtonElement>(null)
   const changed = facts.status === 'ready' && facts.mode === 'independent' && sent !== undefined && sent !== facts.branch
   // A later switch is a new thing to say, so dismissal is remembered for this pair of branches alone.
-  const change = `${thread.id}
-${sent ?? ''}
-${facts.branch ?? ''}`
+  const change = [thread.id, sent ?? '', facts.branch ?? ''].join('\n')
   if (!changed || !composing || dismissed === change) return null
   const restore = (withUncommittedChanges?: boolean): void => {
     if (running) return
-    void run('restore-thread-branch', withUncommittedChanges)
+    void run('restore-thread-branch', withUncommittedChanges).then(done => {
+      // The record here can lag the folder: when main finds work it did not know about, it asks the same question.
+      if (!done && !withUncommittedChanges && lastError.current === RESTORE_BRANCH_NEEDS_CONFIRMATION) setConfirming(true)
+    })
   }
   return <div className="branch-notice" role="status"
     onKeyDown={event => { if (event.key === 'Escape' && !confirming) { event.stopPropagation(); setDismissed(change) } }}>
@@ -175,10 +178,10 @@ ${facts.branch ?? ''}`
       : <>This folder has no branch checked out; sending will continue there.</>}</p>
     <Button ref={trigger} variant="secondary" aria-disabled={running !== null} aria-label={`Restore branch ${sent}`}
       onClick={() => { if (facts.dirty) setConfirming(true); else restore() }}>
-      <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? 'Switching...' : 'Restore branch'}
+      <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? 'Switching…' : 'Restore branch'}
     </Button>
     <Button variant="ghost" aria-label="Dismiss the branch notice" onClick={() => setDismissed(change)}>Dismiss</Button>
-    {error ? <p className="branch-notice__result" role="alert">{error}</p> : null}
+    {error && !confirming ? <p className="branch-notice__result" role="alert">{error}</p> : null}
     {confirming ? <ConfirmationDialog title={`Switch back to ${sent}?`} danger={false}
       description={<>This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict.</>}
       confirmLabel="Switch branch" cancelLabel="Keep this branch" fallbackFocusRef={trigger}

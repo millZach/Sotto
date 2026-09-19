@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState, AgentThread, AgentWorktree } from '../../../src/shared/agents'
-import { defaultAgentConfiguration } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, RESTORE_BRANCH_NEEDS_CONFIRMATION } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadBranchNotice, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
@@ -71,6 +71,19 @@ describe('the branch-changed notice', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(command).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Restore branch sotto/thread-7f1c' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'restore-thread-branch', threadId: 'thread-1', withUncommittedChanges: true }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('asks the same question when the record said clean but main finds uncommitted changes', async () => {
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request =>
+      request.type === 'restore-thread-branch' && !request.withUncommittedChanges ? { ...snapshot(), error: RESTORE_BRANCH_NEEDS_CONFIRMATION } : snapshot())
+    render(<ThreadBranchNotice thread={thread} project={project} command={command as never} composing />)
+    fireEvent.click(screen.getByRole('button', { name: 'Restore branch sotto/thread-7f1c' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Switch back to sotto/thread-7f1c?' })
+    expect(dialog).toHaveTextContent('uncommitted changes')
+    expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'restore-thread-branch', threadId: 'thread-1', withUncommittedChanges: true }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

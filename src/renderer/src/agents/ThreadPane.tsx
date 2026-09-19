@@ -143,6 +143,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     branchRead.current = thread.id
     void command({ type: 'refresh-thread-worktree', threadId: thread.id })
   }, [composing, worktreeReady, thread.id, command])
+  // Coming back from a terminal is the other moment a switch made elsewhere can show; the window regaining
+  // focus re-reads the folder once, so the label follows without a keystroke or a send.
+  useEffect(() => {
+    if (!worktreeReady) return
+    const onFocus = (): void => { void command({ type: 'refresh-thread-worktree', threadId: thread.id }) }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [worktreeReady, thread.id, command])
   const writeHere = (): void => { handoff.current = { managed: true, focused: true, until: performance.now() + 5000 } }
   /** Focus the composer once management is `managed`; a refused command leaves focus where it was. */
   const handOff = (managedNext: boolean, request: () => Promise<AgentState | null>): void => {
