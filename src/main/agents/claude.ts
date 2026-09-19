@@ -521,9 +521,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!log) {
       const alias = this.aliases[id]!
       const generation = this.generation
+      // One publish per read, not per entry: a connect reads the whole transcript, and a snapshot per line
+      // is a snapshot clone and a workspace write per line, which ran the main process out of heap.
+      const current = (): boolean => generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId
       log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
-        if (generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, frame, true); this.emit() }
-      })
+        if (current()) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, frame, true) }
+      }, () => { if (current()) this.emit() })
       this.logs.set(id, log)
     }
     return log

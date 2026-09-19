@@ -104,7 +104,7 @@ describe('ThreadWorkingCopyNotice', () => {
 
   it('only re-checks the bound folder once native work has started, and shows a command failure', async () => {
     const command = vi.fn(async () => snapshot('Git is unavailable.'))
-    render(<ThreadWorkingCopyNotice thread={{ ...failed, nativeSessionStarted: true, worktree: { ...failed.worktree!, error: 'The working folder or branch no longer matches this thread.' } }} project={project} command={command} />)
+    render(<ThreadWorkingCopyNotice thread={{ ...failed, nativeSessionStarted: true, worktree: { ...failed.worktree!, error: 'The working folder is no longer this thread’s Git worktree.' } }} project={project} command={command} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Working folder unavailable.')
     expect(screen.queryByRole('button', { name: 'Retry setup' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))

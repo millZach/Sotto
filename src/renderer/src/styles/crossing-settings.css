@@ -69,11 +69,15 @@
 .segmented-control button[aria-checked='true'] { color: var(--tt-pill-ink); background: var(--tt-pill); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
 
-/* Index: a stable category rail and one focused, independently scrolling form. */
-.settings-view { overflow: hidden; }
-.settings-view .settings-layout { grid-template-columns: 238px minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
-.settings-sidebar { min-height: 0; min-width: 0; overflow-y: auto; padding: 35px 18px 24px 26px; border-right: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.settings-sidebar h1 { margin: 0 0 34px; padding: 0 10px; color: var(--tt-text); font-size: 30px; font-weight: 600; line-height: 1.2; letter-spacing: -1.1px; font-variation-settings: 'opsz' 96; }
+/* Index: a stable category rail and one focused, independently scrolling form. The rail wears the frame of the
+   Threads sidebar (its top row and its foot) at the width of that sidebar, and the page owns the window, so the
+   window controls sit at its top right and the sentence at its bottom right. */
+.settings-view { position: relative; overflow: hidden; }
+.settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
+.settings-view .settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; }
+.settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
+.settings-view .settings-feedback { padding-right: 116px; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
 .settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }

@@ -219,6 +219,28 @@ describe('durable project/thread organization', () => {
     expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
   })
 
+  it('adopts the branch the worktree has checked out on send and publishes it', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    // The fixture project is a plain folder, so stand in for Git: an independent checkout whose branch moves under Sotto.
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let checkedOut = 'sotto/thread-fixture'
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: checkedOut }))
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.threadWorkingDirectory('local')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ status: 'ready', branch: 'sotto/thread-fixture' })
+    checkedOut = 'feat/user-chosen'
+    const published: AgentHostSnapshot[] = []
+    f.host.subscribe(snapshot => published.push(snapshot))
+    await f.host.threadWorkingDirectory('local')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ status: 'ready', branch: 'feat/user-chosen' })
+    expect(published.at(-1)?.threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('feat/user-chosen')
+  })
+
   it('marks the working copy error when its preparation fails, without turning creation into a rejection', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()

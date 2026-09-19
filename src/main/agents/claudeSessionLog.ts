@@ -28,7 +28,8 @@ export class ClaudeSessionLog {
   private decoder = new StringDecoder('utf8')
   private pending: Promise<void> = Promise.resolve()
   private path: string | undefined
-  constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void) {}
+  /** `onSettled` runs once after each read that delivered entries, so a long catch-up costs one publish, not one per line. */
+  constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void, private readonly onSettled?: () => void) {}
   async exists(): Promise<boolean> { const path = await this.resolve(); return Boolean(path && (await stat(path).catch(() => undefined))?.isFile()) }
   poll(): Promise<void> {
     const work = this.pending.then(() => this.read())
@@ -48,6 +49,7 @@ export class ClaudeSessionLog {
   private async read(): Promise<void> {
     const path = await this.resolve(); if (!path) return
     const handle = await open(path, 'r').catch(() => undefined); if (!handle) return
+    let delivered = false
     try {
       const size = (await handle.stat()).size
       if (size < this.offset) { this.offset = 0; this.remainder = ''; this.decoder = new StringDecoder('utf8') }
@@ -62,11 +64,13 @@ export class ClaudeSessionLog {
           if (Buffer.byteLength(line) > CLAUDE_MAX_FRAME_BYTES) continue
           try {
             const entry = object(JSON.parse(line))
-            if (entry && (!entry.sessionId || entry.sessionId === this.sessionId)) this.onEntry(entry)
+            if (entry && (!entry.sessionId || entry.sessionId === this.sessionId)) { this.onEntry(entry); delivered = true }
           } catch { /* Unrelated/malformed native metadata is not user input. */ }
         }
         if (Buffer.byteLength(this.remainder) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
       }
-    } finally { await handle.close() }
+    } finally {
+      try { await handle.close() } finally { if (delivered) this.onSettled?.() }
+    }
   }
 }

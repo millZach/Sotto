@@ -60,11 +60,18 @@ describe('independent working-copy allocation', () => {
     await expect(f.service.ensure(branchCollision)).rejects.toThrow('already exists')
     expect((await git(f.project, ['rev-parse', branchCollision.branch!])).trim()).toBe(branchCollision.baseCommit)
   })
-  it('rejects another branch at the reserved path and never repairs it destructively', async () => {
+  it('follows the branch a worktree has checked out and refuses only a folder that is not its checkout', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     await git(a.path!, ['checkout', '-b', 'user-chosen-branch'])
-    await expect(f.service.ensure(a)).rejects.toThrow('different branch')
-    await expect(f.service.inspect(a)).rejects.toThrow('no longer matches')
+    // Both the send path and Retry setup follow the branch the folder is on.
+    expect(await f.service.inspect(a)).toMatchObject({ status: 'ready', branch: 'user-chosen-branch' })
+    expect(await f.service.ensure(a)).toMatchObject({ status: 'ready', branch: 'user-chosen-branch' })
+    await git(a.path!, ['checkout', '--detach'])
+    const detached = await f.service.inspect(a)
+    expect(detached.status).toBe('ready'); expect(detached.branch).toBeUndefined()
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    const elsewhere = join(f.root, 'elsewhere'); await mkdir(elsewhere)
+    await expect(f.service.inspect({ ...a, path: elsewhere })).rejects.toThrow('no longer this thread')
   })
   it('requires an initial Git commit but permits a deliberate shared empty or non-Git folder', async () => {
     const f = await fixture(false)

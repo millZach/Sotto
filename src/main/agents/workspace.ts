@@ -279,7 +279,16 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     const thread = this.thread(threadId)
-    if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') await this.worktrees.inspect(thread.worktree)
+    if (thread.worktree?.status === 'ready' && thread.worktree.mode === 'independent') {
+      const inspected = await this.worktrees.inspect(thread.worktree)
+      // A branch switched inside the worktree is adopted, so the pane's label follows it (ADR-0014).
+      if (inspected.branch !== thread.worktree.branch) {
+        this.thread(threadId).worktree = inspected; this.dirty = true
+        // The folder was just verified; a cache write that fails must not refuse the send.
+        try { await this.flush() } catch { this.saveError = 'The branch name could not be saved. Restore local storage and refresh.' }
+        this.publish()
+      }
+    }
     return existingWorkingDirectory(resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)))
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {

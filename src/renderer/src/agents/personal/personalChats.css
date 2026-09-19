@@ -1,5 +1,5 @@
 /* Chats: the Threads workspace's sidebar and conversation, with no project folders. Type and spacing are the Threads view's. */
-.personal-chats--unavailable { display: grid; flex: 1; place-items: center; min-height: 0; }
+.personal-chats--unavailable { display: grid; flex: 1; place-items: center; min-width: 0; min-height: 0; }
 .personal-chats__list { margin: 0; padding: 0; list-style: none; }
 .personal-chats .thread-nav__item { grid-template-columns: 18px minmax(0, 1fr); }
 .personal-chats__availability { flex-direction: column; gap: 6px; }

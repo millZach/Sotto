@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { AppSettings } from '../../shared/settings'
-import { AppShell } from './components/AppShell'
+import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
-import { HistoryFooter, HistoryView } from './features/history/HistoryView'
+import { HistoryView } from './features/history/HistoryView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { UpdateControl } from './features/updates/UpdateControl'
 import { installConfirmation } from './features/updates/updateControlLogic'
@@ -23,6 +23,9 @@ import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider } from './agents/AgentContext'
+import { FinishedThreadWatch } from './agents/finishedThreads'
+import { PageSidebar } from './agents/PageSidebar'
+import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { PersonalChatsView } from './agents/personal/PersonalChatsView'
@@ -60,17 +63,20 @@ export function applyDocumentPreferences(
 }
 
 /**
- * The footer's one sentence: what this page keeps. Threads has no footer of its
- * own any more, so it says nothing here.
+ * The one sentence at the room's foot (the footer under the strip, the foot
+ * beside the sidebar, or the corner of a page that owns its window): what this
+ * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings }: {
+function FooterStatus({ navigation, settings, historyKept }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   readonly settings: AppSettings
+  /** Whether History still holds transcripts the user could clear. */
+  readonly historyKept: boolean
 }): ReactNode {
   switch (navigation) {
     case 'agents': return <AgentAppearance />
     case 'chats': return 'Chats are saved on this computer.'
-    case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : 'History is off.'
+    case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
@@ -305,13 +311,17 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     // into its settings lead to Settings instead.
     // The same goes for Memory while memory is hidden.
     const threadsPage = navigation === 'threads' || (navigation === 'agents' && !voiceCoordinator) || (navigation === 'memory' && !memoryEnabled)
+    const layout = layoutFor(navigation, threadsPage)
+    // A capture run holds the sidebar's clocks still.
+    const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
+    const statusText = <FooterStatus navigation={navigation} settings={app.settings} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
         onOpenAgents={voiceCoordinator
           ? () => { setAgentSheet('session'); app.actions.navigate('agents') }
           : () => app.actions.navigate('settings')}
         updateControl={updateControl}
-        now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
+        now={captureNow}
       />
     )
 
@@ -329,7 +339,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = threadWorkspace
         break
       case 'chats':
-        view = <PersonalChatsView onOpenCoordinatorSettings={() => {
+        view = <PersonalChatsView statusText={statusText} onOpenCoordinatorSettings={() => {
           if (!voiceCoordinator) { app.actions.navigate('settings'); return }
           setAgentSheet('settings')
           app.actions.navigate('agents')
@@ -355,6 +365,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         view = <SettingsView
           settings={app.settings}
           platform={app.platform}
+          statusText={statusText}
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
@@ -390,23 +401,27 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
     content = (
       <>
-        <AppShell
-          navigation={navigation}
-          platform={app.platform}
-          layout={threadsPage ? 'page' : 'strip'}
-          statusText={navigation === 'history' ? <HistoryFooter enabled={app.settings.historyEnabled} status={app.historyStatus} count={app.history.length} onClear={() => setHistoryClearOpen(true)} /> : <FooterStatus navigation={navigation} settings={app.settings} />}
-          updateControl={updateControl}
-          onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
-          onMinimize={app.actions.minimizeApp}
-          onMaximize={app.actions.toggleMaximizeApp}
-          maximized={app.windowMaximized}
-          onClose={app.actions.hideApp}
-        >
-          {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
-              page is the Threads page, which must not be replaced by a questionnaire; Memory still
-              offers it on request. */}
-          {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
-        </AppShell>
+        {/* The sidebar and the pages' own columns seat the same update control in their foot. */}
+        <SidebarChromeProvider updateControl={updateControl}>
+          <AppShell
+            navigation={navigation}
+            platform={app.platform}
+            layout={layout}
+            sidebar={layout === 'sidebar' ? <PageSidebar now={captureNow} /> : undefined}
+            statusText={statusText}
+            updateControl={updateControl}
+            onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
+            onMinimize={app.actions.minimizeApp}
+            onMaximize={app.actions.toggleMaximizeApp}
+            maximized={app.windowMaximized}
+            onClose={app.actions.hideApp}
+          >
+            {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
+                page is the Threads page, which must not be replaced by a questionnaire; Memory still
+                offers it on request. */}
+            {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
+          </AppShell>
+        </SidebarChromeProvider>
         {pendingInstall !== null ? (
           <ConfirmationDialog
             title={pendingInstall.title}
@@ -441,6 +456,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   return (
     <AgentProvider settings={app.settings} dictation={app.dictation}>
+      <FinishedThreadWatch />
       {management ? content : (
         <AppShell
           navigation={null}

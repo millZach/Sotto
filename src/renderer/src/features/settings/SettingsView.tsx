@@ -33,6 +33,8 @@ import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
+import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
+import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
@@ -53,6 +55,8 @@ interface DraftSubmission<T> {
 export interface SettingsViewProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
+  /** The page's sentence, seated at the room's bottom right. */
+  readonly statusText?: ReactNode
   /** Null until the main process answers; the section still renders. */
   readonly updateStatus: UpdateStatus | null
   readonly mediaDevices?: MediaDevicesAdapter | undefined
@@ -124,6 +128,7 @@ function canonicalAccelerator(value: string, platform: SottoPlatform): string {
 export function SettingsView({
   settings,
   platform,
+  statusText,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   createMicrophoneTest = () => new BrowserMicrophoneTest(),
@@ -432,7 +437,10 @@ export function SettingsView({
   return (
     <div className="management-view settings-view">
       <div className="settings-layout">
-        <aside className="settings-sidebar">
+        {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
+        <aside className="settings-sidebar thread-nav">
+          <SidebarTop />
+          <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}>Settings</h1>
           <nav className="settings-subnav" aria-label="Settings sections" role="tablist" aria-orientation="vertical">
             {SETTINGS_SECTIONS.map((section, index) => {
@@ -462,6 +470,8 @@ export function SettingsView({
               ><Icon size={17} strokeWidth={1.7} aria-hidden="true" /><span>{section.label}</span>{activeSection === section.id ? <ChevronRight size={15} aria-hidden="true" /> : null}</button>
             })}
           </nav>
+          </div>
+          <SidebarFoot />
         </aside>
         <div className="settings-detail">
           {notice === null ? null : <div className="settings-feedback"><p className="settings-notice" role={notice.error ? 'alert' : 'status'}>{notice.text}</p></div>}
@@ -611,6 +621,8 @@ export function SettingsView({
           </div>
         </div>
       </div>
+      <PageWindowControls />
+      {statusText ? <p className="page-status">{statusText}</p> : null}
 
       {!clearOpen ? null : <ConfirmationDialog title="Clear history?" description="This permanently removes every saved transcript. Settings are unchanged." cancelLabel="Keep history" confirmLabel="Clear all transcripts" failureMessage={clearFailure ?? 'History could not be cleared.'} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: 'Transcript history cleared.', error: false }); else setClearFailure('History could not be cleared. Your saved transcripts are unchanged.'); return cleared }} />}
       {!resetOpen ? null : <ConfirmationDialog title="Reset settings?" description="Defaults will be restored and first-run setup will reopen. Saved history is preserved." cancelLabel="Keep settings" confirmLabel="Reset all settings" failureMessage={resetFailure ?? 'Settings could not be reset.'} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: 'Settings reset to defaults.', error: false }); else setResetFailure('Settings could not be reset. Your current settings are unchanged.'); return reset }} />}

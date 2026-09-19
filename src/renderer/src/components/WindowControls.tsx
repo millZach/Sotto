@@ -1,6 +1,7 @@
 import React, { type ReactNode } from 'react'
 import { Minus, Square, Copy, X } from 'lucide-react'
 
+import { useOptionalApp } from '../state/AppContext'
 import { Button } from './Button'
 
 export interface WindowControlsProps {
@@ -31,4 +32,17 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
       </Button>
     </div>
   )
+}
+
+/**
+ * The window's own controls, seated once at the top-right corner of a page that owns the window (Threads,
+ * Settings, Chats) rather than in any pane's header: such a page has no app strip above it. macOS paints its
+ * traffic lights itself and gets none.
+ */
+export function PageWindowControls(): ReactNode {
+  const app = useOptionalApp()
+  if (app === null || app.platform === 'darwin') return null
+  return <div className="threads-view__winctl">
+    <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
+  </div>
 }

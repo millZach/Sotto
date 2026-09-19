@@ -89,7 +89,8 @@ describe('SettingsView', () => {
       const panel = screen.getByRole('tabpanel', { name, exact: true })
       expect(panel).toBeVisible()
       expect(screen.getByRole('tab', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
-      expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+      // The sidebar foot's room switch is a tablist of its own, so the count is scoped to the sections.
+      expect(within(screen.getByRole('tablist', { name: 'Settings sections' })).getAllByRole('tab', { selected: true })).toHaveLength(1)
       expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(8)
     }
     screen.getByRole('tab', { name: 'Application', exact: true }).focus()
@@ -97,6 +98,13 @@ describe('SettingsView', () => {
     expect(screen.getByRole('tab', { name: 'Dictation', exact: true })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('tab', { name: 'Transcription', exact: true })).toHaveFocus()
+    // The column continues into the sidebar foot (the room switch, then the page links) before the room itself.
+    await user.tab()
+    expect(screen.getByRole('tablist', { name: 'Page' })).toContainElement(document.activeElement as HTMLElement)
+    for (const name of ['Chats', 'History', 'Settings', 'Help']) {
+      await user.tab()
+      expect(screen.getByRole('link', { name, exact: true })).toHaveFocus()
+    }
     await user.tab()
     expect(screen.getByRole('tabpanel', { name: 'Transcription', exact: true })).toHaveFocus()
     await user.tab()

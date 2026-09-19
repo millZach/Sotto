@@ -81,7 +81,7 @@ export class ThreadWorktrees {
     if (!metadata.path) throw new Error('The working-copy allocation is missing.')
     if (metadata.mode === 'shared') return { ...metadata, path: await existingWorkingDirectory(metadata.path), status: 'ready', error: undefined }
     const { repositoryRoot, branch, baseCommit } = metadata
-    if (!repositoryRoot || !branch || !baseCommit) throw new Error('The independent working-copy allocation is incomplete.')
+    if (!repositoryRoot || !baseCommit) throw new Error('The independent working-copy allocation is incomplete.')
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('The working-copy allocation is outside Sotto’s reserved folder.')
     await existingWorkingDirectory(repositoryRoot)
@@ -89,12 +89,13 @@ export class ThreadWorktrees {
     const registered = entries.find(entry => pathKey(entry.path) === pathKey(metadata.path!))
     if (registered) {
       if (registered.locked || registered.prunable) throw new Error('Git has locked this worktree or reports an incomplete checkout. Wait for setup to finish or restore the checkout, then retry.')
-      if (registered.branch !== `refs/heads/${branch}`) throw new Error('The reserved working folder belongs to a different branch. Nothing was changed.')
       const path = await existingWorkingDirectory(metadata.path)
       // A replaced symlink/junction is not the allocated checkout.
       if (pathKey(path) !== pathKey(metadata.path)) throw new Error('The reserved working folder was redirected. Nothing was changed.')
+      // An existing checkout is reused on whatever branch it has (ADR-0014); inspect records it.
       return this.inspect({ ...metadata, status: 'ready', error: undefined })
     }
+    if (!branch) throw new Error('The independent working-copy allocation is incomplete.')
     if (await lstat(metadata.path).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error })) throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
     if (entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
     // -b refuses any existing branch; never reset it with -B or force another checkout.
@@ -109,11 +110,14 @@ export class ThreadWorktrees {
     const path = await existingWorkingDirectory(metadata.path)
     if (metadata.mode === 'shared') return { ...metadata, status: 'ready', error: undefined }
     // Inspection never creates a replacement for a deleted checkout.
-    if (!metadata.repositoryRoot || !metadata.branch) throw new Error('The worktree binding is incomplete.')
+    if (!metadata.repositoryRoot) throw new Error('The worktree binding is incomplete.')
     const entries = registeredWorktrees(await this.git(metadata.repositoryRoot, ['worktree', 'list', '--porcelain', '-z']))
     const registered = entries.find(entry => pathKey(entry.path) === pathKey(path))
     if (registered?.locked || registered?.prunable) throw new Error('Git has locked this worktree or reports an incomplete checkout. Restore the checkout before continuing.')
-    if (pathKey(path) !== pathKey(metadata.path) || !entries.some(entry => pathKey(entry.path) === pathKey(path) && entry.branch === `refs/heads/${metadata.branch}`)) throw new Error('The working folder or branch no longer matches this thread. Restore its checkout before continuing.')
+    if (pathKey(path) !== pathKey(metadata.path) || !registered) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
+    // The thread follows whatever its worktree has checked out (ADR-0014): Sotto records the branch it
+    // sees, none for a detached HEAD, and never switches one itself.
+    const branch = registered.branch?.startsWith('refs/heads/') ? registered.branch.slice('refs/heads/'.length) : undefined
     const [root, common, expectedCommon] = await Promise.all([
       this.git(path, ['rev-parse', '--show-toplevel']),
       this.git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
@@ -121,6 +125,6 @@ export class ThreadWorktrees {
     ])
     if (pathKey(root.trim()) !== pathKey(path) || pathKey(common.trim()) !== pathKey(expectedCommon.trim())) throw new Error('The working folder no longer belongs to the original repository.')
     await this.workingDirectory(metadata)
-    return { ...metadata, status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
+    return { ...metadata, branch, status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
   }
 }

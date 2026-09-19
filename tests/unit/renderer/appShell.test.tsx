@@ -162,6 +162,34 @@ describe('AppShell', () => {
     expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument()
   })
 
+  it('seats the sidebar beside the room in the sidebar layout, with the window controls on the room and the sentence at its foot', () => {
+    const { container } = render(
+      <AppShell {...chrome} navigation="home" layout="sidebar" statusText="MAI-Transcribe-2 via OpenRouter"
+        sidebar={<aside className="thread-nav" aria-label="Thread sidebar"><p>Threads</p></aside>}>
+        <h1>Ready when you are.</h1>
+      </AppShell>,
+    )
+    expect(container.querySelector('.app-shell')).toHaveClass('app-shell--sidebar')
+    expect(screen.getByRole('complementary', { name: 'Thread sidebar' })).toBeInTheDocument()
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(0)
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('main')).toHaveTextContent('Ready when you are.')
+    expect(container.querySelector('.app-room__top')).toContainElement(screen.getByRole('button', { name: 'Minimize Sotto' }))
+    const status = screen.getByText('MAI-Transcribe-2 via OpenRouter')
+    expect(status).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('contentinfo')).toContainElement(status)
+    expect(screen.getByRole('contentinfo')).toHaveClass('app-room__foot')
+    // The page links are the sidebar's to offer, not the shell's.
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument()
+  })
+
+  it('leaves the window controls to macOS in the sidebar layout too', () => {
+    const { container } = render(<AppShell {...chrome} platform="darwin" navigation="home" layout="sidebar" sidebar={<aside />}><p /></AppShell>)
+    expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
+    expect(container.querySelector('.app-room__top')).toBeEmptyDOMElement()
+  })
+
   it('shows the strip and the room but no switch or footer before the management window is ready', () => {
     const { container } = render(<AppShell {...chrome} navigation={null}><p>Preparing Sotto...</p></AppShell>)
     expect(container.querySelector('.app-shell')).toHaveClass('app-shell--bare')
@@ -194,6 +222,8 @@ describe('AppShell', () => {
     expect(css).toMatch(/\.app-shell\s*\{[^}]*height:\s*100vh;/su)
     expect(css).toMatch(/\.app-shell--bare\s*\{[^}]*grid-template-rows:\s*60px minmax\(0, 1fr\);/su)
     expect(css).toMatch(/\.app-shell--page\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\);/su)
+    expect(css).toMatch(/\.app-shell--sidebar\s*\{[^}]*grid-template-rows:\s*44px minmax\(0, 1fr\) 28px;/su)
+    expect(css).toMatch(/\.app-room__top\s*\{[^}]*-webkit-app-region:\s*drag;/su)
     expect(css).toMatch(/\.app-room--page\s*\{[^}]*overflow:\s*hidden;/su)
     expect(css).toMatch(/\.app-strip\s*\{[^}]*-webkit-app-region:\s*drag;/su)
     expect(css).toMatch(/\.app-switch\s*\{[^}]*-webkit-app-region:\s*no-drag;/su)

@@ -13,17 +13,23 @@ type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
 /** The rooms the switch flips between; Agents only appears with the voice coordinator on. */
 export type AppRoom = 'dictate' | 'agents' | 'threads'
+export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
   /** The open page, or `null` while the window is loading, unavailable or onboarding (strip only). */
   readonly navigation: ManagementNavigation | null
   readonly platform: SottoPlatform
   /**
-   * `strip` is the shell every page but Threads wears. `page` hands the whole
-   * window to the page, which then owns its own chrome: the Threads page keeps
-   * its navigation, its window controls and the update control inside itself.
+   * `strip` is the shell of the loading, onboarding and voice surfaces. `page`
+   * hands the whole window to a page that owns its own chrome (Threads,
+   * Settings, Chats): its navigation, its window controls and the update
+   * control live inside it. `sidebar` seats the Threads sidebar beside the
+   * page (Dictate, History, Help), with the window controls on the room's top
+   * edge and the page's sentence at its foot.
    */
-  readonly layout?: 'strip' | 'page'
+  readonly layout?: AppLayout
+  /** The sidebar of the `sidebar` layout: an aside that becomes the shell's first column. */
+  readonly sidebar?: ReactNode
   /** One sentence for the footer's right-hand end. */
   readonly statusText?: ReactNode
   /** The update control, seated at the footer's far end after the status sentence. */
@@ -64,17 +70,33 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 }
 
 /**
- * The Crossing shell: a thin strip (mark, the room switch, window controls)
- * over one black room, with the page links and one sentence of status in a
- * footer line. The strip is the frameless window's drag region. macOS paints
- * its own traffic lights over the strip's left end and closes to the tray
- * through the same intercepted close, so it gets no custom controls. The
- * Threads page asks for the `page` layout instead and is handed the bare room.
+ * Which layout a page takes. Threads, Settings and Chats own the window, their left column wearing the sidebar's
+ * frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain for the
+ * voice surfaces. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
+ */
+export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
+  if (threadsPage || navigation === 'settings' || navigation === 'chats') return 'page'
+  if (navigation === 'home' || navigation === 'history' || navigation === 'help') return 'sidebar'
+  return 'strip'
+}
+
+/**
+ * The Crossing shell. In the `strip` layout: a thin strip (mark, the room
+ * switch, window controls) over one black room, with the page links and one
+ * sentence of status in a footer line; the strip is the frameless window's
+ * drag region. macOS paints its own traffic lights over the strip's left end
+ * and closes to the tray through the same intercepted close, so it gets no
+ * custom controls. In the `sidebar` layout the Threads sidebar stands in the
+ * strip's and footer's stead: its top row drags, its foot carries the page
+ * links and the update control, and the room keeps a top edge for the window
+ * controls and a foot line for the sentence. The `page` layout hands over the
+ * bare room.
  */
 export function AppShell({
   navigation,
   platform,
   layout = 'strip',
+  sidebar,
   statusText,
   updateControl,
   onNavigate,
@@ -113,13 +135,16 @@ export function AppShell({
     go(target.destination)
   }
 
-  // One tree for both layouts, with the strip and footer as empty slots on the page layout: the room keeps
-  // its position, so a page that hands the window over (Threads) and one that keeps the strip (Agents,
-  // Settings) swap without remounting what lives inside the room, and the memory surface's dismissal survives.
+  // One tree for all three layouts, with the strip, the sidebar, the room's edges and the footer as empty
+  // slots where a layout has none: the room keeps its position, so a page that hands the window over
+  // (Threads) and one beside the sidebar (Dictate) swap without remounting what lives inside the room, and
+  // the memory surface's dismissal survives.
   const page = layout === 'page'
+  const beside = layout === 'sidebar'
+  const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
-    <div className={page ? 'app-shell app-shell--page' : management ? 'app-shell' : 'app-shell app-shell--bare'}>
-      {page ? null : (
+    <div className={shellClass}>
+      {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
           <div className="app-mark" aria-label="Sotto application">
             <SottoMark className="app-mark__glyph" />
@@ -149,8 +174,11 @@ export function AppShell({
           {nativeWindowControls ? <span /> : <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} />}
         </header>
       )}
+      {beside ? sidebar : null}
+      {beside ? <div className="app-room__top">{nativeWindowControls ? null : <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} />}</div> : null}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
-      {!page && management ? (
+      {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
+      {!page && !beside && management ? (
         <footer className="app-footer">
           <nav aria-label="Pages">
             {links.map(({ id, label }) => (
