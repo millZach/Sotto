@@ -660,7 +660,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unsubscribeAgents = agentControl.subscribe(state => agentStatePublisher.publish(state))
   const unsubscribeAgentDetail = agentControl.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
-  app.on('will-quit', () => { unsubscribeAgents(); unsubscribeAgentDetail(); agentStatePublisher.dispose(); agentDetailPublisher.dispose(); agentControl.dispose() })
+  app.on('will-quit', () => { unsubscribeAgents(); unsubscribeAgentDetail(); agentStatePublisher.dispose(); agentDetailPublisher.dispose(); agentControl.dispose(); agentHost.dispose() })
   const showTurnRecords = (): void => {
     void (async () => {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)

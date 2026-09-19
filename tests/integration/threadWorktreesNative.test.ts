@@ -36,7 +36,7 @@ async function fixture(provider: ProviderId, committed = true, nested = false) {
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
   const workspace = new WorkspaceHost(native, f.root)
-  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); await registry.flush(); await f.cleanup() })
+  cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)
   await workspace.execute({ type: 'create-project', provider, commandId: 'project', projectId: 'original-scope', title: 'Project', path: project })
   const model = workspace.workspaceSnapshot().models.find(model => model.providerId === provider)!
@@ -78,6 +78,7 @@ describe('native thread working copies', () => {
     await restored.initialize()
     expect(restored.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id)).map(thread => thread.workingDirectory)).toEqual(before.map(thread => thread.workingDirectory))
     await restored.privacyChanged()
+    restored.dispose()
   }, 20000)
 
   it('keeps a failed local thread recoverable across restart, then retries exactly one allocation without native replay', async () => {
@@ -102,6 +103,7 @@ describe('native thread working copies', () => {
     await restored.execute(prompt('recoverable'))
     expect((await f.driver.requests()).filter(frame => frame.method === 'thread/start')).toHaveLength(1)
     await restored.privacyChanged()
+    restored.dispose()
   }, 20000)
 
   it('uses an explicitly shared project folder without creating a branch', async () => {
@@ -128,5 +130,6 @@ describe('native thread working copies', () => {
     expect((await f.driver.requests()).filter(frame => frame.method === 'turn/start')).toHaveLength(0)
     expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
     await restored.privacyChanged()
+    restored.dispose()
   }, 20000)
 })

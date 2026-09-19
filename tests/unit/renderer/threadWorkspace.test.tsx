@@ -475,4 +475,15 @@ describe('Thread transcript scrolling', () => {
     expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
   })
+
+  it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {
+    const state = manualState()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.messages = [{ id: 'm0', role: 'user', text: 'The oldest message the window holds', createdAt: new Date(NOW).toISOString() }]
+    thread.earlierAvailable = true
+    const { live } = mount(state)
+    const earlier = screen.getByRole('button', { name: 'Show earlier messages' })
+    fireEvent.click(earlier)
+    await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
+  })
 })

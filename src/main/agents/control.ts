@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, summarizeThread,
+  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -55,6 +55,7 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'manual-send', 'steer', 'answer', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
+  'load-earlier-messages',
 ])
 
 const savedSchema = z.object({
@@ -91,13 +92,13 @@ const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto 
  * has no finished reply yet, and a thread that has moved on was named or left alone long ago. A requested
  * Regenerate still reads the same first exchange out of a longer history.
  */
-function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested'): ThreadTitleExchange | null {
-  if (trigger === 'automatic' && (thread.status === 'running' || thread.messages.filter(message => message.role === 'user').length !== 1)) return null
-  const prompt = thread.messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
+function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', messages: readonly AgentMessage[]): ThreadTitleExchange | null {
+  if (trigger === 'automatic' && (thread.status === 'running' || messages.filter(message => message.role === 'user').length !== 1)) return null
+  const prompt = messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
   if (prompt === -1) return null
-  const reply = thread.messages.slice(prompt + 1).find(message => message.role === 'assistant' && message.text.trim().length > 0)
+  const reply = messages.slice(prompt + 1).find(message => message.role === 'assistant' && message.text.trim().length > 0)
   if (!reply) return null
-  return { prompt: thread.messages[prompt]!.text, reply: reply.text }
+  return { prompt: messages[prompt]!.text, reply: reply.text }
 }
 
 export interface AgentMembership {
@@ -161,6 +162,8 @@ export class AgentControl {
   private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
   /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
+  /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
+  private readonly titleChecked = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
   /**
    * The history each detail target was last sent, undecorated, to diff the next one against. Bounded by
@@ -297,8 +300,10 @@ export class AgentControl {
       // Native login/model discovery must not hold up dictation or the desktop window.
       void this.checkReasoning(this.state.configuration.reasoning).then(() => this.publish())
     }
-    this.observe()
+    // Subscribe before the first observe: telling the workspace which threads are open now makes it
+    // load their history, and that publish has to reach this coordinator (issue #119).
     this.unsubscribe = this.dependencies.host.subscribe(snapshot => this.acceptSnapshot(snapshot))
+    this.observe()
     if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
       const connection = this.command({ type: 'connect' })
       if (!this.dependencies.host.concurrentProviders) await connection
@@ -348,7 +353,7 @@ export class AgentControl {
     const bare = { ...this.state, host: { ...this.state.host, threads: threads.map(thread => ({
       ...thread, messages: EMPTY_MESSAGES,
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
-      summary: summarizeThread(thread),
+      summary: threadSummaryOf(thread),
     })) } }
     const state = structuredClone(bare)
     state.threadDraftPersistence = this.draftPersistence()
@@ -375,7 +380,8 @@ export class AgentControl {
       ...(activities === undefined ? {} : { activities }) })
     this.publishedDetail.set(threadId, revision)
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
-    return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }) }
+    return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }),
+      ...(thread.earlierAvailable ? { earlierAvailable: true } : {}) }
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -757,11 +763,21 @@ export class AgentControl {
     if (this.dependencies.historyEnabled?.() === false) return
     for (const thread of this.state.host.threads) {
       if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
-      const exchange = firstExchange(thread, 'automatic')
+      // A thread's history lives in the store, so read it only when this thread has said something new:
+      // otherwise a thread that will never be named would be read on every provider frame.
+      const messageCount = threadSummaryOf(thread).messageCount
+      if (messageCount < 2 || this.titleChecked.get(thread.id) === messageCount) continue
+      this.titleChecked.set(thread.id, messageCount)
+      const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
       if (!exchange) continue
       this.titled.add(thread.id)
       void this.writeThreadTitle(thread.id, exchange)
     }
+  }
+  /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
+  private threadHistory(thread: AgentThread): readonly AgentMessage[] {
+    if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
+    return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
   }
   /** Asks for the name and applies it, unless the thread was renamed by hand while the answer was in flight. */
   private async writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
@@ -781,7 +797,7 @@ export class AgentControl {
   private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     // The same rule as automatic naming: with local history off, no thread content is sent to name it.
-    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested') : null
+    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', this.threadHistory(thread)) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
       await this.writeThreadTitle(threadId, exchange)
@@ -1336,6 +1352,11 @@ export class AgentControl {
         this.state.activeProjectId = command.projectId; this.state.activeThreadId = null; this.state.pendingRequest = ''
         this.queueSelectionPinned = true; this.presentedQueueId = null
         this.observe(); return
+      case 'load-earlier-messages': {
+        if (!this.dependencies.host.loadEarlierMessages) throw new Error('Earlier messages are unavailable.')
+        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId))
+        return
+      }
       case 'retry-thread-worktree':
       case 'refresh-thread-worktree': {
         if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')

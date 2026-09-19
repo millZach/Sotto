@@ -19,6 +19,7 @@ async function fixture() {
   cleanup.push(async () => {
     host.disconnect()
     await host.privacyChanged()
+    host.dispose()
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-workspace-flood-')) throw new Error('Unexpected test directory')
     await rm(root, { recursive: true, force: true })
   })
