@@ -34,6 +34,7 @@ const timer = setInterval(() => {
   let action; try { action = JSON.parse(readFileSync(control, 'utf8')) } catch { return }
   if (lastAction === action.id) return
   lastAction = action.id
+  if (action.type === 'raw-burst') { process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join('')); return }
   if (action.type === 'raw') { if (action.persist) persist(action.frame); output(action.frame); return }
   if (action.type === 'dialog') {
     const request = { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: action.payload }

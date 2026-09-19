@@ -68,7 +68,7 @@ it.each(['Done.', 'Done. Another result.'])('Grok retains a distinct live stream
     await expect.poll(async () => (await f.host.snapshot()).threads[0]?.messages.filter(message => message.role === 'assistant').length).toBe(1)
     const firstId = (await f.host.snapshot()).threads[0]!.messages.find(message => message.role === 'assistant')!.id
     await f.action(id, { type: 'activity', update: { sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run', kind: 'execute', status: 'completed' } })
-    await expect.poll(async () => (await f.host.snapshot()).threads[0]?.activities?.length).toBe(1)
+    await expect.poll(async () => tools((await f.host.snapshot()).threads[0]).length).toBe(1)
     await f.script({ historyVisibleCount: 3 }) // user, first assistant, tool; second assistant has not reached durable history
     const liveIds = new Set<string>()
     const unsubscribe = f.host.subscribe(state => {
