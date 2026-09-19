@@ -33,7 +33,7 @@ Every answered request leaves a record in the thread's own history saying which 
 
 Sending directly through the same native provider session transfers that thread to manual control when its authored message is observed. Sotto continues monitoring and stops automatic replies. Reading or opening the native session is not takeover. Say “resume managing Workshop” or choose **Resume management** to authorize supervision again. Missing or locked native history can delay detection.
 
-Model, effort, image and permission-mode controls reflect the adapter's verified capabilities. Unsupported controls are unavailable. Grok currently selects model and effort at thread creation and does not advertise image attachments or existing-thread configuration.
+Model, effort, image and permission-mode controls reflect the adapter's verified capabilities. Paste, drop or attach screenshots with Codex models that accept images or with Claude Code. Screenshots can be sent alone, alongside text or in a queued follow-up. Codex also accepts screenshots when steering a running turn. Unsupported controls are unavailable. Grok currently selects model and effort at thread creation and does not support existing-thread configuration. Its pinned native client, Grok CLI 1.0.5, reports no image input through ACP, so screenshot attachments remain unavailable even when the underlying Grok model supports vision.
 
 ## Upgrading an older installation
 

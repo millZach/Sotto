@@ -17,6 +17,25 @@ afterEach(async () => {
   }
 })
 describe('Codex session log', () => {
+  it('observes native image-only input while suppressing only an explicit own client receipt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-codex-log-')); roots.push(root)
+    const directory = join(root, 'sessions'); await mkdir(directory)
+    const messages: AgentMessage[] = []
+    const watcher = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message) })
+    watchers.push(watcher); watcher.sent('thread', 'own-client', '')
+    await writeFile(join(directory, 'rollout-thread.jsonl'),
+      rolloutLine(1, { type: 'user_message', message: '', images: ['synthetic'], client_id: 'own-client' }) +
+      rolloutLine(2, { type: 'user_message', message: '', images: ['synthetic'.repeat(300_000)], client_id: 'foreign-client' }) +
+      rolloutLine(3, { type: 'user_message', message: '', local_images: ['synthetic.png'] }) +
+      rolloutLine(4, { type: 'item_completed', item: { type: 'UserMessage', id: 'native-image', content: [{ type: 'image', url: 'synthetic' }] } }) +
+      rolloutLine(5, { type: 'user_message', message: '', images: [] }))
+    await watcher.pollThread('thread')
+    expect(messages).toHaveLength(3)
+    expect(messages.every(message => message.text === '' && message.commandId === undefined)).toBe(true)
+    await watcher.pollThread('thread')
+    expect(messages).toHaveLength(3)
+  })
+
   it('uses explicit client identity and never suppresses distinct native-authored repetitions as own input', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-codex-log-')); roots.push(root)
     const directory = join(root, 'sessions'); await mkdir(directory)

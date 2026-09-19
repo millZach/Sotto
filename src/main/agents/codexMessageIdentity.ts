@@ -60,7 +60,7 @@ const bindNativeId = (record: CodexMessageIdentity, id: string): void => {
 }
 
 /** Scoped to a native turn; a reconstructed item-0 from another turn is unrelated. */
-export function messageOrigin(origins: readonly CodexOrigin[], turnId: string, item: IdentityItem): CodexOrigin | undefined {
+export function messageOrigin<T extends CodexOrigin>(origins: readonly T[], turnId: string, item: IdentityItem): T | undefined {
   return origins.find(origin => origin.digest === item.digest && (!origin.turnId || origin.turnId === turnId) &&
     (origin.messageId === item.clientId || !item.clientId && origin.turnId === turnId && origin.itemId === item.id))
 }

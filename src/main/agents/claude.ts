@@ -402,7 +402,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         try { await this.persist() } catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); throw error }
         const content: unknown = command.attachments?.length ? [
           ...command.attachments.map(image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.dataUrl.slice(image.dataUrl.indexOf(',') + 1) } })),
-          ...(typeof nativePrompt === 'string' ? [{ type: 'text', text: nativePrompt }] : nativePrompt),
+          ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
         ] : nativePrompt
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.

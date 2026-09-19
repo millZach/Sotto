@@ -33,6 +33,13 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   return control
 }
 describe('Codex App Server provider adapter', () => {
+  it('allows a screenshot on a Codex model and sends its image content', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH1sAAAAASUVORK5CYII='
+    await expect(f.host.execute({ type: 'send', commandId: 'screenshot', threadId, messageId: 'screenshot-message', text: 'Inspect this screenshot',
+      attachments: [{ id: 'shot', name: 'shot.png', mimeType: 'image/png', dataUrl }] })).resolves.toEqual({ accepted: true })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')?.params?.input).toContainEqual({ type: 'image', url: dataUrl })
+  })
   it('routes manual compaction through the public control, rejecting concurrent requests and preserving uncertain restart state', async () => {
     const f = await fixture()
     const { threadId } = await create(f)
@@ -99,7 +106,7 @@ describe('Codex App Server provider adapter', () => {
   })
   it('reads supported reasoning levels and preserves selected thread settings through real RPCs and restart', async () => {
     const f = await fixture()
-    expect((await f.host.snapshot()).models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: false })
+    expect((await f.host.snapshot()).models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: true })
     const threadId = randomUUID()
     expect(await f.host.execute({ type: 'create-thread', commandId: 'create', threadId, projectId: f.projectId, title: 'Configured', modelId: f.modelId,
       reasoningEffort: 'high', runtimeMode: 'approval-required' })).toEqual({ accepted: true })
@@ -127,7 +134,10 @@ describe('Codex App Server provider adapter', () => {
     expect(resumes.at(-1)?.params).not.toHaveProperty('approvalPolicy')
   })
   it('rejects unsupported images and model reasoning without silently sending text or falling back', async () => {
-    const f = await fixture(); const { threadId } = await create(f)
+    const f = await fixture()
+    await f.script({ models: [{ model: f.modelId, displayName: 'Text only', inputModalities: ['text'] }] })
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    const { threadId } = await create(f)
     await expect(f.host.execute({ type: 'configure-thread', commandId: 'bad', threadId, reasoningEffort: 'invented' })).rejects.toThrow(/reasoning/)
     await expect(f.host.execute({ type: 'send', commandId: 'image', threadId, messageId: 'image-message', text: 'Do not drop this image',
       attachments: [{ id: 'shot', name: 'shot.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YWJj' }] })).rejects.toThrow(/image support/)

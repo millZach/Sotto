@@ -21,6 +21,14 @@ it.each([{cliVersion:'1.0.6'},{protocolVersion:2}])('rejects unpinned native ver
  await expect(f.host.connect()).rejects.toThrow('requires Grok CLI 1.0.5, ACP 1')
  expect((await f.driver.requests()).some(request=>request.method==='authenticate')).toBe(false)
 })
+it('rejects screenshots before sending when the native Grok client cannot accept images',async()=>{
+ const id=await setup()
+ expect((await f!.host.snapshot()).models.every(model=>model.supportsImages===false)).toBe(true)
+ await expect(f!.host.execute({type:'send',threadId:id,commandId:'image',messageId:'image',text:'',attachments:[{
+  id:'shot',name:'Screenshot.png',mimeType:'image/png',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH1sAAAAASUVORK5CYII=',
+ }]})).rejects.toThrow('image support')
+ expect((await f!.driver.requests()).some(request=>request.method==='session/prompt')).toBe(false)
+})
 it('filters API keys and keeps native home/auth paths without disabling coding tools',()=>{
  const env=grokEnvironment({PATH:'native-path',XAI_API_KEY:'must-not-copy',ANTHROPIC_API_KEY:'must-not-copy',GROK_HOME:'C:/native-grok',GROK_AUTH_PATH:'C:/native-auth.json'})
  expect(env.XAI_API_KEY).toBeUndefined();expect(env.ANTHROPIC_API_KEY).toBeUndefined();expect(env.GROK_HOME).toBe('C:/native-grok')
