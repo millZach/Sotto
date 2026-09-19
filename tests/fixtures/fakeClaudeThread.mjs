@@ -9,7 +9,8 @@ const [root, ...args] = process.argv.slice(2)
 const value = flag => args[args.indexOf(flag) + 1]
 const record = (method, frame) => appendFileSync(join(root, 'requests.jsonl'), JSON.stringify({ method, params: { frame } }) + '\n')
 const output = frame => process.stdout.write(JSON.stringify(frame) + '\n')
-const models = [{ value: 'fixture-model', displayName: 'Fixture Claude', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]
+const models = existsSync(join(root, 'models.json')) ? JSON.parse(readFileSync(join(root, 'models.json'), 'utf8'))
+  : [{ value: 'fixture-model', displayName: 'Fixture Claude', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]
 if (args.includes('--help')) {
   console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose'); process.exit(0)
 }
