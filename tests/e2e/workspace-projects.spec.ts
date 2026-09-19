@@ -86,6 +86,8 @@ test('Enter shows the local pending message within 100 ms, measured apart from p
       await page.keyboard.press('Enter')
       await expect(page.getByLabel('Thread transcript')).toContainText(`Round ${round} check`)
       await expect(prompt).toHaveValue('')
+      // The press is the feedback; the provider holds the prompt a moment later, and a reply before that would answer nothing.
+      await expect.poll(() => userMessageTexts(page, 'workshop')).toContain(`Round ${round} check`)
       await page.evaluate(async index => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: `Done with round ${index}.` }), round)
       await expect(page.getByLabel('Thread transcript')).toContainText(`Done with round ${round}.`)
     }
@@ -249,6 +251,8 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await prompt.fill('First, delivered.')
     await page.keyboard.press('Enter')
     await expect(prompt).toHaveValue('')
+    // The composer empties on the press; the provider holds the prompt a moment later, and the reply has to follow it.
+    await expect.poll(() => userMessageTexts(page, 'docs')).toContain('First, delivered.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'Delivered reply.' }))
     // The reply has to reach the window before the next prompt, or Enter queues it behind the turn instead of sending.
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
