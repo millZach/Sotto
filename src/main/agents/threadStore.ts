@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 
@@ -91,6 +91,8 @@ export class ThreadStore {
   open(options: { ephemeral?: boolean } = {}): void {
     if (this.db !== undefined) return
     const ephemeral = options.ephemeral === true
+    // Keep local history was turned off while Sotto was not running: the words an earlier run kept come out first.
+    if (ephemeral && existsSync(this.path)) { this.open(); this.redactAll(); this.close() }
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {

@@ -387,6 +387,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     setLimit(current => current + TRANSCRIPT_PAGE)
   }
 
+  /** Widens the history window from the store. What arrives goes above the reader, so the scroll anchor is
+   * kept and the retained first row is let go: the rows that arrive are the ones the press asked to see. */
+  const loadEarlier = (): void => {
+    const element = scroller.current
+    if (element !== null) anchor.current = { height: element.scrollHeight, top: element.scrollTop }
+    following.current = false
+    firstRendered.current = null
+    void command({ type: 'load-earlier-messages', threadId: thread.id })
+  }
+
   const empty = !thread.messages.length && !pending.length && !queuedEchoes.length && !recovery.length && !showsActivity
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
@@ -398,7 +408,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}>Show earlier messages ({hidden})</Button></div>
           /* Everything the window holds is on screen, and the thread store still has older messages. */
           : thread.earlierAvailable
-            ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={() => void command({ type: 'load-earlier-messages', threadId: thread.id })}>Show earlier messages</Button></div>
+            ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
             : null}
         {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>

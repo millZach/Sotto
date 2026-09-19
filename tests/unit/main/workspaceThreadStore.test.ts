@@ -7,6 +7,7 @@ import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type Agent
 import type { RestoredThreadHistory, ThreadHostEvent } from '../../../src/main/agents/host'
 import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
+import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 
 /** A provider that remembers what the workspace handed back before it connected (ADR-0015). */
@@ -141,6 +142,23 @@ describe('thread messages in the store rather than the workspace cache', () => {
     const disk = await onDisk(directory)
     expect(disk).not.toContain('Prompt secret 0')
     expect(disk).not.toContain('Prompt kept 0')
+  })
+
+  it('shows the messages of this run when Keep local history was already off at start, and writes none of them', async () => {
+    const directory = await root()
+    const adapter = new FakeProviderHost()
+    // An earlier run, with the setting on, kept words this one must take out before it starts.
+    const earlier = new ThreadStore(join(directory, 'threads.sqlite'))
+    earlier.open(); earlier.replaceThreadMessages('session-workshop', conversation('kept', 1)); earlier.close()
+    const host = await opened(directory, adapter, () => false)
+    await host.connect()
+    expect(await onDisk(directory)).not.toContain('Prompt kept 0')
+    host.observeThreads(['session-workshop'])
+    adapter.state.threads[0]!.messages = conversation('secret', 2)
+    adapter.emit()
+    await host.snapshot()
+    expect(host.workspaceSnapshot().threads.find(thread => thread.id === 'session-workshop')?.messages.map(message => message.text)).toContain('Prompt secret 0')
+    expect(await onDisk(directory)).not.toContain('Prompt secret 0')
   })
 
   it('publishes fifty threads with long histories carrying summaries rather than messages', async () => {
