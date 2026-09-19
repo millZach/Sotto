@@ -3,7 +3,7 @@ import { useOptionalApp } from '../state/AppContext'
 import { useAgents } from './AgentContext'
 import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
-import { SidebarChromeProvider, SidebarFoot, SidebarTop, useSidebarMode, type SidebarMode } from './SidebarFrame'
+import { SidebarFoot, SidebarTop, useSidebarMode, type SidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { describeThreads, organizeWorkspace } from './threadFacts'
 import { setNewThreadIntent } from './threadIntent'
@@ -16,11 +16,10 @@ const noop = (): void => {}
  * The Threads sidebar beside a page that is not Threads (Dictate, History, Help): the same list, the same
  * frame, with no thread current and no pane to open beside. Opening a thread or asking for a new one leads to
  * the Threads page, and the Terminal side of the mode switch leads there too, since terminals open in panes.
- * Until main has agent controls the frame stands with the sentence the Threads page would show.
+ * Until main has agent controls the frame stands with the sentence the Threads page would show. The foot's
+ * update control comes from the `SidebarChromeProvider` around the shell.
  */
-export function PageSidebar({ updateControl, now: fixedNow }: {
-  /** The update control, seated at the end of the foot. */
-  readonly updateControl?: ReactNode
+export function PageSidebar({ now: fixedNow }: {
   /** A fixed clock for captures; the rows' times then hold still. */
   readonly now?: number | undefined
 }): ReactNode {
@@ -50,16 +49,12 @@ export function PageSidebar({ updateControl, now: fixedNow }: {
   }, [setMode, navigate])
 
   if (state === null) {
-    return <SidebarChromeProvider updateControl={updateControl}>
-      <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label="Thread sidebar">
-        <SidebarTop />
-        <div className="thread-nav__scroll"><p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls...'}</p></div>
-        <SidebarFoot />
-      </aside>
-    </SidebarChromeProvider>
+    return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label="Thread sidebar">
+      <SidebarTop />
+      <div className="thread-nav__scroll"><p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls…'}</p></div>
+      <SidebarFoot />
+    </aside>
   }
-  return <SidebarChromeProvider updateControl={updateControl}>
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={onMode} onQuery={setQuery}
-      onOpen={openThread} onNewThread={startNewThread} currentThreadId={null} openThreadIds={NO_PANES} onOpenBeside={noop} onDragThread={noop} title={null} />
-  </SidebarChromeProvider>
+  return <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={onMode} onQuery={setQuery}
+    onOpen={openThread} onNewThread={startNewThread} currentThreadId={null} openThreadIds={NO_PANES} onOpenBeside={noop} onDragThread={noop} title={null} />
 }

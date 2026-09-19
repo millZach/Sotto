@@ -8,7 +8,7 @@ import type { AppContextValue, AppNavigation } from '../../../src/renderer/src/s
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { PageSidebar } from '../../../src/renderer/src/agents/PageSidebar'
-import { SIDEBAR_MODE_KEY } from '../../../src/renderer/src/agents/SidebarFrame'
+import { SIDEBAR_MODE_KEY, SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { takeNewThreadIntent } from '../../../src/renderer/src/agents/threadIntent'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
 
@@ -30,7 +30,7 @@ function mount(state: AgentState | null, navigation: AppNavigation = 'home', err
   const live = state === null ? null : liveAgentState(state)
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => live?.command(request) ?? null)
   vi.mocked(useAgents).mockImplementation(() => ({ ...(live?.useLive() ?? { state: null, threadDrafts: undefined }), error, command }) as unknown as ReturnType<typeof useAgents>)
-  render(<PageSidebar updateControl={<button type="button">Check for updates</button>} now={1_700_000_000_000} />)
+  render(<SidebarChromeProvider updateControl={<button type="button">Check for updates</button>}><PageSidebar now={1_700_000_000_000} /></SidebarChromeProvider>)
   return { navigate, command }
 }
 
@@ -61,6 +61,11 @@ describe('the Threads sidebar beside another page', () => {
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('tabindex', '0')
   })
 
+  it('lights Threads for the Agents page while the coordinator is off, since that page is the Threads page', () => {
+    mount(threadsStateFixture(), 'agents')
+    expect(within(sidebar()).getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('opens a thread on the Threads page', () => {
     const { navigate, command } = mount(threadsStateFixture())
     fireEvent.click(within(sidebar()).getByRole('button', { name: 'Footer links' }))
@@ -86,7 +91,7 @@ describe('the Threads sidebar beside another page', () => {
   it('stands as an empty frame with the way off the page until agent controls arrive', () => {
     mount(null)
     const nav = within(sidebar())
-    expect(nav.getByText('Preparing agent controls...')).toBeInTheDocument()
+    expect(nav.getByText('Preparing agent controls…')).toBeInTheDocument()
     expect(nav.getByText('Sotto')).toBeInTheDocument()
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(nav.getByRole('link', { name: 'Settings' })).toBeInTheDocument()

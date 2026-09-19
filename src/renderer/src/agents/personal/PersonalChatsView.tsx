@@ -346,7 +346,7 @@ export interface PersonalChatsViewProps {
  * The page before it has chats to show: the chat list's frame stands empty beside the message, so the foot
  * still leads off the page and the window still has its controls.
  */
-function Unavailable({ children }: { readonly children: ReactNode }): ReactNode {
+function EmptyChatsFrame({ children }: { readonly children: ReactNode }): ReactNode {
   return <div className="threads-view personal-chats">
     <nav className="thread-nav personal-chats__nav" aria-label="Chats"><SidebarTop /><div className="thread-nav__scroll" /><SidebarFoot /></nav>
     <div className="personal-chats--unavailable">{children}</div>
@@ -398,13 +398,13 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
   }, [])
 
   if (!bridge) {
-    return <Unavailable><div className="thread-workspace__empty"><h2>Chats are unavailable</h2><p>Reopen Sotto to use chats.</p></div></Unavailable>
+    return <EmptyChatsFrame><div className="thread-workspace__empty"><h2>Chats are unavailable</h2><p>Reopen Sotto to use chats.</p></div></EmptyChatsFrame>
   }
   if (state === null) {
-    return <Unavailable>
+    return <EmptyChatsFrame>
       {loadError ? <div className="thread-workspace__empty" role="alert"><h2>Your chats did not open</h2><p>{loadError}</p><Button variant="secondary" onClick={() => { setLoadError(null); setAttempt(value => value + 1) }}>Try again</Button></div>
         : <div className="thread-workspace__empty" role="status"><p>Opening your chats…</p></div>}
-    </Unavailable>
+    </EmptyChatsFrame>
   }
 
   const PROVIDER = providerLabel(selected?.providerId ?? state.availability.provider)

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
-import { Brain, CircleHelp, Clock, FolderPlus, MessageSquare, MessagesSquare, Search, Settings, SquareTerminal, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessageSquare, MessagesSquare, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -79,7 +79,9 @@ export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
   const coordinator = useVoiceCoordinatorEnabled()
   const memory = useMemoryEnabled()
-  const room = roomFor(app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation)
+  // With the coordinator off the Agents page is the Threads page (App.tsx), so the foot lights Threads for it.
+  const shown = app === null || app.navigation === 'onboarding' || (app.navigation === 'agents' && !coordinator) ? 'threads' : app.navigation
+  const room = roomFor(shown)
   const go = (destination: AppNavigation): void => { app?.actions.navigate(destination) }
   // The same rooms the strip offers: Agents joins only while the voice coordinator is switched on.
   const rooms: ReadonlyArray<{ readonly id: string; readonly label: string; readonly destination: AppNavigation }> = [
@@ -175,4 +177,14 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
     <div className="thread-nav__scroll">{children}</div>
     {foot ?? <SidebarFoot />}
   </aside>
+}
+
+/** Settle project, or Restore project once settled: the same action on a folder head in either sidebar mode. */
+export function ProjectSettleAction({ projectId, title, settled, disabled, command }: {
+  readonly projectId: string; readonly title: string; readonly settled: boolean; readonly disabled: boolean
+  readonly command: AgentConnection['command']
+}): ReactNode {
+  return settled
+    ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Restore project ${title}`} title="Restore project" disabled={disabled} onClick={() => void command({ type: 'restore-project', projectId })}><ArchiveRestore size={16} aria-hidden="true" /></button>
+    : <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle project ${title}`} title="Settle project" disabled={disabled} onClick={() => void command({ type: 'settle-project', projectId })}><Archive size={16} aria-hidden="true" /></button>
 }

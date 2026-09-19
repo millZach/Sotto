@@ -1,8 +1,8 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
+import { ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
-import { SidebarFrame, type SidebarMode } from '../agents/SidebarFrame'
+import { ProjectSettleAction, SidebarFrame, type SidebarMode } from '../agents/SidebarFrame'
 import { THREAD_DRAG_TYPE } from '../agents/splitLayout'
 import { elapsedLabel } from '../agents/threadFacts'
 import { SIDEBAR_STATE, isOpenTerminal, terminalStateLabel, type TerminalFolder, type TerminalOrganization, type TerminalRow, type TerminalRowState } from './terminalFacts'
@@ -93,9 +93,7 @@ function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onTo
       {folder.project !== undefined && section === 'open' ? <span className="thread-folder__actions">
         <button type="button" className="thread-nav__action tt-focusable" aria-label={`New terminal in ${folder.title}`} title="New terminal here" onClick={() => onNewTerminal(folder.id)}><SquarePlus size={16} aria-hidden="true" /></button>
         {/* The same Settle project the Threads sidebar offers: a settled project leaves this list once its terminals close. */}
-        {settled
-          ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Restore project ${folder.title}`} title="Restore project" disabled={globalLaneBusy} onClick={() => void command({ type: 'restore-project', projectId: folder.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
-          : <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle project ${folder.title}`} title="Settle project" disabled={globalLaneBusy} onClick={() => void command({ type: 'settle-project', projectId: folder.id })}><Archive size={16} aria-hidden="true" /></button>}
+        <ProjectSettleAction projectId={folder.id} title={folder.title} settled={settled} disabled={globalLaneBusy} command={command} />
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>

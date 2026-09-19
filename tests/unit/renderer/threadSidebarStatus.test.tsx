@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { forgetFinishedUnseen } from '../../../src/renderer/src/agents/ThreadSidebar'
+import { FinishedThreadWatch, showThreads, watchThreads } from '../../../src/renderer/src/agents/finishedThreads'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, workingLabel } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
@@ -32,11 +32,12 @@ function asQuestion(state: AgentState): AgentState {
 function mount(state: AgentState, now: number | undefined) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={now} />)
+  render(<><FinishedThreadWatch /><ThreadsView onOpenAgents={vi.fn()} now={now} /></>)
   return live
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); forgetFinishedUnseen() })
+// Watching no threads and showing none forgets everything, as a restart does.
+beforeEach(() => { vi.mocked(useAgents).mockReset(); watchThreads([]); showThreads([]) })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('a row that needs you says what it needs', () => {
@@ -116,6 +117,16 @@ describe('a thread that finishes out of sight', () => {
     act(() => { live.publish(withStatus(live.state, 'footer-links', 'running')) })
     act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
     expect(status('Footer links')).toHaveTextContent('Done')
+  })
+
+  it('marks a thread that finished while no list was on screen, as on Settings', () => {
+    const live = liveAgentState(threadsStateFixture())
+    vi.mocked(useAgents).mockImplementation(live.useLive)
+    const { rerender } = render(<FinishedThreadWatch />)
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
+    rerender(<><FinishedThreadWatch /><ThreadsView onOpenAgents={vi.fn()} now={NOW} /></>)
+    expect(status('Footer links')).toHaveTextContent('Just finished')
+    expect(status('Footer links')).toHaveAttribute('data-unseen', 'true')
   })
 
   it('never marks the thread you are looking at, whichever way it finishes', () => {

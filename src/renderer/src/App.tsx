@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { AppSettings } from '../../shared/settings'
-import { AppShell } from './components/AppShell'
+import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
@@ -23,6 +23,7 @@ import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider } from './agents/AgentContext'
+import { FinishedThreadWatch } from './agents/finishedThreads'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
@@ -310,10 +311,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     // into its settings lead to Settings instead.
     // The same goes for Memory while memory is hidden.
     const threadsPage = navigation === 'threads' || (navigation === 'agents' && !voiceCoordinator) || (navigation === 'memory' && !memoryEnabled)
-    // Threads, Settings and Chats own the window, their left column wearing the sidebar's frame; Dictate, History
-    // and Help stand beside the Threads sidebar itself. The strip and footer remain for the voice surfaces.
-    const layout: 'page' | 'sidebar' | 'strip' = threadsPage || navigation === 'settings' || navigation === 'chats' ? 'page'
-      : navigation === 'home' || navigation === 'history' || navigation === 'help' ? 'sidebar' : 'strip'
+    const layout = layoutFor(navigation, threadsPage)
+    // A capture run holds the sidebar's clocks still.
+    const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
     const statusText = <FooterStatus navigation={navigation} settings={app.settings} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
@@ -321,7 +321,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           ? () => { setAgentSheet('session'); app.actions.navigate('agents') }
           : () => app.actions.navigate('settings')}
         updateControl={updateControl}
-        now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined}
+        now={captureNow}
       />
     )
 
@@ -401,26 +401,27 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
     content = (
       <>
-        <AppShell
-          navigation={navigation}
-          platform={app.platform}
-          layout={layout}
-          sidebar={layout === 'sidebar' ? <PageSidebar updateControl={updateControl} now={window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined} /> : undefined}
-          statusText={statusText}
-          updateControl={updateControl}
-          onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
-          onMinimize={app.actions.minimizeApp}
-          onMaximize={app.actions.toggleMaximizeApp}
-          maximized={app.windowMaximized}
-          onClose={app.actions.hideApp}
-        >
-          {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
-              page is the Threads page, which must not be replaced by a questionnaire; Memory still
-              offers it on request. */}
-          <SidebarChromeProvider updateControl={updateControl}>
+        {/* The sidebar and the pages' own columns seat the same update control in their foot. */}
+        <SidebarChromeProvider updateControl={updateControl}>
+          <AppShell
+            navigation={navigation}
+            platform={app.platform}
+            layout={layout}
+            sidebar={layout === 'sidebar' ? <PageSidebar now={captureNow} /> : undefined}
+            statusText={statusText}
+            updateControl={updateControl}
+            onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
+            onMinimize={app.actions.minimizeApp}
+            onMaximize={app.actions.toggleMaximizeApp}
+            maximized={app.windowMaximized}
+            onClose={app.actions.hideApp}
+          >
+            {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
+                page is the Threads page, which must not be replaced by a questionnaire; Memory still
+                offers it on request. */}
             {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
-          </SidebarChromeProvider>
-        </AppShell>
+          </AppShell>
+        </SidebarChromeProvider>
         {pendingInstall !== null ? (
           <ConfirmationDialog
             title={pendingInstall.title}
@@ -455,6 +456,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
 
   return (
     <AgentProvider settings={app.settings} dictation={app.dictation}>
+      <FinishedThreadWatch />
       {management ? content : (
         <AppShell
           navigation={null}

@@ -13,6 +13,7 @@ type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
 /** The rooms the switch flips between; Agents only appears with the voice coordinator on. */
 export type AppRoom = 'dictate' | 'agents' | 'threads'
+export type AppLayout = 'strip' | 'page' | 'sidebar'
 
 export interface AppShellProps {
   /** The open page, or `null` while the window is loading, unavailable or onboarding (strip only). */
@@ -26,7 +27,7 @@ export interface AppShellProps {
    * page (Dictate, History, Help), with the window controls on the room's top
    * edge and the page's sentence at its foot.
    */
-  readonly layout?: 'strip' | 'page' | 'sidebar'
+  readonly layout?: AppLayout
   /** The sidebar of the `sidebar` layout: an aside that becomes the shell's first column. */
   readonly sidebar?: ReactNode
   /** One sentence for the footer's right-hand end. */
@@ -66,6 +67,17 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
   if (navigation === 'agents') return 'agents'
   if (navigation === 'threads' || navigation === 'chats' || navigation === 'memory') return 'threads'
   return null
+}
+
+/**
+ * Which layout a page takes. Threads, Settings and Chats own the window, their left column wearing the sidebar's
+ * frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain for the
+ * voice surfaces. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
+ */
+export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
+  if (threadsPage || navigation === 'settings' || navigation === 'chats') return 'page'
+  if (navigation === 'home' || navigation === 'history' || navigation === 'help') return 'sidebar'
+  return 'strip'
 }
 
 /**

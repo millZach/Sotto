@@ -161,7 +161,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const mac = app?.platform === 'darwin'
   const page = `management-view threads-view${mac ? ' threads-view--mac' : ''}`
   if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
-    <p role="status">{agents.error ?? 'Preparing agent controls...'}</p>
+    <p role="status">{agents.error ?? 'Preparing agent controls…'}</p>
     {/* An error can stand for good, and this page has no sidebar to leave by. */}
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
     <PageWindowControls />
