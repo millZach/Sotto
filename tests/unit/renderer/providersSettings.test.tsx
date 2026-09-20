@@ -32,18 +32,32 @@ describe('independent provider settings', () => {
   it('shows three enabled connections and disconnects only the selected provider', async () => {
     const { state, command } = provide()
     render(<ProvidersSettings />)
-    for (const label of Object.values(PROVIDER_LABELS)) expect(screen.getByRole('switch', { name: `Enable ${label}` })).toHaveAttribute('aria-checked', 'true')
+    for (const label of ['Codex', 'Claude Code', 'Grok Build']) expect(screen.getByRole('switch', { name: `Enable ${label}` })).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Grok Build', exact: true }))
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect Grok Build' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'disconnect', provider: 'grok' }))
     expect(state.configuration.reasoning).toBe('claude')
     expect(command).toHaveBeenCalledTimes(1)
   })
-  it("marks each provider and the selected detail with that provider's own logo", () => {
+  it('keeps Devin disabled on upgrade and explains native setup and data handling', async () => {
+    const state = fixture()
+    const devin = state.host.providers!.find(provider => provider.id === 'devin')!
+    devin.connection = 'disconnected'
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.getByRole('switch', { name: 'Enable Devin' })).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Devin', exact: true }))
+    expect(screen.getByText(/Install Devin CLI and run devin auth login/)).toBeVisible()
+    expect(screen.getByText(/Devin keeps its own history and usage analytics/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Devin' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin' }))
+    expect(state.configuration.reasoning).toBe('claude')
+  })
+  it("marks each provider and the selected detail with that provider's mark", () => {
     provide()
     const { container } = render(<ProvidersSettings />)
     for (const provider of providerIdSchema.options) {
-      expect(screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)).not.toBeNull()
+      expect(screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).querySelector(`.provider-mark[data-provider="${provider}"]`)).not.toBeNull()
     }
     fireEvent.click(screen.getByRole('button', { name: 'Grok Build', exact: true }))
     expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()

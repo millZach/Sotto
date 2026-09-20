@@ -9,13 +9,13 @@ import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { devinFixture } from '../fixtures/devinFixture'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import type { ProviderId } from '../../src/shared/agents'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
-const factories = { codex: () => codexFixture(), claude: () => claudeFixture(), grok: () => grokFixture() }
-async function fixture(provider: ProviderId, committed = true, nested = false) {
+const factories = { codex: () => codexFixture(), claude: () => claudeFixture(), grok: () => grokFixture(), devin: () => devinFixture() }
+async function fixture(provider: keyof typeof factories, committed = true, nested = false) {
   const f = await factories[provider]()
   let project = join(f.root, 'project'); await mkdir(project)
   await git(project, ['init'])
@@ -34,7 +34,7 @@ async function fixture(provider: ProviderId, committed = true, nested = false) {
   const registry = new ThreadRegistry(f.root)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider,
     threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
+    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
   const workspace = new WorkspaceHost(native, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)
@@ -49,7 +49,7 @@ const prepared = (workspace: WorkspaceHost, ...ids: string[]): Promise<unknown> 
   Promise.all(ids.map(id => workspace.threadWorkingDirectory(id).catch(() => undefined)))
 
 describe('native thread working copies', () => {
-  for (const provider of ['codex', 'claude', 'grok'] as const) it(`${provider}: concurrent native adapters write separate working files with unchanged project scope`, async () => {
+  for (const provider of ['codex', 'claude', 'grok', 'devin'] as const) it(`${provider}: concurrent native adapters write separate working files with unchanged project scope`, async () => {
     const { f, registry, workspace, project, create } = await fixture(provider, true, true)
     await writeFile(join(project, 'tracked.txt'), 'original dirty edits')
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
@@ -80,7 +80,7 @@ describe('native thread working copies', () => {
     restored.dispose()
   }, 20000)
 
-  for (const provider of ['codex', 'claude', 'grok'] as const) it(`${provider}: default threads share the live project without creating a worktree`, async () => {
+  for (const provider of ['codex', 'claude', 'grok', 'devin'] as const) it(`${provider}: default threads share the live project without creating a worktree`, async () => {
     const { f, workspace, project, create, registry } = await fixture(provider)
     await writeFile(join(project, 'tracked.txt'), 'uncommitted project edit')
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
@@ -131,17 +131,17 @@ describe('native thread working copies', () => {
     expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
   })
 
-  it('reuses an existing worktree for another native thread after a restart without checking its branch out again', async () => {
-    const { workspace, project, f, native, create } = await fixture('codex')
+  for (const provider of ['codex', 'devin'] as const) it(`${provider}: reuses an existing worktree after a restart without checking its branch out again`, async () => {
+    const { workspace, project, f, native, create } = await fixture(provider)
     await create('owner', 'independent')
     await workspace.execute(prompt('owner'))
     const owner = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'owner')!
     await writeFile(join(owner.workingDirectory!, 'tracked.txt'), 'shared unfinished edits')
     const snapshot = workspace.workspaceSnapshot()
-    await workspace.execute({ type: 'create-thread', commandId: 'reuse', threadId: 'reuse', projectId: 'original-scope', title: 'Reuse', modelId: snapshot.models.find(model => model.providerId === 'codex')!.id,
+    await workspace.execute({ type: 'create-thread', commandId: 'reuse', threadId: 'reuse', projectId: 'original-scope', title: 'Reuse', modelId: snapshot.models.find(model => model.providerId === provider)!.id,
       workingCopy: 'independent', existingWorktreePath: owner.worktree!.path! })
     await workspace.privacyChanged()
-    const restored = new WorkspaceHost(native, f.root); await restored.initialize(); await restored.connect('codex')
+    const restored = new WorkspaceHost(native, f.root); await restored.initialize(); await restored.connect(provider)
     try {
       await restored.execute(prompt('reuse'))
       const reused = restored.workspaceSnapshot().threads.find(thread => thread.id === 'reuse')!
@@ -149,6 +149,23 @@ describe('native thread working copies', () => {
       expect(await readFile(join(reused.workingDirectory!, 'tracked.txt'), 'utf8')).toBe('shared unfinished edits')
       expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
     } finally { await restored.privacyChanged(); restored.dispose() }
+  })
+
+  it('devin: refuses a locked working copy before another native prompt without changing its files', async () => {
+    const { workspace, project, f, create } = await fixture('devin')
+    await create('locked', 'independent')
+    await workspace.execute(prompt('locked'))
+    await workspace.execute({ type: 'interrupt', commandId: 'stop-locked', threadId: 'locked' })
+    await expect.poll(() => workspace.workspaceSnapshot().threads.find(thread => thread.id === 'locked')?.status).toBe('idle')
+    const path = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'locked')!.worktree!.path!
+    await writeFile(join(path, 'tracked.txt'), 'unfinished work')
+    await git(project, ['worktree', 'lock', '--reason', 'Synthetic lock', path])
+    try {
+      await expect(workspace.execute({ ...prompt('locked'), commandId: 'blocked-send', messageId: 'blocked-message' })).rejects.toThrow('locked')
+      expect((await f.driver.requests()).filter(frame => frame.method === 'session/prompt')).toHaveLength(1)
+      expect(workspace.workspaceSnapshot().threads.find(thread => thread.id === 'locked')?.workingDirectory).toBe(path)
+      expect(await readFile(join(path, 'tracked.txt'), 'utf8')).toBe('unfinished work')
+    } finally { await git(project, ['worktree', 'unlock', path]) }
   })
 
   it('retains the reserved working copy after lost native creation acknowledgement and refuses replay after workspace restart', async () => {

@@ -96,9 +96,13 @@ function fakeViews() {
   return { views, factory }
 }
 
-function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean } = {}) {
+function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean } = {}) {
   localStorage.setItem(SIDEBAR_MODE_KEY, options.mode ?? 'terminals')
   const state = threadsStateFixture()
+  if (options.devinDefault) {
+    state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
+    state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
+  }
   state.assignments = []
   state.queue = []
   const live = liveAgentState(state)
@@ -151,6 +155,18 @@ describe('Terminal mode', () => {
     fireEvent.click(modeSwitch().getByRole('radio', { name: 'Threads' }))
     expect(search().placeholder).toBe('Search threads')
     expect(within(sidebar('Thread sidebar')).getByRole('button', { name: 'Visual gate flake' })).toBeInTheDocument()
+  })
+
+  it('excludes Devin from terminal choices even when it is the default thread model', async () => {
+    const view = mount([], { devinDefault: true })
+    await waitFor(() => expect(view.store.getSnapshot().shell).toBe('pwsh'))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'New terminal' }))
+    const dialog = screen.getByRole('dialog', { name: 'New terminal' })
+    fireEvent.click(within(dialog).getByRole('button', { name: /workshop/ }))
+    const providers = within(dialog).getByRole('combobox', { name: 'Terminal provider' })
+    expect(within(providers).queryByRole('option', { name: 'Devin' })).toBeNull()
+    expect(providers).toHaveValue('claude')
+    expect(within(dialog).getByLabelText('Runs')).toHaveTextContent('claude --model claude:sonnet')
   })
 
   it('opens a provider terminal from the dialog with the mapped command in the Runs box, then shows its pane', async () => {
@@ -207,7 +223,7 @@ describe('Terminal mode', () => {
     await screen.findByRole('region', { name: 'Build' })
     fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
     expect(panes().map(pane => pane.getAttribute('aria-label'))).toEqual(['Build', 'Tests'])
-    expect(screen.getByRole('separator')).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Tests' })).toHaveAttribute('data-focused')
 
     fireEvent.pointerDown(within(screen.getByRole('region', { name: 'Build' })).getByRole('heading', { level: 2, name: 'Build' }))
@@ -217,7 +233,7 @@ describe('Terminal mode', () => {
     expect(within(sidebar()).getByRole('button', { name: 'Tests' }).closest('li')).toHaveAttribute('data-open')
 
     await act(async () => { fireEvent.click(within(screen.getByRole('region', { name: 'Tests' })).getByRole('button', { name: 'Close Tests pane' })) })
-    expect(screen.queryByRole('separator')).toBeNull()
+    expect(screen.queryByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeNull()
     expect(screen.getByRole('region', { name: 'Build' })).toBeInTheDocument()
     expect(view.bridge.close).not.toHaveBeenCalled()
     expect(within(sidebar()).getByRole('button', { name: 'Tests' })).toBeInTheDocument()

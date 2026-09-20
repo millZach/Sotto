@@ -43,7 +43,7 @@ async function fixture() {
     const registry = new ThreadRegistry(directory)
     const native = new ConfiguredProviderHost({ directory,
       hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry),
-        claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry) },
+        claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost() },
       provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
       threadProvider: id => registry.byThread(id)?.provider })
     const host = new WorkspaceHost(native, directory, () => historyEnabled)

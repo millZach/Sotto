@@ -14,7 +14,7 @@ export const agentSkillSchema = agentSkillReferenceSchema.extend({
   nativeSource: z.string().optional(),
 })
 export const agentSkillCatalogSchema = z.object({
-  threadId: z.string(), providerId: z.enum(['codex', 'claude', 'grok']), cwd: z.string(),
+  threadId: z.string(), providerId: z.enum(['codex', 'claude', 'grok', 'devin']), cwd: z.string(),
   status: z.enum(['ready', 'error', 'unsupported']), skills: z.array(agentSkillSchema),
   errors: z.array(z.object({ path: z.string(), message: z.string() })), error: z.string().optional(),
   maxSkillsPerMessage: z.number().int().nonnegative().optional(), invocationNotice: z.string().optional(),

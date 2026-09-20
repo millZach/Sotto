@@ -12,7 +12,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 
 it('keeps the event loop responsive through a three-thread Codex output burst', async () => {
   const f = await codexFixture(undefined, true)
-  const providers = new ConfiguredProviderHost({ hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost() }, provider: () => 'codex' })
+  const providers = new ConfiguredProviderHost({ hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() }, provider: () => 'codex' })
   const workspace = new WorkspaceHost(providers, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await f.cleanup() })
   await workspace.connect('codex')
