@@ -970,7 +970,7 @@ textarea.tt-input {
    window controls and one line at its foot for the sentence of the page. The
    sidebar takes the width it has on Threads at every window size. */
 .app-shell--sidebar {
-  grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: 44px minmax(0, 1fr) 28px;
 }
 

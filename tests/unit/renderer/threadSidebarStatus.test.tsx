@@ -83,11 +83,10 @@ describe('a working row counts up', () => {
     act(() => { vi.advanceTimersByTime(2_000) })
     expect(clock('Footer links')).toHaveTextContent('7s')
     expect(vi.mocked(useAgents).mock.calls.length).toBe(renders)
-    // A row that is not working says nothing at its right end: the clock belongs to the run in progress. Its
-    // last-activity time is still there for assistive technology, inside the hidden status sentence.
+    // Last activity stays visible beside idle titles; only running clocks tick.
     const idle = screen.getByRole('button', { name: 'Grok voice previews' })
-    expect(idle.querySelector(':scope > .thread-nav__time')).toBeNull()
-    expect(idle.querySelector('.thread-nav__status .thread-nav__time')).toHaveAttribute('datetime')
+    expect(idle.querySelector(':scope > .thread-nav__time')).toHaveAttribute('datetime')
+    expect(idle.querySelectorAll('.thread-nav__time')).toHaveLength(1)
   })
 
   it('reads the run from the provider’s running turn when it reported one, otherwise from your prompt', () => {
@@ -138,5 +137,32 @@ describe('a thread that finishes out of sight', () => {
     // Leaving for another thread does not make the finish unseen after the fact.
     act(() => { live.publish({ activeThreadId: 'visual-gate' }) })
     expect(status('Weekly note')).toHaveTextContent('Done')
+  })
+})
+
+
+describe('sidebar working-copy context', () => {
+  it('distinguishes a shared branch, detached checkout, pending worktree and failed setup', () => {
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.worktree = { mode: 'shared', status: 'ready', branch: 'main', path: '/project', repositoryRoot: '/project' }
+    const live = mount(state, NOW)
+    const button = () => screen.getByRole('button', { name: 'Grok voice previews' })
+    expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('main · Project folder')
+    expect(button()).toHaveAccessibleDescription(/Sonnet 4.5, main, Project folder/)
+    // Assert that the localized activity time is exposed, independent of the runner timezone.
+    expect(button()).toHaveAccessibleDescription(`Claude,Done ${rowFor(state, thread.id).when} Sonnet 4.5, main, Project folder`)
+    const update = (worktree: typeof thread.worktree) => act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === thread.id ? { ...item, worktree } : item) } }))
+    update({ mode: 'independent', status: 'ready', path: '/checkout', repositoryRoot: '/checkout' })
+    expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('Detached HEAD · Worktree')
+    expect(button().querySelector('.thread-nav__branch .lucide-git-branch')).not.toBeNull()
+    update({ mode: 'independent', status: 'pending', branch: 'stale-branch' })
+    expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('New worktree pending')
+    expect(button().querySelector('.thread-nav__branch .lucide-folder-git-2')).not.toBeNull()
+    expect(button().querySelector('.thread-nav__branch')).not.toHaveTextContent('stale-branch')
+    update({ mode: 'independent', status: 'error', branch: 'stale-branch', error: 'Folder moved' })
+    expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('Worktree not ready')
+    expect(button().querySelector('.thread-nav__branch .lucide-folder-git-2')).not.toBeNull()
+    expect(button().querySelector('.thread-nav__branch')).not.toHaveTextContent('stale-branch')
   })
 })

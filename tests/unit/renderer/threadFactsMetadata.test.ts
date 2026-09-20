@@ -17,6 +17,11 @@ function stateFor(fields: Record<string, unknown> = {}) {
 }
 
 describe('thread facts metadata regressions', () => {
+  it('keeps a retained Devin thread identified when its model catalog is disconnected', () => {
+    const row = describeThreads(stateFor({ providerId: 'devin' }), NOW)[0]!
+    expect(row).toMatchObject({ provider: 'Devin', providerId: 'devin', providerKey: 'devin', connected: false })
+  })
+
   it.each(['idle', 'running'])('leaves unknown %s activity blank and unchanged across refreshes', status => {
     const state = stateFor({ status })
     for (const now of [NOW, NOW + 60_000]) {
