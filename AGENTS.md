@@ -25,8 +25,8 @@ Only what the tree does not say for itself.
 - `src/renderer/src/agents/` is the Threads page: panes, composer, sidebar, pickers. `features/` holds the other pages, `state/` the app context and hooks, `widget/` the floating widget's own renderer.
 - `src/shared/` is what both processes use: types, zod schemas, `settings.ts`, `channels.ts`, `themes/`. The renderer reaches main only through `src/preload/` (`window.sotto`).
 - Tests live under `tests/`, never in `src/`: `unit/` mirrored by source area, `integration/` over real child processes and the fake providers in `fixtures/`, `e2e/` Playwright specs that launch the built app locally, `perf/` benchmarks. Every adapter passes `tests/integration/adapterContract.ts`.
-- `docs/`: `adr/` decisions, `verification/` evidence notes, `perf/` measurements, `research/` source studies, `plans/` implementation plans, `ci.md`, `release/`, `agents/`. `artifacts/<slug>/` holds the screenshots and JSON a verification note cites.
-- Archival, not authoritative: `design/`, `handoff/`, `.superpowers/`, `notes.md`, the root `.docx`. Code, `CONTEXT.md` and ADRs win.
+- `docs/`: `adr/` decisions, `verification/` evidence notes, `perf/` measurements, `research/` source studies, `plans/` implementation plans, `ci.md`, `release/`, `agents/`. `artifacts/<slug>/` holds the screenshots and JSON a verification note cites: the images the note names or describes, not every intermediate capture. The folder is 190 MB of committed images and every clone downloads all of it.
+- Archival, not authoritative: `design/` (including `design/archive/`, where the early notes and the memory-first prototype spec now live), `handoff/`, `.superpowers/`. Code, `CONTEXT.md` and ADRs win.
 
 ## Design direction
 
