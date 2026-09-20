@@ -1,4 +1,4 @@
-import { isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
@@ -8,7 +8,7 @@ const WEEK_MS = 7 * DAY_MS
 export type ThreadRowState = 'needs' | 'working' | 'stopped' | 'done'
 
 /** The badge tint for a provider; `other` is the neutral badge for a provider Sotto has no colour for. */
-export type ProviderKey = 'claude' | 'codex' | 'grok' | 'other'
+export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'other'
 
 export interface ThreadLastMessage {
   readonly who: string
@@ -76,6 +76,7 @@ const PROVIDER_KEYS: Readonly<Record<string, ProviderKey>> = {
   claude: 'claude', anthropic: 'claude',
   codex: 'codex', openai: 'codex', chatgpt: 'codex',
   grok: 'grok', xai: 'grok',
+  devin: 'devin', cognition: 'devin',
 }
 
 /** The badge tint for a provider name as the provider reports it (a model's `provider` field), never a model's display name. */
@@ -85,7 +86,7 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyph = { claude: 'C', codex: '›_', grok: 'X', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
+  const glyph = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
 
@@ -173,7 +174,7 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const project = state.host.projects.find(entry => entry.id === thread.projectId)
   const model = state.host.models.find(entry => entry.id === thread.modelId)
   const assignment = state.assignments.find(entry => entry.threadId === thread.id)
-  const provider = model?.provider ?? state.host.name
+  const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the
   // messages, and a thread whose messages did arrive derives exactly the same thing.
   const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
