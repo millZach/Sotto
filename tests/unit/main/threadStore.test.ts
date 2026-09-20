@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 
@@ -114,6 +115,18 @@ describe('thread store', () => {
     reopened.store.rebuild()
     expect(reopened.store.readMessages('kept').messages).toEqual([])
     expect(reopened.store.messageCount('kept')).toBe(0)
+  })
+
+  it('opens the file in WAL mode, the setting synchronous=NORMAL exists to serve', async () => {
+    // synchronous is per-connection, so a second connection can only vouch for the mode that
+    // makes it count: journal_mode lives in the file and reads back from any connection.
+    const f = await store()
+    const other = new DatabaseSync(f.path)
+    try {
+      expect(String(other.prepare('PRAGMA journal_mode').get()?.journal_mode)).toBe('wal')
+    } finally {
+      other.close()
+    }
   })
 
   it('keeps an ephemeral run out of the file and hands the file back when history returns', async () => {
