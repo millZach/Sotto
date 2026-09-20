@@ -10,12 +10,11 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import type { ProviderId } from '../../src/shared/agents'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 const factories = { codex: () => codexFixture(), claude: () => claudeFixture(), grok: () => grokFixture() }
-async function fixture(provider: ProviderId, committed = true, nested = false) {
+async function fixture(provider: keyof typeof factories, committed = true, nested = false) {
   const f = await factories[provider]()
   let project = join(f.root, 'project'); await mkdir(project)
   await git(project, ['init'])
@@ -34,7 +33,7 @@ async function fixture(provider: ProviderId, committed = true, nested = false) {
   const registry = new ThreadRegistry(f.root)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider,
     threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
+    hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: new SottoThreadHost(provider, f.host, registry) } })
   const workspace = new WorkspaceHost(native, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)

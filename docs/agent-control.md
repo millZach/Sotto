@@ -1,15 +1,27 @@
 # Sotto agent control
 
-Sotto creates and manages coding threads through the installed Codex, Claude Code and Grok Build clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. All three providers can be connected together. Reading or sending a manual prompt does not grant Sotto permission to supervise a thread.
+Sotto creates and manages coding threads through the installed Codex, Claude Code, Grok Build and Devin clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. Reading or sending a manual prompt does not grant Sotto permission to supervise a thread.
 
 ## Set up
 
 1. Install and sign in to your chosen native coding client. Codex uses App Server, Claude Code uses stream-json and Grok Build uses ACP. Grok connection requires CLI 1.0.5 and ACP 1; incompatible versions produce an error before creating a session.
-2. Open **Settings → Providers**. Select Codex, Claude Code or Grok Build in the list, then connect or enable it. Each row has its own status and switch; Configuration holds connection controls and a default model choice, while Models shows that provider's catalog. No server address or pairing token is needed.
+2. Open **Settings → Providers**. Select Codex, Claude Code, Grok Build or Devin in the list, then connect or enable it. Each row has its own status and switch; Configuration holds connection controls and a default model choice, while Models shows that provider's catalog. No server address or pairing token is needed.
 3. In **New thread**, choose a model from any connected provider. That choice determines which client runs the thread. The same working folder can be used with different providers. Existing threads retain their provider; their model picker only offers models from that client. Unavailable models are reported rather than replaced.
 4. Open **Settings → Agents**, directly below Providers, to configure the **Sotto coordinator** inline: its reasoning account, model and effort, plus the default projects directory. Native Codex, Claude and Grok subscriptions and explicitly configured OpenRouter and OpenAI API routes are supported. Changing this account does not change thread providers. Manual controls work without the coordinator.
 5. Choose the speech route independently: **Grok voice** is the default and **Kokoro** is the cheaper option. Both use the configured hosted route; neither is a system voice. Save the relevant API key, select a voice and preview it. Sotto does not silently switch funding routes.
 6. Configure compatible local wake-model and runtime directories before enabling voice. Wake detection runs locally. See the [wake verification record](verification/issue-9-wake.md) for model formats and distribution limits. Dictation remains available independently of agent control.
+
+### Devin
+
+Install Devin CLI 3000.10.31 and run `devin auth login` outside Sotto. Enable Devin in Providers, connect, and select a model returned by your account. No new API key is stored in Sotto. Devin uses ACP 1 and performs its own tools in the selected local checkout. Windows native verification is recorded; Apple silicon verification is pending.
+
+Devin uses your native billing and data policies, including its local session records and provider analytics. **Keep local history** controls Sotto's copy only. Review your account's training and retention controls. See [the data-policy decision](adr/0017-devin-native-provider-data-policies.md).
+
+The first release requires Sotto's verified approval profile. It refuses project-native Devin configuration, hooks, installed plugins, enabled MCP servers, and incompatible effective settings. It does not edit your global configuration. A permission shows its action before **Allow once** or **Deny**; persistent grants are unavailable. Unsupported request forms stop the session safely. Reconnect after resolving the reported incompatibility.
+
+Choose the model when creating the thread. Later model changes, images, skills, compaction, steering, native slash commands, and other permission modes are unavailable. Devin is a thread provider; it is not a terminal launcher or a coordinator reasoning account.
+
+Devin saves a native session after its first prompt. Sotto may renew the native handle of a confirmed, untouched empty thread after a clean shutdown, retaining its Sotto identity and chosen model. A dispatched, uncertain, missing, or crashed session is never silently replaced. A session open in another native client must be released before Sotto can resume it. Separately authored native messages transfer it to manual control when replayed.
 
 ## Working with threads
 
@@ -55,7 +67,7 @@ Coding and reasoning usage belongs to the selected provider account. Sotto membe
 
 Sotto stores thread bindings, assignment ownership, counters and dispatch identities locally. Assignment context expires after seven days without activity. **Keep local history** off suppresses supervision and clarification text. An unsent draft is the explicit exception: it remains local until sent or cleared. Recovery evidence follows the same history and expiry policy. Background audio and full native transcripts are not copied into coordinator state.
 
-A thread's messages are Sotto's own record, kept in an event store rather than rebuilt from the provider each time Sotto starts. Each adapter appends only what is new to it — Claude from its transcript tail, Codex from the app-server stream and its rollouts, Grok from its update cursor — and a thread nobody is looking at carries its summary rather than its history. A pane opens on the newest ten turns and reads further back when you ask for earlier messages, so a long thread opens as quickly as a short one, and a provider session starts when a thread is opened or sent to rather than at connect. **Keep local history** off still means no message text is written at all, and turning it off removes what was written; what was not kept cannot be recovered. See ADR-0016.
+A thread's messages are Sotto's own record, kept in an event store rather than rebuilt from the provider each time Sotto starts. Each adapter appends only what is new to it — Claude from its transcript tail, Codex from the app-server stream and its rollouts, Grok from its update cursor, Devin from UUID-tagged native replay — and a thread nobody is looking at carries its summary rather than its history. A pane opens on the newest ten turns and reads further back when you ask for earlier messages, so a long thread opens as quickly as a short one, and a provider session starts when a thread is opened or sent to rather than at connect. **Keep local history** off still means no message text is written at all, and turning it off removes what was written; what was not kept cannot be recovered. See ADR-0016.
 
 Coordinator actions append bounded turn records containing timings, acted-on thread/project IDs, retrieved memory IDs, context estimates and outcomes. Draft edits are not turns. With local history off, message and error text are blanked while timings and identities remain. Developer builds can reveal the turn-record folder from the tray menu. Voice timing reports identify measured software milestones separately from acoustic output.
 

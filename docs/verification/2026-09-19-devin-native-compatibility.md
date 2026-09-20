@@ -1,6 +1,6 @@
-# Devin native compatibility experiment ? issue 150
+# Devin native compatibility evidence ? issue 150
 
-Date: September 19, 2026. Status: incomplete; do not register Devin as a supported provider yet.
+Date: September 19, 2026. Windows native adapter journey passed. Apple silicon verification and final delivery gates remain pending.
 
 ## Environment and boundaries
 
@@ -28,7 +28,7 @@ Only selected capability values, event names, shape/type descriptions, counts, a
 | Separately authored input | A second ACP process loaded the same session and sent a prompt without Sotto metadata. A third load replayed two distinct user UUIDs: the known Sotto dispatch and a new unknown identity. This establishes distinguishable separately authored ACP input, not terminal-UI takeover or a race-free guarded follow-up. |
 | Client execution | These tested flows worked without client filesystem or terminal execution. This is not a claim about every optional tool. |
 
-The prompt response denotes turn completion. No live user_message_chunk acknowledgement was observed. Concurrent replay is promising acceptance evidence, but production reconciliation is not implemented or contract-tested.
+The prompt response denotes turn completion. No live user_message_chunk acknowledgement was observed. The adapter persists a UUID before dispatch, then uses replay of that identity as acceptance evidence. Its scripted subprocess passes the existing adapter contract, including ambiguous delivery reconciliation without resending.
 
 Permission requests contained a toolCallId; they did not necessarily contain the requested action. The action arrived in an earlier tool_call update. File input used file_path/content; command input used command. An adapter must join the matching update and reject unsupported or incomplete requests. Offered choices included allow_once, allow_always, and reject_once; persistent grants remain outside the spec.
 
@@ -46,25 +46,28 @@ A Sotto-owned --config file with ask rules Write(**), exec, Fetch(*), and mcp__*
 
 The documented --config flag overrides the user-level config, not all native configuration. Native project and project-local settings still exist. No product integration should claim the temporary profile has established a universal approval boundary.
 
-## Privacy decision needed before integration
+## Accepted privacy boundary
 
 The current [CLI Controls documentation](https://docs.devin.ai/cli/enterprise/controls) describes provider-side usage analytics, including model/message/credit activity, tool counts, and generated-line counts. It documents an analytics exception for hybrid deployments. No supported general CLI analytics opt-out was found in the reviewed help, installed configuration reference, or current controls documentation.
 
-Sotto's own no-analytics implementation can remain unchanged. Allowing this provider's separate analytics needs an explicit interpretation of the project's privacy promise, followed by an ADR and README disclosure; the probe cannot silently make that product decision.
+Zach explicitly approved disclosed provider-side analytics on September 19, 2026. [ADR-0017](../adr/0017-devin-native-provider-data-policies.md) records that boundary; Sotto's own no-analytics implementation remains unchanged.
 
-Proposed boundary for Zach to review: Sotto adds no telemetry, while an explicitly connected Devin provider uses its own documented processing, persistence, and usage analytics. Keep local history controls only Sotto's copy. Connection guidance discloses this distinction. This does not authorize weaker permissions, automatic approval, credential copying, or undisclosed integrations.
+Accepted boundary: Sotto adds no telemetry, while an explicitly connected Devin provider uses its own documented processing, persistence, and usage analytics. Keep local history controls only Sotto's copy. Connection guidance discloses this distinction. This does not authorize weaker permissions, automatic approval, credential copying, or undisclosed integrations.
 
 Cognition's [general security page](https://docs.devin.ai/admin/security) describes plan-dependent training controls and retention. It does not establish this signed-in account's settings. The account's actual applicable controls remain unverified; no assumption of training opt-out or zero retention is made.
 
-Configuration imports can be disabled individually, but those switches are not a blanket native-hook or MCP disable switch. Actual required destinations, native persistence/logging behavior, and exclusion of unrequested native integrations remain to be established before an integration ADR can be accepted.
+The accepted implementation uses a read-back, Sotto-owned ask profile and refuses unverified native integrations instead of treating import switches as a blanket disable. See [policy evidence](2026-09-19-devin-policy.md). A local HTTP CONNECT tunnel, without TLS decryption or payload logging, observed server.codeium.com and o4507463137361920.ingest.us.sentry.io during authenticated discovery and a synthetic turn. These are observed destinations for the tested account route, not a claim about every deployment or the contents of telemetry. Native local records remain outside Sotto?s history control.
+
+## Implemented adapter and native journey
+
+The dedicated AgentHost now drives the native ACP subprocess with bounded framing, output, requests, transcript replay, and tool records. Native IDs stay inside the adapter. Sotto history uses ThreadMessageLog, lazy sessions, watched threads, and the idle reaper. Devin is disabled by default on upgrade and remains outside terminal and coordinator catalogs.
+
+The actual host passed `SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1` on native Windows: account-derived model selection, clean empty-thread restart, streamed text, denied file absent, exact-target one-time allowed file correct, enum question answered, same native session and message identities after a new host instance, and cancellation with the pending file absent. The test records no prompt or protocol bodies. This verifies cancellation while a permission is pending; it does not claim termination of arbitrary background tools spawned before cancellation.
+
+A further native control found that a newly created, empty session has no durable transcript: `session/load` returns `-32016` before the first prompt, both while its creator runs and after it exits. After a prompt, concurrent replay returns history followed by `-32015` (locked). The adapter distinguishes them. Only a confirmed, untouched empty thread after a clean owned shutdown may get a fresh native handle. Dispatch records disable that renewal before transmission. Missing, crashed, or uncertain sessions preserve the thread and report the error; they are never silently recreated.
 
 ## Remaining acceptance work
 
-- Establish an enforceable and confirmable approval policy across native configuration, resume, and setting changes.
-- Complete richer question/cancellation races, terminal-UI takeover, stale follow-up rejection, process-loss recovery, repeated identical prompts, and multiple active threads.
-- Establish the account/privacy configuration and actual required destinations.
-- Implement the adapter, deterministic fixture/shared contract, existing UI integration, event-store behavior, and working-copy integration.
-- Verify native Apple silicon macOS, affected Electron journeys, and visual/keyboard states.
-- Run implementation gates and the two-axis review once there is an implementation.
-
-No application source, provider registration, production settings, or user's global Devin configuration was changed. The feature is not implemented, and no supported-platform claim is made. Baseline typecheck passed before these experiments; application gates were not rerun for this documentation-only stage.
+- Run native Apple silicon verification. No Mac access has been established; Windows evidence is not Mac evidence.
+- Complete final lifecycle/policy regressions, Electron visual checks, full CI gates, and two-axis review.
+- Record final results and PR status in the implementation plan. No merge or completed issue is claimed here.

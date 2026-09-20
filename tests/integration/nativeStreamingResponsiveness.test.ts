@@ -17,7 +17,7 @@ it.each(['claude', 'grok'] as const)('%s keeps three streaming threads responsiv
   const f = provider === 'claude' ? await claudeFixture() : await grokFixture(undefined, 2000, 60_000)
   const registry = new ThreadRegistry(f.root)
   const host = new SottoThreadHost(provider, f.host, registry)
-  const providers = new ConfiguredProviderHost({ hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), [provider]: host }, provider: () => provider })
+  const providers = new ConfiguredProviderHost({ hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), [provider]: host }, provider: () => provider })
   const workspace = new WorkspaceHost(providers, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await registry.flush(); await f.cleanup() })
   await workspace.connect(provider)

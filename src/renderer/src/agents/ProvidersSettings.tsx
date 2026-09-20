@@ -8,7 +8,7 @@ import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI' }
 
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
@@ -68,10 +68,11 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>Uses your sign-in in {CLIENT_NAMES[selected]} on this computer.</p></div>
+            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : `Uses your sign-in in ${CLIENT_NAMES[selected]} on this computer.`}</p></div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working)} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
             </div>
+            {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and usage analytics; Sotto's local history setting does not control them.</p>}
             <label className="provider-default">Default for new threads<select aria-label={`${label} default thread model`} value={models.some(model => model.id === state.configuration.defaultModelId) ? state.configuration.defaultModelId : ''}
               disabled={!connected || Boolean(working)} onChange={event => void setDefault(event.target.value)}><option value="">Choose a model</option>{models.map(model => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
           </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === state.configuration.defaultModelId ? 'Default' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
