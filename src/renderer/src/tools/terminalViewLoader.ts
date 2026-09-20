@@ -5,7 +5,7 @@ import type { TerminalViewFactory } from './terminalStore'
 // Chromium caches failed module imports for this document, so recovery needs a window reload.
 let loading: Promise<TerminalViewFactory> | undefined
 export const loadXtermView = (): Promise<TerminalViewFactory> => loading ??= import('./terminalView')
-  .then(module => module.createXtermView, error => { loading = undefined; throw error })
+  .then(module => module.createXtermView)
 
 /**
  * The injected factory when a caller passes one (tests do), otherwise the xterm one once its chunk arrives.

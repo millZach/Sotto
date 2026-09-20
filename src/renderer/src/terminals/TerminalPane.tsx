@@ -24,7 +24,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
   readonly row: TerminalRow
   readonly store: TerminalWorkspaceStore
   readonly bridge: TerminalWorkspaceBridge | undefined
-  /** Null while the xterm chunk is still loading; the pane renders its frame with an empty screen until it arrives. */
+  /** Null until the xterm chunk loads; viewFailed distinguishes failure from loading. */
   readonly viewFactory: TerminalViewFactory | null
   readonly viewFailed: boolean
   readonly focused: boolean

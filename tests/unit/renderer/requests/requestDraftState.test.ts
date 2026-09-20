@@ -39,7 +39,9 @@ describe('request draft renderer ordering', () => {
     store.select('thread', 'req', 'q', selection('Newer'))
     first.resolve(saves[0]!); await vi.waitFor(() => expect(saves).toHaveLength(2))
     expect(store.get('thread', 'req')).toMatchObject({ selections: { q: selection('Newer') }, save: 'saving' })
+    expect(store.canReload()).toBe(false)
     second.resolve(saves[1]!); await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+    expect(store.canReload()).toBe(true)
   })
 
   it('retains failed saves for retry, rejects invalid local text honestly, and does not autosend', async () => {
@@ -47,7 +49,9 @@ describe('request draft renderer ordering', () => {
     const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
     store.select('thread', 'req', 'q', selection('Keep me'))
     await vi.waitFor(() => expect(store.get('thread', 'req')).toMatchObject({ save: 'unsaved', saveError: 'Disk unavailable' }))
+    expect(store.canReload()).toBe(false)
     await store.flush('thread', 'req')
+    expect(store.canReload()).toBe(true)
     expect(store.get('thread', 'req')).toMatchObject({ save: 'saved', selections: { q: selection('Keep me') } })
     store.select('thread', 'req', 'q', selection('x'.repeat(24001)))
     await vi.waitFor(() => expect(store.get('thread', 'req')).toMatchObject({ save: 'unsaved' }))

@@ -186,6 +186,11 @@ export class RequestAnswerStore {
     return this.entries.get(RequestAnswerStore.key(ownerId, requestId)) ?? EMPTY_ENTRY
   }
 
+  /** A reload must not discard a bound answer whose latest revision has no save acknowledgement. */
+  canReload(): boolean {
+    return [...this.bindings.keys()].every(key => this.entries.get(key)?.save === 'saved')
+  }
+
   /** Stable recovery status for this owner's bindings, including ones a remounted view never saw live. */
   recoverySnapshot(owner: RequestDraftOwner, live: readonly AgentRequest[]): string {
     const ownerKey = requestDraftOwnerKey(owner)

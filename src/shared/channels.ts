@@ -48,5 +48,6 @@ export const EXTERNAL_LINK_OPEN = 'sotto:external-link:open' as const
 export const APP_HIDE = 'sotto:app:hide' as const
 export const APP_TOGGLE_MAXIMIZE = 'sotto:app:toggle-maximize' as const
 export const APP_MAXIMIZED = 'sotto:app:maximized' as const
+export const APP_RELOAD = 'sotto:app:reload' as const
 export const APP_MINIMIZE = 'sotto:app:minimize' as const
 export const APP_QUIT = 'sotto:app:quit' as const

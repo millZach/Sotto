@@ -10,7 +10,8 @@ export interface TerminalSurfaceProps {
   readonly store: TerminalStore
   readonly bridge: TerminalBridge | undefined
   /** Null until the xterm chunk loads; viewFailed distinguishes failure from loading. */
-  readonly viewFactory: TerminalViewFactory | null; readonly viewFailed: boolean
+  readonly viewFactory: TerminalViewFactory | null
+  readonly viewFailed: boolean
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {

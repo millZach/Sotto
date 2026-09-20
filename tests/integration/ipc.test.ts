@@ -35,6 +35,7 @@ import {
 import {
   APP_HIDE,
   APP_MINIMIZE,
+  APP_RELOAD,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
@@ -273,6 +274,7 @@ function createIpcHarness() {
     show: vi.fn(),
     hide: vi.fn(),
     minimize: vi.fn(),
+    reload: vi.fn(),
     toggleMaximize: vi.fn(),
     isMaximized: vi.fn(() => false),
     quit: vi.fn(),
@@ -378,6 +380,7 @@ describe('typed preload bridge', () => {
         'listRecoveryNotices',
         'memory',
         'minimizeApp',
+        'reloadApp',
         'toggleMaximizeApp',
         'onDictationCommand',
         'onRecoveryNotice',
@@ -841,10 +844,19 @@ describe('typed preload bridge', () => {
 })
 
 describe('IPC validation and lifecycle', () => {
+  it('reloads the main window through the authenticated no-payload command', async () => {
+    const { ipc, app } = createIpcHarness()
+    await ipc.invokeArgs(APP_RELOAD, [])
+    expect(app.reload).toHaveBeenCalledOnce()
+    await expect(ipc.invoke(APP_RELOAD, 'https://example.com')).rejects.toThrow('Invalid IPC payload')
+    expect(app.reload).toHaveBeenCalledOnce()
+  })
+
   it.each([
     SETTINGS_GET,
     SETTINGS_UPDATE,
     HISTORY_CLEAR,
+    APP_RELOAD,
     APP_QUIT,
     WIDGET_PUBLISH,
     OUTPUT_DELIVER,
@@ -1093,6 +1105,7 @@ describe('IPC validation and lifecycle', () => {
           APP_SHOW,
           APP_HIDE,
           APP_MINIMIZE,
+          APP_RELOAD,
           APP_QUIT,
           RECOVERY_NOTICE_LIST,
         ].sort(),

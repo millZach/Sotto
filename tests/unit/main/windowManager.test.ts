@@ -1234,6 +1234,18 @@ describe('WindowManager cursor monitor following', () => {
 })
 
 describe('WindowManager lifecycle', () => {
+  it('reloads only the existing main document without recreating either window', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWindows()
+    const main = windows[0]!
+    const widget = windows[1]!
+    widget.loadURL.mockClear()
+    await manager.reloadMain()
+    expect(main.loadURL).toHaveBeenLastCalledWith(main.webContents.getURL())
+    expect(widget.loadURL).not.toHaveBeenCalled()
+    expect(windows).toHaveLength(2)
+  })
+
   it('toggles only the main window and publishes native maximize changes', async () => {
     const { manager, windows } = createHarness()
     await manager.createWindows()
