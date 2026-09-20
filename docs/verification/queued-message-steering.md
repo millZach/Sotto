@@ -32,3 +32,9 @@ Independent standards and spec reviews found no code defects. The standards revi
 - `npm run typecheck`, `npm run lint`, `npm run notices:verify`: passed.
 - `npm test -- --maxWorkers=2`: 3,982 passed, 34 skipped; 305 test files passed, 17 skipped.
 - Neighboring `composer-short-window.spec.ts`: the keyboard test passed. The attached-image test fails at line 66 because it expects `16px` and the current stylesheet renders `15px`. The same command fails at the same assertion on untouched main `e29cd544` in an independently installed and built worktree. The steering change does not alter prompt typography.
+
+## Review follow-up
+
+Greptile identified a renderer/main mismatch for settled projects. A focused regression reproduced enabled steering for both a settled project and an individually settled workspace thread. The action now uses the same `isWorkspaceThreadSettled` helper as main, and neither case dispatches a command. The initial full local gate counts above refer to `59721254`; latest-revision CI is tracked on PR #165.
+
+After this fix, both queue UI suites passed (44 tests); typecheck and lint passed.

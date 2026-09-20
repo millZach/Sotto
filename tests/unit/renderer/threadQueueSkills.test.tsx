@@ -62,14 +62,16 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup() })
 
 describe('follow-up queue in the Threads composer', () => {
-  it.each(['unsupported', 'idle', 'uncertain', 'question', 'disconnected'] as const)('does not allow queued steering when %s', async condition => {
+  it.each(['unsupported', 'idle', 'uncertain', 'question', 'disconnected', 'settled-project', 'settled-thread'] as const)('does not allow queued steering when %s', async condition => {
     const state = manualState({ running: condition !== 'idle', capabilities: { steer: condition !== 'unsupported' } })
     state.followups = [followup({ id: crypto.randomUUID(), text: 'Queued message', status: condition === 'uncertain' ? 'uncertain' : 'queued' })]
     if (condition === 'question') state.host.threads.find(thread => thread.id === THREAD)!.requests = [{ id: 'question', kind: 'question', text: 'Which?', options: [] }]
     if (condition === 'disconnected') state.host.connected = false
+    if (condition === 'settled-project') state.host.projects.find(project => project.id === state.host.threads.find(thread => thread.id === THREAD)!.projectId)!.workspaceSettledAt = new Date(NOW).toISOString()
+    if (condition === 'settled-thread') state.host.threads.find(thread => thread.id === THREAD)!.workspaceSettledAt = new Date(NOW).toISOString()
     const { live } = mount(state)
     const action = within(screen.getByRole('region', { name: 'Queued messages' })).queryByRole('button', { name: 'Steer now' })
-    if (condition === 'question' || condition === 'disconnected') {
+    if (condition === 'question' || condition === 'disconnected' || condition === 'settled-project' || condition === 'settled-thread') {
       expect(action).toHaveAttribute('aria-disabled', 'true')
       fireEvent.click(action!)
       expect(requests(live, 'steer-followup')).toHaveLength(0)

@@ -17,5 +17,6 @@ Delivery checklist:
 - [x] Independent standards and spec reviews.
 - [x] Typecheck, lint, notices and the steering Electron journey.
 - [x] Complete the full CI-equivalent suite and document the neighboring baseline comparison.
-- [ ] Open the PR, resolve feedback and wait for latest-revision CI.
+- [x] Open PR #165 and fix the settled-project UI guard reported by review.
+- [ ] Wait for latest-revision CI and review results.
 - [ ] Merge with a merge commit once green.

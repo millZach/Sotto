@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, type AgentFollowup, type AgentState } from '../../../shared/agents'
-import { isThreadClosed } from '../../../shared/threadActivity'
+import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
@@ -208,7 +208,8 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const expanded = opened ?? !short
   const pendingDelivery = items.some(item => item.status === 'dispatching' || item.status === 'uncertain')
   const steerVisible = row.thread.status === 'running' && capabilitiesForThread(state.host, row.thread).steer === true
-  const canSteer = row.connected && !isThreadClosed(row.thread) && !row.thread.requests.length && !isThreadBusy(state, threadId)
+  const canSteer = row.connected && !isThreadClosed(row.thread) && !isWorkspaceThreadSettled(row.thread, row.project)
+    && !row.thread.requests.length && !isThreadBusy(state, threadId)
     && !pendingDelivery && !state.deliveries?.some(item => item.threadId === threadId && (item.status === 'submitting' || item.status === 'uncertain'))
   const movable = items.filter(followupEditable)
   const resumable = items.some(item => item.status === 'paused' || item.status === 'failed')
