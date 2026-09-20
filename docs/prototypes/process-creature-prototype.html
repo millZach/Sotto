@@ -1,0 +1,108 @@
+<!doctype html>
+<!-- PROTOTYPE: Three background-process creature variants in the same Sotto thread view.
+     ?variant=A/B/C. Synthetic data only. Open directly or run the adjacent .mjs file.
+     Standalone docs prototype, outside every production entrypoint. See adjacent .md for checks. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — little process inspector</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;src:url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2')}
+:root{color-scheme:dark;--tt-bg:oklch(.235 .018 280);--tt-sidebar:oklch(.205 .016 282);--tt-field:oklch(.26 .019 280);--tt-raised:oklch(.305 .021 280);--tt-text:oklch(.985 .005 280);--tt-muted:oklch(.76 .014 265);--tt-border:oklch(.42 .03 270);--tt-accent:oklch(.79 .13 220);--tt-ink:oklch(.2 .02 280);--tt-selected:oklch(.35 .04 262);--tt-warning:oklch(.83 .15 81);--tt-shadow:oklch(.1 0 0 / .3)}
+:root[data-theme=light]{color-scheme:light;--tt-bg:oklch(.978 .004 85);--tt-sidebar:oklch(.955 .008 85);--tt-field:oklch(.99 .003 85);--tt-raised:oklch(.935 .006 85);--tt-text:oklch(.235 .014 75);--tt-muted:oklch(.46 .014 75);--tt-border:oklch(.78 .016 80);--tt-accent:oklch(.49 .13 235);--tt-ink:oklch(.99 .003 85);--tt-selected:oklch(.90 .03 230);--tt-warning:oklch(.48 .11 60);--tt-shadow:oklch(.1 0 0 / .12)}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{font:14px/1.5 Figtree,system-ui,sans-serif;color:var(--tt-text);background:var(--tt-bg);overflow:hidden}button,textarea,select{font:inherit;color:inherit}button,select{cursor:pointer}button{border:0;background:none}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--tt-accent);outline-offset:4px}button:hover{background:var(--tt-selected)}
+.window{height:calc(100% - 86px);display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:14px 8px;background:var(--tt-sidebar);border-right:1px solid color-mix(in srgb,var(--tt-border) 45%,transparent)}.brand{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;margin-bottom:20px;font-weight:600}.brand i{width:14px;height:14px;border-radius:4px;background:var(--tt-accent)}.group{color:var(--tt-muted);font-size:12px;padding:12px 10px 5px}.row{padding:8px 10px;display:flex;gap:9px;align-items:center;border-radius:8px}.row.active{background:var(--tt-selected)}.dot{width:7px;height:7px;border-radius:50%;border:1px solid var(--tt-muted);flex:none}.active .dot{background:var(--tt-accent);border-color:var(--tt-accent)}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column}.head{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid color-mix(in srgb,var(--tt-border) 25%,transparent)}.head strong{font-size:14px;font-weight:500}.head span{color:var(--tt-muted);font-size:12px}.head .chrome{margin-left:auto;letter-spacing:12px;font-size:16px}.transcript{flex:1;min-height:0;overflow:auto;padding:30px max(24px,calc((100% - 760px)/2)) 12px}.turn{font-size:16px;line-height:1.6;margin-bottom:28px}.user{margin-left:auto;max-width:85%;width:fit-content;background:var(--tt-raised);padding:11px 16px;border-radius:14px 14px 4px 14px}.who{color:var(--tt-muted);font-size:12px;margin-bottom:9px}.turn p{margin:0 0 14px}.activity{display:flex;gap:10px;align-items:center;color:var(--tt-muted);font-size:14px;margin-top:22px}.activity code{font:13px ui-monospace,monospace;color:var(--tt-text)}.activity .chev{font-size:20px}
+.compose{flex:none;padding:76px max(24px,calc((100% - 760px)/2)) 12px}.composer{position:relative;border:1px solid var(--tt-border);background:var(--tt-field);border-radius:16px;padding:14px 16px 10px}.composer:focus-within{border-color:var(--tt-accent)}textarea{display:block;width:100%;height:74px;resize:none;background:none;border:0;outline:none!important;font-size:15px;line-height:1.5;padding:0}textarea::placeholder{color:var(--tt-muted)}.foot{display:flex;align-items:center;gap:8px;margin-top:6px}.chip{border:1px solid var(--tt-border);border-radius:20px;padding:3px 9px;font-size:12px;color:var(--tt-muted)}.clip{color:var(--tt-muted);font-size:22px;margin-right:2px}.send{margin-left:auto;display:grid;place-items:center;background:var(--tt-accent);color:var(--tt-ink);border-radius:50%;width:30px;height:30px}.usage{display:flex;justify-content:space-between;margin-top:7px;color:var(--tt-muted);font-size:12px}.status{display:flex;gap:8px;align-items:center}.status i{display:block;width:5px;height:5px;background:var(--tt-accent);border-radius:50%}.status[data-state=attention] i{background:var(--tt-warning)}
+.walkway{position:absolute;left:14px;right:14px;top:-64px;height:64px;pointer-events:none}.creature{position:absolute;left:0;bottom:0;width:80px;height:64px;image-rendering:pixelated}.edge-status{position:absolute;left:102px;bottom:10px;color:var(--tt-muted);font-size:12px;white-space:nowrap;display:none}.process{display:none;position:absolute;right:14px;bottom:0;border:1px solid var(--tt-border);border-bottom:0;border-radius:8px 8px 0 0;background:var(--tt-raised);padding:9px 14px;font-size:12px;min-width:168px}.process code{color:var(--tt-text);font-size:12px}.process small{display:block;color:var(--tt-muted);font-size:12px}.composer[data-variant=B] .edge-status{display:block;left:178px}.composer[data-variant=C] .process{display:block}.composer[data-variant=B] + .usage .status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.prototype-bar{position:fixed;bottom:15px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--tt-text);color:var(--tt-bg);border-radius:18px;box-shadow:0 8px 30px var(--tt-shadow);white-space:nowrap}.prototype-bar button{border-radius:8px;padding:7px 10px;min-height:36px}.prototype-bar button:hover{background:color-mix(in srgb,var(--tt-bg) 12%,transparent)}.prototype-bar button[aria-pressed=true]{background:var(--tt-bg);color:var(--tt-text)}.variant-label{min-width:168px;text-align:center;font-weight:600}.proto-label{font-size:12px;opacity:.8;margin:0 6px}.divider{height:22px;width:1px;background:color-mix(in srgb,var(--tt-bg) 25%,transparent);margin:0 4px}.prototype-bar select{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--tt-bg) 30%,transparent);border-radius:8px;padding:7px;font-size:14px}.prototype-bar option{background:var(--tt-bg);color:var(--tt-text)}.prototype-bar :focus-visible{outline-color:var(--tt-bg)}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(max-width:1000px){.window{grid-template-columns:196px minmax(0,1fr)}.row{font-size:12px}.proto-label{display:none}.prototype-bar{gap:3px;padding:7px}.variant-label{min-width:156px}.head{padding:0 20px}.head .chrome{display:none}.turn{font-size:15px}}
+@media(max-height:650px){.transcript{padding-top:20px}.turn{margin-bottom:16px}.compose{padding-top:66px}textarea{height:50px}.activity{margin-top:10px}.brand{margin-bottom:8px}}
+[hidden]{display:none!important}.window{height:calc(100% - 110px)}.prototype-feedback{position:fixed;bottom:76px;left:16px;right:16px;text-align:center;color:var(--tt-muted);font-size:12px}.prototype-bar{gap:3px}.prototype-bar .proto-label{display:none}.variant-label{min-width:156px}.prototype-bar button{padding:7px 8px}.prototype-bar select{max-width:192px}
+</style>
+</head>
+<body>
+<div class="window">
+ <aside class="sidebar" aria-label="Thread context"><div class="brand"><i></i>Sotto</div><div class="group">sotto</div><div class="row active"><i class="dot"></i>Check the Windows build</div><div class="row"><i class="dot"></i>Effort control</div><div class="row"><i class="dot"></i>New thread dialog</div><div class="group">plant-net</div><div class="row"><i class="dot"></i>Rack 4 loop check</div><div class="row"><i class="dot"></i>Alarm shelving report</div></aside>
+ <main class="pane"><header class="head"><strong>Check the Windows build</strong><span>/ sotto</span><span class="chrome" aria-hidden="true">▥ ···</span></header>
+  <div class="transcript"><div class="turn user">Run the build and keep an eye on it for me.</div><div class="turn"><div class="who">Codex</div><p>The build is running in the background. I’ll watch for the result.</p><div class="activity"><span class="chev">›</span><code>npm run build</code><span id="activity-state">Running</span></div></div></div>
+  <div class="compose"><div class="composer" data-variant="C">
+   <div class="walkway" aria-hidden="true" hidden><canvas class="creature" width="40" height="32"></canvas><span class="edge-status">Watching the build</span><div class="process"><code>npm run build</code><small id="process-state">Waiting for the result</small></div></div>
+   <label class="sr" for="prompt">Draft a follow-up</label><textarea id="prompt" placeholder="What would you like to do next?"></textarea><div class="foot"><span class="clip" aria-hidden="true">＋</span><span class="chip">GPT-6 Astra⌄</span><span class="chip">High⌄</span><span class="chip">Auto⌄</span><button class="send" aria-label="Stop simulated monitoring" title="Stop simulated monitoring">■</button></div>
+  </div><div class="usage"><span class="status" role="status"><i></i><span id="status-text">Watching the build</span></span><span>17% context</span></div></div>
+ </main>
+</div>
+<nav class="prototype-bar" aria-label="Prototype controls"><span class="proto-label">Prototype</span><button id="prev" aria-label="Previous variant">←</button><span class="variant-label" id="variant-label"></span><button id="next" aria-label="Next variant">→</button><span class="divider"></span><select id="scenario" aria-label="Simulated process state"><option value="monitoring">Background watch</option><option value="quick">Quick command · 2s</option><option value="brief">Short watch · 4s</option><option value="unconfirmed">Unconfirmed watch</option><option value="long">Long command</option><option value="unwatched">Agent moved on</option><option value="done">Completed</option><option value="attention">Needs you</option></select><button id="replay">Replay</button><button id="finish">Finish task</button><button id="still" aria-pressed="false">Still</button><button id="theme" aria-pressed="false">Light</button></nav>
+<div class="prototype-feedback" id="gate-feedback" role="status"></div>
+<script>
+const variants=[['A','The patrol'],['B','The little lookout'],['C','The process perch']];
+const root=document.documentElement,composer=document.querySelector('.composer'),canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),walkway=document.querySelector('.walkway');
+const params=new URLSearchParams(location.search);let variant=variants.some(v=>v[0]===params.get('variant'))?params.get('variant'):'C',state='monitoring',paused=false,start=performance.now();
+const motion=matchMedia('(prefers-reduced-motion: reduce)');let colors={};
+function palette(){const s=getComputedStyle(root);for(const k of ['accent','text','bg','ink','border','warning'])colors[k]=s.getPropertyValue('--tt-'+k).trim();}
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
+// Original pixel art, drawn on a 40 x 32 grid. Body and feet animate independently so the feet stay on the edge.
+function draw(step,look,dir,time){ctx.clearRect(0,0,40,32);ctx.save();if(dir<0){ctx.translate(40,0);ctx.scale(-1,1)}
+ const walking=step>=0,bob=walking&&step%2===1?-1:0,accent=state==='attention'?colors.warning:colors.accent;
+ // Feet use four planted poses, never dipping through the composer border.
+ rect(walking?[9,11,13,11][step]:11,29,5,3,accent);rect(walking?[23,21,19,21][step]:21,29,5,3,accent);
+ ctx.save();ctx.translate(0,bob);
+ // Two little ears, squat body, a light belly, and a tiny tail.
+ rect(9,8,4,8,accent);rect(21,7,4,9,accent);rect(11,6,2,5,accent);rect(23,5,2,5,accent);
+ rect(9,13,17,15,accent);rect(7,16,21,9,accent);rect(11,11,12,18,accent);rect(5,23,4,4,accent);
+ ctx.globalAlpha=.24;rect(10,14,3,9,colors.text);rect(13,25,10,3,colors.bg);ctx.globalAlpha=1;
+ // Eyes blink only while moving; the loupe sits beside the forward eye.
+ const blink=walking&&time%6>5.8;rect(15,17,2,blink?1:3,colors.bg);rect(22,17,2,blink?1:3,colors.bg);rect(20,22,2,1,colors.bg);
+ // Magnifying glass: stepped ring, translucent lens, bright reflection and solid handle.
+ const gx=look?25:29,gy=look?14:19;
+ rect(gx+3,gy+8,2,7,colors.border);rect(gx+2,gy+12,4,2,accent);
+ ctx.globalAlpha=.28;rect(gx+1,gy+1,7,7,colors.accent);ctx.globalAlpha=1;
+ rect(gx+2,gy,5,1,colors.text);rect(gx+2,gy+8,5,1,colors.text);rect(gx,gy+2,1,5,colors.text);rect(gx+8,gy+2,1,5,colors.text);
+ rect(gx+1,gy+1,1,1,colors.text);rect(gx+7,gy+1,1,1,colors.text);rect(gx+1,gy+7,1,1,colors.text);rect(gx+7,gy+7,1,1,colors.text);rect(gx+2,gy+2,2,1,colors.text);
+ rect(25,25,5,2,accent);ctx.restore();
+ if(state==='done'){rect(28,6,2,2,colors.accent);rect(30,8,2,2,colors.accent);rect(32,6,2,2,colors.accent);rect(34,4,2,2,colors.accent)}
+ if(state==='attention'){rect(31,3,2,6,colors.warning);rect(31,11,2,2,colors.warning)}
+ ctx.restore();}
+
+// Prototype-only eligibility facts. Production must receive verified adapter evidence;
+// an old running command, generic tool activity or the assistant's prose is insufficient.
+const scenes={
+ monitoring:{background:true,watching:true,command:'npm run build',message:'The build is running in the background. I’m watching for its result.'},
+ quick:{background:false,watching:false,endsAfter:2000,command:'git status --short',message:'I’m checking the working folder.'},
+ brief:{background:true,watching:true,endsAfter:4000,command:'npm run build',message:'The build is nearly finished. I’m checking its result.'},
+ unconfirmed:{background:true,watching:null,command:'npm run build',message:'The build is running in the background. Its monitoring state is not confirmed.'},
+ long:{background:false,watching:false,command:'npm test',message:'The test command is still running.'},
+ unwatched:{background:true,watching:false,command:'npm run dev',message:'The preview server is running. I’m moving on to the next change.'},
+ done:{background:true,watching:false,terminal:'done',command:'npm run build',message:'The build finished.'},
+ attention:{background:true,watching:false,terminal:'attention',command:'npm run build',message:'The build stopped and needs your attention.'}
+};
+let scenario='monitoring',watchStart=performance.now(),lastGateKey='',visible=false;
+function updateGate(now){const scene=scenes[scenario],elapsedMs=Math.max(0,now-watchStart);state=scene.terminal||(scene.endsAfter&&elapsedMs>=scene.endsAfter?'done':'monitoring');
+ const nextVisible=state==='monitoring'&&scene.background===true&&scene.watching===true;
+ if(nextVisible&&!visible)start=now;visible=nextVisible;walkway.hidden=!visible;
+ const feedback=state==='done'?'Task finished · creature hidden':state==='attention'?'Needs you · creature hidden':!scene.background?'Ordinary command · creature stays hidden':scene.watching===null?'Monitoring unconfirmed · creature stays hidden':!scene.watching?'Agent is not watching · creature stays hidden':'Monitoring confirmed · creature visible';
+ const key=scenario+state+feedback;
+ if(key!==lastGateKey){lastGateKey=key;document.querySelector('#gate-feedback').textContent=feedback;
+  const status=state==='done'?'Task complete':state==='attention'?'Needs your attention':scene.watching===true?'Watching the build':scene.watching===null?'Background task running':scene.background?'Working on the next change':'Running command';
+  document.querySelector('#status-text').textContent=status;document.querySelector('.edge-status').textContent=status;document.querySelector('.status').dataset.state=state;
+  document.querySelector('#activity-state').textContent=state==='done'?'Completed':state==='attention'?'Stopped':'Running';
+  document.querySelector('#process-state').textContent='Waiting for the result';document.querySelector('.send').disabled=state!=='monitoring';document.querySelector('#finish').disabled=state!=='monitoring';
+ }
+ window.prototypeState={variant,scenario,backgroundConfirmed:scene.background,activelyWatching:scene.watching===true&&state==='monitoring',state,elapsedMs:Math.floor(elapsedMs),creatureVisible:visible};
+}
+function render(){composer.dataset.variant=variant;document.querySelector('#variant-label').textContent=variant+' · '+variants.find(v=>v[0]===variant)[1];document.querySelector('#scenario').value=scenario;document.querySelector('#still').setAttribute('aria-pressed',paused||motion.matches);palette();updateGate(performance.now());}
+function setScene(value){scenario=value;watchStart=performance.now();lastGateKey='';visible=false;start=watchStart;const scene=scenes[value];document.querySelector('.turn:not(.user) p').textContent=scene.message;document.querySelector('.activity code').textContent=scene.command;document.querySelector('.process code').textContent=scene.command;render()}
+function cycle(delta){variant=variants[(variants.findIndex(v=>v[0]===variant)+delta+3)%3][0];const url=new URL(location);url.searchParams.set('variant',variant);history.replaceState(null,'',url);render();}
+document.querySelector('#prev').onclick=()=>cycle(-1);document.querySelector('#next').onclick=()=>cycle(1);
+document.addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select,[contenteditable]'))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();cycle(e.key==='ArrowRight'?1:-1)}});
+document.querySelector('#scenario').onchange=e=>setScene(e.target.value);document.querySelector('.send').onclick=()=>setScene('attention');document.querySelector('#finish').onclick=()=>setScene('done');document.querySelector('#replay').onclick=()=>setScene(scenario);
+document.querySelector('#still').onclick=()=>{paused=!paused;render()};document.querySelector('#theme').onclick=e=>{const light=root.dataset.theme!=='light';root.dataset.theme=light?'light':'dark';e.currentTarget.setAttribute('aria-pressed',light);palette()};motion.onchange=render;
+function frame(now){updateGate(now);if(!visible){requestAnimationFrame(frame);return}const t=(now-start)/1000,still=paused||motion.matches||state!=='monitoring';const max=Math.max(0,walkway.clientWidth-80);let x=0,dir=1,look=true,moving=false;
+ if(variant==='A'){const duration=Math.max(4,max/33),period=2*duration+5,p=t%period;if(p<duration){x=max*p/duration;moving=true}else if(p<duration+2.5){x=max}else if(p<2*duration+2.5){x=max*(1-(p-duration-2.5)/duration);dir=-1;moving=true}else{dir=-1}}
+ if(variant==='B'){const reach=Math.min(82,max),p=t%10;if(p<2.5){x=reach*p/2.5;moving=true}else if(p<5.5){x=reach}else if(p<8){x=reach*(1-(p-5.5)/2.5);dir=-1;moving=true}else{dir=-1}}
+ if(variant==='C'){const reach=Math.max(0,max-174),p=t%14;if(p<4){x=reach*p/4;moving=true}else if(p<9){x=reach}else if(p<13){x=reach*(1-(p-9)/4);dir=-1;moving=true}else{dir=-1}}
+ if(still){x=variant==='C'?Math.max(0,max-174):variant==='B'?66:Math.min(92,max);dir=1;moving=false}
+ look=!moving;canvas.style.transform='translateX('+Math.round(x/2)*2+'px)';draw(moving?Math.floor(t*7)%4:-1,look,dir,t);requestAnimationFrame(frame)}
+setScene('monitoring');requestAnimationFrame(frame);
+</script>
+</body></html>

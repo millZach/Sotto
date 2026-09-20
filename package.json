@@ -26,7 +26,8 @@
     "package:dir:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
     "package:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-0.1.10-arm64.dmg\"",
     "perf:voice": "node scripts/voice-perf/run.mjs",
-    "test:voice-perf": "node --test scripts/voice-perf/*.test.mjs"
+    "test:voice-perf": "node --test scripts/voice-perf/*.test.mjs",
+    "prototype:process-creature": "node docs/prototypes/process-creature-prototype.mjs"
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
