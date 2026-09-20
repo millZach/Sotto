@@ -10,6 +10,44 @@ function gate<T>() { let resolve!: (value: T) => void; const promise = new Promi
 function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
 
 describe('request draft renderer ordering', () => {
+  it('waits for the newest answer edit while reload is saving an older revision', async () => {
+    const first = gate<RequestDraft>(), second = gate<RequestDraft>(), api = bridge(), saves: RequestDraft[] = []
+    api.save = vi.fn(input => { saves.push(input); return saves.length === 1 ? first.promise : second.promise })
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('Older'))
+    await vi.waitFor(() => expect(saves).toHaveLength(1))
+    let finished = false
+    const reloading = store.flushForReload().then(saved => { finished = true; return saved })
+    store.select('thread', 'req', 'q', selection('Newest'))
+    first.resolve(saves[0]!)
+    await vi.waitFor(() => expect(saves).toHaveLength(2))
+    expect(finished).toBe(false)
+    second.resolve(saves[1]!)
+    expect(await reloading).toBe(true)
+    expect(store.get('thread', 'req').selections.q?.text).toBe('Newest')
+  })
+
+  it('does not rewrite saved answers that main may already have retired', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('Already saved'))
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+    vi.mocked(api.save).mockClear()
+    store.prune('thread', [])
+    expect(await store.flushForReload()).toBe(true)
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it('retries a failed answer save after its request leaves the live set before reload', async () => {
+    const api = bridge(); api.save = vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async value => value)
+    const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('Keep this closed question answer'))
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('unsaved'))
+    store.prune('thread', [])
+    expect(await store.flushForReload()).toBe(true)
+    expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ selections: { q: selection('Keep this closed question answer') }, held: false }))
+  })
+
   it('keeps local text written after an initial load failure when retry restores an older draft', async () => {
     const api = bridge(); api.get = vi.fn().mockRejectedValueOnce(new Error('Disconnected bridge')).mockResolvedValue(draft('Old saved text', 5))
     const store = new RequestAnswerStore(() => api)

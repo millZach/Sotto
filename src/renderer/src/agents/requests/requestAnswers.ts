@@ -191,6 +191,22 @@ export class RequestAnswerStore {
     return [...this.bindings.keys()].every(key => this.entries.get(key)?.save === 'saved')
   }
 
+  /** Save retained local answers even when their live cards (and Save actions) have gone away. */
+  async flushForReload(): Promise<boolean> {
+    for (;;) {
+      const revisions = new Map([...this.bindings.keys()].map(key => [key, this.entries.get(key)?.revision]))
+      await Promise.all([...this.bindings].map(async ([key, binding]) => {
+        await binding.loading
+        await binding.writing
+        if (this.entries.get(key)?.save === 'saved') return
+        const split = key.lastIndexOf('\0')
+        await this.flush(key.slice(0, split), key.slice(split + 1))
+      }))
+      if ([...this.bindings.keys()].some(key => revisions.get(key) !== this.entries.get(key)?.revision)) continue
+      return this.canReload()
+    }
+  }
+
   /** Stable recovery status for this owner's bindings, including ones a remounted view never saw live. */
   recoverySnapshot(owner: RequestDraftOwner, live: readonly AgentRequest[]): string {
     const ownerKey = requestDraftOwnerKey(owner)

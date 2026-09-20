@@ -357,13 +357,18 @@ export class ThreadDraftStore {
 
   flushAll(): void { for (const threadId of [...this.timers.keys()]) this.flush(threadId) }
 
+  /** Whether every current composer revision has durability evidence right now. */
+  canReload(): boolean {
+    return [...this.entries.values()].every(entry => !entry.draft.draftId || entry.saved)
+  }
+
   /** A deliberate window reload waits for durability evidence, including edits made while saving. */
   async flushForReload(): Promise<boolean> {
     for (;;) {
       const revisions = new Map([...this.entries].map(([id, entry]) => [id, entry.draft.draftId]))
       await Promise.all([...this.entries.keys()].map(id => this.flushPending(id)))
       if ([...this.entries].some(([id, entry]) => revisions.get(id) !== entry.draft.draftId)) continue
-      return [...this.entries.values()].every(entry => !entry.draft.draftId || entry.saved)
+      return this.canReload()
     }
   }
 
