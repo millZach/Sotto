@@ -1,6 +1,6 @@
 # Devin local provider implementation ? issue 150
 
-Status: implemented locally; final validation and review in progress. Verification is Windows-only for this PR; Zach deferred Mac verification on September 20 because no Mac is available.
+Status: implemented and pushed; all Windows validation passes. Independent review is awaiting reviewer authorization. Verification is Windows-only for this PR; Zach deferred Mac verification on September 20 because no Mac is available.
 
 ## Scope and acceptance
 
@@ -15,9 +15,10 @@ Implement [issue 150](https://github.com/millZach/Sotto/issues/150) from base da
 - [x] Complete final lifecycle and post-session policy regression checks.
 - [x] Finish Electron captures and visual/keyboard review at 1600?1000, 1280?800, and 820?560, light/dark/reduced motion.
 - [ ] Deferred by Zach: native Apple silicon verification; no Mac support claim.
-- [ ] Run full typecheck, lint, tests with two workers, and notices.
-- [ ] Complete Standards and Spec reviews using the configured reviewer.
-- [ ] Commit/push only this work, create PR, resolve review findings and CI, then merge when every required gate passes.
+- [x] Run full typecheck, lint, tests with two workers, and notices.
+- [ ] Complete Standards and Spec reviews. Automatic approval review blocked the configured Claude CLI because it would receive repository contents; Zach was asked to authorize it or choose Codex reviewers.
+- [x] Commit and push only this work to feat/devin-local-provider.
+- [ ] Create PR after independent review, resolve findings and CI, then merge when every required gate passes.
 
 ## Implementation decisions
 
@@ -30,3 +31,7 @@ Existing desktop provider and thread surfaces are retained. The provider grid fi
 ## Revised verification scope
 
 On September 20 Zach confirmed that no Mac is available and directed this work to proceed with Windows only. Native Apple silicon verification is deferred and is no longer a pre-merge gate for this PR. The original issue/spec requested both platforms; this is the user-approved deviation. The Mac route remains unverified.
+
+## Final Windows gates ? September 20
+
+Typecheck, lint, and notices pass (174 notice components). Full `npm test -- --maxWorkers=2`: 301 files passed, 17 skipped; 3,920 tests passed, 32 skipped, 589.80 seconds. The earlier full run?s sole stale error-message assertion was corrected. Built Devin/provider-selection Electron specs passed 2 tests in 25.7 seconds after main integration. Native Windows host journey passed 1 test in 27.42 seconds. No PR or merge yet; review-route approval is outstanding.
