@@ -150,7 +150,8 @@ describe('sidebar working-copy context', () => {
     const button = () => screen.getByRole('button', { name: 'Grok voice previews' })
     expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('main · Project folder')
     expect(button()).toHaveAccessibleDescription(/Sonnet 4.5, main, Project folder/)
-    expect(button()).toHaveAccessibleDescription(/7:58 am/)
+    // Assert that the localized activity time is exposed, independent of the runner timezone.
+    expect(button()).toHaveAccessibleDescription(`Claude,Done ${rowFor(state, thread.id).when} Sonnet 4.5, main, Project folder`)
     const update = (worktree: typeof thread.worktree) => act(() => live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === thread.id ? { ...item, worktree } : item) } }))
     update({ mode: 'independent', status: 'ready', path: '/checkout', repositoryRoot: '/checkout' })
     expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('Detached HEAD · Worktree')

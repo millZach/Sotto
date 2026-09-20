@@ -39,3 +39,5 @@ Local captures and logs are under the ignored `artifacts/thread-sidebar/` direct
 ## PR review follow-up
 
 Greptile on PR #151 identified the divider action name and detached-checkout icon inconsistency. The divider now says "Resize sidebar" with an accessible keyboard description. Working-copy symbols match the existing header control for ready, detached, pending and failed states. The 43 focused unit tests and both Electron sidebar journeys pass after these changes; typecheck, lint and notices also pass.
+
+CI exposed a timezone-specific test expectation: Pacific time 7:58 am was hard-coded while the Windows runner renders the same activity as 2:58 pm in UTC. The failure reproduced locally with TZ=UTC. The assertion now checks the localized activity time from the row facts rather than a fixed timezone. All nine sidebar-status tests pass under both UTC and America/Los_Angeles; production timestamp behavior is unchanged.
