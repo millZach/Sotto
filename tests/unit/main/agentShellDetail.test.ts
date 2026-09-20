@@ -331,7 +331,6 @@ describe('coalesced thread detail at the IPC boundary', () => {
     vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
     expect(vi.getTimerCount()).toBe(0)
     publisher.publish(detail('docs', 1))
-    vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
     publisher.dispose()
     expect(vi.getTimerCount()).toBe(0)
   })
