@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
@@ -80,6 +80,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
   const detailsId = useId()
   const archived = isThreadArchived(row.thread)
   const copy = describeWorkingCopy(row.thread, row.project)
+  const WorkingCopyIcon = copy.status === 'pending' || copy.status === 'error' ? FolderGit2 : copy.branch || copy.repositoryRoot ? GitBranch : Folder
   const branch = copy.status === 'ready' ? copy.branch : undefined
   const copyLabel = copy.status === 'error' ? 'Worktree not ready' : copy.status === 'pending' ? (copy.mode === 'independent' ? 'New worktree pending' : 'Project folder pending') : copy.mode === 'independent' ? 'Worktree' : copy.mode === 'shared' ? 'Project folder' : copy.label
   const branchName = branch ?? (copy.status === 'ready' && copy.repositoryRoot ? 'Detached HEAD' : copyLabel)
@@ -106,7 +107,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
         <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} title={status + (row.connected ? '' : ' · Disconnected')}><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
       </span>
       <span className="thread-nav__branch" data-working-copy-state={copy.status} title={branchName !== copyLabel ? `${branchName} · ${copyLabel}` : copyLabel}>
-        {branch ? <GitBranch size={12} aria-hidden="true" /> : <Folder size={12} aria-hidden="true" />}
+        <WorkingCopyIcon size={12} aria-hidden="true" />
         <span className="thread-nav__branch-name">{branchName}</span>{branchName !== copyLabel ? <span className="thread-nav__copy-kind"> · {copyLabel}</span> : null}
       </span>
     </button>

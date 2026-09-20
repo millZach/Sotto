@@ -35,3 +35,7 @@ Local captures and logs are under the ignored `artifacts/thread-sidebar/` direct
 - [Neighbor recheck](../../artifacts/thread-sidebar/e2e-neighbor-recheck.log)
 - [Clean baseline reproduction](../../artifacts/thread-sidebar/e2e-baseline.log)
 - [Design capture](../../artifacts/thread-sidebar/design-capture.log)
+
+## PR review follow-up
+
+Greptile on PR #151 identified the divider action name and detached-checkout icon inconsistency. The divider now says "Resize sidebar" with an accessible keyboard description. Working-copy symbols match the existing header control for ready, detached, pending and failed states. The 43 focused unit tests and both Electron sidebar journeys pass after these changes; typecheck, lint and notices also pass.

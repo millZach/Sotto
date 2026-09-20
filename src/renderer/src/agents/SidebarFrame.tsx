@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessageSquare, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
@@ -153,6 +153,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   const addProject = useAddProject(state, command)
   const mac = (platform ?? app?.platform) === 'darwin'
   const size = useSidebarSize()
+  const resizeHelpId = useId()
   const [resizing, setResizing] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const previousCollapsed = useRef(size.collapsed)
@@ -195,7 +196,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
       {foot ?? <SidebarFoot />}
-    </div> : <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label="Sidebar width" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
+    </div> : <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label="Resize sidebar" aria-describedby={resizeHelpId} aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
       aria-valuetext={`${size.width} pixels`} title="Drag to resize. Use arrow keys when focused. Double-click to reset."
       onPointerDown={event => {
         if (event.button !== 0) return
@@ -208,7 +209,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault(); event.stopPropagation()
         size.resize(event.key === 'Home' ? 260 : event.key === 'End' ? size.maximum : size.width + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10))
-      }} />}
+      }}><span id={resizeHelpId} className="tt-visually-hidden">Use Left and Right arrow keys to resize. Hold Shift for larger steps. Home chooses the narrowest width; End chooses the widest.</span></div>}
   </aside>
 }
 

@@ -23,7 +23,7 @@ async function prepare(launched: LaunchedSotto): Promise<void> {
 }
 
 const sidebar = (page: Page): Locator => page.getByRole('complementary', { name: 'Thread sidebar', exact: true })
-const separator = (page: Page): Locator => page.getByRole('separator', { name: 'Sidebar width', exact: true })
+const separator = (page: Page): Locator => page.getByRole('separator', { name: 'Resize sidebar', exact: true })
 const row = (page: Page, title: string): Locator => sidebar(page).locator('.thread-nav__row').filter({ has: page.getByRole('button', { name: title, exact: true }) })
 
 async function dragWidth(page: Page, width: number): Promise<void> {
@@ -73,6 +73,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await prepare(launched)
     await expectWidth(page, 320)
     await expect(separator(page)).toHaveAttribute('aria-orientation', 'vertical')
+    await expect(separator(page)).toHaveAccessibleDescription(/Left and Right arrow keys.*Shift.*Home.*End/)
     await expect(separator(page)).toHaveAttribute('aria-valuemin', '260')
     await expect(separator(page)).toHaveAttribute('aria-valuemax', '480')
     const preview = row(page, 'Grok voice previews')

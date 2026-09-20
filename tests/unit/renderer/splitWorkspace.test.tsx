@@ -57,7 +57,7 @@ const openBesideButton = (title: string) => within(sidebar()).getByRole('button'
 describe('split thread workspace', () => {
   it('opens a second thread beside the first, evenly, and gives the new pane the selection once', async () => {
     const view = mount()
-    expect(screen.queryByRole('separator', { name: /^Resize / })).toBeNull()
+    expect(screen.queryByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeNull()
     await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
     const panes = within(screen.getByRole('group', { name: 'Thread panes' })).getAllByRole('region')
     expect(panes.map(item => item.getAttribute('aria-label'))).toEqual(['Grok voice previews', 'Streaming WAV stall'])
@@ -101,7 +101,7 @@ describe('split thread workspace', () => {
     const after = view.command.mock.calls.slice(before).map(([request]) => request.type)
     expect(after).toEqual(['select-thread'])
     expect(view.selections().at(-1)).toBe('grok-previews')
-    expect(screen.queryByRole('separator', { name: /^Resize / })).toBeNull()
+    expect(screen.queryByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Streaming WAV stall' })).toBeNull()
     expect(within(sidebar()).getByRole('button', { name: 'Streaming WAV stall', exact: true })).toBeInTheDocument()
     expect(view.store.get()).toBe(SINGLE_VIEW)
@@ -163,7 +163,7 @@ describe('split thread workspace', () => {
     fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize panes' }), { key: 'ArrowRight' })
     fireEvent.change(view.prompt('Grok voice previews'), { target: { value: 'Kept while hidden' } })
     view.resize(700)
-    expect(screen.queryByRole('separator', { name: /^Resize / })).toBeNull()
+    expect(screen.queryByRole('separator', { name: /^Resize (?!sidebar$)/ })).toBeNull()
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getAllByRole('tab').map(tab => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['Grok voice previews', 'false'], ['Streaming WAV stall', 'true']])
     const hidden = document.getElementById('thread-pane-grok-previews')!
@@ -292,12 +292,12 @@ describe('multi-pane workspace', () => {
     // Wide enough for three usable columns once a fifth pane arrives.
     const view = mount({ width: 1400, height: TALL })
     await openAll('Streaming WAV stall')
-    expect(screen.getAllByRole('separator', { name: /^Resize / })).toHaveLength(1)
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(1)
     await openAll('Footer links')
     expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links'])
     expect(screen.getByRole('group', { name: 'Thread panes' })).toHaveAttribute('data-rows')
     // One divider between the top two, one between the rows; the third pane spans its row.
-    expect(screen.getAllByRole('separator', { name: /^Resize / }).map(item => [item.getAttribute('aria-label'), item.getAttribute('aria-orientation')])).toEqual([
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ }).map(item => [item.getAttribute('aria-label'), item.getAttribute('aria-orientation')])).toEqual([
       ['Resize Grok voice previews and Streaming WAV stall', 'vertical'], ['Resize rows 1 and 2', 'horizontal'],
     ])
     const area = view.pane('Footer links').parentElement!
@@ -305,7 +305,7 @@ describe('multi-pane workspace', () => {
     expect(area.style.getPropertyValue('--pane-2-w')).toBe('calc((100% - 0px) * 1)')
     expect(area.style.getPropertyValue('--pane-2-y')).toBe('calc((100% - 9px) * 0.5 + 9px)')
     await openAll('Weekly note')
-    expect(screen.getAllByRole('separator', { name: /^Resize / })).toHaveLength(3)
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(3)
     expect(area.style.getPropertyValue('--pane-3-x')).toBe('calc((100% - 9px) * 0.5 + 9px)')
     await openAll('Visual gate flake')
     expect(regions()).toHaveLength(5)
@@ -329,15 +329,15 @@ describe('multi-pane workspace', () => {
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('group', { name: 'Thread panes' })).not.toHaveAttribute('data-rows')
-    const dividers = screen.getAllByRole('separator', { name: /^Resize / })
+    const dividers = screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })
     expect(dividers.map(item => item.getAttribute('aria-orientation'))).toEqual(['vertical', 'vertical'])
     expect(dividers.map(item => item.getAttribute('aria-valuenow'))).toEqual(['33', '67'])
     fireEvent.keyDown(dividers[1]!, { key: 'ArrowLeft' })
-    expect(screen.getAllByRole('separator', { name: /^Resize / })[1]).toHaveAttribute('aria-valuenow', '62')
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })[1]).toHaveAttribute('aria-valuenow', '62')
     fireEvent.click(within(view.pane('Footer links')).getByRole('button', { name: 'Single row' }))
     expect(screen.getByRole('separator', { name: 'Resize Grok voice previews and Streaming WAV stall' })).toHaveAttribute('aria-valuenow', '55')
     fireEvent.click(within(view.pane('Footer links')).getByRole('button', { name: 'Single row' }))
-    expect(screen.getAllByRole('separator', { name: /^Resize / })[1]).toHaveAttribute('aria-valuenow', '62')
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })[1]).toHaveAttribute('aria-valuenow', '62')
     expect(view.store.get().arrangement).toBe('row')
   })
 
@@ -363,7 +363,7 @@ describe('multi-pane workspace', () => {
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getAllByRole('tab')).toHaveLength(4)
     expect(within(tabs).getByRole('tab', { name: 'Grok voice previews' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.queryAllByRole('separator', { name: /^Resize / })).toHaveLength(0)
+    expect(screen.queryAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(0)
     expect(document.getElementById('thread-pane-footer-links')).toHaveAttribute('inert')
     expect(screen.getByText('Grok voice previews zoomed')).toHaveAttribute('role', 'status')
     // Zoom focused the pane it was asked for; nothing else was sent.
@@ -391,7 +391,7 @@ describe('multi-pane workspace', () => {
     expect(within(weekly).getByRole('button', { name: 'Close Weekly note pane' })).toBeInTheDocument()
     view.resize(WIDE, TALL)
     expect(screen.queryByRole('tablist', { name: 'Open panes' })).toBeNull()
-    expect(screen.getAllByRole('separator', { name: /^Resize / })).toHaveLength(3)
+    expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(3)
   })
 
   it('keeps the arrangement switch when a single row goes compact, and returns to the same grid from it by keyboard', async () => {
@@ -404,7 +404,7 @@ describe('multi-pane workspace', () => {
     await act(async () => { fireEvent.click(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })) })
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getByRole('tab', { name: 'Weekly note' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.queryAllByRole('separator', { name: /^Resize / })).toHaveLength(0)
+    expect(screen.queryAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(0)
     // The shown pane keeps the switch, pressed for the retained row; hidden panes stay out of reach.
     const weekly = document.getElementById('thread-pane-weekly-note')!
     const toggle = within(weekly).getByRole('button', { name: 'Single row' })
