@@ -966,7 +966,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
       const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
       await dialog.getByRole('button', { name: 'sotto-site C:/sotto-site', exact: true }).click()
-      await expect(dialog.getByRole('radio', { name: 'New worktree', exact: true })).toBeChecked()
+      await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeChecked()
       await capturePage(page, `threads-working-copy-choice-${appearance}.png`, { theme: appearance, category: 'threads', state: 'working-copy-choice' })
     })
   })

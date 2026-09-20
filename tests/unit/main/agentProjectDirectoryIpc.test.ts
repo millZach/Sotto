@@ -39,11 +39,12 @@ function fixture() {
   const parent = { isDestroyed: () => false }
   native.fromWebContents.mockReturnValue(parent)
   native.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\Existing Folder\\project'] })
-  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() })
+  const workingCopyOptions = vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] }))
+  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, workingCopyOptions)
   disposables.push(dispose)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (source = event, ...args: unknown[]) => handlers.get(AGENT_CHOOSE_PROJECT_DIRECTORY)!(source, ...args)
-  return { invoke, event, main, widget, parent, control, handlers, dispose }
+  return { invoke, event, main, widget, parent, control, handlers, dispose, workingCopyOptions }
 }
 
 function enableE2E() {
@@ -53,6 +54,18 @@ function enableE2E() {
 }
 
 describe('project directory picker IPC', () => {
+  it('lists worktree choices for a trusted main window and refuses other senders or malformed requests', async () => {
+    const f = fixture()
+    const invoke = async (event: IpcInvocationEvent, ...args: unknown[]) => f.handlers.get('sotto:agents:working-copy-options')!(event, ...args)
+    await expect(invoke(f.event, 'project')).resolves.toMatchObject({ isGit: true, currentBranch: 'main' })
+    expect(f.workingCopyOptions).toHaveBeenCalledExactlyOnceWith('project')
+    await expect(invoke({ sender: f.widget.webContents, senderFrame: f.widget.webContents.mainFrame }, 'project')).rejects.toThrow()
+    await expect(invoke({ ...f.event, senderFrame: null }, 'project')).rejects.toThrow()
+    for (const args of [[], [''], [{}], ['project', 'extra']]) await expect(invoke(f.event, ...args)).rejects.toThrow()
+    expect(f.workingCopyOptions).toHaveBeenCalledTimes(1)
+    f.dispose()
+    expect(f.handlers.has('sotto:agents:working-copy-options')).toBe(false)
+  })
   it('allows trusted main, parents the directory-only dialog to its window and returns the exact selection without project commands', async () => {
     const f = fixture()
     await expect(f.invoke()).resolves.toBe('D:\\Existing Folder\\project')

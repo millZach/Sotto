@@ -86,6 +86,10 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
         const projectId = (await agents.get()).host.projects.find(item => item.title === title)!.id
         await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test', managed: false, workingCopy })
         created[thread] = (await agents.get()).host.threads.find(item => item.title === thread)!.id
+        if (workingCopy === 'independent') {
+          await agents.command({ type: 'manual-send', threadId: created[thread]!, text: 'Inspect the working copy.' })
+          await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: created[thread]!, status: 'idle', text: 'Working copy inspected.' })
+        }
       }
       return created
     }, [repo, notes])

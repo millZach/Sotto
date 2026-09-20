@@ -47,7 +47,7 @@ describe('native folder project resolution', () => {
     fireEvent.change(screen.getByLabelText('Thread permissions'), { target: { value: 'full-access' } })
     await submit()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'independent', titleSource: 'user', reasoningEffort: 'high', runtimeMode: 'full-access' })
+    expect(command).toHaveBeenLastCalledWith({ type: 'create-thread', projectId: actual.id, title: 'My work', modelId: 'codex:model', managed: false, workingCopy: 'shared', titleSource: 'user', reasoningEffort: 'high', runtimeMode: 'full-access' })
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
@@ -183,8 +183,8 @@ describe('a client-minted thread id', () => {
     const start = view.start()
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', projectId: actual.id, title: 'My work', threadId: start.thread.id }))
     expect(start.thread).toMatchObject({ id: expect.any(String), projectId: actual.id, title: 'My work', modelId: 'codex:model',
-      status: 'idle', messages: [], requests: [], nativeSessionStarted: false, historyStatus: 'ready', worktree: { mode: 'independent', status: 'pending' } })
-    expect(start.choices).toEqual({ projectId: actual.id, title: 'My work', modelId: 'codex:model', workingCopy: 'independent' })
+      status: 'idle', messages: [], requests: [], nativeSessionStarted: false, historyStatus: 'ready', worktree: { mode: 'shared', status: 'pending' } })
+    expect(start.choices).toEqual({ projectId: actual.id, title: 'My work', modelId: 'codex:model', workingCopy: 'shared' })
     settle()
     await expect(start.created).resolves.toBeNull()
   })
@@ -215,16 +215,83 @@ describe('a client-minted thread id', () => {
 })
 
 describe('working copy choice', () => {
-  it('asks for a new worktree by default and says what an ordinary folder does', async () => {
+  it('does not guess defaults after a settings read fails and allows a retry', async () => {
+    const state = fixture([actual])
+    const command = vi.fn(async () => state)
+    const getSettings = vi.fn().mockRejectedValueOnce(new Error('read failed')).mockResolvedValue({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: {} })
+    vi.stubGlobal('sotto', { getSettings })
+    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not read your working-copy defaults.')
+    expect(screen.getByRole('button', { name: 'Create thread' })).toBeDisabled()
+    expect(command).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry defaults' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    expect(screen.getByRole('button', { name: 'Create thread' })).not.toBeDisabled()
+  })
+
+  it('honors a project override ahead of the global default and sends selected base and origin', async () => {
+    const state = fixture([actual])
+    const command = vi.fn(async () => state)
+    vi.stubGlobal('sotto', {
+      getSettings: vi.fn(async () => ({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: { [actual.id]: 'independent' } })),
+      agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main', 'develop'], worktrees: [] })) },
+    })
+    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    fireEvent.change(await screen.findByLabelText('Base branch'), { target: { value: 'develop' } })
+    expect(screen.getByLabelText('Start from origin')).toBeChecked()
+    expect(command).not.toHaveBeenCalled()
+    await submit()
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: true }))
+  })
+
+  it('explicitly chooses an existing checkout and explains that its files and branch are shared', async () => {
+    const state = fixture([actual])
+    const command = vi.fn(async () => state)
+    vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [{ path: 'C:/work/task', branch: 'feat/task' }] })) } })
+    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
+    fireEvent.change(await screen.findByLabelText('Worktree'), { target: { value: 'C:/work/task' } })
+    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this worktree.')
+    expect(screen.queryByLabelText('Base branch')).toBeNull()
+    await submit()
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', existingWorktreePath: 'C:/work/task' }))
+  })
+
+  it('preserves an explicit local base without origin through creation', async () => {
+    const state = fixture([actual])
+    const command = vi.fn(async () => state)
+    vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] })) } })
+    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
+    fireEvent.click(await screen.findByLabelText('Start from origin'))
+    await submit()
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', startFromOrigin: false }))
+  })
+
+  it('saves and clears a project override without changing a global preference', async () => {
+    const state = fixture([actual])
+    const getSettings = vi.fn(async () => ({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} }))
+    const updateSettings = vi.fn(async (patch: object) => ({ ...await getSettings(), ...patch }))
+    vi.stubGlobal('sotto', { getSettings, updateSettings })
+    render(<NewThreadDialog state={state} command={vi.fn()} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    fireEvent.change(screen.getByLabelText('Default for this project'), { target: { value: 'independent' } })
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ projectThreadWorkingCopyDefaults: { [actual.id]: 'independent' } }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    fireEvent.change(screen.getByLabelText('Default for this project'), { target: { value: 'inherit' } })
+    await waitFor(() => expect(updateSettings).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: {} }))
+  })
+
+  it('uses the project folder by default and explains shared files and branch', async () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
     setup(command, fixture([actual]))
     await browse()
     const group = screen.getByRole('group', { name: 'Working copy' })
-    expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked()
-    expect(group).toHaveAccessibleDescription(/Folders without Git are used as they are/)
+    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
+    expect(group).toHaveAccessibleDescription(/Shares files and branch/)
     expect(group.textContent).not.toMatch(/isolat|memory/i)
     await submit()
-    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent' }))
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'shared' }))
   })
 
   it('sends a deliberately chosen shared project folder and keeps the choice after a rejected create', async () => {
@@ -233,7 +300,7 @@ describe('working copy choice', () => {
     const view = setup(command, fixture([actual]))
     await browse()
     fireEvent.click(screen.getByRole('radio', { name: 'Project folder' }))
-    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Edits the same files as other threads in this project.')
+    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this folder.')
     await submit()
     expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable.')
     expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()

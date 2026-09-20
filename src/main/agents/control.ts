@@ -35,7 +35,7 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
-  'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread', 'compact-thread',
+  'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
 ])
 /**
  * The commands that name one thread and act only on it. Each runs in that thread's own lane, so an
@@ -54,7 +54,7 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
  * them waits on the global lane or on another thread. They are unchanged.
  */
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
-  'manual-send', 'steer', 'answer', 'configure-thread', 'compact-thread',
+  'manual-send', 'steer', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
   'load-earlier-messages',
 ])
@@ -1374,6 +1374,11 @@ export class AgentControl {
         this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
         return
       }
+      case 'configure-thread-working-copy': {
+        if (!this.dependencies.host.configureThreadWorkingCopy) throw new Error('Changing the working copy is unavailable.')
+        this.acceptSnapshot(await this.dependencies.host.configureThreadWorkingCopy(command.threadId, command))
+        return
+      }
       case 'restore-thread-branch': {
         if (!this.dependencies.host.restoreThreadBranch) throw new Error('Switching this thread’s branch is unavailable.')
         this.acceptSnapshot(await this.dependencies.host.restoreThreadBranch(command.threadId, command.withUncommittedChanges === true))
@@ -1406,6 +1411,9 @@ export class AgentControl {
           await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
             ...(command.titleSource ? { titleSource: command.titleSource } : {}),
             ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
+            ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
+            ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
+            ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
             ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}) }, turn)
         } catch (error) { if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = previousSelectionPinned; throw error }

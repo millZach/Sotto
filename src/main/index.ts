@@ -68,6 +68,7 @@ import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { ShortTextWriter } from './llm/shortTextWriter'
 import { threadTitleWriter } from './llm/threadTitle'
+import { threadBranchWriter } from './llm/threadBranch'
 import { pullRequestTextWriter } from './llm/pullRequestText'
 import { commitMessageWriter } from './llm/commitMessage'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
@@ -489,6 +490,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await settings.migrate().catch(() => logOperational('secure-key-migration-unavailable'))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
+  let workingCopySettings = startupSettings
   // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
   // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
@@ -575,6 +577,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), userDataPath, () => agentHistoryEnabled)
+  agentHost.setWorkingCopyDefaults(projectId => workingCopySettings.projectThreadWorkingCopyDefaults[projectId] ?? workingCopySettings.threadWorkingCopyDefault)
+  agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, () => settings.forFormatting()))
   const turns = new TurnRecorder({
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
@@ -849,6 +853,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(currentTrayState)
     },
     async onSettingsChanged(settings): Promise<void> {
+      workingCopySettings = settings
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()
@@ -1000,7 +1005,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, agentControl, hostService, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-      }, grokSpeech, kokoroSpeech)
+      }, grokSpeech, kokoroSpeech, projectId => agentHost.workingCopyOptions(projectId))
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),

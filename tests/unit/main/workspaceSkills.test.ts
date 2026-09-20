@@ -39,25 +39,25 @@ it('loads unstarted skills from the independent project subfolder and rejects it
   await runWorktreeGit(repository, ['-c', 'user.name=Sotto Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Fixture'])
   f.adapters.codex.state.projects[0]!.path = subfolder
   const list = vi.fn(async (threadId: string, _reload?: boolean, scope?: AgentSkillScope) => ({
-    threadId, cwd: scope?.workingDirectory ?? '', providerId: 'codex' as const, status: 'ready' as const, skills: [], errors: [],
+    threadId, cwd: scope?.workingDirectory ?? f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')?.workingDirectory ?? '', providerId: 'codex' as const, status: 'ready' as const, skills: [], errors: [],
   }))
   Object.assign(f.adapters.codex, { listThreadSkills: list })
   f.adapters.codex.state.capabilities.skills = true
   const snapshot = await f.host.connect()
   const project = snapshot.projects.find(project => project.providerId === 'codex')!
   const model = snapshot.models.find(model => model.providerId === 'codex')!
-  await f.host.execute({ type: 'create-thread', commandId: 'isolated', threadId: 'isolated', projectId: project.id, title: 'Independent', modelId: model.id })
-  // Creation returns before the checkout; asking for the folder waits for the setup it started.
+  await f.host.execute({ type: 'create-thread', commandId: 'isolated', threadId: 'isolated', projectId: project.id, title: 'Independent', modelId: model.id, workingCopy: 'independent' })
+  // Preview catalogs read the project; the first send alone allocates its worktree.
   expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')?.worktree?.status).toBe('pending')
-  await f.host.threadWorkingDirectory('isolated')
+  expect(await f.host.listThreadSkills('isolated', true)).toMatchObject({ cwd: subfolder })
+  expect(f.registry.byThread('isolated')).toBeUndefined()
+  await f.host.execute({ type: 'send', commandId: 'first', threadId: 'isolated', messageId: 'first', text: 'First prompt' })
   const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')!
   expect(thread.worktree?.status).toBe('ready')
   expect(thread.workingDirectory).toBe(join(thread.worktree!.path!, 'packages', 'app'))
   expect(thread.projectId).toBe(project.id)
   expect(await f.host.listThreadSkills(thread.id, true)).toMatchObject({ cwd: thread.workingDirectory })
-  expect(list).toHaveBeenLastCalledWith(thread.id, true, { providerId: 'codex', workingDirectory: thread.workingDirectory })
-  expect(f.registry.byThread(thread.id)).toBeUndefined()
-  expect(f.adapters.codex.commands).toEqual([])
+  expect(f.registry.byThread(thread.id)).toBeDefined()
   await rename(thread.workingDirectory!, join(thread.worktree!.path!, 'packages', 'app-preserved'))
   list.mockClear()
   await expect(f.host.listThreadSkills(thread.id)).rejects.toThrow()
@@ -73,9 +73,37 @@ it('does not browse the project catalog when independent worktree setup failed',
   const snapshot = await f.host.connect()
   const project = snapshot.projects.find(project => project.providerId === 'codex')!
   const model = snapshot.models.find(model => model.providerId === 'codex')!
-  await f.host.execute({ type: 'create-thread', commandId: 'failed', threadId: 'failed', projectId: project.id, title: 'Recoverable', modelId: model.id })
+  await f.host.execute({ type: 'create-thread', commandId: 'failed', threadId: 'failed', projectId: project.id, title: 'Recoverable', modelId: model.id, workingCopy: 'independent' })
+  await expect(f.host.execute({ type: 'send', commandId: 'failed-send', threadId: 'failed', messageId: 'failed-send', text: 'First prompt' })).rejects.toThrow('no commit')
   await expect(f.host.listThreadSkills('failed')).rejects.toThrow('no commit')
   expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'failed')?.worktree?.status).toBe('error')
   expect(list).not.toHaveBeenCalled()
   expect(f.registry.byThread('failed')).toBeUndefined()
+})
+
+it('maps a project skill preview into the new checkout and validates it before native creation', async () => {
+  const f = await workspaceFixture(); fixtures.push(f)
+  const repository = f.adapters.codex.state.projects[0]!.path
+  const relativeSkill = join('.agents', 'skills', 'review', 'SKILL.md')
+  await mkdir(join(repository, '.agents', 'skills', 'review'), { recursive: true })
+  await writeFile(join(repository, relativeSkill), 'Synthetic review skill')
+  await runWorktreeGit(repository, ['init'])
+  await runWorktreeGit(repository, ['add', '.'])
+  await runWorktreeGit(repository, ['-c', 'user.name=Sotto Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Fixture'])
+  const list = vi.fn(async (threadId: string, _reload?: boolean, scope?: AgentSkillScope) => ({
+    threadId, cwd: scope!.workingDirectory, providerId: 'codex' as const, status: 'ready' as const,
+    skills: [{ name: 'review', path: join(scope!.workingDirectory, relativeSkill), description: 'Review', scope: 'repo' as const }], errors: [],
+  }))
+  Object.assign(f.adapters.codex, { listThreadSkills: list })
+  f.adapters.codex.state.capabilities.skills = true
+  const snapshot = await f.host.connect()
+  const project = snapshot.projects.find(project => project.providerId === 'codex')!
+  const model = snapshot.models.find(model => model.providerId === 'codex')!
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'skills', projectId: project.id, title: 'Skills', modelId: model.id, workingCopy: 'independent' })
+  const preview = await f.host.listThreadSkills('skills')
+  expect(preview.cwd).toBe(repository)
+  await f.host.execute({ type: 'send', commandId: 'send', threadId: 'skills', messageId: 'send', text: '$review Check', skills: [{ name: 'review', path: preview.skills[0]!.path }] })
+  const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'skills')!
+  expect(f.adapters.codex.commands.at(-1)).toMatchObject({ type: 'send', skills: [{ name: 'review', path: join(thread.workingDirectory!, relativeSkill) }] })
+  expect(list.mock.calls.some(call => call[2]?.workingDirectory === thread.workingDirectory)).toBe(true)
 })

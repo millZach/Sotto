@@ -103,25 +103,38 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     threadId = created.activeThreadId!
     expect(created.host.threads).toHaveLength(1)
     const working = await thread()
-    expect(working.worktree).toMatchObject({ mode: 'independent', status: 'ready' })
-    const cwd = await realpath(working.workingDirectory!)
-    const inside = relative(root, cwd)
-    expect(isAbsolute(inside) || inside === '..' || inside.startsWith(`..${sep}`)).toBe(false)
-    expect(cwd).not.toBe(await realpath(project))
+    expect(working.worktree).toMatchObject({ mode: 'independent', status: 'pending' })
+    expect(working.worktree?.path).toBeUndefined()
     const selected = await command({ type: 'refresh-thread-skills', threadId, forceReload: true })
     const catalog = selected.skillCatalogs?.find(value => value.threadId === threadId)
     expect(catalog?.status).toBe('ready')
-    expect(await realpath(catalog!.cwd)).toBe(cwd)
+    expect(await realpath(catalog!.cwd)).toBe(await realpath(project))
     const skill = catalog!.skills.find(value => value.name === skillName)!
     expect(skill).toBeTruthy()
-    expect(await realpath(skill.path)).toBe(await realpath(join(cwd, '.agents', 'skills', skillName, 'SKILL.md')))
-    const skills = [{ name: skill.name, path: skill.path }]
-    evidence.worktree = { relativeCwd: inside.split(sep).join('/'), independent: true, skillInActualCwd: true }
-    await checkpoint('independent worktree and native project skill catalog verified')
+    expect(await realpath(skill.path)).toBe(await realpath(join(project, '.agents', 'skills', skillName, 'SKILL.md')))
+    let skills = [{ name: skill.name, path: skill.path }]
+    await checkpoint('project skill preview verified without allocating a worktree')
 
     // Only these two commands may initiate turns. Polls/readbacks never resubmit.
     await command({ type: 'manual-send', threadId, draftId: randomUUID(), skills,
       text: `$${skillName} PROVE. Use the selected skill once. Work only inside this synthetic project; no outside access.` })
+    const allocated = await thread()
+    expect(allocated.worktree).toMatchObject({ mode: 'independent', status: 'ready' })
+    const cwd = await realpath(allocated.workingDirectory!)
+    const inside = relative(root, cwd)
+    expect(isAbsolute(inside) || inside === '..' || inside.startsWith(`..${sep}`)).toBe(false)
+    expect(cwd).not.toBe(await realpath(project))
+    // The first send revalidates the preview selection in the allocated checkout.
+    // Later messages select from that checkout's own native catalog.
+    const refreshed = await command({ type: 'refresh-thread-skills', threadId, forceReload: true })
+    const actualCatalog = refreshed.skillCatalogs?.find(value => value.threadId === threadId)
+    expect(actualCatalog?.status).toBe('ready')
+    expect(await realpath(actualCatalog!.cwd)).toBe(cwd)
+    const actualSkill = actualCatalog!.skills.find(value => value.name === skillName)!
+    expect(await realpath(actualSkill.path)).toBe(await realpath(join(cwd, '.agents', 'skills', skillName, 'SKILL.md')))
+    skills = [{ name: actualSkill.name, path: actualSkill.path }]
+    evidence.worktree = { relativeCwd: inside.split(sep).join('/'), independent: true, skillInActualCwd: true }
+    await checkpoint('first send allocated the independent worktree and revalidated its skill')
     await expect.poll(async () => (await thread()).activities?.some(value => value.kind === 'command' && value.status === 'running' && value.command?.includes(scriptName)),
       { timeout: 60_000, intervals: [100] }).toBe(true)
     const active = await thread()

@@ -53,11 +53,10 @@ describe('native thread working copies', () => {
     const { f, registry, workspace, project, create } = await fixture(provider, true, true)
     await writeFile(join(project, 'tracked.txt'), 'original dirty edits')
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
-    await Promise.all([create('first'), create('second')])
+    await Promise.all([create('first', 'independent'), create('second', 'independent')])
     await prepared(workspace, 'first', 'second')
     const before = workspace.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id))
-    expect(before.every(thread => thread.worktree?.status === 'ready')).toBe(true)
-    expect(new Set(before.map(thread => thread.workingDirectory)).size).toBe(2)
+    expect(before.every(thread => thread.worktree?.status === 'pending' && !thread.worktree.path)).toBe(true)
     const results = await Promise.all([workspace.execute(prompt('first')), workspace.execute(prompt('second'))])
     expect(results).toEqual([{ accepted: true }, { accepted: true }])
     for (const id of ['first', 'second']) {
@@ -76,15 +75,31 @@ describe('native thread working copies', () => {
     expect(new Set(Object.values(aliases).map(alias => alias.cwd)).size).toBe(2)
     const restored = new WorkspaceHost(new FakeProviderHost(), f.root)
     await restored.initialize()
-    expect(restored.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id)).map(thread => thread.workingDirectory)).toEqual(before.map(thread => thread.workingDirectory))
+    expect(restored.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id)).map(thread => thread.workingDirectory)).toEqual(workspace.workspaceSnapshot().threads.filter(thread => ['first', 'second'].includes(thread.id)).map(thread => thread.workingDirectory))
     await restored.privacyChanged()
     restored.dispose()
   }, 20000)
 
+  for (const provider of ['codex', 'claude', 'grok'] as const) it(`${provider}: default threads share the live project without creating a worktree`, async () => {
+    const { f, workspace, project, create, registry } = await fixture(provider)
+    await writeFile(join(project, 'tracked.txt'), 'uncommitted project edit')
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
+    await create('shared-one'); await create('shared-two')
+    expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+    for (const id of ['shared-one', 'shared-two']) {
+      expect(await workspace.threadWorkingDirectory(id)).toBe(project)
+      await workspace.execute(prompt(id))
+      expect(registry.byThread(id)?.projectId).toBe('original-scope')
+      expect(await readFile(join(project, 'native-cwd-proof.txt'), 'utf8')).toBe(prompt(id).text)
+    }
+    expect(await readFile(join(project, 'tracked.txt'), 'utf8')).toBe('uncommitted project edit')
+    expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+  })
+
   it('keeps a failed local thread recoverable across restart, then retries exactly one allocation without native replay', async () => {
     const { workspace, f, project, native, create } = await fixture('codex', false)
-    expect(await create('recoverable')).toEqual({ accepted: true })
-    await prepared(workspace, 'recoverable')
+    expect(await create('recoverable', 'independent')).toEqual({ accepted: true })
+    await expect(workspace.execute(prompt('recoverable'))).rejects.toThrow('no commit')
     const failed = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'recoverable')!
     expect(failed).toMatchObject({ nativeSessionStarted: false, projectId: 'original-scope', worktree: { status: 'error' } })
     await expect(workspace.execute(prompt('recoverable'))).rejects.toThrow('no commit')
@@ -116,13 +131,33 @@ describe('native thread working copies', () => {
     expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
   })
 
+  it('reuses an existing worktree for another native thread after a restart without checking its branch out again', async () => {
+    const { workspace, project, f, native, create } = await fixture('codex')
+    await create('owner', 'independent')
+    await workspace.execute(prompt('owner'))
+    const owner = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'owner')!
+    await writeFile(join(owner.workingDirectory!, 'tracked.txt'), 'shared unfinished edits')
+    const snapshot = workspace.workspaceSnapshot()
+    await workspace.execute({ type: 'create-thread', commandId: 'reuse', threadId: 'reuse', projectId: 'original-scope', title: 'Reuse', modelId: snapshot.models.find(model => model.providerId === 'codex')!.id,
+      workingCopy: 'independent', existingWorktreePath: owner.worktree!.path! })
+    await workspace.privacyChanged()
+    const restored = new WorkspaceHost(native, f.root); await restored.initialize(); await restored.connect('codex')
+    try {
+      await restored.execute(prompt('reuse'))
+      const reused = restored.workspaceSnapshot().threads.find(thread => thread.id === 'reuse')!
+      expect(reused).toMatchObject({ workingDirectory: owner.workingDirectory, worktree: { reused: true, mode: 'independent' } })
+      expect(await readFile(join(reused.workingDirectory!, 'tracked.txt'), 'utf8')).toBe('shared unfinished edits')
+      expect((await git(project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
+    } finally { await restored.privacyChanged(); restored.dispose() }
+  })
+
   it('retains the reserved working copy after lost native creation acknowledgement and refuses replay after workspace restart', async () => {
     const { f, workspace, native, create, project } = await fixture('codex')
-    await create('uncertain')
+    await create('uncertain', 'independent')
     await prepared(workspace, 'uncertain')
-    const path = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'uncertain')!.workingDirectory
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ delay: { method: 'thread/start', ms: 3000 }, suppressNotifications: true }))
     await expect(workspace.execute(prompt('uncertain'))).rejects.toThrow('not confirmed')
+    const path = workspace.workspaceSnapshot().threads.find(thread => thread.id === 'uncertain')!.workingDirectory
     const restored = new WorkspaceHost(native, f.root); await restored.initialize()
     await expect(restored.execute(prompt('uncertain'))).rejects.toThrow('will not create it twice')
     expect(restored.workspaceSnapshot().threads.find(thread => thread.id === 'uncertain')?.workingDirectory).toBe(path)

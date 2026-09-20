@@ -7,7 +7,7 @@ import { FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileLis
   type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
-export interface FilesBinding { threadId: string; projectId: string; workingDirectory: string }
+export interface FilesBinding { threadId: string; projectId: string; workingDirectory: string; previewOnly?: boolean }
 export interface FilesDependencies {
   /** Resolve from current main-owned thread state, never a renderer-provided root. */
   resolveBinding(threadId: string): FilesBinding | null
@@ -33,7 +33,7 @@ export class FilesService {
 
   /** Shared main-owned identity boundary for terminal, browser and Git tools. */
   resolveWorkspace(threadId: string, expected?: string): Promise<FilesResult<FileWorkspace>> {
-    return this.run(async () => (await this.workspace(threadId, expected)).value)
+    return this.run(async () => (await this.workspace(threadId, expected, false)).value)
   }
 
   private async run<T>(operation: () => Promise<T>): Promise<FilesResult<T>> {
@@ -49,11 +49,12 @@ export class FilesService {
     } finally { this.active-- }
   }
 
-  private async workspace(threadId: string, expected?: string): Promise<Workspace> {
+  private async workspace(threadId: string, expected?: string, allowPreview = true): Promise<Workspace> {
     let binding: FilesBinding | null
     try { binding = this.dependencies.resolveBinding(threadId) }
     catch { return fail('workspace-unavailable', 'The thread working directory is not ready. Retry its setup, then refresh Files.') }
     if (!binding || binding.threadId !== threadId) return fail('thread-unavailable', 'This thread is unavailable. Select a thread and refresh Files.')
+    if (binding.previewOnly && !allowPreview) return fail('workspace-unavailable', 'This worktree will be created on the first send. Send a prompt or choose Project folder before using these tools.')
     if (!isAbsolute(binding.workingDirectory)) return fail('workspace-unavailable', 'The thread working directory is unavailable.')
     let root: string, info: BigIntStats
     try {
@@ -61,11 +62,11 @@ export class FilesService {
       info = await stat(root, { bigint: true })
       if (!info.isDirectory()) throw new Error('not a directory')
     } catch { return fail('workspace-unavailable', 'The thread working directory is unavailable. Restore the folder and refresh Files.') }
-    const workspaceId = createHash('sha256').update(JSON.stringify([binding.threadId, binding.projectId, binding.workingDirectory, root, info.dev.toString(), info.ino.toString(), info.birthtimeNs.toString()])).digest('hex')
+    const workspaceId = createHash('sha256').update(JSON.stringify([binding.threadId, binding.projectId, binding.workingDirectory, root, info.dev.toString(), info.ino.toString(), info.birthtimeNs.toString(), binding.previewOnly ?? false])).digest('hex')
     const latest = this.dependencies.resolveBinding(threadId)
-    if (!latest || latest.threadId !== binding.threadId || latest.projectId !== binding.projectId || latest.workingDirectory !== binding.workingDirectory) return fail('workspace-changed', 'The thread working directory changed. Refresh Files.')
+    if (!latest || latest.threadId !== binding.threadId || latest.projectId !== binding.projectId || latest.workingDirectory !== binding.workingDirectory || Boolean(latest.previewOnly) !== Boolean(binding.previewOnly)) return fail('workspace-changed', 'The thread working directory changed. Refresh Files.')
     if (expected !== undefined && expected !== workspaceId) return fail('workspace-changed', 'The thread working directory changed. Refresh Files before selecting a path.')
-    return { root, value: { ...binding, workspaceId } }
+    return { root, value: { threadId: binding.threadId, projectId: binding.projectId, workingDirectory: binding.workingDirectory, workspaceId } }
   }
 
   private async target(workspace: Workspace, path: string): Promise<Target> {

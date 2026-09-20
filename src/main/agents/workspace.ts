@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
@@ -101,6 +102,93 @@ export class WorkspaceHost implements AgentHost {
   private readonly pendingEvents = new Map<string, ThreadEvent[]>()
   /** The threads whose window and summary the next publish has to read again. */
   private readonly eventChanged = new Set<string>()
+
+  private workingCopyDefault: (projectId: string) => 'independent' | 'shared' = () => 'shared'
+  private branchNameWriter: ((prompt: string) => Promise<string | null>) | undefined
+  private readonly namingBranches = new Set<string>()
+  setWorkingCopyDefaults(resolver: (projectId: string) => 'independent' | 'shared'): void { this.workingCopyDefault = resolver }
+  setBranchNameWriter(writer: (prompt: string) => Promise<string | null>): void { this.branchNameWriter = writer }
+  async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
+    await this.initialize()
+    const project = this.state.snapshot.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('Choose an available project.')
+    return this.worktrees.options(project.path)
+  }
+  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection): Promise<AgentWorktree> {
+    const project = this.state.snapshot.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('Choose an available project.')
+    if (selection.workingCopy === 'shared') return this.worktrees.inspect(await this.worktrees.allocate(project.path, 'shared'))
+    return { mode: 'independent', status: 'pending', baseBranch: selection.baseBranch,
+      startFromOrigin: selection.startFromOrigin, existingWorktreePath: selection.existingWorktreePath }
+  }
+  configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const thread = this.thread(threadId)
+      const creation = this.state.creations.find(item => item.threadId === threadId)
+      if (thread.nativeSessionStarted !== false || creation?.phase !== 'unstarted' || thread.worktree?.mode === 'independent' && thread.worktree.path) {
+        throw new Error('This thread already has a working folder. Start a new thread to choose another one.')
+      }
+      const previous = { worktree: thread.worktree, workingDirectory: thread.workingDirectory }
+      const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
+      const current = this.thread(threadId)
+      current.worktree = worktree
+      current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
+      this.dirty = true
+      try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+      this.publish()
+      return this.workspaceSnapshot()
+    })
+  }
+  /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
+  private async exclusivelyOwnsCheckout(threadId: string): Promise<boolean> {
+    const thread = this.thread(threadId)
+    const metadata = thread.worktree
+    if (!metadata?.temporaryBranch || metadata.reused || !metadata.path) return false
+    try {
+      const identity = await this.worktrees.checkoutIdentity(metadata.path)
+      const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
+      for (const other of others) {
+        if (other.nativeSessionStarted === false && other.worktree?.mode === 'independent' && !other.worktree.path && !other.worktree.existingWorktreePath) continue
+        const path = other.workingDirectory ?? other.worktree?.path ?? other.worktree?.existingWorktreePath
+          ?? this.state.snapshot.projects.find(project => project.id === other.projectId)?.path
+        if (!path || await this.worktrees.checkoutIdentity(path) === identity) return false
+      }
+      return true
+    } catch { return false } // An unavailable folder makes exclusive ownership unprovable.
+  }
+  async renameTemporaryBranch(threadId: string, name: string): Promise<void> {
+    return this.onLane(threadId, async () => {
+      if (!await this.exclusivelyOwnsCheckout(threadId)) return
+      const metadata = this.thread(threadId).worktree!
+      const renamed = await this.worktrees.renameTemporaryBranch(metadata, name)
+      this.thread(threadId).worktree = renamed
+      this.dirty = true
+      await this.flush()
+      this.publish()
+    })
+  }
+  private nameBranch(threadId: string, prompt: string): void {
+    if (!this.branchNameWriter || this.namingBranches.has(threadId)) return
+    this.namingBranches.add(threadId)
+    const writer = this.branchNameWriter
+    void this.exclusivelyOwnsCheckout(threadId).then(exclusive => exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(prompt) : null)
+      .then(name => name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
+  }
+  private async discoverWorkingCopy(threadId: string): Promise<void> {
+    const thread = this.thread(threadId)
+    if (thread.worktree || thread.nativeSessionStarted === false) return
+    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+    const directory = thread.workingDirectory ?? project?.path
+    if (!directory) throw new Error('This thread’s working folder is unavailable.')
+    const metadata = await this.worktrees.discover(directory, project?.path ?? directory)
+    const current = this.thread(threadId)
+    if (current.worktree) return
+    current.worktree = metadata
+    this.dirty = true
+    try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+    this.publish()
+  }
 
   setCheckpointHooks(hooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> }): void { this.checkpointHooks = hooks }
   rollbackCapability(threadId: string) { return this.inner.rollbackCapability?.(threadId) ?? { supported: false, reason: 'This provider does not expose verified conversation rewind.' } }
@@ -369,7 +457,9 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
     if (!thread || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
-    const workingDirectory = await this.threadWorkingDirectory(threadId)
+    const workingDirectory = thread.nativeSessionStarted === false && thread.worktree?.status === 'pending' && !thread.worktree.path
+      ? await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
+      : await this.threadWorkingDirectory(threadId)
     const creation = this.state.creations.find(item => item.threadId === threadId)
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
@@ -471,8 +561,8 @@ export class WorkspaceHost implements AgentHost {
   }
   /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
   private scheduleWorktreeRefresh(threadId: string): void {
-    const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
-    if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
+    const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    if (!thread || thread.nativeSessionStarted === false || thread.worktree && thread.worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
     const timer = setTimeout(() => { this.worktreeRefreshes.delete(threadId); void this.refreshWorktreeRecord(threadId) }, this.worktreeRefreshDelayMs)
     timer.unref?.()
     this.worktreeRefreshes.set(threadId, timer)
@@ -481,8 +571,9 @@ export class WorkspaceHost implements AgentHost {
    * A folder problem found here is left for the next send to report: a background read refuses nothing. */
   private refreshWorktreeRecord(threadId: string): Promise<void> {
     return this.onLane(threadId, async () => {
+      try { await this.discoverWorkingCopy(threadId) } catch { return }
       const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
-      if (worktree?.mode !== 'independent' || worktree.status !== 'ready') return
+      if (!worktree || worktree.status !== 'ready') return
       let inspected: AgentWorktree
       try { inspected = await this.worktrees.inspect(worktree) } catch { return }
       const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
@@ -618,10 +709,8 @@ export class WorkspaceHost implements AgentHost {
       this.publish()
     })
     this.preparations.set(thread.id, pending)
-    this.lanes.set(thread.id, pending)
     void pending.finally(() => {
       if (this.preparations.get(thread.id) === pending) this.preparations.delete(thread.id)
-      if (this.lanes.get(thread.id) === pending) this.lanes.delete(thread.id)
     }).catch(() => undefined)
     return pending
   }
@@ -634,15 +723,16 @@ export class WorkspaceHost implements AgentHost {
       if (!metadata.path) {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
-        metadata = await this.worktrees.allocate(project.path, metadata.mode)
+        metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath })
         current().worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
       metadata = await this.worktrees.ensure(metadata)
+      const workingDirectory = await this.worktrees.workingDirectory(metadata)
       const target = current()
       target.worktree = metadata
-      target.workingDirectory = await this.worktrees.workingDirectory(metadata)
+      target.workingDirectory = workingDirectory
     } catch (error) {
       const target = current()
       target.worktree = { ...(target.worktree ?? thread.worktree), status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
@@ -652,9 +742,10 @@ export class WorkspaceHost implements AgentHost {
   async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
+      await this.discoverWorkingCopy(threadId)
       const thread = this.thread(threadId)
-      if (retry && thread.nativeSessionStarted === false) await this.prepareWorkingCopy(thread)
-      else if (thread.worktree) {
+      if (retry && thread.nativeSessionStarted === false && thread.worktree?.status === 'error') await this.prepareWorkingCopy(thread)
+      else if (thread.worktree?.path) {
         // Native events can replace the thread object while Git is pending.
         let metadata = thread.worktree
         // A folder that was deleted is put back before it is read, so a refresh never turns a missing
@@ -676,7 +767,7 @@ export class WorkspaceHost implements AgentHost {
     return this.onLane(threadId, async () => {
       await this.initialize()
       const worktree = this.thread(threadId).worktree
-      if (worktree?.mode !== 'independent' || worktree.status !== 'ready') throw new Error('This thread has no working copy of its own to switch.')
+      if (worktree?.mode !== 'shared' || worktree.status !== 'ready') throw new Error('This thread has no project checkout to switch.')
       const target = worktree.sentBranch
       if (!target) throw new Error('Sotto has not sent to this thread yet, so there is no earlier branch to restore.')
       const inspected = await this.worktrees.inspect(worktree)
@@ -695,8 +786,7 @@ export class WorkspaceHost implements AgentHost {
   /** The branch this thread's work went to, so the pane can say what changed under it afterwards. */
   private async recordSentBranch(threadId: string): Promise<void> {
     const worktree = this.thread(threadId).worktree
-    if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || worktree.sentBranch === worktree.branch) return
-    if (worktree.branch === undefined) return // A detached HEAD has no branch to remember.
+    if (!worktree || worktree.status !== 'ready' || worktree.sentBranch === worktree.branch) return
     worktree.sentBranch = worktree.branch
     this.dirty = true
     // The prompt is about to go out; a cache write that fails must not refuse the send.
@@ -706,8 +796,9 @@ export class WorkspaceHost implements AgentHost {
   async threadWorkingDirectory(threadId: string): Promise<string> {
     await this.initialize()
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
+    await this.discoverWorkingCopy(threadId)
     const thread = this.thread(threadId)
-    if (thread.worktree?.mode === 'independent' && (thread.worktree.status === 'ready' || thread.worktree.status === 'error')) {
+    if (thread.worktree?.path && (thread.worktree.status === 'ready' || thread.worktree.status === 'error')) {
       // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014). A record
       // an earlier read marked as an error gets the same chance; when it cannot be put back, the error it
       // already carries is the one reported below.
@@ -733,13 +824,22 @@ export class WorkspaceHost implements AgentHost {
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
+    let preparedSkills: AgentSkillReference[] | undefined
+    let firstSend = false
     if ('threadId' in command && command.type !== 'create-thread' && command.type !== 'interrupt' && await this.checkpointHooks?.isBlocked(command.threadId)) throw new Error('Wait for Git changes or resolve the interrupted checkpoint revert before changing this thread.')
     if ((command.type === 'send' || command.type === 'steer') && command.skills?.length) {
       const thread = this.thread(command.threadId)
       const capabilities = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.capabilities ?? this.state.snapshot.capabilities
       if (!capabilities.skills || !this.inner.listThreadSkills) throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
       const catalog = await this.listThreadSkills(command.threadId, true)
-      if (catalog.status !== 'ready' || catalog.providerId !== thread.providerId || command.skills.some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
+      if (thread.nativeSessionStarted === false && thread.worktree?.path && thread.workingDirectory) {
+        const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
+        preparedSkills = command.skills.map(selected => {
+          const local = relative(projectPath, selected.path)
+          return { ...selected, path: !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(thread.workingDirectory!, local) : selected.path }
+        })
+      }
+      if (catalog.status !== 'ready' || catalog.providerId !== thread.providerId || (preparedSkills ?? command.skills).some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
         throw new Error('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
       }
     }
@@ -762,8 +862,9 @@ export class WorkspaceHost implements AgentHost {
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
-        worktree: { mode: command.workingCopy ?? 'independent', status: 'pending' },
+        worktree: await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
+      if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       this.state.snapshot.threads.push(thread)
       this.state.creations.push({ threadId: thread.id, projectId: thread.projectId, commandId: randomUUID(), phase: 'unstarted' })
       this.dirty = true
@@ -774,10 +875,7 @@ export class WorkspaceHost implements AgentHost {
         throw error
       }
       this.publish()
-      // The local thread is already durable, so creation is accepted here and the pane appears at once.
-      // The checkout continues in the background and publishes its own pending/ready/error status;
-      // setup failure is shown on the thread's working copy, never a silent success or a late rejection.
-      void this.startWorkingCopy(thread).catch(() => undefined)
+      // Opening a thread never allocates a worktree. Its choice remains editable until first send.
       return { accepted: true }
     }
     let thread = this.thread(command.threadId)
@@ -802,6 +900,7 @@ export class WorkspaceHost implements AgentHost {
       this.publish(); return { accepted: true }
     }
     if (command.type === 'send' && creation && creation.phase !== 'started') {
+      firstSend = true
       if (creation.phase === 'starting') {
         await this.refreshThread(thread.id)
         if (this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
@@ -810,6 +909,19 @@ export class WorkspaceHost implements AgentHost {
         if (thread.worktree?.status !== 'ready') await this.startWorkingCopy(thread)
         thread = this.thread(command.threadId)
         const workingDirectory = await this.threadWorkingDirectory(thread.id)
+        if (command.skills?.length) {
+          const projectPath = await existingWorkingDirectory(this.state.snapshot.projects.find(project => project.id === thread.projectId)!.path)
+          const catalog = await this.listThreadSkills(thread.id, true)
+          const skills = (preparedSkills ?? command.skills).map(selected => {
+            const local = relative(projectPath, selected.path)
+            const path = !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`) ? join(workingDirectory, local) : selected.path
+            return { ...selected, path }
+          })
+          if (catalog.status !== 'ready' || skills.some(selected => !catalog.skills.some(skill => skill.name === selected.name && skill.path === selected.path && skill.enabled !== false && skill.userInvocable !== false))) {
+            throw new Error('A selected skill is unavailable in the chosen working copy. Refresh the skill catalog and select it again. Your prompt has not been sent.')
+          }
+          preparedSkills = skills
+        }
         validateThreadOptions(this.state.snapshot, thread)
         this.requireCreation(thread.providerId)
         const priorPhase = creation.phase
@@ -861,7 +973,9 @@ export class WorkspaceHost implements AgentHost {
       await this.recordSentBranch(thread.id)
     }
     if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
-    return this.inner.execute(command)
+    const result = await this.inner.execute(command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills } : command)
+    if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
+    return result
   }
   private requireCreation(provider?: ProviderId): void {
     const status = this.state.snapshot.providers?.find(item => item.id === provider)

@@ -19,9 +19,14 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
     const snapshot = host.workspaceSnapshot(), target = snapshot.threads.find(thread => thread.id === threadId)
     if (!target) return []
     const path = await canonical(resolveThreadWorkingDirectory(target, snapshot.projects.find(project => project.id === target.projectId)))
-    const candidates = await Promise.all(snapshot.threads.map(async thread => ({ thread,
-      path: await canonical(resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId))).catch(() => null),
-    })))
+    const candidates = await Promise.all(snapshot.threads.map(async thread => {
+      try {
+        return { thread, path: await canonical(resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId))) }
+      } catch {
+        // An unallocated or unavailable copy cannot share this ready thread's verified folder.
+        return { thread, path: null }
+      }
+    }))
     return candidates.filter(candidate => candidate.path === path).map(candidate => candidate.thread)
   }
   const pending = async (threadId: string): Promise<boolean> => (await sharedThreads(threadId)).some(thread => thread.status === 'running' || thread.requests.length > 0
@@ -45,12 +50,17 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   })
   const ready = checkpoints.initialize()
   void ready.catch(() => options.report('Checkpoint recovery storage could not be read. Thread mutations are blocked until it is repaired.'))
+  const unallocated = (threadId: string): boolean => {
+    const thread = host.workspaceSnapshot().threads.find(item => item.id === threadId)
+    return thread?.nativeSessionStarted === false && thread.worktree?.mode === 'independent' && !thread.worktree.path
+  }
   const blocked = async (threadId: string): Promise<boolean> => {
     await ready
-    return checkpoints.isWorkspaceBlocked(threadId)
+    // A first send has no folder yet. Honor any thread recovery record, then let setup allocate it.
+    return unallocated(threadId) ? checkpoints.isBlocked(threadId) : checkpoints.isWorkspaceBlocked(threadId)
   }
   host.setCheckpointHooks({
-    isBlocked: async threadId => await blocked(threadId) || await options.git().isMutating(threadId),
+    isBlocked: async threadId => await blocked(threadId) || !unallocated(threadId) && await options.git().isMutating(threadId),
     beforeTurn: async threadId => {
       await ready
       await host.refreshThread(threadId)
@@ -70,7 +80,7 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
     }
   })
   return { checkpoints,
-    canMutate: async (threadId: string): Promise<boolean> => !await blocked(threadId) && !await pending(threadId),
+    canMutate: async (threadId: string): Promise<boolean> => !unallocated(threadId) && !await blocked(threadId) && !await pending(threadId),
     dispose: (): void => { unsubscribe(); checkpoints.dispose() },
   }
 }

@@ -6,10 +6,12 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
+import { ThreadWorkingCopyFields, type ThreadWorkingCopySelection } from './ThreadWorkingCopyFields'
+import './newThread.css'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
-export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted' | 'workingDirectory' | 'worktree'>
+export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted' | 'workingDirectory' | 'worktree'> & Partial<Pick<AgentThread, 'projectId'>>
 export interface ThreadWorkingCopyProps {
   readonly thread: WorkingCopyThread
   /** The thread's original Sotto project, never a provider's project alias. */
@@ -44,10 +46,10 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
     return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : 'Working folder' }
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty }
-  if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: 'Preparing worktree...' }
+  if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? 'Project folder' : 'New worktree' }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
   const directory = resolve()
-  const label = worktree.mode === 'independent' && worktree.branch ? worktree.branch : directory ? folderLabel(directory, project) : 'Working folder'
+  const label = worktree.branch ?? (worktree.repositoryRoot ? 'Detached HEAD' : directory ? folderLabel(directory, project) : 'Working folder')
   return { ...common, status: 'ready', directory, label }
 }
 
@@ -77,7 +79,7 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
 export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCopyProps): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const [open, setOpen] = useState(false)
-  const [alignEnd, setAlignEnd] = useState(false)
+  const [position, setPosition] = useState<{ left: number; width: number; maxHeight: number } | null>(null)
   const root = useRef<HTMLSpanElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -90,25 +92,45 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     return () => document.removeEventListener('pointerdown', outside)
   }, [open])
   useEffect(() => { setOpen(false) }, [thread.id])
-  // A chip in a right-hand pane opens its details toward the pane instead of past the window edge.
+  // Panes clip their children. Keep the whole editor inside its pane, including when the chip is near either edge.
   useLayoutEffect(() => {
     if (!open || !root.current || !panel.current) return
-    setAlignEnd(root.current.getBoundingClientRect().left + panel.current.offsetWidth > document.documentElement.clientWidth - 16)
+    const element = root.current
+    const pane = element.closest('.thread-pane')
+    const update = (): void => {
+      const anchor = element.getBoundingClientRect()
+      const bounds = pane?.getBoundingClientRect()
+      const leftEdge = Math.max(0, bounds?.left ?? 0) + 8
+      const rightEdge = Math.min(document.documentElement.clientWidth, bounds?.right ?? document.documentElement.clientWidth) - 8
+      const width = Math.min(420, Math.max(0, rightEdge - leftEdge))
+      const left = Math.max(leftEdge, Math.min(anchor.left, rightEdge - width)) - anchor.left
+      const bottom = Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight)
+      const maxHeight = Math.max(0, bottom - anchor.bottom - 14)
+      setPosition(previous => previous?.left === left && previous.width === width && previous.maxHeight === maxHeight ? previous : { left, width, maxHeight })
+    }
+    update()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(element)
+    if (pane) observer?.observe(pane)
+    window.addEventListener('resize', update)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
   }, [open])
-  const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
+  const configurable = thread.projectId && thread.nativeSessionStarted === false && (!thread.worktree?.path || thread.worktree.mode === 'shared')
+  const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
   return <span className="working-copy" ref={root} data-status={facts.status}
     onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
     <button ref={trigger} type="button" className="working-copy__trigger tt-focusable" aria-expanded={open} aria-controls={open ? panelId : undefined}
       aria-label={`Working copy: ${facts.label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
     </button>
-    {open ? <div ref={panel} id={panelId} className="working-copy__panel" data-align={alignEnd ? 'end' : undefined} role="group" aria-label="Working copy details">
+    {open ? <div ref={panel} id={panelId} className="working-copy__panel" style={position ?? undefined} role="group" aria-label="Working copy details">
+      {configurable ? <UnsentWorkingCopy key={thread.id} thread={thread} command={command} /> : null}
       <dl>
         {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt>Branch</dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt>Repository</dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
         {facts.status === 'ready' && facts.dirty !== undefined ? <div><dt>Changes</dt><dd>{facts.dirty ? 'Uncommitted changes' : 'No uncommitted changes'}</dd></div> : null}
-        {facts.status === 'pending' ? <div><dt>Status</dt><dd>Creating this thread’s branch and folder.</dd></div> : null}
+        {facts.status === 'pending' && !configurable ? <div><dt>Status</dt><dd>Preparing the working copy.</dd></div> : null}
         {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
       </dl>
       <div className="working-copy__actions">
@@ -118,6 +140,43 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
       {error ? <p className="agent-error" role="alert">{error}</p> : null}
     </div> : null}
   </span>
+}
+
+/** Choices remain editable until a first send allocates a checkout or binds a provider session. */
+function UnsentWorkingCopy({ thread, command }: { readonly thread: WorkingCopyThread; readonly command: AgentConnection['command'] }): ReactNode {
+  const [selection, setSelection] = useState<ThreadWorkingCopySelection>(() => ({ workingCopy: thread.worktree?.mode ?? 'shared', baseBranch: thread.worktree?.baseBranch, startFromOrigin: thread.worktree?.startFromOrigin ?? true, existingWorktreePath: thread.worktree?.existingWorktreePath }))
+  const [changed, setChanged] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const applying = useRef(false)
+  const form = useRef<HTMLDivElement>(null)
+  const applyButton = useRef<HTMLButtonElement>(null)
+  const restoreFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (saving || !restoreFocus.current) return
+    restoreFocus.current = false
+    form.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus()
+  }, [saving])
+  const apply = async (): Promise<void> => {
+    if (applying.current) return
+    const hadFocus = document.activeElement === applyButton.current
+    applying.current = true; setSaving(true); setError(null)
+    try {
+      const result = await command({ type: 'configure-thread-working-copy', threadId: thread.id, ...selection })
+      if (!result || result.error) setError(result?.error ?? 'Could not confirm the working copy. Your choices are retained.')
+      else {
+        // Apply disappears after success. Keep keyboard navigation inside the popover unless the user moved away.
+        restoreFocus.current = hadFocus && (document.activeElement === applyButton.current || document.activeElement === document.body)
+        setChanged(false)
+      }
+    } catch { setError('Could not confirm the working copy. Your choices are retained.') }
+    finally { applying.current = false; setSaving(false) }
+  }
+  return <div ref={form} className="working-copy__selection">
+    <ThreadWorkingCopyFields projectId={thread.projectId} value={selection} disabled={saving} onChange={value => { setSelection(value); setChanged(true) }} />
+    {changed ? <Button ref={applyButton} variant="secondary" aria-disabled={saving} onClick={() => void apply()}>{saving ? 'Applying…' : 'Apply working copy'}</Button> : null}
+    {error ? <p className="agent-error" role="alert">{error}</p> : null}
+  </div>
 }
 
 /** Above the pane composer: a failed setup and the one action that can recover it. The draft stays untouched. */
@@ -148,22 +207,27 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
 }
 
 /**
- * Above the pane composer: the thread's worktree is on a different branch from the one its last send went
+ * Above the pane composer: the shared checkout is on a different named branch from the one its last send went
  * to. It is information, not a refusal: the next send goes to the branch the folder is on either way, so
  * the notice waits until there is something to send and can be dismissed. Restore branch switches back,
  * and asks first when the folder has uncommitted work to carry along.
  */
+const dismissedBranchNotices = new Set<string>()
+/** Test seam: a new client session has no dismissed notices. */
+export function resetBranchNoticeDismissals(): void { dismissedBranchNotices.clear() }
+
 export function ThreadBranchNotice({ thread, project, command, composing }: ThreadWorkingCopyProps & { readonly composing: boolean }): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const sent = thread.worktree?.sentBranch
-  const [dismissed, setDismissed] = useState<string | null>(null)
+  const [, rerender] = useState(0)
   const [confirming, setConfirming] = useState(false)
   const { running, error, lastError, run } = useWorkingCopyAction(thread.id, command)
   const trigger = useRef<HTMLButtonElement>(null)
-  const changed = facts.status === 'ready' && facts.mode === 'independent' && sent !== undefined && sent !== facts.branch
+  const changed = facts.status === 'ready' && facts.mode === 'shared' && Boolean(sent) && Boolean(facts.branch) && sent !== facts.branch
   // A later switch is a new thing to say, so dismissal is remembered for this pair of branches alone.
   const change = [thread.id, sent ?? '', facts.branch ?? ''].join('\n')
-  if (!changed || !composing || dismissed === change) return null
+  const dismiss = (): void => { dismissedBranchNotices.add(change); rerender(value => value + 1) }
+  if (!changed || !composing || dismissedBranchNotices.has(change)) return null
   const restore = (withUncommittedChanges?: boolean): void => {
     if (running) return
     void run('restore-thread-branch', withUncommittedChanges).then(done => {
@@ -172,7 +236,7 @@ export function ThreadBranchNotice({ thread, project, command, composing }: Thre
     })
   }
   return <div className="branch-notice" role="status"
-    onKeyDown={event => { if (event.key === 'Escape' && !confirming) { event.stopPropagation(); setDismissed(change) } }}>
+    onKeyDown={event => { if (event.key === 'Escape' && !confirming) { event.stopPropagation(); dismiss() } }}>
     <p><strong>Branch changed, was {sent}.</strong> {facts.branch
       ? <>Sending will continue on {facts.branch}.</>
       : <>This folder has no branch checked out; sending will continue there.</>}</p>
@@ -180,7 +244,7 @@ export function ThreadBranchNotice({ thread, project, command, composing }: Thre
       onClick={() => { if (facts.dirty) setConfirming(true); else restore() }}>
       <Undo2 size={15} aria-hidden="true" />{running === 'restore-thread-branch' ? 'Switching…' : 'Restore branch'}
     </Button>
-    <Button variant="ghost" aria-label="Dismiss the branch notice" onClick={() => setDismissed(change)}>Dismiss</Button>
+    <Button variant="ghost" aria-label="Dismiss the branch notice" onClick={() => dismiss()}>Dismiss</Button>
     {error && !confirming ? <p className="branch-notice__result" role="alert">{error}</p> : null}
     {confirming ? <ConfirmationDialog title={`Switch back to ${sent}?`} danger={false}
       description={<>This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict.</>}

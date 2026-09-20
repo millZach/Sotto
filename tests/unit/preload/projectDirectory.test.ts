@@ -9,6 +9,15 @@ function fixture() {
 }
 
 describe('project directory preload bridge', () => {
+  it('lists working-copy choices only on main and validates the response', async () => {
+    const f = fixture()
+    const options = { isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [{ path: 'D:/project', branch: 'main' }] }
+    f.ipc.invoke.mockResolvedValueOnce(options).mockResolvedValueOnce({ isGit: 'yes' })
+    await expect(f.main.agents!.workingCopyOptions!('project')).resolves.toEqual(options)
+    expect(f.ipc.invoke).toHaveBeenLastCalledWith('sotto:agents:working-copy-options', 'project')
+    expect('workingCopyOptions' in f.widget.agents!).toBe(false)
+    await expect(f.main.agents!.workingCopyOptions!('project')).rejects.toThrow()
+  })
   it('exposes the picker only on main and sends no payload', async () => {
     const f = fixture()
     expect(f.main.agents!.chooseProjectDirectory).toBeTypeOf('function')

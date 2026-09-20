@@ -143,11 +143,26 @@ export const agentWorktreeSchema = z.object({
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
   baseCommit: z.string().optional(), error: z.string().optional(), dirty: z.boolean().optional(),
   projectRelativePath: z.string().optional(),
+  baseBranch: z.string().optional(), startFromOrigin: z.boolean().optional(),
+  existingWorktreePath: z.string().optional(), reused: z.boolean().optional(), temporaryBranch: z.boolean().optional(),
   /** The branch this worktree was on when Sotto last sent to the thread. Absent before the first send,
    * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
   sentBranch: z.string().optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
+export const agentWorkingCopySelectionSchema = z.object({
+  workingCopy: z.enum(['independent', 'shared']), baseBranch: z.string().min(1).max(512).optional(),
+  startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
+}).strict()
+export type AgentWorkingCopySelection = z.infer<typeof agentWorkingCopySelectionSchema>
+export const agentWorkingCopyOptionsSchema = z.object({
+  isGit: z.boolean(), currentBranch: z.string().nullable(), branches: z.array(z.string()),
+  worktrees: z.array(z.object({ path: z.string(), branch: z.string().nullable() })),
+}).strict()
+export type AgentWorkingCopyOptions = z.infer<typeof agentWorkingCopyOptionsSchema>
+export const AGENT_WORKING_COPY_OPTIONS = 'sotto:agents:working-copy-options'
+export const agentWorkingCopyOptionsRequestSchema = z.string().min(1).max(512)
+
 export const agentThreadSchema = z.object({
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   /** Who named this thread: the user by hand, Sotto's writing model, or the stand-in/provider name.
@@ -481,11 +496,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
+    baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
   z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
+  agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
@@ -505,6 +522,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 export interface AgentBridge {
+  workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
   chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>

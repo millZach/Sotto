@@ -21,13 +21,16 @@ export function draftThread(values: {
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
   readonly workingCopy: 'independent' | 'shared'
+  readonly baseBranch?: string | undefined
+  readonly startFromOrigin?: boolean | undefined
+  readonly existingWorktreePath?: string | undefined
 }): AgentThread {
   return {
     id: values.id, projectId: values.projectId, title: values.title, modelId: values.modelId,
     ...(values.providerId ? { providerId: values.providerId } : {}),
     ...(values.reasoningEffort ? { reasoningEffort: values.reasoningEffort } : {}),
     ...(values.runtimeMode ? { runtimeMode: values.runtimeMode } : {}),
-    worktree: { mode: values.workingCopy, status: 'pending' },
+    worktree: { mode: values.workingCopy, status: 'pending', ...(values.baseBranch ? { baseBranch: values.baseBranch } : {}), ...(values.startFromOrigin !== undefined ? { startFromOrigin: values.startFromOrigin } : {}), ...(values.existingWorktreePath ? { existingWorktreePath: values.existingWorktreePath } : {}) },
     status: 'idle', messages: [], requests: [], workspaceSettledAt: null,
     // Creation has not been dispatched to the provider yet, and there is no history to wait for.
     nativeSessionStarted: false, historyStatus: 'ready',
