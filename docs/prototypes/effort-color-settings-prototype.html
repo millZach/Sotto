@@ -1,0 +1,480 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Zach wants the six effort colourways from docs/prototypes/effort-slider-prototype.html (the colour the
+  effort slider's wash, fill and word take at a model's highest level) to be a choice on Settings → Appearance.
+  Where does the choice sit on that page, what does a colourway look like before it is picked, and how does the
+  user see what they are choosing?
+
+  Settings → Appearance today: Color scheme, the theme grid, then the Contrast and Glass opacity sliders, with
+  the Live appearance sample at the right (src/renderer/src/features/settings/AppearanceSettings.tsx, themes.css).
+  Both variants add one subsection, "Effort color", between Themes and the sliders, and one sample to the Live
+  appearance card: the effort control at its highest level. Picking a colourway plays the wash through that
+  sample, so the choice is seen where it will be felt. On ?variant=a|b, bar at the top (← → keys too):
+
+   a  Swatches.  Six small pills in one row, each the slider's own filled track in that colourway, its name under
+                 it. The chosen one wears the same ring the theme swatches wear. Quiet; one line of the page.
+   b  Cards.     Six tiles in the theme grid's three columns, each a small composer caught mid-wash with the
+                 track beneath, the name under it. Louder; the colourway is seen as a scene before it is chosen.
+
+  Copy: the subsection is "Effort color" with the line "The color a thread's effort control turns at its highest
+  level." The names are Ember, Cyberpunk, Rainbow, Aurora, Plasma and Theme accent; the last follows whichever
+  theme is active and needs no new colour. Saving follows the page's rule: changes save as you make them.
+
+  In the app this is a new setting (src/shared/settings.ts plus the patch allow-list in registerIpc.ts), a set of
+  effort tokens in tokens.css derived from the chosen palette (ember and accent from theme roles, the rest a fixed
+  palette a theme may override), and a README line under Appearance. ADR-0011 says colour comes from the theme;
+  a user-chosen effort palette is a decision to record beside it.
+
+  Target: desktop only, inherited from Sotto. Reviewed at 1600x1000, 1280x800 and the 820x560 minimum in dark and
+  light, and with Still (reduced motion) where the sample shows the finished state.
+
+  Extras in the bar: Light, Still. Open the file in a browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Appearance, effort color</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* The Sotto palette through the roles tokens.css derives; names follow the --tt-* tokens the stylesheet would use. */
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280);
+  --surface: oklch(0.26 0.019 280);
+  --surface-raised: oklch(0.305 0.021 280);
+  --surface-elevated: oklch(0.305 0.021 280);
+  --sidebar: oklch(0.205 0.016 282);
+  --text: oklch(0.985 0.005 280);
+  --text-2: oklch(0.86 0.01 272);
+  --text-muted: oklch(0.72 0.014 265);
+  --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270);
+  --border-faint: oklch(0.36 0.026 272);
+  --field-border: oklch(0.40 0.03 272);
+  --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220);
+  --accent-text: oklch(0.86 0.09 215);
+  --on-accent: oklch(0.2 0.02 280);
+  --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent);
+  --selected: oklch(0.35 0.04 262);
+  --focus: oklch(0.79 0.13 220);
+  --warning: oklch(0.829017 0.171221 81.038);
+  --track: oklch(0.36 0.026 272);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --effort-track: var(--surface-raised);
+  --effort-fill-cool: var(--text-muted);
+  --effort-thumb: var(--text);
+  --effort-thumb-edge: color-mix(in srgb, var(--text) 10%, transparent);
+  --hot-text: var(--p-text);
+  --fill-white: transparent;
+  --swatch-white: transparent;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85);
+  --surface: oklch(0.99 0.003 85);
+  --surface-raised: oklch(0.955 0.006 85);
+  --surface-elevated: oklch(0.975 0.005 85);
+  --sidebar: oklch(0.955 0.008 85);
+  --text: oklch(0.235 0.014 75);
+  --text-2: oklch(0.36 0.014 75);
+  --text-muted: oklch(0.5 0.014 75);
+  --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80);
+  --border-faint: oklch(0.9 0.01 80);
+  --field-border: oklch(0.82 0.016 80);
+  --accent: oklch(0.52 0.13 235);
+  --accent-text: oklch(0.42 0.1 235);
+  --on-accent: oklch(0.99 0.003 85);
+  --accent-surface: oklch(0.9 0.03 230);
+  --selected: oklch(0.885 0.03 235);
+  --focus: oklch(0.52 0.13 235);
+  --warning: oklch(0.546927 0.155556 45.359);
+  --track: oklch(0.9 0.01 80);
+  --effort-track: oklch(0.93 0.008 85);
+  --effort-fill-cool: oklch(0.78 0.02 80);
+  --effort-thumb: white;
+  --effort-thumb-edge: var(--border);
+  --hot-text: color-mix(in oklab, var(--p-text) 72%, var(--text));
+  --fill-white: rgb(255 255 255 / 38%);
+  --swatch-white: rgb(255 255 255 / 30%);
+}
+
+/* The colourways, as the slider prototype defines them. Each swatch and card carries its own palette on the element. */
+.pal-ember { --p-a: var(--warning); --p-b: var(--warning); --p-c: color-mix(in srgb, var(--warning) 60%, var(--text)); --p-text: color-mix(in oklab, var(--warning) 70%, var(--text)); --p-border: var(--warning); --p-fill-image: none; --p-text-image: none; }
+.pal-cyber { --p-a: oklch(0.7 0.3 345); --p-b: oklch(0.62 0.27 305); --p-c: oklch(0.86 0.15 200); --p-text: oklch(0.86 0.15 200); --p-border: oklch(0.7 0.3 345); --p-fill-image: none; --p-text-image: none; }
+.pal-rainbow { --p-a: oklch(0.7 0.24 20); --p-b: oklch(0.8 0.2 130); --p-c: oklch(0.7 0.24 300); --p-text: transparent; --p-border: oklch(0.7 0.22 300);
+  --p-spectrum: linear-gradient(90deg, oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340));
+  --p-fill-image: var(--p-spectrum); --p-text-image: var(--p-spectrum); --hot-text: transparent; }
+:root[data-theme='light'] .pal-rainbow { --p-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340)); }
+.pal-aurora { --p-a: oklch(0.86 0.18 160); --p-b: oklch(0.82 0.14 200); --p-c: oklch(0.68 0.22 300); --p-text: oklch(0.87 0.16 165); --p-border: oklch(0.82 0.14 200); --p-fill-image: none; --p-text-image: none; }
+.pal-plasma { --p-a: oklch(0.42 0.25 300); --p-b: oklch(0.68 0.29 350); --p-c: oklch(0.86 0.18 75); --p-text: oklch(0.8 0.2 20); --p-border: oklch(0.68 0.29 350); --p-fill-image: none; --p-text-image: none; }
+.pal-accent { --p-a: var(--accent); --p-b: var(--accent); --p-c: color-mix(in srgb, var(--accent) 55%, var(--text)); --p-text: var(--accent-text); --p-border: var(--accent); --p-fill-image: none; --p-text-image: none; }
+.pal-grad { --p-gradient: linear-gradient(90deg, var(--p-a), var(--p-b), var(--p-c)); }
+.pal-rainbow.pal-grad { --p-gradient: var(--p-spectrum); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--canvas); color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { padding: 0; border: 0; background: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The Settings window around the page: the nav at the left, enough to judge the page in place. */
+.window { display: grid; grid-template-columns: 322px minmax(0, 1fr); height: 100%; }
+.nav { display: flex; flex-direction: column; padding: 30px 22px 18px; background: var(--sidebar); border-right: 1px solid var(--hairline); }
+.nav__brand { display: flex; align-items: center; gap: 8px; margin: 0 0 30px; font-size: 15px; font-weight: 500; }
+.nav__brand i { width: 20px; height: 20px; border-radius: 5px; background: var(--accent); }
+.nav h1 { margin: 0 0 20px; font-size: 26px; font-weight: 600; letter-spacing: -.3px; }
+.nav__item { display: flex; align-items: center; gap: 10px; height: 44px; margin: 0 -10px; padding: 0 10px; border-radius: 10px; color: var(--text-2); font-size: 15px; }
+.nav__item i { width: 18px; height: 18px; border: 1.5px solid currentColor; border-radius: 5px; opacity: .8; }
+.nav__item[aria-current] { background: var(--selected); color: var(--text); }
+.nav__item[aria-current]::after { content: '›'; margin-left: auto; color: var(--text-muted); font-size: 18px; }
+.nav__sep { height: 1px; margin: 12px 0; background: var(--hairline); }
+.nav__foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 18px; border-top: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; }
+.nav__foot .seg { display: inline-flex; gap: 10px; padding: 8px 14px; border-radius: 8px; background: var(--surface-raised); }
+
+/* The page: the Appearance card as the app lays it out. */
+.page { min-width: 0; overflow-y: auto; padding: 44px 44px 40px 130px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.card { max-width: 1010px; }
+.heading h2 { margin: 0 0 8px; font-size: 32px; font-weight: 600; letter-spacing: -.4px; }
+.heading p { margin: 0 0 22px; padding-bottom: 22px; color: var(--text-muted); font-size: 17px; border-bottom: 1px solid var(--hairline); }
+.layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr); align-items: start; gap: 28px; }
+.controls { min-width: 0; }
+.sub { margin: 28px 0 12px; color: var(--text); font-size: 15px; font-weight: 500; }
+.scheme { padding-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.scheme .sub { margin: 0 0 10px; }
+.segments { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; }
+.segment { min-height: 30px; padding: 4px 13px; border-radius: 999px; color: var(--text-muted); font-size: 14px; }
+.segment[aria-pressed='true'] { color: var(--on-accent); background: var(--accent); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: 20px 0 8px; }
+.bar .sub { margin: 0; }
+.bar .actions { display: flex; gap: 0; }
+.bar .actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 7px; border-radius: 8px; color: var(--text-muted); font-size: 14px; }
+.bar .actions button:hover { color: var(--text); background: var(--hover); }
+.hint { margin: 0 0 14px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.tcard { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tcard__swatches { display: flex; gap: 3px; }
+.tswatch { position: relative; flex: 1; min-width: 0; height: 58px; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--sw-bg); }
+.tswatch[aria-pressed='true'] { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.tswatch i { position: absolute; inset: 7px auto 7px 6px; width: 25%; border-radius: 2px; background: var(--sw-side); }
+.tswatch b { position: absolute; left: 40%; right: 10%; top: 12px; height: 5px; border-radius: 2px; background: var(--sw-accent); }
+.tswatch em { position: absolute; right: 5px; bottom: 5px; width: 21px; height: 21px; border-radius: 50%; background: var(--surface); }
+.tswatch[aria-pressed='true'] em { background: var(--accent); }
+.tcard__title { padding: 4px 4px; color: var(--text); font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; }
+.tcard[data-active] .tcard__title { font-weight: 600; }
+.rows { margin-top: 16px; }
+.slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label value' 'description description' 'range range'; gap: 8px; padding: 18px 0; border-top: 1px solid var(--hairline); }
+.slider:first-child { border-top: 0; }
+.slider label { grid-area: label; font-size: 15px; font-weight: 500; }
+.slider p { grid-area: description; margin: 0; color: var(--text-muted); font-size: 12px; }
+.slider output { grid-area: value; color: var(--text-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+.slider .range { grid-area: range; position: relative; height: 20px; }
+.slider .range::before { content: ''; position: absolute; left: 0; right: 0; top: 8px; height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--accent-text) var(--fill), var(--track) var(--fill)); }
+.slider .range::after { content: ''; position: absolute; left: calc(var(--fill) - 8px); top: 2px; width: 16px; height: 16px; border: 2px solid var(--accent-text); border-radius: 50%; background: var(--surface-elevated); }
+
+/* Effort color — the new subsection, between Themes and the sliders. */
+.effort-section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+.effort-section .sub { margin-top: 0; }
+.effort-section .hint { margin-bottom: 12px; }
+/* a · Swatches: six pills in the theme grid's columns, the slider's own filled track in each colourway. */
+.swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+.swatch { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; margin: 0 -4px; padding: 6px 4px 2px; border-radius: 8px; color: var(--text); font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; }
+.swatch:hover { background: var(--hover); }
+.swatch[aria-pressed='true'] { font-weight: 600; }
+.swatch__pill { position: relative; flex: none; width: 84px; height: 14px; margin: 2px 0 0 2px; border-radius: 999px; background: var(--p-gradient); box-shadow: 0 0 0 1px var(--border); overflow: hidden; }
+.swatch__pill::before { content: ''; position: absolute; inset: 0; background: var(--swatch-white); }
+.swatch__pill i { position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: rgb(0 0 0 / 28%); transform: translate(-50%, -50%); }
+.swatch__pill b { position: absolute; right: -1px; top: -1px; width: 16px; height: 16px; border-radius: 50%; background: var(--effort-thumb); box-shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 0 0 1px var(--effort-thumb-edge); }
+.swatch[aria-pressed='true'] .swatch__pill { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.swatch__pill { overflow: visible; }
+.swatch__pill::before { border-radius: 999px; }
+/* b · Cards: six tiles in the theme grid's columns, each a small composer caught mid-wash. */
+.ecard { display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; }
+.ecard__tile { position: relative; height: 66px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.ecard__tile::before { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, color-mix(in srgb, var(--p-a) 42%, transparent) 0%, color-mix(in srgb, var(--p-b) 34%, transparent) 45%, color-mix(in srgb, var(--p-c) 12%, transparent) 80%, transparent 100%); }
+.ecard__tile[data-spectrum]::before { background: var(--p-spectrum); opacity: .5; -webkit-mask-image: linear-gradient(to top, black 10%, transparent 100%); mask-image: linear-gradient(to top, black 10%, transparent 100%); }
+.ecard__tile i { position: absolute; left: 10px; right: 10px; top: 12px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--text) 20%, transparent); }
+.ecard__tile i:nth-of-type(2) { top: 22px; right: 45%; }
+.ecard__track { position: absolute; left: 10px; right: 10px; bottom: 11px; height: 10px; border-radius: 999px; background: var(--p-gradient); box-shadow: 0 0 0 1px rgb(0 0 0 / 20%); }
+.ecard__track::before { content: ''; position: absolute; inset: 0; border-radius: 999px; background: var(--swatch-white); }
+.ecard__track b { position: absolute; right: -1px; top: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--effort-thumb); box-shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 0 0 1px var(--effort-thumb-edge); }
+.ecard__tile[aria-pressed='true'] { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.ecard__title { padding: 4px 4px; color: var(--text); font-size: 14px; font-weight: 500; line-height: 20px; }
+.ecard[data-active] .ecard__title { font-weight: 600; }
+
+/* Live appearance, with the new effort sample under the window. */
+.preview { min-width: 0; padding: 17px; border: 1px solid var(--border); border-radius: 16px; }
+.preview h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.pwindow { overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--canvas); }
+.pwindow__title { display: flex; align-items: center; gap: 7px; padding: 10px; border-bottom: 1px solid var(--hairline); font-size: 12px; }
+.pwindow__title i { width: 20px; height: 20px; border-radius: 5px; background: var(--accent); }
+.pwindow__title > span { margin-left: auto; color: var(--text-muted); }
+.pwindow__body { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 12px; }
+.orb { width: 62px; height: 62px; border-radius: 50%; background: radial-gradient(circle at 30% 24%, color-mix(in srgb, var(--accent), white 25%), var(--accent) 12%, var(--accent-surface) 55%, color-mix(in srgb, var(--accent-surface), black 60%) 90%); box-shadow: inset -5px -7px 13px rgb(0 0 0 / 15%), 0 9px 25px color-mix(in srgb, var(--accent-surface) 22%, transparent); }
+.pwindow__body strong { font-size: 15px; font-weight: 600; }
+.pcomposer { display: flex; align-items: center; gap: 7px; width: 72%; padding: 9px 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--accent-text); }
+.pcomposer span { flex: 1; height: 3px; border-radius: 2px; background: var(--hairline); }
+.preview__parts { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-top: 18px; }
+.preview__parts > div { display: grid; justify-items: center; gap: 9px; }
+.preview__parts > div > span { color: var(--text-muted); font-size: 12px; }
+.appicon { width: 44px; height: 44px; border-radius: 12px; background: var(--accent); }
+.widget { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 136px; padding: 10px 17px; border: 1px solid var(--text-muted); border-radius: 15px; background: var(--surface-raised); font-size: 14px; }
+.widget i { width: 16px; height: 12px; border-radius: 2px; background: var(--accent); }
+.preview > p { margin: 14px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+
+/* The effort sample: a small composer with the effort card at its highest level, in the chosen colourway. */
+.esample { margin-top: 18px; }
+.esample__head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; color: var(--text-muted); font-size: 12px; }
+.esample__head button { color: var(--text-muted); font-size: 12px; padding: 2px 6px; border-radius: 5px; }
+.esample__head button:hover { color: var(--text); background: var(--hover); }
+.scene { position: relative; padding: 76px 14px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--canvas); overflow: hidden; }
+.mcomposer { position: relative; padding: 10px 12px 8px; border: 1px solid color-mix(in srgb, var(--p-border) max(var(--tint, 0%), 30%), var(--field-border)); border-radius: 12px; background: var(--surface); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
+/* At the highest level the composer wears a thin outline in the colourway with a brighter run travelling round it. */
+@property --ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.ring::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--p-a) 70%, transparent) .66turn, var(--p-b) .76turn, var(--p-c) .84turn, transparent .94turn, transparent 1turn);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; }
+:root[data-ring='ring'] .ring::after { background: conic-gradient(from var(--ring-angle), var(--p-a), var(--p-b), var(--p-c), var(--p-a)); opacity: .85; }
+.pal-rainbow .ring::after { background: conic-gradient(from var(--ring-angle), transparent 0turn, transparent .5turn, oklch(0.7 0.24 20) .6turn, oklch(0.82 0.18 70) .68turn, oklch(0.85 0.2 130) .76turn, oklch(0.85 0.14 200) .82turn, oklch(0.65 0.24 280) .88turn, oklch(0.7 0.28 340) .93turn, transparent .97turn); }
+:root[data-ring='ring'] .pal-rainbow .ring::after { background: conic-gradient(from var(--ring-angle), oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340), oklch(0.7 0.24 20)); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-still='true']) .ring::after { animation: ring-run 4200ms linear infinite; } }
+@keyframes ring-run { to { --ring-angle: 360deg; } }
+:root[data-still='true'] .ring::after { background: conic-gradient(color-mix(in srgb, var(--p-a) 55%, transparent), color-mix(in srgb, var(--p-b) 55%, transparent), color-mix(in srgb, var(--p-c) 55%, transparent), color-mix(in srgb, var(--p-a) 55%, transparent)); }
+.mcomposer[data-tinting='true'] { transition: border-color 220ms cubic-bezier(.2, .8, .2, 1); }
+.mcomposer .ph { height: 3px; width: 55%; border-radius: 2px; background: var(--hairline); margin: 4px 0 18px; }
+.mchips { display: flex; gap: 5px; }
+.mchip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--field-border); border-radius: 999px; color: var(--text-muted); font-size: 11px; }
+.mchip[data-top='true'] { color: var(--hot-text); font-weight: 500; }
+.pal-rainbow .mchip[data-top='true'], .pal-rainbow .mcard__word { background: var(--p-text-image); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.mcard { position: absolute; z-index: 2; left: 14px; bottom: 58px; width: 212px; padding: 9px 10px 9px; border: 1px solid var(--field-border); border-radius: 10px; background: var(--surface-elevated); box-shadow: 0 10px 30px rgb(0 0 0 / 40%); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); --heat: 1; }
+.mcard[data-arriving='true'] { border-color: color-mix(in srgb, var(--p-border) 55%, var(--field-border)); transition-duration: 200ms; }
+.mcard__head { display: flex; justify-content: space-between; align-items: baseline; }
+.mcard__word { margin: 0; font-size: 12px; font-weight: 600; color: var(--hot-text); }
+.mcard__word > span { display: inline-block; }
+.mcard__default { color: var(--text-muted); font-size: 10px; }
+.mcard__line { margin: 1px 0 0; color: var(--text-muted); font-size: 9.5px; line-height: 1.4; }
+.mtrack { position: relative; height: 18px; margin: 8px 0 0; }
+.mtrack__pill { position: absolute; inset: 2px 0 2px 0; border-radius: 999px; background: var(--effort-track); overflow: hidden; }
+.mtrack__fill { position: absolute; inset: 0; border-radius: 999px; background: var(--p-gradient); }
+.mtrack__fill::after { content: ''; position: absolute; inset: 0; background: var(--fill-white); }
+.mtrack__dot { position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: rgb(0 0 0 / 28%); transform: translate(-50%, -50%); }
+.mtrack__thumb { position: absolute; right: 0; top: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--effort-thumb); box-shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 0 0 1px var(--effort-thumb-edge); }
+.mends { display: flex; justify-content: space-between; margin: 4px 1px 0; color: var(--text-faint); font-size: 8.5px; }
+.wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.wash::before { content: ''; position: absolute; left: 0; right: 0; height: 220%; top: 100%; background: linear-gradient(to top, transparent 0%, color-mix(in srgb, var(--p-a) 46%, transparent) 34%, color-mix(in srgb, var(--p-b) 40%, transparent) 50%, color-mix(in srgb, var(--p-c) 16%, transparent) 66%, transparent 100%); }
+.pal-rainbow .wash::before { background: var(--p-spectrum); opacity: .5; -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-still='true']) .mcard[data-arriving='true'] > .wash::before { animation: wash-rise 1500ms cubic-bezier(.3, .6, .2, 1) both; }
+  :root:not([data-still='true']) .mcomposer[data-washing='true'] > .wash::before { animation: wash-rise 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+  :root:not([data-still='true']) .mcard[data-arriving='true'] .mcard__word > span { animation: letter-warm 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--i) * 55ms); }
+}
+@keyframes wash-rise { from { top: 100%; } to { top: -220%; } }
+@keyframes letter-warm { from { color: var(--text); } 45% { color: var(--text); transform: translateY(-1px); } to { color: var(--hot-text); transform: none; } }
+:root[data-still='true'] .scene, :root[data-still='true'] .scene * { animation: none !important; transition: none !important; }
+
+@media (max-width: 1050px) { .layout { grid-template-columns: minmax(0, 1fr); } .preview { width: min(100%, 340px); } }
+@media (max-width: 900px) { .window { grid-template-columns: 240px minmax(0, 1fr); } .page { padding: 32px 28px 32px 40px; } }
+
+/* The prototype's own bar: not part of the design. */
+.switcher { position: fixed; top: 10px; left: 50%; z-index: 99; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); white-space: nowrap; }
+.switcher button { height: 24px; padding: 0 9px; border-radius: 999px; color: #111; }
+.switcher button:hover { background: #ddd; }
+.switcher button[aria-pressed='true'] { background: #111; color: #fff; }
+.switcher .label { padding: 0 6px; }
+.switcher .label b { font-weight: 600; }
+.switcher .sep { width: 1px; height: 16px; background: #ccc; margin: 0 2px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <aside class="nav" aria-hidden="true">
+    <div class="nav__brand"><i></i>Sotto</div>
+    <h1>Settings</h1>
+    <div class="nav__item"><i></i>Dictation</div>
+    <div class="nav__item"><i></i>Transcription</div>
+    <div class="nav__item"><i></i>Cleanup</div>
+    <div class="nav__sep"></div>
+    <div class="nav__item"><i></i>Providers</div>
+    <div class="nav__item"><i></i>Agents</div>
+    <div class="nav__item"><i></i>Output</div>
+    <div class="nav__sep"></div>
+    <div class="nav__item" aria-current="page"><i></i>Appearance</div>
+    <div class="nav__item"><i></i>Application</div>
+    <div class="nav__foot"><span class="seg">Dictate&nbsp;&nbsp;&nbsp;Agents&nbsp;&nbsp;&nbsp;Threads</span></div>
+  </aside>
+  <main class="page">
+    <section class="card" id="settings-appearance">
+      <div class="heading"><h2>Appearance</h2><p>Themes &amp; interface</p></div>
+      <div class="layout">
+        <div class="controls">
+          <div class="scheme">
+            <h3 class="sub">Color scheme</h3>
+            <div class="segments" role="group" aria-label="Color scheme">
+              <button type="button" class="segment" data-mode="light" aria-pressed="false">Light</button>
+              <button type="button" class="segment" data-mode="dark" aria-pressed="true">Dark</button>
+              <button type="button" class="segment" aria-pressed="false">System</button>
+            </div>
+          </div>
+          <div class="bar"><h3 class="sub">Themes</h3><div class="actions"><button type="button">✎ Create theme</button><button type="button">+ Add theme</button></div></div>
+          <p class="hint">Choose a theme for both modes, or use its sun and moon to set each separately.</p>
+          <div class="grid" role="list" data-themes></div>
+
+          <div class="effort-section" data-effort-section>
+            <h3 class="sub" id="effort-heading">Effort color</h3>
+            <p class="hint">The color a thread's effort control turns at its highest level.</p>
+            <div data-effort-choices role="group" aria-labelledby="effort-heading"></div>
+          </div>
+
+          <div class="rows">
+            <div class="slider"><label>Contrast</label><output>100%</output><p>Color and border intensity.</p><div class="range" style="--fill:34%"></div></div>
+            <div class="slider"><label>Glass opacity</label><output>80%</output><p>Higher values make menus, dialogs and the composer more solid.</p><div class="range" style="--fill:66%"></div></div>
+          </div>
+        </div>
+        <aside class="preview" aria-label="Appearance preview">
+          <h3>◉ Live appearance</h3>
+          <div class="pwindow">
+            <div class="pwindow__title"><i></i><strong>Sotto</strong><span>Dictate</span></div>
+            <div class="pwindow__body"><div class="orb"></div><strong>Ready when you are</strong><div class="pcomposer">⏦<span></span><span></span></div></div>
+          </div>
+          <div class="preview__parts">
+            <div><div class="appicon"></div><span>App icon</span></div>
+            <div><div class="widget"><i></i><strong>Ready</strong></div><span>Floating widget</span></div>
+          </div>
+          <div class="esample" data-esample>
+            <div class="esample__head"><span>Effort at its highest level</span><button type="button" data-replay>Play again</button></div>
+            <div class="scene pal-grad" data-scene>
+              <div class="mcard" data-mcard>
+                <div class="mcard__head"><p class="mcard__word" data-word></p><span class="mcard__default">Default</span></div>
+                <p class="mcard__line">Near the model's limit. Slow and costly.</p>
+                <div class="mtrack"><div class="mtrack__pill"><div class="mtrack__fill"></div><span class="mtrack__dot" style="left:9px"></span><span class="mtrack__dot" style="left:25%"></span><span class="mtrack__dot" style="left:50%"></span><span class="mtrack__dot" style="left:75%"></span></div><span class="mtrack__thumb"></span></div>
+                <div class="mends"><span>Faster</span><span>More thorough</span></div>
+                <div class="wash" aria-hidden="true"></div>
+              </div>
+              <div class="mcomposer ring" data-mcomposer>
+                <div class="wash" aria-hidden="true"></div>
+                <div class="ph"></div>
+                <div class="mchips"><span class="mchip">✺ Fable 5.1</span><span class="mchip" data-top="true" data-effort-chip>Max</span><span class="mchip">Auto</span></div>
+              </div>
+            </div>
+          </div>
+          <p>The widget follows Windows light or dark mode.</p>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button type="button" data-prev aria-label="Previous variant">←</button>
+  <span class="label"><b data-key></b> — <span data-name></span></span>
+  <button type="button" data-next aria-label="Next variant">→</button>
+  <span class="sep"></span>
+  <button type="button" data-ring="comet">Comet</button>
+  <button type="button" data-ring="ring">Ring</button>
+  <span class="sep"></span>
+  <button type="button" data-still>Still</button>
+  <button type="button" data-theme-toggle>Light</button>
+</div>
+
+<script>
+const VARIANTS = [['a', 'Swatches'], ['b', 'Cards']]
+const PALETTES = [['ember', 'Ember'], ['cyber', 'Cyberpunk'], ['rainbow', 'Rainbow'], ['aurora', 'Aurora'], ['plasma', 'Plasma'], ['accent', 'Theme accent']]
+const THEMES = [
+  ['Sotto', ['oklch(0.96 0.005 85)', 'oklch(0.9 0.01 85)', 'oklch(0.79 0.13 220)'], ['oklch(0.235 0.018 280)', 'oklch(0.205 0.016 282)', 'oklch(0.79 0.13 220)'], true],
+  ['Rose', ['oklch(0.97 0.01 350)', 'oklch(0.92 0.03 350)', 'oklch(0.62 0.22 350)'], ['oklch(0.22 0.02 350)', 'oklch(0.19 0.02 350)', 'oklch(0.62 0.22 350)']],
+  ['Fern', ['oklch(0.97 0.01 150)', 'oklch(0.92 0.03 150)', 'oklch(0.62 0.15 155)'], ['oklch(0.22 0.02 150)', 'oklch(0.19 0.02 150)', 'oklch(0.7 0.15 155)']],
+  ['Tide', ['oklch(0.97 0.01 230)', 'oklch(0.92 0.03 230)', 'oklch(0.6 0.14 230)'], ['oklch(0.24 0.03 240)', 'oklch(0.2 0.03 240)', 'oklch(0.7 0.13 220)']],
+  ['Copper', ['oklch(0.97 0.01 60)', 'oklch(0.92 0.03 60)', 'oklch(0.62 0.16 45)'], ['oklch(0.24 0.02 50)', 'oklch(0.2 0.02 50)', 'oklch(0.7 0.15 50)']],
+  ['Dusk', ['oklch(0.97 0.01 290)', 'oklch(0.92 0.03 290)', 'oklch(0.58 0.18 290)'], ['oklch(0.22 0.03 290)', 'oklch(0.19 0.03 290)', 'oklch(0.68 0.18 290)']],
+]
+const url = new URL(location.href)
+const state = {
+  variant: VARIANTS.some(([k]) => k === url.searchParams.get('variant')) ? url.searchParams.get('variant') : 'a',
+  palette: PALETTES.some(([k]) => k === url.searchParams.get('palette')) ? url.searchParams.get('palette') : 'ember',
+}
+if (url.searchParams.get('ring') === 'ring') document.documentElement.dataset.ring = 'ring'
+if (url.searchParams.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+if (url.searchParams.get('still') === '1') document.documentElement.dataset.still = 'true'
+const still = () => document.documentElement.dataset.still === 'true' || matchMedia('(prefers-reduced-motion: reduce)').matches
+const dark = () => document.documentElement.dataset.theme !== 'light'
+const choices = document.querySelector('[data-effort-choices]'), scene = document.querySelector('[data-scene]'), mcard = document.querySelector('[data-mcard]'), mcomposer = document.querySelector('[data-mcomposer]'), word = document.querySelector('[data-word]')
+
+function save() {
+  const u = new URL(location.href)
+  u.searchParams.set('variant', state.variant); u.searchParams.set('palette', state.palette)
+  if (!dark()) u.searchParams.set('theme', 'light'); else u.searchParams.delete('theme')
+  history.replaceState(null, '', u)
+}
+function renderThemes() {
+  document.querySelector('[data-themes]').innerHTML = THEMES.map(([name, light, darkc, active]) => {
+    const sw = (c, on) => `<span class="tswatch" aria-pressed="${on}" style="--sw-bg:${c[0]};--sw-side:${c[1]};--sw-accent:${c[2]}"><i></i><b></b><em></em></span>`
+    return `<div class="tcard" role="listitem" ${active ? 'data-active' : ''}><div class="tcard__swatches">${sw(light, active && !dark())}${sw(darkc, active && dark())}</div><div class="tcard__title">${name}</div></div>`
+  }).join('')
+}
+function renderChoices() {
+  const pressed = id => id === state.palette
+  if (state.variant === 'a') {
+    choices.className = 'swatches'
+    choices.innerHTML = PALETTES.map(([id, name]) => `<button type="button" class="swatch pal-grad pal-${id}" data-palette="${id}" aria-pressed="${pressed(id)}" aria-label="${name}${pressed(id) ? ', currently active' : ''}"><span class="swatch__pill"><i style="left:9px"></i><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i><b></b></span><span>${name}</span></button>`).join('')
+  } else {
+    choices.className = 'grid'
+    choices.innerHTML = PALETTES.map(([id, name]) => `<button type="button" class="ecard pal-grad pal-${id}" data-palette="${id}" ${pressed(id) ? 'data-active' : ''} aria-label="${name}${pressed(id) ? ', currently active' : ''}"><span class="ecard__tile" aria-pressed="${pressed(id)}" ${id === 'rainbow' ? 'data-spectrum' : ''}><i></i><i></i><span class="ecard__track"><b></b></span></span><span class="ecard__title">${name}</span></button>`).join('')
+  }
+  for (const b of choices.querySelectorAll('[data-palette]')) b.addEventListener('click', () => pick(b.dataset.palette))
+}
+function renderScene() {
+  scene.className = `scene pal-grad pal-${state.palette}`
+  word.innerHTML = Array.from('Max', (ch, i) => `<span style="--i:${i}">${ch}</span>`).join('')
+  placeCard()
+}
+/* The sample card anchors 6px above its chip, as the real one does, and stays inside the scene. */
+function placeCard() {
+  const chip = mcomposer.querySelector('[data-effort-chip]'), s = scene.getBoundingClientRect(), c = chip.getBoundingClientRect()
+  mcard.style.left = `${Math.round(Math.max(10, Math.min(c.left - s.left, s.width - mcard.offsetWidth - 10)))}px`
+  mcard.style.bottom = `${Math.round(s.bottom - c.top + 6)}px`
+}
+window.addEventListener('resize', placeCard)
+let arriving = 0
+function play() {
+  clearTimeout(arriving); mcard.dataset.arriving = 'false'; mcomposer.dataset.washing = 'false'; mcomposer.style.setProperty('--tint', '0%')
+  if (still()) return
+  requestAnimationFrame(() => {
+    mcard.dataset.arriving = 'true'; mcomposer.dataset.washing = 'true'
+    mcomposer.dataset.tinting = 'true'; mcomposer.style.setProperty('--tint', '70%')
+    setTimeout(() => { mcomposer.dataset.tinting = 'false'; mcomposer.style.setProperty('--tint', '0%') }, 900)
+    arriving = setTimeout(() => { mcard.dataset.arriving = 'false'; mcomposer.dataset.washing = 'false' }, 2000)
+  })
+}
+function pick(id) { state.palette = id; save(); renderChoices(); renderScene(); play() }
+function renderBar() {
+  document.querySelector('[data-key]').textContent = state.variant.toUpperCase()
+  document.querySelector('[data-name]').textContent = VARIANTS.find(([k]) => k === state.variant)[1]
+  document.querySelector('[data-still]').setAttribute('aria-pressed', document.documentElement.dataset.still === 'true')
+  document.querySelector('[data-theme-toggle]').setAttribute('aria-pressed', !dark())
+  for (const b of document.querySelectorAll('.segment[data-mode]')) b.setAttribute('aria-pressed', b.dataset.mode === (dark() ? 'dark' : 'light'))
+  for (const b of document.querySelectorAll('[data-ring]')) b.setAttribute('aria-pressed', (document.documentElement.dataset.ring ?? 'comet') === b.dataset.ring)
+}
+for (const b of document.querySelectorAll('[data-ring]')) b.addEventListener('click', () => { document.documentElement.dataset.ring = b.dataset.ring; renderBar() })
+function render() { save(); renderThemes(); renderChoices(); renderScene(); renderBar() }
+function step(d) { const i = VARIANTS.findIndex(([k]) => k === state.variant); state.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]; render() }
+document.querySelector('[data-prev]').addEventListener('click', () => step(-1))
+document.querySelector('[data-next]').addEventListener('click', () => step(1))
+document.querySelector('[data-replay]').addEventListener('click', play)
+document.querySelector('[data-still]').addEventListener('click', () => { document.documentElement.dataset.still = document.documentElement.dataset.still === 'true' ? 'false' : 'true'; render() })
+document.querySelector('[data-theme-toggle]').addEventListener('click', () => { document.documentElement.dataset.theme = dark() ? 'light' : ''; render() })
+for (const b of document.querySelectorAll('.segment[data-mode]')) b.addEventListener('click', () => { document.documentElement.dataset.theme = b.dataset.mode === 'light' ? 'light' : ''; render() })
+document.addEventListener('keydown', e => { if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+render()
+</script>
+</body>
+</html>

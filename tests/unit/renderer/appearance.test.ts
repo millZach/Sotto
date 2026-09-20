@@ -25,6 +25,7 @@ const base: AppearanceChoice = {
   darkTheme: 'ocean',
   appearanceContrast: 100,
   glassOpacity: 80,
+  effortColor: 'ember',
   customThemes: [],
 }
 
@@ -69,6 +70,17 @@ describe('main-window appearance', () => {
     expect(root.style.getPropertyValue('--theme-contrast-base')).toBe('50%')
     expect(root.style.getPropertyValue('--theme-contrast-boost')).toBe('0%')
     expect(root.style.getPropertyValue('--theme-glass-opacity')).toBe('40%')
+  })
+
+  it('puts the effort colourway on the root as an attribute, and an unknown one falls back to Ember', () => {
+    const root = document.createElement('html')
+    applyAppearance({ ...base, effortColor: 'cyberpunk' }, root, true)
+    expect(root.dataset.effortColor).toBe('cyberpunk')
+    expect(readCachedAppearance().effortColor).toBe('cyberpunk')
+    applyAppearance({ ...base, effortColor: 'neon' as AppearanceChoice['effortColor'] }, root, true)
+    expect(root.dataset.effortColor).toBe('ember')
+    localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ ...base, effortColor: 'neon' }))
+    expect(readCachedAppearance().effortColor).toBe('ember')
   })
 
   it('never writes a colour that is not canonical, so an injected value cannot reach the style', () => {

@@ -4,6 +4,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { codexFixture } from '../fixtures/codexFixture'
 import { RequestDraftService, personalRequestDraftState, requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import { requestDraftQuestions } from '../../src/shared/requestDrafts'
+import type { AgentRequest } from '../../src/shared/agents'
 import { PersonalChatService } from '../../src/main/agents/personalChats'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { personalChatStateSchema, type PersonalChat } from '../../src/shared/personalChats'
@@ -267,4 +269,43 @@ it.each(['different', 'same'] as const)('keeps the newer %s-definition hold thro
   expect((await recovered.list(owner))[0]).toMatchObject({ held: true, selections: { notes: { text: 'PRIVATE newer answer' } } })
   expect((await nextFixture.driver.requests()).filter(r => r.result?.answers)).toHaveLength(1)
   expect((await diskChat(path)).decisions!.map(d => d.status)).toEqual(['accepted', 'uncertain'])
+})
+
+
+it.each([true, false])('binds a personal legacy choice before native delivery and retains only uncertain drafts (accepted %s)', async accepted => {
+  const fixture = await codexFixture(); fixtures.push(fixture)
+  const service: PersonalChatService = new PersonalChatService({ userDataPath: fixture.root, host: fixture.adapter, configuration: () => configuration, historyEnabled: () => false,
+    bindRequestDraftDecision: (target, id, answers) => drafts.bindDecision(target, id, answers) })
+  services.push(service)
+  await service.start(); await service.connect()
+  const chat = (await service.create()).chats[0]!
+  await service.saveDraft({ chatId: chat.id, revision: 1, text: 'PRIVATE prompt', skills: [] })
+  await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
+  const request: AgentRequest = { id: 'legacy-choice', kind: 'question', text: 'PRIVATE question', options: [{ id: 'PRIVATE option', label: 'PRIVATE label' }] }
+  const native = fixture.adapter.personalSnapshot().find(item => item.id === chat.id)!
+  const snapshot = vi.spyOn(fixture.adapter, 'personalSnapshot').mockReturnValue([{ ...native, requests: [request] }])
+  await service.refresh(chat.id); await service.settled()
+  const owner = { kind: 'personal' as const, ownerId: chat.id, providerId: 'codex' as const }
+  const target = { ...owner, requestId: request.id, questions: requestDraftQuestions(request) }
+  const drafts: RequestDraftService = new RequestDraftService(fixture.root, input => personalRequestDraftState(service.get(), input), async () => { await service.refresh(chat.id) })
+  await drafts.start()
+  await drafts.save({ target, revision: 1, held: true, selections: { [request.id]: { optionIds: ['PRIVATE option'], other: false, text: '' } } })
+  const execute = vi.spyOn(fixture.adapter, 'execute').mockImplementation(async command => {
+    expect(command).toEqual({ type: 'answer', commandId: expect.any(String), threadId: chat.id, requestId: request.id, answer: 'PRIVATE option' })
+    expect((await drafts.get(target))?.decisionId).toBe(command.commandId)
+    return { accepted, uncertain: !accepted }
+  })
+  await service.answer({ chatId: chat.id, requestId: request.id, answer: 'PRIVATE option' })
+  await drafts.reconcile()
+  expect(execute).toHaveBeenCalledOnce()
+  expect(await drafts.list(owner)).toHaveLength(accepted ? 0 : 1)
+  const path = join(fixture.root, 'personal-chat', 'chats.json')
+  expect((await diskChat(path)).decisions![0]).toMatchObject({ answer: '', questionsDigest: requestQuestionsDigest(target.questions), status: accepted ? 'accepted' : 'uncertain' })
+  execute.mockRestore(); snapshot.mockRestore()
+  await stop(service)
+  const restored = makeService(fixture)
+  await restored.start()
+  const recovered = new RequestDraftService(fixture.root, input => personalRequestDraftState(restored.get(), input), async () => {})
+  await recovered.start(); await recovered.reconcile()
+  expect(await recovered.list(owner)).toHaveLength(accepted ? 0 : 1)
 })

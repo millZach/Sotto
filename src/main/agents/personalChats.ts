@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { requestDraftQuestions } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -373,13 +374,16 @@ export class PersonalChatService {
       if (!this.connections.has(chat.providerId) || !request) throw new Error('This request is no longer pending in this conversation.')
       if (chat.decisions?.some(d => d.requestId === answer.requestId && (d.status === 'submitting' || d.status === 'uncertain'))) throw new Error('Answer delivery is uncertain. Refresh without replaying the answer.')
       const decisions = chat.decisions ??= []
-      decisions.push({ ...answer, request, ...(request.questions?.length ? { questionsDigest: requestQuestionsDigest(request.questions) } : {}), id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
+      const questions = requestDraftQuestions(request)
+      decisions.push({ ...answer, request, ...(questions.length ? { questionsDigest: requestQuestionsDigest(questions) } : {}), id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
     })
     let status: 'accepted' | 'uncertain' | 'failed' = 'uncertain'
     let failure: unknown
     try {
       const request = this.chat(chatId).decisions!.find(d => d.id === decisionId)!.request!
-      if (request.questions?.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: this.chat(chatId).providerId, requestId: request.id, questions: request.questions }, decisionId, answer.questionAnswers)
+      const questions = requestDraftQuestions(request)
+      const draftAnswers = request.questions?.length ? answer.questionAnswers : { [request.id]: { optionIds: [answer.answer] } }
+      if (questions.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: this.chat(chatId).providerId, requestId: request.id, questions }, decisionId, draftAnswers)
       const result = await this.host(chatId).execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
       status = result.accepted && !result.uncertain ? 'accepted' : 'uncertain'
       if (!result.accepted) this.error = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'

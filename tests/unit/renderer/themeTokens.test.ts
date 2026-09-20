@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { EFFORT_COLORS } from '../../../src/shared/settings'
 import { DEFAULT_THEME_ID, THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 import {
@@ -51,6 +52,17 @@ describe('main-window theme tokens', () => {
     expect(contrast(color('effort-text'), color('surface-elevated')), 'gold effort word').toBeGreaterThanOrEqual(4.5)
   })
 
+  it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {
+    for (const effortColor of EFFORT_COLORS) {
+      const color = palette(mode, id, { effortColor })
+      // The word on its card and on the chip in the composer, where the colourway also paints it.
+      expect(contrast(color('effort-text'), color('surface-elevated')), `${effortColor} word on the card`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(color('effort-text'), color('field')), `${effortColor} word on the chip`).toBeGreaterThanOrEqual(4.5)
+      // The colourway's hues reach the fill and the outline through three tokens every colourway declares.
+      for (const hue of ['effort-a', 'effort-b', 'effort-c', 'effort-border'] as const) expect(color(hue).a, `${effortColor} ${hue}`).toBeGreaterThan(0)
+    }
+  })
+
   it.each(combinations)('%s mode of %s keeps accent text, actions, focus, boundaries and status readable', (mode, id) => {
     const color = palette(mode, id)
     for (const surface of ['canvas', 'surface'] as const) {
@@ -68,6 +80,9 @@ describe('main-window theme tokens', () => {
     // as in the transcript, so it has to read on both rooms.
     for (const surface of ['canvas', 'sidebar'] as const) {
       expect(contrast(color('success'), color(surface)), `finished mark on ${surface}`).toBeGreaterThanOrEqual(3)
+    }
+    for (const surface of ['field', 'selected'] as const) {
+      expect(contrast(color('accent-text'), color(surface)), `question recommendation on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('on-accent'), color('accent')), 'on-accent on accent').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('primary-contrast'), color('primary')), 'primary action').toBeGreaterThanOrEqual(4.5)
@@ -142,6 +157,7 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/agents/requests/requests.css',
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',
       'src/renderer/src/styles/glass.css',

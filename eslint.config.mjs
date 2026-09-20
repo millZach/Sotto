@@ -11,10 +11,12 @@ export default tseslint.config(
       // every file twice and confuse the parser about which tsconfig root it is under.
       '.claude/worktrees/**',
       'coverage/**',
+      'artifacts/question-choices/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',
+      'artifacts/effort-slider/**',
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
       'artifacts/voice-perf/**',

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
-import { requestDraftSchema, type RequestDraft, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { requestDraftQuestions, requestDraftSchema, type RequestDraft, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import type { AgentRequest } from '../../../src/shared/agents'
 
 const questions = [
@@ -274,4 +274,36 @@ it('retains held content when explicit discard cannot commit and only reports su
   expect(await service.discard({ target, revision: 1 })).toBe(true)
   expect(await service.discard({ target, revision: 1 })).toBe(false)
   expect((await disk()).drafts).toEqual([])
+})
+
+
+it('retains legacy choices across restart and checks definition and delivery identity before release or cleanup', async () => {
+  const legacy: AgentRequest = { id: 'legacy', kind: 'question', text: 'Choose a destination', options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] }
+  const legacyTarget = { ...target, requestId: legacy.id, questions: requestDraftQuestions(legacy) }
+  const retained: RequestDraft = { target: legacyTarget, revision: 1, held: false, selections: { legacy: { optionIds: ['coast'], other: false, text: '' } } }
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [legacy] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(retained)
+  const refresh = vi.fn(async () => {})
+  const restarted = new RequestDraftService(directory, () => state, refresh)
+  await restarted.start()
+  expect(await restarted.get(legacyTarget)).toEqual(retained)
+  await restarted.save({ ...retained, revision: 2, held: true })
+  await restarted.bindDecision(legacyTarget, 'old', { legacy: { optionIds: ['hills'] } })
+  expect((await restarted.get(legacyTarget))?.decisionId).toBeUndefined()
+  await restarted.bindDecision(legacyTarget, 'actual', { legacy: { optionIds: ['coast'] } })
+  state = { ...state, requests: [{ ...legacy, options: [{ id: 'coast', label: 'A new meaning' }] }] }
+  await expect(restarted.check(legacyTarget)).rejects.toThrow('still unconfirmed')
+  expect(refresh).toHaveBeenCalledOnce()
+  state = { ...state, requests: [legacy] }
+  expect(await restarted.check(legacyTarget)).toMatchObject({ revision: 3, held: false })
+  await restarted.save({ ...retained, revision: 4, held: true })
+  await restarted.bindDecision(legacyTarget, 'retry', { legacy: { optionIds: ['coast'] } })
+  const receipt = { requestId: legacy.id, questionsDigest: requestQuestionsDigest(legacyTarget.questions) }
+  state = { ...state, requests: [], completed: [{ ...receipt, decisionId: 'actual' }] }
+  await restarted.reconcile()
+  expect((await restarted.get(legacyTarget))?.decisionId).toBe('retry')
+  state = { ...state, completed: [{ ...receipt, decisionId: 'retry' }] }
+  await restarted.reconcile()
+  expect(await restarted.get(legacyTarget)).toBeNull()
 })

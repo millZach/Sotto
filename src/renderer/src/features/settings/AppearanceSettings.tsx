@@ -7,6 +7,7 @@ import { APPEARANCE_CONTRAST, GLASS_OPACITY, type ThemeDefinition } from '../../
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
 import { ThemeLivePreview } from './themes/ThemeLivePreview'
@@ -24,7 +25,7 @@ export interface AppearanceSettingsProps {
 const SLIDER_SAVE_DELAY_MS = 250
 
 /**
- * The main window's colour scheme, themes, contrast and glass (ADR-0011). Every
+ * The main window's colour scheme, themes, effort colour, contrast and glass (ADR-0011, ADR-0019). Every
  * choice becomes a pending edit that App paints before the save round-trip, so
  * the preview is immediate and overlapping edits combine; a failed save leaves
  * the saved look in force. The floating widget keeps following the system.
@@ -93,6 +94,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
           />
           <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
 
+          <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, 'Effort color saved.')} />
+
           <div className="settings-rows">
             <AppearanceSlider
               label="Contrast"
@@ -112,7 +115,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
             />
           </div>
         </div>
-        <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} />
+        <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />
       </div>
 
       {importing

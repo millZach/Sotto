@@ -42,6 +42,7 @@ scripts/memeval/results/*.json
 artifacts/voice-perf/
 
 artifacts/effort-furnace/
+artifacts/effort-slider/
 artifacts/new-thread-saved-draft/
 artifacts/codex-stream-freeze/
 
@@ -59,3 +60,6 @@ artifacts/thread-sidebar/
 artifacts/terminal-loading/
 
 artifacts/queued-steering/
+
+# Question panel verification captures
+artifacts/question-choices/
