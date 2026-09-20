@@ -87,7 +87,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
     await expect(footerPrompt).toHaveValue('')
     const afterSend = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
+    await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
     expect(afterSend.assignments).toHaveLength(0)
     await expect.poll(() => threadStatus(page, 'footer-links')).toBe('running')

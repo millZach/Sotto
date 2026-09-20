@@ -49,3 +49,6 @@ artifacts/codex-stream-freeze/
 artifacts/codex-images/
 artifacts/issue-146/
 artifacts/codex-connection-recovery/
+
+# Resizable thread sidebar verification
+artifacts/thread-sidebar/
