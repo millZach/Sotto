@@ -81,6 +81,9 @@ describe('main-window theme tokens', () => {
     for (const surface of ['canvas', 'sidebar'] as const) {
       expect(contrast(color('success'), color(surface)), `finished mark on ${surface}`).toBeGreaterThanOrEqual(3)
     }
+    for (const surface of ['field', 'selected'] as const) {
+      expect(contrast(color('accent-text'), color(surface)), `question recommendation on ${surface}`).toBeGreaterThanOrEqual(4.5)
+    }
     expect(contrast(color('on-accent'), color('accent')), 'on-accent on accent').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('primary-contrast'), color('primary')), 'primary action').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('error-text'), color('error-surface'))).toBeGreaterThanOrEqual(4.5)
@@ -154,6 +157,7 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/agents/requests/requests.css',
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',
       'src/renderer/src/styles/glass.css',

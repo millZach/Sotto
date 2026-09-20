@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentRequest } from '../../../../shared/agents'
 import {
-  requestDraftKey, requestDraftOwnerKey, sameRequestQuestions,
+  requestDraftKey, requestDraftOwnerKey, requestDraftQuestions, sameRequestQuestions,
   type RequestDraft, type RequestDraftBridge, type RequestDraftOwner,
 } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { useTransientFlag, writeClipboard } from '../richActions'
-import { answerProgress, requestAnswerStore, requestMode, textOnly, type RequestAnswerStore, type StructuredQuestion } from './requestAnswers'
+import { answerProgress, requestAnswerStore, textOnly, type RequestAnswerStore, type StructuredQuestion } from './requestAnswers'
 import './requests.css'
 import './requestDraftRecovery.css'
 
@@ -24,8 +24,8 @@ const savedAnswerKey = (draft: RequestDraft): string => requestDraftKey(draft.ta
 
 /** A live card renders exactly this request ID and definition, so it already shows the saved answer. */
 function renderedLive(draft: RequestDraft, live: readonly AgentRequest[]): boolean {
-  return live.some(request => request.id === draft.target.requestId && requestMode(request) === 'structured'
-    && sameRequestQuestions(request.questions ?? [], draft.target.questions))
+  return live.some(request => request.id === draft.target.requestId
+    && sameRequestQuestions(requestDraftQuestions(request), draft.target.questions))
 }
 
 /** One question's saved answer in words: the chosen option labels, then Other or free text. Null when unanswered. */
@@ -124,9 +124,9 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
     const next = [...container.current?.querySelectorAll<HTMLElement>('[data-recovery-key]') ?? []].find(item => item.dataset.recoveryKey === pending.next)
     ;(next?.querySelector<HTMLElement>('button') ?? pending.scroller)?.focus()
   }, [keysSignature])
-  const liveStructured = live.some(request => requestMode(request) === 'structured')
+  const liveAnswer = live.some(request => requestDraftQuestions(request).length > 0)
   // An unreadable store is already explained inside a live card; elsewhere it is said once here.
-  const listError = model.error && !liveStructured
+  const listError = model.error && !liveAnswer
     ? <div className="agent-request request-recovery request-recovery--error" role="alert"><p className="agent-request__error">{model.error}</p>
       <div className="agent-request__actions"><Button variant="secondary" onClick={model.reload}>Try again</Button></div></div> : null
   if (!listError && model.drafts.length === 0) return null

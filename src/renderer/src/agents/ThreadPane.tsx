@@ -30,25 +30,25 @@ type Command = AgentConnection['command']
  * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
  * A plain question points at the composer; everything the provider structured is answered in place.
  */
-function ThreadRequests({ row, state, command, blocked, onAnswer }: {
-  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly blocked: string | null; readonly onAnswer: () => void
+function ThreadRequests({ row, state, command, blocked, onAnswer, kind }: {
+  readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly blocked: string | null; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
 }): ReactNode {
   // Without the voice coordinator nothing is listening, so a request never says an answer can be spoken.
   const spoken = useVoiceCoordinatorEnabled()
   const thread = row.thread
-  const requests = thread.requests
+  const requests = thread.requests.filter(request => request.kind === kind)
   if (isThreadClosed(thread) || requests.length === 0) return null
-  return <>{requests.map(request => {
+  return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     const voice = spoken && state.queue.some(item => item.threadId === thread.id && item.requestId === request.id)
     const mode = requestMode(request)
-    return <AgentRequestCard key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
+    return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
       draftOwner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
       hint={voice && (mode === 'permission' && request.permissionChoices === undefined || mode === 'legacy-text')
         ? mode === 'permission' ? 'Say “allow” or “deny”, or choose here.' : 'Say your answer, then “send it”, or write it below.' : undefined}
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
       onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
-  })}</>
+  })}</div>
 }
 
 export interface ThreadPaneProps {
@@ -198,6 +198,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ...(thread.status === 'running' && managed
       ? [{ id: 'interrupt', label: 'Stop agent', icon: <Square size={15} aria-hidden="true" />, disabled: threadBusy || !rowConnected || !capabilities.interrupt, run: () => void command({ type: 'interrupt', threadId: thread.id }) }] : []),
   ]
+  const focusAnswerComposer = (): void => {
+    const target = (): void => document.getElementById(managed ? 'agent-prompt' : promptId)?.focus()
+    // A managed pane's composer appears only once the pane holds the selection.
+    if (managed && !focused) { onFocusPane?.(); window.setTimeout(target, 0) } else target()
+  }
   return <>
     <header className="thread-workspace__head" ref={head}>
       <div className="thread-workspace__title">
@@ -219,12 +224,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </header>
     {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
-      <ThreadRequests row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
-        onAnswer={() => {
-          const target = (): void => document.getElementById(managed ? 'agent-prompt' : promptId)?.focus()
-          // A managed pane's composer appears only once the pane holds the selection.
-          if (managed && !focused) { onFocusPane?.(); window.setTimeout(target, 0) } else target()
-        }} />
+      <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
+        onAnswer={focusAnswerComposer} />
       {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
       <RequestDraftRecovery owner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
         live={closed ? [] : thread.requests} provider={row.provider}
@@ -237,6 +238,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
       {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
         onRetryAdmission={draftId => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue', draftId) }} /> : null}
+      <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
+        onAnswer={focusAnswerComposer} />
       {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
         // The pane takes the selection in the capture pass of pointerdown or focus, and that update lands before the event
         // reaches this button, which it would replace. So both are handled in the same capture pass: a pointer arms the

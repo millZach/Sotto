@@ -60,3 +60,6 @@ artifacts/thread-sidebar/
 artifacts/terminal-loading/
 
 artifacts/process-creature/
+
+# Question panel verification captures
+artifacts/question-choices/

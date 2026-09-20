@@ -10,6 +10,7 @@ export default tseslint.config(
       // every file twice and confuse the parser about which tsconfig root it is under.
       '.claude/worktrees/**',
       'coverage/**',
+      'artifacts/question-choices/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/process-creature/**',
       'artifacts/terminal-loading/**',
