@@ -363,6 +363,7 @@ it.each(['codex', 'claude', 'grok'] as const)('dictation stays in its captured %
   const other = chat({ id: 'other', title: 'Other chat', providerId })
   const h = mount(snapshot({ chats: [original, other] }))
   await screen.findByRole('textbox', { name: 'Message' })
+  await waitFor(() => expect(captureDictationDestination()).toBeDefined())
   const deliver = captureDictationDestination()!
   expect(deliver).toBeDefined()
   await act(async () => { await h.bridge.select('other') })

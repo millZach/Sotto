@@ -204,6 +204,8 @@ describe('Codex App Server provider adapter', () => {
       await expect.poll(() => !!release).toBe(true)
       await f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId: second!.id, answer: '', approved: true })
       release!(); await interrupt
+      // The write callback confirms the pipe accepted bytes, not that the child has recorded them.
+      await expect.poll(async () => (await f.driver.requests()).some(r => r.id === JSON.parse(second!.id.slice(4)) && r.result)).toBe(true)
       f.host.disconnect(); await f.adapter.closed()
       expect((await f.driver.requests()).filter(r => r.id === JSON.parse(second!.id.slice(4)) && r.result)).toEqual([
         { id: JSON.parse(second!.id.slice(4)), result: { decision: 'accept' } },

@@ -40,6 +40,8 @@ scripts/memeval/results/*.json
 
 # Isolated voice measurement bundles, audio and temporary reports
 artifacts/voice-perf/
+
+artifacts/effort-furnace/
 artifacts/new-thread-saved-draft/
 artifacts/codex-stream-freeze/
 

@@ -11,6 +11,7 @@ export default tseslint.config(
       '.claude/worktrees/**',
       'coverage/**',
       'artifacts/agent-control-smoke/**',
+      'artifacts/effort-furnace/**',
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
       'artifacts/voice-perf/**',

@@ -48,6 +48,7 @@ describe('main-window theme tokens', () => {
     expect(contrast(color('sidebar-text-muted'), color('sidebar'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('bubble-text'), color('bubble'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('terminal-foreground'), color('terminal-background')), 'terminal text').toBeGreaterThanOrEqual(4.5)
+    expect(contrast(color('effort-text'), color('surface-elevated')), 'gold effort word').toBeGreaterThanOrEqual(4.5)
   })
 
   it.each(combinations)('%s mode of %s keeps accent text, actions, focus, boundaries and status readable', (mode, id) => {
@@ -146,6 +147,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/styles/glass.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
+      'src/renderer/src/agents/effortPicker.css',
       'src/renderer/src/agents/threadChips.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/newThread.css',
