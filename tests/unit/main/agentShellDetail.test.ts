@@ -5,7 +5,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentThreadDetailPublishes, type PublishScheduler } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -27,6 +27,7 @@ function delta(update: AgentThreadDetailUpdate | undefined): AgentThreadDetailDe
 const roots: string[] = []
 const controls = new Set<AgentControl>()
 afterEach(async () => {
+  vi.useRealTimers()
   for (const control of controls) control.dispose()
   controls.clear()
   for (const root of roots.splice(0)) {
@@ -303,5 +304,35 @@ describe('coalesced thread detail at the IPC boundary', () => {
     publisher.publish(detail('workshop', 3))
     clock.tick()
     expect(sent).toEqual(['workshop:1'])
+  })
+  it('drops a lane once it goes quiet, so the next update opens a fresh one and sends at once', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`${item.threadId}:${item.revision}`), { schedule: clock.schedule })
+    publisher.publish(detail('workshop', 1))
+    publisher.publish(detail('workshop', 2))
+    expect(sent).toEqual(['workshop:1'])
+    clock.tick()
+    expect(sent).toEqual(['workshop:1', 'workshop:2'])
+    // The trailing run fires with nothing waiting and retires the lane.
+    clock.tick()
+    expect(sent).toEqual(['workshop:1', 'workshop:2'])
+    publisher.publish(detail('workshop', 3))
+    expect(sent).toEqual(['workshop:1', 'workshop:2', 'workshop:3'])
+  })
+  it('leaves no timer armed once a lane goes quiet or the publisher is disposed', () => {
+    vi.useFakeTimers()
+    const sent: number[] = []
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(item.revision))
+    publisher.publish(detail('workshop', 1))
+    publisher.publish(detail('workshop', 2))
+    vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+    expect(sent).toEqual([1, 2])
+    vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+    expect(vi.getTimerCount()).toBe(0)
+    publisher.publish(detail('docs', 1))
+    vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+    publisher.dispose()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

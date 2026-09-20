@@ -2337,6 +2337,7 @@ export interface CoalescedThreadDetailPublisher {
  * A delta cannot simply be dropped the way a whole detail can — the window applies it to the revision it
  * holds — so a lane folds what is waiting into one update where it can (two appends to one message become
  * one) and keeps them in order where it cannot. Whole details still supersede everything before them.
+ * A lane that goes quiet is dropped; the next update opens a fresh one.
  */
 export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDetailUpdate) => void,
   options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedThreadDetailPublisher {
@@ -2351,7 +2352,7 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
     const queued = lane.pending
     lane.pending = []
     for (const update of queued) send(update)
-    lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending.length > 0) flushLane(threadId) }, intervalMs)
+    lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending.length > 0) flushLane(threadId); else lanes.delete(threadId) }, intervalMs)
   }
   return {
     publish: update => {
