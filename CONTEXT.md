@@ -18,7 +18,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
+**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build or Devin. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 
 **Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 

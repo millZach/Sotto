@@ -50,5 +50,7 @@ artifacts/codex-images/
 artifacts/issue-146/
 artifacts/codex-connection-recovery/
 
+artifacts/devin-local-provider/
+
 # Resizable thread sidebar verification
 artifacts/thread-sidebar/

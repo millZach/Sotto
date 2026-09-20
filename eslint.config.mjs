@@ -21,6 +21,7 @@ export default tseslint.config(
       'artifacts/codex-images/**',
       'artifacts/issue-146/**',
       'artifacts/codex-connection-recovery/**',
+      'artifacts/devin-local-provider/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',
