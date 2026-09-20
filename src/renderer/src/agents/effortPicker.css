@@ -1,74 +1,96 @@
-.effort-picker {
-  --effort-forge: 0%;
+/* The effort card (ADR-0019): the level word and its line, a pill track with the stops as dots and a round
+   thumb, and the colourway's wash when the thread reaches the model's highest level. Every colour is a --tt-*
+   token; the colourway's hues arrive through the --tt-effort-* tokens the root carries, so the card never
+   branches on which colourway is chosen. */
+.effort-card {
+  --effort-x: 0;
+  --effort-heat: 0;
   position: fixed;
   inset: auto;
   margin: 0;
   box-sizing: border-box;
-  width: min(440px, calc(100vw - 24px));
+  width: min(292px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
   overflow: auto;
-  padding: 18px 20px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--tt-field-border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--tt-surface-elevated);
   color: var(--tt-text);
   box-shadow: 0 16px 48px var(--tt-shadow-color);
   z-index: 60;
   font: inherit;
+  transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1);
 }
-.effort-picker:popover-open { display: block; }
-.effort-picker__drawing { position: relative; height: 138px; }
-.effort-picker__drawing canvas { width: 100%; height: 100%; display: block; }
-.effort-picker__drawing input {
+.effort-card:popover-open { display: block; }
+.effort-card[data-arriving='true'] { border-color: color-mix(in srgb, var(--tt-effort-border) 55%, var(--tt-field-border)); transition-duration: 200ms; }
+
+/* Header: the word, and Default when the model reports one. */
+.effort-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
+.effort-card__word { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--tt-text); }
+.effort-card__word > span { display: inline-block; }
+.effort-card__word[data-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; }
+.effort-card__word[data-unknown='true'] { color: var(--tt-text-muted); font-weight: 500; }
+.effort-card__default { flex: none; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.effort-card__default:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
+.effort-card__default:disabled { opacity: .5; cursor: default; }
+.effort-card__line { margin: 1px 0 0; min-height: 18px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+
+/* The track: a 22px pill. The fill warms from the cool end toward the colourway as the level climbs, and the
+   colourway's own gradient shows through near the top. Dots mark the stops; the thumb is a 26px disc. */
+.effort-card__track { position: relative; height: 26px; margin: 12px 0 0; }
+.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 999px; background: var(--tt-effort-track); overflow: hidden; }
+.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--effort-x) * (100% - 26px)); border-radius: 999px; overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tt-effort-a) calc(30% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool)), color-mix(in srgb, var(--tt-effort-b) calc(45% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool))); }
+.effort-card__fill::before { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-image); opacity: calc(var(--effort-heat) * var(--effort-heat) * var(--effort-heat)); }
+.effort-card__fill::after { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-veil); }
+.effort-card[data-unknown='true'] .effort-card__fill { opacity: .35; }
+.effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--effort-stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--tt-effort-dot); transform: translate(-50%, -50%); }
+.effort-card__dot[data-under='true'] { background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); width: 26px; height: 26px; border-radius: 50%; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
+.effort-card[data-unknown='true'] .effort-card__thumb { opacity: .45; }
+.effort-card__track input {
   position: absolute;
-  appearance: none;
+  inset: 0;
   width: 100%;
-  height: 32px;
-  bottom: 2px;
+  height: 100%;
   margin: 0;
   padding: 0;
+  appearance: none;
   background: transparent;
+  border: 0;
+  border-radius: 999px;
+  outline: 0;
   cursor: ew-resize;
   touch-action: none;
-  border: 0;
-  border-radius: 4px;
 }
-.effort-picker__drawing input::-webkit-slider-thumb { appearance: none; width: 16px; height: 24px; background: transparent; border: 0; }
-.effort-picker__drawing input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
-.effort-picker__drawing input[aria-disabled='true'] { cursor: default; }
-.effort-picker__thumb { position: absolute; left: 8px; bottom: 10px; width: 16px; height: 16px; border: 3px solid var(--tt-surface-elevated); background: var(--tt-text); box-shadow: 0 0 0 1px var(--tt-border); border-radius: 50%; transform: translateX(-50%); pointer-events: none; box-sizing: border-box; }
-.effort-picker[data-gold='true'] .effort-picker__thumb { background: var(--tt-effort-gold); }
-.effort-picker__stops { display: grid; grid-template-columns: repeat(var(--effort-count), minmax(0, 1fr)); margin: 4px -12px 0; }
-.effort-picker__stops button { position: relative; padding: 7px 1px; min-height: 36px; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; }
-.effort-picker__stops button[aria-pressed='true'] { color: var(--tt-text); font-weight: 600; }
-.effort-picker__stops button[data-highest='true'] { color: color-mix(in srgb, var(--tt-effort-text) var(--effort-forge), var(--tt-text)); }
-.effort-picker__stops button[aria-disabled='true'] { cursor: default; }
-.effort-picker__word { position: relative; z-index: 1; }
-.effort-picker__word > span { display: inline-block; }
-.effort-picker__sparks { position: absolute; inset: 3px; pointer-events: none; }
-.effort-picker__sparks i { position: absolute; top: 70%; width: 3px; height: 3px; background: var(--tt-effort-warm); opacity: 0; }
-.effort-picker__sparks i:nth-child(3n) { width: 2px; height: 2px; background: var(--tt-effort-highlight); }
-.effort-picker__description { color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; margin: 10px 0 0; }
-.effort-picker__think, .effort-picker__done { background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; border: 0; border-radius: 5px; min-height: 32px; padding: 6px 8px; margin: 10px 0 0; cursor: pointer; }
-.effort-picker__think { border: 1px solid var(--tt-field-border); }
-.effort-picker__think:disabled { color: var(--tt-text-muted); cursor: default; }
-.effort-picker__done { float: right; }
-.effort-picker__think:hover:not(:disabled), .effort-picker__done:hover { background: var(--tt-hover); }
-@keyframes effort-rise { from { transform: translateY(4px); } 70% { transform: translateY(-1px); } to { transform: none; } }
-@keyframes effort-spark { from { transform: translateY(3px) scale(.96); } 40% { transform: translateY(-3px) scale(1.07); } to { transform: none; } }
-@keyframes effort-ripple { from { transform: translateY(4px) skewX(-5deg); } 35% { transform: translateY(-4px) skewX(4deg); } 65% { transform: translateY(1px) skewX(-2deg); } to { transform: none; } }
-@keyframes effort-forge { from { transform: translateY(-7px) scale(.9); } 36% { transform: translateY(3px) scale(1.08, .91); } 63% { transform: translateY(-2px) scale(.99, 1.03); } to { transform: none; } }
-@keyframes effort-pixel { 0% { opacity: 0; transform: none; } 18% { opacity: .9; } 100% { opacity: 0; transform: translate(var(--spark-x), var(--spark-y)); } }
-@media (prefers-reduced-motion: no-preference) {
-  .effort-picker[data-still='false'] button[aria-pressed='true'] .effort-picker__word > span { animation: effort-rise 420ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--letter) * 32ms); }
-  .effort-picker[data-still='false'] button[aria-pressed='true'][data-tier='spark'] .effort-picker__word > span { animation-name: effort-spark; animation-duration: 540ms; }
-  .effort-picker[data-still='false'] button[aria-pressed='true'][data-tier='ripple'] .effort-picker__word > span { animation-name: effort-ripple; animation-duration: 680ms; }
-  .effort-picker[data-still='false'] button[aria-pressed='true'][data-tier='forge'] .effort-picker__word > span { animation-name: effort-forge; animation-duration: 820ms; }
-  .effort-picker[data-still='false'] .effort-picker__sparks i { animation: effort-pixel 750ms var(--spark-delay) cubic-bezier(.15, .6, .3, 1) both; }
-}
+.effort-card__track input::-webkit-slider-thumb { appearance: none; width: 26px; height: 26px; background: transparent; border: 0; }
+.effort-card__track input[aria-disabled='true'] { cursor: default; }
+.effort-card__track:has(input:focus-visible) .effort-card__thumb { box-shadow: var(--tt-shadow-sm), 0 0 0 2px var(--tt-surface-elevated), 0 0 0 4px var(--tt-focus-ring); }
+.effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--tt-text-faint); font-size: 11.5px; line-height: 1.2; }
 
-/* The furnace has a true still state, including inherited control color transitions. */
-.effort-picker[data-still='true'], .effort-picker[data-still='true'] * {
+/* Ultrathink: one row that reads as a check, on Claude threads with an editable draft. */
+.effort-card__ultrathink { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.effort-card__ultrathink:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
+.effort-card__ultrathink:disabled { cursor: default; }
+.effort-card__ultrathink i { display: inline-grid; flex: none; place-items: center; width: 15px; height: 15px; border: 1.5px solid var(--tt-border); border-radius: 4px; color: var(--tt-on-accent); }
+.effort-card__ultrathink i svg { display: none; }
+.effort-card__ultrathink[data-on='true'] i { border-color: var(--tt-accent); background: var(--tt-accent); }
+.effort-card__ultrathink[data-on='true'] i svg { display: block; }
+
+/* The arrival. The letters take the colourway in turn, and a tide of it rises through the card from the track;
+   threads.css carries the same tide through the composer and its border tint. */
+.effort-card__wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.effort-card__wash::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 220%; background: var(--tt-effort-wash-image); opacity: .5;
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
+@media (prefers-reduced-motion: no-preference) {
+  .effort-card[data-still='false'][data-arriving='true'] .effort-card__word[data-top='true'] > span { animation: effort-letter 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--effort-letter) * 55ms); }
+  .effort-card[data-still='false'][data-arriving='true'] .effort-card__wash::before { animation: effort-wash 1500ms cubic-bezier(.3, .6, .2, 1) both; }
+}
+/* The effort-letter and effort-wash keyframes live in global.css, shared with the composer and the Appearance sample. */
+
+/* Reduced motion is a true still state, inherited control transitions and the global focus rings' pseudo-elements included. */
+.effort-card[data-still='true'], .effort-card[data-still='true'] *, .effort-card[data-still='true'] *::before, .effort-card[data-still='true'] *::after {
   animation: none !important;
   transition: none !important;
 }

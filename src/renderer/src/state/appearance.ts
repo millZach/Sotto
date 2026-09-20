@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
-import { DEFAULT_SETTINGS, type AppSettings, type Appearance } from '../../../shared/settings'
+import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
@@ -19,12 +19,14 @@ import {
 export type ResolvedAppearance = ThemeAppearance
 
 /** Everything that decides the main window's look. */
-export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'glassOpacity'> & {
+export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'glassOpacity' | 'effortColor'> & {
   readonly customThemes: readonly ThemeDefinition[]
 }
 
 type ChoiceKey = keyof AppearanceChoice
-const CHOICE_KEYS = ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes'] as const satisfies readonly ChoiceKey[]
+const CHOICE_KEYS = ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'effortColor', 'customThemes'] as const satisfies readonly ChoiceKey[]
+
+const isEffortColor = (value: unknown): value is EffortColor => typeof value === 'string' && (EFFORT_COLORS as readonly string[]).includes(value)
 
 /** An unsaved palette from the theme editor, painted over the saved look until the editor closes. */
 export interface ThemeDraft {
@@ -123,6 +125,8 @@ export function applyAppearance(
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   root.style.setProperty('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
   root.style.setProperty('--theme-glass-opacity', `${clampStep(choice.glassOpacity, GLASS_OPACITY)}%`)
+  // The effort colourway is an attribute, not a role: tokens.css keys its palette blocks on it (ADR-0019).
+  root.dataset.effortColor = isEffortColor(choice.effortColor) ? choice.effortColor : DEFAULT_SETTINGS.effortColor
   if (draft === null) writeCachedAppearance(choice)
   return resolved
 }
@@ -144,6 +148,7 @@ function defaultChoice(): AppearanceChoice {
     darkTheme: DEFAULT_SETTINGS.darkTheme,
     appearanceContrast: DEFAULT_SETTINGS.appearanceContrast,
     glassOpacity: DEFAULT_SETTINGS.glassOpacity,
+    effortColor: DEFAULT_SETTINGS.effortColor,
     customThemes: [],
   }
 }
@@ -165,6 +170,7 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
       darkTheme: resolveThemeHalfId(text(record.darkTheme, fallback.darkTheme), 'dark', customThemes),
       appearanceContrast: clampStep(number(record.appearanceContrast, fallback.appearanceContrast), APPEARANCE_CONTRAST),
       glassOpacity: clampStep(number(record.glassOpacity, fallback.glassOpacity), GLASS_OPACITY),
+      effortColor: isEffortColor(record.effortColor) ? record.effortColor : fallback.effortColor,
       customThemes,
     }
   } catch {
@@ -184,6 +190,7 @@ function writeCachedAppearance(choice: AppearanceChoice, storage: Pick<Storage, 
       darkTheme: choice.darkTheme,
       appearanceContrast: choice.appearanceContrast,
       glassOpacity: choice.glassOpacity,
+      effortColor: choice.effortColor,
       customThemes: selected,
     }))
   } catch {
@@ -277,6 +284,7 @@ export class AppearancePreview {
       darkTheme: fields.darkTheme?.value ?? persisted.darkTheme,
       appearanceContrast: fields.appearanceContrast?.value ?? persisted.appearanceContrast,
       glassOpacity: fields.glassOpacity?.value ?? persisted.glassOpacity,
+      effortColor: fields.effortColor?.value ?? persisted.effortColor,
       customThemes,
     }
   }

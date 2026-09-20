@@ -79,6 +79,7 @@ const settingKeys = [
   'darkTheme',
   'appearanceContrast',
   'glassOpacity',
+  'effortColor',
   'customThemes',
   'reducedMotion',
   'microphoneId',

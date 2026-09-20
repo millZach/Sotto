@@ -127,7 +127,7 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
 /**
  * The composer's option controls: three chips saying what this thread is set to, the model with its
  * provider's mark, the reasoning effort and what the thread may do without asking. Effort opens its
- * slider; the other chips open lists. While a change is being confirmed the chips are fixed; afterwards,
+ * card; the other chips open lists. While a change is being confirmed the chips are fixed; afterwards,
  * focus returns to a closed chip unless the user has moved on. New thread and New terminal show the same three
  * controls laid out in full.
  */
@@ -183,6 +183,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
       <ModelPicker models={models} modelId={thread.modelId} disabled={disabled || modelDisabled} onChange={modelId => void save({ modelId })} note={note} />
       {efforts.length > 0 && <EffortPicker key={`${thread.modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={disabled || modelDisabled} onChange={reasoningEffort => save({ reasoningEffort })}
+        defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={thread.runtimeMode ?? ''} options={modes} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })} />}
     </div>

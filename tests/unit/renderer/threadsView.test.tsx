@@ -300,7 +300,7 @@ describe('ThreadsView workspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    fireEvent.click(screen.getByRole('button', { name: 'High effort' }))
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'End' })
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, reasoningEffort: 'high' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))

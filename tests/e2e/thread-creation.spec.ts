@@ -98,9 +98,10 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await resizeWindow(launched, 1280, 800)
     await page.getByRole('option', { name: 'Claude Test', exact: true }).click()
     await page.getByRole('combobox', { name: 'Thread reasoning' }).click()
-    await page.getByRole('button', { name: 'Low effort', exact: true }).click()
-    await page.keyboard.press('Escape')
+    // The card has no level buttons: Home is the lowest level the model reports.
+    await page.getByRole('slider', { name: 'Thread reasoning effort', exact: true }).press('Home')
     await expect(page.getByRole('combobox', { name: 'Thread reasoning' })).toHaveText('Low')
+    await page.keyboard.press('Escape')
     await page.getByRole('combobox', { name: 'Thread permissions' }).click()
     await page.getByRole('option', { name: 'Allow edits', exact: true }).click()
     await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveText('Allow edits')

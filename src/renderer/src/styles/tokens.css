@@ -275,16 +275,23 @@
   --tt-provider-ink: #080b0a;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
   --tt-backdrop: rgb(0 0 0 / 38%);
-  /* Pixel furnace materials follow the active theme; selected gold remains readable. */
-  --tt-effort-track: var(--tt-border);
-  --tt-effort-fill: var(--tt-text);
-  --tt-effort-gold: var(--theme-warning);
-  --tt-effort-highlight: color-mix(in srgb, var(--theme-warning) 48%, var(--tt-text));
-  --tt-effort-shadow: color-mix(in srgb, var(--theme-warning) 48%, var(--tt-surface-elevated));
-  --tt-effort-fire: var(--tt-error);
-  --tt-effort-warm: var(--theme-warning);
-  --tt-effort-core: var(--tt-effort-highlight);
-  --tt-effort-text: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text));
+  /* The effort control (ADR-0019): a pill track in the card, and the colourway chosen in Settings → Appearance
+     for the fill, the wash and the tinted word at a model's highest level. The colourway's three hues
+     (`--tt-effort-a/b/c`), its ink and its border hue are set per colourway after the mode blocks; the tokens
+     here shape them for the mode. `--tt-effort-text-fill` is the colour the word is painted in and
+     `--tt-effort-text-image` the gradient clipped to it, so a colourway that paints its word as a gradient
+     needs no branch in feature CSS. */
+  --tt-effort-track: color-mix(in srgb, var(--tt-text) 7%, var(--tt-surface-elevated));
+  --tt-effort-dot: color-mix(in srgb, var(--tt-text-muted) 55%, var(--tt-effort-track));
+  --tt-effort-fill-cool: var(--tt-text-muted);
+  --tt-effort-fill-veil: transparent;
+  --tt-effort-thumb: var(--tt-text);
+  --tt-effort-thumb-edge: color-mix(in srgb, var(--tt-text) 10%, transparent);
+  --tt-effort-text: var(--effort-ink);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+  --tt-effort-wash-image: linear-gradient(to top, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
 
   --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
@@ -323,6 +330,84 @@
   /* Inverting luminance and turning the hue back keeps the orb's colour
      while its additive glow becomes ink on paper. */
   --tt-orb-filter: invert(1) hue-rotate(180deg);
+  /* Light: the effort fill tints toward white so it stays a light surface, the thumb is paper with an edge,
+     and the tinted word mixes toward the ink so it reads at 4.5:1. */
+  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));
+  --tt-effort-fill-veil: color-mix(in srgb, white 38%, transparent);
+  --tt-effort-thumb: var(--tt-surface);
+  --tt-effort-thumb-edge: var(--tt-border);
+  --tt-effort-text: var(--effort-ink-light);
+}
+
+/* The effort colourways (ADR-0019). Ember and Theme accent come from theme roles; Cyberpunk, Rainbow, Aurora
+   and Plasma are fixed palettes a theme does not carry. Keyed on the attribute alone, so a Settings swatch can
+   wear a colourway the root does not; the bare `:root` line is the first paint before the setting arrives. */
+:root, [data-effort-color='ember'] {
+  --tt-effort-a: var(--theme-warning);
+  --tt-effort-b: var(--theme-warning);
+  --tt-effort-c: color-mix(in srgb, var(--theme-warning) 60%, var(--tt-text));
+  --tt-effort-border: var(--theme-warning);
+  --effort-ink: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text));
+  --effort-ink-light: var(--effort-ink);
+}
+/* A custom property substitutes its var()s where it is declared, so an element wearing its own colourway
+   re-derives the gradients from its own hues here rather than inheriting the root's. */
+[data-effort-color] {
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+  --tt-effort-wash-image: linear-gradient(to top, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+}
+[data-effort-color='accent'] {
+  --tt-effort-a: var(--theme-accent);
+  --tt-effort-b: var(--theme-accent);
+  --tt-effort-c: color-mix(in srgb, var(--theme-accent) 55%, var(--tt-text));
+  --tt-effort-border: var(--theme-accent);
+  --effort-ink: var(--tt-accent-text);
+  --effort-ink-light: var(--tt-accent-text);
+}
+/* The fixed palettes name a bright ink for dark rooms and a deep one of the same hue for light, where a
+   bright neon mixed toward the text would still fall short of 4.5:1 on a light card. */
+[data-effort-color='cyberpunk'] {
+  --tt-effort-a: oklch(0.7 0.3 345);
+  --tt-effort-b: oklch(0.62 0.27 305);
+  --tt-effort-c: oklch(0.86 0.15 200);
+  --tt-effort-border: oklch(0.7 0.3 345);
+  --effort-ink: oklch(0.86 0.15 200);
+  --effort-ink-light: oklch(0.44 0.22 335);
+}
+[data-effort-color='aurora'] {
+  --tt-effort-a: oklch(0.86 0.18 160);
+  --tt-effort-b: oklch(0.82 0.14 200);
+  --tt-effort-c: oklch(0.68 0.22 300);
+  --tt-effort-border: oklch(0.82 0.14 200);
+  --effort-ink: oklch(0.87 0.16 165);
+  --effort-ink-light: oklch(0.44 0.12 175);
+}
+[data-effort-color='plasma'] {
+  --tt-effort-a: oklch(0.42 0.25 300);
+  --tt-effort-b: oklch(0.68 0.29 350);
+  --tt-effort-c: oklch(0.86 0.18 75);
+  --tt-effort-border: oklch(0.68 0.29 350);
+  --effort-ink: oklch(0.8 0.2 20);
+  --effort-ink-light: oklch(0.45 0.22 350);
+}
+/* Rainbow paints its word as the spectrum itself; the ink is the fallback where text cannot clip a gradient. */
+[data-effort-color='rainbow'] {
+  --tt-effort-a: oklch(0.7 0.24 20);
+  --tt-effort-b: oklch(0.8 0.2 130);
+  --tt-effort-c: oklch(0.7 0.24 300);
+  --tt-effort-border: oklch(0.7 0.22 300);
+  --effort-ink: oklch(0.82 0.16 200);
+  --effort-ink-light: oklch(0.44 0.2 290);
+  --effort-spectrum: linear-gradient(90deg, oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340));
+  --tt-effort-text-fill: transparent;
+  --tt-effort-text-image: var(--effort-spectrum);
+  --tt-effort-fill-image: var(--effort-spectrum);
+  --tt-effort-wash-image: var(--effort-spectrum);
+}
+:root[data-theme='light'][data-effort-color='rainbow'] {
+  --tt-effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340));
 }
 
 /* A mode or theme switch repaints at once: no colour transition runs mid-switch. */
