@@ -288,15 +288,6 @@ export class ThreadStore {
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
   rebuild(): void { rebuildProjection(this.requireOpen()) }
 
-  /**
-   * Forces the log to disk. For the few writes that nothing can replay: an answer's
-   * attribution, and the one-time move out of workspace.json.
-   */
-  sync(): void {
-    if (this.memory) return
-    this.requireOpen().exec('PRAGMA wal_checkpoint(FULL)')
-  }
-
   private requireOpen(): DatabaseSync {
     if (this.db === undefined) throw new Error('Thread store is not open')
     return this.db
@@ -401,8 +392,9 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
 export function prepareThreadDatabase(db: DatabaseSync): void {
+  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')
