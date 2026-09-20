@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { MenuItemConstructorOptions } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 

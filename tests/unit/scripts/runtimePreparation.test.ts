@@ -1,4 +1,5 @@
-﻿import { createHash } from 'node:crypto'
+// @vitest-environment node
+import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

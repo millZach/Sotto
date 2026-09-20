@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
 import { WAV_HEADER_BYTES, encodeWavPcm16 } from '../../../src/shared/wav'

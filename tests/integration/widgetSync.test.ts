@@ -1,4 +1,6 @@
-﻿import { act, render, waitFor } from '@testing-library/react'
+// @vitest-environment jsdom
+// Mounts the real DictationController and widget shell, which read document.hasFocus() and the DOM.
+import { act, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -71,6 +73,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     showApp: vi.fn(async () => undefined),
     hideApp: vi.fn(async () => undefined),
     minimizeApp: vi.fn(async () => undefined),
+    reloadApp: vi.fn(async () => undefined),
     toggleMaximizeApp: vi.fn(async () => undefined),
     getWindowMaximized: vi.fn(async () => false),
     onWindowMaximized: vi.fn(() => () => undefined),

@@ -142,7 +142,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.assignments).toHaveLength(0)
-    expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
+    await expect.poll(() => userMessageTexts(page, 'workshop')).toHaveLength(1)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'workshop')!.status)).toBe('idle')
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
@@ -203,7 +203,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Start a new manual task in this thread.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Start a new manual task in this thread.')
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments.some(assignment => assignment.threadId === 'release-notes'))).toBe(false)
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).assignments.some(assignment => assignment.threadId === 'release-notes'))).toBe(false)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
 
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()

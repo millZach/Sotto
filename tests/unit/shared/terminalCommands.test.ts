@@ -1,7 +1,13 @@
+// @vitest-environment node
+import { terminalLaunchSchema } from '../../../src/shared/terminalWorkspace'
 import { describe, expect, it } from 'vitest'
 import { commandLine, nativeModelName, providerCommand, TERMINAL_PERMISSION_LABELS } from '../../../src/shared/terminalCommands'
 
 describe('terminal launch commands', () => {
+  it('rejects a thread provider without a dedicated terminal launcher', () => {
+    expect(terminalLaunchSchema.safeParse({ provider: 'devin', modelId: null, reasoning: null, permission: null }).success).toBe(false)
+  })
+
   it('maps every setting to the flags each CLI accepts', () => {
     expect(providerCommand({ provider: 'claude', model: 'claude-sonnet-5', reasoning: 'high', permission: 'edits' }))
       .toEqual(['claude', '--model', 'claude-sonnet-5', '--effort', 'high', '--permission-mode', 'acceptEdits'])

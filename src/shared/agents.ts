@@ -38,7 +38,7 @@ const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => 
 export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
 export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
 
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok'])
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 
 const id = z.string().min(1).max(512)
@@ -251,7 +251,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
 const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 const orbColorSchema = z.enum(ORB_COLORS)
@@ -259,7 +259,7 @@ export type OrbColor = z.infer<typeof orbColorSchema>
 const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
-  enabledProviders: z.array(providerIdSchema).max(3).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  enabledProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),

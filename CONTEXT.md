@@ -18,7 +18,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
 
-**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code or Grok Build. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
+**Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build or Devin. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 
 **Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
@@ -163,7 +163,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Memory.** One remembered fact about the user, a project or the world, with the metadata the spec requires: type, scope, content, source class (explicit, observed, inferred, imported, agent-confirmed), confidence, evidence count, importance, temporal fields (created, last confirmed, last used, valid from, valid to), provenance, tags, state (active, superseded, disputed, temporary, archived) and authority (preference, policy, permission). Avoid: "fact", "note", "record".
 
-**Memory store.** The SQLite database `memory.sqlite` in the user data folder, the single source of truth for accepted memories. It is opened by Node's built-in `node:sqlite` in the packaged Electron runtime, so production dependencies stay `zod` only, and it carries a full-text index for lexical retrieval. Search honours a memory's validity window and includes temporary memories that are current. See ADR-0003.
+**Memory store.** The SQLite database `memory.sqlite` in the user data folder, the single source of truth for accepted memories. It is opened by Node's built-in `node:sqlite` in the packaged Electron runtime, without another production dependency, and it carries a full-text index for lexical retrieval. Search honours a memory's validity window and includes temporary memories that are current. See ADR-0003.
 
 **Provenance.** Where a memory came from: a Sotto thread and reference, or a dated questionnaire answer or inspector correction. Questionnaire and inspector provenance do not invent a thread; provenance never carries a provider session ID.
 
@@ -211,7 +211,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Strip.** The top bar of the main window on the pages that still wear one, Agents and Memory (both behind their beta gates) and onboarding: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region. Every other page has the sidebar top row instead. The Threads page owns the whole window, with the sidebar's top row and the pane header as its drag regions and the window controls once at the top right. Dictate, History and Help seat the Threads sidebar beside the room, with a thin drag strip above the room carrying the window controls. Settings and Chats give their own left column the sidebar top row and the sidebar foot, and carry the window controls at the top right the way Threads does.
 
-**Sidebar top row.** The first row of the Threads sidebar, and of the Settings and Chats columns: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
+**Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings and Chats keep their own columns.
+
+**Sidebar top row.** The first row of the Threads sidebar, and of the Settings and Chats columns: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project, New thread and Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
 
 **Sidebar foot.** The bottom of the Threads sidebar, and of the Settings and Chats columns: the switch, the page links as icons (Chats, History, Settings, Help, and Memory while memory is switched on) and the update control. Every page without a strip has one, so the way to any page is the same from any page.
 
