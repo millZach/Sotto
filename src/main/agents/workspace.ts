@@ -265,7 +265,10 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) return
     const carrying = snapshot.threads.filter(thread => thread.messages.length)
     if (carrying.length) {
-      try { for (const thread of carrying) this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch) }
+      try {
+        for (const thread of carrying) this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch)
+        this.threadStore.sync()
+      }
       catch { this.saveError = HISTORY_SAVE_ERROR; return }
       this.dirty = true
     }
@@ -441,7 +444,10 @@ export class WorkspaceHost implements AgentHost {
    */
   recordAnswer(threadId: string, event: AnswerGivenEvent): void {
     if (this.storeUnavailable) return
-    try { this.threadStore.append(threadId, event) }
+    try {
+      this.threadStore.append(threadId, event)
+      this.threadStore.sync()
+    }
     catch { this.saveError = HISTORY_SAVE_ERROR }
   }
   /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */

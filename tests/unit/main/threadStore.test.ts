@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { prepareThreadDatabase, ThreadStore } from '../../../src/main/agents/threadStore'
 
 const open: ThreadStore[] = []
 const roots: string[] = []
@@ -115,6 +115,18 @@ describe('thread store', () => {
     reopened.store.rebuild()
     expect(reopened.store.readMessages('kept').messages).toEqual([])
     expect(reopened.store.messageCount('kept')).toBe(0)
+  })
+
+  it('prepares a connection with synchronous=NORMAL', () => {
+    const db = new DatabaseSync(':memory:')
+    try {
+      prepareThreadDatabase(db)
+      // synchronous is per-connection, so it reads back here even though the memory
+      // database's journal_mode reports 'memory' rather than 'wal'.
+      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(1)
+    } finally {
+      db.close()
+    }
   })
 
   it('opens the file in WAL mode, the setting synchronous=NORMAL exists to serve', async () => {

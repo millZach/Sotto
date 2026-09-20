@@ -2,7 +2,7 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../../src/shared/agents'
 import type { RestoredThreadHistory, ThreadHostEvent } from '../../../src/main/agents/host'
 import type { ThreadEvent } from '../../../src/shared/threadEvents'
@@ -19,7 +19,7 @@ class RestoringProviderHost extends FakeProviderHost {
 }
 
 const cleanup: Array<() => Promise<void>> = []
-afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
+afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
 
 async function root(): Promise<string> {
   const created = await mkdtemp(join(tmpdir(), 'sotto-thread-projection-'))
@@ -105,7 +105,10 @@ describe('thread messages in the store rather than the workspace cache', () => {
     }, null, 2)}\n`, 'utf8')
 
     const adapter = new RestoringProviderHost()
+    const synced = vi.spyOn(ThreadStore.prototype, 'sync')
     const host = await opened(directory, adapter)
+    // The one-time move out of workspace.json is a write nothing can replay, so it checkpoints.
+    expect(synced).toHaveBeenCalledTimes(1)
     expect(adapter.restored).toEqual([{ threadId: 'session-workshop', messages }])
     const saved = await readFile(join(directory, 'workspace.json'), 'utf8')
     expect(saved).not.toContain('Prompt legacy 0')
@@ -212,10 +215,13 @@ describe('thread messages in the store rather than the workspace cache', () => {
     const adapter = new FakeProviderHost()
     const host = await opened(directory, adapter)
     await host.connect()
+    const synced = vi.spyOn(ThreadStore.prototype, 'sync')
     host.recordAnswer('session-workshop', {
       kind: 'answer-given', at: at(0), requestId: 'request-1', approved: true, permissionChoice: 'allow-once',
       attribution: { clientId: 'desktop-window', user: 'tester', transport: 'ipc' },
     })
+    // An answer's attribution is a write nothing can replay, so it checkpoints at once.
+    expect(synced).toHaveBeenCalledTimes(1)
     // Nothing is projected from an answer, so the thread's messages are untouched by one.
     host.observeThreads(['session-workshop'])
     expect(host.workspaceSnapshot().threads.find(item => item.id === 'session-workshop')?.messages).toEqual([])

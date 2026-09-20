@@ -98,7 +98,7 @@ export class ThreadStore {
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {
-      migrate(db)
+      prepareThreadDatabase(db)
       if (readMeta(db, 'projectionVersion') !== String(PROJECTION_VERSION)) {
         rebuildProjection(db)
         writeMeta(db, 'projectionVersion', String(PROJECTION_VERSION))
@@ -288,6 +288,15 @@ export class ThreadStore {
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
   rebuild(): void { rebuildProjection(this.requireOpen()) }
 
+  /**
+   * Forces the log to disk. For the few writes that nothing can replay: an answer's
+   * attribution, and the one-time move out of workspace.json.
+   */
+  sync(): void {
+    if (this.memory) return
+    this.requireOpen().exec('PRAGMA wal_checkpoint(FULL)')
+  }
+
   private requireOpen(): DatabaseSync {
     if (this.db === undefined) throw new Error('Thread store is not open')
     return this.db
@@ -391,7 +400,7 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
 }
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
-function migrate(db: DatabaseSync): void {
+export function prepareThreadDatabase(db: DatabaseSync): void {
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
   db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
