@@ -190,16 +190,19 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // A streamed chunk arrives as two messages: the shell, then the open thread's detail delta. The shell
     // waits out the frame so the detail that follows commits with it; a shell nothing follows commits in
     // the frame it would have painted in anyway, and a second shell inside the frame commits the first —
-    // nothing published is skipped. Windows without a detail channel commit at once.
+    // nothing published is skipped. Hidden windows cannot wait for animation frames: voice controls must
+    // still reach their effects. They and windows without a detail channel commit at once.
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
       if (!active) return
-      if (!detail.channel) { receive(next); return }
       if (detail.pendingShell !== null) commitPendingShell()
+      if (!detail.channel || document.hidden) { receive(next); return }
       detail.pendingShell = next
       detail.frame = requestAnimationFrame(flushPendingShell)
     })
+    const visibilityChanged = (): void => { if (document.hidden) flushPendingShell() }
+    document.addEventListener('visibilitychange', visibilityChanged)
     const unsubscribeDetail = bridge?.onThreadDetail?.(next => { if (active) receiveDetail.current(next) })
     // The shell this window saw last time paints the page on the first frame, marked stale and
     // disconnected, and the first live shell replaces it.
@@ -218,10 +221,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
       detail.pendingShell = null
       active = false; session.current = false; unsubscribe?.(); unsubscribeDetail?.()
+      document.removeEventListener('visibilitychange', visibilityChanged)
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)
     }
-  }, [bridge, session, threadDrafts, receiveState, detail])
+  }, [bridge, session, threadDrafts, receiveState, commitPendingShell, detail])
   // Keep the newest shell for the next start, at most once every couple of seconds. Nothing is kept
   // while Keep local history is off, and a stale shell is never written back over itself.
   const cached = useRef(0)

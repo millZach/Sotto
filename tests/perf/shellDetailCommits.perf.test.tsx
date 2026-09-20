@@ -78,6 +78,8 @@ async function commitsPerChunk(order: 'shell-then-detail' | 'detail-then-shell')
     // Each arrival is its own IPC message, so each is its own task and its own act().
     if (order === 'shell-then-detail') { act(() => link.shell(grown)); act(() => link.delta(delta)) }
     else { act(() => link.delta(delta)); act(() => link.shell(grown)) }
+    // Finish this chunk's frame before another chunk can flush its pending shell.
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
   }
   expect(result.current.state?.host.threads[0]?.messages[1]?.text).toBe(text)
   return (renders - before) / CHUNKS
@@ -89,10 +91,9 @@ describe('commits per streamed chunk', () => {
     cleanup(); localStorage.clear()
     const detailFirst = await commitsPerChunk('detail-then-shell')
     console.info(`shell+detail commits per chunk: ${JSON.stringify({ shellFirst, detailFirst })}`)
-    // Main sends the shell first; detail-first is the fixture's order, and its 1 is the next chunk's detail committing the held shell.
-    // Whatever the order, the text on screen is complete and every chunk costs at least one commit.
-    expect(shellFirst).toBeGreaterThanOrEqual(1)
-    expect(detailFirst).toBeGreaterThanOrEqual(1)
+    // Main sends the shell first. Detail-first remains correct but needs a second commit.
+    expect(shellFirst).toBe(1)
+    expect(detailFirst).toBe(2)
   })
 
   it('commits once per chunk when the shell arrives before the detail', async () => {

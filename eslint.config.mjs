@@ -18,6 +18,7 @@ export default tseslint.config(
       'artifacts/new-thread-saved-draft/**',
       'artifacts/codex-stream-freeze/**',
       'artifacts/codex-images/**',
+      'artifacts/shell-detail-visibility/**',
       'artifacts/issue-146/**',
       'artifacts/codex-connection-recovery/**',
       'node_modules/**',
