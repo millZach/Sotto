@@ -150,7 +150,7 @@ const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; la
   useEffect(() => {
     if (highlighter !== null || !language || code.length > MAX_HIGHLIGHTED_CODE_LENGTH) return
     let live = true
-    void loadHighlighter().then(loaded => { if (live) setHighlighter(loaded) })
+    void loadHighlighter().then(loaded => { if (live) setHighlighter(loaded) }, () => undefined)
     return () => { live = false }
   }, [highlighter, language, code])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])

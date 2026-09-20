@@ -50,7 +50,6 @@ export interface TerminalWorkspaceProps {
  */
 export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow, store = terminalWorkspaceStore, bridge = defaultBridge(), viewFactory: injected,
   layoutStore = terminalLayoutStore, platform = defaultPlatform(), paneAreaWidth, paneAreaHeight }: TerminalWorkspaceProps): ReactNode {
-  const viewFactory = useTerminalViewFactory(injected)
   const workspace = useTerminalWorkspace(store)
   const [query, setQuery] = useState('')
   const [dialog, setDialog] = useState<{ readonly projectId?: string | undefined } | null>(null)
@@ -71,6 +70,7 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const visible = workspace.status === 'ready' ? prune(stored, isOpen) : stored
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focused)
   const paneIds = isSplit(layout) ? layout.panes : focused !== null ? [focused] : []
+  const viewFactory = useTerminalViewFactory(injected, paneIds.length > 0)
 
   useEffect(() => { void store.activate(bridge) }, [store, bridge])
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])

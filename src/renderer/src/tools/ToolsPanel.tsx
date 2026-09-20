@@ -161,7 +161,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  */
 export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
-  const viewFactory = useTerminalViewFactory(terminalView)
+  const viewFactory = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
   const terminalBridge = terminal ?? bridgeTerminal()

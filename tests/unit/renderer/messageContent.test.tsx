@@ -185,6 +185,27 @@ describe('code blocks', () => {
     expect(block).toHaveTextContent('const answer = 42')
   })
 
+  it('leaves the block plain when the highlighter cannot load, and a later block tries again', async () => {
+    // Fresh modules so the cached highlighter from earlier tests does not mask the rejection.
+    vi.resetModules()
+    let imports = 0
+    vi.doMock('lowlight', async () => {
+      imports += 1
+      if (imports === 1) throw new Error('missing chunk')
+      return vi.importActual('lowlight')
+    })
+    const { MessageContent: Fresh } = await import('../../../src/renderer/src/agents/MessageContent')
+    render(<Fresh text={'```ts\nconst a = 1\n```'} />)
+    const block = screen.getByLabelText('ts code block')
+    expect(block).toHaveTextContent('const a = 1')
+    await waitFor(() => expect(imports).toBe(1))
+    await act(async () => undefined)
+    expect(block.querySelector('.hljs-keyword')).toBeNull()
+    render(<Fresh text={'```ts\nconst b = 2\n```'} />)
+    await waitFor(() => expect(imports).toBe(2))
+    vi.doUnmock('lowlight')
+  })
+
   it('reaches the copy control and the scrollable code by keyboard and reports copy failures', async () => {
     const user = userEvent.setup()
     stubClipboard(async () => { throw new Error('denied') })
