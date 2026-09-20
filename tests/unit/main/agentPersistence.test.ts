@@ -51,15 +51,15 @@ describe('coordinator persistence', () => {
       count: () => spy.mock.contexts.filter(isAgents).length,
     }
   }
-  async function settle(count: () => number) {
+  async function settle(writes: ReturnType<typeof agentsWriteSpy>) {
     // Each persist reaches the spy synchronously; the writes it counted still
-    // complete on the store's serialized queue, so wait out a quiet window.
-    let last = -1
-    for (let idle = 0; idle < 3; idle += 1) {
-      if (count() === last) continue
-      last = count()
-      await new Promise(resolve => setTimeout(resolve, 20))
-    }
+    // complete on the store's serialized queue, so wait on their own promises.
+    const agentsWrites = writes.spy.mock.results
+      .filter((result, index) => result.type === 'return' && writes.isAgents(writes.spy.mock.contexts[index]))
+      .map(result => result.value as Promise<unknown>)
+    await Promise.allSettled(agentsWrites)
+    // A persist chained behind a resolved write still has to be called.
+    await new Promise(resolve => setImmediate(resolve))
   }
 
   it('does not rewrite agents.json for a provider frame that changed no saved fact', async () => {
@@ -67,13 +67,13 @@ describe('coordinator persistence', () => {
     const writes = agentsWriteSpy()
     const file = join(f.root, 'agents.json')
     f.host.event({ type: 'manual', threadId: 'workshop', text: 'Describe the workspace.' })
-    await settle(writes.count)
+    await settle(writes)
     const before = JSON.parse(await readFile(file, 'utf8')) as unknown
     const writesBeforeStream = writes.count()
     for (let frame = 0; frame < 50; frame += 1) {
       f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'word '.repeat(frame + 1), status: 'running' })
     }
-    await settle(writes.count)
+    await settle(writes)
     expect(writes.count()).toBe(writesBeforeStream)
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(before)
   })
@@ -81,7 +81,7 @@ describe('coordinator persistence', () => {
   it('writes once when a saved fact changes and not again for an identical one', async () => {
     const f = await fixture()
     const writes = agentsWriteSpy()
-    await settle(writes.count)
+    await settle(writes)
     const file = join(f.root, 'agents.json')
     const beforeConfigure = writes.count()
     await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
@@ -90,14 +90,45 @@ describe('coordinator persistence', () => {
       expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('amber')
     })
     await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
-    await settle(writes.count)
+    await settle(writes)
     expect(writes.count()).toBe(beforeConfigure + 1)
+  })
+
+  it('does not queue a second write of what a hung write already carries', async () => {
+    const f = await fixture()
+    const writes = agentsWriteSpy()
+    await settle(writes)
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const real = writes.realWrite
+    let hungOnce = false
+    writes.spy.mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (!hungOnce && writes.isAgents(this)) {
+        hungOnce = true
+        return held.then(() => real.call(this, value as never))
+      }
+      return real.call(this, value as never)
+    })
+    const configured = f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
+    await vi.waitFor(() => expect(writes.count()).toBe(1))
+    // Every frame repersists the same saved state the hung write already holds.
+    for (let frame = 0; frame < 20; frame += 1) {
+      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'word '.repeat(frame + 1), status: 'running' })
+    }
+    await new Promise(resolve => setImmediate(resolve))
+    expect(writes.count()).toBe(1)
+    release()
+    await configured
+    const file = join(f.root, 'agents.json')
+    await vi.waitFor(async () => {
+      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('amber')
+    })
   })
 
   it('writes again after a failed write instead of remembering the failed content', async () => {
     const f = await fixture()
     const writes = agentsWriteSpy()
-    await settle(writes.count)
+    await settle(writes)
     let failedOnce = false
     const real = writes.realWrite
     writes.spy.mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
