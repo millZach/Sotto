@@ -26,7 +26,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { AttachmentPreviews } from './attachmentPreviews'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
-import { requestDraftProvider } from '../../shared/requestDrafts'
+import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -1673,11 +1673,11 @@ export class AgentControl {
     if ((command.type === 'send' || command.type === 'steer')) draftId ??= randomUUID()
     if (this.outbox.some(item => threadId ? item.threadId === threadId : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     const answerRequest = command.type === 'answer' ? this.thread(command.threadId).requests.find(item => item.id === command.requestId) : undefined
+    const answerQuestions = answerRequest ? requestDraftQuestions(answerRequest) : []
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
-      ...(command.type === 'answer' && this.thread(command.threadId).requests.find(item => item.id === command.requestId)?.questions
-        ? { questionsDigest: requestQuestionsDigest(this.thread(command.threadId).requests.find(item => item.id === command.requestId)!.questions!) } : {}),
+      ...(answerQuestions.length ? { questionsDigest: requestQuestionsDigest(answerQuestions) } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command,
         ...(command.modelId !== undefined && command.reasoningEffort === undefined && this.state.host.models.find(model => model.id === command.modelId)?.defaultReasoningEffort
           ? { reasoningEffort: this.state.host.models.find(model => model.id === command.modelId)!.defaultReasoningEffort } : {}) }) } : {}),
@@ -1707,8 +1707,9 @@ export class AgentControl {
         const attachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
         await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
       }
-      if (command.type === 'answer' && answerRequest?.questions?.length && provider) {
-        await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerRequest.questions }, command.commandId, command.questionAnswers)
+      if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
+        const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
+        await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerQuestions }, command.commandId, draftAnswers)
         this.canAct(); this.guardAuthority(command, turn); validate?.()
       }
       const providerStartedAt = Date.now()

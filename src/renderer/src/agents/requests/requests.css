@@ -22,7 +22,7 @@
 .agent-request__form { display: grid; gap: 14px; }
 .agent-request__question { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .agent-request__question + .agent-request__question { padding-top: 14px; border-top: 1px solid var(--tt-hairline); }
-.agent-request__question legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; float: left; width: 100%; padding: 0; }
+.agent-request__question legend:not(.tt-visually-hidden) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; float: left; width: 100%; padding: 0; }
 .agent-request__question legend + * { clear: both; }
 .agent-request__prompt { font-size: 16px; line-height: 1.5; color: var(--tt-text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .agent-request__note { color: var(--tt-text-muted); font-size: 13px; }
@@ -67,7 +67,7 @@
 .agent-request[data-placement='composer'] { position: relative; margin-top: 0; padding: 16px 18px; border: 0; border-radius: 0; background: var(--tt-field); animation: question-arrive 180ms ease-out; }
 .thread-questions:has(.agent-request[data-uncertain]) { border-color: var(--tt-warning); }
 .agent-request[data-placement='composer'] .agent-request__form { gap: 12px; }
-.agent-request[data-placement='composer'] .agent-request__question legend { padding-right: 28px; }
+.agent-request[data-placement='composer'] .agent-request__question legend:not(.tt-visually-hidden) { padding-right: 28px; }
 .agent-request[data-placement='composer'] .agent-request__prompt { font-size: 16px; font-weight: 600; }
 .agent-request[data-placement='composer'] .agent-request__option { padding-block: 10px; border: 1px solid transparent; }
 .agent-request[data-placement='composer'] .agent-request__option[data-checked] { border-color: var(--tt-selected-border); }

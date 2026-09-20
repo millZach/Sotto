@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { PersonalChatState } from '../../shared/personalChats'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
-  requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
+  requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
   type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard,
 } from '../../shared/requestDrafts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -37,7 +37,7 @@ export function personalRequestDraftState(state: PersonalChatState, owner: Reque
       decisionId: item.id, ...(item.questionsDigest ? { questionsDigest: item.questionsDigest } : {}) })) } : undefined
 }
 
-/** Unsent structured answers have their own durable aggregate, independent of both composers and history.
+/** Unsent question answers have their own durable aggregate, independent of both composers and history.
  * It never submits an answer. Native delivery and request liveness remain main-owned evidence.
  */
 export class RequestDraftService {
@@ -92,7 +92,7 @@ export class RequestDraftService {
     const state = this.lookup(target)
     return !!state?.connected && state.ready && !state.uncertainRequestIds?.includes(target.requestId)
       && state.requests.some(request => request.id === target.requestId && request.delivery !== 'uncertain'
-        && sameRequestQuestions(request.questions ?? [], target.questions))
+        && sameRequestQuestions(requestDraftQuestions(request), target.questions))
   }
 
   /** Only positive acceptance of the exact bound native attempt can erase held content.

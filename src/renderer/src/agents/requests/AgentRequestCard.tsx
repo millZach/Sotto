@@ -1,7 +1,7 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { AgentRequest } from '../../../../shared/agents'
-import type { RequestDraftOwner } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, hasNoSendableChoice, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
@@ -35,9 +35,10 @@ export interface AgentRequestCardProps {
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
 export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+  const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
-  const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && requestMode(request) === 'structured'
-    ? { ...draftOwner, requestId: request.id, questions: request.questions! } : undefined)
+  const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
+    ? { ...draftOwner, requestId: request.id, questions: draftQuestions } : undefined)
   const [checking, setChecking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
@@ -136,14 +137,14 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
               <span><OptionLabel label={option.label} /></span>
             </label>)}</div>
           </fieldset>
-          <div className="agent-request__footer"><Button disabled={disabled || !legacyChoice}
+          <div className="agent-request__footer"><Button disabled={disabled || entry.save === 'unsaved' || !legacyChoice}
             onClick={() => { if (legacyChoice) send(legacyChoice.id, { answer: legacyChoice.id }) }}>Send answer</Button></div>
         </> : <div className="agent-request__actions">{onWriteAnswer ? <Button variant="secondary" disabled={locked} onClick={onWriteAnswer}>Write an answer</Button> : null}</div>}
       </>}
       {status}
       {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
         {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
-        : mode === 'structured' && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
+        : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
           : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
       {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
     </div>
