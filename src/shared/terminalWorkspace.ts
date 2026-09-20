@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentWorktreeSchema, providerIdSchema } from './agents'
+import { agentWorktreeSchema } from './agents'
 import { TERMINAL_MAX_OUTPUT, terminalSizeSchema } from './terminal'
 import type { ToolsResult } from './tools'
 
@@ -10,9 +10,13 @@ export const TERMINALS_MAX = 64
 /** A pasted image on its way to a terminal's folder: PNG only, the same ceiling as an attachment. */
 export const TERMINAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
+// Terminal launchers are implemented separately from thread-provider adapters.
+export const terminalProviderSchema = z.enum(['codex', 'claude', 'grok'])
+export type TerminalProvider = z.infer<typeof terminalProviderSchema>
+
 const terminalPermissionSchema = z.enum(['ask', 'edits', 'everything'])
 export const terminalLaunchSchema = z.object({
-  provider: providerIdSchema.nullable(),
+  provider: terminalProviderSchema.nullable(),
   /** Sotto's public model ID; the command mapping reads the CLI name out of it. */
   modelId: z.string().max(512).nullable(),
   reasoning: z.string().max(64).nullable(),

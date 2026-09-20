@@ -25,6 +25,23 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 - **Wall-clock budgets.** See below.
 - **Packaging and publishing.** Releases are still cut by hand on the Windows PC and the Apple silicon Mac.
 
+## Devin native verification
+
+`tests/integration/devinAdapter.test.ts` runs the complete shared adapter contract and boundary cases against a scripted ACP subprocess in CI. It does not establish live CLI compatibility.
+
+The opt-in `tests/integration/devinLive.test.ts` uses the installed, natively signed-in Devin CLI 3000.10.31 and account-advertised `swe-1-6-fast`. It creates a disposable Git project and incurs native account usage. It checks denial, exact-target one-time approval, a structured question, same-session restart, and cancellation. Two additional Windows-only cases kill a uniquely identified test ACP owner while permission is pending and verify safe model-change refusal or same-session recovery, according to whether the native model had been saved by a clean shutdown. It never reads credentials or logs protocol bodies. Run on native Windows and Apple silicon macOS before claiming both platforms verified. The initial PR is verified on Windows only; Zach deferred Mac verification because no Mac is available:
+
+```powershell
+$env:SOTTO_DEVIN_LIVE = '1'
+npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
+```
+
+```sh
+SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
+```
+
+Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.spec.ts` for the Electron provider/permission journey, keyboard path, independent-provider behavior, coordinator separation, and light/dark/minimum-size captures. The verification note records actual platforms and results; a fixture pass is not a native-platform pass.
+
 ## Gated assertions
 
 A shared runner interleaves two vitest workers with everything else on the host, so an absolute
