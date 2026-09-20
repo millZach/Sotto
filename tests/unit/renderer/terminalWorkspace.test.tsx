@@ -194,7 +194,7 @@ describe('Terminal mode', () => {
     await screen.findByRole('region', { name: 'Build' })
     fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
     expect(panes().map(pane => pane.getAttribute('aria-label'))).toEqual(['Build', 'Tests'])
-    expect(screen.getByRole('separator')).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: /^Resize / })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Tests' })).toHaveAttribute('data-focused')
 
     fireEvent.pointerDown(within(screen.getByRole('region', { name: 'Build' })).getByRole('heading', { level: 2, name: 'Build' }))
@@ -204,7 +204,7 @@ describe('Terminal mode', () => {
     expect(within(sidebar()).getByRole('button', { name: 'Tests' }).closest('li')).toHaveAttribute('data-open')
 
     await act(async () => { fireEvent.click(within(screen.getByRole('region', { name: 'Tests' })).getByRole('button', { name: 'Close Tests pane' })) })
-    expect(screen.queryByRole('separator')).toBeNull()
+    expect(screen.queryByRole('separator', { name: /^Resize / })).toBeNull()
     expect(screen.getByRole('region', { name: 'Build' })).toBeInTheDocument()
     expect(view.bridge.close).not.toHaveBeenCalled()
     expect(within(sidebar()).getByRole('button', { name: 'Tests' })).toBeInTheDocument()

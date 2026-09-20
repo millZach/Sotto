@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessageSquare, MessagesSquare, Search, Settings, SquareTerminal, X } from 'lucide-react'
+import React, { createContext, useCallback, useContext, useMemo, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { Archive, ArchiveRestore, Brain, CircleHelp, Clock, FolderPlus, MessageSquare, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Settings, SquareTerminal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -11,6 +11,7 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
+import { useSidebarSize } from './sidebarSize'
 
 /** What the sidebar lists: threads, or the terminals of Terminal mode. */
 export type SidebarMode = 'threads' | 'terminals'
@@ -139,6 +140,7 @@ export interface SidebarFrameProps {
   /** The page's hidden heading while the sidebar is the page's own; `null` beside a page with a heading of its own. */
   readonly title?: string | null | undefined
   readonly children: ReactNode
+  readonly collapsedContent?: ReactNode
 }
 
 /**
@@ -146,11 +148,21 @@ export interface SidebarFrameProps {
  * actions, then search, the scrolling list, and the foot. Only what the body lists changes with the mode. The
  * top row is the frameless window's drag region, which is why every control in it is marked no-drag.
  */
-export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, platform, foot, title = 'Threads', children }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, platform, foot, title = 'Threads', children, collapsedContent }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
   const addProject = useAddProject(state, command)
   const mac = (platform ?? app?.platform) === 'darwin'
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode}>
+  const size = useSidebarSize()
+  const [resizing, setResizing] = useState(false)
+  const toggle = useRef<HTMLButtonElement>(null)
+  const previousCollapsed = useRef(size.collapsed)
+  useLayoutEffect(() => {
+    if (previousCollapsed.current !== size.collapsed) toggle.current?.focus()
+    previousCollapsed.current = size.collapsed
+  }, [size.collapsed])
+  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+    style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
+    <div className="thread-nav__expanded" hidden={size.collapsed}>
     <SidebarTop>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
       <div className="thread-nav__seg thread-nav__seg--icons" role="radiogroup" aria-label="Sidebar mode">
@@ -167,6 +179,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
       </div>
       <Button variant="ghost" iconOnly aria-label="Add project" title="Add project" disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" iconOnly aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} /></Button>
+      <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label="Collapse sidebar" title="Collapse sidebar" onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
       <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
@@ -175,7 +188,27 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
     </label>
     {addProject.error ? <p className="thread-nav__error" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label="Dismiss" onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
     <div className="thread-nav__scroll">{children}</div>
-    {foot ?? <SidebarFoot />}
+    {size.collapsed ? null : foot ?? <SidebarFoot />}
+    </div>
+    {size.collapsed ? <div className="thread-nav__rail">
+      <SottoMark className="thread-nav__glyph" />
+      <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+      <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
+      {foot ?? <SidebarFoot />}
+    </div> : <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label="Sidebar width" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
+      aria-valuetext={`${size.width} pixels`} title="Drag to resize. Use arrow keys when focused. Double-click to reset."
+      onPointerDown={event => {
+        if (event.button !== 0) return
+        event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setResizing(true)
+      }}
+      onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) size.resize(event.clientX - event.currentTarget.parentElement!.getBoundingClientRect().left) }}
+      onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); setResizing(false) }}
+      onLostPointerCapture={() => setResizing(false)} onDoubleClick={size.reset}
+      onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault(); event.stopPropagation()
+        size.resize(event.key === 'Home' ? 260 : event.key === 'End' ? size.maximum : size.width + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10))
+      }} />}
   </aside>
 }
 
