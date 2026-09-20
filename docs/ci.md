@@ -87,9 +87,10 @@ a privilege an ordinary account does not hold, and where it is held — an eleva
 copies through the dangling link instead of refusing, so the retry the test is about cannot happen. The
 same guarantee is asserted on Windows by the neighbouring occupied-plain-file and timestamp-only cases.
 
-Two tests carry a raised timeout rather than a budget, because they do a lot of real work and wait for
+Three tests carry a raised timeout rather than a budget, because they do a lot of real work and wait for
 nothing: the 2 MB rollout read in `tests/unit/main/codexTargetLog.test.ts` and the streamed-Markdown
-comparison in `tests/unit/renderer/streamingMarkdown.test.tsx` each allow 60 s.
+comparison in `tests/unit/renderer/streamingMarkdown.test.tsx`, and the 1005-file directory enumeration
+in `tests/unit/main/files.test.ts` each allow 60 s.
 
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s. Waiting
 is not the assertion: a runner takes several times longer over a provider round trip or a child process
