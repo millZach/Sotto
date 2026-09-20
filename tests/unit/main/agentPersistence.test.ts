@@ -118,4 +118,41 @@ describe('coordinator persistence', () => {
       expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('violet')
     })
   })
+  it('keeps the newest save when it returns to the last completed state', async () => {
+    const f = await fixture()
+    const writes = agentsWriteSpy()
+    await settle(writes)
+    const initial = f.control.get().configuration.speak
+    let started!: () => void
+    const writing = new Promise<void>(resolve => { started = resolve })
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let blocked = false
+    // Hold the physical write inside the real queue, so later writes retain their ordering.
+    const prototype = AtomicJsonStore.prototype as unknown as { writeImmediately(value: unknown): Promise<void> }
+    const realImmediate = prototype.writeImmediately
+    vi.spyOn(prototype, 'writeImmediately').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (!blocked && writes.isAgents(this)) {
+        blocked = true
+        started()
+        return held.then(() => realImmediate.call(this, value))
+      }
+      return realImmediate.call(this, value)
+    })
+    const older = f.control.command({ type: 'configure', patch: { speak: !initial } })
+    await writing
+    let newerFinished = false
+    const newerCommand = f.control.command({ type: 'configure', patch: { speak: initial } })
+      .then(result => { newerFinished = true; return result })
+    await new Promise(resolve => setImmediate(resolve))
+    const finishedBeforeWrite = newerFinished
+    release()
+    const [, newer] = await Promise.all([older, newerCommand])
+    await settle(writes)
+    expect(finishedBeforeWrite).toBe(false)
+    expect(newer.error).toBeNull()
+    expect(f.control.get().configuration.speak).toBe(initial)
+    expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { speak: boolean } }).configuration.speak).toBe(initial)
+  })
+
 })

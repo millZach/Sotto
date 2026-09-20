@@ -127,9 +127,8 @@ export class AgentControl {
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
   private publishedDraftPersistence = ''
-  // What the last successful write put on disk. A provider frame that changed no saved fact costs no
-  // write. An identical write queued while another is still in flight is not deduplicated on purpose: a
-  // persist that skipped it would have to wait on a write it did not issue, and the queue drains it anyway.
+  // Skip unchanged state only when no writes are pending: an older queued write could otherwise
+  // overwrite a newer state that happens to match the last completed save.
   private lastWritten = ''
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
@@ -487,7 +486,7 @@ export class AgentControl {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     const saved = this.saved()
     const serialized = JSON.stringify(saved)
-    if (serialized !== this.lastWritten) {
+    if (serialized !== this.lastWritten || this.pendingDraftWrites.size > 0) {
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
       try {

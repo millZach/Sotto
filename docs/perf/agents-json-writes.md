@@ -23,7 +23,10 @@ slow disk turns the queue into a backlog that a real save (a draft, a delivery r
 ## After
 
 `persist()` serialises what it would write and compares it with what the last successful write put on
-disk. Equal bytes cost no write; a failed write leaves the comparison alone so the next attempt writes.
+disk. Equal bytes cost no write only when no writes are pending; a failed write leaves the comparison
+alone so the next attempt writes. While a write is pending, every persist stays on the existing queue
+and waits for its own save. Otherwise, an older queued state could overwrite a newer state that
+happens to match the last completed save.
 Everything else about the path is unchanged: `saved()` still runs (it also upgrades the legacy draft),
 a changed fact still writes exactly once, and the draft-persistence publish that follows a write still
 follows a skipped one.
@@ -35,6 +38,8 @@ follows a skipped one.
 | The same change again | 0 |
 
 The test asserts each of these rows, and that a write which fails is retried with the same content.
+A deferred-write regression changes the spoken-reply setting and changes it back before the first
+write finishes. The newer command waits, and its value is the one left on disk.
 
 ## Also in this change
 
