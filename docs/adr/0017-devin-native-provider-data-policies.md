@@ -10,4 +10,6 @@ The Windows native experiment observed TLS connections to server.codeium.com and
 
 Approval-required means the tested, read-back Sotto ask profile, not Devin's ineffective ACP Normal selector. The adapter pins CLI 3000.10.31, verifies the profile and native integrations before dispatch, and keeps every supported request with the user. Existing native configuration is never edited. These restrictions may reject projects or account setups that work in the standalone CLI; the error must explain how to preserve the thread and continue.
 
-On September 20 Zach deferred native Apple silicon verification because no Mac is available and authorized completing this PR against Windows checks. This narrows the initial issue?s verification scope; it does not turn fixture results into Mac evidence.
+On September 20 Zach deferred native Apple silicon verification because no Mac is available and authorized completing this PR against Windows checks. This narrows the initial issue's verification scope; it does not turn fixture results into Mac evidence.
+
+Devin native recovery uses bounded full replay because the tested ACP interface has no verified incremental cursor. The explicit exception to native recovery cost is recorded in [ADR-0016](0016-sotto-owned-history-on-an-event-store.md#amendment-bounded-devin-native-replay-september-20-2026-150); Sotto's event store and windowed history remain unchanged.

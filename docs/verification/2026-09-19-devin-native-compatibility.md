@@ -1,4 +1,4 @@
-# Devin native compatibility evidence ? issue 150
+# Devin native compatibility evidence - issue 150
 
 Date: September 19, 2026. Windows native adapter journey passed. Apple silicon verification is deferred by Zach; all Windows validation gates pass; independent review remains pending.
 
@@ -56,7 +56,7 @@ Accepted boundary: Sotto adds no telemetry, while an explicitly connected Devin 
 
 Cognition's [general security page](https://docs.devin.ai/admin/security) describes plan-dependent training controls and retention. It does not establish this signed-in account's settings. The account's actual applicable controls remain unverified; no assumption of training opt-out or zero retention is made.
 
-The accepted implementation uses a read-back, Sotto-owned ask profile and refuses unverified native integrations instead of treating import switches as a blanket disable. See [policy evidence](2026-09-19-devin-policy.md). A local HTTP CONNECT tunnel, without TLS decryption or payload logging, observed server.codeium.com and o4507463137361920.ingest.us.sentry.io during authenticated discovery and a synthetic turn. These are observed destinations for the tested account route, not a claim about every deployment or the contents of telemetry. Native local records remain outside Sotto?s history control.
+The accepted implementation uses a read-back, Sotto-owned ask profile and refuses unverified native integrations instead of treating import switches as a blanket disable. See [policy evidence](2026-09-19-devin-policy.md). A local HTTP CONNECT tunnel, without TLS decryption or payload logging, observed server.codeium.com and o4507463137361920.ingest.us.sentry.io during authenticated discovery and a synthetic turn. These are observed destinations for the tested account route, not a claim about every deployment or the contents of telemetry. Native local records remain outside Sotto's history control.
 
 ## Implemented adapter and native journey
 
@@ -66,8 +66,19 @@ The actual host passed `SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devi
 
 A further native control found that a newly created, empty session has no durable transcript: `session/load` returns `-32016` before the first prompt, both while its creator runs and after it exits. After a prompt, concurrent replay returns history followed by `-32015` (locked). The adapter distinguishes them. Only a confirmed, untouched empty thread after a clean owned shutdown may get a fresh native handle. Dispatch records disable that renewal before transmission. Missing, crashed, or uncertain sessions preserve the thread and report the error; they are never silently recreated.
 
+## Abrupt native process loss (September 20)
+
+The Windows live suite now kills only the ACP process whose command line names the test's unique Sotto approval-profile path, while a file permission is pending. It never approves that action. Both native cases passed in 27.78 seconds during diagnosis; the final native suite passed all 3 cases in 54.10 seconds.
+
+- Before the provider has had a clean shutdown, loading the same native ID reports a different model in both its configuration update and final load response. Sotto preserves the saved model, dispatch identity, and native binding, closes the incompatible owner, and tells the user to restore the original model in Devin or start a new thread. It neither changes the model nor repeats the prompt. The marker file remains absent.
+- After a harmless completed turn and clean shutdown/reload, killing the next pending-permission owner allows same-session recovery. The original message identity remains, the old permission answer is rejected, a new harmless prompt completes, and the earlier marker remains absent.
+
+The first attempted prompt asked the model to wait before acting and never reached a permission, so it established no process-loss result. A direct file-tool instruction reproduced the native model mismatch. Temporary content-free diagnostics isolated the model check and were removed. Final loaded settings are now checked outside protocol parsing so their actionable error survives; historical model updates during replay cannot replace that final check. Live model changes and permission-mode guards remain enforced. Deterministic regression tests cover final mismatch refusal and historical model updates.
+
+This establishes behavior for an active turn blocked on permission. It does not prove that arbitrary previously launched external tools stop when the ACP process exits.
+
 ## Remaining acceptance work
 
-- Native Apple silicon verification is deferred by Zach?s September 20 direction to proceed with Windows only. Windows evidence is not Mac evidence.
-- Lifecycle/policy regressions, Electron visual checks, typecheck, lint, notices, and the full suite passed (3,920 tests passed, 32 skipped). Two-axis review awaits approval of the configured external reviewer or a replacement route.
+- Native Apple silicon verification is deferred by Zach's September 20 direction to proceed with Windows only. Windows evidence is not Mac evidence.
+- Lifecycle/policy regressions, Electron visual checks, typecheck, lint, notices, and the full suite passed (3,927 tests passed, 34 skipped). Independent Codex reviewers completed both axes and confirmed the findings resolved.
 - Record final results and PR status in the implementation plan. No merge or completed issue is claimed here.

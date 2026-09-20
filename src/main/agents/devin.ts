@@ -231,7 +231,7 @@ export class DevinAcpHost implements AgentHost {
     this.executable = this.options.executable ?? await findDevinExecutable(this.options.environment) ?? ''
     if (!isAbsolute(this.executable)) throw new Error('Install Devin CLI and run devin auth login, then connect again. Your threads and drafts are kept.')
     const version = await readDevinVersion(this.executable, this.options.args ?? [], devinEnvironment(this.options.environment))
-    if (version !== DEVIN_CLI_VERSION) throw new Error('This Devin version has not passed Sotto’s compatibility checks. Your threads are kept. Use the tested Devin version before connecting.')
+    if (version !== DEVIN_CLI_VERSION) throw new Error('This Devin version has not passed compatibility checks. Your threads are kept. Use Devin CLI ' + DEVIN_CLI_VERSION + ' before connecting.')
     const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.aliases = aliases; this.state.projects = projects
@@ -247,7 +247,6 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         disposableSession = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
         const model = modelConfig(value)
-        if (!model.models.length) throw new Error('Sign in to Devin before connecting.')
         this.state.models = model.models.map(option => ({
           id: option.value, name: option.name, provider: 'Devin', ready: true,
           runtimeModes: ['approval-required'], supportsImages: false, reasoningEfforts: [],
@@ -256,6 +255,7 @@ export class DevinAcpHost implements AgentHost {
       await this.revalidate(catalog, this.userDataDirectory, generation)
       // This empty session belongs only to discovery; no inference runs at connect.
       if (disposableSession) await catalog.rpc.request('session/delete', { sessionId: disposableSession })
+      if (!this.state.models.length) throw new Error('Devin returned no available models. Run devin auth login and check your account access, then reconnect. Your threads and drafts are kept.')
     } finally { catalog.intentionalClose = true; catalog.rpc.close(); await catalog.rpc.closed }
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.state.connected = true; this.state.version = version + ' / ACP 1'; delete this.state.error
@@ -297,12 +297,16 @@ export class DevinAcpHost implements AgentHost {
         })
         await connection.rpc.request('session/set_config_option', { sessionId: alias.devinSessionId, configId: 'model', value: alias.modelId }, value => {
           if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-          if (modelConfig(value).current !== alias.modelId) throw new Error('Devin did not confirm this thread?s model.')
+          if (modelConfig(value).current !== alias.modelId) throw new Error('Devin did not confirm the model for this thread.')
         })
-      } else await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] }, value => {
-        if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-        if (modelConfig(value).current !== alias.modelId) throw new Error('Devin changed this thread’s model. Sotto will not substitute it.')
-      })
+      } else {
+        let loadedModel: string | undefined
+        await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] }, value => {
+          if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
+          loadedModel = modelConfig(value).current
+        })
+        if (loadedModel !== alias.modelId) throw new Error('Devin changed the saved model. Your thread and draft are kept. Restore the original model in Devin and reconnect, or start a new thread. Sotto will not substitute it.')
+      }
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       await this.revalidate(connection, alias.cwd, generation)
       if (this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
@@ -386,7 +390,7 @@ export class DevinAcpHost implements AgentHost {
     const content = record(update.content)
     if (content?.type !== 'text' || typeof content.text !== 'string') return
     transcript.bytes += Buffer.byteLength(content.text)
-    if (transcript.bytes > MAX_TRANSCRIPT_BYTES || transcript.messages.length > 20_000) throw new Error('Devin history exceeds the supported read limit. Your saved history is kept.')
+    if (transcript.bytes > MAX_TRANSCRIPT_BYTES || transcript.messages.length >= 20_000) throw new Error('Devin history exceeds the supported read limit. Your saved history is kept.')
     const alias = this.aliases[id]!
     if (update.sessionUpdate === 'user_message_chunk') {
       const meta = record(update._meta)
@@ -444,7 +448,7 @@ export class DevinAcpHost implements AgentHost {
       if (!params || params.sessionId !== alias.devinSessionId) return
       const update = record(params.update)
       if (!update) throw new Error('Invalid Devin update.')
-      if (alias.settingsConfirmed && update.sessionUpdate === 'config_option_update' && modelConfig(update).current !== alias.modelId) throw new Error('Devin changed the selected model.')
+      if (!connection.replaying && alias.settingsConfirmed && update.sessionUpdate === 'config_option_update' && modelConfig(update).current !== alias.modelId) throw new Error('Devin changed the selected model.')
       if (update.sessionUpdate === 'current_mode_update' && update.currentModeId !== 'accept-edits') throw new Error('Devin changed the session mode.')
       if (connection.replaying) { this.consume(id, connection.transcript, update); return }
       if (typeof update.toolCallId === 'string') {

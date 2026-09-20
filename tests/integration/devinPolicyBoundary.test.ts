@@ -57,3 +57,20 @@ it('refuses connection readiness if catalog discovery activates a native integra
   await expect(f.host.connect()).rejects.toThrow(/MCP servers/u)
   expect(await prompts()).toHaveLength(0)
 })
+
+
+it('keeps signed-out setup actionable without sending a prompt', async () => {
+  f.host.disconnect(); await f.host.closed()
+  await f.script({ signedOut: true })
+  await expect(f.host.connect()).rejects.toThrow('devin auth login')
+  expect((await f.host.snapshot()).connected).toBe(false)
+  expect(await prompts()).toHaveLength(0)
+})
+
+it('names the compatible CLI version when the installed version is unsupported', async () => {
+  f.host.disconnect(); await f.host.closed()
+  await f.script({ cliVersion: '9999.0.0' })
+  await expect(f.host.connect()).rejects.toThrow('3000.10.31')
+  expect((await f.host.snapshot()).connected).toBe(false)
+  expect(await prompts()).toHaveLength(0)
+})

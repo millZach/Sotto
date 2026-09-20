@@ -1,6 +1,6 @@
-# Devin local provider implementation ? issue 150
+# Devin local provider implementation - issue 150
 
-Status: implemented and pushed; all Windows validation passes. Independent review is awaiting reviewer authorization. Verification is Windows-only for this PR; Zach deferred Mac verification on September 20 because no Mac is available.
+Status: implemented and pushed; all Windows validation passes. Independent Codex Standards and Spec reviews are complete; final validation of the review fixes passes. Verification is Windows-only for this PR; Zach deferred Mac verification on September 20 because no Mac is available.
 
 ## Scope and acceptance
 
@@ -13,10 +13,10 @@ Implement [issue 150](https://github.com/millZach/Sotto/issues/150) from base da
 - [x] Add Devin to Providers and thread catalogs, disabled on upgrade; keep terminal/coordinator catalogs unchanged.
 - [x] Pass the native Windows host journey: deny, exact allow, question, restart, cancel.
 - [x] Complete final lifecycle and post-session policy regression checks.
-- [x] Finish Electron captures and visual/keyboard review at 1600?1000, 1280?800, and 820?560, light/dark/reduced motion.
+- [x] Finish Electron captures and visual/keyboard review at 1600x1000, 1280x800, and 820x560, light/dark/reduced motion.
 - [ ] Deferred by Zach: native Apple silicon verification; no Mac support claim.
 - [x] Run full typecheck, lint, tests with two workers, and notices.
-- [ ] Complete Standards and Spec reviews. Automatic approval review blocked the configured Claude CLI because it would receive repository contents; Zach was asked to authorize it or choose Codex reviewers.
+- [x] Complete Standards and Spec reviews. Zach approved Codex reviewers in place of the configured external Claude reviewer.
 - [x] Commit and push only this work to feat/devin-local-provider.
 - [ ] Create PR after independent review, resolve findings and CI, then merge when every required gate passes.
 
@@ -32,6 +32,10 @@ Existing desktop provider and thread surfaces are retained. The provider grid fi
 
 On September 20 Zach confirmed that no Mac is available and directed this work to proceed with Windows only. Native Apple silicon verification is deferred and is no longer a pre-merge gate for this PR. The original issue/spec requested both platforms; this is the user-approved deviation. The Mac route remains unverified.
 
-## Final Windows gates ? September 20
+## Final Windows gates - September 20
 
-Typecheck, lint, and notices pass (174 notice components). Full `npm test -- --maxWorkers=2`: 301 files passed, 17 skipped; 3,920 tests passed, 32 skipped, 589.80 seconds. The earlier full run?s sole stale error-message assertion was corrected. Built Devin/provider-selection Electron specs passed 2 tests in 25.7 seconds after main integration. Native Windows host journey passed 1 test in 27.42 seconds. No PR or merge yet; review-route approval is outstanding.
+Typecheck, lint, and notices pass (174 notice components). Full `npm test -- --maxWorkers=2`: 301 files passed, 17 skipped; 3,927 tests passed, 34 skipped, 343.29 seconds. Built Devin/provider-selection Electron specs passed 2 tests in 14.8 seconds. All 3 native Windows cases passed in 54.10 seconds. No PR or merge yet; independent Codex reviews are complete.
+
+## Review fixes
+
+Standards: one finding resolved by the explicit bounded native replay amendment to ADR-0016. Spec: two findings resolved by real Devin working-copy coverage and native abrupt-owner-loss checks. First-owner crash can lose the selected native model; the adapter refuses substitution and now reports actionable recovery instructions. A previously clean-saved session recovers under the same native ID. See the separate [review report](../verification/2026-09-20-devin-review.md). Final full-suite, native, and Electron checks of these fixes passed before PR creation.

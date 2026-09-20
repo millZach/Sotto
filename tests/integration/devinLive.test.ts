@@ -81,3 +81,83 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identi
     await rm(root, { recursive: true, force: true })
   }
 }, 180_000)
+
+
+it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1' || process.platform !== 'win32').each([false, true])('preserves native identity after abrupt owner loss (model previously saved: %s)', async modelSaved => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-devin-live-'))
+  if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-devin-live-')) throw new Error('Unexpected temporary directory')
+  const cwd = join(root, 'project'); const data = join(root, 'sotto')
+  await mkdir(cwd); await mkdir(data)
+  execFileSync('git', ['init', '--quiet', cwd], { windowsHide: true, stdio: 'ignore' })
+  const options = { pollIntervalMs: 60_000 }
+  let host = new DevinAcpHost(data, options)
+  const id = randomUUID()
+  const thread = async () => (await host.snapshot()).threads.find(thread => thread.id === id)!
+  let stage = 'connect'
+  try {
+    await host.connect()
+    await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'live', title: 'Synthetic loss check', path: cwd })
+    await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'live', title: 'Synthetic loss check', modelId: 'swe-1-6-fast' })
+    host.observeThreads([id])
+    if (modelSaved) {
+      expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id,
+        text: 'Reply with SOTTO_INITIALIZED. Do not use tools.' })).toEqual({ accepted: true })
+      await expect.poll(async () => (await thread()).status, { timeout: 30_000 }).toBe('idle')
+      host.disconnect(); await host.closed()
+      host = new DevinAcpHost(data, options); host.observeThreads([id]); await host.connect()
+    }
+    const messageId = randomUUID()
+    expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId, threadId: id,
+      text: 'Use the file write tool to create lost-owner.txt containing SOTTO_LOST_OWNER. Do not read other files, use shell commands, fetch URLs, or delegate.' })).toEqual({ accepted: true })
+    await expect.poll(async () => (await thread()).requests.some(request => request.kind === 'permission'), { timeout: 30_000 }).toBe(true)
+    const pendingId = (await thread()).requests[0]!.id
+    const before = JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].devinSessionId
+    // Select only the ACP child launched with this test's unique owned profile; never print command lines.
+    const profile = join(data, 'devin', 'approval-policy-v1.json').replaceAll("'", "''")
+    const query = "@(Get-CimInstance Win32_Process -Filter \"Name = 'devin.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('" + profile + "') -and $_.CommandLine -match '(?:^|\\s)acp(?:\\s|$)' } | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress"
+    const raw = execFileSync('powershell.exe', ['-NoProfile', '-EncodedCommand', Buffer.from(query, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8', timeout: 15_000, stdio: ['ignore', 'pipe', 'ignore'] })
+    const value: unknown = JSON.parse(raw)
+    const pids = Array.isArray(value) ? value : [value]
+    expect(pids).toHaveLength(1)
+    const pid: unknown = pids[0]
+    if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) throw new Error('Unexpected native process identity')
+    stage = 'kill-owner'
+    process.kill(pid, 'SIGKILL')
+    await expect.poll(async () => (await thread()).status, { timeout: 15_000 }).toBe('error')
+    expect((await thread()).lastTurn?.status).toBe('failed')
+    expect(await readFile(join(cwd, 'lost-owner.txt')).then(() => true, () => false)).toBe(false)
+    stage = 'restart'
+    host.disconnect(); await host.closed()
+    host = new DevinAcpHost(data, options)
+    if (!modelSaved) {
+      await host.connect()
+      await expect(host.refreshThread(id)).rejects.toThrow('Restore the original model in Devin')
+      const alias = JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id]
+      expect(alias.devinSessionId).toBe(before)
+      expect(alias.modelId).toBe('swe-1-6-fast')
+      expect(alias.origins.some((origin: { messageId: string }) => origin.messageId === messageId)).toBe(true)
+      expect((await thread()).status).toBe('error')
+      expect((await thread()).requests).toHaveLength(0)
+      await expect(host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: pendingId, answer: '', approved: true })).rejects.toThrow('Restore the original model in Devin')
+      expect(await readFile(join(cwd, 'lost-owner.txt')).then(() => true, () => false)).toBe(false)
+      return
+    }
+    host.observeThreads([id]); await host.connect()
+    expect(JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].devinSessionId).toBe(before)
+    expect((await thread()).messages.some(message => message.id === messageId)).toBe(true)
+    expect((await thread()).requests).toHaveLength(0)
+    stage = 'reject-stale-answer'
+    await expect(host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: pendingId, answer: '', approved: true })).rejects.toThrow('no longer pending')
+    stage = 'new-prompt'
+    expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id,
+      text: 'Reply with SOTTO_RECOVERED. Do not use tools or resume the previous file action.' })).toEqual({ accepted: true })
+    await expect.poll(async () => (await thread()).status, { timeout: 30_000 }).toBe('idle')
+    expect(await readFile(join(cwd, 'lost-owner.txt')).then(() => true, () => false)).toBe(false)
+  } catch (error) {
+    console.info('devin-live-loss-failure', { stage, code: error instanceof DevinRejected ? error.code : undefined, operation: error instanceof DevinRejected ? error.operation : undefined })
+    throw error
+  } finally {
+    host.disconnect(); await host.closed()
+    await rm(root, { recursive: true, force: true })
+  }
+}, 180_000)

@@ -11,7 +11,7 @@ const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(nam
 const write = (name, value) => writeFileSync(path(name), JSON.stringify(value))
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const violate = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
-if (process.argv.includes('--version')) { process.stdout.write('devin 3000.10.31 (b98cc431)\n'); process.exit(0) }
+if (process.argv.includes('--version')) { process.stdout.write('devin ' + (read('script.json', {}).cliVersion ?? '3000.10.31') + ' (b98cc431)\n'); process.exit(0) }
 if (process.argv.includes('plugins') && process.argv.includes('list')) { process.stdout.write('No plugins installed.\n'); process.exit(0) }
 if (process.argv.includes('mcp') && process.argv.includes('list')) {
  process.stdout.write(read('integrations.json', {}).enabledMcp
@@ -41,7 +41,7 @@ function acquire(id) {
 }
 function configOptions(session) {
  return [{ id: 'mode', name: 'Mode', type: 'select', currentValue: 'accept-edits', options: [{ value: 'accept-edits', name: 'Code' }, { value: 'ask', name: 'Ask' }] },
-  { id: 'model', name: 'Model', type: 'select', currentValue: session.model, options: [{ value: 'fixture-model', name: 'Fixture Devin' }] }]
+  { id: 'model', name: 'Model', type: 'select', currentValue: session.model, options: read('script.json', {}).signedOut ? [] : [{ value: 'fixture-model', name: 'Fixture Devin' }] }]
 }
 function applyScriptedPolicyChange(script, operation) {
  if (script[operation === 'new' ? 'enableMcpAfterNew' : 'enableMcpAfterLoad']) write('integrations.json', { enabledMcp: true })
@@ -133,6 +133,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (session.messages.length === 0) { reject(frame.id, -32016); return }
   if (script.rejectLoadAfterPrompt && session.messages.some(message => message.role === 'user')) { reject(frame.id); return }
   applyScriptedPolicyChange(script, 'load')
+  if (script.replayModel) update(p.sessionId, { sessionUpdate: 'config_option_update', configOptions: configOptions({ ...session, model: script.replayModel }) })
   replay(p.sessionId)
   if (!acquire(p.sessionId)) reject(frame.id, -32015)
   else result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session))
@@ -147,6 +148,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(id ?? '') || p.prompt?.length !== 1 || p.prompt[0]?.type !== 'text') { violate('Invalid authored prompt identity or content'); reject(frame.id); return }
   active.set(p.sessionId, frame.id)
   saveMessage(p.sessionId, { role: 'user', id, text: p.prompt[0].text, timestamp: new Date().toISOString(), visibleAfter: Date.now() + (script.delayPrompt ?? 0) })
+  // Opt-in synthetic filesystem effect used only by the cross-provider working-copy contract.
+  if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), p.prompt[0].text)
   if (script.delayPrompt) write('script.json', {})
   // Native Devin does not emit a live user echo; only a later load proves acceptance.
  } else if (frame.method === 'session/cancel') { complete(p.sessionId, '', 'cancelled'); result(frame.id) }
