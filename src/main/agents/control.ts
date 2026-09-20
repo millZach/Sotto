@@ -1386,7 +1386,8 @@ export class AgentControl {
         return
       }
       case 'create-thread': {
-        if (this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
+        const managed = command.managed !== false
+        if (managed && this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
         const model = this.state.host.models.find(model => model.id === command.modelId)
         this.canCreate(model?.providerId)
         if (!this.state.host.capabilities.threads) throw new Error('This provider cannot create threads.')
@@ -1414,12 +1415,16 @@ export class AgentControl {
         }
         this.observe(); this.acceptSnapshot(await this.readThread(threadId))
         if (selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
-        if (command.managed !== false) this.assign(threadId, '', selectionRevision)
-        if (!(this.state.providerUpgrade && this.state.draftThreadId === null && this.hasDraft())) {
-          this.clearDraft(); this.startDraft(threadId)
+        // A manual thread owns its composer. Creating it must neither consume nor retarget
+        // the coordinator's saved prompt or answer, even when that surface is hidden.
+        if (managed) {
+          this.assign(threadId, '', selectionRevision)
+          if (!(this.state.providerUpgrade && this.state.draftThreadId === null && this.hasDraft())) {
+            this.clearDraft(); this.startDraft(threadId)
+          }
+          this.state.pendingRequest = ''
         }
-        this.state.pendingRequest = ''
-        this.say(`Opened ${command.title}. Tell me your prompt, then say send it.`)
+        this.say(managed ? `Opened ${command.title}. Tell me your prompt, then say send it.` : `Opened ${command.title}.`)
         return
       }
       case 'select-thread': {

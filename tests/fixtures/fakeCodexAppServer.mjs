@@ -97,7 +97,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'initialize') reply({ userAgent: 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })
-  else if (method === 'model/list') reply({ data: [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
+  else if (method === 'model/list') reply(script.modelPages?.[params.cursor ?? 'first'] ?? { data: script.models ?? [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })
   else if (method === 'thread/start') {
     const thread = { id: randomUUID(), cwd: params.cwd, model: params.model, createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: [],
@@ -186,6 +186,9 @@ setInterval(() => {
   if (action.type === 'exit') process.exit(0)
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
+  else if (action.type === 'notify-burst') {
+    process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join(''))
+  }
   else if (action.type === 'notify') {
     if (action.persist && action.params?.item) {
       const turn = thread.turns.find(turn => turn.id === action.params.turnId)

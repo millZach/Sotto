@@ -70,7 +70,11 @@ A thread's messages are Sotto's own record, kept in `threads.sqlite` in the app'
 
 This is an unreleased development feature. Native clients retain their own subscription sign-in and model catalogs. Wake control requires separately supplied compatible local model/runtime files; their distribution, real microphone acceptance, and macOS live checks remain release gates. Production sign-in, checkout, and billing webhooks are not deployed. Until a membership service is configured, every build, installed or unpackaged, labels access **Private beta** and allows agent actions; that is not a paid entitlement.
 
+Paste a screenshot into a thread's prompt, drag it in, or choose **Attach screenshots**. Codex models that accept images and Claude Code models support screenshots; text-only models keep the control unavailable. Send an image on its own or alongside text, with up to eight images, 10 MB per image and 20 MB total. Grok Build currently cannot receive screenshots through its native client.
+
 Read the [agent setup and behavior guide](docs/agent-control.md), [implementation evidence and remaining gates](docs/verification/issue-9-implementation.md), and [membership service contract](docs/verification/issue-9-membership-service.md) before using or distributing this feature.
+
+You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.
 
 ## Install and first run
 

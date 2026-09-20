@@ -60,7 +60,7 @@ createInterface({input:process.stdin}).on('line', line => {
   pending.delete(frame.id); return
  }
  const p = frame.params ?? {}; const script = read('script.json', {})
- if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalog}}})
+ if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalog}}})
  else if (frame.method === 'authenticate') send({id:frame.id,result:{}})
  else if (frame.method === 'session/new') {
   checkPolicy(p._meta)
@@ -114,6 +114,7 @@ const control = setInterval(() => {
  if (command.type === 'complete') complete(command.sessionId,command.text,command.reason)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)
  if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
+ if (command.type === 'raw-burst') process.stdout.write(command.frames.map(frame => JSON.stringify({jsonrpc:'2.0',...frame})+'\n').join(''))
  if (command.type === 'coalesce') {
   const entries = sessions[command.sessionId].updates.filter(entry => entry.params.update.sessionUpdate === 'agent_message_chunk' && entry.params._meta.streamStartMs === command.streamStartMs)
   const text = entries.map(entry => entry.params.update.content.text).join('')

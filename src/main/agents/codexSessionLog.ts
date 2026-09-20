@@ -2,17 +2,19 @@ import { createHash } from 'node:crypto'
 import { open, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { AgentMessage } from '../../shared/agents'
+import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../shared/agents'
 import { CodexRolloutIdentities, type RolloutIdentity } from './codexMessageIdentity'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+// An authored rollout row can contain the full accepted image batch as base64.
+const MAX_ROLLOUT_LINE_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
 const entrySchema = z.object({ timestamp: z.string(), ordinal: z.number().optional(), type: z.string(), payload: z.unknown() })
 const textContent = z.array(z.object({ type: z.string(), text: z.string().optional() }))
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
-  client_id: z.string().nullish(),
+  client_id: z.string().nullish(), images: z.array(z.string()).optional(), local_images: z.array(z.string()).optional(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; offset: number; buffer: Buffer; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
+type Tail = { path?: string | undefined; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
@@ -23,7 +25,7 @@ export class CodexSessionLogWatcher {
   private stopped = false
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
   observe(threadId: string): void {
-    if (!this.tails.has(threadId)) this.tails.set(threadId, { offset: 0, buffer: Buffer.alloc(0), own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
+    if (!this.tails.has(threadId)) this.tails.set(threadId, { offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   sent(threadId: string, messageId: string, text: string): void { this.sentDigest(threadId, messageId, promptDigest(text)) }
@@ -67,7 +69,7 @@ export class CodexSessionLogWatcher {
       const file = await open(tail.path, 'r')
       try {
         const size = (await file.stat()).size
-        if (size < tail.offset) { tail.offset = 0; tail.buffer = Buffer.alloc(0); tail.identities = new CodexRolloutIdentities() }
+        if (size < tail.offset) { tail.offset = 0; tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false; tail.identities = new CodexRolloutIdentities() }
         // Background polls stay bounded. A guarded target read reaches the captured
         // file size with bounded buffers so takeover evidence is never truncated.
         do {
@@ -75,14 +77,22 @@ export class CodexSessionLogWatcher {
           const { bytesRead } = await file.read(buffer, 0, buffer.length, tail.offset)
           if (!bytesRead) break
           tail.offset += bytesRead
-          tail.buffer = Buffer.concat([tail.buffer, buffer.subarray(0, bytesRead)])
-          let newline: number
-          while ((newline = tail.buffer.indexOf(10)) >= 0) {
-            const line = tail.buffer.subarray(0, newline).toString('utf8')
-            tail.buffer = tail.buffer.subarray(newline + 1)
-            this.consume(threadId, tail, line)
+          let start = 0
+          while (start < bytesRead) {
+            const newline = buffer.indexOf(10, start)
+            const end = newline < 0 ? bytesRead : newline
+            if (!tail.discarding) {
+              const part = buffer.subarray(start, end)
+              tail.buffer.push(part); tail.bufferedBytes += part.length
+              if (tail.bufferedBytes > MAX_ROLLOUT_LINE_BYTES) {
+                tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = true
+              }
+            }
+            if (newline < 0) break
+            if (!tail.discarding) this.consume(threadId, tail, Buffer.concat(tail.buffer, tail.bufferedBytes).toString('utf8'))
+            tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false
+            start = newline + 1
           }
-          if (tail.buffer.length > 1024 * 1024) tail.buffer = Buffer.alloc(0)
         } while (complete && tail.offset < size && !this.stopped)
       } finally { await file.close() }
     } catch { /* A rollout may not exist yet, rotate, or be temporarily locked by Codex. */ }
@@ -96,7 +106,9 @@ export class CodexSessionLogWatcher {
       const item = event.type === 'item_completed' && ['UserMessage', 'user_message'].includes(event.item?.type ?? '') ? event.item : undefined
       if (!item && event.type !== 'user_message') return
       const text = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
-      if (!text) return
+      const hasImages = (event.images?.length ?? 0) > 0 || (event.local_images?.length ?? 0) > 0
+        || (item?.content ?? event.content)?.some(part => part.type === 'image' || part.type === 'localImage')
+      if (!text && !hasImages) return
       const id = item?.id ?? event.id ?? `rollout:${promptDigest(`${entry.ordinal ?? entry.timestamp}:${text}`)}`
       if (tail.seen.has(id)) return
       tail.seen.add(id)
