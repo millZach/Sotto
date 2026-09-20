@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { EFFORT_COLORS } from '../../../src/shared/settings'
 import { DEFAULT_THEME_ID, THEME_COLOR_ROLES } from '../../../src/shared/themes/library'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 import {
@@ -49,6 +50,17 @@ describe('main-window theme tokens', () => {
     expect(contrast(color('bubble-text'), color('bubble'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('terminal-foreground'), color('terminal-background')), 'terminal text').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('effort-text'), color('surface-elevated')), 'gold effort word').toBeGreaterThanOrEqual(4.5)
+  })
+
+  it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {
+    for (const effortColor of EFFORT_COLORS) {
+      const color = palette(mode, id, { effortColor })
+      // The word on its card and on the chip in the composer, where the colourway also paints it.
+      expect(contrast(color('effort-text'), color('surface-elevated')), `${effortColor} word on the card`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(color('effort-text'), color('field')), `${effortColor} word on the chip`).toBeGreaterThanOrEqual(4.5)
+      // The colourway's hues reach the fill and the outline through three tokens every colourway declares.
+      for (const hue of ['effort-a', 'effort-b', 'effort-c', 'effort-border'] as const) expect(color(hue).a, `${effortColor} ${hue}`).toBeGreaterThan(0)
+    }
   })
 
   it.each(combinations)('%s mode of %s keeps accent text, actions, focus, boundaries and status readable', (mode, id) => {

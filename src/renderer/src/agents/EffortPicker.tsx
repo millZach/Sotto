@@ -1,11 +1,29 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
-import { ChevronDown } from 'lucide-react'
-import { rootStyleUnchanged, THEME_TOKEN_PROBE_ATTRIBUTE } from '../state/appearance'
-import { furnaceGold, paintFurnace, type FurnaceColor } from './effortFurnace'
+import { Check, ChevronDown } from 'lucide-react'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
 const effortLabel = (value: string): string => value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1)
+
+/** One line per level: what it does and what it costs. The top of any list gets the top line, whatever its name. */
+const EFFORT_LINES: Record<string, string> = {
+  minimal: 'Fastest. For the smallest tasks.',
+  low: 'Fast. For small, clear tasks.',
+  medium: 'The usual balance of speed and care.',
+  high: 'Takes longer and catches more.',
+  xhigh: 'Much longer. For problems that resist a first pass.',
+  max: "Near the model's limit. Slow and costly.",
+}
+const TOP_LINE = 'Everything the model has. Slowest, costliest.'
+export function effortLine(id: string, index: number, count: number): string {
+  if (count > 1 && index === count - 1) return TOP_LINE
+  return EFFORT_LINES[id] ?? (index === 0 ? EFFORT_LINES.low! : 'More time for difficult problems.')
+}
+
+/** How long the arrival at the top level plays: the wash through the card and the composer, then the letters settle. */
+const ARRIVAL_MS = 1900
+/** A drag within this much of a stop is drawn toward it, so the thumb settles on levels rather than between them. */
+const MAGNET = 0.2
 
 function useStill(): boolean {
   const read = (): boolean => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reducedMotion === 'on'
@@ -21,75 +39,65 @@ function useStill(): boolean {
   return still
 }
 
-/** The loop is awake only during interaction, then leaves a still painting until the next change. */
-function useFurnace(canvas: RefObject<HTMLCanvasElement | null>, panel: RefObject<HTMLDivElement | null>, thumb: RefObject<HTMLSpanElement | null>, position: number, count: number, top: boolean, dragging: boolean, still: boolean): void {
+/**
+ * Eases the painted position toward the chosen one and writes it to the card as `--effort-x`, which the fill,
+ * thumb and dots read. The first write lands before the card's first paint, so it opens at the saved level
+ * rather than flashing from the left; a drag paints where the hand is; reduced motion snaps. The loop sleeps
+ * once settled.
+ */
+function usePaintedPosition(panel: RefObject<HTMLDivElement | null>, position: number, count: number, dragging: boolean, still: boolean): void {
   const painted = useRef(position)
-  const heat = useRef(position / Math.max(1, count - 1))
-  useEffect(() => {
-    const element = canvas.current, surface = panel.current
-    if (!element || !surface) return
-    const context = element.getContext('2d')
-    if (!context) return
-    let raf = 0, width = 0, height = 0, previous = performance.now(), started = previous, awake = previous + 4200
-    const colors = {} as Record<FurnaceColor, string>
-    const palette = (): void => {
-      const probe = document.createElement('span')
-      probe.hidden = true
-      probe.setAttribute(THEME_TOKEN_PROBE_ATTRIBUTE, '')
-      surface.append(probe)
-      for (const key of ['track', 'fill', 'gold', 'highlight', 'shadow', 'fire', 'warm', 'core'] as const) {
-        probe.style.color = `var(--tt-effort-${key})`
-        colors[key] = getComputedStyle(probe).color
-      }
-      probe.remove()
+  useLayoutEffect(() => {
+    const surface = panel.current
+    if (!surface) return
+    let raf = 0, previous = performance.now()
+    const write = (): void => {
+      const x = count > 1 ? painted.current / (count - 1) : 0
+      surface.style.setProperty('--effort-x', x.toFixed(4))
+      surface.style.setProperty('--effort-heat', x.toFixed(3))
     }
-    const draw = (now: number): void => {
+    const frame = (now: number): void => {
       raf = 0
       const dt = Math.min(64, now - previous)
       previous = now
-      painted.current = still || dragging ? position : painted.current + (position - painted.current) * (1 - Math.exp(-dt / 55))
-      if (Math.abs(painted.current - position) < .0005) painted.current = position
-      const wantedHeat = position / Math.max(1, count - 1)
-      heat.current = still ? wantedHeat : heat.current + (wantedHeat - heat.current) * (1 - Math.exp(-dt / 120))
-      const elapsed = top && !dragging ? still ? 4 : (now - started) / 1000 : null
-      const gold = furnaceGold(elapsed)
-      surface.style.setProperty('--effort-forge', `${gold * 100}%`)
-      surface.dataset.gold = String(gold === 1)
-      paintFurnace(context, width, height, colors, { position: painted.current, heat: heat.current, count, elapsed, now, moving: !still && now < awake })
-      if (thumb.current) thumb.current.style.left = `${8 + (width - 16) * painted.current / Math.max(1, count - 1)}px`
-      if (!still && (now < awake || painted.current !== position)) raf = requestAnimationFrame(draw)
+      painted.current += (position - painted.current) * (1 - Math.exp(-dt / 60))
+      if (Math.abs(painted.current - position) < .001) painted.current = position
+      write()
+      if (painted.current !== position) raf = requestAnimationFrame(frame)
     }
-    const wake = (): void => {
-      awake = performance.now() + 4200
-      if (!raf) raf = requestAnimationFrame(draw)
-    }
-    const resize = (): void => {
-      const box = element.getBoundingClientRect()
-      width = box.width; height = box.height
-      const dpr = window.devicePixelRatio || 1
-      element.width = Math.round(width * dpr); element.height = Math.round(height * dpr)
-      context.setTransform(dpr, 0, 0, dpr, 0, 0)
-      palette(); wake()
-    }
-    const resizeObserver = new ResizeObserver(resize)
-    resizeObserver.observe(element)
-    const themeObserver = new MutationObserver(records => { if (rootStyleUnchanged(records, document.documentElement)) return; palette(); wake() })
-    themeObserver.observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['style', 'class', 'data-theme', 'data-appearance'] })
-    const visibility = (): void => {
-      if (document.hidden) { cancelAnimationFrame(raf); raf = 0 }
-      else { started = performance.now() - 4200; wake() }
-    }
-    document.addEventListener('visibilitychange', visibility)
-    resize()
-    return () => { cancelAnimationFrame(raf); resizeObserver.disconnect(); themeObserver.disconnect(); document.removeEventListener('visibilitychange', visibility) }
-  }, [canvas, panel, thumb, position, count, top, dragging, still])
+    if (still || dragging || typeof requestAnimationFrame !== 'function') painted.current = position
+    write()
+    if (painted.current !== position) raf = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(raf)
+  }, [panel, position, count, dragging, still])
 }
 
-function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, close, id, trigger }: {
+/**
+ * The arrival at a model's highest level: true for a moment after the saved level reaches the top from
+ * below, never on the first level seen or under reduced motion. It lives beside the chip rather than in the
+ * card, so closing the card mid-arrival leaves the composer's tide to finish.
+ */
+function useArrival(top: boolean, still: boolean): boolean {
+  const [arriving, setArriving] = useState(false)
+  const lastTop = useRef<boolean | null>(null)
+  useEffect(() => {
+    const was = lastTop.current
+    lastTop.current = top
+    if (!top || was === null || was || still) { setArriving(false); return }
+    setArriving(true)
+    const timer = setTimeout(() => setArriving(false), ARRIVAL_MS)
+    return () => clearTimeout(timer)
+  }, [top, still])
+  return arriving
+}
+
+function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, id, trigger, arriving, still }: {
   value: string; options: readonly EffortOption[]; disabled: boolean; onChange: (id: string) => Promise<boolean>
-  onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; close: () => void; id: string; trigger: RefObject<HTMLButtonElement | null>
+  onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; defaultValue?: string | undefined; modelName?: string | undefined
+  id: string; trigger: RefObject<HTMLButtonElement | null>; arriving: boolean; still: boolean
 }): ReactNode {
   const choices = options.filter(option => !option.disabled)
+  const count = choices.length
   const actual = choices.findIndex(option => option.id === value)
   const [position, setPosition] = useState(Math.max(0, actual))
   const [known, setKnown] = useState(actual >= 0)
@@ -98,15 +106,12 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   const pending = useRef(false)
   const mounted = useRef(true)
   const panel = useRef<HTMLDivElement>(null)
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const thumb = useRef<HTMLSpanElement>(null)
   const range = useRef<HTMLInputElement>(null)
-  const still = useStill()
   const selected = Math.round(position)
-  const choice = choices[selected]
-  const highest = known && choices.length > 1 && selected === choices.length - 1
-  const label = choice ? effortLabel(choice.id) : 'Provider default'
-  useFurnace(canvas, panel, thumb, position, choices.length, highest, dragging, still)
+  const shown = choices[selected]
+  const top = known && count > 1 && actual === count - 1
+  const defaultIndex = defaultValue === undefined ? -1 : choices.findIndex(option => option.id === defaultValue)
+  usePaintedPosition(panel, position, count, dragging, still)
   useEffect(() => { if (!pending.current) { setPosition(Math.max(0, actual)); setKnown(actual >= 0) } }, [actual])
   useEffect(() => {
     if (!disabled || !drag.current) return
@@ -146,7 +151,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   }, [trigger])
   const choose = async (index: number): Promise<void> => {
     if (disabled || pending.current) return
-    const next = Math.max(0, Math.min(choices.length - 1, index)), option = choices[next]
+    const next = Math.max(0, Math.min(count - 1, index)), option = choices[next]
     if (!option) return
     setPosition(next); setKnown(true); setDragging(false); drag.current = false
     if (option.id === value) return
@@ -157,49 +162,77 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       if (!saved && mounted.current) { setPosition(Math.max(0, actual)); setKnown(actual >= 0) }
     }
   }
-  const description = !known ? `${value ? effortLabel(value) : 'Provider default'} is set. Choose a supported level.`
-    : highest ? 'Highest model reasoning effort.'
-      : choice?.id === 'low' || choice?.id === 'minimal' ? 'Quick, focused reasoning.'
-        : choice?.id === 'medium' ? 'Balanced reasoning.' : 'More time for difficult problems.'
-  return <div ref={panel} id={id} popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined} role="dialog" aria-label="Reasoning effort" className="effort-picker" data-still={still} data-gold="false">
-    <div className="effort-picker__drawing">
-      <canvas ref={canvas} aria-hidden="true" /><span ref={thumb} className="effort-picker__thumb" aria-hidden="true" />
-      <input ref={range} type="range" aria-label="Thread reasoning effort" aria-valuetext={known ? label : value ? effortLabel(value) : 'Provider default'} aria-valuenow={selected}
-        aria-describedby={`${id}-description`} aria-disabled={disabled || choices.length === 0} min={0} max={Math.max(0, choices.length - 1)} step={.001} value={position}
+  // The wheel steps a level. React registers wheel listeners as passive, so the page would scroll behind the card without this.
+  useEffect(() => {
+    const input = range.current
+    if (!input) return
+    const wheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      if (disabled || event.deltaY === 0) return
+      const next = Math.max(0, Math.min(count - 1, Math.round(position) + (event.deltaY < 0 ? 1 : -1)))
+      if (next !== Math.round(position) || !known) void choose(next)
+    }
+    input.addEventListener('wheel', wheel, { passive: false })
+    return () => input.removeEventListener('wheel', wheel)
+  })
+  const magnet = (raw: number): number => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < MAGNET ? near + d * Math.pow(Math.abs(d) / MAGNET, 2) : raw }
+  const word = !known ? (value ? effortLabel(value) : 'Provider default') : effortLabel((dragging ? shown?.id : value) ?? value)
+  const line = !known ? `${value ? effortLabel(value) : 'Provider default'} is set. Choose a level this model offers.`
+    : effortLine((dragging ? shown?.id : value) ?? value, dragging ? selected : actual, count)
+  // The slider announces where the thumb is, so a drag is heard as it moves; the word above follows the same rule.
+  const valueText = known ? effortLabel(shown?.id ?? value) : value ? effortLabel(value) : 'Provider default'
+  return <div ref={panel} id={id} popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined} role="dialog" aria-label="Reasoning effort"
+    className="effort-card" data-still={still} data-top={top} data-arriving={arriving} data-unknown={!known} data-dragging={dragging}>
+    <div className="effort-card__head">
+      <p className="effort-card__word" data-top={top && !dragging} data-unknown={!known}>
+        {Array.from(word, (letter, index) => <span key={`${word}-${index}`} style={{ '--effort-letter': index } as CSSProperties}>{letter === ' ' ? '\u00a0' : letter}</span>)}
+      </p>
+      {defaultIndex >= 0 && <button type="button" className="effort-card__default tt-focusable" disabled={disabled || value === defaultValue}
+        title={`Use ${modelName ?? 'the model'}'s default, ${effortLabel(defaultValue!)}`} onClick={() => void choose(defaultIndex)}>Default</button>}
+    </div>
+    <p id={`${id}-description`} className="effort-card__line">{line}</p>
+    <div className="effort-card__track">
+      <div className="effort-card__pill" aria-hidden="true">
+        <div className="effort-card__fill" />
+        {choices.map((option, index) => <span key={option.id} className="effort-card__dot" data-under={index <= selected} style={{ '--effort-stop': count > 1 ? index / (count - 1) : 0 } as CSSProperties} />)}
+      </div>
+      <span className="effort-card__thumb" aria-hidden="true" />
+      <input ref={range} type="range" aria-label="Thread reasoning effort" aria-valuetext={valueText} aria-valuenow={selected}
+        aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
         onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
         onPointerUp={event => { if (!drag.current) return; drag.current = false; setDragging(false); void choose(Math.round(Number(event.currentTarget.value))) }}
         onPointerCancel={() => { drag.current = false; setDragging(false); setPosition(Math.max(0, actual)); setKnown(actual >= 0) }}
-        onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) { setPosition(next); setKnown(true) } else void choose(Math.round(next)) }}
+        onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) { setPosition(magnet(next)); setKnown(true) } else void choose(Math.round(next)) }}
         onKeyDown={event => {
           if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); return }
-          const keys = ['ArrowRight', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']
-          if (!keys.includes(event.key)) return
+          const digit = /^[1-9]$/u.test(event.key) ? Number(event.key) - 1 : -1
+          const steps: Record<string, number> = { ArrowRight: 1, ArrowUp: 1, PageUp: 1, ArrowLeft: -1, ArrowDown: -1, PageDown: -1 }
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : digit >= 0 && digit < count ? digit : steps[event.key] !== undefined ? selected + steps[event.key]! : null
+          if (next === null) return
           event.preventDefault(); event.stopPropagation()
-          const up = ['ArrowRight', 'ArrowUp', 'PageUp'].includes(event.key)
-          void choose(event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : selected + (up ? 1 : -1))
+          void choose(next)
         }} />
     </div>
-    <div className="effort-picker__stops" role="group" aria-label="Choose effort level" style={{ '--effort-count': choices.length } as CSSProperties}>
-      {choices.map((option, index) => {
-        const active = known && selected === index
-        const tier = index === choices.length - 1 || ['max', 'ultra'].includes(option.id) ? 'forge' : option.id === 'xhigh' ? 'ripple' : option.id === 'high' ? 'spark' : 'rise'
-        return <button type="button" key={option.id} aria-label={`${effortLabel(option.id)} effort`} aria-pressed={active} aria-disabled={disabled} className="tt-focusable"
-          data-tier={tier} data-highest={active && highest} onClick={() => void choose(index)}>
-          <span className="effort-picker__word" key={String(active)} aria-hidden="true">{Array.from(effortLabel(option.id), (letter, i) => <span key={i} style={{ '--letter': i } as CSSProperties}>{letter === ' ' ? '\u00a0' : letter}</span>)}</span>
-          {active && ['forge', 'ripple', 'spark'].includes(tier) && <span className="effort-picker__sparks" aria-hidden="true">{Array.from({ length: tier === 'forge' ? 18 : 9 }, (_, i) => <i key={i} style={{ left: `${(i * .61803398875 % 1) * 100}%`, '--spark-x': `${(i % 2 ? 1 : -1) * (3 + i % 5 * 2)}px`, '--spark-y': `${-(9 + i * 7 % 17)}px`, '--spark-delay': `${130 + i * 43 % 430}ms` } as CSSProperties} />)}</span>}
-        </button>
-      })}
-    </div>
-    <p id={`${id}-description`} className="effort-picker__description">{description}</p>
-    {onUltrathink && <button type="button" className="effort-picker__think tt-focusable" disabled={hasUltrathink} onClick={onUltrathink} aria-label={hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}>{hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}</button>}
-    <button type="button" className="effort-picker__done tt-focusable" onClick={close}>Done</button>
+    <div className="effort-card__ends" aria-hidden="true"><span>Faster</span><span>More thorough</span></div>
+    {onUltrathink && <button type="button" className="effort-card__ultrathink tt-focusable" disabled={hasUltrathink} data-on={hasUltrathink} onClick={onUltrathink}
+      aria-label={hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}>
+      <i aria-hidden="true"><Check size={10} strokeWidth={3} /></i>{hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}
+    </button>}
+    <div className="effort-card__wash" aria-hidden="true" />
   </div>
 }
 
-/** A preview is local until release. The provider remains authoritative for supported values and saves. */
-export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink }: {
+/**
+ * The effort chip and its card. A preview is local until release; the provider remains authoritative for
+ * supported values and saves. The chip wears the colourway at the model's highest level, and the composer
+ * around it reads that mark for its outline and this wrapper's arrival mark for its tide (ADR-0019).
+ */
+export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => Promise<boolean>
   readonly onUltrathink?: (() => void) | undefined; readonly hasUltrathink?: boolean | undefined
+  /** The model's own default level, offered as the card's Default button when the model reports one. */
+  readonly defaultValue?: string | undefined
+  readonly modelName?: string | undefined
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -207,6 +240,10 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   const id = useId()
   const returnFocus = useRef(false)
   const close = (): void => { returnFocus.current = true; setOpen(false) }
+  const choices = options.filter(option => !option.disabled)
+  const top = choices.length > 1 && choices[choices.length - 1]?.id === value
+  const still = useStill()
+  const arriving = useArrival(top, still)
   useLayoutEffect(() => {
     // Hide the native popover before restoring focus; a pending save temporarily disables the chip.
     if (open || disabled || !returnFocus.current) return
@@ -219,13 +256,14 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
     document.addEventListener('pointerdown', dismiss, true)
     return () => document.removeEventListener('pointerdown', dismiss, true)
   }, [open])
-  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor"
+  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={trigger} type="button" role="combobox" aria-label="Thread reasoning" title="Thread reasoning" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-      className="thread-chip tt-focusable" disabled={disabled} onClick={() => setOpen(current => !current)}>
+      className="thread-chip tt-focusable" data-effort-top={top} disabled={disabled} onClick={() => setOpen(current => !current)}>
       <span>{value ? effortLabel(value) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && <EffortSurface value={value} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink} close={close} id={id} trigger={trigger} />}
+    {open && <EffortSurface value={value} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
+      defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}
   </div>
 }

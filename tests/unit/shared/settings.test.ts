@@ -7,6 +7,7 @@ import { parseThemeFile } from '../../../src/shared/themes/library'
 import {
   APPEARANCES,
   DEFAULT_SETTINGS,
+  EFFORT_COLORS,
   SETTINGS_VERSION,
   defaultSettings,
   parseSettings,
@@ -24,6 +25,7 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   glassOpacity: 60,
+  effortColor: 'aurora',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -91,10 +93,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'effortColor', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, glassOpacity: 80, customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, glassOpacity: 80, effortColor: 'ember', customThemes: [] })
     }
   })
 
@@ -125,6 +127,12 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, glassOpacity: 82 }).success).toBe(false)
     for (const contrast of [50, 100, 200]) expect(parseSettings({ appearanceContrast: contrast }).appearanceContrast).toBe(contrast)
     for (const glass of [40, 80, 100]) expect(parseSettings({ glassOpacity: glass }).glassOpacity).toBe(glass)
+  })
+
+  it('keeps every effort colourway and recovers an unknown one as Ember', () => {
+    for (const effortColor of EFFORT_COLORS) expect(parseSettings({ effortColor }).effortColor).toBe(effortColor)
+    expect(parseSettings({ effortColor: 'neon' }).effortColor).toBe('ember')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, effortColor: 'neon' }).success).toBe(false)
   })
 
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
@@ -162,6 +170,7 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       glassOpacity: 80,
+      effortColor: 'ember',
       customThemes: [],
       reducedMotion: 'system',
       microphoneId: null,

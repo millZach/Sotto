@@ -323,4 +323,20 @@ describe('appearance settings', () => {
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
     expect(save.mock.calls[1]![0]).toEqual({ glassOpacity: 40 })
   })
+
+  it('offers the six effort colourways as swatches, previews the pick at once and saves it, and the sample plays the arrival', async () => {
+    const { save } = renderSettings({})
+    const group = screen.getByRole('group', { name: 'Effort color' })
+    const swatches = within(group).getAllByRole('button')
+    expect(swatches.map(swatch => swatch.getAttribute('data-effort-color'))).toEqual(['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'])
+    expect(within(group).getByRole('button', { name: 'Use Ember as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    const sample = screen.getByText('Effort at its highest level').closest('.effort-sample')!
+    expect(sample).toHaveAttribute('data-arriving', 'false')
+    fireEvent.click(within(group).getByRole('button', { name: 'Use Cyberpunk as the effort color' }))
+    // The pick paints before the save answers: the swatch, the preview and the root all say Cyberpunk at once.
+    expect(within(group).getByRole('button', { name: 'Use Cyberpunk as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(appearancePreview.effective(DEFAULT_SETTINGS).effortColor).toBe('cyberpunk')
+    await waitFor(() => expect(sample).toHaveAttribute('data-arriving', 'true'))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ effortColor: 'cyberpunk' }, 'Effort color saved.'))
+  })
 })

@@ -2471,3 +2471,10 @@ textarea.tt-input {
 .voice-wave--listening[data-size="hero"] { width: 180px; }
 .voice-wave--listening[data-size="hero"] .widget-bars { transform: scale(3); transform-origin: center; }
 .voice-wave--listening[data-size="deck"] .widget-bars { transform: scale(1.5); }
+
+/* The effort colourway motion (ADR-0019), shared by the effort card, the composer outline and the Appearance sample, so
+   whichever surface loads first has them. The ring angle is registered so the conic gradient can turn. */
+@property --effort-ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes effort-ring { to { --effort-ring-angle: 360deg; } }
+@keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
+@keyframes effort-letter { from { color: var(--tt-text); } 45% { color: var(--tt-text); transform: translateY(-1px); } to { color: var(--tt-effort-text-fill); transform: none; } }

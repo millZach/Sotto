@@ -6,6 +6,8 @@
 .thread-chip > svg { flex: none; }
 .thread-chip:hover:not(:disabled), .thread-chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .thread-chip:disabled { opacity: .55; cursor: default; }
+/* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
+.thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
 
 /* The effort and permission lists. */
 .thread-chip-menu { position: relative; min-width: 0; }

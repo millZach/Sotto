@@ -151,6 +151,35 @@
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 
+/* At a model's highest level the composer wears a thin outline in the effort colourway, with a brighter run
+   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). Both composers read
+   the effort chip's own mark, so no prop has to travel; the card's arrival state drives the tide. The ring angle
+   property and the effort-ring keyframes are declared once in global.css. */
+.thread-prompt, .thread-workspace__compose .agent-composer { position: relative; --effort-tint: 0%; }
+.thread-prompt:has(.thread-chip[data-effort-top='true']), .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true']) { --effort-tint: 30%; border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-border)); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
+/* The arrival mark sits on the chip's wrapper, which outlives the card: closing the card mid-tide does not cut it. */
+.thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true']), .thread-workspace__compose .agent-composer:has(.effort-picker-anchor[data-effort-arriving='true']) { --effort-tint: 70%; transition-duration: 220ms; }
+/* The tint sits over the focus and running colours rather than replacing them: the border is the textarea's focus cue. */
+.thread-prompt[data-running]:has(.thread-chip[data-effort-top='true']) { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border))); }
+.thread-prompt:has(.thread-chip[data-effort-top='true']):focus-within, .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true']):focus-within { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-focus)); }
+.thread-prompt::after, .thread-workspace__compose .agent-composer::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
+  background: conic-gradient(from var(--effort-ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--tt-effort-a) 70%, transparent) .66turn, var(--tt-effort-b) .76turn, var(--tt-effort-c) .84turn, transparent .94turn, transparent 1turn);
+  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); mask-composite: exclude; }
+.thread-prompt:has(.thread-chip[data-effort-top='true'])::after, .thread-workspace__compose .agent-composer:has(.thread-chip[data-effort-top='true'])::after { opacity: 1; }
+.thread-prompt::before, .thread-workspace__compose .agent-composer::before { content: ''; position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 1;
+  background: var(--tt-effort-wash-image); background-size: 100% 220%; background-position: 0 -320%; background-repeat: no-repeat; opacity: 0;
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) :is(.thread-prompt, .thread-workspace__compose .agent-composer):has(.thread-chip[data-effort-top='true'])::after { animation: effort-ring 4200ms linear infinite; }
+  :root:not([data-reduced-motion='on']) :is(.thread-prompt, .thread-workspace__compose .agent-composer):has(.effort-picker-anchor[data-effort-arriving='true'])::before { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+}
+@keyframes effort-tide { from { opacity: .5; background-position: 0 100%; } to { opacity: .5; background-position: 0 -320%; } }
+/* Reduced motion keeps the outline as a still ring at half strength. */
+:root[data-reduced-motion='on'] :is(.thread-prompt, .thread-workspace__compose .agent-composer)::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+@media (prefers-reduced-motion: reduce) {
+  :is(.thread-prompt, .thread-workspace__compose .agent-composer)::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+}
+
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
 .threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .threads-view .thread-options-bar > small { margin-top: 0; font-size: 12px; }
