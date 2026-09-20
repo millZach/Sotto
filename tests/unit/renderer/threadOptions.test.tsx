@@ -84,13 +84,23 @@ describe('composer option chips', () => {
     expect(panel).toHaveAttribute('data-top', 'true')
     expect(panel).toHaveAttribute('data-arriving', 'true')
     expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAccessibleDescription('Everything the model has. Slowest, costliest.')
+    // The arrival belongs to the chip's wrapper, which the composer reads, so closing the card does not cut the tide short.
+    const anchor = chip.closest('.effort-picker-anchor')!
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'true')
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'true')
+    fireEvent.click(chip)
+    expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toHaveAttribute('data-arriving', 'true')
     // Lowering the level ends the arrival at once; the Electron spec watches it run its course.
     fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Home' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'low' }))
     state.host.threads[0]!.reasoningEffort = 'low'
     rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
-    expect(panel).toHaveAttribute('data-arriving', 'false')
-    expect(panel).toHaveAttribute('data-top', 'false')
+    const reopened = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    expect(reopened).toHaveAttribute('data-arriving', 'false')
+    expect(reopened).toHaveAttribute('data-top', 'false')
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'false')
     expect(chip).toHaveAttribute('data-effort-top', 'false')
   })
 

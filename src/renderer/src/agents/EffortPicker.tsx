@@ -41,11 +41,13 @@ function useStill(): boolean {
 
 /**
  * Eases the painted position toward the chosen one and writes it to the card as `--effort-x`, which the fill,
- * thumb and dots read. A drag paints where the hand is; reduced motion snaps. The loop sleeps once settled.
+ * thumb and dots read. The first write lands before the card's first paint, so it opens at the saved level
+ * rather than flashing from the left; a drag paints where the hand is; reduced motion snaps. The loop sleeps
+ * once settled.
  */
 function usePaintedPosition(panel: RefObject<HTMLDivElement | null>, position: number, count: number, dragging: boolean, still: boolean): void {
   const painted = useRef(position)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const surface = panel.current
     if (!surface) return
     let raf = 0, previous = performance.now()
@@ -63,16 +65,36 @@ function usePaintedPosition(panel: RefObject<HTMLDivElement | null>, position: n
       write()
       if (painted.current !== position) raf = requestAnimationFrame(frame)
     }
-    if (still || dragging || typeof requestAnimationFrame !== 'function') { painted.current = position; write() }
-    else raf = requestAnimationFrame(frame)
+    if (still || dragging || typeof requestAnimationFrame !== 'function') painted.current = position
+    write()
+    if (painted.current !== position) raf = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(raf)
   }, [panel, position, count, dragging, still])
 }
 
-function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, id, trigger }: {
+/**
+ * The arrival at a model's highest level: true for a moment after the saved level reaches the top from
+ * below, never on the first level seen or under reduced motion. It lives beside the chip rather than in the
+ * card, so closing the card mid-arrival leaves the composer's tide to finish.
+ */
+function useArrival(top: boolean, still: boolean): boolean {
+  const [arriving, setArriving] = useState(false)
+  const lastTop = useRef<boolean | null>(null)
+  useEffect(() => {
+    const was = lastTop.current
+    lastTop.current = top
+    if (!top || was === null || was || still) { setArriving(false); return }
+    setArriving(true)
+    const timer = setTimeout(() => setArriving(false), ARRIVAL_MS)
+    return () => clearTimeout(timer)
+  }, [top, still])
+  return arriving
+}
+
+function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, id, trigger, arriving, still }: {
   value: string; options: readonly EffortOption[]; disabled: boolean; onChange: (id: string) => Promise<boolean>
   onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; defaultValue?: string | undefined; modelName?: string | undefined
-  id: string; trigger: RefObject<HTMLButtonElement | null>
+  id: string; trigger: RefObject<HTMLButtonElement | null>; arriving: boolean; still: boolean
 }): ReactNode {
   const choices = options.filter(option => !option.disabled)
   const count = choices.length
@@ -80,15 +102,11 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   const [position, setPosition] = useState(Math.max(0, actual))
   const [known, setKnown] = useState(actual >= 0)
   const [dragging, setDragging] = useState(false)
-  const [arriving, setArriving] = useState(false)
   const drag = useRef(false)
   const pending = useRef(false)
   const mounted = useRef(true)
-  const arrival = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastTop = useRef<boolean | null>(null)
   const panel = useRef<HTMLDivElement>(null)
   const range = useRef<HTMLInputElement>(null)
-  const still = useStill()
   const selected = Math.round(position)
   const shown = choices[selected]
   const top = known && count > 1 && actual === count - 1
@@ -99,16 +117,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
     if (!disabled || !drag.current) return
     drag.current = false; setDragging(false); setPosition(Math.max(0, actual)); setKnown(actual >= 0)
   }, [disabled, actual])
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; if (arrival.current !== null) clearTimeout(arrival.current) } }, [])
-  // The arrival plays once, when the saved level reaches the top from below. Opening the card at the top shows the settled state.
-  useEffect(() => {
-    const was = lastTop.current
-    lastTop.current = top
-    if (arrival.current !== null) { clearTimeout(arrival.current); arrival.current = null }
-    if (!top || was === null || was || still) { setArriving(false); return }
-    setArriving(true)
-    arrival.current = setTimeout(() => { arrival.current = null; if (mounted.current) setArriving(false) }, ARRIVAL_MS)
-  }, [top, still])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useLayoutEffect(() => {
     const surface = panel.current
     if (!surface) return
@@ -216,7 +225,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
 /**
  * The effort chip and its card. A preview is local until release; the provider remains authoritative for
  * supported values and saves. The chip wears the colourway at the model's highest level, and the composer
- * around it reads that mark for its outline (ADR-0019).
+ * around it reads that mark for its outline and this wrapper's arrival mark for its tide (ADR-0019).
  */
 export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => Promise<boolean>
@@ -233,6 +242,8 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   const close = (): void => { returnFocus.current = true; setOpen(false) }
   const choices = options.filter(option => !option.disabled)
   const top = choices.length > 1 && choices[choices.length - 1]?.id === value
+  const still = useStill()
+  const arriving = useArrival(top, still)
   useLayoutEffect(() => {
     // Hide the native popover before restoring focus; a pending save temporarily disables the chip.
     if (open || disabled || !returnFocus.current) return
@@ -245,7 +256,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
     document.addEventListener('pointerdown', dismiss, true)
     return () => document.removeEventListener('pointerdown', dismiss, true)
   }, [open])
-  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor"
+  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={trigger} type="button" role="combobox" aria-label="Thread reasoning" title="Thread reasoning" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
@@ -253,6 +264,6 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
       <span>{value ? effortLabel(value) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <EffortSurface value={value} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
-      defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} />}
+      defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}
   </div>
 }
