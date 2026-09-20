@@ -1,4 +1,4 @@
-/* The Threads page sidebar: the 44px top row, search, project folders, 32px rows and the Settled/Closed shelf.
+/* The Threads page sidebar: the 44px top row, search, project folders, adaptive thread rows and the Settled/Closed shelf.
    Terminal mode reuses every class here (terminals/TerminalSidebar.tsx). The Chats page borrows the frame's
    older shape (agents/personal/PersonalChatsView.tsx), so everything the redesign moved is scoped to the
    [data-mode] the Threads and Terminal sidebars carry and Chats does not. */
@@ -10,13 +10,13 @@
 .thread-nav__head-actions { display: flex; gap: 2px; }
 .thread-nav__head .tt-button { width: 36px; min-height: 36px; padding: 0; }
 
-/* The top row carries the mark, the mode switch and the two new actions, and it is the frameless window's
+/* The top row carries the mark, the mode switch and the project, thread and collapse actions, and it is the frameless window's
    drag region: every control in it opts back out. macOS keeps room at the left for the traffic lights. */
 .thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; -webkit-app-region: drag; user-select: none; }
 .thread-nav--mac .thread-nav__top { padding-left: 78px; }
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
-   down). On macOS the traffic lights take the left end of the row, and what is left of the 264px does not hold
-   the wordmark beside the mode switch and the two actions: the mark stands alone. */
+   down). On macOS the traffic lights take the left end of the row, and the narrowest expanded width does not hold
+   the wordmark beside the mode switch and actions: the mark stands alone. */
 .thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
 .thread-nav__glyph { flex: none; width: 18px; height: 18px; }
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -130,7 +130,7 @@
 }
 @keyframes thread-ring { to { rotate: 360deg; } }
 
-/* The Threads sidebar hides this sentence and rings instead; the Chats page still draws it, dot and all. */
+/* Thread rows pair this status with a provider; Chats also uses the inline status dot. */
 .thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }
@@ -151,3 +151,58 @@
 @media (prefers-reduced-motion: reduce) { .thread-folder__chevron { transition: none; } .thread-nav__ring { animation: none; } }
 :root[data-reduced-motion='on'] .thread-folder__chevron { transition: none; }
 :root[data-reduced-motion='on'] .thread-nav__ring { animation: none; }
+
+
+/* Approved project rows: context grows with the sidebar, while the same icons and actions remain. */
+.thread-nav[data-mode] { position: relative; min-width: 0; container: thread-sidebar / inline-size; }
+.thread-nav__expanded { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.thread-nav__expanded[hidden] { display: none; }
+.thread-nav__collapse { flex: none; -webkit-app-region: no-drag; }
+.thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: 14px; font-weight: 500; }
+.thread-nav[data-mode='threads'] .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: block; }
+.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: hidden; }
+.thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
+.thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }
+.thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
+.thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__provider { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__metadata .thread-nav__status { display: block; margin-left: auto; min-width: 0; flex-shrink: 0; max-width: 70%; text-overflow: ellipsis; }
+.thread-nav__model, .thread-nav__copy-kind { display: none; }
+.thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__branch > svg, .thread-nav__copy-kind { flex: none; }
+.thread-nav__branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
+.thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 3px; right: 1px; opacity: 0; pointer-events: none; border-radius: 6px; background: var(--tt-sidebar); }
+.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
+.thread-nav__row--details[data-current] .thread-nav__row-actions { background: var(--tt-selected); }
+.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 114px; }
+.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: hidden; max-width: 0; }
+.thread-nav__row--details:is(:hover, :focus-within) .thread-nav__branch { padding-right: 114px; }
+.thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
+.thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; }
+.thread-nav__resize::after { content: ''; position: absolute; left: 3px; top: calc(50% - 18px); height: 36px; width: 4px; border-radius: 4px; background: var(--tt-border); }
+.thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }
+.thread-nav[data-resizing] { user-select: none; }
+.thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
+.thread-nav--mac .thread-nav__rail { padding-top: 44px; }
+.thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: thin; }
+.thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
+.thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: 7px; color: var(--tt-text); background: transparent; cursor: pointer; font: inherit; font-size: 14px; }
+.thread-nav__rail-thread:hover { background: var(--tt-hover); }
+.thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
+.thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
+.thread-nav__rail .thread-nav__foot { width: 100%; justify-content: center; padding: 8px 0; }
+.thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
+.thread-nav__rail .thread-nav__pages { flex-direction: column; }
+.thread-nav .thread-nav__rail .update-control { margin: 0; }
+@container thread-sidebar (max-width: 285px) { .thread-nav__wordmark { display: none; } }
+@container thread-sidebar (min-width: 340px) {
+  .thread-nav__branch { display: flex; }
+  .thread-nav__row--details .thread-nav__title { white-space: normal; overflow-wrap: anywhere; }
+  .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 0; }
+  .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: visible; max-width: 70%; }
+}
+@container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
+
+.thread-nav .thread-nav__row--details:is(:hover, :focus-within, [data-current]) .thread-nav__time { visibility: visible; }
