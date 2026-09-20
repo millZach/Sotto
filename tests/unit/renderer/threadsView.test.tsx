@@ -300,12 +300,31 @@ describe('ThreadsView workspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    fireEvent.click(screen.getByRole('option', { name: 'High' }))
+    fireEvent.click(screen.getByRole('button', { name: 'High effort' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, reasoningEffort: 'high' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
     fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
     await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, runtimeMode: 'full-access' }))
+  })
+
+  it('puts Ultrathink in the visible Claude prompt and sends exactly that draft once', async () => {
+    const state = stateFixture()
+    state.activeThreadId = 'grok-previews'; state.assignments = []
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    thread.providerId = 'claude'; thread.modelId = 'claude:sonnet'; thread.status = 'idle'; thread.requests = []
+    state.host.capabilities.configureThread = true
+    state.host.models = [{ id: thread.modelId, provider: 'claude', providerId: 'claude', name: 'Claude', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
+    const { command } = renderThreads(state)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt' })
+    fireEvent.change(prompt, { target: { value: 'Review this plan.' } })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Ultrathink to prompt' }))
+    expect(prompt).toHaveValue('Review this plan.\n\nultrathink')
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'manual-send', threadId: thread.id, draftId: expect.any(String), text: 'Review this plan.\n\nultrathink' }))
+    expect(prompt).toHaveValue('')
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread' }))
   })
 
   it('lists open work and expands settled history without changing its lifecycle', async () => {

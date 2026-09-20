@@ -19,7 +19,7 @@ export class E2EAgentHost implements AgentHost {
     ...structuredClone(EMPTY_AGENT_HOST), version: 'fixture',
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
     models: [{ id: 'claude:test', provider: 'Claude', name: 'Claude Test', ready: true,
-      reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }],
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultReasoningEffort: 'low', runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }],
     projects: [{ id: 'project', title: 'Sotto test', path: 'C:/sotto-test' }],
     threads: ['workshop', 'docs'].map((id): AgentThread => ({ id, title: id === 'workshop' ? 'Workshop' : 'Docs', projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [] })),
   }

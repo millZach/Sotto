@@ -280,7 +280,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} />
+            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false}
+              {...(editable && !answering && !permission ? { draftText: draft.text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; editText(text); textarea.current?.focus() } } : {})} />
             : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
           {status}
         </div>

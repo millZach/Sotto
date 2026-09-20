@@ -4,6 +4,7 @@ import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, PROVIDE
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker } from './ModelPicker'
+import { EffortPicker } from './EffortPicker'
 import './threadChips.css'
 
 const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
@@ -81,7 +82,7 @@ function threadModelChoices(state: AgentState, thread: AgentThread): { readonly 
 }
 
 /**
- * A chip that opens a short list above itself: the reasoning effort or the permissions. The chip reads the
+ * A chip that opens a short list above itself for permissions. The chip reads the
  * current choice, or the setting's own name while the provider has not said. Arrow keys move through the
  * list; Escape, Tab or a pointer outside closes it, and Escape returns focus to the chip.
  */
@@ -125,28 +126,35 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
 
 /**
  * The composer's option controls: three chips saying what this thread is set to, the model with its
- * provider's mark, the reasoning effort and what the thread may do without asking. Each opens its own
- * list. While a change is being confirmed the chips are fixed; once it is, focus comes back to the chip
- * the choice was made from unless the user has moved on. New thread and New terminal show the same three
+ * provider's mark, the reasoning effort and what the thread may do without asking. Effort opens its
+ * slider; the other chips open lists. While a change is being confirmed the chips are fixed; afterwards,
+ * focus returns to a closed chip unless the user has moved on. New thread and New terminal show the same three
  * controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, draftText, onDraftText }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
+  /** Present only beside an editable prompt; Ultrathink changes its visible text before sending. */
+  readonly draftText?: string
+  readonly onDraftText?: (text: string) => void
 }): ReactNode {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const { models, locked } = threadModelChoices(state, thread)
   const disabled = saving || isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
-  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<void> => {
+  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<boolean> => {
     // The choice was made inside a chip's list; the chip is fixed while saving, so focus is put back afterwards.
     refocus.current = (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
     setSaving(true); setError(null)
     try {
       const result = await command({ type: 'configure-thread', threadId: thread.id, ...patch })
-      if (!result || result.error) setError(result?.error ?? 'Could not confirm this change. Try again.')
+      if (!result || result.error) { setError(result?.error ?? 'Could not confirm this change. Try again.'); return false }
+      return true
+    } catch {
+      setError('Could not confirm this change. Try again.')
+      return false
     } finally { setSaving(false) }
   }
   useEffect(() => {
@@ -164,11 +172,18 @@ export function ThreadOptions({ thread, state, command, turnNote = true }: {
   const modes = modeChoices(model, thread.runtimeMode)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
+  const claude = (thread.providerId ?? model?.providerId) === 'claude' || /^claude(?: code)?$/iu.test(model?.provider ?? '')
+  const hasUltrathink = /\bultrathink\b/iu.test(draftText ?? '')
+  const addUltrathink = claude && draftText !== undefined && onDraftText ? (): void => {
+    if (!hasUltrathink) onDraftText(draftText ? `${draftText}${/\s$/u.test(draftText) ? '' : '\n\n'}ultrathink` : 'ultrathink')
+  } : undefined
   const note = locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
   return <div className="thread-options-bar" data-provider-locked={locked}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={models} modelId={thread.modelId} disabled={disabled || modelDisabled} onChange={modelId => void save({ modelId })} note={note} />
-      {efforts.length > 0 && <ChoiceChip label="Thread reasoning" placeholder="Effort" value={reasoning} options={efforts} disabled={disabled || modelDisabled} onChange={reasoningEffort => void save({ reasoningEffort })} />}
+      {efforts.length > 0 && <EffortPicker key={`${thread.modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
+        disabled={disabled || modelDisabled} onChange={reasoningEffort => save({ reasoningEffort })}
+        hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={thread.runtimeMode ?? ''} options={modes} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })} />}
     </div>
     {saving ? <small role="status">Saving...</small> : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small> : null}

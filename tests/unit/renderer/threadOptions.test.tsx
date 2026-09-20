@@ -36,26 +36,153 @@ describe('composer option chips', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
-  it('opens the effort list on its chip, lands on the current level and saves the chosen one', async () => {
+  it('opens the effort slider at the current level and saves a supported stop without closing', async () => {
     const { command } = mount()
     const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
     fireEvent.click(chip)
-    const list = screen.getByRole('listbox', { name: 'Thread reasoning' })
-    expect(within(list).getAllByRole('option').map(option => option.textContent)).toEqual(['Low', 'Medium', 'High', 'Xhigh', 'Max'])
-    expect(within(list).getByRole('option', { name: 'High' })).toHaveFocus()
-    fireEvent.click(within(list).getByRole('option', { name: 'Xhigh' }))
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    const slider = within(panel).getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(slider).toHaveAttribute('aria-valuetext', 'High')
+    expect(slider).toHaveFocus()
+    for (const label of ['Low', 'Medium', 'High', 'Extra high', 'Max']) expect(within(panel).getByRole('button', { name: `${label} effort` })).toBeVisible()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Extra high effort' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'xhigh' }))
-    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(panel).toBeInTheDocument()
+    fireEvent.keyDown(slider, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
     expect(chip).toHaveFocus()
   })
 
-  it('closes an open list when focus leaves it by Tab', () => {
+  it('closes the effort panel when focus leaves it by Tab', () => {
     mount()
-    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
-    fireEvent.click(chip)
-    const option = screen.getByRole('option', { name: 'High' })
-    fireEvent.blur(option, { relatedTarget: screen.getByRole('combobox', { name: 'Thread permissions' }) })
-    expect(screen.queryByRole('listbox')).toBeNull()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.blur(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { relatedTarget: screen.getByRole('combobox', { name: 'Thread permissions' }) })
+    expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
+  })
+
+  it('offers Ultra only when the selected provider model advertises it', async () => {
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
+    state.host.models.find(model => model.id === 'codex:model')!.reasoningEfforts!.push('ultra')
+    const { command } = mount(state)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ultra effort' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'ultra' }))
+    cleanup()
+    mount()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    expect(screen.queryByRole('button', { name: 'Ultra effort' })).toBeNull()
+  })
+
+  it('keeps the confirmed setting and allows retry when a settings command rejects', async () => {
+    const state = fixture()
+    const command = vi.fn().mockRejectedValueOnce(new Error('Transport closed')).mockResolvedValue(state)
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm this change. Try again.')
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('High')
+    expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    await waitFor(() => expect(command).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('keeps the effort panel mounted while a selection is being confirmed', async () => {
+    const state = fixture()
+    let release!: () => void
+    const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    expect(panel).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Low effort' }))
+    expect(command).toHaveBeenCalledTimes(1)
+    release()
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
+    expect(panel).toBeInTheDocument()
+  })
+
+  it('preserves an unavailable saved level until the user chooses a supported one', () => {
+    const { command } = mount(fixture({ reasoningEffort: 'legacy' }))
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Legacy')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    expect(command).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'High effort' })).toBeInTheDocument()
+  })
+
+  it('retains the open effort panel when a provider-default choice is confirmed', async () => {
+    const state = fixture()
+    delete state.host.threads[0]!.reasoningEffort
+    delete state.host.models.find(model => model.id === 'claude:model')!.defaultReasoningEffort
+    const command = vi.fn(async () => state)
+    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    fireEvent.click(screen.getByRole('button', { name: 'High effort' }))
+    await waitFor(() => expect(command).toHaveBeenCalled())
+    state.host.threads[0]!.reasoningEffort = 'high'
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toBe(panel)
+  })
+
+  it('adds Ultrathink visibly to a Claude draft without changing thread settings', () => {
+    const state = fixture()
+    const command = vi.fn(async () => state)
+    const onDraftText = vi.fn()
+    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} draftText="Review this plan." onDraftText={onDraftText} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Ultrathink to prompt' }))
+    expect(onDraftText).toHaveBeenCalledWith('Review this plan.\n\nultrathink')
+    expect(command).not.toHaveBeenCalled()
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} draftText="Review this plan. ULTRATHINK" onDraftText={onDraftText} />)
+    if (!screen.queryByRole('dialog', { name: 'Reasoning effort' })) fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const included = screen.getByRole('button', { name: 'Ultrathink is in this prompt' })
+    fireEvent.click(included)
+    expect(onDraftText).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a single supported level stable at both keyboard endpoints', () => {
+    const state = fixture()
+    state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = ['high']
+    const { command } = mount(state)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
+    fireEvent.keyDown(slider, { key: 'Home' })
+    expect(slider).toHaveValue('0')
+    expect(slider).toHaveAttribute('aria-valuetext', 'High')
+    expect(screen.getByRole('button', { name: 'High effort' })).toHaveAttribute('aria-pressed', 'true')
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('restores the confirmed effort if the thread becomes busy during a drag', () => {
+    const state = fixture({ nativeSessionStarted: true })
+    const command = vi.fn(async () => state)
+    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '3.8' } })
+    expect(slider).toHaveAttribute('aria-valuetext', 'Max')
+    state.host.threads[0]!.status = 'running'
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    fireEvent.pointerUp(slider)
+    expect(slider).toHaveValue('2')
+    expect(slider).toHaveAttribute('aria-valuetext', 'High')
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('does not offer a draft action without an editable Claude prompt', () => {
+    mount()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    expect(screen.queryByRole('button', { name: 'Add Ultrathink to prompt' })).toBeNull()
+    cleanup()
+    const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={vi.fn()} draftText="Review this." onDraftText={vi.fn()} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    expect(screen.queryByRole('button', { name: 'Add Ultrathink to prompt' })).toBeNull()
   })
 
   it('puts focus back on the chip once a choice is confirmed, since the chip was fixed while saving', async () => {

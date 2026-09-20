@@ -275,6 +275,17 @@
   --tt-provider-ink: #080b0a;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
   --tt-backdrop: rgb(0 0 0 / 38%);
+  /* Pixel furnace materials follow the active theme; selected gold remains readable. */
+  --tt-effort-track: var(--tt-border);
+  --tt-effort-fill: var(--tt-text);
+  --tt-effort-gold: var(--theme-warning);
+  --tt-effort-highlight: color-mix(in srgb, var(--theme-warning) 48%, var(--tt-text));
+  --tt-effort-shadow: color-mix(in srgb, var(--theme-warning) 48%, var(--tt-surface-elevated));
+  --tt-effort-fire: var(--tt-error);
+  --tt-effort-warm: var(--theme-warning);
+  --tt-effort-core: var(--tt-effort-highlight);
+  --tt-effort-text: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text));
+
   --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
   --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
