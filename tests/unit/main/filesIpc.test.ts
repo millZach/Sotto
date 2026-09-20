@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { registerFilesIpc } from '../../../src/main/files/ipc'
 import { FilesService } from '../../../src/main/files/service'

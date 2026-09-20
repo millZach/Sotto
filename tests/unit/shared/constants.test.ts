@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
 import { APP_NAME, DEFAULT_HOTKEY } from '../../../src/shared/constants'

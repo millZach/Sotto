@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'

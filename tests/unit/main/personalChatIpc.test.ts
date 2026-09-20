@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { registerPersonalChatIpc } from '../../../src/main/agents/personalChatIpc'
 import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS } from '../../../src/shared/personalChats'

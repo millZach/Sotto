@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { ZodError } from 'zod'
 import { describe, expect, it } from 'vitest'
 

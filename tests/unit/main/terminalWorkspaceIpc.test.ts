@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { registerTerminalWorkspaceIpc, TERMINAL_WORKSPACE_METHODS } from '../../../src/main/terminals/ipc'
 import type { TerminalWorkspaceService } from '../../../src/main/terminals/service'

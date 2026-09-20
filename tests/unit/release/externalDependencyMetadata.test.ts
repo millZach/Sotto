@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { builtinModules } from 'node:module'
 
 import { describe, expect, it } from 'vitest'

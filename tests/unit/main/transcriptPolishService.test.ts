@@ -1,4 +1,5 @@
-﻿import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest'
 
 import { QUALITY_TIERS, TranscriptPolishService } from '../../../src/main/llm/transcriptPolishService'
 import { buildPolishSystemPrompt } from '../../../src/main/llm/prompt'

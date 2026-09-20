@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'

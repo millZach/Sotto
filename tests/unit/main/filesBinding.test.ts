@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { resolveFilesBinding } from '../../../src/main/files/binding'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot } from '../../../src/shared/agents'

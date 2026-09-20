@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -131,7 +132,7 @@ describe('Open VSX client', () => {
 
 describe('VSIX theme extraction', () => {
   it('parses the JSONC theme files VS Code accepts', () => {
-    expect(parseJsonc('﻿{ // note\n "a": "x // not a comment", /* block */ "b": [1, 2,], }')).toEqual({ a: 'x // not a comment', b: [1, 2] })
+    expect(parseJsonc('\uFEFF{ // note\n "a": "x // not a comment", /* block */ "b": [1, 2,], }')).toEqual({ a: 'x // not a comment', b: [1, 2] })
   })
 
   it('refuses ZIP64 and encrypted archives', () => {
