@@ -155,7 +155,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         const next = await bridge.command(request)
         if (session.current) {
           setFailure(null)
-          if (version === session.observed) receiveState(next)
+          // A shell held for its frame is older than this response; it commits first so it can never land after.
+          if (version === session.observed) { commitPendingShell(); receiveState(next) }
         }
         return next
       } catch {
@@ -177,7 +178,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
-  }, [bridge, session, receiveState, detail, requestDetail])
+  }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   const state = snapshot?.session === session ? snapshot.state : null
   const error = failure?.session === session ? failure.error : null

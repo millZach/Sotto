@@ -89,6 +89,7 @@ describe('commits per streamed chunk', () => {
     cleanup(); localStorage.clear()
     const detailFirst = await commitsPerChunk('detail-then-shell')
     console.info(`shell+detail commits per chunk: ${JSON.stringify({ shellFirst, detailFirst })}`)
+    // Main sends the shell first; detail-first is the fixture's order, and its 1 is the next chunk's detail committing the held shell.
     // Whatever the order, the text on screen is complete and every chunk costs at least one commit.
     expect(shellFirst).toBeGreaterThanOrEqual(1)
     expect(detailFirst).toBeGreaterThanOrEqual(1)

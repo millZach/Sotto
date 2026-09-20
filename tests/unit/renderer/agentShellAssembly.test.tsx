@@ -178,3 +178,20 @@ describe('the startup shell cache', () => {
     expect(readShellCache()).toBeNull()
   })
 })
+
+describe('a shell held for its frame', () => {
+  it('commits before a command response, so the older shell never lands after it', async () => {
+    const wire = shellBridge(fullState([thread('workshop', [])], 'workshop'))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    // The shell arrives and is held for the frame; the command that follows answers before the frame fires.
+    act(() => { wire.publish({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the shell' }) })
+    expect(result.current.state?.notice).not.toBe('from the shell')
+    vi.mocked(wire.bridge.command).mockResolvedValueOnce({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the command' })
+    await act(async () => { await result.current.command({ type: 'configure', patch: { orbColor: 'amber' } }) })
+    expect(result.current.state?.notice).toBe('from the command')
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    await act(async () => undefined)
+    expect(result.current.state?.notice).toBe('from the command')
+  })
+})

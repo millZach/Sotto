@@ -53,8 +53,10 @@ drives `useAgentConnection` with a fake bridge and counts renders per chunk:
 | Arrival order | Commits per chunk, before | after |
 | --- | ---: | ---: |
 | shell, then detail | 2 | 1 |
-| detail, then shell | 2 | 1 |
+| detail, then shell (not the order main sends) | 2 | 1 |
 
+Main sends the shell first, so the second row is the fixture's order rather than the app's; on its own a
+detail-first pair still costs two commits, and the 1 there is the next chunk's detail committing the held shell.
 Swapping the order main sends in would not have helped: each message changed something and each was
 committed. Instead the window holds a shell for one animation frame when it has a detail channel. A
 detail arriving inside that frame commits together with the held shell; a shell nothing follows commits
