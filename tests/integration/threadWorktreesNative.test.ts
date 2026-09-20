@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
-import { runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
+import { ThreadWorktrees, runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
@@ -13,7 +13,7 @@ import { devinFixture } from '../fixtures/devinFixture'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 
 const cleanup: Array<() => Promise<void>> = []
-afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
+afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
 const factories = { codex: () => codexFixture(), claude: () => claudeFixture(), grok: () => grokFixture(), devin: () => devinFixture() }
 async function fixture(provider: keyof typeof factories, committed = true, nested = false) {
   const f = await factories[provider]()
@@ -49,6 +49,51 @@ const prepared = (workspace: WorkspaceHost, ...ids: string[]): Promise<unknown> 
   Promise.all(ids.map(id => workspace.threadWorkingDirectory(id).catch(() => undefined)))
 
 describe('native thread working copies', () => {
+  it('keeps a new working-copy choice when an older folder inspection finishes', async () => {
+    const { workspace, create } = await fixture('grok', true, true)
+    await create('changing', 'shared')
+    const inspect = ThreadWorktrees.prototype.inspect
+    let started!: () => void
+    const inspecting = new Promise<void>(resolve => { started = resolve })
+    let finish!: () => void
+    const held = new Promise<void>(resolve => { finish = resolve })
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementationOnce(async function (this: ThreadWorktrees, metadata) {
+      const result = await inspect.call(this, metadata)
+      started()
+      await held
+      return result
+    })
+    const reading = workspace.threadWorkingDirectory('changing').catch(() => undefined)
+    await inspecting
+    await workspace.configureThreadWorkingCopy('changing', { workingCopy: 'independent' })
+    finish()
+    await reading
+    expect(workspace.workspaceSnapshot().threads.find(thread => thread.id === 'changing')).toMatchObject({
+      nativeSessionStarted: false, worktree: { mode: 'independent', status: 'pending' },
+    })
+    expect(workspace.workspaceSnapshot().threads.find(thread => thread.id === 'changing')?.workingDirectory).toBeUndefined()
+  })
+
+  it('persists the verified folder when first-send setup recovers after the checkout was created', async () => {
+    const { f, workspace, create } = await fixture('grok', true, true)
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ writeCwd: true }))
+    await create('recovered', 'independent')
+    // Git succeeded, but the final folder read failed once. The next read can verify the same checkout.
+    vi.spyOn(ThreadWorktrees.prototype, 'workingDirectory').mockRejectedValueOnce(new Error('The working folder could not be read.'))
+    expect(await workspace.execute(prompt('recovered'))).toEqual({ accepted: true })
+    const thread = workspace.workspaceSnapshot().threads.find(item => item.id === 'recovered')!
+    const directory = join(thread.worktree!.path!, 'packages', 'app')
+    expect(thread.worktree?.status).toBe('ready')
+    expect(await readFile(join(directory, 'native-cwd-proof.txt'), 'utf8')).toBe(prompt('recovered').text)
+    expect(thread.workingDirectory).toBe(directory)
+    await workspace.privacyChanged()
+    const restored = new WorkspaceHost(new FakeProviderHost(), f.root)
+    try {
+      await restored.initialize()
+      expect(restored.workspaceSnapshot().threads.find(item => item.id === 'recovered')?.workingDirectory).toBe(directory)
+    } finally { restored.dispose() }
+  })
+
   for (const provider of ['codex', 'claude', 'grok', 'devin'] as const) it(`${provider}: concurrent native adapters write separate working files with unchanged project scope`, async () => {
     const { f, registry, workspace, project, create } = await fixture(provider, true, true)
     await writeFile(join(project, 'tracked.txt'), 'original dirty edits')

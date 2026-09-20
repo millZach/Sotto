@@ -798,22 +798,30 @@ export class WorkspaceHost implements AgentHost {
     await this.preparations.get(threadId) // A folder question asked during setup waits for its answer.
     await this.discoverWorkingCopy(threadId)
     const thread = this.thread(threadId)
-    if (thread.worktree?.path && (thread.worktree.status === 'ready' || thread.worktree.status === 'error')) {
+    const worktree = thread.worktree
+    if (worktree?.path && (worktree.status === 'ready' || worktree.status === 'error')) {
       // A folder that was deleted is put back on its recorded branch before the turn (ADR-0014). A record
       // an earlier read marked as an error gets the same chance; when it cannot be put back, the error it
       // already carries is the one reported below.
       let inspected: AgentWorktree | undefined
-      try { inspected = await this.worktrees.inspect(await this.worktrees.restore(thread.worktree)) }
-      catch (error) { if (thread.worktree.status === 'ready') throw error }
+      try { inspected = await this.worktrees.inspect(await this.worktrees.restore(worktree)) }
+      catch (error) { if (worktree.status === 'ready') throw error }
       // A branch switched inside the worktree is adopted, so the pane's label follows it (ADR-0014).
-      if (inspected && (inspected.branch !== thread.worktree.branch || thread.worktree.status !== 'ready')) {
-        this.thread(threadId).worktree = inspected; this.dirty = true
-        // The folder was just verified; a cache write that fails must not refuse the send.
-        try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
-        this.publish()
+      // A newer working-copy choice or refresh wins; provider snapshots preserve the worktree object.
+      if (inspected && this.thread(threadId).worktree === worktree) {
+        // Setup can fail after Git creates the checkout but before its verified folder is recorded.
+        const workingDirectory = this.thread(threadId).workingDirectory ?? await this.worktrees.workingDirectory(inspected)
+        const current = this.thread(threadId)
+        if (current.worktree === worktree && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || current.workingDirectory === undefined)) {
+          current.worktree = inspected; current.workingDirectory ??= workingDirectory; this.dirty = true
+          // The folder was just verified; a cache write that fails must not refuse the send.
+          try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+          this.publish()
+        }
       }
     }
-    return existingWorkingDirectory(resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)))
+    const current = this.thread(threadId)
+    return existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     const key = 'threadId' in command ? command.threadId : command.projectId
