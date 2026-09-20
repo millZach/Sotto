@@ -6,7 +6,7 @@ The current stack matters. [System speech](../../src/main/agents/speech.ts) runs
 
 [Playback stop](../../src/renderer/src/agents/voiceSpeech.ts) pauses and clears the audio element and discards late results. [Natural cancellation](../../src/renderer/src/agents/naturalSpeech.ts) terminates a worker with pending inference, making its next request cold; Grok aborts HTTP. [System synthesis continues](../../src/main/agents/ipc.ts) until completion/timeout and can block another request. The [voice session](../../src/renderer/src/agents/voiceSession.ts) invalidates queued speech but retains a 450 ms microphone echo guard: silence and readiness to listen are separate metrics. [Voice documentation](../agent-control.md) makes hosted speech explicit opt-in.
 
-Local sizes below are decimal MB of selected weights, excluding runtime and usually voice/tokenizer assets. These have Python-free ONNX/WASM or C/C++ routes; Windows x64 and Apple-silicon Electron execution remains unverified. [notes.md](../../notes.md) requires production dependencies exactly `['zod']`: bundle JavaScript from development dependencies; package native runtimes, phonemizers and their licences as resources.
+Local sizes below are decimal MB of selected weights, excluding runtime and usually voice/tokenizer assets. These have Python-free ONNX/WASM or C/C++ routes; Windows x64 and Apple-silicon Electron execution remains unverified. [notes.md](../../design/archive/notes.md) requires production dependencies exactly `['zod']`: bundle JavaScript from development dependencies; package native runtimes, phonemizers and their licences as resources.
 
 | Model | Size; licence; output and coverage | CPU evidence; streaming; disposition |
 |---|---|---|
