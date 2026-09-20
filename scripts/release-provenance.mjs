@@ -131,12 +131,14 @@ export async function writeBuildProvenance({ outRoot, sourceCommit, repositoryRo
 
 // electron-builder.yml excludes the renderer's emitted ONNX WASM from the archive: the worker reads
 // it only through sotto-runtime://, so this is the one out/ file the archive never contains.
-const PACKAGING_EXCLUDES = /^renderer\/assets\/ort-wasm-simd-threaded/u
+const PACKAGING_EXCLUDES = /^renderer\/(?:.*\/)?ort-wasm-simd-threaded[^/]*$/u
+/** True for the one built file electron-builder.yml leaves out of the archive, at any depth under renderer. */
+export const isPackagingExcluded = (path) => PACKAGING_EXCLUDES.test(path)
 
 export async function verifyBuildProvenance({ outRoot, asarPath, repositoryRoot, buildInputsRevision }) {
   const local = await localArtifacts(outRoot)
   const packaged = packagedArtifacts(asarPath)
-  const localPackaged = local.filter((artifact) => !PACKAGING_EXCLUDES.test(artifact.path))
+  const localPackaged = local.filter((artifact) => !isPackagingExcluded(artifact.path))
   if (JSON.stringify(packaged) !== JSON.stringify(localPackaged)) {
     throw new Error('packaged build artifacts differ from just-built out')
   }

@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
+import { isPackagingExcluded } from '../../../scripts/release-provenance.mjs'
+
 const root = process.cwd()
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
 
@@ -125,8 +127,14 @@ describe('release contract', () => {
     expect(read('scripts/verify-packaged-resources.mjs')).toContain(
       "fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')",
     )
-    // Provenance still records the emitted file but expects it absent from the archive.
-    expect(read('scripts/release-provenance.mjs')).toContain('PACKAGING_EXCLUDES')
+    // Provenance still records the emitted file but expects it absent from the archive, wherever
+    // under renderer the build puts it, and nothing else.
+    for (const path of ['renderer/assets/ort-wasm-simd-threaded.asyncify-DMmc6YqF.wasm', 'renderer/ort-wasm-simd-threaded.wasm']) {
+      expect(isPackagingExcluded(path)).toBe(true)
+    }
+    for (const path of ['main/index.js', 'renderer/assets/main-abc.js', 'renderer/assets/ort-wasm-simd-threaded/nested.txt', 'preload/index.js']) {
+      expect(isPackagingExcluded(path)).toBe(false)
+    }
   })
 
   it('bundles the memory store into the runtime and closes it on quit', () => {
