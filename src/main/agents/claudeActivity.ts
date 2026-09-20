@@ -9,6 +9,7 @@ const json = (value: unknown): string | undefined => value === undefined ? undef
 export class ClaudeActivity {
   private readonly blocks = new Map<string, { block: ClaudeFrame; input: string }>()
   private readonly hiddenTasks = new Set<string>()
+  private readonly monitorTasks = new Set<string>()
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string): AgentActivity[] {
     const rows: AgentActivity[] = []
     const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
@@ -59,6 +60,9 @@ export class ClaudeActivity {
       if (event?.type === 'content_block_stop') this.blocks.delete(key)
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
+      if (frame.subtype === 'task_started' && ['monitor', 'monitor_mcp'].includes(String(frame.task_type))) this.monitorTasks.add(frame.task_id)
+      // Monitor lifecycle belongs to the live watch, never to the subagent roster, even after it ends.
+      if (this.monitorTasks.has(frame.task_id)) return mergeAgentActivities(previous, rows)
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : frame.status === 'stopped' ? 'interrupted' : 'unknown' : 'running'
       // Claude Code registers every shell command as a task too, and files housekeeping watchers as tasks the transcript should not show.
       // Neither is a subagent: a shell task's outcome belongs to its command row, whose exit code a background command only learns here.

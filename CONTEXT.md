@@ -87,9 +87,11 @@ Answering a question or permission request and creating a project are also part 
 
 **History window.** How much of a thread's history a pane holds: the newest ten turns when it opens, then twenty more each time the user presses **Show earlier messages**. A turn here is a user message and the assistant messages that follow it. The detail says whether anything older exists (`earlierAvailable`), so opening a long thread costs the same as opening a short one.
 
+**Monitoring task.** A live, provider-confirmed watch on background work. A running command or unattended process is not enough evidence. The little creature above the thread composer appears while that watch is active and leaves when it ends or needs your answer. Monitoring is observation, never permission to act, and is not restored from history.
+
 **Watched set.** The threads the host keeps in memory and keeps a provider session for: the threads on screen, plus assigned or queued ones. It is what `observeThreads` names. A thread outside it carries its summary alone, so startup and publish cost follow the open panes rather than the whole archive. Avoid: "active threads", "open threads".
 
-**Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
+**Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, one with a confirmed live monitoring task, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
 
 **Host.** The process that owns the providers, the worktrees and the event store. Today it is Electron main, and the word is also the suffix of the interfaces inside it (`AgentHost`, `WorkspaceHost`); in the host-and-client sense it means the whole owning side, whichever machine it runs on. Avoid: "server", "backend".
 

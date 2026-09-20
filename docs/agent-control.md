@@ -25,6 +25,10 @@ Devin saves a native session after its first prompt. Sotto may renew the native 
 
 ## Working with threads
 
+A **monitoring task** is a provider-confirmed live watch, shown by the pixel creature above the thread composer. It works in manual and managed threads, including with the voice coordinator hidden. There is no elapsed-time threshold. Ordinary commands, long foreground work and unattended background processes do not qualify; short confirmed watches can appear briefly. The indicator is observational and cannot approve or send anything. It disappears for a pending question or permission, an error, a closed thread, interruption, disconnect or task completion. System or app reduced motion holds a still inspection pose.
+
+Claude Code clients that emit native `task_started` events with `task_type: monitor` or `monitor_mcp` supply this evidence. Task progress and status updates refresh it; terminal statuses and end times clear it. Nested subagent, ambient and transcript-only tasks do not qualify. The adapter maps native task IDs to ephemeral Sotto IDs and does not restore monitoring from transcripts or cached threads. An active confirmed monitor keeps its Claude session alive so the idle reaper cannot abandon it. Codex terminal-interaction events do not identify a bounded monitoring interval; Codex, Grok Build and Devin therefore publish no inferred monitoring state.
+
 The **Threads** page lists threads across providers. Create a thread with its project, model and available options; open one to read messages, type a prompt or answer an outstanding request. Native adapters recover threads created by Sotto; they do not import unrelated conversations from your coding clients.
 
 Creating a manual thread leaves any saved coordinator prompt or answer with its original thread. That draft does not block **New thread**, including while the voice coordinator is hidden. Creating a managed thread still requires sending or clearing the current coordinator draft first.

@@ -21,6 +21,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
+import { ThreadMonitor } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -104,6 +105,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const assigned = coordinated ? row.assignment : undefined
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
+  // Monitoring is observation, independent of the voice coordinator's authority.
+  const liveMonitors = rowConnected && !closed && !row.attention && thread.status !== 'error' && thread.requests.length === 0 ? thread.monitoring ?? [] : []
+  const monitor = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} /> : undefined
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = hasDraftContent(paneDraft.draft)
     || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))
@@ -240,8 +244,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         onPointerDownCapture={writeHere} onFocusCapture={() => setHoldingWriteHere(true)} onBlur={() => setHoldingWriteHere(false)}
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
-          : managed ? <AgentComposer state={state} command={command} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
+          : managed ? <AgentComposer state={state} command={command} ornament={monitor} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
+            : <ThreadComposer key={thread.id} ornament={monitor} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
       {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
           so panes side by side keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">

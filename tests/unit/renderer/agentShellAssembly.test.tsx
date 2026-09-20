@@ -255,3 +255,17 @@ describe('shell updates while the main window is hidden', () => {
     expect(remove).toHaveBeenCalledWith('visibilitychange', listener)
   })
 })
+
+it('keeps monitoring on the live shell but never caches or restores it', () => {
+  const watched = thread('workshop', [])
+  watched.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch only while connected' }]
+  const live = fullState([watched])
+  expect(agentShell(live).host.threads[0]!.monitoring).toEqual(watched.monitoring)
+  writeShellCache(live)
+  expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('Watch only while connected')
+  expect(readShellCache()!.host.threads[0]!.monitoring).toBeUndefined()
+  // An older cache or a manually copied live shell cannot resurrect an observation either.
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
+  expect(readShellCache()!.host.threads[0]!.monitoring).toBeUndefined()
+  expect(watched.monitoring).toHaveLength(1)
+})

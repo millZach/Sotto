@@ -22,6 +22,7 @@ import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from '
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
@@ -82,6 +83,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly observed = new Set<string>()
   private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
+  private readonly monitoring = new Map<string, ClaudeMonitoring>()
   private readonly restoredHistory = new Map<string, readonly AgentMessage[]>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
   private readonly messageLog = new ThreadMessageLog()
@@ -109,10 +111,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       stop: id => this.stopSession(id),
     })
   }
-  /** A turn, an unanswered request, a compaction or a command mid-dispatch all hold a session open. */
+  /** A turn, live watch, unanswered request, compaction or command mid-dispatch holds a session open. */
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
-    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length)
       || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.rollbackPending
   }
   /**
@@ -124,6 +126,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const runtime = this.runtimes.get(id)
     if (!runtime) return
     this.runtimes.delete(id)
+    this.clearMonitoring(id)
     this.messageLog.release(id)
     runtime.protocol.stop()
     await runtime.protocol.closed
@@ -257,7 +260,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       alias.rollbackPending = { sourceSessionId, sourceDigest: claudeDigest(JSON.stringify(messages)), ...(boundary ? { boundary } : {}) }
       try { await this.persist() } catch (error) { delete alias.rollbackPending; throw error }
       const runtime = this.runtimes.get(id)
-      if (runtime) { this.runtimes.delete(id); runtime.protocol.stop(); await runtime.protocol.closed }
+      if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
       forkDispatched = true
       const targetSessionId = boundary ? await history.fork(sourceSessionId, boundary) : randomUUID()
       alias.rollbackPending.targetSessionId = targetSessionId; await this.persist()
@@ -371,7 +374,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       validateThreadOptions(this.state, command, alias.modelId)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
       const runtime = this.runtimes.get(id)
-      if (runtime) { this.runtimes.delete(id); runtime.protocol.stop(); await runtime.protocol.closed }
+      if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
       alias.modelId = command.modelId ?? alias.modelId; alias.reasoningEffort = command.reasoningEffort ?? alias.reasoningEffort; if (command.runtimeMode) alias.runtimeMode = command.runtimeMode
       await this.persist(); thread.modelId = alias.modelId; thread.reasoningEffort = alias.reasoningEffort; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
       await this.start(id); this.emit(); return { accepted: true }
@@ -390,7 +393,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       try {
         if (this.staleContexts.delete(id)) {
           const stale = this.runtimes.get(id)
-          if (stale) { await this.denyPending(id, stale); this.runtimes.delete(id); stale.protocol.stop(); await stale.protocol.closed }
+          if (stale) { await this.denyPending(id, stale); this.runtimes.delete(id); this.clearMonitoring(id); stale.protocol.stop(); await stale.protocol.closed }
         }
         const runtime = await this.start(id)
         verifyFileMentions(command.text, command.files)
@@ -453,7 +456,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'interrupt') {
       await this.denyPending(id, runtime)
-      try { await runtime.protocol.control({ subtype: 'interrupt' }); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.markTurn(id, 'interrupted'); this.emit(); return { accepted: true } }
+      try { await runtime.protocol.control({ subtype: 'interrupt' }); this.clearMonitoring(id); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' }; this.markTurn(id, 'interrupted'); this.emit(); return { accepted: true } }
       catch { return { accepted: false, uncertain: true } }
     }
     throw new Error('Unsupported Claude command.')
@@ -466,6 +469,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   disconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.state.connected = false
+    for (const id of this.threads.keys()) this.clearMonitoring(id)
     this.reaper.dispose()
     this.flushCursors()
     for (const [id, runtime] of this.runtimes) {
@@ -495,6 +499,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const runtime: Runtime = { requests: new Map(), answered: new Set(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, this.client.environment(), this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
+        this.clearMonitoring(id)
         this.runtimes.delete(id); this.threads.get(id)!.requests = []; this.threads.get(id)!.status = 'error'
         this.state.connected = false; this.state.error = 'Claude Code disconnected. Reconnect to recover its existing session; uncertain prompts will not be resent.'; this.emit()
       }) }
@@ -506,7 +511,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (object(pending)) this.frame(id, pending as ClaudeFrame)
       }
     }
-    catch (error) { this.runtimes.delete(id); runtime.protocol.stop(); throw error }
+    catch (error) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); throw error }
     if (generation !== this.generation) { runtime.protocol.stop(); throw new Error('Claude connection was cancelled.') }
     return runtime
   }
@@ -514,6 +519,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
+    let monitoring = this.monitoring.get(id)
+    if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
+    monitoring.apply(frame); thread.monitoring = monitoring.current
     if (frame.type === 'system' && frame.subtype === 'init' && typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
     if (frame.type === 'control_request') {
       if (typeof frame.request_id === 'string' && runtime.answered.has(frame.request_id)) return
@@ -580,10 +588,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
           alias.origins.find(value => value.uuid === origin)?.messageId, typeof frame.result === 'string' && frame.is_error === true ? frame.result : undefined)
       }
       thread.status = frame.is_error === true ? 'error' : 'idle'; runtime.requests.clear(); thread.requests = []
-      if (frame.is_error === true) this.state.error = 'Claude could not complete this turn. Check its native subscription, model and usage limits.'
+      if (frame.is_error === true) { this.clearMonitoring(id); this.state.error = 'Claude could not complete this turn. Check its native subscription, model and usage limits.' }
     }
     this.emit(frame.type === 'stream_event' || frame.type === 'assistant'
-      || frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)))
+      || frame.type === 'system' && ['task_started', 'task_progress', 'task_updated', 'task_notification'].includes(String(frame.subtype)))
+  }
+  private clearMonitoring(id: string): void {
+    this.monitoring.delete(id)
+    const thread = this.threads.get(id)
+    if (thread) delete thread.monitoring
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return

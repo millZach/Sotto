@@ -11,6 +11,7 @@ export default tseslint.config(
       '.claude/worktrees/**',
       'coverage/**',
       'artifacts/agent-control-smoke/**',
+      'artifacts/process-creature/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',

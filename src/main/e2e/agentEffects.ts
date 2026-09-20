@@ -128,7 +128,10 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'disconnect') { this.state.connected = false; this.emit(); return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
-    if (event.type === 'history') {
+    if (event.type === 'monitoring') {
+      if (!event.monitoring) throw new Error('E2E_MONITORING_REQUIRED')
+      thread.monitoring = structuredClone(event.monitoring)
+    } else if (event.type === 'history') {
       if (!event.messages) throw new Error('E2E_HISTORY_REQUIRED')
       thread.messages = structuredClone(event.messages)
       thread.requests = []
