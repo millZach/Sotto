@@ -10,7 +10,7 @@ The rule that production dependencies are exactly `zod` exists so that what ship
 
 ## Decision
 
-**`node-pty` 1.1.0 is a pinned production dependency, and the only one besides `zod`.** `src/main/terminals/service.ts` is its sole importer and loads it once per session with a dynamic `import('node-pty')`, so a machine where the native module cannot load still starts Sotto; the terminal reports itself unavailable and nothing else is affected.
+**`node-pty` 1.1.0 is a pinned production dependency, and the only one besides `zod`.** Two services import it, each once per session with a dynamic `import('node-pty')`: `src/main/terminals/service.ts` for Terminal mode and `src/main/tools/terminal.ts` for the Tools panel's terminal beside a thread. Loading late means a machine where the native module cannot load still starts Sotto; the terminal reports itself unavailable and nothing else is affected.
 
 **It stays outside the bundle and outside the archive.** `electron.vite.config.ts` lists it as a Rollup external, `electron-builder.yml` unpacks `node_modules/node-pty/**` from `app.asar`, and `scripts/release-external-dependencies.mjs` names it as the one allowed dynamic external of main. A bundled copy loses the relative paths its helpers are found by; that was the `unavailable` startup error in `docs/verification/2026-09-14-tools-sidebar-terminal.md`.
 
