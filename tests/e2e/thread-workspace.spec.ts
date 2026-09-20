@@ -79,8 +79,16 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await prompt.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Start the long job.')
     await expect(prompt).toHaveValue('')
-    // Finish the native send before installing a new saved draft behind the composer.
-    await expect.poll(async () => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'docs')?.status)).toBe('running')
+    // Direct fixture writes must wait for the composer's post-send empty revision to finish saving.
+    await expect.poll(() => page.evaluate(async () => {
+      const state = await window.sotto!.agents!.get()
+      const delivery = state.deliveries?.findLast(item => item.threadId === 'docs')
+      const saved = state.threadDraftPersistence?.find(item => item.threadId === 'docs')
+      return state.host.threads.find(thread => thread.id === 'docs')?.status === 'running'
+        && delivery?.status === 'accepted' && !state.busyThreadIds?.includes('docs')
+        && saved?.status === 'saved' && saved.draftId !== delivery.draftId
+        && !state.threadDrafts?.some(item => item.threadId === 'docs')
+    })).toBe(true)
     // A durable draft carrying a selected skill, as the picker leaves it, returns to the composer after a reload.
     await page.evaluate(async reference => {
       await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'docs', draftId: crypto.randomUUID(), text: 'Then run $deploy for staging.', skills: [reference], requestId: null })

@@ -27,7 +27,7 @@ Evidence: [dark minimum](../../artifacts/process-creature/dark-820x560.png), [li
 
 ## Test synchronization
 
-Two existing thread-workspace tests reproduced their failures on untouched main at 865e9484. Both mistook optimistic send feedback for native execution. They now wait for the host to report running before queuing or installing a saved draft; the original paused/resume, draft and exactly-once assertions remain. The monitoring geometry test also waits for the old indicator to disappear before starting a new lifecycle. No fixed sleeps or shorter timeouts were added. See [baseline evidence](../../artifacts/process-creature/queue-test-baseline.md).
+Two existing thread-workspace tests reproduced their failures on untouched main at 865e9484. The first mistook optimistic send feedback for native execution and now waits for the host to report running before queueing. The second directly installed a saved draft while the composer still had a debounced empty save pending. It now waits for accepted delivery and the persisted empty revision before seeding its draft; a running-only guard proved insufficient. The original paused/resume, draft and exactly-once assertions remain. The stronger saved-draft guard passed five baseline repeats. The monitoring geometry test also waits for the old indicator to disappear before starting a new lifecycle. No fixed sleeps or shorter timeouts were added. See [baseline evidence](../../artifacts/process-creature/queue-test-baseline.md).
 
 ## Independent review
 
@@ -36,3 +36,5 @@ Separate standards and specification reviews found no remaining code findings in
 ## Design source
 
 The user's confirmed composer-only C direction supersedes #125's initial inferred header/sidebar/widget proposal. The [approved throwaway prototype](https://github.com/millZach/Sotto/blob/888c639b/docs/prototypes/process-creature-prototype.html) is archived at prototype/process-creature, commit 888c639b. It stays outside main. The [T3 source study](../research/2026-09-20-t3-monitoring-popup.md) records the lifecycle evidence behind removing the provisional ten-second buffer.
+
+Integration update: main at b8349c12 (question-panel PR #164) was merged before publication. Typecheck, lint and build passed again; 105 affected unit/integration tests and all seven Electron scenarios passed on the combined build. The final Electron run completed in 37.0 seconds. GitHub CI runs the full suite on the combined revision.
