@@ -19,6 +19,7 @@ export default tseslint.config(
       'artifacts/codex-stream-freeze/**',
       'artifacts/codex-images/**',
       'artifacts/issue-146/**',
+      'artifacts/codex-connection-recovery/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

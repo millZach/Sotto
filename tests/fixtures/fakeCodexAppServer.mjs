@@ -39,6 +39,7 @@ const directory = process.env.SOTTO_FAKE_CODEX_DIR ?? process.argv[2]
 const file = name => join(directory, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(file(name), 'utf8')) } catch { return fallback } }
 const state = read('state.json', { threads: {} })
+const loadedThreads = new Set()
 const save = () => { writeFileSync(file('state.tmp'), JSON.stringify(state)); renameSync(file('state.tmp'), file('state.json')) }
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
@@ -103,6 +104,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     const thread = { id: randomUUID(), cwd: params.cwd, model: params.model, createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: [],
       approvalPolicy: params.approvalPolicy, approvalsReviewer: params.approvalsReviewer, sandbox: params.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? 'low' }
     state.threads[thread.id] = thread
+    loadedThreads.add(thread.id)
     save()
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
@@ -116,12 +118,15 @@ createInterface({ input: process.stdin }).on('line', line => {
         setTimeout(() => emit({ id, error: { code: -32600, message: `thread ${thread.id} is not materialized yet; includeTurns is unavailable before first user message` } }), delay)
         return
       }
-      if (method === 'thread/resume') {
+      // Native resume returns an already loaded session without applying overrides.
+      if (method === 'thread/resume' && !loadedThreads.has(thread.id)) {
         for (const key of ['model', 'approvalPolicy', 'approvalsReviewer', 'sandbox']) if (params[key] !== undefined) thread[key] = params[key]
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
+        loadedThreads.add(thread.id)
         save()
       }
       const history = JSON.parse(JSON.stringify(thread))
+      if (method === 'thread/resume' && params.excludeTurns) history.turns = []
       if (script.historyItemIds) for (const turn of history.turns) {
         turn.items = turn.items.map((item, index) => ['userMessage', 'agentMessage'].includes(item.type)
           ? { ...item, id: `item-${index}` } : item)
@@ -130,6 +135,22 @@ createInterface({ input: process.stdin }).on('line', line => {
         reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
+  } else if (method === 'thread/settings/update') {
+    // Codex 0.155.1 acknowledges separately from its effective-settings notification.
+    const thread = state.threads[params.threadId]
+    if (!thread || !loadedThreads.has(thread.id)) { emit({ id, error: { code: -32600, message: 'Thread is not loaded' } }); return }
+    for (const key of ['model', 'approvalPolicy', 'approvalsReviewer']) if (params[key] != null) thread[key] = params[key]
+    if (params.effort != null) thread.reasoningEffort = params.effort
+    if (params.sandboxPolicy) thread.sandbox = { readOnly: 'read-only', workspaceWrite: 'workspace-write', dangerFullAccess: 'danger-full-access' }[params.sandboxPolicy.type]
+    save()
+    const settings = { model: thread.model, effort: thread.reasoningEffort, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
+      sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
+    if (!script.dropSettingsNotification) {
+      const changed = () => notify('thread/settings/updated', { threadId: thread.id, threadSettings: settings })
+      if (script.settingsNotificationDelay) setTimeout(changed, script.settingsNotificationDelay)
+      else changed()
+    }
+    reply({})
   } else if (method === 'thread/rollback') {
     const thread = state.threads[params.threadId]
     if (!thread || thread.status.type !== 'idle' || !Number.isInteger(params.numTurns) || params.numTurns < 1 || params.numTurns > thread.turns.length) {
