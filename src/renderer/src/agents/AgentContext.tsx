@@ -37,6 +37,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const detail = useMemo(() => ({
     held: new Map<string, AgentThreadDetail>(), used: new Map<string, number>(), asked: new Set<string>(),
     viewed: new Set<string>(), shell: null as AgentState | null, clock: 0,
+    pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
@@ -90,6 +91,13 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       return state === current.state ? current : { session, state }
     })
   }, [session, assemble, detail])
+  /** A shell held for its frame commits now: the detail that follows it lands in the same commit. */
+  const commitPendingShell = useCallback((): void => {
+    if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
+    const pending = detail.pendingShell
+    detail.pendingShell = null
+    if (pending !== null) receiveState(pending)
+  }, [detail, receiveState])
   const receiveDetail = useRef<(update: AgentThreadDetailUpdate) => void>(() => undefined)
   receiveDetail.current = (update: AgentThreadDetailUpdate): void => {
     const held = detail.held.get(update.threadId)
@@ -113,7 +121,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         .sort((first, second) => (detail.used.get(first) ?? 0) - (detail.used.get(second) ?? 0))
       for (const id of evictable.slice(0, detail.held.size - DETAIL_CACHE_LIMIT)) { detail.held.delete(id); detail.used.delete(id) }
     }
-    if (detail.shell !== null) receiveState(detail.shell)
+    // A shell being held for its frame commits now, inside the detail's own task: one chunk, one commit.
+    if (detail.pendingShell !== null) commitPendingShell()
+    else if (detail.shell !== null) receiveState(detail.shell)
   }
   /**
    * A thread's history the window does not hold, asked for once until it arrives. A resync asks for a
@@ -176,9 +186,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     let active = true
     const receive = receiveState
     const version = session.observed
+    // A streamed chunk arrives as two messages: the shell, then the open thread's detail delta. The shell
+    // waits out the frame so the detail that follows commits with it; a shell nothing follows commits in
+    // the frame it would have painted in anyway, and a second shell inside the frame commits the first —
+    // nothing published is skipped. Windows without a detail channel commit at once.
+    const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
-      if (active) receive(next)
+      if (!active) return
+      if (!detail.channel) { receive(next); return }
+      if (detail.pendingShell !== null) commitPendingShell()
+      detail.pendingShell = next
+      detail.frame = requestAnimationFrame(flushPendingShell)
     })
     const unsubscribeDetail = bridge?.onThreadDetail?.(next => { if (active) receiveDetail.current(next) })
     // The shell this window saw last time paints the page on the first frame, marked stale and
@@ -195,6 +214,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     window.addEventListener('beforeunload', flush)
     return () => {
       flush()
+      if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
+      detail.pendingShell = null
       active = false; session.current = false; unsubscribe?.(); unsubscribeDetail?.()
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)

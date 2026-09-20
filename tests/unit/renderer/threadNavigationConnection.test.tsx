@@ -317,10 +317,11 @@ describe('thread navigation through the real renderer connection and controller'
       if (pending === 'refresh') expect(result.current.state).toMatchObject({ draft: 'Bound to A', draftThreadId: 'workshop' })
       await act(async () => { release(); await operation; await selection })
       expect(result.current.title).toBe('Docs')
-      expect(result.current.state?.draftThreadId).toBe('workshop')
+      // The shell carrying these fields holds for its animation frame before it commits.
+      await waitFor(() => expect(result.current.state?.draftThreadId).toBe('workshop'))
       await act(async () => { await result.current.command({ type: 'send' }) })
       expect(execute).not.toHaveBeenCalled()
-      expect(result.current.state?.error).toMatch(/Assign/)
+      await waitFor(() => expect(result.current.state?.error).toMatch(/Assign/))
     } finally {
       await act(async () => { release(); await operation; await selection })
       cleanup(); control.dispose()
