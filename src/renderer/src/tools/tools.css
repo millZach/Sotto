@@ -47,8 +47,8 @@
 .tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
 .tools-panel .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
 .tools-panel .files-icon--small { width: 28px; height: 28px; border-radius: 7px; }
-.tools-panel .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
-.tools-panel .files-link:hover { border-color: var(--tt-border); }
+:is(.tools-panel, .terminal-pane) .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
+:is(.tools-panel, .terminal-pane) .files-link:hover { border-color: var(--tt-border); }
 .tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
@@ -104,10 +104,10 @@
 .files-preview__image img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: var(--tt-code-bg); image-rendering: auto; }
 .files-preview__loading { margin: 0; padding: 16px; color: var(--tt-text-muted); font-size: 13px; }
 
-.tools-panel .files-problem { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 18px; }
-.tools-panel .files-problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; }
-.tools-panel .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.tools-panel .files-problem--root { padding-top: 28px; }
+:is(.tools-panel, .terminal-pane) .files-problem { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 18px; }
+:is(.tools-panel, .terminal-pane) .files-problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; }
+:is(.tools-panel, .terminal-pane) .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+:is(.tools-panel, .terminal-pane) .files-problem--root { padding-top: 28px; }
 
 /* Changes: the changed files, and the selected file's diff beneath them (beside them once the panel is wide). */
 .changes-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }

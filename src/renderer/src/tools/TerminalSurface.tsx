@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Plus, RotateCcw, Square, X } from 'lucide-react'
 import type { TerminalBridge, TerminalSession } from '../../../shared/terminal'
+import { TerminalViewProblem } from './TerminalViewProblem'
 import type { ToolsError } from '../../../shared/tools'
 import { sessionStatusText, useThreadTerminals, type TerminalStore, type TerminalViewFactory } from './terminalStore'
 
@@ -8,8 +9,8 @@ export interface TerminalSurfaceProps {
   readonly threadId: string
   readonly store: TerminalStore
   readonly bridge: TerminalBridge | undefined
-  /** Null while the xterm chunk is still loading; the screen renders empty and busy until it arrives. */
-  readonly viewFactory: TerminalViewFactory | null
+  /** Null until the xterm chunk loads; viewFailed distinguishes failure from loading. */
+  readonly viewFactory: TerminalViewFactory | null; readonly viewFailed: boolean
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {
@@ -39,7 +40,7 @@ function sessionNames(sessions: readonly TerminalSession[]): Map<string, string>
  * The thread's shells, running in its working folder. Main keeps each session alive while the panel is hidden,
  * another thread is focused or the page changes; closing a tab here is the only thing that ends one.
  */
-export function TerminalSurface({ threadId, store, bridge, viewFactory }: TerminalSurfaceProps): ReactNode {
+export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFailed }: TerminalSurfaceProps): ReactNode {
   const terminals = useThreadTerminals(store, threadId)
   const [confirming, setConfirming] = useState<string | null>(null)
   const focusNext = useRef(false)
@@ -106,7 +107,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory }: Termin
       onKeep={() => { setConfirming(null); focusTab(active.id) }} /> : null}
     {terminals.notice ? <p className="terminal-notice" role="alert">{terminals.notice}</p> : null}
     {active ? <TerminalScreen key={active.id} session={active} name={names.get(active.id) ?? 'Terminal'} threadId={threadId} store={store} bridge={bridge}
-      viewFactory={viewFactory} focusNext={focusNext} busy={terminals.busy} /> : null}
+      viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} /> : null}
   </div>
 }
 
@@ -122,9 +123,9 @@ function CloseConfirm({ name, onEnd, onKeep }: { readonly name: string; readonly
   </div>
 }
 
-function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, focusNext, busy }: {
+function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, viewFailed, focusNext, busy }: {
   readonly session: TerminalSession; readonly name: string; readonly threadId: string; readonly store: TerminalStore; readonly bridge: TerminalBridge | undefined
-  readonly viewFactory: TerminalViewFactory | null; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean
+  readonly viewFactory: TerminalViewFactory | null; readonly viewFailed: boolean; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const sessionId = session.id
@@ -156,9 +157,10 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, f
       <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => { focusNext.current = true; void store.reopen(bridge, threadId, sessionId) }}>
         <RotateCcw size={14} aria-hidden="true" />Reopen</button>
     </div> : null}
+    {viewFailed ? <TerminalViewProblem /> : null}
     {loadError ? <div className="files-problem" role="status"><strong>{loadError}</strong>
       <button type="button" className="files-link tt-focusable" onClick={() => store.retry(bridge, threadId, sessionId)}>Try again</button></div> : null}
-    <div className="terminal-view" ref={host} aria-label={`${name}, terminal`} aria-busy={viewFactory === null || undefined} data-replaying={replaying || undefined} />
+    <div className="terminal-view" ref={host} aria-label={`${name}, terminal`} aria-busy={viewFactory === null && !viewFailed || undefined} data-replaying={replaying || undefined} />
     {replaying ? <p className="terminal-restoring" role="status">Restoring output…</p> : null}
     <p className="terminal-hint">Ctrl+C copies a selection or stops the command · Ctrl+Tab leaves the terminal</p>
   </div>

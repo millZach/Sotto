@@ -161,7 +161,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  */
 export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
-  const viewFactory = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
+  const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
   const terminalBridge = terminal ?? bridgeTerminal()
@@ -276,7 +276,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
-  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} />
+  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 

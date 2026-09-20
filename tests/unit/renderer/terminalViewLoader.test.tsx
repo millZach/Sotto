@@ -16,18 +16,18 @@ describe('the terminal view loader', () => {
     const { useTerminalViewFactory } = await loader()
     const injected = (() => ({ injected: true })) as unknown as Parameters<typeof useTerminalViewFactory>[0]
     const { result } = renderHook(() => useTerminalViewFactory(injected))
-    expect(result.current).toBe(injected)
+    expect(result.current.factory).toBe(injected)
     expect(imports.count).toBe(0)
   })
 
   it('loads nothing while no terminal is on screen, then loads once one is', async () => {
     const { useTerminalViewFactory } = await loader()
     const { result, rerender } = renderHook(({ enabled }: { enabled: boolean }) => useTerminalViewFactory(undefined, enabled), { initialProps: { enabled: false } })
-    expect(result.current).toBeNull()
+    expect(result.current.factory).toBeNull()
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(imports.count).toBe(0)
     rerender({ enabled: true })
-    await waitFor(() => expect(result.current).not.toBeNull())
+    await waitFor(() => expect(result.current.factory).not.toBeNull())
     expect(imports.count).toBe(1)
   })
 })

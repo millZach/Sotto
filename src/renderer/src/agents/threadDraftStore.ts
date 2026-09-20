@@ -357,6 +357,17 @@ export class ThreadDraftStore {
 
   flushAll(): void { for (const threadId of [...this.timers.keys()]) this.flush(threadId) }
 
+  /** A deliberate window reload waits for durability evidence, including edits made while saving. */
+  async flushForReload(): Promise<boolean> {
+    for (;;) {
+      const revisions = new Map([...this.entries].map(([id, entry]) => [id, entry.draft.draftId]))
+      await Promise.all([...this.entries.keys()].map(id => this.flushPending(id)))
+      if ([...this.entries].some(([id, entry]) => revisions.get(id) !== entry.draft.draftId)) continue
+      return [...this.entries.values()].every(entry => !entry.draft.draftId || entry.saved)
+    }
+  }
+
+
   /**
    * Take the current revision out of the composer for sending. The pending debounce is replaced by an
    * immediate save of this same revision, so nothing older can be saved after it, and the composer

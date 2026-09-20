@@ -4,6 +4,7 @@ import type { TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { ProviderMark } from '../agents/ProviderMark'
 import type { TerminalViewFactory } from '../tools/terminalStore'
+import { TerminalViewProblem } from '../tools/TerminalViewProblem'
 import { exitLabel, exitNote, type TerminalRow } from './terminalFacts'
 import type { TerminalWorkspaceStore } from './terminalWorkspaceStore'
 import '../tools/tools.css'
@@ -19,12 +20,13 @@ function fileName(path: string): string {
  * One terminal in the pane grid: the same header as a thread pane, the screen, and a status line with the branch and
  * the two shortcuts. Main keeps the process alive while the pane is hidden or the mode changes.
  */
-export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNext, busy, platform }: {
+export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focused, focusNext, busy, platform }: {
   readonly row: TerminalRow
   readonly store: TerminalWorkspaceStore
   readonly bridge: TerminalWorkspaceBridge | undefined
   /** Null while the xterm chunk is still loading; the pane renders its frame with an empty screen until it arrives. */
   readonly viewFactory: TerminalViewFactory | null
+  readonly viewFailed: boolean
   readonly focused: boolean
   /** Put the cursor in the terminal once it mounts; cleared once used. */
   readonly focusNext: React.MutableRefObject<string | null>
@@ -87,9 +89,10 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
         <button type="button" className="files-link tt-focusable" disabled={busy || !bridge} onClick={() => { focusNext.current = id; void store.restart(bridge, id) }}>
           <RotateCcw size={14} aria-hidden="true" />Restart</button>
       </div> : null}
+      {viewFailed ? <TerminalViewProblem /> : null}
       {loadError ? <div className="files-problem" role="status"><strong>{loadError}</strong>
         <button type="button" className="files-link tt-focusable" onClick={() => store.retry(bridge, id)}>Try again</button></div> : null}
-      <div className="terminal-view" ref={host} aria-label={`${terminal.title}, terminal`} aria-busy={viewFactory === null || undefined} data-replaying={replaying || undefined} />
+      <div className="terminal-view" ref={host} aria-label={`${terminal.title}, terminal`} aria-busy={viewFactory === null && !viewFailed || undefined} data-replaying={replaying || undefined} />
       {replaying ? <p className="terminal-restoring" role="status">Restoring output…</p> : null}
       {pasted ? <p className="terminal-pane__chip" role="status">Image saved · {fileName(pasted.path)}</p> : null}
     </div>
