@@ -67,11 +67,18 @@ const threadSchema = z.object({ id: z.string(), historyMode: z.enum(['legacy', '
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
+const settingsObservation = settingsResponse.extend({ thread: threadSchema.optional() })
+const settingsNotification = z.object({ threadId: z.string(), threadSettings: z.object({
+  model: z.string(), effort: z.string().nullish(), approvalPolicy: z.string(), approvalsReviewer: z.string(), sandboxPolicy: z.object({ type: z.string() }),
+}) })
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
   startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
   error: z.object({ message: z.string() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
   explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).optional() })
 class Uncertain extends Error {}
+class SettingsUnconfirmed extends Error {
+  constructor() { super('Codex did not confirm this thread’s settings. Choose the thread settings again before sending.') }
+}
 class Rejected extends Error {
   readonly unmaterializedThreadId: string | undefined
   readonly missingThreadId: string | undefined
@@ -122,6 +129,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly requests = new Map<string, CodexPendingRequest>()
   private readonly inFlightRequestIds = new Set<string>()
   private readonly waiters = new Map<string, Waiter>()
+  private readonly settingsConfirmations = new Map<string, { desired: Alias['pendingSettings']; settle: (confirmed: boolean) => void }>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
@@ -194,7 +202,7 @@ export class CodexAppServerHost implements AgentHost {
       const sessionId = this.sessionId(id)
       if (sessionId) {
         this.touch(sessionId)
-        if (!this.live.has(sessionId)) {
+        if (!this.live.has(sessionId) || !this.histories.has(sessionId)) {
           const pending = this.pendingLogMessages.get(sessionId) ?? []
           pending.push(message); this.pendingLogMessages.set(sessionId, pending)
           return
@@ -395,7 +403,9 @@ export class CodexAppServerHost implements AgentHost {
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
             this.applyThread(id, threadResponse.parse(value).thread, z.object({ thread: z.object({ turns: z.array(z.unknown()) }) }).safeParse(value).success); await this.persist(); applied = true
             this.histories.add(id)
-            const read = this.ensureThread(id); delete read.historyStatus; delete read.historyError
+            this.flushLogMessages(id); this.orderMessages(id)
+            const read = this.ensureThread(id)
+            if (!alias.pendingSettings) { delete read.historyStatus; delete read.historyError }
           }
           try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
           catch (error) {
@@ -413,6 +423,12 @@ export class CodexAppServerHost implements AgentHost {
     })
     this.threadReads.set(id, work)
     try { await work; return this.current() }
+    catch (error) {
+      // A failed read cannot hide native-authored input. Without corroboration,
+      // buffered rows remain external and management must stop for review.
+      if (generation === this.generation) { this.flushLogMessages(id); this.orderMessages(id); this.emit() }
+      throw error
+    }
     finally { if (this.threadReads.get(id) === work) this.threadReads.delete(id) }
   }
   private touch(id: string): void { this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1) }
@@ -472,13 +488,10 @@ export class CodexAppServerHost implements AgentHost {
         thread.status = 'error'; thread.historyStatus = 'error'; thread.historyError = error.message
         this.emit()
       }
+      if (generation === this.generation) { this.flushLogMessages(id); this.orderMessages(id); this.emit() }
       throw error
     }).finally(() => {
       this.resuming.delete(id)
-      // A failed history read cannot silently discard native-authored input.
-      if (generation === this.generation && this.pendingLogMessages.has(id)) {
-        this.flushLogMessages(id); this.orderMessages(id); this.emit()
-      }
     })
     this.resuming.set(id, operation); return operation
   }
@@ -622,7 +635,7 @@ export class CodexAppServerHost implements AgentHost {
     this.aliases[id]!.messageIdentities.sort((a, b) => (order.get(a.turnId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.turnId) ?? Number.MAX_SAFE_INTEGER))
     // Corroborate aliases before exposing legacy rollout rows to authority
     // observers. Unmatched rows remain visible as external input.
-    this.flushLogMessages(id)
+    if (completeHistory || this.histories.has(id)) this.flushLogMessages(id)
     this.orderMessages(id)
     if (confirmsRewind && JSON.stringify([...this.log.userMessageIds(id)]) === JSON.stringify(rewind.retainedUsers)) {
       alias.historyEpoch = randomUUID(); this.ensureThread(id).historyEpoch = alias.historyEpoch
@@ -639,16 +652,32 @@ export class CodexAppServerHost implements AgentHost {
     const alias = this.aliases[id]!
     const desired = alias.pendingSettings
     if (!desired) return
-    const response = settingsResponse.parse(value)
+    const response = settingsObservation.parse(value)
     const policy = runtimePolicy(desired.runtimeMode)
     const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
     if (response.model !== desired.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer || response.sandbox.type !== sandboxType
-      || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) throw new Error('Codex did not confirm the selected thread settings.')
+      || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) {
+      // A valid response can disagree with an interrupted settings change. Keep the
+      // intent for reconciliation, but isolate this thread from the shared transport.
+      const error = new SettingsUnconfirmed()
+      // Observation still reads current history and runtime state so the user can
+      // review the thread and change settings only once its work has stopped.
+      if (response.thread) this.applyThread(id, response.thread)
+      this.live.add(id); this.log.pin(id)
+      const thread = this.ensureThread(id)
+      thread.historyStatus = 'error'; thread.historyError = error.message
+      await this.persist(); this.emit()
+      return
+    }
     alias.modelId = response.model; alias.runtimeMode = desired.runtimeMode; alias.reasoningEffort = response.reasoningEffort ?? undefined
     delete alias.pendingSettings
     const thread = this.ensureThread(id)
     thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode; thread.reasoningEffort = alias.reasoningEffort
-    this.applyThread(id, response.thread); this.live.add(id); this.log.pin(id); await this.persist(); this.emit()
+    if (thread.historyError === new SettingsUnconfirmed().message) { delete thread.historyStatus; delete thread.historyError }
+    if (response.thread) this.applyThread(id, response.thread)
+    this.live.add(id); this.log.pin(id); await this.persist(); this.emit()
+    const confirmation = this.settingsConfirmations.get(id)
+    if (confirmation?.desired === desired) confirmation.settle(true)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
@@ -735,7 +764,7 @@ export class CodexAppServerHost implements AgentHost {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
-        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer') return { accepted: false, uncertain: true }
+        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.
@@ -761,6 +790,7 @@ export class CodexAppServerHost implements AgentHost {
           } finally { this.dispatching.delete(id) }
         }
         if (command.type === 'configure-thread') {
+          if (this.settingsConfirmations.has(id)) throw new Error('Wait for this thread’s settings change to finish.')
           const thread = this.ensureThread(id)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the thread and resolve pending requests before changing settings.')
           validateThreadOptions(this.state, command, alias.modelId)
@@ -769,12 +799,35 @@ export class CodexAppServerHost implements AgentHost {
             ? this.state.models.find(model => model.id === modelId)?.defaultReasoningEffort : alias.reasoningEffort)
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
           const policy = runtimePolicy(mode)
-          alias.pendingSettings = { modelId, reasoningEffort, runtimeMode: mode }
-          await this.persist()
-          await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, model: modelId, modelProvider: 'openai',
-            ...policy, config: { model_reasoning_effort: reasoningEffort ?? null }, excludeTurns: true }, value => this.applySettings(id, value), async () => {
-            delete alias.pendingSettings; await this.persist()
+          const previousPendingSettings = alias.pendingSettings
+          const desired = { modelId, reasoningEffort, runtimeMode: mode }
+          const generation = this.generation
+          alias.pendingSettings = desired
+          const confirmed = new Promise<boolean>(resolve => {
+            const timer = setTimeout(() => resolve(false), this.options.requestTimeoutMs ?? 15000)
+            this.settingsConfirmations.set(id, { desired, settle: value => { clearTimeout(timer); resolve(value) } })
           })
+          const confirmation = this.settingsConfirmations.get(id)!
+          try {
+            await this.persist()
+            if (generation !== this.generation || !this.state.connected) throw new Uncertain('Codex disconnected before saving the thread settings.')
+            // Resume returns existing settings for an already-loaded session. The
+            // dedicated update confirms its effective values in a notification.
+            // Wait outside rpc.apply: that callback shares the notification queue.
+            await this.rpc('thread/settings/update', { threadId: alias.codexThreadId, model: modelId, effort: reasoningEffort ?? null,
+              approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer,
+              sandboxPolicy: { type: policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess' },
+            }, value => { z.object({}).parse(value) }, async () => {
+              if (alias.pendingSettings !== desired) return
+              if (previousPendingSettings) alias.pendingSettings = previousPendingSettings
+              else delete alias.pendingSettings
+              await this.persist()
+            })
+            if (!await confirmed) return { accepted: false, uncertain: true }
+          } finally {
+            confirmation.settle(false)
+            if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
+          }
         } else if (command.type === 'steer') {
           const thread = this.ensureThread(id)
           const expectedTurnId = this.runningTurns.get(id)
@@ -904,6 +957,15 @@ export class CodexAppServerHost implements AgentHost {
     if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
       this.skillsRevision++; this.loadedSkillCwds.clear(); return
     }
+    if (frame.method === 'thread/settings/updated') {
+      const parsed = settingsNotification.safeParse(frame.params)
+      if (!parsed.success) return
+      const id = this.sessionId(parsed.data.threadId)
+      if (!id || !this.aliases[id]?.pendingSettings) return
+      const settings = parsed.data.threadSettings
+      await this.applySettings(id, { ...settings, reasoningEffort: settings.effort, sandbox: settings.sandboxPolicy })
+      return
+    }
     if (frame.method === 'thread/started') {
       const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
       if (id) { this.touch(id); this.applyThread(id, thread); this.emit() }
@@ -1027,6 +1089,8 @@ export class CodexAppServerHost implements AgentHost {
     this.reaper.dispose()
     this.skillsRevision++; this.loadedSkillCwds.clear()
     this.child = undefined; this.state.connected = false; this.live.clear(); this.histories.clear(); this.resuming.clear(); this.opening.clear(); this.pendingLogMessages.clear()
+    for (const confirmation of this.settingsConfirmations.values()) confirmation.settle(false)
+    this.settingsConfirmations.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new Uncertain('Codex disconnected before acknowledgement.')) }
     this.waiters.clear(); this.requests.clear(); this.inFlightRequestIds.clear()
     for (const thread of this.threads.values()) thread.requests = []

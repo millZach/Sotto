@@ -80,23 +80,34 @@ it('Codex rejects a stale history completion after live text and turn completion
   const f = await codexFixture()
   const id = randomUUID()
   let completed = false
-  const unsubscribe = f.host.subscribe(snapshot => { completed = snapshot.threads.find(thread => thread.id === id)?.messages.some(message => message.text === 'Finished during history read') ?? false })
+  let reading: ReturnType<typeof f.adapter.refreshThread> | undefined
+  const unsubscribe = f.host.subscribe(snapshot => {
+    const thread = snapshot.threads.find(thread => thread.id === id)
+    completed = thread?.status === 'idle' && thread.messages.some(message => message.text === 'Finished during history read')
+  })
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
     await f.host.execute({ type: 'send', commandId: 'own-command', threadId: id, messageId: 'own-message', text: 'Synthetic prompt' })
     const before = (await f.driver.requests()).filter(request => request.method === 'thread/read').length
-    await f.script({ delay: { method: 'thread/read', ms: 150 } })
-    const reading = f.adapter.refreshThread(id)
+    await f.script({ holdReply: 'thread/read' })
+    reading = f.adapter.refreshThread(id)
     await expect.poll(async () => (await f.driver.requests()).filter(request => request.method === 'thread/read').length).toBeGreaterThan(before)
     await f.driver.completeTurn(id, 'Finished during history read')
     await expect.poll(() => completed).toBe(true)
+    // The frozen running-state response must arrive after both live text and
+    // completion, regardless of how the runner schedules the two processes.
+    await f.action(id, { type: 'release-reply', method: 'thread/read' })
     const thread = (await reading).threads.find(thread => thread.id === id)!
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read')).toHaveLength(before + 2)
     expect(thread.status).toBe('idle')
     expect(thread.messages.filter(message => message.role === 'user')).toHaveLength(1)
     expect(thread.messages.at(-1)?.text).toBe('Finished during history read')
-  } finally { unsubscribe(); await f.cleanup() }
+  } finally {
+    if (reading) { await f.action(id, { type: 'release-reply', method: 'thread/read' }); await reading.catch(() => undefined) }
+    unsubscribe(); await f.cleanup()
+  }
 })
 
 it.each(['codex', 'grok'] as const)('%s treats a failed pre-dispatch authority read as an unsent prompt', async provider => {

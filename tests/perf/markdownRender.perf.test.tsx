@@ -2,6 +2,7 @@ import React from 'react'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MessageContent, splitStreamingMarkdown } from '../../src/renderer/src/agents/MessageContent'
+import { expectWithinBudget } from '../fixtures/perfBudget'
 
 afterEach(cleanup)
 
@@ -103,8 +104,9 @@ describe('rendering a reply as it streams', () => {
     }
     console.log(`markdown streaming render: ${JSON.stringify(report)}`)
     expect(text.length).toBeGreaterThan(5_000)
-    // Loose so a slow machine cannot fail the suite; the logged numbers carry the detail.
-    expect(incremental.total).toBeLessThan(whole.total)
+    // These series run one after another, so a shared runner can pause either one
+    // independently. Keep the stopwatch opt-in; parsed work stays asserted everywhere.
+    expectWithinBudget(incremental.total, whole.total, 'Incremental Markdown rendering compared with whole-message rendering')
     expect(report.incrementalParsedChars).toBeLessThan(report.wholeParsedChars / 3)
   })
 })

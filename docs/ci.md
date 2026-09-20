@@ -21,7 +21,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
-- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it compares incremental rendering against re-parsing the same reply, both measured in the same process, and logs the numbers, so a slow runner slows both sides alike.
+- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters. Its elapsed-time comparison is opt-in like the other stopwatch budgets below.
 - **Wall-clock budgets.** See below.
 - **Packaging and publishing.** Releases are still cut by hand on the Windows PC and the Apple silicon Mac.
 
@@ -35,22 +35,32 @@ gated: the behaviour around each one — the queue row is on screen, the send is
 `submitting`, the queued delivery is published before the provider answers — is asserted on every run,
 including CI.
 
+The same rule applies to relative timings measured in consecutive runs. A competing worker can
+pause one run more than the other. PR #149 exposed this in the unchanged Markdown renderer:
+incremental rendering's median chunk took 13.65 ms against 27.66 ms for whole-message rendering,
+but its total took 1,726.7 ms against 1,313.8 ms. The parsed-character comparison still passed
+(28,973 against 113,960). Only that elapsed-time assertion is gated; the work bound and the
+renderer tests for memoization and identical final markup run in CI.
+
 | Budget | Test | What it measures |
 | --- | --- | --- |
 | 100 ms | `tests/unit/renderer/threadQueueSkills.test.tsx` — *queues with Enter while a turn runs…* | Enter to the queue row being on screen. |
 | 100 ms | `tests/integration/personalChats.test.ts` — *durably acknowledges send before native completion…* | `send()` returning while the provider is held for 350 ms. |
 | 100 ms | `tests/unit/main/threadDrafts.test.ts` — *publishes local queued feedback before provider latency…* | The first published `queued` delivery after a send. |
 | 250 ms | `tests/integration/codexStreamingResponsiveness.test.ts`, `tests/integration/nativeStreamingResponsiveness.test.ts` | The longest main-process heartbeat gap while three threads stream 600 output updates, tested for Codex, Claude and Grok. Snapshot coalescing and lossless output are checked regardless of the budget switch. |
+| Less than whole-message rendering | `tests/perf/markdownRender.perf.test.tsx` | Total elapsed time for rendering a reply in 40 incremental chunks against re-parsing each whole prefix. |
 
 Run them by hand on an idle machine:
 
 ```powershell
 $env:SOTTO_PERF_ASSERT = '1'
 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 ```
 
 ```sh
 SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 ```
 
 One test is skipped by platform rather than gated: *preserves an occupied broken-symlink backup

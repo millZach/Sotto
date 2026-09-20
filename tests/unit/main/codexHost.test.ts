@@ -113,8 +113,8 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'approval-required' })
     await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, reasoningEffort: 'low', runtimeMode: 'full-access' })
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
-    const rpc = (await f.driver.requests()).findLast(request => request.method === 'thread/resume')!
-    expect(rpc.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', config: { model_reasoning_effort: 'low' } })
+    const rpc = (await f.driver.requests()).findLast(request => request.method === 'thread/settings/update')!
+    expect(rpc.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' }, effort: 'low' })
     f.host.disconnect(); await f.adapter.closed()
     await f.host.connect()
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
@@ -124,14 +124,75 @@ describe('Codex App Server provider adapter', () => {
   it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
     // The settings acknowledgement arrives after the deadline; child initialization keeps its full headroom.
     const f = await fixture(); const { threadId } = await create(f)
-    await f.script({ delay: { method: 'thread/resume', ms: 3000 } })
+    await f.script({ delay: { method: 'thread/settings/update', ms: 3000 }, dropSettingsNotification: true })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     f.host.disconnect(); await f.adapter.closed()
     await f.host.connect()
     expect((await f.host.snapshot()).threads[0]).toMatchObject({ runtimeMode: 'full-access' })
     const resumes = (await f.driver.requests()).filter(request => request.method === 'thread/resume')
-    expect(resumes.filter(request => request.params?.sandbox !== undefined)).toHaveLength(1)
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/settings/update')).toHaveLength(1)
+    expect(resumes.filter(request => request.params?.sandbox !== undefined)).toHaveLength(0)
     expect(resumes.at(-1)?.params).not.toHaveProperty('approvalPolicy')
+  })
+  it.each([0, 25])('changes a loaded native thread from high to ultra with settings notification delay %s', async notificationDelay => {
+    const f = await fixture()
+    await f.script({ models: [{ model: f.modelId, displayName: 'Fixture Codex', defaultReasoningEffort: 'high',
+      supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'ultra' }] }], settingsNotificationDelay: notificationDelay })
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    const threadId = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: 'create-ultra', threadId, projectId: f.projectId, title: 'Ultra settings', modelId: f.modelId,
+      reasoningEffort: 'high', runtimeMode: 'approval-required' })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'ultra', threadId, reasoningEffort: 'ultra' })).toEqual({ accepted: true })
+    const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
+    expect(aliases[threadId]).toMatchObject({ reasoningEffort: 'ultra', runtimeMode: 'approval-required' })
+    expect(aliases[threadId].pendingSettings).toBeUndefined()
+    const requests = await f.driver.requests()
+    expect(requests.filter(request => request.method === 'thread/settings/update')).toEqual([expect.objectContaining({ params: expect.objectContaining({
+      effort: 'ultra', approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: { type: 'readOnly' },
+    }) })])
+    expect(requests.filter(request => request.method === 'thread/resume')).toHaveLength(0)
+    expect((await f.host.snapshot()).connected).toBe(true)
+  })
+  it('retains unconfirmed settings when only the update acknowledgement arrives without replaying them', async () => {
+    const f = await fixture(); const { threadId } = await create(f); const other = await create(f)
+    await f.script({ dropSettingsNotification: true })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'no-event', threadId, reasoningEffort: 'high' })).toEqual({ accepted: false, uncertain: true })
+    const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
+    expect(aliases[threadId].pendingSettings).toMatchObject({ reasoningEffort: 'high' })
+    await expect(f.host.execute({ type: 'send', commandId: 'blocked-no-event', threadId, messageId: 'blocked-no-event', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
+    expect(await f.host.execute({ type: 'send', commandId: 'other-no-event', threadId: other.threadId, messageId: 'other-no-event', text: 'Other thread' })).toEqual({ accepted: true })
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/settings/update')).toHaveLength(1)
+  })
+  it.each([false, true])('keeps Codex connected when saved settings are not confirmed (watched: %s)', async watched => {
+    const f = await fixture(); const { threadId } = await create(f)
+    const other = await create(f)
+    f.host.disconnect(); await f.adapter.closed()
+    const path = join(f.root, 'codex-threads.json')
+    const aliases = JSON.parse(await readFile(path, 'utf8'))
+    aliases[threadId].pendingSettings = { modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'full-access' }
+    await writeFile(path, JSON.stringify(aliases))
+    if (watched) f.adapter.observeThreads([threadId])
+    const before = (await f.driver.requests()).length
+    expect((await f.host.connect()).connected).toBe(true)
+    const resumes = (await f.driver.requests()).slice(before).filter(request => request.method === 'thread/resume')
+    expect(resumes.length).toBeGreaterThan(0)
+    for (const resume of resumes) {
+      expect(resume.params).not.toHaveProperty('approvalPolicy')
+      expect(resume.params).not.toHaveProperty('config')
+    }
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toEqual(aliases[threadId].pendingSettings)
+    await expect(f.host.execute({ type: 'send', commandId: 'blocked', threadId, messageId: 'blocked', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
+    await f.script({ reject: 'thread/settings/update' })
+    await expect(f.host.execute({ type: 'configure-thread', commandId: 'rejected-recovery', threadId, reasoningEffort: 'low' })).rejects.toThrow(/rejected/)
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toEqual(aliases[threadId].pendingSettings)
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect(await f.host.execute({ type: 'send', commandId: 'other', threadId: other.threadId, messageId: 'other', text: 'Other thread' })).toEqual({ accepted: true })
+    const control = await startControl(f)
+    expect((await control.command({ type: 'configure-thread', threadId, reasoningEffort: 'high', runtimeMode: 'approval-required' })).error).toBeNull()
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toBeUndefined()
+    expect(await f.host.execute({ type: 'send', commandId: 'resolved', threadId, messageId: 'resolved', text: 'Confirmed settings' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')?.params).toMatchObject({ approvalPolicy: 'untrusted', approvalsReviewer: 'user', effort: 'high' })
   })
   it('rejects unsupported images and model reasoning without silently sending text or falling back', async () => {
     const f = await fixture()

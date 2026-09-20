@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
@@ -198,8 +198,10 @@ describe('composer option chips', () => {
     const elsewhere = document.createElement('button')
     document.body.append(elsewhere); elsewhere.focus(); elsewhere.remove()
     expect(chip).not.toHaveFocus()
-    release()
-    await waitFor(() => expect(chip).toBeEnabled())
+    // Flush the confirmation's render and focus effect together; an enabled DOM
+    // button alone does not mean React has run its passive focus-restoration effect.
+    await act(async () => { release() })
+    expect(chip).toBeEnabled()
     expect(chip).toHaveFocus()
   })
 
