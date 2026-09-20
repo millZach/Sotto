@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
-import type { AgentFollowup, AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, type AgentFollowup, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
@@ -207,6 +207,9 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
 
   const expanded = opened ?? !short
   const pendingDelivery = items.some(item => item.status === 'dispatching' || item.status === 'uncertain')
+  const steerVisible = row.thread.status === 'running' && capabilitiesForThread(state.host, row.thread).steer === true
+  const canSteer = row.connected && !isThreadClosed(row.thread) && !row.thread.requests.length && !isThreadBusy(state, threadId)
+    && !pendingDelivery && !state.deliveries?.some(item => item.threadId === threadId && (item.status === 'submitting' || item.status === 'uncertain'))
   const movable = items.filter(followupEditable)
   const resumable = items.some(item => item.status === 'paused' || item.status === 'failed')
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
@@ -306,6 +309,13 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
           <p className="thread-followup__text" title={item.text}>{item.text}{item.attachments.length ? <span className="thread-followup__extra"> · {item.attachments.length === 1 ? '1 image' : `${item.attachments.length} images`}</span> : null}</p>
           {item.status === 'queued' || item.status === 'paused' && queuePaused ? null : <span className="thread-followup__state" data-status={item.status}><i aria-hidden="true" />{STATUS_LABELS[item.status]}</span>}
           {editable ? <span className="thread-followup__tools">
+            {steerVisible && item.status === 'queued' ? <Button variant="secondary" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
+              if (!canSteer || itemBusy) return
+              run(item.id, { type: 'steer-followup', threadId, itemId: item.id },
+                next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id),
+                'Sotto could not confirm this steer. Check the message before trying again.',
+                () => { refocus.current = toggle })
+            }}>Steer now</Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
               <Button variant="ghost" iconOnly data-tool="up" aria-label={`Move queued message ${index + 1} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
               <Button variant="ghost" iconOnly data-tool="down" aria-label={`Move queued message ${index + 1} down`} {...off(itemBusy || index === items.length - 1)} onClick={() => { if (index < items.length - 1) move(item, 1) }}><ArrowDown size={15} /></Button>

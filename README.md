@@ -88,6 +88,8 @@ New threads use the **Project folder** by default, including its uncommitted edi
 
 The branch label follows the actual checkout. A shared project folder that changes branches can show a dismissible notice while you draft; sending continues on the current branch. **Restore branch** switches back by your choice, asking first about uncommitted changes. Worktree-backed threads follow their branch without that notice.
 
+While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery.
+
 ## Install and first run
 
 ### Windows

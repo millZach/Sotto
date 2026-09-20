@@ -55,6 +55,8 @@ The composer’s effort chip opens a slider with the model’s supported levels.
 
 Model, effort, image and permission-mode controls reflect the adapter's verified capabilities. Paste, drop or attach screenshots with Codex models that accept images or with Claude Code. Screenshots can be sent alone, alongside text or in a queued follow-up. Codex also accepts screenshots when steering a running turn. Unsupported controls are unavailable. Grok currently selects model and effort at thread creation and does not support existing-thread configuration. Its pinned native client, Grok CLI 1.0.5, reports no image input through ACP, so screenshot attachments remain unavailable even when the underlying Grok model supports vision.
 
+While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery.
+
 ## Upgrading an older installation
 
 An installation configured for the retired intermediary host is migrated before its saved state is interpreted as a native configuration. Sotto disables automatic connection, retains the draft and attachments without their old target, and preserves recovery evidence separately. Old assignments and uncertain actions are not transferred to a native provider or replayed. Existing thread bindings remain historical identities, never relabelled as native sessions.

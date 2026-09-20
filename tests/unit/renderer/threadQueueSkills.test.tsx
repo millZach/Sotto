@@ -62,6 +62,34 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup() })
 
 describe('follow-up queue in the Threads composer', () => {
+  it.each(['unsupported', 'idle', 'uncertain', 'question', 'disconnected'] as const)('does not allow queued steering when %s', async condition => {
+    const state = manualState({ running: condition !== 'idle', capabilities: { steer: condition !== 'unsupported' } })
+    state.followups = [followup({ id: crypto.randomUUID(), text: 'Queued message', status: condition === 'uncertain' ? 'uncertain' : 'queued' })]
+    if (condition === 'question') state.host.threads.find(thread => thread.id === THREAD)!.requests = [{ id: 'question', kind: 'question', text: 'Which?', options: [] }]
+    if (condition === 'disconnected') state.host.connected = false
+    const { live } = mount(state)
+    const action = within(screen.getByRole('region', { name: 'Queued messages' })).queryByRole('button', { name: 'Steer now' })
+    if (condition === 'question' || condition === 'disconnected') {
+      expect(action).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.click(action!)
+      expect(requests(live, 'steer-followup')).toHaveLength(0)
+    } else expect(action).not.toBeInTheDocument()
+  })
+
+  it('offers steering on the queued message with an empty composer', async () => {
+    const { live, prompt } = mount(manualState({ running: true, capabilities: { steer: true } }))
+    type(prompt(), 'Use the simpler approach')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.state.followups).toHaveLength(1))
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByRole('button', { name: 'Steer now' })).toBeEnabled()
+    expect(prompt()).toHaveValue('')
+    type(prompt(), 'Keep this newer draft')
+    fireEvent.click(within(queue).getByRole('button', { name: 'Steer now' }))
+    expect(requests(live, 'steer-followup')).toEqual([{ type: 'steer-followup', threadId: THREAD, itemId: live.state.followups![0]!.id }])
+    expect(prompt()).toHaveValue('Keep this newer draft')
+  })
+
   it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
     const { live, prompt } = mount(manualState({ running: true }), { holdQueue: true })
     type(prompt(), 'Then run the visual gate')
@@ -300,7 +328,7 @@ describe('Steer now', () => {
     const { live, prompt } = mount(manualState({ running: true, capabilities: { steer: true } }))
     expect(screen.getByRole('button', { name: 'Steer now' })).toBeDisabled()
     type(prompt(), 'Use the staging database instead')
-    fireEvent.click(screen.getByRole('button', { name: 'Steer now' }))
+    fireEvent.click(within(prompt().closest('form')!).getByRole('button', { name: 'Steer now' }))
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Use the staging database instead')
     expect(requests(live, 'steer')).toEqual([{ type: 'steer', threadId: THREAD, draftId: expect.any(String), text: 'Use the staging database instead' }])
     expect(requests(live, 'queue-followup')).toHaveLength(0)
@@ -466,7 +494,7 @@ describe('skills with queue and steer', () => {
     reloaded.receive(live.state)
     expect(reloaded.draft(THREAD)).toMatchObject({ draftId: saved.draftId, text: 'Steer $imagegen', skills: [imagegen] })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Steer now' }))
+    fireEvent.click(within(prompt().closest('form')!).getByRole('button', { name: 'Steer now' }))
     expect(requests(live, 'steer')).toEqual([{ type: 'steer', threadId: THREAD, draftId: saved.draftId, text: 'Steer $imagegen', skills: [imagegen] }])
   })
 })

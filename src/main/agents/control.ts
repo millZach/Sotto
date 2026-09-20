@@ -33,7 +33,7 @@ import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDet
 const EMPTY_MESSAGES: AgentMessage[] = []
 const EMPTY_ACTIVITIES: AgentActivity[] = []
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
-  'utterance', 'connect', 'refresh', 'send', 'steer', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
+  'utterance', 'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
   'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
 ])
@@ -54,7 +54,7 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
  * them waits on the global lane or on another thread. They are unchanged.
  */
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
-  'manual-send', 'steer', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
+  'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
   'load-earlier-messages',
 ])
@@ -977,7 +977,7 @@ export class AgentControl {
     })
     if (independent) {
       this.threadActions.set(laneThreadId, task)
-      const releasePrompt = command.type === 'manual-send' || command.type === 'steer' ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
+      const releasePrompt = command.type === 'manual-send' || command.type === 'steer' || command.type === 'steer-followup' ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
       void task.finally(() => {
         releasePrompt(); releaseThread()
         if (this.threadActions.get(laneThreadId) === task) this.threadActions.delete(laneThreadId)
@@ -1053,8 +1053,10 @@ export class AgentControl {
     for (const threadId of new Set(items.map(item => item.threadId))) {
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
-      const first = items.find(item => item.threadId === threadId)!
       const thread = this.state.host.threads.find(t => t.id === threadId)
+      // A steer may have selected any queue item. Reconcile its late echo before the queue head.
+      const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
+        ?? items.find(item => item.threadId === threadId)!
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
@@ -1121,6 +1123,40 @@ export class AgentControl {
     } catch (error) { failure = error instanceof Error ? error.message : 'Could not interrupt this thread.'; this.state.error = failure }
     release()
     this.publish(); await this.finishTurn(turn, failure); return this.get()
+  }
+  private async steerFollowup(command: Extract<AgentCommand, { type: 'steer-followup' }>, turn?: ActiveTurn): Promise<void> {
+    const queued = this.followupStore.get().items.find(item => item.threadId === command.threadId && item.id === command.itemId)
+    if (!queued) return // Already delivered or removed; a repeated click never creates another prompt.
+    const validate = (): void => {
+      this.canAct(command.threadId)
+      const thread = this.thread(command.threadId)
+      if (!capabilitiesForThread(this.state.host, thread).steer) throw new Error('This provider does not support native steering. Leave the message queued instead.')
+      if (thread.status !== 'running') throw new Error('There is no running turn to steer. The message is still queued.')
+      if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before steering.')
+      if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before steering.')
+    }
+    validate()
+    if (this.outbox.some(item => item.threadId === command.threadId) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
+    await this.followupStore.claim(queued.id, 'steer')
+    this.syncFollowups(); this.publish()
+    const item = this.followupStore.get().items.find(item => item.id === queued.id)!
+    try {
+      const validatePrompt = (): void => {
+        validate()
+        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments)
+      }
+      validatePrompt(); this.manualHandoff(command.threadId)
+      if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
+      await this.dispatch({ type: 'steer', threadId: item.threadId, commandId: item.commandId!, messageId: item.messageId!,
+        text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
+        expectedLastUserMessageId: this.thread(item.threadId).messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validatePrompt, item.draftId)
+      await this.followupStore.settle(item.id, 'accepted')
+    } catch (error) {
+      const accepted = this.thread(item.threadId).messages.some(message => message.role === 'user' && message.id === item.messageId)
+      await this.followupStore.settle(item.id, accepted ? 'accepted' : this.outbox.some(entry => entry.id === item.commandId) ? 'uncertain' : 'failed',
+        error instanceof Error ? error.message : 'Could not steer this message.')
+      throw error
+    } finally { this.syncFollowups(); this.publish() }
   }
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
@@ -1313,6 +1349,7 @@ export class AgentControl {
       }
       case 'send': await this.sendDraft(turn, manualRetryId, selectionRevision); return
       case 'manual-send': await this.sendManual(command.threadId, command.text, turn, manualRetryId, command.attachments, command.draftId, command.skills, command.files); return
+      case 'steer-followup': await this.steerFollowup(command, turn); return
       case 'steer': await this.steer(command, turn); return
       case 'create-project': {
         const provider = command.provider ?? this.state.configuration.provider

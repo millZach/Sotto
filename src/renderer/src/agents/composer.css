@@ -33,6 +33,7 @@
 .thread-followup__state[data-status='paused'] { color: var(--tt-text-2); }
 .thread-followups__head > .thread-followup__state { padding: 0 4px; }
 .thread-followup__tools { display: inline-flex; grid-column: 3; }
+.thread-followup__tools [data-tool="steer"] { min-height: 32px; padding: 0 10px; margin-right: 6px; font-size: 14px; white-space: nowrap; }
 .thread-followup__tools .tt-button--icon { width: 32px; min-height: 32px; }
 .thread-followup__tools .tt-button[aria-disabled='true'] { opacity: .45; cursor: default; }
 .thread-followup__tools .tt-button[aria-disabled='true']:hover { background: transparent; }
