@@ -34,6 +34,32 @@ beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('ThreadDraftStore revisions and saves', () => {
+  it('allows reload only after the latest revisions have durability evidence', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'first' })
+    const reloading = store.flushForReload()
+    store.edit('thread', { text: 'latest' })
+    held.calls[0]!.resolve(published(held.saves()[0]!))
+    await vi.waitFor(() => expect(held.saves()).toHaveLength(2))
+    held.calls[1]!.resolve(published(held.saves()[1]!))
+    expect(await reloading).toBe(true)
+    expect(store.draft('thread').text).toBe('latest')
+  })
+
+  it('blocks reload when a draft save fails and permits a successful retry', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'keep this' })
+    const failed = store.flushForReload()
+    held.calls[0]!.resolve(null)
+    expect(await failed).toBe(false)
+    expect(store.draft('thread').text).toBe('keep this')
+    const retry = store.flushForReload()
+    held.calls[1]!.resolve(published(held.saves()[1]!))
+    expect(await retry).toBe(true)
+  })
+
   it('gives every edit a fresh revision and saves only the latest after the debounce', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())

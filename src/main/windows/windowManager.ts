@@ -583,6 +583,12 @@ export class WindowManager {
     else window.maximize()
   }
 
+  /** Reload only the trusted main window's current document; terminals stay in main. */
+  async reloadMain(): Promise<void> {
+    const window = this.mainWindow
+    if (window) await window.loadURL(window.webContents.getURL())
+  }
+
   minimizeMain(): void {
     this.mainWindow?.minimize()
   }

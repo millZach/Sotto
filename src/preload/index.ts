@@ -16,6 +16,7 @@ import { AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewRequestSchema, agentAtt
 import {
   APP_HIDE,
   APP_MINIMIZE,
+  APP_RELOAD,
   APP_TOGGLE_MAXIMIZE,
   APP_MAXIMIZED,
   APP_QUIT,
@@ -363,6 +364,7 @@ export function createSottoBridge(
     showApp: () => invokeParsed(renderer, APP_SHOW, voidSchema),
     openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
     hideApp: () => invokeParsed(renderer, APP_HIDE, voidSchema),
+    reloadApp: () => invokeParsed(renderer, APP_RELOAD, voidSchema),
     minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
     toggleMaximizeApp: () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
     getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),

@@ -208,6 +208,7 @@ Builds are ad-hoc signed and not notarized, so anyone installing the disk image 
 - **"OpenRouter rejected the API key":** The key is wrong, revoked, or out of credit. Check it at [openrouter.ai/keys](https://openrouter.ai/keys) and verify it again in Settings.
 - **"Sotto could not reach OpenRouter":** Check the internet connection and any proxy or firewall, then dictate again. Nothing was lost except that recording.
 - **AI cleanup not applied:** Check that AI cleanup is enabled and that the computer is online. When cleanup fails or times out, Sotto delivers the raw transcript instead of failing the dictation.
+- **Terminal view could not load:** Press **Reload window** to try again. Terminals keep running and retain their output. Sotto saves thread drafts first and keeps the window open if any thread draft or question answer is not saved. Save those drafts, then try again.
 - **Window disappeared:** Sotto is probably hidden in the Windows notification area or the macOS menu bar. Open it from that icon or start Sotto again; the existing instance will be shown.
 
 ### Windows

@@ -168,13 +168,42 @@ describe('code blocks', () => {
     const { container } = render(<MessageContent text={`\`\`\`ts\n${code}\n\`\`\``} />)
     const block = screen.getByLabelText('ts code block')
     expect(block.tagName).toBe('PRE')
-    expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const')
+    await waitFor(() => expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const'))
     expect(block.querySelector('.hljs-string')).toHaveTextContent('"<img src=x onerror=alert(1)>"')
     expect(block).toHaveTextContent('function run() { return 42 }')
     assertInert(container)
     await user.click(screen.getByRole('button', { name: 'Copy ts code' }))
     expect(writeText).toHaveBeenCalledWith(code)
     expect(screen.getByText('Copied')).toBeInTheDocument()
+  })
+
+  it('renders a code block readable before its highlighter arrives, then highlights it', async () => {
+    render(<MessageContent text={'```ts\nconst answer = 42\n```'} />)
+    const block = screen.getByLabelText('ts code block')
+    expect(block).toHaveTextContent('const answer = 42')
+    await waitFor(() => expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const'))
+    expect(block).toHaveTextContent('const answer = 42')
+  })
+
+  it('leaves the block plain when the highlighter cannot load, and a later block tries again', async () => {
+    // Fresh modules so the cached highlighter from earlier tests does not mask the rejection.
+    vi.resetModules()
+    let imports = 0
+    vi.doMock('lowlight', async () => {
+      imports += 1
+      if (imports === 1) throw new Error('missing chunk')
+      return vi.importActual('lowlight')
+    })
+    const { MessageContent: Fresh } = await import('../../../src/renderer/src/agents/MessageContent')
+    render(<Fresh text={'```ts\nconst a = 1\n```'} />)
+    const block = screen.getByLabelText('ts code block')
+    expect(block).toHaveTextContent('const a = 1')
+    await waitFor(() => expect(imports).toBe(1))
+    await act(async () => undefined)
+    expect(block.querySelector('.hljs-keyword')).toBeNull()
+    render(<Fresh text={'```ts\nconst b = 2\n```'} />)
+    await waitFor(() => expect(imports).toBe(2))
+    vi.doUnmock('lowlight')
   })
 
   it('reaches the copy control and the scrollable code by keyboard and reports copy failures', async () => {

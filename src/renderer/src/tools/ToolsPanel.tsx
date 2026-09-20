@@ -15,7 +15,7 @@ import { FilesSurface, useThreadFiles } from './FilesSurface'
 import type { PathAction } from './filesBrowser'
 import { TerminalSurface } from './TerminalSurface'
 import type { TerminalViewFactory } from './terminalStore'
-import { createXtermView } from './terminalView'
+import { useTerminalViewFactory } from './terminalViewLoader'
 import {
   TOOL_SURFACES, TOOLS_PANEL_MAX_WIDTH, TOOLS_PANEL_MIN_PANE_WIDTH, TOOLS_PANEL_MIN_WIDTH, toolsPanelStore, toolsTarget,
   useToolsPanelChrome, type ToolSurfaceId, type ToolsPanelStore,
@@ -159,8 +159,9 @@ function useTransientStatus(): [string, (message: string) => void] {
  * thread's browsing for the session, and docks only while the panes keep a readable width; otherwise it
  * overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView = createXtermView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
+  const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
   const terminalBridge = terminal ?? bridgeTerminal()
@@ -275,7 +276,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
-  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={terminalView} />
+  else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 

@@ -1036,6 +1036,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
+          reload: () => windows.reloadMain(),
           toggleMaximize: () => windows.toggleMaximizeMain(),
           isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),

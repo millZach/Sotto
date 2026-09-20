@@ -9,7 +9,7 @@ import { focusPaneLater, paneGridActions, useClock } from '../agents/paneGrid'
 import { SplitLayoutStore, browserStorage, isSplit, prune, retarget, setFocused, useSplitLayout } from '../agents/splitLayout'
 import { Button } from '../components/Button'
 import type { TerminalViewFactory } from '../tools/terminalStore'
-import { createXtermView } from '../tools/terminalView'
+import { useTerminalViewFactory } from '../tools/terminalViewLoader'
 import { NewTerminalDialog } from './NewTerminalDialog'
 import { describeTerminals, isOpenTerminal, organizeTerminals, terminalState, type TerminalRowState } from './terminalFacts'
 import { TerminalPane } from './TerminalPane'
@@ -48,7 +48,7 @@ export interface TerminalWorkspaceProps {
  * Terminal mode: the sidebar's terminals and the pane grid they open in. The grid, its divider, grip, expand and
  * close are the thread workspace's; only what a pane holds differs.
  */
-export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow, store = terminalWorkspaceStore, bridge = defaultBridge(), viewFactory = createXtermView,
+export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow, store = terminalWorkspaceStore, bridge = defaultBridge(), viewFactory: injected,
   layoutStore = terminalLayoutStore, platform = defaultPlatform(), paneAreaWidth, paneAreaHeight }: TerminalWorkspaceProps): ReactNode {
   const workspace = useTerminalWorkspace(store)
   const [query, setQuery] = useState('')
@@ -70,6 +70,7 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const visible = workspace.status === 'ready' ? prune(stored, isOpen) : stored
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focused)
   const paneIds = isSplit(layout) ? layout.panes : focused !== null ? [focused] : []
+  const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(injected, paneIds.length > 0)
 
   useEffect(() => { void store.activate(bridge) }, [store, bridge])
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
@@ -98,7 +99,7 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const renderPane = (id: string): ReactNode => {
     const row = rowsById.get(id)
     if (row === undefined) return null
-    return <TerminalPane row={row} store={store} bridge={bridge} viewFactory={viewFactory} focused={id === focused} focusNext={focusNext} busy={workspace.busy} platform={platform} />
+    return <TerminalPane row={row} store={store} bridge={bridge} viewFactory={viewFactory} viewFailed={viewFailed} focused={id === focused} focusNext={focusNext} busy={workspace.busy} platform={platform} />
   }
   const problem = workspace.status === 'error' ? (bridge ? workspace.error?.message || 'Terminals could not load.' : 'Terminal is not available in this window.') : null
 

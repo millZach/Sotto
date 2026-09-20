@@ -54,3 +54,5 @@ artifacts/devin-local-provider/
 
 # Resizable thread sidebar verification
 artifacts/thread-sidebar/
+
+artifacts/terminal-loading/
