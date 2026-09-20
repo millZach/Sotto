@@ -28,6 +28,8 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('A separate manual message.')
     await expect(prompt).toHaveValue('')
+    // The transcript and emptied composer are optimistic; queue only after the provider confirms this turn.
+    await expect.poll(async () => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'docs')?.status)).toBe('running')
     // While Docs runs, the next message queues; it is not a send and nothing reaches the provider yet.
     await prompt.fill('Prepare the next message while Docs runs.')
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toHaveCount(0)
@@ -77,6 +79,8 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await prompt.press('Enter')
     await expect(page.getByLabel('Thread transcript')).toContainText('Start the long job.')
     await expect(prompt).toHaveValue('')
+    // Finish the native send before installing a new saved draft behind the composer.
+    await expect.poll(async () => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === 'docs')?.status)).toBe('running')
     // A durable draft carrying a selected skill, as the picker leaves it, returns to the composer after a reload.
     await page.evaluate(async reference => {
       await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'docs', draftId: crypto.randomUUID(), text: 'Then run $deploy for staging.', skills: [reference], requestId: null })
