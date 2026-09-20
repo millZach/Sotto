@@ -1,8 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
-import { PROVIDER_LABELS, defaultThreadModelId, type AgentModel, type AgentProject, type AgentState, type ProviderId } from '../../../shared/agents'
+import { PROVIDER_LABELS, defaultThreadModelId, type AgentModel, type AgentProject, type AgentState } from '../../../shared/agents'
 import { TERMINAL_PERMISSIONS, TERMINAL_PERMISSION_LABELS, commandLine, nativeModelName, providerCommand, type TerminalPermission } from '../../../shared/terminalCommands'
-import type { TerminalLaunch, TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
+import { terminalProviderSchema, type TerminalProvider, type TerminalLaunch, type TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
 import type { AgentConnection } from '../agents/AgentContext'
 import { ModelPicker } from '../agents/ModelPicker'
 import { folderName, projectForFolder, useProjectChooser } from '../agents/ProjectChooser'
@@ -20,14 +20,13 @@ function launchCommandLine(launch: TerminalLaunch, shell: string | null): string
 }
 
 /** The provider a model belongs to, from its ID or, as the thread rows do, from its provider name. */
-function providerOf(model: AgentModel): ProviderId | undefined {
-  if (model.providerId) return model.providerId
-  const key = providerKey(model.provider)
-  return key === 'other' ? undefined : key
+function providerOf(model: AgentModel): TerminalProvider | undefined {
+  const parsed = terminalProviderSchema.safeParse(model.providerId ?? providerKey(model.provider))
+  return parsed.success ? parsed.data : undefined
 }
 
-function providersOf(models: readonly AgentModel[]): ProviderId[] {
-  const seen: ProviderId[] = []
+function providersOf(models: readonly AgentModel[]): TerminalProvider[] {
+  const seen: TerminalProvider[] = []
   for (const model of models) {
     const id = providerOf(model)
     if (id && !seen.includes(id)) seen.push(id)
@@ -58,7 +57,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const providers = useMemo(() => providersOf(state.host.models), [state.host.models])
   const defaultModel = state.host.models.find(model => model.id === defaultThreadModelId(state.configuration, state.host.models))
   const defaultProvider = defaultModel ? providerOf(defaultModel) : undefined
-  const [provider, setProvider] = useState<ProviderId | null>(() => defaultProvider ?? providers[0] ?? null)
+  const [provider, setProvider] = useState<TerminalProvider | null>(() => defaultProvider ?? providers[0] ?? null)
   const models = useMemo(() => state.host.models.filter(model => providerOf(model) === provider), [state.host.models, provider])
   const [modelId, setModelId] = useState(() => defaultModel && defaultProvider === provider ? defaultModel.id : models[0]?.id ?? '')
   const model = models.find(item => item.id === modelId)
@@ -84,7 +83,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   }, [])
   useEffect(() => { if (selectedFolder) nameInput.current?.focus(); else focusSearch.current() }, [selectedFolder])
   // A provider change moves the model to that provider's default; the reasoning and permissions start over with it.
-  const chooseProvider = (next: ProviderId | null): void => {
+  const chooseProvider = (next: TerminalProvider | null): void => {
     setProvider(next)
     const candidates = state.host.models.filter(item => providerOf(item) === next)
     setModelId(defaultModel && defaultProvider === next ? defaultModel.id : candidates[0]?.id ?? '')
@@ -131,7 +130,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
       <label>Terminal name<input ref={nameInput} className="tt-input" placeholder="Build watcher" value={title} required disabled={submitting} onChange={event => setTitle(event.target.value)} /></label>
       <WorkingCopyFieldset value={workingCopy} disabled={submitting} sharedHint="Runs in the same files as the project's threads." onChange={setWorkingCopy} />
       <div className="thread-options new-terminal-dialog__options">
-        <label><span>Provider</span><select aria-label="Terminal provider" title="Provider" value={provider ?? ''} disabled={submitting} onChange={event => chooseProvider(event.target.value === '' ? null : event.target.value as ProviderId)}>
+        <label><span>Provider</span><select aria-label="Terminal provider" title="Provider" value={provider ?? ''} disabled={submitting} onChange={event => chooseProvider(event.target.value === '' ? null : event.target.value as TerminalProvider)}>
           <option value="">None, just a shell</option>
           {providers.map(id => <option key={id} value={id}>{PROVIDER_LABELS[id]}</option>)}
         </select></label>

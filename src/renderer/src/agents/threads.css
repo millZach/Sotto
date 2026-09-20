@@ -16,7 +16,7 @@
   --threads-warning-text: var(--tt-warning-text, var(--tt-warning, #f0b45c));
   --threads-on-accent: var(--tt-on-accent, #000);
 }
-.threads-view { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); overflow: hidden; }
+.threads-view { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); overflow: hidden; }
 
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }

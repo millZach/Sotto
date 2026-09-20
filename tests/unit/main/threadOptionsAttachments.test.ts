@@ -77,7 +77,7 @@ describe('coordinator images, authority and durable settings', () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-options-')); roots.push(root)
     const provider = new FixtureHost()
     const registry = new ThreadRegistry(root)
-    const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: { codex: new SottoThreadHost('codex', provider, registry), claude: new E2EAgentHost(), grok: new E2EAgentHost() } })
+    const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: { codex: new SottoThreadHost('codex', provider, registry), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
     disposers.push(() => host.disconnect())
     const initial = await host.connect()
     const threadId = initial.threads[0]!.id

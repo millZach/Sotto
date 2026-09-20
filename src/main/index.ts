@@ -1,3 +1,4 @@
+import { DevinAcpHost } from './agents/devin'
 import { PersonalChatService } from './agents/personalChats'
 import { ChatPromptService } from './agents/chatPrompts'
 import { registerChatPromptIpc } from './agents/chatPromptIpc'
@@ -559,19 +560,29 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
     },
   })
-  const testAgentHost = e2eConfiguration === null ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  // This explicit development-only path drives the real adapter through a scripted ACP child.
+  const devinFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_DEVIN_ROOT'] : undefined
+  const devinFixtureExecutable = process.env['SOTTO_E2E_DEVIN_EXECUTABLE']
+  if (devinFixtureRoot && (!isAbsolute(devinFixtureRoot) || !devinFixtureExecutable || !isAbsolute(devinFixtureExecutable))) {
+    throw new Error('The Devin test fixture requires absolute paths.')
+  }
+  const testAgentHost = e2eConfiguration === null || devinFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
   // Static design fixtures include deliberately unavailable folders. Interactive E2E
   // journeys need real, profile-owned folders and exercise the production cwd checks.
   if (testAgentHost !== null && process.env['SOTTO_DESIGN_CAPTURE'] !== '1') {
     await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
   }
-  const threadRegistry = e2eConfiguration === null ? new ThreadRegistry(userDataPath) : null
+  const threadRegistry = testAgentHost === null ? new ThreadRegistry(userDataPath) : null
   const agentHost = new WorkspaceHost(testAgentHost ?? new ConfiguredProviderHost({
     directory: userDataPath,
     hosts: {
-      codex: new SottoThreadHost('codex', new CodexAppServerHost({ userDataPath }), threadRegistry!),
-      claude: new SottoThreadHost('claude', new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
-      grok: new SottoThreadHost('grok', new GrokAcpHost(userDataPath), threadRegistry!),
+      codex: new SottoThreadHost('codex', devinFixtureRoot ? new E2EAgentHost() : new CodexAppServerHost({ userDataPath }), threadRegistry!),
+      claude: new SottoThreadHost('claude', devinFixtureRoot ? new E2EAgentHost() : new ClaudeStreamJsonHost({ userDataPath }), threadRegistry!),
+      grok: new SottoThreadHost('grok', devinFixtureRoot ? new E2EAgentHost() : new GrokAcpHost(userDataPath), threadRegistry!),
+      devin: new SottoThreadHost('devin', new DevinAcpHost(userDataPath, devinFixtureRoot ? {
+        executable: devinFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeDevinAgent.mjs'), devinFixtureRoot],
+        nativeConfigDirectory: join(devinFixtureRoot, 'native-config'), pollIntervalMs: 50,
+      } : {}), threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
