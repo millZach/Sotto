@@ -38,3 +38,5 @@ Independent standards and spec reviews found no code defects. The standards revi
 Greptile identified a renderer/main mismatch for settled projects. A focused regression reproduced enabled steering for both a settled project and an individually settled workspace thread. The action now uses the same `isWorkspaceThreadSettled` helper as main, and neither case dispatches a command. The initial full local gate counts above refer to `59721254`; latest-revision CI is tracked on PR #165.
 
 After this fix, both queue UI suites passed (44 tests); typecheck and lint passed.
+
+The final-build keyboard repeat initially pressed the next action before delivery released its busy state. The test now asserts the action is enabled before pressing Enter. Three traced repetitions passed after this synchronization change.

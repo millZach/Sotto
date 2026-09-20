@@ -44,6 +44,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
     }
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const steer = queue.locator('li').filter({ hasText: 'Use the simpler approach' }).getByRole('button', { name: 'Steer now' })
+    await expect(steer).toBeEnabled()
     await steer.focus()
     await page.keyboard.press('Enter')
     await expect(queue).not.toContainText('Use the simpler approach')
@@ -54,6 +55,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
     const thread = state.host.threads.find(t => t.id === 'docs')!
     expect(thread.lastTurn?.id).toBe(turn)
     expect(await userMessageTexts(page, 'docs')).toEqual(['Start the work', 'Use the simpler approach'])
+    await expect(queue.getByRole('button', { name: 'Steer now' })).toBeEnabled()
     await queue.getByRole('button', { name: 'Steer now' }).focus()
     await page.keyboard.press('Enter')
     await expect(queue).toHaveCount(0)
