@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { bracketCompaction, markCompactionActivity } from '../../../src/main/agents/compactionActivity'
 import type { AgentActivity } from '../../../src/shared/agentActivity'

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
 import { contrastRatio, isCanonicalThemeColor, parseThemeRgb, toCanonicalThemeColor } from '../../../src/shared/themes/color'

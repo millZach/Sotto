@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APP_MAXIMIZED, WIDGET_VISIBILITY } from '../../../src/shared/channels'

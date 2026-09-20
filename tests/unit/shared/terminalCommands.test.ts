@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { commandLine, nativeModelName, providerCommand, TERMINAL_PERMISSION_LABELS } from '../../../src/shared/terminalCommands'
 

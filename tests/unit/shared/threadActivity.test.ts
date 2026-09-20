@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { agentThreadSchema } from '../../../src/shared/agents'
 import { isThreadClosed, isThreadSettled } from '../../../src/shared/threadActivity'
