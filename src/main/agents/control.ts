@@ -127,6 +127,9 @@ export class AgentControl {
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
   private publishedDraftPersistence = ''
+  // What the last successful write put on disk. A provider frame that changed
+  // no saved fact costs no write.
+  private lastWritten = ''
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
@@ -482,21 +485,25 @@ export class AgentControl {
   private async persist(): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     const saved = this.saved()
-    const drafts = this.draftSignatures(saved.threadDrafts)
-    this.pendingDraftWrites.add(drafts)
-    try {
-      await this.store.write(saved)
-      // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
-      // completed, never newer state that changed while this write was outstanding.
-      this.persistedDrafts = drafts
-    } finally {
-      this.pendingDraftWrites.delete(drafts)
-      // Some full-state writes are fire-and-forget; a fresh renderer still needs
-      // their completion evidence, even when no command response reaches it.
-      // Most writes follow host snapshots and change no evidence; republishing
-      // every thread's history for them backs up the main process.
-      if (JSON.stringify(this.draftPersistence()) !== this.publishedDraftPersistence) this.publish()
+    const serialized = JSON.stringify(saved)
+    if (serialized !== this.lastWritten) {
+      const drafts = this.draftSignatures(saved.threadDrafts)
+      this.pendingDraftWrites.add(drafts)
+      try {
+        await this.store.write(saved)
+        // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
+        // completed, never newer state that changed while this write was outstanding.
+        this.persistedDrafts = drafts
+        this.lastWritten = serialized
+      } finally {
+        this.pendingDraftWrites.delete(drafts)
+      }
     }
+    // Some full-state writes are fire-and-forget; a fresh renderer still needs
+    // their completion evidence, even when no command response reaches it.
+    // Most writes follow host snapshots and change no evidence; republishing
+    // every thread's history for them backs up the main process.
+    if (JSON.stringify(this.draftPersistence()) !== this.publishedDraftPersistence) this.publish()
   }
   private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
     return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, files, requestId }) => [threadId,

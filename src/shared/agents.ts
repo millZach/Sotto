@@ -427,10 +427,15 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')
   const lastAssistant = messages.findLast(message => message.role === 'assistant')
-  const lastMessageAt = messages.reduce<string | undefined>((latest, message) => {
+  let latestAt = Number.NaN
+  let lastMessageAt: string | undefined
+  for (const message of messages) {
     const at = Date.parse(message.createdAt)
-    return Number.isFinite(at) && (latest === undefined || at > Date.parse(latest)) ? message.createdAt : latest
-  }, undefined)
+    if (Number.isFinite(at) && (lastMessageAt === undefined || at > latestAt)) {
+      latestAt = at
+      lastMessageAt = message.createdAt
+    }
+  }
   const running = activities.filter(record => record.kind === 'turn' && record.status === 'running')
     .sort((first, second) => first.sequence - second.sequence).at(-1)
   return { messageCount: messages.length, activityCount: activities.length,

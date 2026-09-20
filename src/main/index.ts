@@ -641,7 +641,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
     if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
-    const state = agentControl.get(), thread = state.host.threads.find(item => item.id === owner.ownerId
+    const state = agentControl.shell(), thread = state.host.threads.find(item => item.id === owner.ownerId
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
     const recovery = agentControl.requestAnswerRecovery(owner.ownerId, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
