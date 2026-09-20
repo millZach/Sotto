@@ -260,6 +260,8 @@ export class RequestAnswerStore {
     if (!binding.loaded) {
       await this.connect(ownerId, requestId, binding.target)
       if (!binding.loaded) return false
+      // A successful restore already proves durability when no local edits were made.
+      if (this.get(ownerId, requestId).save === 'saved') return true
     }
     const entry = this.get(ownerId, requestId)
     const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),

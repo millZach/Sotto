@@ -10,6 +10,19 @@ function gate<T>() { let resolve!: (value: T) => void; const promise = new Promi
 function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
 
 describe('request draft renderer ordering', () => {
+  it.each([false, true])('does not rewrite a saved answer restored after a failed initial read (held=%s)', async held => {
+    const api = bridge()
+    const restored = { ...draft('Saved in main', 5, held), ...(held ? { decisionId: 'main-owned-decision' } : {}) }
+    api.get = vi.fn().mockRejectedValueOnce(new Error('Disconnected bridge')).mockResolvedValue(restored)
+    api.save = vi.fn().mockRejectedValue(new Error('Must not rewrite restored content'))
+    const store = new RequestAnswerStore(() => api)
+    await store.connect('thread', 'req', target)
+    expect(store.canReload()).toBe(false)
+    expect(await store.flushForReload()).toBe(true)
+    expect(api.save).not.toHaveBeenCalled()
+    expect(store.get('thread', 'req')).toMatchObject({ save: 'saved', phase: held ? 'unconfirmed' : 'idle', selections: restored.selections })
+  })
+
   it('waits for the newest answer edit while reload is saving an older revision', async () => {
     const first = gate<RequestDraft>(), second = gate<RequestDraft>(), api = bridge(), saves: RequestDraft[] = []
     api.save = vi.fn(input => { saves.push(input); return saves.length === 1 ? first.promise : second.promise })
