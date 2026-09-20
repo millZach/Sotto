@@ -51,6 +51,8 @@ Two details settled in implementation. The `answer-given` event carries no answe
 
 Four implementation tickets hang off this: the store and its migration, windowed reads and the pane control, lazy sessions with the reaper, and attribution on answers. The host and client split is already true locally the day the store lands, which is what makes the remote step a transport decision rather than a rewrite.
 
+Amended September 20, 2026: the store explicitly keeps WAL with `synchronous=FULL`. Provider transcript cursors are saved independently of the event store, so a cursor that survives a power loss could skip messages lost from a less durable store. Every committed event, including answers and migrated history, keeps the same durability. Prepared statements are reused for the life of the connection to avoid compiling them on each read and streamed update; closing the connection drops them.
+
 ## Amendment: bounded Devin native replay (September 20, 2026, #150)
 
 Devin CLI 3000.10.31 has a verified ACP session/load replay but no verified incremental transcript cursor. Its prompt response reports completion, so Sotto also needs replayed dispatch identities to confirm delivery without resending uncertain work. Devin is an explicit exception to this ADR's native resume-without-re-reading and incremental reconnect-cost guarantees. Sotto keeps its own event store as the history of record and preserves windowed renderer reads; those guarantees do not depend on Devin replay speed.

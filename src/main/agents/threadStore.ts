@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
+import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqlite'
 
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import { threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
@@ -83,6 +83,8 @@ function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
 export class ThreadStore {
   private db: DatabaseSync | undefined
   private memory = false
+  /** Prepared once per connection; a statement is bound to its database, so `close` clears the map. */
+  private readonly statements = new Map<string, StatementSync>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string) {}
@@ -96,7 +98,7 @@ export class ThreadStore {
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {
-      migrate(db)
+      prepareThreadDatabase(db)
       if (readMeta(db, 'projectionVersion') !== String(PROJECTION_VERSION)) {
         rebuildProjection(db)
         writeMeta(db, 'projectionVersion', String(PROJECTION_VERSION))
@@ -136,9 +138,19 @@ export class ThreadStore {
   }
 
   close(): void {
+    this.statements.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
+  }
+
+  private statement(sql: string): StatementSync {
+    let statement = this.statements.get(sql)
+    if (statement === undefined) {
+      statement = this.requireOpen().prepare(sql)
+      this.statements.set(sql, statement)
+    }
+    return statement
   }
 
   /** Writes one event and applies it to the projection in a single transaction. */
@@ -155,10 +167,10 @@ export class ThreadStore {
     try {
       for (const event of events) {
         const parsed = threadEventSchema.parse(event)
-        db.prepare('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
+        this.statement('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
           .run(threadId, parsed.kind, parsed.at, JSON.stringify(parsed))
-        seq = Number(db.prepare('SELECT last_insert_rowid() AS seq').get()!.seq)
-        applyEvent(db, threadId, parsed)
+        seq = Number(this.statement('SELECT last_insert_rowid() AS seq').get()!.seq)
+        applyEvent(db, threadId, parsed, sql => this.statement(sql))
       }
       db.exec('COMMIT')
     } catch (error) {
@@ -174,22 +186,21 @@ export class ThreadStore {
    * whole history, which is what a one-time read at start asks for.
    */
   readMessages(threadId: string, options: ThreadWindowOptions = {}): ThreadMessageWindow {
-    const db = this.requireOpen()
     const bound = options.beforePosition
     const clause = bound === undefined ? '' : ' AND position < ?'
     const parameters = bound === undefined ? [threadId] : [threadId, bound]
-    const last = db.prepare(`SELECT MAX(position) AS last FROM messages WHERE thread_id = ?${clause}`).get(...parameters)?.last
+    const last = this.statement(`SELECT MAX(position) AS last FROM messages WHERE thread_id = ?${clause}`).get(...parameters)?.last
     if (last === null || last === undefined) return EMPTY_WINDOW
     const lastPosition = Number(last)
     let firstPosition = 0
     if (options.turns !== undefined) {
-      const starts = db.prepare(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user'${clause} ORDER BY position DESC LIMIT ?`)
+      const starts = this.statement(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user'${clause} ORDER BY position DESC LIMIT ?`)
         .all(...parameters, options.turns).map(row => Number(row.position))
       firstPosition = starts.length < options.turns ? 0 : starts.at(-1)!
     } else if (options.limit !== undefined) {
       firstPosition = Math.max(0, lastPosition - options.limit + 1)
     }
-    const rows = db.prepare('SELECT * FROM messages WHERE thread_id = ? AND position BETWEEN ? AND ? ORDER BY position')
+    const rows = this.statement('SELECT * FROM messages WHERE thread_id = ? AND position BETWEEN ? AND ? ORDER BY position')
       .all(threadId, firstPosition, lastPosition)
     return { messages: rows.map(messageOf), earlierAvailable: firstPosition > 0, firstPosition, lastPosition }
   }
@@ -197,20 +208,19 @@ export class ThreadStore {
   /** Every message this thread holds, by ID and role, oldest first: what an adapter needs to recognise
    * a message the store already has without reading the words back out of it. */
   messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant' }[] {
-    return this.requireOpen().prepare('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
+    return this.statement('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
       .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant' }))
   }
 
   messageCount(threadId: string): number {
-    return Number(this.requireOpen().prepare('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
+    return Number(this.statement('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
   }
 
   /** The sidebar's facts about a thread, taken from the projection rather than from its history. */
   summary(threadId: string): AgentThreadSummary {
-    const db = this.requireOpen()
     const count = this.messageCount(threadId)
     const newest = (role: 'user' | 'assistant'): AgentMessage | undefined => {
-      const row = db.prepare('SELECT * FROM messages WHERE thread_id = ? AND role = ? ORDER BY position DESC LIMIT 1').get(threadId, role)
+      const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND role = ? ORDER BY position DESC LIMIT 1').get(threadId, role)
       return row === undefined ? undefined : messageOf(row)
     }
     const user = newest('user')
@@ -221,15 +231,14 @@ export class ThreadStore {
 
   /** Everything after `seq`, in the order it was written. */
   eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
-    const db = this.requireOpen()
     const rows = threadId === undefined
-      ? db.prepare('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq').all(seq)
-      : db.prepare('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq').all(seq, threadId)
+      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq').all(seq)
+      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq').all(seq, threadId)
     return rows.map(row => ({ seq: Number(row.seq), threadId: String(row.thread_id), event: JSON.parse(String(row.payload)) as ThreadEvent }))
   }
 
   latestSeq(): number {
-    const row = this.requireOpen().prepare('SELECT MAX(seq) AS seq FROM events').get()
+    const row = this.statement('SELECT MAX(seq) AS seq FROM events').get()
     return row?.seq === null || row?.seq === undefined ? 0 : Number(row.seq)
   }
 
@@ -238,7 +247,7 @@ export class ThreadStore {
     const db = this.requireOpen()
     db.exec('BEGIN IMMEDIATE')
     try {
-      db.prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      this.statement('DELETE FROM messages WHERE thread_id = ?').run(threadId)
       redactEvents(db, threadId)
       db.exec('COMMIT')
     } catch (error) {
@@ -285,30 +294,31 @@ export class ThreadStore {
   }
 }
 
-function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent): void {
+function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
+  prepare: (sql: string) => StatementSync = sql => db.prepare(sql)): void {
   switch (event.kind) {
     case 'message-added': {
-      const row = db.prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
+      const row = prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
       const position = row?.last === null || row?.last === undefined ? 0 : Number(row.last) + 1
       const { message } = event
-      db.prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(threadId, position, message.id, message.role, message.text, message.createdAt,
           message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments))
       return
     }
     case 'message-text-appended':
-      db.prepare('UPDATE messages SET text = text || ? WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET text = text || ? WHERE thread_id = ? AND message_id = ?')
         .run(event.appendText, threadId, event.messageId)
       return
     case 'message-replaced': {
       const { message } = event
-      db.prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ? WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ? WHERE thread_id = ? AND message_id = ?')
         .run(message.role, message.text, message.createdAt, message.commandId ?? null,
           message.attachments === undefined ? null : JSON.stringify(message.attachments), threadId, message.id)
       return
     }
     case 'messages-reset':
-      db.prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
       return
     case 'answer-given':
       return
@@ -381,9 +391,10 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
 }
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
-function migrate(db: DatabaseSync): void {
+export function prepareThreadDatabase(db: DatabaseSync): void {
+  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')

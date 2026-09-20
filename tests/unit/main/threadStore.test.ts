@@ -2,13 +2,15 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { prepareThreadDatabase, ThreadStore } from '../../../src/main/agents/threadStore'
 
 const open: ThreadStore[] = []
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const store of open.splice(0)) store.close()
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-thread-store-')) throw new Error('Unexpected test directory')
@@ -114,6 +116,46 @@ describe('thread store', () => {
     reopened.store.rebuild()
     expect(reopened.store.readMessages('kept').messages).toEqual([])
     expect(reopened.store.messageCount('kept')).toBe(0)
+  })
+
+  it('keeps committed history durable with synchronous=FULL', () => {
+    const db = new DatabaseSync(':memory:')
+    try {
+      prepareThreadDatabase(db)
+      // synchronous is per-connection, so it reads back here even though the memory
+      // database's journal_mode reports 'memory' rather than 'wal'.
+      expect(db.prepare('PRAGMA synchronous').get()?.synchronous).toBe(2)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('opens the durable history file in WAL mode', async () => {
+    // Unlike synchronous, journal_mode lives in the file and reads back from any connection.
+    const f = await store()
+    const other = new DatabaseSync(f.path)
+    try {
+      expect(String(other.prepare('PRAGMA journal_mode').get()?.journal_mode)).toBe('wal')
+    } finally {
+      other.close()
+    }
+  })
+
+  it('reuses compiled statements until the connection closes', async () => {
+    const f = await store()
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    expect(f.store.messageCount('thread')).toBe(0)
+    expect(prepare).toHaveBeenCalledTimes(1)
+    f.store.replaceThreadMessages('thread', conversation(1))
+    prepare.mockClear()
+    expect(f.store.messageCount('thread')).toBe(2)
+    expect(f.store.messageCount('thread')).toBe(2)
+    expect(prepare).not.toHaveBeenCalled()
+    f.store.close()
+    f.store.open()
+    prepare.mockClear()
+    expect(f.store.messageCount('thread')).toBe(2)
+    expect(prepare).toHaveBeenCalledTimes(1)
   })
 
   it('keeps an ephemeral run out of the file and hands the file back when history returns', async () => {
