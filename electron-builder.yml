@@ -8,6 +8,9 @@ directories:
 
 files:
   - out/**/*
+  # The renderer build emits ONNX Runtime's WASM because onnxruntime-web refers to it, but the
+  # speech worker loads it only through sotto-runtime:// from resources/runtime — this copy is never read.
+  - '!out/renderer/**/ort-wasm-simd-threaded*'
   - package.json
 
 asar: true

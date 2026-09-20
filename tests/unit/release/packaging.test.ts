@@ -25,6 +25,7 @@ interface BuilderResource {
 }
 
 interface BuilderConfig {
+  files: string[]
   npmRebuild: boolean
   beforeBuild?: string
   asarUnpack: string[]
@@ -115,6 +116,17 @@ describe('release contract', () => {
       verifier.indexOf('const smoke = await verifyNormalPackagedLaunch'),
     )
     expect(verifier).not.toContain('.matchAll(')
+  })
+
+  it('ships the ONNX runtime only under resources/runtime and rejects a copy inside the archive', () => {
+    // The renderer build emits the WASM because onnxruntime-web refers to it; the speech
+    // worker reads it solely through sotto-runtime://, so the archived copy is never read.
+    expect(builderConfig.files).toContain('!out/renderer/**/ort-wasm-simd-threaded*')
+    expect(read('scripts/verify-packaged-resources.mjs')).toContain(
+      "fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')",
+    )
+    // Provenance still records the emitted file but expects it absent from the archive.
+    expect(read('scripts/release-provenance.mjs')).toContain('PACKAGING_EXCLUDES')
   })
 
   it('bundles the memory store into the runtime and closes it on quit', () => {

@@ -269,6 +269,9 @@ export async function verifyPackagedResources(input, options = {}) {
   ]) {
     if (!entries.includes(required)) fail(`app.asar is missing ${required}`)
   }
+  if (entries.some((entry) => entry.includes('ort-wasm-simd-threaded'))) {
+    fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')
+  }
   let provenance
   try {
     provenance = await verifyBuildProvenance({
