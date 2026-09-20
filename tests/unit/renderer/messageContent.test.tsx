@@ -168,13 +168,21 @@ describe('code blocks', () => {
     const { container } = render(<MessageContent text={`\`\`\`ts\n${code}\n\`\`\``} />)
     const block = screen.getByLabelText('ts code block')
     expect(block.tagName).toBe('PRE')
-    expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const')
+    await waitFor(() => expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const'))
     expect(block.querySelector('.hljs-string')).toHaveTextContent('"<img src=x onerror=alert(1)>"')
     expect(block).toHaveTextContent('function run() { return 42 }')
     assertInert(container)
     await user.click(screen.getByRole('button', { name: 'Copy ts code' }))
     expect(writeText).toHaveBeenCalledWith(code)
     expect(screen.getByText('Copied')).toBeInTheDocument()
+  })
+
+  it('renders a code block readable before its highlighter arrives, then highlights it', async () => {
+    render(<MessageContent text={'```ts\nconst answer = 42\n```'} />)
+    const block = screen.getByLabelText('ts code block')
+    expect(block).toHaveTextContent('const answer = 42')
+    await waitFor(() => expect(block.querySelector('.hljs-keyword')).toHaveTextContent('const'))
+    expect(block).toHaveTextContent('const answer = 42')
   })
 
   it('reaches the copy control and the scrollable code by keyboard and reports copy failures', async () => {

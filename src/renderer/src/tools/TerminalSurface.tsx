@@ -8,7 +8,8 @@ export interface TerminalSurfaceProps {
   readonly threadId: string
   readonly store: TerminalStore
   readonly bridge: TerminalBridge | undefined
-  readonly viewFactory: TerminalViewFactory
+  /** Null while the xterm chunk is still loading; the screen renders empty and busy until it arrives. */
+  readonly viewFactory: TerminalViewFactory | null
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {
@@ -123,7 +124,7 @@ function CloseConfirm({ name, onEnd, onKeep }: { readonly name: string; readonly
 
 function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, focusNext, busy }: {
   readonly session: TerminalSession; readonly name: string; readonly threadId: string; readonly store: TerminalStore; readonly bridge: TerminalBridge | undefined
-  readonly viewFactory: TerminalViewFactory; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean
+  readonly viewFactory: TerminalViewFactory | null; readonly focusNext: React.MutableRefObject<boolean>; readonly busy: boolean
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const sessionId = session.id
@@ -132,7 +133,7 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, f
 
   useLayoutEffect(() => {
     const element = host.current
-    if (!element) return
+    if (!element || !viewFactory) return
     const view = store.attach(bridge, threadId, sessionId, element, viewFactory)
     const fit = (): void => {
       const size = view?.fit()
@@ -157,7 +158,7 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, f
     </div> : null}
     {loadError ? <div className="files-problem" role="status"><strong>{loadError}</strong>
       <button type="button" className="files-link tt-focusable" onClick={() => store.retry(bridge, threadId, sessionId)}>Try again</button></div> : null}
-    <div className="terminal-view" ref={host} aria-label={`${name}, terminal`} data-replaying={replaying || undefined} />
+    <div className="terminal-view" ref={host} aria-label={`${name}, terminal`} aria-busy={viewFactory === null || undefined} data-replaying={replaying || undefined} />
     {replaying ? <p className="terminal-restoring" role="status">Restoring output…</p> : null}
     <p className="terminal-hint">Ctrl+C copies a selection or stops the command · Ctrl+Tab leaves the terminal</p>
   </div>

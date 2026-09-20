@@ -9,7 +9,7 @@ import { focusPaneLater, paneGridActions, useClock } from '../agents/paneGrid'
 import { SplitLayoutStore, browserStorage, isSplit, prune, retarget, setFocused, useSplitLayout } from '../agents/splitLayout'
 import { Button } from '../components/Button'
 import type { TerminalViewFactory } from '../tools/terminalStore'
-import { createXtermView } from '../tools/terminalView'
+import { useTerminalViewFactory } from '../tools/terminalViewLoader'
 import { NewTerminalDialog } from './NewTerminalDialog'
 import { describeTerminals, isOpenTerminal, organizeTerminals, terminalState, type TerminalRowState } from './terminalFacts'
 import { TerminalPane } from './TerminalPane'
@@ -48,8 +48,9 @@ export interface TerminalWorkspaceProps {
  * Terminal mode: the sidebar's terminals and the pane grid they open in. The grid, its divider, grip, expand and
  * close are the thread workspace's; only what a pane holds differs.
  */
-export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow, store = terminalWorkspaceStore, bridge = defaultBridge(), viewFactory = createXtermView,
+export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow, store = terminalWorkspaceStore, bridge = defaultBridge(), viewFactory: injected,
   layoutStore = terminalLayoutStore, platform = defaultPlatform(), paneAreaWidth, paneAreaHeight }: TerminalWorkspaceProps): ReactNode {
+  const viewFactory = useTerminalViewFactory(injected)
   const workspace = useTerminalWorkspace(store)
   const [query, setQuery] = useState('')
   const [dialog, setDialog] = useState<{ readonly projectId?: string | undefined } | null>(null)

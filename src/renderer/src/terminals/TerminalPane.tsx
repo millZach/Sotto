@@ -23,7 +23,8 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
   readonly row: TerminalRow
   readonly store: TerminalWorkspaceStore
   readonly bridge: TerminalWorkspaceBridge | undefined
-  readonly viewFactory: TerminalViewFactory
+  /** Null while the xterm chunk is still loading; the pane renders its frame with an empty screen until it arrives. */
+  readonly viewFactory: TerminalViewFactory | null
   readonly focused: boolean
   /** Put the cursor in the terminal once it mounts; cleared once used. */
   readonly focusNext: React.MutableRefObject<string | null>
@@ -39,7 +40,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
 
   useLayoutEffect(() => {
     const element = host.current
-    if (!element) return
+    if (!element || !viewFactory) return
     const view = store.attach(bridge, id, element, viewFactory)
     const fit = (): void => {
       const size = view?.fit()
@@ -88,7 +89,7 @@ export function TerminalPane({ row, store, bridge, viewFactory, focused, focusNe
       </div> : null}
       {loadError ? <div className="files-problem" role="status"><strong>{loadError}</strong>
         <button type="button" className="files-link tt-focusable" onClick={() => store.retry(bridge, id)}>Try again</button></div> : null}
-      <div className="terminal-view" ref={host} aria-label={`${terminal.title}, terminal`} data-replaying={replaying || undefined} />
+      <div className="terminal-view" ref={host} aria-label={`${terminal.title}, terminal`} aria-busy={viewFactory === null || undefined} data-replaying={replaying || undefined} />
       {replaying ? <p className="terminal-restoring" role="status">Restoring output…</p> : null}
       {pasted ? <p className="terminal-pane__chip" role="status">Image saved · {fileName(pasted.path)}</p> : null}
     </div>
