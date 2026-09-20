@@ -46,6 +46,7 @@ const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 let requestId = 10000
 const pending = new Map()
+const heldReplies = new Map()
 function complete(thread, text, status = 'completed') {
   const turn = thread.turns.at(-1)
   if (!turn) return
@@ -92,7 +93,12 @@ createInterface({ input: process.stdin }).on('line', line => {
   const script = read('script.json', {})
   const delay = script.delay?.method === method ? script.delay.ms : 0
   if (delay) { delete script.delay; writeFileSync(file('script.json'), JSON.stringify(script)) }
-  const reply = result => setTimeout(() => emit({ id, result }), delay)
+  const holdReply = script.holdReply === method
+  if (holdReply) { delete script.holdReply; writeFileSync(file('script.json'), JSON.stringify(script)) }
+  const reply = result => {
+    if (holdReply) heldReplies.set(method, { id, result })
+    else setTimeout(() => emit({ id, result }), delay)
+  }
   if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
   if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
   if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
@@ -205,6 +211,11 @@ setInterval(() => {
   save()
   const thread = state.threads[action.threadId]
   if (action.type === 'exit') process.exit(0)
+  if (action.type === 'release-reply') {
+    const reply = heldReplies.get(action.method)
+    if (reply) { heldReplies.delete(action.method); emit(reply) }
+    return
+  }
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
   else if (action.type === 'notify-burst') {
