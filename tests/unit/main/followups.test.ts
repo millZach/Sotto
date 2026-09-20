@@ -386,3 +386,64 @@ it('requires explicit resume when an idle thread has no known turn outcome', asy
   await expect.poll(() => f.control.get().followups?.length).toBe(0)
   expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(1)
 })
+
+
+it('steers a selected edited queue item once, preserving the remaining queue and newer draft', async () => {
+  const f = await fixture()
+  f.host.state.capabilities.steer = true
+  f.host.update('workshop', { status: 'running' })
+  await f.control.command(queued('first'))
+  const prompt = { ...queued('$build second @README.md'), skills: [{ name: 'build', path: 'C:/skills/build/SKILL.md' }], files: [{ path: 'README.md' }],
+    attachments: [{ id: randomUUID(), name: 'reference.png', mimeType: 'image/png' as const, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=' }] }
+  await f.control.command(prompt)
+  const item = f.control.get().followups![1]!
+  await f.control.command({ type: 'edit-followup', threadId: item.threadId, itemId: item.id, text: '$build edited second @README.md' })
+  const newer = { ...queued('newer draft'), type: 'save-thread-draft' as const }
+  await f.control.command(newer)
+  const request = { type: 'steer-followup' as const, threadId: item.threadId, itemId: item.id }
+  expect(agentCommandSchema.safeParse(request).success).toBe(true)
+  await Promise.all([f.control.command(request), f.control.command(request)])
+  expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'steer', text: '$build edited second @README.md', skills: prompt.skills, files: prompt.files, attachments: prompt.attachments })])
+  expect(f.control.get().followups?.map(item => item.text)).toEqual(['first'])
+  expect(f.control.get().threadDrafts).toEqual([expect.objectContaining({ draftId: newer.draftId, text: newer.text })])
+  complete(f.host)
+  await expect.poll(() => f.control.get().followups?.length).toBe(0)
+  expect(f.host.attempts.map(item => item.type)).toEqual(['steer', 'send'])
+})
+
+it.each(['unsupported', 'question', 'refused', 'uncertain'] as const)('preserves a queued steer when %s and never replays uncertainty', async outcome => {
+  const f = await fixture()
+  f.host.state.capabilities.steer = outcome !== 'unsupported'
+  f.host.update('workshop', { status: 'running', requests: outcome === 'question' ? [{ id: 'question', kind: 'question', text: 'Which?', options: [] }] : [] })
+  await f.control.command(queued('keep this message'))
+  const item = f.control.get().followups![0]!
+  if (outcome === 'refused') f.host.result = { accepted: false }
+  if (outcome === 'uncertain') f.host.result = { accepted: false, uncertain: true }
+  const request = { type: 'steer-followup' as const, threadId: item.threadId, itemId: item.id }
+  const result = await f.control.command(request)
+  expect(result.followups?.[0]).toMatchObject({ id: item.id, text: item.text, status: outcome === 'uncertain' ? 'uncertain' : outcome === 'refused' ? 'failed' : 'queued' })
+  expect(f.host.attempts).toHaveLength(outcome === 'unsupported' || outcome === 'question' ? 0 : 1)
+  if (outcome === 'uncertain') {
+    await f.control.command(request)
+    f.control.dispose(); await f.control.privacyChanged()
+    const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+    await restored.command(request)
+    expect(f.host.attempts).toHaveLength(1)
+    expect(restored.get().followups?.[0]?.status).toBe('uncertain')
+  }
+})
+
+
+it('reconciles a late steer confirmation behind an untouched queue head', async () => {
+  const f = await fixture(); f.host.state.capabilities.steer = true
+  f.host.update('workshop', { status: 'running' })
+  await f.control.command(queued('keep first')); await f.control.command(queued('steer second'))
+  const item = f.control.get().followups![1]!
+  f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'steer-followup', threadId: item.threadId, itemId: item.id })
+  const attempt = f.host.attempts[0]!
+  if (attempt.type !== 'steer') throw new Error('Expected a steer')
+  f.host.update('workshop', { messages: [{ id: attempt.messageId, commandId: attempt.commandId, role: 'user', text: attempt.text, createdAt: new Date().toISOString() }] })
+  await expect.poll(() => f.control.get().followups?.map(item => item.text)).toEqual(['keep first'])
+  expect(f.host.attempts).toHaveLength(1)
+})

@@ -59,5 +59,7 @@ artifacts/thread-sidebar/
 
 artifacts/terminal-loading/
 
+artifacts/queued-steering/
+
 # Question panel verification captures
 artifacts/question-choices/

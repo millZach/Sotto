@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/queued-steering/**',
       '.worktrees/**',
       '.claude/tmp/**',
       // Agent worktrees are whole checkouts of this repository, so linting them would lint
