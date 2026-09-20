@@ -6,7 +6,7 @@ import type { BrowserBridge, BrowserEvent, BrowserPage } from '../../../../src/s
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
-import { normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
+import { BrowserStore, normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
 import { threadsStateFixture } from '../liveAgentState'
@@ -198,9 +198,9 @@ describe('Browser page placement', () => {
     setup(browser)
     await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt }))
     await userEvent.click(within(panel()).getByRole('tab', { name: 'Vite App' }))
+    await act(async () => { refuse({ ok: false, error: { code: 'busy', message: 'Busy.' } }) })
     await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
     const sent = vi.mocked(browser.bridge.mount).mock.calls.length
-    await act(async () => { refuse({ ok: false, error: { code: 'busy', message: 'Busy.' } }) })
     await frames()
     expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
     // Nothing about the shown page changes: no hide, no second placement.
@@ -221,8 +221,10 @@ describe('Browser page placement', () => {
     vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('browser-viewport') ? DOMRect.fromRect({ x: 900, y: 180, width: 700, height: 520 }) : DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 })
     })
-    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: { x: 900, y: 180, width: 700, height: 520 } }))
+    await frames()
+    expect(calls).toBe(1)
     await act(async () => { refuse({ ok: false, error: { code: 'busy', message: 'Busy.' } }) })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: { x: 900, y: 180, width: 700, height: 520 } }))
     await frames()
     expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -330,5 +332,98 @@ describe('web links in a thread', () => {
     } finally {
       Reflect.deleteProperty(window, 'sotto')
     }
+  })
+})
+
+describe('browser placement admission', () => {
+  it('keeps one placement pending and sends only the latest queued rectangle', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const store = new BrowserStore()
+    store.adopt(page(PAGE_1))
+    let finish!: (result: ToolsResult<void>) => void
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 800 })
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(1)
+    await act(async () => { finish(ok(undefined)) })
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(2)
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: { ...shownAt, x: 800 } })
+  })
+
+  it('supersedes queued bounds when the newest rectangle returns to the pending rectangle', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const store = new BrowserStore()
+    store.adopt(page(PAGE_1))
+    let finish!: (result: ToolsResult<void>) => void
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(1)
+    await act(async () => { finish(ok(undefined)) })
+    expect(browser.bridge.mount).not.toHaveBeenCalledWith({ ...target, pageId: PAGE_1, bounds: { ...shownAt, x: 900 } })
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt })
+  })
+
+  it('does not let an old hide cancel the newer page queued behind a pending placement', async () => {
+    const browser = fakeBrowser([page(PAGE_1), page(PAGE_2)])
+    const store = new BrowserStore()
+    store.adopt(page(PAGE_1))
+    store.adopt(page(PAGE_2))
+    let finish!: (result: ToolsResult<void>) => void
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, null)
+    store.mount(browser.bridge, workspace.threadId, PAGE_2, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, null)
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(2)
+    await act(async () => { finish(ok(undefined)) })
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(3)
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt })
+    expect(store.thread(workspace.threadId)?.placementProblem).toBeNull()
+  })
+  it('invalidates the pending old page when the queued new page closes before validation finishes', async () => {
+    const browser = fakeBrowser([page(PAGE_1), page(PAGE_2)])
+    const store = new BrowserStore()
+    store.adopt(page(PAGE_1))
+    store.adopt(page(PAGE_2))
+    let finish!: () => void
+    let desired: string | null = null
+    let mounted: string | null = null
+    // Match main's admission rule: a hide invalidates that page before directory validation completes.
+    vi.mocked(browser.bridge.mount).mockImplementation(async ({ pageId, bounds }) => {
+      if (bounds === null) {
+        if (desired === pageId) desired = null
+        if (mounted === pageId) mounted = null
+        return ok(undefined)
+      }
+      desired = pageId
+      await new Promise<void>(resolve => { finish = resolve })
+      if (desired === pageId) mounted = pageId
+      return ok(undefined)
+    })
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_2, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_2, null)
+    await act(async () => { finish() })
+    expect(mounted).toBeNull()
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(3)
+    expect(browser.bridge.mount).toHaveBeenNthCalledWith(2, { ...target, pageId: PAGE_1, bounds: null })
+    expect(browser.bridge.mount).toHaveBeenNthCalledWith(3, { ...target, pageId: PAGE_2, bounds: null })
+  })
+  it('hides immediately and does not replay a queued placement after the panel closes', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const store = new BrowserStore()
+    store.adopt(page(PAGE_1))
+    let finish!: (result: ToolsResult<void>) => void
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
+    store.mount(browser.bridge, workspace.threadId, PAGE_1, null)
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(2)
+    expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null })
+    await act(async () => { finish(ok(undefined)) })
+    expect(browser.bridge.mount).toHaveBeenCalledTimes(2)
   })
 })

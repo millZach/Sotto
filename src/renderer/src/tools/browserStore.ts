@@ -57,9 +57,11 @@ export class BrowserStore {
   private readonly listTokens = new Map<string, number>()
   private subscribed: BrowserBridge | null = null
   private unsubscribe: (() => void) | null = null
-  /** The page main was last told to show, where, and which request told it. */
-  private mounted: { pageId: string; bounds: BrowserBounds; request: number } | null = null
+  /** The latest desired page and rectangle, including a placement waiting for main. */
+  private mounted: { bridge: BrowserBridge; threadId: string; workspaceId: string; pageId: string; bounds: BrowserBounds; request: number } | null = null
   private placements = 0
+  private placementPending = false
+  private queuedPlacement: (() => void) | null = null
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -154,16 +156,34 @@ export class BrowserStore {
     }
     if (this.mounted?.pageId === pageId && sameBounds(this.mounted.bounds, bounds)) return
     if (thread.placementProblem?.pageId === pageId) return
+    const previous = this.mounted
+    // Invalidate a pending mount of the previous page before a queued page becomes the desired one.
+    if (previous !== null && previous.pageId !== pageId) {
+      void settle(previous.bridge.mount({ threadId: previous.threadId, workspaceId: previous.workspaceId, pageId: previous.pageId, bounds: null }))
+    }
     const request = ++this.placements
-    this.mounted = { pageId, bounds, request }
-    void settle(bridge.mount({ ...target, bounds })).then(result => {
-      if (result.ok || this.mounted?.request !== request) return
-      // Main may still draw the page where an earlier request put it, over the explanation.
-      this.mounted = null
-      void settle(bridge.mount({ ...target, bounds: null }))
-      this.patch(threadId, { placementProblem: { pageId, message: placementReason(result.error) } })
-      if (result.error.code === 'workspace-changed' || result.error.code === 'page-unavailable') void this.activate(bridge, threadId)
-    })
+    this.mounted = { bridge, ...target, bounds, request }
+    // A moving panel can report a new rectangle every frame, faster than main validates its folder.
+    // Keep only the newest rectangle while that validation is pending; hides still go through immediately.
+    const place = (): void => {
+      if (this.mounted?.request !== request) return
+      this.placementPending = true
+      void settle(bridge.mount({ ...target, bounds })).then(result => {
+        if (result.ok || this.mounted?.request !== request) return
+        // Main may still draw the page where an earlier request put it, over the explanation.
+        this.mounted = null
+        void settle(bridge.mount({ ...target, bounds: null }))
+        this.patch(threadId, { placementProblem: { pageId, message: placementReason(result.error) } })
+        if (result.error.code === 'workspace-changed' || result.error.code === 'page-unavailable') void this.activate(bridge, threadId)
+      }).finally(() => {
+        this.placementPending = false
+        const queued = this.queuedPlacement
+        this.queuedPlacement = null
+        queued?.()
+      })
+    }
+    if (this.placementPending) this.queuedPlacement = place
+    else place()
   }
 
   /** Lets a refused page ask main again; the surface sends its rectangle on the next frame. */

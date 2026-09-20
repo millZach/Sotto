@@ -23,3 +23,13 @@ The native probe activates voice management, hides main through `window.sotto.hi
 - Probe command: `node artifacts/shell-detail-visibility/native-journey.cjs`
 
 These artifacts are ignored locally. No real microphone, live provider, speech service or macOS acceptance was exercised. This fix does not change the voice beta gate or the visible design.
+
+## Browser placement during panel animation
+
+Combined native verification also exposed a placement burst: every changed animation frame could start another browser mount while main was still checking the previous mount's working folder. The shared Files service admits four concurrent requests, so a transient busy result could leave the browser waiting for explicit retry after closing and reopening the tools panel.
+
+Browser placement now keeps one non-null request in flight and remembers only the latest desired rectangle. Hides still go through immediately. Changing pages first hides the previous desired page, which invalidates its pending main-process mount before a queued replacement can be canceled. A genuine refusal still requires the existing explicit retry; workspace validation and service admission limits are unchanged.
+
+Three deferred-bridge regressions failed before the change. Five tests now cover latest-only rectangles, returning to an earlier rectangle, immediate hide, stale hides, and closing a queued replacement before the old page's validation completes. Two older late-refusal tests were updated to resolve the pending placement before expecting the newer one to be admitted. The browser renderer and main lifecycle suites pass all 20 tests.
+
+`npm run build` and `npx playwright test tests/e2e/tools-sidecar.spec.ts --workers=1` pass with the combined changes. The native scenario checks browser placement, close/reopen, terminal input, Files, Changes, light/dark appearance and three window sizes. This does not establish that PR #159 introduced the original busy condition: its isolated native run and two repeats passed; another repeat failed earlier at terminal input rather than browser placement.
