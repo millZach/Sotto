@@ -34,3 +34,6 @@ export function fileSha256(path: string): Promise<{
   readonly bytes: number
   readonly sha256: string
 }>
+
+/** True for the one built file electron-builder.yml leaves out of the archive, at any depth under renderer. */
+export function isPackagingExcluded(path: string): boolean
