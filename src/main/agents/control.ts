@@ -127,10 +127,10 @@ export class AgentControl {
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
   private publishedDraftPersistence = ''
-  // What the last successful write put on disk. A provider frame that changed
-  // no saved fact costs no write, and a snapshot already queued costs none either.
+  // What the last successful write put on disk. A provider frame that changed no saved fact costs no
+  // write. An identical write queued while another is still in flight is not deduplicated on purpose: a
+  // persist that skipped it would have to wait on a write it did not issue, and the queue drains it anyway.
   private lastWritten = ''
-  private readonly writing = new Set<string>()
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
@@ -487,10 +487,9 @@ export class AgentControl {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     const saved = this.saved()
     const serialized = JSON.stringify(saved)
-    if (serialized !== this.lastWritten && !this.writing.has(serialized)) {
+    if (serialized !== this.lastWritten) {
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      this.writing.add(serialized)
       try {
         await this.store.write(saved)
         // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
@@ -499,7 +498,6 @@ export class AgentControl {
         this.lastWritten = serialized
       } finally {
         this.pendingDraftWrites.delete(drafts)
-        this.writing.delete(serialized)
       }
     }
     // Some full-state writes are fire-and-forget; a fresh renderer still needs

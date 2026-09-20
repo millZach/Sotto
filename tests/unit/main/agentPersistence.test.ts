@@ -94,37 +94,6 @@ describe('coordinator persistence', () => {
     expect(writes.count()).toBe(beforeConfigure + 1)
   })
 
-  it('does not queue a second write of what a hung write already carries', async () => {
-    const f = await fixture()
-    const writes = agentsWriteSpy()
-    await settle(writes)
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
-    const real = writes.realWrite
-    let hungOnce = false
-    writes.spy.mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
-      if (!hungOnce && writes.isAgents(this)) {
-        hungOnce = true
-        return held.then(() => real.call(this, value as never))
-      }
-      return real.call(this, value as never)
-    })
-    const configured = f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
-    await vi.waitFor(() => expect(writes.count()).toBe(1))
-    // Every frame repersists the same saved state the hung write already holds.
-    for (let frame = 0; frame < 20; frame += 1) {
-      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'word '.repeat(frame + 1), status: 'running' })
-    }
-    await new Promise(resolve => setImmediate(resolve))
-    expect(writes.count()).toBe(1)
-    release()
-    await configured
-    const file = join(f.root, 'agents.json')
-    await vi.waitFor(async () => {
-      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('amber')
-    })
-  })
-
   it('writes again after a failed write instead of remembering the failed content', async () => {
     const f = await fixture()
     const writes = agentsWriteSpy()
