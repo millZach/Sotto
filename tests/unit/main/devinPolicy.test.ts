@@ -117,7 +117,7 @@ it('bounds native integration checks and keeps subprocess output out of failures
   await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).resolves.toBeUndefined()
   await expect(assertDevinNoIntegrations(process.execPath, [script], {}, root)).rejects.toThrow(/require the Sotto/u)
   await writeFile(script, "console.error('PRIVATE_PROVIDER_OUTPUT'); process.exit(1)")
-  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow('Sotto could not check Devin integrations. Nothing was sent. Check the supported Devin installation and reconnect.')
+  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow('Sotto could not check Devin integrations. Your thread is kept. Check the supported Devin installation and reconnect.')
 })
 
 

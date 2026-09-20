@@ -1,6 +1,6 @@
 # Devin local provider implementation ? issue 150
 
-Status: implemented locally; final validation and review in progress. Native Apple silicon verification remains pending.
+Status: implemented locally; final validation and review in progress. Verification is Windows-only for this PR; Zach deferred Mac verification on September 20 because no Mac is available.
 
 ## Scope and acceptance
 
@@ -14,7 +14,7 @@ Implement [issue 150](https://github.com/millZach/Sotto/issues/150) from base da
 - [x] Pass the native Windows host journey: deny, exact allow, question, restart, cancel.
 - [x] Complete final lifecycle and post-session policy regression checks.
 - [x] Finish Electron captures and visual/keyboard review at 1600?1000, 1280?800, and 820?560, light/dark/reduced motion.
-- [ ] Run required native Apple silicon verification.
+- [ ] Deferred by Zach: native Apple silicon verification; no Mac support claim.
 - [ ] Run full typecheck, lint, tests with two workers, and notices.
 - [ ] Complete Standards and Spec reviews using the configured reviewer.
 - [ ] Commit/push only this work, create PR, resolve review findings and CI, then merge when every required gate passes.
@@ -27,6 +27,6 @@ A native session becomes durable with its first prompt. Only a confirmed, untouc
 
 Existing desktop provider and thread surfaces are retained. The provider grid fits four identities at desktop widths and two at narrow widths. Supported requests show the exact action once; scope validation retains the original action privately.
 
-## Remaining external input
+## Revised verification scope
 
-The user was asked whether an Apple silicon Mac can be accessed or whether they will run the prepared native verification there. No connection details or result have been received. This remains a merge gate under the approved specification, not a reason to stop independent implementation and PR preparation.
+On September 20 Zach confirmed that no Mac is available and directed this work to proceed with Windows only. Native Apple silicon verification is deferred and is no longer a pre-merge gate for this PR. The original issue/spec requested both platforms; this is the user-approved deviation. The Mac route remains unverified.

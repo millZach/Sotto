@@ -1,6 +1,6 @@
 # Devin native compatibility evidence ? issue 150
 
-Date: September 19, 2026. Windows native adapter journey passed. Apple silicon verification and final delivery gates remain pending.
+Date: September 19, 2026. Windows native adapter journey passed. Apple silicon verification is deferred by Zach; final Windows delivery gates remain pending.
 
 ## Environment and boundaries
 
@@ -68,6 +68,6 @@ A further native control found that a newly created, empty session has no durabl
 
 ## Remaining acceptance work
 
-- Run native Apple silicon verification. No Mac access has been established; Windows evidence is not Mac evidence.
-- Complete final lifecycle/policy regressions, Electron visual checks, full CI gates, and two-axis review.
+- Native Apple silicon verification is deferred by Zach?s September 20 direction to proceed with Windows only. Windows evidence is not Mac evidence.
+- Lifecycle/policy regressions and Electron visual checks passed. Finish full CI gates and two-axis review.
 - Record final results and PR status in the implementation plan. No merge or completed issue is claimed here.
