@@ -17,8 +17,18 @@ Independent source review found two issues: loss of focus after Ultrathink inser
 - Typecheck and lint passed after the interaction review fixes.
 - Third-party notices verified: 174 components; no dependency changes.
 - Focused integration and theme contrast: 84 tests passed across four files. The Electron effort check passed, including exact anchoring 8px above its chip after each resize. The final Electron run passed in 7.8 seconds. Reduced motion explicitly disables inherited control transitions, including the 1ms transitions from the global stylesheet. The existing thread creation/configuration/send journey also passed.
-- The first full `npm test -- --maxWorkers=2` run reported 3,758 passes, 28 skips and four failures. It started before the mid-drag correction; the corrected case passes on rerun. The Grok live-history integration failure also passes in isolation. Two optional performance tests read the local workspace snapshot, which currently has no messages: longTranscript requires a nonempty message source, and statePipeline dereferences the missing final message. These failures are outside the changed effort path; the full suite is not claimed green.
+- The first full `npm test -- --maxWorkers=2` run reported 3,758 passes, 28 skips and four failures. It started before the mid-drag correction; the corrected case passes on rerun. The Grok live-history integration failure also passes in isolation. Two optional performance tests read the local workspace snapshot, which currently has no messages: longTranscript requires a nonempty message source, and statePipeline dereferences the missing final message. These failures are outside the changed effort path; that initial full run was not green.
 
 ## Provider limits
 
 Claude Ultrathink is visible text in the current draft, with the existing draft persistence and retry behavior. It does not alter effort or permission settings. Ultracode combines extra-high effort and workflow orchestration; current discovery cannot confirm that workflow capability, so the prototype toggle is not exposed as a working production mode. Codex Ultra is offered when the selected model advertises it.
+
+## Pull request validation
+
+Integrated main at `71d0cd73beda2c0bcd0dde3b7ba93c3062a8acd9`. The two merge conflicts were documentation and artifact ignore entries; both sets of behavior were retained. Typecheck, lint and notices pass. The rebuilt effort and thread-creation Electron specs pass all three cases. Final independent standards and spec reviews found no remaining actionable issues.
+
+Both optional personal-workspace performance failures reproduce in a clean, independently installed worktree at that exact main commit: longTranscript fails its nonempty-message assertion at line 51, and statePipeline accesses a missing final message at line 160. For the PR suite, `SOTTO_PERF_DATA` points to an absent folder so these optional benchmarks skip as they do on CI, as documented in `docs/ci.md`.
+
+The first integrated CI-mode run passed 3,781 tests, skipped 31, and failed an existing Codex test that disconnected the fake provider before its answer receipt was recorded. The test passed in isolation, as did three clean-main attempts. The source showed the distinction between the parent's pipe write callback and the child's recorded receipt. The test now waits for the receipt before disconnecting and retains its exact post-close assertion against duplicate answers or declines. No production permission behavior changed.
+
+The final full-suite result and Windows CI check are recorded on [PR #148](https://github.com/millZach/Sotto/pull/148).
