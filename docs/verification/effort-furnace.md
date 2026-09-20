@@ -32,3 +32,5 @@ Both optional personal-workspace performance failures reproduce in a clean, inde
 The first integrated CI-mode run passed 3,781 tests, skipped 31, and failed an existing Codex test that disconnected the fake provider before its answer receipt was recorded. The test passed in isolation, as did three clean-main attempts. The source showed the distinction between the parent's pipe write callback and the child's recorded receipt. The test now waits for the receipt before disconnecting and retains its exact post-close assertion against duplicate answers or declines. No production permission behavior changed.
 
 The final full-suite result and Windows CI check are recorded on [PR #148](https://github.com/millZach/Sotto/pull/148).
+
+A later full local run passed the Codex receipt test but found a chat-dictation test capturing its destination immediately after the editor appeared. Its complete file passed in isolation. The test now waits for the registered destination before capturing it, preserving the subsequent navigation and no-send/no-answer assertions. This is test synchronization only.
