@@ -1,4 +1,4 @@
-/* A pending question or approval: one quiet ruled block in the transcript, the provider's choices as native controls. */
+/* Native request controls, shared by transcript approvals and questions above the composer. */
 .agent-request { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border: 1px solid var(--tt-border-faint); border-left: 2px solid var(--tt-attention); border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); cursor: default; }
 .agent-request[data-uncertain] { border-left-color: var(--tt-warning); }
 .agent-request__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
@@ -56,3 +56,45 @@
 .agent-request__clear:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .agent-request__clear:disabled { cursor: default; opacity: .72; }
 .agent-request__fallback { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+
+/* Approved answer-list panel. The durable form remains mounted while collapsed. */
+.agent-request__body { display: grid; gap: 10px; min-width: 0; }
+.agent-request__body[hidden] { display: none; }
+.agent-request__status:empty { display: none; }
+.agent-request__recommended { margin-left: 6px; color: var(--tt-accent-text); font-size: 13px; white-space: nowrap; }
+.thread-workspace__compose > .thread-questions { flex: 0 1 auto; min-height: 48px; max-height: min(480px, 60vh); margin-bottom: 10px; overflow: auto; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); scrollbar-width: thin; scroll-padding-block: 8px; }
+.thread-questions .agent-request + .agent-request { border-top: 1px solid var(--tt-field-border); }
+.agent-request[data-placement='composer'] { position: relative; margin-top: 0; padding: 16px 18px; border: 0; border-radius: 0; background: var(--tt-field); animation: question-arrive 180ms ease-out; }
+.thread-questions:has(.agent-request[data-uncertain]) { border-color: var(--tt-warning); }
+.agent-request[data-placement='composer'] .agent-request__form { gap: 12px; }
+.agent-request[data-placement='composer'] .agent-request__question legend { padding-right: 28px; }
+.agent-request[data-placement='composer'] .agent-request__prompt { font-size: 16px; font-weight: 600; }
+.agent-request[data-placement='composer'] .agent-request__option { padding-block: 10px; border: 1px solid transparent; }
+.agent-request[data-placement='composer'] .agent-request__option[data-checked] { border-color: var(--tt-selected-border); }
+.agent-request[data-placement='composer'] .agent-request__input { min-height: 64px; max-height: 160px; resize: vertical; }
+.agent-request__toggle-row { position: absolute; top: 10px; right: 10px; }
+.agent-request__toggle { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.agent-request__toggle:hover { background: var(--tt-hover); color: var(--tt-text); }
+.agent-request[data-collapsed] { padding: 8px 12px; }
+.agent-request[data-collapsed] .agent-request__toggle-row { position: static; display: flex; gap: 10px; align-items: center; justify-content: space-between; min-width: 0; }
+.agent-request__collapsed-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--tt-text); }
+@keyframes question-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .agent-request[data-placement='composer'] { animation: none; } }
+
+/* The compact pane normally keeps its composer fixed. A question makes that area shrinkable instead. */
+.threads-view .thread-pane .thread-workspace__compose:has(> .thread-questions) { flex: 0 1 auto; }
+.agent-request[data-placement='composer'] .agent-request__footer { position: sticky; bottom: 0; z-index: 1; padding-block: 8px; background: var(--tt-field); }
+
+/* A short split gives history space to the question, but keeps pending approvals and saved-answer recovery reachable. */
+@container thread-pane (max-height: 420px) {
+  .threads-view .thread-pane:has(.thread-questions .agent-request:not([data-collapsed])) > .thread-transcript:not(:has(.agent-request)) { display: none; }
+  .thread-workspace__compose > .thread-questions { min-height: 120px; }
+  .threads-view .thread-pane .thread-workspace__compose:has(> .thread-questions) :is(.thread-prompt, .agent-composer) textarea { min-height: 32px; max-height: 32px; }
+  .thread-workspace__compose > .thread-questions:not(:has(.agent-request:not([data-collapsed]))) { min-height: 48px; }
+  /* When both areas need an answer, the pane scrolls between two bounded regions instead of hiding either. */
+  .threads-view .thread-pane:has(.thread-questions) > .thread-transcript:has(.agent-request) { flex: 0 0 160px; min-height: 160px; max-height: 160px; }
+  .threads-view .thread-pane:has(> .thread-transcript .agent-request) .thread-workspace__compose:has(> .thread-questions) { flex: none; }
+  .threads-view .thread-pane:has(> .thread-transcript .agent-request) .thread-workspace__compose > .thread-questions { max-height: 160px; }
+}
+
+:root[data-reduced-motion='on'] .agent-request[data-placement='composer'] { animation: none; }

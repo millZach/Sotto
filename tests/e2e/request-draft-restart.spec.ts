@@ -71,7 +71,7 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
     await record(launched, owner)
     await emit(page, owner, id); await open(page, owner)
     const first = card(page)
-    await first.getByRole('radio', { name: 'Other', exact: true }).click()
+    await first.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
     await first.getByRole('textbox', { name: 'Other answer to: Where should we go?' }).fill('A quiet shore')
     await first.getByRole('checkbox', { name: 'Unit checks' }).click()
     await first.getByRole('checkbox', { name: 'Type checks' }).click()
@@ -96,7 +96,7 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
       await emit(page, owner, id)
     }
     await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Unsent notes survive restart')
-    await expect(card(page).getByRole('radio', { name: 'Other', exact: true })).toBeChecked()
+    await expect(card(page).getByRole('radio', { name: 'Write my own answer', exact: true })).toBeChecked()
     await expect(card(page).getByRole('textbox', { name: 'Other answer to: Where should we go?' })).toHaveValue('A quiet shore')
     await expect(card(page).getByRole('checkbox', { name: 'Unit checks' })).toBeChecked()
     await expect(card(page).getByRole('checkbox', { name: 'Type checks' })).toBeChecked()

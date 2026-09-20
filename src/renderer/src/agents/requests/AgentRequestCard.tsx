@@ -1,4 +1,5 @@
-import React, { useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { AgentRequest } from '../../../../shared/agents'
 import type { RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
@@ -25,20 +26,25 @@ export interface AgentRequestCardProps {
   /** A line under the choices, such as the voice phrases. */
   readonly hint?: ReactNode
   readonly store?: RequestAnswerStore
+  /** Thread questions sit above the composer; other hosts keep their existing placement. */
+  readonly placement?: 'composer' | undefined
 }
 
 /**
  * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && requestMode(request) === 'structured'
     ? { ...draftOwner, requestId: request.id, questions: request.questions! } : undefined)
   const [checking, setChecking] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const toggle = useRef<HTMLButtonElement>(null)
   const baseId = useId()
   const mode = requestMode(request)
   const permission = mode === 'permission'
+  const docked = placement === 'composer' && !permission
   const uncertain = request.delivery === 'uncertain' || entry.phase === 'unconfirmed'
   const locked = uncertain || entry.phase === 'sending' || entry.phase === 'sent'
   const disabled = locked || blocked !== null || entry.save === 'loading'
@@ -58,6 +64,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
   const touched = questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
+  const legacySelection = entry.selections[request.id] ?? EMPTY_SELECTION
+  const legacyChoice = request.options.find(option => legacySelection.optionIds.includes(option.id))
 
   const status = request.delivery === 'uncertain'
     ? <div className="agent-request__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
@@ -72,47 +80,73 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
             : blocked !== null ? <p className="agent-request__status">{blocked}</p> : null
 
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
-    aria-labelledby={titleId} aria-busy={entry.phase === 'sending' || undefined}>
-    <span className="tt-visually-hidden">{permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
-    {summary ? <>
-      <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
-        {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
-      {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
-      {summary.cwd ? <p className="agent-request__cwd">in <code>{summary.cwd}</code></p> : null}
-      {summary.details ? <pre className="agent-request__details">{summary.details}</pre> : null}
-      <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} />
-    </> : mode === 'structured' ? <form className="agent-request__form" noValidate onSubmit={(event: FormEvent) => {
-      event.preventDefault()
-      if (answer) send(null, answer)
+    data-placement={docked ? 'composer' : undefined} data-collapsed={docked && collapsed || undefined}
+    aria-labelledby={docked && collapsed ? `${baseId}-collapsed` : titleId} aria-busy={entry.phase === 'sending' || undefined}
+    onKeyDown={event => {
+      if (docked && !collapsed && event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setCollapsed(true)
+        toggle.current?.focus()
+      }
     }}>
-      <div className="agent-request__head"><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
-        {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
-      <FormContext request={request} />
-      {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question}
-        selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
-        onChange={selection => store.select(entryOwner, request.id, question.id, selection)}
-        onSubmitKey={() => { if (answer) send(null, answer) }} />)}
-      <div className="agent-request__footer">
-        <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
-          : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : ''}</span>
-        <Button type="submit" disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
-      </div>
-    </form> : <>
-      <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
-      <p className="agent-request__text">{request.text}</p>
-      <div className="agent-request__actions">
-        {mode === 'legacy-options'
-          ? request.options.map(option => <Button key={option.id} variant="secondary" disabled={disabled} aria-pressed={entry.choice === option.id || undefined}
-            onClick={() => send(option.id, { answer: option.id })}>{option.label}</Button>)
-          : onWriteAnswer ? <Button variant="secondary" disabled={locked} onClick={onWriteAnswer}>Write an answer</Button> : null}
-      </div>
-    </>}
-    {status}
-    {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
-      {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
-      : mode === 'structured' && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
-        : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
-    {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
+    <span className="tt-visually-hidden">{permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
+    {docked ? <div className="agent-request__toggle-row">
+      {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questions.length > 1 ? `${questions.length} questions waiting` : questions[0]?.question ?? request.text}</span> : null}
+      <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? 'Show question' : 'Collapse question'}
+        aria-expanded={!collapsed} aria-controls={`${baseId}-body`} onClick={() => setCollapsed(value => !value)}>
+        {collapsed ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+      </button>
+    </div> : null}
+    <div id={`${baseId}-body`} className="agent-request__body" hidden={docked && collapsed}>
+      {summary ? <>
+        <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
+          {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
+        {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
+        {summary.cwd ? <p className="agent-request__cwd">in <code>{summary.cwd}</code></p> : null}
+        {summary.details ? <pre className="agent-request__details">{summary.details}</pre> : null}
+        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} />
+      </> : mode === 'structured' ? <form className="agent-request__form" noValidate onKeyDown={event => {
+        // Enter on a radio must not trigger the form's implicit submit. The send button still works by keyboard.
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault()
+      }} onSubmit={(event: FormEvent) => {
+        event.preventDefault()
+        if (answer) send(null, answer)
+      }}>
+        <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
+          {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
+        <FormContext request={request} />
+        {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question}
+          selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
+          onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
+        <div className="agent-request__footer">
+          <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
+            : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : 'Choose an answer'}</span>
+          <Button type="submit" disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? 'Sending…' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
+        </div>
+      </form> : <>
+        <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
+        <p className="agent-request__text">{request.text}</p>
+        {mode === 'legacy-options' ? <>
+          <fieldset className="agent-request__question" disabled={disabled}>
+            <legend className="tt-visually-hidden">{request.text}</legend>
+            <div className="agent-request__options">{request.options.map(option => <label key={option.id} className="agent-request__option" data-checked={legacyChoice?.id === option.id || undefined}>
+              <input type="radio" name={`${baseId}-legacy`} value={option.id} checked={legacyChoice?.id === option.id}
+                onChange={() => store.select(entryOwner, request.id, request.id, { ...legacySelection, optionIds: [option.id] })} />
+              <span><OptionLabel label={option.label} /></span>
+            </label>)}</div>
+          </fieldset>
+          <div className="agent-request__footer"><Button disabled={disabled || !legacyChoice}
+            onClick={() => { if (legacyChoice) send(legacyChoice.id, { answer: legacyChoice.id }) }}>Send answer</Button></div>
+        </> : <div className="agent-request__actions">{onWriteAnswer ? <Button variant="secondary" disabled={locked} onClick={onWriteAnswer}>Write an answer</Button> : null}</div>}
+      </>}
+      {status}
+      {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
+        {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
+        : mode === 'structured' && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
+          : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
+      {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
+    </div>
   </section>
 }
 
@@ -142,9 +176,16 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
   </div>
 }
 
-function QuestionField({ name, question, selection, disabled, onChange, onSubmitKey }: {
+/** Only a recommendation present in the provider's label is called one. IDs and answers stay untouched. */
+function OptionLabel({ label }: { readonly label: string }): ReactNode {
+  const recommendation = /\s*\(recommended\)\s*$/iu.exec(label)
+  return <span className="agent-request__label">{recommendation ? label.slice(0, recommendation.index) : label}
+    {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
+}
+
+function QuestionField({ name, question, selection, disabled, onChange }: {
   readonly name: string; readonly question: StructuredQuestion; readonly selection: typeof EMPTY_SELECTION
-  readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void; readonly onSubmitKey: () => void
+  readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
 }): ReactNode {
   const type = question.multiSelect ? 'checkbox' : 'radio'
   const onlyText = textOnly(question)
@@ -157,11 +198,6 @@ function QuestionField({ name, question, selection, disabled, onChange, onSubmit
     onChange(EMPTY_SELECTION)
   }
   const textId = `${name}-text`
-  const textKey = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    onSubmitKey()
-  }
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
     <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt">{question.question}</span>
       {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
@@ -169,7 +205,7 @@ function QuestionField({ name, question, selection, disabled, onChange, onSubmit
       {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
       {onlyText ? question.allowFreeText
         ? <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
-          placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} />
+          placeholder="Type your answer…" onChange={event => onChange({ ...selection, text: event.target.value })} />
         : <p className="agent-request__note">This question has no choices Sotto can show.</p>
         : <div className="agent-request__options">
           {question.options.map(option => {
@@ -177,20 +213,17 @@ function QuestionField({ name, question, selection, disabled, onChange, onSubmit
             return <label key={option.id} className="agent-request__option" data-checked={checked || undefined}>
               <input type={type} name={name} value={option.id} checked={checked}
                 onChange={event => onChange(pickOption(question, selection, option.id, event.target.checked))} />
-              <span><span className="agent-request__label">{option.label}</span>
+              <span><OptionLabel label={option.label} />
                 {option.description ? <small>{option.description}</small> : null}
                 {option.preview && checked ? <pre className="agent-request__preview">{option.preview}</pre> : null}</span>
             </label>
           })}
           {question.allowFreeText ? <div className="agent-request__option agent-request__option--other" data-checked={selection.other || undefined}>
             <input id={`${name}-other`} type={type} name={name} value="" checked={selection.other}
-              onChange={event => {
-                onChange(pickOther(question, selection, event.target.checked))
-                if (event.target.checked) requestAnimationFrame(() => document.getElementById(textId)?.focus())
-              }} />
-            <span><label className="agent-request__label" htmlFor={`${name}-other`}>Other</label>
-              {selection.other ? <textarea id={textId} className="agent-request__input" rows={1} aria-label={`Other answer to: ${question.question}`} value={selection.text}
-                placeholder="Your answer" onKeyDown={textKey} onChange={event => onChange({ ...selection, text: event.target.value })} /> : null}</span>
+              onChange={event => onChange(pickOther(question, selection, event.target.checked))} />
+            <span><label className="agent-request__label" htmlFor={`${name}-other`}>Write my own answer</label>
+              <textarea id={textId} className="agent-request__input" rows={2} aria-label={`Other answer to: ${question.question}`} value={selection.text}
+                placeholder="Type your answer…" onChange={event => onChange({ ...pickOther(question, selection, true), text: event.target.value })} /></span>
           </div> : null}
         </div>}
       {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={`Clear choice for ${question.question}`} onClick={clear}>Clear choice</button> : null}
