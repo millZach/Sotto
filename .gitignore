@@ -58,3 +58,6 @@ artifacts/devin-local-provider/
 artifacts/thread-sidebar/
 
 artifacts/terminal-loading/
+
+# Question panel verification captures
+artifacts/question-choices/

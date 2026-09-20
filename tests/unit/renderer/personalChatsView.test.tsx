@@ -303,12 +303,14 @@ describe('Chats', () => {
     const question = { id: 'pick', kind: 'question' as const, text: 'Which?', options: [{ id: 'a', label: 'Coast' }, { id: 'b', label: 'Hills' }] }
     const { bridge, update } = mount(snapshot({ chats: [chat({ requests: [question] })] }))
     bridge.answer.mockRejectedValueOnce(new Error("Error invoking remote method 'personal-chat:command': Error: This request is no longer pending in this conversation."))
-    fireEvent.click(await screen.findByRole('button', { name: 'Coast' }))
+    fireEvent.click(await screen.findByRole('radio', { name: 'Coast' }))
+    expect(bridge.answer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Send answer' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/^This request is no longer pending in this conversation\.$/u)
 
     act(() => { update('trip', item => { item.decisions = [{ id: 'd1', requestId: 'pick', answer: 'b', createdAt: AT, status: 'uncertain' }] }) })
     expect(screen.getByText(/arrival could not be confirmed/u)).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Hills' })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: 'Hills' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     await waitFor(() => expect(bridge.refresh).toHaveBeenCalledWith('trip'))
   })

@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
-import type { RequestDraft, RequestDraftBridge, RequestDraftOwner } from '../../../../src/shared/requestDrafts'
+import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner } from '../../../../src/shared/requestDrafts'
 import { RequestDraftRecovery, savedAnswerClipboard, type RecoveryObservation } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 
@@ -272,4 +272,18 @@ describe('discarding a saved answer', () => {
 it('formats a text-only and multi-select answer for the clipboard', () => {
   expect(savedAnswerClipboard(draft({ selections: { checks: { optionIds: ['types'], other: false, text: '' } } })))
     .toBe('Where should we go?\nNo answer\n\nWhich checks?\nType checks\n\nTravel notes\nNo answer\n\nBudget\nNo answer')
+})
+
+
+it('keeps a legacy draft in its live card and shows recovery when the same request ID changes', async () => {
+  const request: AgentRequest = { id: 'legacy', kind: 'question', text: 'Choose the route', options: [{ id: 'coast', label: 'Coast' }] }
+  const retained = draft({ selections: { legacy: { optionIds: ['coast'], other: false, text: '' } } }, { requestId: request.id, questions: requestDraftQuestions(request) })
+  const bridge = fakeBridge([retained])
+  const rendered = view(bridge, { live: [request] })
+  await waitFor(() => expect(bridge.list).toHaveBeenCalled())
+  expect(screen.queryByRole('region', { name: 'Saved answer' })).toBeNull()
+  rendered.update({ live: [{ ...request, text: 'Choose a different route', options: [{ id: 'coast', label: 'Harbor' }] }] })
+  const recovered = await saved()
+  expect(within(recovered).getByText('Coast')).toBeTruthy()
+  expect(within(recovered).queryByRole('button', { name: /send/iu })).toBeNull()
 })
