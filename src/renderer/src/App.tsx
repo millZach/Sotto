@@ -223,7 +223,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     else await microphoneReleaseTailRef.current
   }, [commitMicrophoneState, releaseMicrophone])
 
-  const requestMicrophone = useCallback(async (): Promise<void> => {
+  const requestMicrophone = useCallback(async (selectedDeviceId?: string | null): Promise<void> => {
     const generation = ++microphoneGenerationRef.current
     if (!microphoneMountedRef.current) return
     const previousController = microphoneRef.current
@@ -245,6 +245,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
       return
     }
     microphoneRef.current = controller
+    const selected = selectedDeviceId !== undefined
+      ? selectedDeviceId
+      : latestSettingsRef.current?.microphoneId
     const outcome = await controller.start((level) => {
       if (
         microphoneMountedRef.current &&
@@ -253,7 +256,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
       ) {
         setMicrophoneLevel(level)
       }
-    }, latestSettingsRef.current?.microphoneId ?? undefined, () => {
+    }, selected ? selected : undefined, () => {
       if (
         !microphoneMountedRef.current ||
         microphoneGenerationRef.current !== generation ||

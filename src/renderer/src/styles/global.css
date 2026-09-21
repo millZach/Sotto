@@ -718,6 +718,10 @@ textarea.tt-input {
   color: var(--tt-success);
 }
 
+.onboarding-microphone-picker {
+  margin: 0 0 16px;
+}
+
 /* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */
 .onboarding-microphone-test,
 .settings-microphone-test {

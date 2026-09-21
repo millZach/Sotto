@@ -29,6 +29,12 @@ Node 22 on this Mac failed 65 tests. Three host mismatches, not product regressi
 3. Terminal fixtures inject `platform: 'win32'` while `path.join` on darwin is POSIX. Shell discovery and names now use `path.win32` when the logical platform is Windows.
 4. E2E admission and Grok `GROK_HOME` tests used `C:\…` paths, which `path.isAbsolute` rejects here.
 
+## Onboarding microphone picker
+
+The first live onboarding test on this Mac used the system default input, the built-in MacBook Pro microphone, with the lid shut. The meter stayed at 0. Settings already stored `microphoneId`; onboarding did not offer a choice, and the worklet test ignored the stored id.
+
+Onboarding now lists detected inputs after the first capture (Chromium withholds labels until then). Choosing **C922 Pro Stream Webcam** and retesting produced a live meter (`aria-valuenow` non-zero, `data-speaking=true`). The same picker remains in Settings. Dictation already honored `microphoneId`; the onboarding and Settings tests now do too.
+
 ## Still open on this machine
 
 - **Packaged Playwright smoke** (`verify-packaged-resources.mjs` → `verifyNormalPackagedLaunch`) launched Sotto, wrote `workspace.json` / `threads.sqlite`, then never returned from `application.firstWindow({ timeout: 45_000 })`. The 45s timeout did not fire. Killed after several minutes. This blocks `package:dir:mac` from completing its last step and therefore blocks `package:mac` until it is fixed or the wait is made to fail.

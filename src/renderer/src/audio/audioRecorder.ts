@@ -81,7 +81,9 @@ export interface AudioContextAdapter {
 export interface AudioRecorderDependencies {
   readonly audioWorkletModuleUrl: string
   mediaDevices: {
-    getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
+    getUserMedia(
+      constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
+    ): Promise<MediaStreamAdapter>
   }
   createAudioContext(): AudioContextAdapter
   createAudioWorkletNode(
@@ -142,7 +144,9 @@ function defaultDependencies(): AudioRecorderDependencies {
   const browser = globalThis as unknown as {
     navigator: {
       mediaDevices: {
-        getUserMedia(constraints: MicrophoneConstraints | { audio: true }): Promise<MediaStreamAdapter>
+        getUserMedia(
+          constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
+        ): Promise<MediaStreamAdapter>
       }
     }
     document: { readonly baseURI: string }
@@ -163,13 +167,7 @@ function defaultDependencies(): AudioRecorderDependencies {
           error.name = 'NotAllowedError'
           throw error
         }
-        try {
-          return await browser.navigator.mediaDevices.getUserMedia(constraints)
-        } catch (error: unknown) {
-          const name = error instanceof Error ? error.name : ''
-          if (name !== 'OverconstrainedError' && name !== 'ConstraintNotSatisfiedError') throw error
-          return browser.navigator.mediaDevices.getUserMedia({ audio: true })
-        }
+        return await browser.navigator.mediaDevices.getUserMedia(constraints)
       },
     },
     createAudioContext: () => new browser.AudioContext(),
@@ -240,7 +238,15 @@ export class AudioRecorder {
       session.gain.connect(session.context.destination)
       session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
 
-      session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(this.options.selectedDeviceId))
+      const selected = this.options.selectedDeviceId
+      try {
+        session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(selected))
+      } catch (error: unknown) {
+        if (!isConstraintError(error)) throw error
+        session.stream = await this.dependencies.mediaDevices.getUserMedia(
+          selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
+        )
+      }
       this.assertSessionLive(session)
       this.monitorTrackEnd(session)
 
@@ -531,6 +537,11 @@ export class AudioRecorder {
       // Best-effort release continues for the remaining independently owned resources.
     }
   }
+}
+
+function isConstraintError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : ''
+  return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError'
 }
 
 function readStartFailureName(error: unknown): string | undefined {

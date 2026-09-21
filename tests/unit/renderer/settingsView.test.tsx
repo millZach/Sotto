@@ -661,6 +661,19 @@ describe('SettingsView', () => {
     expect(mediaDevices.removeEventListener).toHaveBeenCalledWith('devicechange', listener)
   })
 
+  it('runs the Settings microphone test on the selected input', async () => {
+    const user = userEvent.setup()
+    const start = vi.fn(async () => 'ready' as const)
+    render(<SettingsView {...baseProps({
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, microphoneId: 'mic-c922' },
+      createMicrophoneTest: () => ({ start, stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), { selectedDeviceId: 'mic-c922' }))
+  })
+
   it('clears a skipped microphone once the Settings test reports ready', async () => {
     const user = userEvent.setup()
     const onUpdateSettings = vi.fn(async () => true)
