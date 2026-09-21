@@ -83,3 +83,47 @@ Captures the spec writes to `artifacts/effort-slider/`, in Rainbow:
 - `tests/unit/renderer/effortArrival.test.ts` holds the stylesheets to the rule: the letters' keyframes carry colour and nothing else, the word's carry the lift, and no rule moves a letter on either surface.
 - `tests/unit/renderer/themeLibrary.test.tsx`: the sample's scene is a fresh element on every play, mid-arrival included.
 - `tests/unit/renderer/threadOptions.test.tsx`: the Extra high line reads as the card's description at that level.
+
+## The lag between choosing a level and seeing it, September 21 2026
+
+Zach reported that a level takes a visible moment to appear: moving the slider to Max left the word reading High, then it blinked to Max with an animation too short to see. He read the cause correctly — the control was waiting on the provider's confirmation, which the user has no reason to wait for. ADR-0019's amendment records the decision and the variant he picked from `docs/prototypes/effort-choice-latency-prototype.html`.
+
+The wait is real and it is not a token round trip: `configure-thread` reaches the adapter and the adapter waits for the provider to agree. `codex.ts` arms a settings confirmation with a 15 second timeout and refuses a second settings change while one is in flight. Release also ended the drag preview, so letting go of the thumb at the top level put the word back to the level it started from before the provider had said anything.
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` | Clean. |
+| `npm run lint` | Clean. |
+| `npm test -- --maxWorkers=2` | 4318 passed, 37 skipped, 0 failed (333 files, 18 skipped). Two earlier runs on this branch went red on tests this change does not touch — `devinAdapter`, `codexHost`, `subscriptionClaude`, then `agentTargetRefresh`. Each passed alone on the same commit, and the red runs carried "Worker exited unexpectedly": another full suite was running on the machine at the time. |
+| `npm run notices:verify` | 174 components verified; no dependency changes. |
+| `npm run build && npx playwright test tests/e2e/effort-picker.spec.ts` | 3 passed, and 3 passed on seven of eight consecutive runs. The eighth failed two tests at `page.emulateMedia`, the first line of each, with "Target page, context or browser has been closed": the app did not start that time. |
+| `npm run design:verify` | Red on `settings-feedback.png`, and red the same way on `origin/main` at `a2475d68`: the same capture, the same message, with the run stopping there and nine captures not reached. Nothing of this change is in it; this changes when a level is shown, not how anything is painted, and no stylesheet was touched. Baselines were not regenerated: the branch that moved that surface owns the capture. |
+
+## Measured in the running app
+
+Traced in the built app through a temporary Electron spec, watching the chip's attributes and text with a `MutationObserver` while polling main's own state. The temporary spec was removed; the numbers are one run each, representative of several.
+
+- **Before.** Pressing End: the chip read `Max` only once the provider answered, and the chip was `disabled` from 53ms to 130ms. With the lane split in place but the busy mark still read, the chip went dead from 42ms to 93ms — after `saving` had already cleared, because the coordinator's busy mark for this very save reaches the window after the save's own reply. Escape during that window handed focus to the chip and the disable took it away again, which is what `tests/e2e/effort-picker.spec.ts` caught.
+- **After.** Pressing End: the chip reads `Max` at 14ms, and never becomes `disabled` at any point in the save. Pressing End then Home: `Max` at 14ms, `Low` at 54ms, and it stays `Low` — one save for Max, one for Low, nothing in between, and no frame showing a level neither press asked for.
+- **Coalescing, twenty times over.** End then Home repeated twenty times against the running provider: the saved level was `low` every time.
+
+## Two flakes in the effort spec, fixed at their cause
+
+Both predate this change and both were proved on `origin/main`'s own build before being touched.
+
+- **The drag preview.** `page.mouse.move(..., { steps: 12 })` returns when the events have been sent, not when the window has drawn them, so reading the slider once caught whichever step had been handled. The values seen in failures — 0.253, 0.38, 0.003 — are exactly the intermediate steps of that drag, and `main` failed the same assertion on one run in three. The spec now waits for the thumb rather than sampling it once. A second cause sat beside it: the card can open on the catalog the provider reported first, which carries two levels, so the track read as halves rather than fifths; the spec now waits for the full set of stops.
+- **Reduced motion.** `expect(await runningAnimations(page)).toBe(0)` sampled once, immediately after turning the setting on. Turning it on repaints the window, and the one-shot transitions that carries — the root's colour, font weight and scrollbar, the composer's border taking the colourway — are running for their own moment; eight attempts gave 8, 0, 0, 10, 8, 10 running animations, every one a transition at `currentTime` 0. What reduced motion promises is that nothing keeps running, so the spec polls to zero instead.
+
+## Checked through the tests
+
+- `tests/unit/renderer/threadOptions.test.tsx` renders the chips over a parent that applies main's answer before the command resolves, the way `AgentContext` does, because a static fixture confirms a change and then reports the level it always had. Three tests fail against the old code and pass against the new: the press shows at once and holds when the answer agrees with it; the card stays mounted and live while a selection is being confirmed, where the other two chips are fixed; and presses made during a save land on the card but only the level landed on is sent.
+- The existing rejection test still holds the other end: a refused change takes the press back to the saved level and the error under the chips says so.
+
+## After the two-axis review
+
+Both axes found the same defect and it is fixed in its own commit, with a test that fails without it: the press was let go of only when the saved level moved while no save was running, and on the ordinary path the saved level arrives while the save is still in flight, so that never fired. A provider that answered with a level of its own rather than the one asked for left the control showing the press with nothing to correct it. Each pass of the save loop now notes the level reported before it asked and lets go of the press when that has moved.
+
+- `npm run typecheck`, `npm run lint`: clean. `npm test -- --maxWorkers=2`: 4319 passed, 37 skipped, 0 failed. `npm run notices:verify`: 174. `npx playwright test tests/e2e/effort-picker.spec.ts`: 3 passed, three runs in a row.
+- The standards axis also called the README out: it described the old rule and now describes this one. The spec axis called two assertions weaker than the ones they replaced, and both were strengthened — endless animations are read straight away, since one is running from the moment it starts, and the two-press check watches the chip through both presses rather than only the level they end on.
+- Left as it is, with the reason: the card's save keeps the `onChange` it was given rather than the newest, because a press belongs to the thread it was made on. Effort no longer reads the coordinator's busy mark at all, not only this save's own mark, so a press made while a send or an interrupt is in flight now reaches the provider and can be refused out loud rather than being impossible; a turn under way and an unanswered request still fix the card, which is what a provider itself refuses on.
+

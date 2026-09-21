@@ -145,15 +145,28 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
   readonly draftText?: string
   readonly onDraftText?: (text: string) => void
 }): ReactNode {
-  const [saving, setSaving] = useState(false)
+  const [saving, setSaving] = useState<'effort' | 'other' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const { models, locked } = threadModelChoices(state, thread)
-  const disabled = saving || isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
-  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }): Promise<boolean> => {
-    // The choice was made inside a chip's list; the chip is fixed while saving, so focus is put back afterwards.
-    refocus.current = (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
-    setSaving(true); setError(null)
+  const fixed = isThreadBusy(state, thread.id) || Boolean(thread.archivedAt) || (locked && (!isThreadProviderConnected(state.host, thread) || thread.status === 'running' || thread.requests.length > 0))
+  const disabled = saving !== null || fixed
+  /**
+   * Effort alone stays live through its own save. It shows the level you pressed rather than the one the
+   * provider has confirmed, and a control that shows a level it will not let you change reads as stuck; the
+   * card sends where you land instead. So it is fixed by what a provider actually refuses — a turn under way,
+   * an unanswered request, an archived thread, a provider that is gone — and by a model or permissions save,
+   * which is the other settings change a provider will not take beside this one. It does not read the
+   * coordinator's busy mark: that mark covers this very save, and it outlives the save's own reply, so the
+   * chip went dead for a moment each time it was used and dropped the focus Escape had just handed back.
+   */
+  const effortDisabled = saving === 'other' || Boolean(thread.archivedAt) || thread.status === 'running'
+    || thread.requests.length > 0 || (locked && !isThreadProviderConnected(state.host, thread))
+  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }, lane: 'effort' | 'other' = 'other'): Promise<boolean> => {
+    // The choice was made inside a chip's list; a chip fixed while saving has focus put back afterwards.
+    refocus.current = lane === 'effort' ? null
+      : (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
+    setSaving(lane); setError(null)
     try {
       const result = await command({ type: 'configure-thread', threadId: thread.id, ...patch })
       if (!result || result.error) { setError(result?.error ?? 'Could not confirm this change. Try again.'); return false }
@@ -161,10 +174,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
     } catch {
       setError('Could not confirm this change. Try again.')
       return false
-    } finally { setSaving(false) }
+    } finally { setSaving(null) }
   }
   useEffect(() => {
-    if (saving || refocus.current === null) return
+    if (saving !== null || refocus.current === null) return
     const chip = refocus.current
     refocus.current = null
     if (chip.isConnected && (document.activeElement === null || document.activeElement === document.body)) chip.focus()
@@ -188,7 +201,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
     <div className="thread-options thread-options--chips">
       <ModelPicker models={models} modelId={thread.modelId} disabled={disabled || modelDisabled} onChange={modelId => void save({ modelId })} note={note} />
       {efforts.length > 0 && <EffortPicker key={`${thread.modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={disabled || modelDisabled} onChange={reasoningEffort => save({ reasoningEffort })}
+        disabled={effortDisabled || modelDisabled} onChange={reasoningEffort => save({ reasoningEffort }, 'effort')}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={thread.runtimeMode ?? ''} options={modes} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })} />}

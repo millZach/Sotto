@@ -1,0 +1,394 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: when you choose a level, the card shows the level the PROVIDER has confirmed, not the one you
+  chose. `configure-thread` goes to the adapter and waits for the CLI to echo the setting back (codex.ts arms
+  a confirmation with a 15s timeout), and the card's word, its line, the chip and the top-level arrival all
+  read the saved value. So a press reads: thumb moves -> word snaps BACK to the old level -> long pause ->
+  word and arrival fire together as one blink. ADR-0019 wrote that rule down ("Dragging previews without
+  saving; release saves", the outline follows "the saved level"), so changing it is an amendment.
+
+  Axis 1, what follows the press:
+
+    now   shipped. Word, line, chip and arrival all wait for the provider.
+    A     the press is the truth. Word, line, chip AND the arrival go at once; the save runs behind. A save
+          that fails falls the word back and says so under the chip.
+    B     the press is the truth for the word, the line and the chip; the CELEBRATION (the tide through the
+          card, the composer outline) still waits for the provider, so nothing is congratulated until it is
+          real. Costs: the word says Max while the composer is still dark, for as long as the provider takes.
+
+  Axis 2, while the save is in flight ("Stay live"):
+
+    off   shipped. The chip and the slider are fixed until the provider answers.
+    on    the control stays live. Keep moving; where you land is what gets sent. Needed because Codex
+          REJECTS a second configure-thread while one is pending, so the renderer must coalesce rather than
+          fire one save per level crossed.
+
+  Bar: Dark / Light, colourway, Still (reduced motion), and how long the provider takes -- including Fails,
+  which is the case each variant has to survive. Drag the thumb, click the track, or use the arrows and 1-5.
+
+  Open the file in a browser; nothing to run.
+-->
+<html lang="en" data-theme="dark" data-palette="rainbow" data-still="false">
+<head>
+<meta charset="utf-8">
+<title>Sotto — effort choice latency</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+@property --x { syntax: '<number>'; inherits: true; initial-value: 0; }
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280); --surface: oklch(0.26 0.019 280); --surface-raised: oklch(0.305 0.021 280); --surface-elevated: oklch(0.305 0.021 280);
+  --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 272); --text-muted: oklch(0.72 0.014 265); --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270); --field-border: oklch(0.40 0.03 272); --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220); --accent-text: oklch(0.86 0.09 215); --hover: color-mix(in srgb, oklch(0.4 0.06 230) 70%, transparent);
+  --warning: oklch(0.829017 0.171221 81.038); --shadow: 0 16px 48px rgb(0 0 0 / 73%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --effort-track: color-mix(in srgb, var(--text) 7%, var(--surface-elevated));
+  --effort-dot: color-mix(in srgb, var(--text-muted) 55%, var(--effort-track));
+  --effort-fill-cool: var(--text-muted); --effort-fill-veil: transparent; --effort-thumb: var(--text); --effort-thumb-edge: color-mix(in srgb, var(--text) 10%, transparent);
+  --effort-text: var(--ink); --effort-text-fill: var(--effort-text); --effort-text-image: none;
+  --effort-fill-image: linear-gradient(90deg, var(--p-a), var(--p-b), var(--p-c));
+  --effort-wash-image: linear-gradient(to top, var(--p-a), var(--p-b), var(--p-c));
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --surface-raised: oklch(0.955 0.006 85); --surface-elevated: oklch(0.975 0.005 85);
+  --text: oklch(0.235 0.014 75); --text-2: oklch(0.36 0.014 75); --text-muted: oklch(0.5 0.014 75); --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80); --field-border: oklch(0.82 0.016 80); --accent: oklch(0.52 0.13 235); --accent-text: oklch(0.42 0.1 235);
+  --warning: oklch(0.546927 0.155556 45.359); --shadow: 0 16px 48px rgb(20 24 22 / 18%);
+  --effort-fill-cool: color-mix(in srgb, var(--text-muted) 40%, var(--surface-elevated)); --effort-fill-veil: color-mix(in srgb, white 38%, transparent);
+  --effort-thumb: var(--surface); --effort-thumb-edge: var(--border); --effort-text: var(--ink-light);
+}
+:root[data-palette='ember'] { --p-a: var(--warning); --p-b: var(--warning); --p-c: color-mix(in srgb, var(--warning) 60%, var(--text)); --p-border: var(--warning);
+  --ink: color-mix(in oklab, var(--warning) 70%, var(--text)); --ink-light: var(--ink); }
+:root[data-palette='cyberpunk'] { --p-a: oklch(0.7 0.3 345); --p-b: oklch(0.62 0.27 305); --p-c: oklch(0.86 0.15 200); --p-border: oklch(0.7 0.3 345);
+  --ink: oklch(0.86 0.15 200); --ink-light: oklch(0.44 0.22 335); }
+:root[data-palette='rainbow'] { --p-a: oklch(0.7 0.24 20); --p-b: oklch(0.8 0.2 130); --p-c: oklch(0.7 0.24 300); --p-border: oklch(0.7 0.22 300);
+  --ink: oklch(0.82 0.16 200); --ink-light: oklch(0.44 0.2 290);
+  --spectrum: linear-gradient(90deg, oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340));
+  --effort-text-fill: transparent; --effort-text-image: var(--spectrum); --effort-fill-image: var(--spectrum); --effort-wash-image: var(--spectrum); }
+:root[data-theme='light'][data-palette='rainbow'] { --effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340)); }
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0 0 80px; background: var(--canvas); color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+.bar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--hairline); }
+.bar button { padding: 4px 10px; border: 1px solid var(--field-border); border-radius: 999px; background: none; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.bar button[aria-pressed='true'] { border-color: var(--accent); color: var(--text); background: var(--hover); }
+.bar span { margin-left: 8px; color: var(--text-faint); font-size: 12px; }
+h2 { margin: 26px 20px 4px; font-size: 15px; font-weight: 600; }
+h2 + p { margin: 0 20px 16px; max-width: 980px; color: var(--text-muted); font-size: 13px; }
+.cases { display: flex; flex-wrap: wrap; gap: 26px; padding: 0 20px; align-items: flex-start; }
+figure { margin: 0; width: 340px; }
+figcaption { margin: 0 0 10px; color: var(--text-muted); font-size: 12px; min-height: 68px; }
+figcaption b { display: block; color: var(--text); font-weight: 600; font-size: 13px; }
+
+/* The card, as effortPicker.css paints it, with the post-PR-176 arrival. */
+.effort-card { position: relative; width: 292px; padding: 12px 14px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--surface-elevated); box-shadow: var(--shadow); transition: border-color 2400ms cubic-bezier(.2,.8,.2,1); }
+.effort-card[data-arriving='true'] { border-color: color-mix(in srgb, var(--p-border) 55%, var(--field-border)); transition-duration: 200ms; }
+.effort-card[data-fixed='true'] { opacity: .72; }
+.effort-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
+.effort-card__word { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--effort-text-fill); background: var(--effort-text-image); -webkit-background-clip: text; background-clip: text; }
+.effort-card__word:not([data-top='true']) { color: var(--text); background: none; }
+.effort-card__word > span { display: inline-block; }
+.effort-card__line { margin: 1px 0 0; min-height: 18px; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; }
+.effort-card__track { position: relative; height: 26px; margin: 12px 0 0; }
+.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 999px; background: var(--effort-track); overflow: hidden; }
+.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--x) * (100% - 26px)); border-radius: 999px; overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--p-a) calc(30% + 50% * var(--x)), var(--effort-fill-cool)), color-mix(in srgb, var(--p-b) calc(45% + 50% * var(--x)), var(--effort-fill-cool))); }
+.effort-card__fill::before { content: ''; position: absolute; inset: 0; background: var(--effort-fill-image); opacity: calc(var(--x) * var(--x) * var(--x)); }
+.effort-card__fill::after { content: ''; position: absolute; inset: 0; background: var(--effort-fill-veil); }
+.effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--effort-dot); transform: translate(-50%, -50%); }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--x) * (100% - 26px)); width: 26px; height: 26px; border-radius: 50%; background: var(--effort-thumb); box-shadow: 0 1px 2px rgb(0 0 0 / 25%), 0 0 0 1px var(--effort-thumb-edge); transform: translateX(-50%); }
+.effort-card__range { position: absolute; inset: -4px 0; width: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.effort-card__range:focus-visible { outline: none; }
+.effort-card:has(.effort-card__range:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--text-faint); font-size: 11.5px; line-height: 1.2; }
+.effort-card__wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.effort-card__wash::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 220%; background: var(--effort-wash-image); opacity: .5;
+  mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
+/* The painted position eases toward the chosen one, and snaps under the hand or under reduced motion. */
+.effort-card { transition: border-color 2400ms cubic-bezier(.2,.8,.2,1), --x 190ms cubic-bezier(.2,.8,.2,1); }
+.effort-card[data-dragging='true'] { transition: border-color 2400ms cubic-bezier(.2,.8,.2,1); }
+
+@keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
+@keyframes effort-letter { from { color: var(--text); } 45% { color: var(--text); } to { color: var(--effort-text-fill); } }
+@keyframes effort-word { from { transform: translateY(0); } 45% { transform: translateY(-1px); } to { transform: none; } }
+:root[data-still='false'] .effort-card[data-arriving='true'] .effort-card__wash::before { animation: effort-wash 1500ms cubic-bezier(.3,.6,.2,1) both; }
+:root[data-still='false'] .effort-card[data-arriving='true'] .effort-card__word[data-top='true'] > span { animation: effort-letter 520ms cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(140ms + var(--i) * 55ms); }
+:root[data-still='false'] .effort-card[data-arriving='true'] .effort-card__word[data-top='true'] { animation: effort-word 520ms cubic-bezier(.2,.8,.2,1) both; }
+
+/* The composer under the card: the chip, and the outline the top level earns. */
+.composer { position: relative; margin: 10px 0 0; width: 292px; padding: 10px 12px 8px; border: 1px solid var(--field-border); border-radius: 12px; background: var(--surface); transition: border-color 1200ms cubic-bezier(.2,.8,.2,1); }
+.composer__text { color: var(--text-faint); font-size: 12.5px; }
+.composer[data-top='true'] { border-color: color-mix(in srgb, var(--p-border) 30%, var(--field-border)); }
+.composer[data-arriving='true'] { border-color: color-mix(in srgb, var(--p-border) 70%, var(--field-border)); transition-duration: 200ms; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; margin-top: 8px; padding: 0 9px; border: 1px solid var(--field-border); border-radius: 999px; background: none; color: var(--text-muted); font: inherit; font-size: 12.5px; }
+.chip[data-top='true'] { border-color: color-mix(in srgb, var(--p-border) 55%, var(--field-border)); color: var(--effort-text); }
+.chip[data-fixed='true'] { opacity: .5; }
+.err { margin: 8px 0 0; min-height: 32px; width: 292px; color: var(--warning); font-size: 12px; line-height: 1.35; }
+.trace { margin: 6px 0 0; width: 292px; min-height: 58px; color: var(--text-faint); font-size: 11.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.trace b { color: var(--text-2); font-weight: 600; }
+:root[data-still='true'] * { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button type="button" data-set="theme" data-value="dark" aria-pressed="true">Dark</button>
+  <button type="button" data-set="theme" data-value="light" aria-pressed="false">Light</button>
+  <span>colourway</span>
+  <button type="button" data-set="palette" data-value="rainbow" aria-pressed="true">Rainbow</button>
+  <button type="button" data-set="palette" data-value="ember" aria-pressed="false">Ember</button>
+  <button type="button" data-set="palette" data-value="cyberpunk" aria-pressed="false">Cyberpunk</button>
+  <span>the provider answers in</span>
+  <button type="button" data-set="delay" data-value="150" aria-pressed="false">150ms</button>
+  <button type="button" data-set="delay" data-value="900" aria-pressed="true">900ms</button>
+  <button type="button" data-set="delay" data-value="3000" aria-pressed="false">3s</button>
+  <button type="button" data-set="delay" data-value="fail" aria-pressed="false">Fails</button>
+  <span></span>
+  <button type="button" data-set="live" data-value="on" aria-pressed="false">Stay live while saving</button>
+  <button type="button" data-set="still" data-value="true" aria-pressed="false">Still</button>
+  <button type="button" id="reset">Reset all to High</button>
+</div>
+
+<h2>Choosing a level, with the provider taking its time</h2>
+<p>
+  Three copies of the same card. Drag the thumb to Max, or press End, and watch the word above it. In <b>now</b>
+  the word previews under your finger, snaps back to the old level the instant you let go, then blinks to the new
+  one when the provider answers. The trace under each card is what the user can see happening. Try it at 150ms and
+  at 3s, and then on <b>Fails</b>, which is the case each variant has to survive.
+</p>
+<div class="cases" id="cases"></div>
+
+<h2>What to watch for when it reaches the top</h2>
+<p>
+  The arrival is the part that reads as a blink. Set the provider to 3s, then press End: in <b>now</b> nothing at
+  all happens for three seconds and then the word, the tide and the composer outline all fire together. In <b>A</b>
+  they fire under your hand. In <b>B</b> the word goes at once but the tide and the outline hold until it is real,
+  so the card says Max over a composer that is still dark.
+</p>
+<div class="measure" id="notes" style="padding:0 20px;color:var(--text-faint);font-size:12px"></div>
+
+<script>
+const LEVELS = [
+  { id: 'low', word: 'Low', line: 'Fast. For small, clear tasks.' },
+  { id: 'medium', word: 'Medium', line: 'The usual balance of speed and care.' },
+  { id: 'high', word: 'High', line: 'Takes longer and catches more.' },
+  { id: 'xhigh', word: 'Extra high', line: 'Much longer. For stubborn problems.' },
+  { id: 'max', word: 'Max', line: 'Everything the model has. Slowest, costliest.' },
+]
+const TOP = LEVELS.length - 1
+const ARRIVAL_MS = 1900
+const VARIANTS = [
+  ['now', 'now — the provider decides what you see', 'Shipped. The word, the line, the chip and the arrival all wait for <code>configure-thread</code> to come back. Release snaps the word back to the old level first.'],
+  ['A', 'A — the press is the truth', 'Word, line, chip and the arrival all follow your press. The save runs behind it. A save that fails falls the word back and says so.'],
+  ['B', 'B — the word goes, the celebration waits', 'Word, line and chip follow your press; the tide and the composer outline wait for the provider, so nothing is congratulated before it is real.'],
+]
+
+const root = document.documentElement
+const state = { delay: 900, live: false }
+
+class Card {
+  constructor(variant) {
+    this.variant = variant
+    this.confirmed = 2       // what the provider has agreed to
+    this.chosen = 2          // what the user last pressed
+    this.position = 2        // where the thumb is
+    this.dragging = false
+    this.saving = false
+    this.token = 0
+    this.arrivalTimer = 0
+    this.arriving = false
+    this.error = ''
+    this.log = []
+    this.build()
+    this.render()
+  }
+
+  build() {
+    const figure = document.createElement('figure')
+    const [, title, blurb] = VARIANTS.find(entry => entry[0] === this.variant)
+    figure.innerHTML = `
+      <figcaption><b>${title}</b>${blurb}</figcaption>
+      <div class="effort-card">
+        <div class="effort-card__head"><p class="effort-card__word"></p></div>
+        <p class="effort-card__line"></p>
+        <div class="effort-card__track">
+          <div class="effort-card__pill">
+            <div class="effort-card__fill"></div>
+            ${LEVELS.map((_, i) => `<span class="effort-card__dot" style="--stop:${i / TOP}"></span>`).join('')}
+          </div>
+          <span class="effort-card__thumb"></span>
+          <input class="effort-card__range" type="range" min="0" max="${TOP}" step="0.001" value="2" aria-label="Thread reasoning effort">
+        </div>
+        <div class="effort-card__ends"><span>Faster</span><span>More thorough</span></div>
+        <div class="effort-card__wash"></div>
+      </div>
+      <div class="composer"><span class="composer__text">Ask for a change…</span><br><span class="chip">High <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg></span></div>
+      <p class="err" role="status"></p>
+      <p class="trace"></p>`
+    this.el = {
+      card: figure.querySelector('.effort-card'), word: figure.querySelector('.effort-card__word'),
+      line: figure.querySelector('.effort-card__line'), range: figure.querySelector('.effort-card__range'),
+      composer: figure.querySelector('.composer'), chip: figure.querySelector('.chip'),
+      err: figure.querySelector('.err'), trace: figure.querySelector('.trace'),
+    }
+    document.getElementById('cases').append(figure)
+
+    const magnet = raw => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < 0.2 ? near + d * Math.pow(Math.abs(d) / 0.2, 2) : raw }
+    this.el.range.addEventListener('pointerdown', event => { if (this.fixed) { event.preventDefault(); return } this.dragging = true; event.currentTarget.setPointerCapture(event.pointerId); this.render() })
+    this.el.range.addEventListener('pointerup', event => { if (!this.dragging) return; this.dragging = false; this.choose(Math.round(Number(event.currentTarget.value))) })
+    this.el.range.addEventListener('input', event => {
+      if (this.fixed) return
+      const next = Number(event.target.value)
+      if (this.dragging) { this.position = magnet(next); this.render() } else this.choose(Math.round(next))
+    })
+    this.el.range.addEventListener('keydown', event => {
+      const digit = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1
+      const steps = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? TOP
+        : digit >= 0 && digit <= TOP ? digit : steps[event.key] !== undefined ? Math.round(this.position) + steps[event.key] : null
+      if (next === null) return
+      event.preventDefault()
+      this.choose(next)
+    })
+  }
+
+  get fixed() { return this.saving && !(state.live && this.variant !== 'now') }
+
+  note(text) {
+    this.log.push(`${String(Math.round(performance.now() - this.t0)).padStart(4, ' ')}ms &nbsp;${text}`)
+    this.el.trace.innerHTML = this.log.slice(-3).join('<br>')
+  }
+
+  choose(index) {
+    if (this.fixed) return
+    const next = Math.max(0, Math.min(TOP, index))
+    this.position = next
+    this.chosen = next
+    this.error = ''
+    if (this.t0 === undefined || !this.saving) this.t0 = performance.now()
+    this.log = []
+    this.note(`<b>pressed ${LEVELS[next].word}</b>`)
+    if (this.variant !== 'now') {
+      this.note(`the word, the line and the chip say ${LEVELS[next].word}`)
+      // A celebrates on the press; B holds the tide and the outline until the provider agrees.
+      if (this.variant === 'A' && next === TOP && this.confirmed !== TOP) this.playArrival()
+    }
+    this.render()
+    if (LEVELS[next].id === LEVELS[this.confirmed].id && !this.saving) return
+    this.save(next)
+  }
+
+  save(target) {
+    const token = ++this.token
+    const previous = this.confirmed
+    this.saving = true
+    this.render()
+    const wait = state.delay === 'fail' ? 1200 : state.delay
+    setTimeout(() => {
+      if (token !== this.token) return           // a later press won; only where you land is confirmed
+      this.saving = false
+      if (state.delay === 'fail') {
+        this.chosen = previous
+        this.position = previous
+        this.error = 'Could not confirm this change. Try again.'
+        this.stopArrival()
+        this.note(`<b>the provider refused</b> — back to ${LEVELS[previous].word}`)
+      } else {
+        const rose = this.confirmed !== TOP && target === TOP
+        this.confirmed = target
+        this.note(`<b>the provider confirmed ${LEVELS[target].word}</b>`)
+        if (this.variant === 'now') {
+          this.note(`only now do the word and the arrival move`)
+          if (rose) this.playArrival()
+        } else if (this.variant === 'B' && rose) {
+          this.note('the tide and the outline light up')
+          this.playArrival()
+        }
+      }
+      this.render()
+    }, wait)
+  }
+
+  playArrival() {
+    if (root.dataset.still === 'true') return
+    this.stopArrival()
+    this.arriving = true
+    this.arrivalTimer = setTimeout(() => { this.arriving = false; this.render() }, ARRIVAL_MS)
+  }
+
+  stopArrival() { clearTimeout(this.arrivalTimer); this.arriving = false }
+
+  render() {
+    // What the card shows: the provider's answer in `now`, the press itself in A and B; a drag previews in all three.
+    const shown = this.dragging ? Math.round(this.position) : this.variant === 'now' ? this.confirmed : this.chosen
+    const level = LEVELS[shown]
+    const top = shown === TOP
+    this.el.word.dataset.top = String(top && !this.dragging)
+    this.el.word.innerHTML = Array.from(level.word, (letter, i) => `<span style="--i:${i}">${letter === ' ' ? '&nbsp;' : letter}</span>`).join('')
+    this.el.line.textContent = level.line
+    this.el.card.style.setProperty('--x', (this.position / TOP).toFixed(4))
+    this.el.card.dataset.arriving = String(this.arriving)
+    this.el.card.dataset.dragging = String(this.dragging)
+    this.el.card.dataset.fixed = String(this.fixed)
+    this.el.range.value = String(this.position)
+    this.el.chip.firstChild.textContent = `${level.word} `
+    this.el.chip.dataset.top = String(top)
+    this.el.chip.dataset.fixed = String(this.fixed)
+    // A's outline follows the press with the arrival; B's and now's follow the confirmed level.
+    const outlined = this.variant === 'A' ? this.chosen === TOP : this.confirmed === TOP
+    this.el.composer.dataset.top = String(outlined)
+    this.el.composer.dataset.arriving = String(this.arriving)
+    this.el.err.textContent = this.error
+  }
+
+  reset() {
+    this.token++
+    this.stopArrival()
+    this.confirmed = this.chosen = this.position = 2
+    this.saving = this.dragging = false
+    this.error = ''
+    this.log = []
+    this.el.trace.innerHTML = ''
+    this.render()
+  }
+}
+
+const cards = VARIANTS.map(([variant]) => new Card(variant))
+
+document.querySelector('.bar').addEventListener('click', event => {
+  const button = event.target.closest('button')
+  if (!button) return
+  if (button.id === 'reset') { cards.forEach(card => card.reset()); return }
+  const key = button.dataset.set, value = button.dataset.value
+  if (key === 'delay') {
+    state.delay = value === 'fail' ? 'fail' : Number(value)
+    document.querySelectorAll('[data-set="delay"]').forEach(other => other.setAttribute('aria-pressed', String(other === button)))
+    return
+  }
+  if (key === 'live') {
+    state.live = !state.live
+    button.setAttribute('aria-pressed', String(state.live))
+    cards.forEach(card => card.render())
+    return
+  }
+  if (key === 'still') {
+    const on = root.dataset.still !== 'true'
+    root.dataset.still = String(on)
+    button.setAttribute('aria-pressed', String(on))
+    return
+  }
+  root.dataset[key] = value
+  document.querySelectorAll(`[data-set="${key}"]`).forEach(other => other.setAttribute('aria-pressed', String(other === button)))
+})
+
+document.getElementById('notes').innerHTML = `
+  What is the same in all three: the thumb, the fill and the dots follow your hand immediately, exactly as they do
+  today — only the word, the line, the chip and the arrival are in question. What A and B both add: the save is no
+  longer something the user waits on, so a refusal has to be said out loud rather than simply not happening.`
+</script>
+</body>
+</html>
