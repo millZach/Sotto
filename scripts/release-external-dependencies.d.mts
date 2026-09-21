@@ -13,3 +13,10 @@ export function verifyExternalDependencyInventories(
   packagedModuleRoots: readonly string[],
   availableBuiltinModules?: readonly string[],
 ): void
+
+export const HOST_EXTERNAL_IMPORTS: readonly string[]
+export function verifyHostExternalDependencies(
+  inventory: unknown,
+  packagedDependencies: Readonly<Record<string, string>>,
+  availableBuiltinModules?: readonly string[],
+): void
