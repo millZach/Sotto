@@ -59,6 +59,35 @@ describe('Claude monitor activity classification', () => {
     expect(apply(new ClaudeActivity(), { ...ended('reused'), status: 'failed', summary: 'New task failed' }, rows)[0]).toMatchObject({ status: 'failed', text: 'New task failed' })
   })
 
+  it.each(['completed', 'failed', 'stopped', 'cancelled', 'canceled', 'killed', 'interrupted', 'unknown'])('closes %s notifications before late progress or duplicate outcomes', status => {
+    const projector = new ClaudeActivity()
+    let rows = apply(projector, started('finished'))
+    rows = apply(projector, { ...ended('finished'), status }, rows)
+    expect(rows[0]?.status).toBe(status === 'completed' || status === 'failed' || status === 'unknown' ? status : 'interrupted')
+    expect(rows[0]?.taskUpdatesExcluded).toBe(true)
+    const restored = JSON.parse(JSON.stringify(rows)).map((row: unknown) => agentActivitySchema.parse(row))
+    expect(apply(new ClaudeActivity(), progress('finished'), restored)).toEqual(rows)
+    expect(apply(new ClaudeActivity(), { ...ended('finished'), status: 'failed', summary: 'Late outcome' }, restored)).toEqual(rows)
+  })
+
+  it('closes older terminal history without overwriting its outcome when a notification has no known status', () => {
+    const original = new ClaudeActivity()
+    let rows = apply(original, started('legacy'))
+    rows = apply(original, ended('legacy'), rows).map(row => { const legacy = { ...row }; delete legacy.taskUpdatesExcluded; return legacy })
+    rows = apply(new ClaudeActivity(), { ...ended('legacy'), status: undefined }, rows)
+    expect(rows[0]).toMatchObject({ status: 'completed', taskUpdatesExcluded: true })
+    expect(apply(new ClaudeActivity(), { ...ended('legacy'), status: 'failed', summary: 'Late failure' }, rows)).toEqual(rows)
+  })
+
+  it('accepts an explicit new start against legacy terminal history with no exclusion marker', () => {
+    const projector = new ClaudeActivity()
+    let rows = apply(projector, started('legacy'))
+    rows = apply(projector, ended('legacy'), rows).map(row => { const legacy = { ...row }; delete legacy.taskUpdatesExcluded; return legacy })
+    rows = apply(new ClaudeActivity(), started('legacy'), rows)
+    expect(rows[0]?.taskUpdatesExcluded).toBe(false)
+    expect(apply(new ClaudeActivity(), { ...ended('legacy'), status: 'failed' }, rows)[0]?.status).toBe('failed')
+  })
+
   it('finishes a known shell command even without a task start', () => {
     const projector = new ClaudeActivity()
     const rows = apply(projector, { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'shell', name: 'Bash', input: { command: 'build' } }] } })

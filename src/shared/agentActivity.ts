@@ -21,7 +21,7 @@ export const agentActivitySchema = z.object({
   context: z.object({ before: z.number().int().nonnegative().optional(), after: z.number().int().nonnegative().optional() }).optional(),
   /** Display identities only. These cannot address provider sessions or grant authority. */
   agents: z.array(z.object({ id: z.string(), status: detail, message: detail.optional() })).max(200).optional(),
-  /** Its native task identity was reassigned; retained history must reject later lifecycle events. */
+  /** Its native task ended or its identity was reassigned; retained history rejects later lifecycle events. */
   taskUpdatesExcluded: z.boolean().optional(),
   truncated: z.boolean().optional(),
 })
