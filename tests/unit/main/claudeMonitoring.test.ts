@@ -53,6 +53,36 @@ describe('Claude confirmed monitoring', () => {
     expect(watch.current).toEqual([])
   })
 
+  it('keeps fresh root monitoring available after more than 4,096 nested launches without trusting evicted ownership', () => {
+    const watch = new ClaudeMonitoring()
+    for (let index = 0; index < 4_100; index++) {
+      watch.apply({ type: 'assistant', parent_tool_use_id: 'child', message: { content: [{ type: 'tool_use', id: `nested-${index}` }] } })
+    }
+    watch.apply(start({ task_id: 'old-nested-watch', tool_use_id: 'nested-0' }))
+    watch.apply(start({ task_id: 'current-nested-watch', tool_use_id: 'nested-4099' }))
+    watch.apply(start({ task_id: 'unknown-watch', tool_use_id: 'unseen' }))
+    expect(watch.current).toEqual([])
+
+    watch.apply({ type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 'fresh-root' } } })
+    watch.apply(start({ task_id: 'root-watch', tool_use_id: 'fresh-root', description: 'Watch the root build' }))
+    watch.apply(start({ task_id: 'direct-watch', description: 'Watch the direct process' }))
+    expect(watch.current.map(task => task.label)).toEqual(['Watch the root build', 'Watch the direct process'])
+  })
+
+  it('requires observed root ownership for a linked watch and never promotes conflicting nested evidence', () => {
+    const watch = new ClaudeMonitoring()
+    watch.apply(start({ tool_use_id: 'unseen' }))
+    expect(watch.current).toEqual([])
+    watch.apply({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'root' }] } })
+    watch.apply(start({ tool_use_id: 'root' }))
+    expect(watch.current).toHaveLength(1)
+
+    watch.apply({ type: 'assistant', parent_tool_use_id: 'child', message: { content: [{ type: 'tool_use', id: 'nested' }] } })
+    watch.apply({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'nested' }] } })
+    watch.apply(start({ task_id: 'nested-watch', tool_use_id: 'nested' }))
+    expect(watch.current).toHaveLength(1)
+  })
+
   it('pauses on idle evidence and resumes only on an explicit running update', () => {
     const watch = new ClaudeMonitoring()
     watch.apply(start())

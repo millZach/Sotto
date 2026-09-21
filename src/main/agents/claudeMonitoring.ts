@@ -10,22 +10,24 @@ const label = (value: unknown): string | undefined => typeof value === 'string'
 /** Native stream only. A transcript replay must never manufacture a live watch. */
 export class ClaudeMonitoring {
   private readonly tasks = new Map<string, { monitor: AgentMonitoringTask; active: boolean }>()
-  private readonly nestedTools = new Set<string>()
-  private nestedOwnershipOverflow = false
+  private readonly toolOwners = new Map<string, 'root' | 'nested'>()
 
   get current(): AgentMonitoringTask[] { return [...this.tasks.values()].filter(task => task.active).map(task => ({ ...task.monitor })) }
 
   apply(frame: ClaudeFrame): void {
-    // A task's start can omit parent_tool_use_id. Remember its launching tool's owner too.
-    if (frame.parent_tool_use_id || frame.isSidechain === true) {
-      const content = object(frame.message)?.content
-      const block = object(object(frame.event)?.content_block)
-      for (const value of [...(Array.isArray(content) ? content : []), block]) {
-        const tool = object(value)
-        if (typeof tool?.id === 'string' && ['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(tool.type))) {
-          if (this.nestedTools.size < 4_096) this.nestedTools.add(tool.id)
-          else this.nestedOwnershipOverflow = true
-        }
+    // Task starts can omit their parent. Keep bounded launch evidence for both root and nested tools;
+    // an evicted or unseen linked tool stays unknown, while fresh root launches remain observable.
+    const nestedFrame = !!frame.parent_tool_use_id || frame.isSidechain === true
+    const content = object(frame.message)?.content
+    const block = object(object(frame.event)?.content_block)
+    for (const value of [...(Array.isArray(content) ? content : []), block]) {
+      const tool = object(value)
+      if (typeof tool?.id === 'string' && tool.id.length > 0 && tool.id.length <= 512
+        && ['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(tool.type))) {
+        const owner = nestedFrame || this.toolOwners.get(tool.id) === 'nested' ? 'nested' : 'root'
+        this.toolOwners.delete(tool.id)
+        this.toolOwners.set(tool.id, owner)
+        if (this.toolOwners.size > 4_096) this.toolOwners.delete(this.toolOwners.keys().next().value!)
       }
     }
     if (frame.type !== 'system' || typeof frame.task_id !== 'string' || !frame.task_id || frame.task_id.length > 512) return
@@ -37,9 +39,10 @@ export class ClaudeMonitoring {
       this.tasks.delete(taskId); return
     }
     if (frame.subtype === 'task_started') {
-      const nested = this.nestedOwnershipOverflow || !!frame.parent_tool_use_id || frame.isSidechain === true
-        || typeof frame.tool_use_id === 'string' && this.nestedTools.has(frame.tool_use_id)
-      if (!monitorTypes.has(String(frame.task_type)) || nested || frame.ambient === true || frame.skip_transcript === true) {
+      const nestedOrUnknown = nestedFrame
+        || frame.tool_use_id !== undefined && frame.tool_use_id !== null
+          && (typeof frame.tool_use_id !== 'string' || this.toolOwners.get(frame.tool_use_id) !== 'root')
+      if (!monitorTypes.has(String(frame.task_type)) || nestedOrUnknown || frame.ambient === true || frame.skip_transcript === true) {
         this.tasks.delete(taskId); return
       }
       if (!this.tasks.has(taskId) && this.tasks.size >= MAX_AGENT_MONITORS) return
