@@ -57,17 +57,17 @@ export function EffortColorSample({ effortColor, still }: {
   readonly still: boolean
 }): ReactNode {
   const [arriving, setArriving] = useState(false)
+  const [run, setRun] = useState(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seen = useRef<EffortColor | null>(null)
   const play = (): void => {
-    if (timer.current !== null) clearTimeout(timer.current)
-    setArriving(false)
-    if (still) return
-    // A frame apart, so the animation restarts even when it was already running.
-    requestAnimationFrame(() => {
-      setArriving(true)
-      timer.current = setTimeout(() => { timer.current = null; setArriving(false) }, SAMPLE_ARRIVAL_MS)
-    })
+    if (timer.current !== null) { clearTimeout(timer.current); timer.current = null }
+    if (still) { setArriving(false); return }
+    // The scene mounts fresh on every play, which is the one way an arrival already running restarts:
+    // turning the attribute off and on again is never painted in between, so the browser has nothing to stop.
+    setRun(current => current + 1)
+    setArriving(true)
+    timer.current = setTimeout(() => { timer.current = null; setArriving(false) }, SAMPLE_ARRIVAL_MS)
   }
   // The colourway changing is the cue; the first colourway seen is the settled state, not an arrival.
   useEffect(() => {
@@ -82,7 +82,7 @@ export function EffortColorSample({ effortColor, still }: {
         <span>Effort at its highest level</span>
         <button type="button" className="effort-sample__replay tt-focusable" onClick={play} disabled={still}>Play again</button>
       </div>
-      <div className="effort-sample__scene" aria-hidden="true">
+      <div className="effort-sample__scene" key={run} aria-hidden="true">
         <div className="effort-sample__card">
           <div className="effort-sample__card-head"><p className="effort-sample__word">{letters}</p><span>Default</span></div>
           <p className="effort-sample__line">Everything the model has. Slowest, costliest.</p>

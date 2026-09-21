@@ -339,4 +339,20 @@ describe('appearance settings', () => {
     await waitFor(() => expect(sample).toHaveAttribute('data-arriving', 'true'))
     await waitFor(() => expect(save).toHaveBeenCalledWith({ effortColor: 'cyberpunk' }, 'Effort color saved.'))
   })
+
+  it('mounts the sample scene fresh on every play, so an arrival already running starts again', () => {
+    renderSettings({})
+    const sample = screen.getByText('Effort at its highest level').closest('.effort-sample')!
+    const scene = (): Element => sample.querySelector('.effort-sample__scene')!
+    const settled = scene()
+    fireEvent.click(screen.getByRole('button', { name: 'Play again' }))
+    expect(sample).toHaveAttribute('data-arriving', 'true')
+    const playing = scene()
+    expect(playing).not.toBe(settled)
+    // Pressing again mid-arrival is the case the restart has to survive: nothing about the sample changes, so a
+    // fresh scene is the only thing that hands the browser an animation to play.
+    fireEvent.click(screen.getByRole('button', { name: 'Play again' }))
+    expect(sample).toHaveAttribute('data-arriving', 'true')
+    expect(scene()).not.toBe(playing)
+  })
 })
