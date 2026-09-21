@@ -84,7 +84,7 @@ Read the [agent setup and behavior guide](docs/agent-control.md), [implementatio
 
 When Claude Code reports an active monitoring task, a small pixel creature walks above the composer with a magnifying glass and the task name. It appears immediately for a confirmed watch, including a brief one, and leaves when the watch ends, the thread disconnects, or your answer is needed. Ordinary commands and unattended background processes do not trigger it. Reduced motion holds a still inspection pose. Codex, Grok Build and Devin stay hidden until their native events can confirm the same lifecycle.
 
-The Threads sidebar keeps each thread’s provider, status and last activity beneath its project. Drag its right edge to resize it; a wider sidebar reveals the branch, model and working copy. Collapse sidebar makes more room for the conversation, and Expand sidebar restores the width you chose. With the divider focused, arrow keys resize it, Home and End choose the limits, and a double-click resets it.
+The Threads sidebar keeps each thread’s provider, status and last activity beneath its project. Drag its right edge to resize it; a wider sidebar reveals the branch, model and working copy. Collapse sidebar makes more room for the conversation, and Expand sidebar restores the width you chose. With the divider focused, arrow keys resize it, Home and End choose the limits, and a double-click resets it. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
 You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.
 

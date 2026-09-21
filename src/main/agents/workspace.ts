@@ -86,6 +86,7 @@ export class WorkspaceHost implements AgentHost {
   private publishPending = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
+  private readonly organizationLanes = new Map<string, Promise<unknown>>()
   /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
   private readonly preparations = new Map<string, Promise<void>>()
   private readonly worktrees: ThreadWorktrees
@@ -647,11 +648,11 @@ export class WorkspaceHost implements AgentHost {
       this.publish()
     })
   }
-  /** Runs `work` after whatever this thread's lane already holds, so a folder read never races a command on it. */
-  private onLane<T>(threadId: string, work: () => Promise<T>): Promise<T> {
-    const pending = (this.lanes.get(threadId) ?? Promise.resolve()).catch(() => undefined).then(work)
-    this.lanes.set(threadId, pending)
-    void pending.finally(() => { if (this.lanes.get(threadId) === pending) this.lanes.delete(threadId) }).catch(() => undefined)
+  /** Serializes work for one thread or project without holding up unrelated provider work. */
+  private onLane<T>(key: string, work: () => Promise<T>, lanes = this.lanes): Promise<T> {
+    const pending = (lanes.get(key) ?? Promise.resolve()).catch(() => undefined).then(work)
+    lanes.set(key, pending)
+    void pending.finally(() => { if (lanes.get(key) === pending) lanes.delete(key) }).catch(() => undefined)
     return pending
   }
   private flush(): Promise<void> {
@@ -743,18 +744,22 @@ export class WorkspaceHost implements AgentHost {
   }
   async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
-    const entity = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
-    if (!entity) throw new Error(`That ${kind} is unavailable.`)
-    const previous = entity.workspaceSettledAt ?? null
-    entity.workspaceSettledAt = settled ? previous ?? new Date().toISOString() : null
-    this.dirty = true
-    try { await this.flush() }
-    catch (error) {
-      const current = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
-      if (current) current.workspaceSettledAt = previous
-      throw error
-    }
-    this.publish(); return this.workspaceSnapshot()
+    const projectId = kind === 'project' ? id : this.state.snapshot.threads.find(thread => thread.id === id)?.projectId
+    if (!projectId) throw new Error('That thread is unavailable.')
+    return this.onLane(projectId, async () => {
+      const entity = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
+      if (!entity) throw new Error(`That ${kind} is unavailable.`)
+      const previous = entity.workspaceSettledAt ?? null
+      entity.workspaceSettledAt = settled ? previous ?? new Date().toISOString() : null
+      this.dirty = true
+      try { await this.flush() }
+      catch (error) {
+        const current = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
+        if (current) current.workspaceSettledAt = previous
+        throw error
+      }
+      this.publish(); return this.workspaceSnapshot()
+    }, this.organizationLanes)
   }
   /**
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
@@ -903,10 +908,11 @@ export class WorkspaceHost implements AgentHost {
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     const key = 'threadId' in command ? command.threadId : command.projectId
-    const pending = (this.lanes.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => this.executeOne(command))
-    this.lanes.set(key, pending)
-    void pending.finally(() => { if (this.lanes.get(key) === pending) this.lanes.delete(key) }).catch(() => undefined)
-    return pending
+    // Creation changes older threads' settlement too. Keep that transaction apart from
+    // settlement edits in the same project so failed writes cannot cross their rollbacks.
+    return this.onLane(key, () => command.type === 'create-thread'
+      ? this.onLane(command.projectId, () => this.executeOne(command), this.organizationLanes)
+      : this.executeOne(command))
   }
   private async executeOne(command: AgentHostCommand): Promise<AgentHostResult> {
     await this.initialize()
@@ -951,6 +957,19 @@ export class WorkspaceHost implements AgentHost {
         worktree: await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
+      // New work reopens the folder, while the work put aside stays settled.
+      // Re-read after working-copy preparation, which can accept a fresh snapshot.
+      const project = this.state.snapshot.projects.find(item => item.id === command.projectId)!
+      const projectSettledAt = project.workspaceSettledAt ?? null
+      const previousSettlement = new Map<string, string | null | undefined>()
+      if (projectSettledAt !== null) {
+        for (const existing of this.state.snapshot.threads) {
+          if (existing.projectId !== project.id || existing.workspaceSettledAt != null) continue
+          previousSettlement.set(existing.id, existing.workspaceSettledAt)
+          existing.workspaceSettledAt = projectSettledAt
+        }
+        project.workspaceSettledAt = null
+      }
       this.state.snapshot.threads.push(thread)
       this.state.creations.push({ threadId: thread.id, projectId: thread.projectId, commandId: randomUUID(), phase: 'unstarted' })
       this.dirty = true
@@ -958,6 +977,11 @@ export class WorkspaceHost implements AgentHost {
       catch (error) {
         this.state.snapshot.threads = this.state.snapshot.threads.filter(item => item.id !== thread.id)
         this.state.creations = this.state.creations.filter(item => item.threadId !== thread.id)
+        const currentProject = this.state.snapshot.projects.find(item => item.id === command.projectId)
+        if (currentProject && projectSettledAt !== null) currentProject.workspaceSettledAt = projectSettledAt
+        for (const existing of this.state.snapshot.threads) {
+          if (previousSettlement.has(existing.id)) existing.workspaceSettledAt = previousSettlement.get(existing.id)
+        }
         throw error
       }
       this.publish()

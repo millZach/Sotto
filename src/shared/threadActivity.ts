@@ -1,6 +1,6 @@
 import type { AgentProject, AgentThread } from './agents'
 
-/** Project settlement is inherited for display, never written onto its individual threads. */
+/** Project settlement is inherited until new work reopens the folder and preserves it on older threads. */
 export function isWorkspaceThreadSettled(thread: Pick<AgentThread, 'workspaceSettledAt'>, project?: Pick<AgentProject, 'workspaceSettledAt'>): boolean {
   return hasTimestamp(thread.workspaceSettledAt) || hasTimestamp(project?.workspaceSettledAt)
 }

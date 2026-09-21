@@ -40,7 +40,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy.
 
-**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled.
+**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
 **Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control in the sidebar's top row. Terminals open in the same pane grid as thread panes, so turning the control to Terminal from another page leads to the Threads page. A project's folder head in Terminal mode offers Settle project, the same as in the thread list; a settled project leaves the list once its terminals close. Avoid: "terminal tab", "terminal page".
 
