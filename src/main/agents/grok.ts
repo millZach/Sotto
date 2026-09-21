@@ -617,7 +617,7 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {

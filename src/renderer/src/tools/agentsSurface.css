@@ -1,0 +1,43 @@
+/* Approved roomier roster: task first, a short preview, quiet model metadata and stable separators. */
+.subagents-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
+.subagents-roster { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.subagents-list { list-style: none; padding: 0; margin: 0; }
+.subagent-item { margin-left: calc(var(--subagent-depth, 0) * 18px); }
+.subagent-item + .subagent-item { border-top: 1px solid var(--tt-hairline); }
+.subagent-item[data-nested] { border-top: 0; border-left: 1px solid var(--tt-hairline); padding-left: 8px; }
+.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 94px; padding: 16px 6px 16px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.subagent-head:hover { background: var(--tt-hover); }
+.subagent-dot { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--tt-text-muted); }
+.subagent-dot[data-status='running'] { background: var(--tt-activity); }
+.subagent-dot[data-status='failed'] { background: var(--tt-error); }
+.subagent-dot[data-status='unknown'] { outline: 1px solid var(--tt-text-muted); box-shadow: inset 0 0 0 1.5px var(--tt-sidebar); }
+.subagent-main { min-width: 0; }
+.subagent-title { display: block; overflow: hidden; font-size: 15px; font-weight: 550; line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
+.subagent-description { display: block; overflow: hidden; margin-top: 6px; color: var(--tt-text-muted); font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; color: var(--tt-text-muted); font-size: 12px; line-height: 18px; }
+.subagent-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-run { white-space: nowrap; }
+.subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 2px; color: var(--tt-text-muted); font-size: 12px; }
+.subagent-time { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.subagent-head[aria-expanded='true'] .subagent-time svg { transform: rotate(90deg); }
+.subagent-details { margin: 0 5px 10px 22px; padding: 4px 0 12px; }
+.subagent-details h3 { margin: 12px 0 5px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.subagent-details p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subagent-result { border-left: 2px solid var(--tt-hairline); padding-left: 12px; }
+.subagent-previous { margin-top: 17px; border-top: 1px solid var(--tt-hairline); padding-top: 12px; }
+.subagent-previous summary { color: var(--tt-text-muted); font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.subagents-older { margin-top: 18px; }
+.subagents-footer { display: flex; flex: none; justify-content: space-between; gap: 10px; min-height: 40px; border-top: 1px solid var(--tt-hairline); padding: 10px 18px; color: var(--tt-text-muted); font-size: 12px; }
+.subagents-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 190px; padding: 30px; color: var(--tt-text-muted); text-align: center; }
+.subagents-empty p { margin: 0; font-size: 14px; }
+.tools-toggle { position: relative; }
+.tools-toggle__agents-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .subagent-details { animation: subagent-reveal .14s ease-out; }
+}
+@keyframes subagent-reveal { from { opacity: 0; transform: translateY(-3px); } }
+@container tools-body (max-width: 439px) {
+  .subagents-roster { padding-inline: 10px; }
+  .subagent-head { column-gap: 7px; }
+  .subagent-right { max-width: 90px; text-align: right; }
+}

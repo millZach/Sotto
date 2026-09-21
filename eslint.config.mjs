@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/settled-folder-new-thread/**',
+      'artifacts/agents-view/**',
       'artifacts/queued-steering/**',
       '.worktrees/**',
       '.claude/tmp/**',

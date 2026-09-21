@@ -3,6 +3,7 @@ import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRA
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
 import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatPromptCopySchema, chatPromptResultSchema, type ChatPromptBridge } from '../shared/chatPrompts'
 import { contextBridge, ipcRenderer } from 'electron'
+import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { createToolsBridges } from './tools'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
@@ -290,6 +291,11 @@ export function createSottoBridge(
     ...createToolsBridges(renderer),
     terminals: createTerminalWorkspaceBridge(renderer),
     themes: createThemesBridge(renderer),
+    subagents: Object.freeze<SubagentsBridge>({
+      page: request => invokeParsed(renderer, SUBAGENTS_PAGE, subagentPageSchema, subagentPageRequestSchema.parse(request)),
+      assignments: request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),
+      onChanged: listener => subscribe(renderer, SUBAGENTS_CHANGED, subagentChangeSchema, listener),
+    }),
     files: Object.freeze<FilesBridge>({
       list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),
       preview: request => invokeParsed(renderer, FILES_PREVIEW, filesResultSchema(filePreviewSchema), fileRequestSchema.parse(request)),

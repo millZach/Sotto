@@ -1,10 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, RotateCw, SquareTerminal, X, type LucideIcon } from 'lucide-react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, RotateCw, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { TerminalBridge } from '../../../shared/terminal'
+import type { SubagentsBridge } from '../../../shared/subagents'
+import { AgentsSurface } from './AgentsSurface'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserSurface } from './BrowserSurface'
@@ -37,6 +39,7 @@ export interface ToolsPanelProps {
   readonly gitChanges?: GitChangesBridge | undefined
   readonly terminal?: TerminalBridge | undefined
   readonly browser?: BrowserBridge | undefined
+  readonly subagents?: SubagentsBridge | undefined
   /** How a terminal session is drawn; tests pass a light stand-in for xterm. */
   readonly terminalView?: TerminalViewFactory
   readonly store?: ToolsPanelStore
@@ -94,14 +97,17 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
     else store.clearToggleFocus()
   }, [chrome.open, store])
   const pinned = chrome.pinnedThreadId
+  const toolsThreadId = pinned ?? paneThreadId ?? agentState?.activeThreadId
+  const workingAgents = (agentState?.host.threads.find(thread => thread.id === toolsThreadId)?.subagentSummary?.working ?? 0) > 0
   const pinnedElsewhere = chrome.open && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
   return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={pinnedTitle === null ? undefined : `Showing ${pinnedTitle}, pinned`}
+    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : `Showing ${pinnedTitle}, pinned`, workingAgents ? 'Agents are working' : null].filter(Boolean).join('. ') || undefined}
     title={pinnedTitle === null ? 'Tools' : `Tools are pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
     {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">Tools</span>
+    {workingAgents ? <span className="tools-toggle__agents-dot" aria-hidden="true" /> : null}
   </button>
 }
 
@@ -117,12 +123,13 @@ function WorkingCopyLine({ thread, project }: { readonly thread: AgentThread; re
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, terminal: SquareTerminal, browser: Globe }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, terminal: SquareTerminal, browser: Globe, agents: Users }
 
 /** What the panel says when there is no thread to show, in the words of the surface that is open. */
 const NO_THREAD: Record<ToolSurfaceId, string> = {
   files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.', terminal: 'Open a thread to use its terminal.',
   browser: 'Open a thread to browse its pages.',
+  agents: 'Open a thread to see its agents.',
 }
 
 /** The panel's surface tabs. Only implemented surfaces are listed. */
@@ -159,13 +166,14 @@ function useTransientStatus(): [string, (message: string) => void] {
  * thread's browsing for the session, and docks only while the panes keep a readable width; otherwise it
  * overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
   const terminalBridge = terminal ?? bridgeTerminal()
   const browserBridge = browser ?? bridgeBrowser()
+  const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   const platform = bridgePlatform()
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
@@ -275,6 +283,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   if (target === null) body = <div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div>
   else if (!thread) body = <div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div>
+  else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
@@ -189,6 +190,8 @@ export const agentThreadSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** Ephemeral provider-confirmed watches; never reconstructed from saved activity. */
   monitoring: agentMonitoringSchema.optional(),
+  /** Tiny current counts; the retained roster is read through its own paged bridge. */
+  subagentSummary: subagentSummarySchema.optional(),
   usage: threadUsageSchema.optional(),
   compaction: compactionSchema.optional(),
   manualCompactionSupported: z.boolean().optional(),

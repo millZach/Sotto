@@ -86,6 +86,8 @@ When Claude Code reports an active monitoring task, a small pixel creature walks
 
 The Threads sidebar keeps each thread’s provider, status and last activity beneath its project. Drag its right edge to resize it; a wider sidebar reveals the branch, model and working copy. Collapse sidebar makes more room for the conversation, and Expand sidebar restores the width you chose. With the divider focused, arrow keys resize it, Home and End choose the limits, and a double-click resets it. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
+Hovering a message or a finished reply shows a copy control at its top corner. One press copies it as Markdown, so code blocks, lists and tables paste intact somewhere else. Right-click the control, or press Shift+F10 with it focused, to copy as plain text instead. A reply still being written has no copy control, and each code block keeps a copy button of its own.
+
 You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.
 
 New threads use the **Project folder** by default, including its uncommitted edits. Threads in that folder share files and branch; choose **New worktree** for independent parallel work. A new worktree is created on the first send from the selected base branch, or you can reuse an existing worktree. Before that send, change the choice in the thread's working-copy control. Settings under Application sets the global default, and New thread can override it for a project. Existing threads keep their folders and unfinished work.
@@ -93,6 +95,10 @@ New threads use the **Project folder** by default, including its uncommitted edi
 The branch label follows the actual checkout. A shared project folder that changes branches can show a dismissible notice while you draft; sending continues on the current branch. **Restore branch** switches back by your choice, asking first about uncommitted changes. Worktree-backed threads follow their branch without that notice.
 
 While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery.
+
+Open **Tools → Agents** in a thread to see its reported subagents. Each row shows the task, model when reported, status and elapsed time when known. Open a row for its task and result, including earlier assignments when an agent is reused. Children appear under their reported parent. **Load earlier agents** reads older entries without loading the whole history at once.
+
+A small dot above-left of the Tools icon means agents are working in the thread Tools follows, including a pinned thread. Opening Tools keeps the tab you last used. After a disconnect or restart, **Last seen working** means current activity has not been confirmed; the clock and dot wait for fresh provider evidence. Finished agents remain in local history independently of the transcript's activity limit. **Keep local history** controls whether this roster and its task text are saved. Turning it off erases saved tasks and results while unfinished agents keep their status and generic task labels. If you turn it back on, erased assignments stay text-free, including later results; fresh assignments are saved again.
 
 ## Install and first run
 

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, compactAgentIdentity, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'>
 
@@ -12,7 +12,7 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   commandExecution: ['command', 'cwd', 'aggregatedOutput', 'exitCode'],
   fileChange: ['changes'], mcpToolCall: ['server', 'tool', 'result', 'error'],
   dynamicToolCall: ['tool', 'contentItems'], reasoning: ['summary'], plan: ['text'],
-  collabAgentToolCall: ['tool', 'prompt', 'receiverThreadIds', 'agentsStates'],
+  collabAgentToolCall: ['tool', 'prompt', 'model', 'senderThreadId', 'receiverThreadIds', 'agentsStates'],
   webSearch: ['query'], contextCompaction: [],
 }
 export const codexItemSchema = z.preprocess(value => {
@@ -30,7 +30,7 @@ export const codexItemSchema = z.preprocess(value => {
   exitCode: z.number().int().nullish(), durationMs: z.number().nonnegative().nullish(),
   changes: z.array(z.object({ path: z.string(), kind: z.object({ type: z.string() }).optional(), diff: z.string().optional() })).optional(),
   tool: z.string().optional(), server: z.string().optional(), prompt: z.string().nullish(),
-  receiverThreadIds: z.array(z.string()).optional(),
+  receiverThreadIds: z.array(z.string()).optional(), senderThreadId: z.string().optional(), model: z.string().nullish(),
   agentsStates: z.record(z.string(), z.object({ status: z.string(), message: z.string().nullish() })).optional(),
   result: z.object({ content: z.array(z.unknown()).optional() }).nullish(),
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
@@ -43,9 +43,9 @@ const codexActivityId = (turnId: string, itemId: string): string => `codex-activ
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
 const iso = (ms: number | undefined): string | undefined => ms !== undefined && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : undefined
 const mappedStatus = (status: string | undefined, fallback: AgentActivity['status']): AgentActivity['status'] =>
-  status === 'inProgress' || status === 'running' ? 'running'
-    : status === 'completed' ? 'completed' : status === 'failed' || status === 'errored' || status === 'declined' ? 'failed'
-      : status === 'interrupted' ? 'interrupted' : fallback
+  status === 'inProgress' || status === 'running' || status === 'pendingInit' ? 'running'
+    : status === 'completed' ? 'completed' : status === 'failed' || status === 'errored' || status === 'declined' || status === 'notFound' ? 'failed'
+      : status === 'interrupted' || status === 'shutdown' ? 'interrupted' : fallback
 const contentText = (value: unknown[] | null | undefined): string | undefined => {
   if (!value) return undefined
   return value.flatMap(part => {
@@ -57,7 +57,7 @@ const contentText = (value: unknown[] | null | undefined): string | undefined =>
 /** Observational native activity. Never sends commands, reads child transcripts or creates threads. */
 export class CodexActivityProjection {
   private readonly summaries = new Map<string, Map<number, string>>()
-  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string }>()
+  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent }>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -85,6 +85,20 @@ export class CodexActivityProjection {
       if (kept.length < value.length) activity.truncated = true
       return kept
     }
+    // Child lifecycle metadata survives detail truncation. Reserve its task/result before duplicate tool text.
+    if (activity.agents) {
+      if (activity.agents.length > 200) activity.truncated = true
+      activity.agents = activity.agents.slice(0, 200).map(agent => {
+        const result = { ...agent, status: agent.status.slice(0, 128),
+          ...(agent.title !== undefined ? { title: agent.title.slice(0, 240) } : {}),
+          ...(agent.model !== undefined ? { model: agent.model.slice(0, 512) } : {}),
+        }
+        for (const key of ['message', 'description', 'prompt'] as const) {
+          if (result[key] !== undefined) result[key] = bounded(result[key]!)
+        }
+        return result
+      })
+    }
     // One total detail budget per record, including file diffs and tool output.
     for (const key of ['title', 'command', 'cwd', 'text', 'error', 'output'] as const) {
       if (activity[key] !== undefined) activity[key] = bounded(activity[key]!)
@@ -93,10 +107,7 @@ export class CodexActivityProjection {
       if (activity.changes.length > 200) activity.truncated = true
       activity.changes = activity.changes.slice(0, 200).map(change => ({ path: bounded(change.path), kind: bounded(change.kind), ...(change.diff !== undefined ? { diff: bounded(change.diff) } : {}) }))
     }
-    if (activity.agents) {
-      if (activity.agents.length > 200) activity.truncated = true
-      activity.agents = activity.agents.slice(0, 200).map(agent => ({ ...agent, status: bounded(agent.status), ...(agent.message !== undefined ? { message: bounded(agent.message) } : {}) }))
-    }
+
     thread.activities = mergeAgentActivities(thread.activities, [activity])
   }
 
@@ -138,9 +149,28 @@ export class CodexActivityProjection {
     if (item.type === 'collabAgentToolCall') {
       if (item.prompt != null) activity.text = item.prompt
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]
-      activity.agents = ids.map(child => ({ id: agentId(child), status: item.agentsStates?.[child]?.status ?? 'unknown',
-        ...(item.agentsStates?.[child]?.message != null ? { message: item.agentsStates[child]!.message! } : {}) }))
-      for (const child of ids) this.children.set(child, { thread, turnId: context.turnId })
+      const assignment = item.tool === 'spawnAgent' || (item.tool === 'sendInput' && item.prompt != null)
+      activity.agents = ids.map(child => {
+        const owner = this.children.get(child)
+        const prior = previous?.agents?.find(agent => agent.id === agentId(child)) ?? owner?.agent
+        const assignmentId = assignment ? id : prior?.assignmentId
+        const sameAssignment = prior?.assignmentId === assignmentId
+        const childStatus = item.agentsStates?.[child]?.status ?? (assignment ? 'running' : prior?.status ?? 'unknown')
+        // These timestamps describe observation of the child, never the duration of its spawn/wait tool.
+        const observedAt = context.phase === 'history' ? prior?.observedAt : iso(this.now())
+        const agent: ObservedAgent = { ...(sameAssignment ? prior : {}), id: agentId(child), status: childStatus,
+          ...(assignmentId ? { assignmentId } : {}),
+          ...(item.senderThreadId && this.children.has(item.senderThreadId) ? { parentId: agentId(item.senderThreadId) } : {}),
+          ...(assignment && item.prompt != null ? { prompt: item.prompt, title: item.prompt.split(/\r?\n/u)[0]!.slice(0, 1_000) } : {}),
+          ...(assignment && item.model ? { model: item.model } : {}),
+          ...(observedAt ? { observedAt } : {}),
+          ...(assignment && (!sameAssignment || !prior?.startedAt) && observedAt ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
+          ...(item.agentsStates?.[child]?.message != null ? { message: item.agentsStates[child]!.message! } : {}),
+          ...(isTerminalActivity(mappedStatus(childStatus, 'unknown')) && observedAt ? { completedAt: sameAssignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
+        }
+        this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent) })
+        return agent
+      })
     }
     this.put(thread, activity)
     if (isTerminalActivity(status)) this.summaries.delete(id)
@@ -206,15 +236,36 @@ export class CodexActivityProjection {
   childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
     const owner = this.children.get(child)
     if (!owner) return undefined
-    const payload = z.object({ turn: z.object({ status: z.string(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() }).safeParse(params)
+    if (method === 'item/started' || method === 'item/completed') {
+      const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)
+      if (!nested.success || nested.data.item.type !== 'collabAgentToolCall') return undefined
+      this.item(owner.thread, { ...nested.data.item, senderThreadId: child }, { turnId: nested.data.turnId,
+        phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined })
+      return owner.thread
+    }
+    const payload = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() }).safeParse(params)
     if (!payload.success) return undefined
     const status = method === 'turn/started' ? 'running' : method === 'turn/completed' ? payload.data.turn?.status
       : method === 'thread/status/changed' ? ({ active: 'running', idle: 'unknown', systemError: 'errored', notLoaded: 'unknown' } as Record<string, string>)[payload.data.status?.type ?? ''] : undefined
     if (!status) return undefined
-    for (const record of owner.thread.activities ?? []) if (record.agents?.some(agent => agent.id === agentId(child))) {
-      this.put(owner.thread, { ...record, agents: record.agents.map(agent => agent.id === agentId(child) ? { ...agent, status,
-        ...(payload.data.turn?.error ? { message: payload.data.turn.error.message } : {}) } : agent) })
+    const prior = owner.agent
+    // A late status notification cannot restart a completed assignment. A new input item can.
+    if (isTerminalActivity(mappedStatus(prior.status, 'unknown')) && !isTerminalActivity(mappedStatus(status, 'unknown'))) return owner.thread
+    const observedAt = iso(this.now())!
+    const turn = payload.data.turn
+    const startedAt = iso(turn?.startedAt == null ? undefined : turn.startedAt * 1_000)
+    const completedAt = iso(turn?.completedAt == null ? undefined : turn.completedAt * 1_000)
+    const agent: ObservedAgent = { ...prior, status, observedAt,
+      ...(startedAt ? { startedAt, timingSource: 'provider' } : !prior.startedAt && status === 'running' ? { startedAt: observedAt, timingSource: 'observed' } : {}),
+      ...(isTerminalActivity(mappedStatus(status, 'unknown')) ? { completedAt: prior.completedAt ?? completedAt ?? observedAt } : {}),
+      ...(turn?.durationMs != null ? { durationMs: turn.durationMs } : {}),
+      ...(turn?.error ? { message: turn.error.message } : {}),
     }
+    owner.agent = compactAgentIdentity(agent)
+    const record = owner.thread.activities?.find(activity => activity.id === owner.activityId)
+    // A current child remains observable after its spawn has left the bounded activity window.
+    this.put(owner.thread, record ? { ...record, agents: record.agents?.map(child => child.id === prior.id ? agent : child) }
+      : { id: `codex-child-state-${opaque(child, prior.assignmentId ?? '')}`, turnId: owner.turnId, sequence: 0, kind: 'subagent', title: 'Subagent', status: 'unknown', agents: [agent] })
     return owner.thread
   }
 }

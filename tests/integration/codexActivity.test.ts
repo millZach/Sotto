@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { agentActivitySchema } from '../../src/shared/agentActivity'
 import { afterEach, describe, expect, it } from 'vitest'
+import { subagentActivityClassification } from '../../src/main/agents/subagentStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { codexFixture } from '../fixtures/codexFixture'
 import { activityItems } from '../fixtures/codexActivityFixture'
@@ -82,7 +83,8 @@ describe('Codex activity through native transport and workspace persistence', ()
     const savedText = await readFile(join(f.root, 'workspace.json'), 'utf8')
     expect(savedText).not.toContain('2 tests passed')
     expect(JSON.parse(savedText).snapshot.threads[0]).not.toHaveProperty('activities')
-    expect(savedActivities(f.root)).toEqual(before.activities)
+    expect(savedActivities(f.root)).toEqual(before.activities?.map(record => record.kind === 'subagent' || record.agents?.length ? subagentActivityClassification(record) : record))
+    expect(await savedActivityBytes(f.root)).not.toContain('Review the fixture')
     const activityText = await savedActivityBytes(f.root)
     expect(activityText).toContain('2 tests passed')
     expect(activityText).not.toContain('PRIVATE_REASONING')
@@ -94,13 +96,17 @@ describe('Codex activity through native transport and workspace persistence', ()
     const restored = new WorkspaceHost(restarted.host, f.root)
     cleanup.push(async () => { restored.disconnect(); await restarted.adapter.closed(); await restored.privacyChanged(); restored.dispose() })
     await restored.initialize()
-    expect(restored.workspaceSnapshot().threads[0]?.activities).toEqual(before.activities)
+    expect(restored.workspaceSnapshot().threads[0]?.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length)).toEqual(before.activities?.filter(record => record.kind !== 'subagent' && !record.agents?.length))
+    expect(restored.workspaceSnapshot().threads[0]?.activities?.find(record => record.kind === 'subagent')).toMatchObject({ title: 'Subagent' })
+    const child = before.activities!.find(record => record.kind === 'subagent')!.agents![0]!
+    expect((await restored.subagentPage({ threadId: 'thread' })).rows).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id, status: 'completed' })]))
+    expect((await restored.subagentAssignments({ threadId: 'thread', agentId: child.id })).assignments[0]?.prompt).toBe('Review the fixture')
     restarted.host.observeThreads?.(['thread'])
     await restored.connect()
     const after = (await restored.snapshot()).threads[0]!
     expect(after.activities?.map(record => record.id)).toEqual(before.activities?.map(record => record.id))
     expect(after.activities?.find(record => record.kind === 'command')).toEqual(before.activities?.find(record => record.kind === 'command'))
-    expect(after.activities?.find(record => record.kind === 'subagent')?.agents?.[0]?.status).toBe('completed')
+    expect((await restored.subagentPage({ threadId: 'thread' })).rows.find(row => row.id === child.id)?.status).toBe('completed')
     expect(after.messages).toEqual(before.messages)
     expect(after.lastTurn).toEqual({ id: turnId, status: 'completed' })
     expect((await restarted.driver.requests()).filter(record => record.method === 'turn/start')).toHaveLength(1)

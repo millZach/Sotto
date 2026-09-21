@@ -143,6 +143,8 @@ import { ClaudeStreamJsonHost } from './agents/claude'
 import { GrokAcpHost } from './agents/grok'
 import { ConfiguredProviderHost } from './agents/providerSwitch'
 import { WorkspaceHost } from './agents/workspace'
+import { registerSubagentIpc } from './agents/subagentIpc'
+import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { SottoThreadHost, ThreadRegistry } from './agents/threads'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { TurnRecorder } from './agents/turns'
@@ -980,6 +982,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         reveal: path => shell.showItemInFolder(path),
       })
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers())
+      const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change))
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
@@ -1090,6 +1093,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
+        cleanupSubagents()
         cleanupTerminals()
         cleanupTools()
         cleanupThemes()

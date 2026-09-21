@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
-import type { AgentHostCommand } from '../../../src/main/agents/host'
+import type { AgentHostCommand, ThreadHistorySource } from '../../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
@@ -58,6 +58,19 @@ afterEach(async () => {
 })
 
 describe('Sotto thread interface', () => {
+  it('translates indexed task classification lookups to Sotto thread IDs and preserves the history epoch', async () => {
+    let received: ThreadHistorySource | undefined
+    const inner = Object.assign(new FakeProviderHost(), { useThreadHistory: (source: ThreadHistorySource) => { received = source } })
+    const f = adapter(await directory(), inner)
+    const snapshot = await f.host.connect()
+    const expected = { id: 'claude-task-old', turnId: 'turn', sequence: 0, kind: 'subagent' as const, status: 'completed' as const, title: 'Subagent', taskUpdatesExcluded: true }
+    const activity = vi.fn(() => expected)
+    f.host.useThreadHistory({ messageIdentities: () => [], activity })
+    expect(received?.activity?.(inner.state.threads[0]!.id, expected.id, 'epoch')).toEqual(expected)
+    expect(activity).toHaveBeenCalledExactlyOnceWith(snapshot.threads[0]!.id, expected.id, 'epoch')
+    expect(received?.activity?.('unknown-session', expected.id, 'epoch')).toBeUndefined()
+    expect(activity).toHaveBeenCalledTimes(1)
+  })
   it('exposes UUIDs and persists provider/session/project bindings before returning a snapshot', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()

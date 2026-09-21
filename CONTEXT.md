@@ -263,3 +263,13 @@ Answering a question or permission request and creating a project are also part 
 - `src/main/agents/authority.ts` — the `Authority` interface and the risky-action classifier the coordinator consults at dispatch.
 - `scripts/memeval/` — SottoMemEval harness, backends, case sets and results.
 - `docs/adr/` — decisions, including ADR-0002 on Sotto-owned thread identity and ADR-0003 on the memory store, ADR-0004 on authority in policy records, ADR-0005 on the Codex App Server adapter, ADR-0006 on hosted transcription through OpenRouter, ADR-0012 and ADR-0013 on the voice coordinator and memory being hidden for the beta, and ADR-0016 on Sotto-owned history in an event store with a host and client split.
+
+## Subagents
+
+**Subagent.** A child agent reported by a thread's provider. It belongs to its parent thread and has an observational identity; it is not a Sotto thread or a target for commands.
+
+**Subagent roster.** The thread's retained list of reported subagents, shown in Tools under Agents. It includes finished agents and follows Tools' selected or pinned thread.
+
+**Subagent assignment.** One task given to a subagent, with the result it reported. A reused subagent keeps its identity and earlier tasks; unlike a coordinator assignment, a subagent assignment grants Sotto no authority.
+
+**Last seen working.** A subagent whose last known work has not been confirmed after a disconnect or restart. It is evidence of earlier activity, not a claim that the agent is running now.

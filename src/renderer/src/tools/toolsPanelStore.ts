@@ -4,9 +4,10 @@ import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
 import { TerminalStore } from './terminalStore'
+import { SubagentsStore } from './subagentsStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }] as const
+export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'agents', label: 'Agents' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 const TOOLS_PANEL_DEFAULT_WIDTH = 600
@@ -38,6 +39,7 @@ export class ToolsPanelStore {
   readonly changes = new ChangesStore()
   readonly terminals = new TerminalStore()
   readonly browser = new BrowserStore()
+  readonly subagents = new SubagentsStore()
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH, resized: false, expanded: false }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0

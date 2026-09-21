@@ -1,0 +1,430 @@
+{
+  "results": [
+    {
+      "variant": "compact",
+      "theme": "dark",
+      "width": 1600,
+      "height": 1000,
+      "overflow": [],
+      "panelWidth": 600,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "compact",
+      "theme": "dark",
+      "width": 1280,
+      "height": 800,
+      "overflow": [],
+      "panelWidth": 512.046875,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "compact",
+      "theme": "dark",
+      "width": 820,
+      "height": 560,
+      "overflow": [],
+      "panelWidth": 393.59375,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "compact",
+      "theme": "light",
+      "width": 1600,
+      "height": 1000,
+      "overflow": [],
+      "panelWidth": 600,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "compact",
+      "theme": "light",
+      "width": 1280,
+      "height": 800,
+      "overflow": [],
+      "panelWidth": 512.046875,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "compact",
+      "theme": "light",
+      "width": 820,
+      "height": 560,
+      "overflow": [],
+      "panelWidth": 393.59375,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "dark",
+      "width": 1600,
+      "height": 1000,
+      "overflow": [],
+      "panelWidth": 600,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "dark",
+      "width": 1280,
+      "height": 800,
+      "overflow": [],
+      "panelWidth": 512.046875,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "dark",
+      "width": 820,
+      "height": 560,
+      "overflow": [],
+      "panelWidth": 393.59375,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "light",
+      "width": 1600,
+      "height": 1000,
+      "overflow": [],
+      "panelWidth": 600,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "light",
+      "width": 1280,
+      "height": 800,
+      "overflow": [],
+      "panelWidth": 512.046875,
+      "font": "Figtree, system-ui, sans-serif"
+    },
+    {
+      "variant": "roomy",
+      "theme": "light",
+      "width": 820,
+      "height": 560,
+      "overflow": [],
+      "panelWidth": 393.59375,
+      "font": "Figtree, system-ui, sans-serif"
+    }
+  ],
+  "errors": [],
+  "contrast": [
+    {
+      "theme": "dark",
+      "samples": [
+        {
+          "text": "Browser",
+          "ratio": 8.36
+        },
+        {
+          "text": "Terminal",
+          "ratio": 8.36
+        },
+        {
+          "text": "Files",
+          "ratio": 8.36
+        },
+        {
+          "text": "Changes",
+          "ratio": 8.36
+        },
+        {
+          "text": "Agents",
+          "ratio": 17.24
+        },
+        {
+          "text": "Retain agent history",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 8.36
+        },
+        {
+          "text": "3m 12s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Working",
+          "ratio": 12.02
+        },
+        {
+          "text": "Store each agent and its assignments ind",
+          "ratio": 11.99
+        },
+        {
+          "text": "Checking restart behavior and the histor",
+          "ratio": 11.99
+        },
+        {
+          "text": "Found that general activity history is c",
+          "ratio": 11.99
+        },
+        {
+          "text": "Build the Agents view",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 8.36
+        },
+        {
+          "text": "2m 46s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Working",
+          "ratio": 12.02
+        },
+        {
+          "text": "Check keyboard navigation",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 8.36
+        },
+        {
+          "text": "48s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Finished",
+          "ratio": 8.36
+        },
+        {
+          "text": "Check streaming performance",
+          "ratio": 17.24
+        },
+        {
+          "text": "Model not reported",
+          "ratio": 8.36
+        },
+        {
+          "text": "1m 34s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Working",
+          "ratio": 12.02
+        },
+        {
+          "text": "Verify history-off cleanup",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 8.36
+        },
+        {
+          "text": "37s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Failed",
+          "ratio": 6.23
+        },
+        {
+          "text": "Review provider mappings",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 8.36
+        },
+        {
+          "text": "1m 52s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Finished",
+          "ratio": 8.36
+        },
+        {
+          "text": "Check theme tokens",
+          "ratio": 17.24
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 8.36
+        },
+        {
+          "text": "42s",
+          "ratio": 8.36
+        },
+        {
+          "text": "Finished",
+          "ratio": 8.36
+        },
+        {
+          "text": "3 working",
+          "ratio": 12.02
+        },
+        {
+          "text": "1 finished · 1 failed",
+          "ratio": 8.36
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "samples": [
+        {
+          "text": "Browser",
+          "ratio": 6.26
+        },
+        {
+          "text": "Terminal",
+          "ratio": 6.26
+        },
+        {
+          "text": "Files",
+          "ratio": 6.26
+        },
+        {
+          "text": "Changes",
+          "ratio": 6.26
+        },
+        {
+          "text": "Agents",
+          "ratio": 14.67
+        },
+        {
+          "text": "Retain agent history",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 6.26
+        },
+        {
+          "text": "3m 12s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Working",
+          "ratio": 7.21
+        },
+        {
+          "text": "Store each agent and its assignments ind",
+          "ratio": 9.73
+        },
+        {
+          "text": "Checking restart behavior and the histor",
+          "ratio": 9.73
+        },
+        {
+          "text": "Found that general activity history is c",
+          "ratio": 9.73
+        },
+        {
+          "text": "Build the Agents view",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 6.26
+        },
+        {
+          "text": "2m 46s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Working",
+          "ratio": 7.21
+        },
+        {
+          "text": "Check keyboard navigation",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 6.26
+        },
+        {
+          "text": "48s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Finished",
+          "ratio": 6.26
+        },
+        {
+          "text": "Check streaming performance",
+          "ratio": 14.67
+        },
+        {
+          "text": "Model not reported",
+          "ratio": 6.26
+        },
+        {
+          "text": "1m 34s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Working",
+          "ratio": 7.21
+        },
+        {
+          "text": "Verify history-off cleanup",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 6.26
+        },
+        {
+          "text": "37s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Failed",
+          "ratio": 5.63
+        },
+        {
+          "text": "Review provider mappings",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Sonnet 4.6",
+          "ratio": 6.26
+        },
+        {
+          "text": "1m 52s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Finished",
+          "ratio": 6.26
+        },
+        {
+          "text": "Check theme tokens",
+          "ratio": 14.67
+        },
+        {
+          "text": "Claude Haiku 4.5",
+          "ratio": 6.26
+        },
+        {
+          "text": "42s",
+          "ratio": 6.26
+        },
+        {
+          "text": "Finished",
+          "ratio": 6.26
+        },
+        {
+          "text": "3 working",
+          "ratio": 7.21
+        },
+        {
+          "text": "1 finished · 1 failed",
+          "ratio": 6.26
+        }
+      ]
+    }
+  ],
+  "interactions": "details/history, Escape, close/reopen preserving tab, keyboard tabs, pin, states, reduced motion passed"
+}

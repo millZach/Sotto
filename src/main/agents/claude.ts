@@ -543,7 +543,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
-    this.projectActivity(id, frame)
+    this.projectActivity(id, frame, true)
     if (frame.parent_tool_use_id) { this.emit(true); return }
     this.observeCompaction(id, frame, false)
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
@@ -728,12 +728,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     thread.activities = markTurnActivity(thread.activities, { provider: 'claude', turnId: turn, status,
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
   }
-  private projectActivity(id: string, frame: ClaudeFrame): void {
+  private projectActivity(id: string, frame: ClaudeFrame, live = false): void {
     const thread = this.threads.get(id)!
     let projector = this.activity.get(id)
-    if (!projector) { projector = new ClaudeActivity(); this.activity.set(id, projector) }
+    if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const turnId = this.messageLog.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.messageLog.lastTextMessageId(id), this.aliases[id]!.cwd)
+    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.messageLog.lastTextMessageId(id), this.aliases[id]!.cwd, live)
     if (rows.length) thread.activities = rows
   }
   /** The one place a Claude message reaches the record: the transcript tail, a streamed reply, or a
