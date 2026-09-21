@@ -264,7 +264,7 @@ export class GrokAcpHost implements AgentHost {
     try {
       await rpc.request('initialize', { protocolVersion: GROK_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '1' } }, value => {
         const response = z.object({ protocolVersion: z.number(), agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.string().min(1).max(64), modelState: catalogSchema }) }).parse(value)
-        // The pin is a floor, not one exact version (ADR-0020): an exact pin is what kept an installed
+        // The pin is a floor, not one exact version (ADR-0021): an exact pin is what kept an installed
         // client on 1.0.5 while 1.0.40 was published. Older than the checked version is still refused.
         if (response.protocolVersion !== GROK_ACP_VERSION) throw new GrokUnsupported(`Sotto speaks ACP ${GROK_ACP_VERSION}, and this client answered ACP ${response.protocolVersion}.`)
         if (compareClientVersions(response._meta.agentVersion, GROK_CLI_VERSION) < 0) throw new GrokUnsupported(`Grok CLI ${GROK_CLI_VERSION} or newer is required, and this client is ${response._meta.agentVersion}.`)

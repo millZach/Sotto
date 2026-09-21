@@ -27,7 +27,7 @@ it.each([
  expect(error?.message).not.toContain('Connect again to retry.')
  expect((await f.driver.requests()).some(request=>request.method==='authenticate')).toBe(false)
 })
-it('connects to a client newer than the verified version and says which version is running (ADR-0020)',async()=>{
+it('connects to a client newer than the verified version and says which version is running (ADR-0021)',async()=>{
  f=await grokFixture();await f.script({cliVersion:'1.0.40'})
  const snapshot=await f.host.connect()
  expect(snapshot.connected).toBe(true)

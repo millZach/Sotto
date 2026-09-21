@@ -17,7 +17,7 @@ function sinceLabel(iso: string): string {
 }
 
 /**
- * One card in the corner for every client that has fallen behind (ADR-0020). It says what is
+ * One card in the corner for every client that has fallen behind (ADR-0021). It says what is
  * installed, what is published and what a press will do, and after a press whether it worked. It
  * never speaks for a client Sotto cannot update: that row shows the command to run instead.
  */
