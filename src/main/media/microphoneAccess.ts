@@ -12,6 +12,8 @@ export interface MicrophoneAccessAdapter {
 
 export interface MicrophoneAccessGate {
   ensure(): Promise<boolean>
+  /** Synchronous OS read for Chromium's permission check, which must not pre-grant. */
+  isGranted(): boolean
 }
 
 export function createMicrophoneAccessGate(
@@ -34,6 +36,13 @@ export function createMicrophoneAccessGate(
   }
 
   return {
+    isGranted: (): boolean => {
+      try {
+        return adapter.status() === 'granted'
+      } catch {
+        return true
+      }
+    },
     ensure: async (): Promise<boolean> => {
       let status: MediaAccessStatus
       try {
