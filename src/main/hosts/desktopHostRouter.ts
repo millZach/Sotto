@@ -120,14 +120,21 @@ export class DesktopHostRouter {
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-    if (command.type === 'select-thread') {
+    if (command.type === 'select-thread' || command.type === 'select-project') {
       this.selectedHostId = connection.hostId
-      this.selectedThreadId = command.threadId ? hostEntityKey(connection.hostId, command.threadId) : null
-      this.selectedProjectId = this.shell().host.threads.find(thread => thread.id === this.selectedThreadId)?.projectId ?? null
+      if (command.type === 'select-thread') {
+        this.selectedThreadId = command.threadId ? hostEntityKey(connection.hostId, command.threadId) : null
+        this.selectedProjectId = this.shell().host.threads.find(thread => thread.id === this.selectedThreadId)?.projectId ?? null
+      } else {
+        this.selectedProjectId = command.projectId ? hostEntityKey(connection.hostId, command.projectId) : null; this.selectedThreadId = null
+      }
+      // The window's selection is client-local, but the owning host keeps its own active thread:
+      // without the forward, compose and send would still target the previous one.
+      if (connection.available?.() !== false) {
+        const result = await connection.service.command(command, client)
+        if (result.error) this.notice = result.error
+      }
       this.emit(); return this.shell()
-    }
-    if (command.type === 'select-project') {
-      this.selectedHostId = connection.hostId; this.selectedProjectId = command.projectId ? hostEntityKey(connection.hostId, command.projectId) : null; this.selectedThreadId = null; this.emit(); return this.shell()
     }
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before sending. No command was sent.')
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
