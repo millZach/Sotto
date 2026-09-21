@@ -10,6 +10,9 @@ import type { DesktopHostRouter } from './desktopHostRouter'
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
 interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number }
+interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active: LiveHost | undefined }
+/** Drops that only the user can resolve stop the reconnect backoff instead of retrying. */
+const FINAL_FAILURES = ['identity changed', 'host key changed', 'installation was not found', 'connection record could not be read', 'identity file could not be read', 'could not pair again']
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
@@ -17,6 +20,7 @@ export class DesktopHosts {
   private saved: SavedHost[] = []
   private readonly status = new Map<string, HostStatus>()
   private readonly live = new Map<string, LiveHost>()
+  private readonly retries = new Map<string, Retry>()
   private readonly listeners = new Set<(state: HostsState) => void>()
   private generation = 0
   private writing: Promise<void> = Promise.resolve()
@@ -24,6 +28,7 @@ export class DesktopHosts {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
+    retryDelayMs?: (attempt: number) => number;
   }) {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
   }
@@ -43,6 +48,7 @@ export class DesktopHosts {
     if (command.type === 'restart') { this.options.restart(); return this.get() }
     if (command.type === 'save') {
       const host = command.host
+      this.clearRetry(host.id)
       if (this.live.has(host.id)) throw new Error('Disconnect this host before changing its connection.')
       const existing = this.saved.find(item => item.id === host.id)
       // Editing a route must not silently transfer a credential to a different host.
@@ -57,30 +63,20 @@ export class DesktopHosts {
       this.live.get(host.id)?.launcher.answerPrompt(command.promptId, command.answer)
       return this.get()
     }
-    if (command.type === 'disconnect') { await this.disconnect(host.id); return this.get() }
+    if (command.type === 'disconnect') { this.clearRetry(host.id); await this.disconnect(host.id, true); return this.get() }
     if (command.type === 'forget') {
+      this.clearRetry(host.id)
       const active = this.live.get(host.id)
       if (host.clientId) {
         if (!active?.tunnel) throw new Error('Connect to this host before forgetting it so its client access can be revoked.')
         await active.tunnel.revokeClient(host.clientId)
       }
-      await this.disconnect(host.id)
+      await this.disconnect(host.id, true)
       await this.options.credentials.set(`remote-host:${host.id}`, '')
       this.saved = this.saved.filter(item => item.id !== host.id)
       await this.save(); this.status.delete(host.id); this.emit(); return this.get()
     }
-    if (command.type === 'pair') {
-      const active = this.live.get(host.id)
-      if (!active?.tunnel) throw new Error('Connect the SSH host before entering its pairing code.')
-      const pairing = await SocketHostService.pair(active.tunnel.url, command.code, 'Sotto desktop')
-      if (pairing.hostId !== active.tunnel.hostId || host.hostId && pairing.hostId !== host.hostId) throw new Error('This is a different host. Check the address before pairing.')
-      await this.options.credentials.set(`remote-host:${host.id}`, pairing.token)
-      host.hostId = pairing.hostId; host.clientId = pairing.clientId
-      await this.save()
-      await this.openSocket(host, active)
-      return this.get()
-    }
-    if (this.live.has(host.id)) await this.disconnect(host.id)
+    if (this.live.has(host.id)) await this.disconnect(host.id, false, true)
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...remoteHostSchema.strip().parse(host), phase: 'connecting' }); this.emit()
@@ -88,31 +84,71 @@ export class DesktopHosts {
       active.tunnel = await active.launcher.connect({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
         ...(host.identityFile ? { identityFile: host.identityFile } : {}) }, {
         onPrompt: prompt => { if (this.live.get(host.id) !== active) return; const state = this.status.get(host.id); if (state) { if (prompt) state.prompt = prompt; else delete state.prompt; this.emit() } },
-        onDisconnected: () => { if (this.live.get(host.id) !== active) return; if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId } this.update(host.id, { phase: 'error', error: 'The SSH connection ended. Connect again to resume. Your threads remain on the host.' }) },
+        onDisconnected: () => { if (this.live.get(host.id) === active) this.dropped(host, active) },
       })
       if (this.live.get(host.id) !== active) { await active.tunnel.close(); return this.get() }
       if (host.hostId && host.hostId !== active.tunnel.hostId) throw new Error('The host identity changed. Check its data folder before connecting again.')
       this.update(host.id, { hostId: active.tunnel.hostId })
-      if (this.options.credentials.has(`remote-host:${host.id}`)) await this.openSocket(host, active)
-      else this.update(host.id, { phase: 'pairing' })
+      if (!this.options.credentials.has(`remote-host:${host.id}`)) await this.pairOverTunnel(host, active)
+      await this.openSocket(host, active)
     } catch (error) {
+      let failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
       if (error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.tunnel) {
         await active.socket?.close().catch(() => undefined)
         delete active.socket
         await this.options.credentials.set(`remote-host:${host.id}`, '')
-        this.update(host.id, { phase: 'pairing', error: 'This device is no longer paired. Read a new code on the host and enter it here.' })
-        return this.get()
+        try {
+          await this.pairOverTunnel(host, active)
+          await this.openSocket(host, active)
+          this.clearRetry(host.id)
+          return this.get()
+        } catch { failure = new Error('This device is no longer paired and could not pair again. Check the host, then connect again.') }
       }
       await active.socket?.close().catch(() => undefined)
       await active.launcher.disconnect().catch(() => undefined)
       if (this.live.get(host.id) === active) this.live.delete(host.id)
-      this.update(host.id, { phase: 'error', error: error instanceof Error ? error.message : 'The host could not connect. Check its SSH settings and try again.' })
+      if (this.retries.has(host.id) && !this.final(failure) && !this.status.get(host.id)?.prompt) {
+        this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
+        this.scheduleReconnect(host, undefined)
+      } else {
+        this.clearRetry(host.id)
+        this.update(host.id, { phase: 'error', reconnecting: false, error: failure.message })
+      }
     }
     return this.get()
   }
+  private async pairOverTunnel(host: SavedHost, active: LiveHost): Promise<void> {
+    const code = await active.tunnel!.showHostPairingCode()
+    const pairing = await SocketHostService.pair(active.tunnel!.url, code.code, 'Sotto desktop')
+    if (pairing.hostId !== active.tunnel!.hostId || host.hostId && pairing.hostId !== host.hostId) throw new Error('This is a different host. Check the address before pairing.')
+    await this.options.credentials.set(`remote-host:${host.id}`, pairing.token)
+    host.hostId = pairing.hostId; host.clientId = pairing.clientId
+    await this.save()
+  }
+  private final(error: Error): boolean { return FINAL_FAILURES.some(part => error.message.includes(part)) }
+  private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
+  private scheduleReconnect(host: SavedHost, active: LiveHost | undefined): void {
+    const previous = this.retries.get(host.id)
+    if (previous) clearTimeout(previous.timer)
+    const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined as never }
+    entry.timer = setTimeout(() => {
+      if (this.retries.get(host.id) !== entry) return
+      if (entry.active && this.live.get(host.id) !== entry.active) return
+      void this.command({ type: 'connect', id: host.id })
+    }, (this.options.retryDelayMs ?? (attempt => Math.min(30_000, 1_000 * 2 ** attempt)))(entry.attempt))
+    entry.attempt += 1
+    this.retries.set(host.id, entry)
+  }
+  private dropped(host: SavedHost, active: LiveHost): void {
+    if (this.status.get(host.id)?.phase !== 'connected') return
+    if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
+    if (!this.status.has(host.id)) return
+    this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
+    if (!this.status.get(host.id)!.prompt) this.scheduleReconnect(host, active)
+  }
   private async openSocket(host: SavedHost, active: LiveHost): Promise<void> {
     let connected = false
-    const socket = new SocketHostService({ onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.update(host.id, { phase: 'error', error: 'The connection ended. Connect again to refresh. Unconfirmed commands are not sent again.' }) }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId })
+    const socket = new SocketHostService({ onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId })
     active.socket = socket
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
@@ -124,16 +160,19 @@ export class DesktopHosts {
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
     })
     active.registeredHostId = hello.hostId
-    this.update(host.id, { phase: 'connected', hostId: hello.hostId, clientId: hello.clientId })
+    this.clearRetry(host.id)
+    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId })
   }
-  private async disconnect(id: string): Promise<void> {
+  private async disconnect(id: string, stopHost = false, keepRetry = false): Promise<void> {
+    if (!keepRetry) this.clearRetry(id)
     const active = this.live.get(id)
     this.live.delete(id)
     if (active?.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     await active?.socket?.close()
+    if (stopHost && active?.tunnel?.owned) await active.tunnel.stopHost().catch(() => undefined)
     await active?.launcher.disconnect()
     const status = this.status.get(id)
-    if (status) { delete status.prompt; delete status.error; status.phase = 'disconnected'; this.emit() }
+    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; status.phase = 'disconnected'; this.emit() }
   }
   async close(): Promise<void> { await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing }
 }

@@ -25,7 +25,7 @@ async function fixture(mode = 'started', timing?: { authenticationTimeoutMs?: nu
   launchers.push(launcher)
   return { launcher, children, events: async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; args?: string[]; owned?: boolean; tunnel?: boolean; kind?: string }) }
 }
-it.each(['started', 'discovered'])('discovers readiness, verifies forward and stops only owned host: %s', async mode => {
+it.each(['started', 'discovered'])('discovers readiness, verifies forward and leaves the host running on close: %s', async mode => {
   const { launcher, events } = await fixture(mode)
   const status: string[] = []
   const connection = await launcher.connect(configuration, { onStatus: value => status.push(value) })
@@ -39,8 +39,14 @@ it.each(['started', 'discovered'])('discovers readiness, verifies forward and st
   expect(initial.some(item => item.type === 'pairing-requested')).toBe(false)
   expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123', hostId: connection.hostId })
   await connection.close()
-  expect((await events()).find(item => item.type === 'host-stopped')?.owned).toBe(mode === 'started')
+  expect((await events()).some(item => item.type === 'host-stopped')).toBe(false)
   expect(status.at(-1)).toBe('disconnected')
+})
+it.each([['started', true], ['discovered', false]])('stop-host ends only a host this launcher started: %s', async (mode, stopped) => {
+  const { launcher, events } = await fixture(mode)
+  const connection = await launcher.connect(configuration)
+  expect(await connection.stopHost()).toBe(stopped)
+  expect((await events()).find(item => item.type === 'host-stopped')?.owned).toBe(mode === 'started')
 })
 it.each(['password', 'passphrase', 'host-key'])('surfaces split %s prompts for both SSH processes and waits for explicit answers', async mode => {
   const { launcher, events } = await fixture(mode)
@@ -70,7 +76,7 @@ it('times out without a ready marker and starts a fresh forward before reconnect
   const first = await launcher.connect(configuration); await first.close()
   const second = await launcher.connect(configuration)
   expect((await events()).filter(item => item.type === 'forward-ready')).toHaveLength(2)
-  expect((await events()).filter(item => item.type === 'host-stopped').every(item => item.owned === false)).toBe(true)
+  expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
   await second.close()
 })
 it('declining a host key never completes a connection', async () => {

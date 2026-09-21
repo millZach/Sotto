@@ -9,9 +9,9 @@ import type { HostsBridge, HostsState } from '../../../src/shared/hosts'
 afterEach(cleanup)
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
-function fixture(phase: 'connected' | 'pairing' = 'connected') {
+function fixture(phase: 'connected' | 'connecting' = 'connected', reconnecting = false) {
   const state: HostsState = { localHostEnabled: true, localHostRunning: true, localHostId: LOCAL, activeHostId: LOCAL,
-    hosts: [{ id: REMOTE, hostId: REMOTE, name: 'Forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase }] }
+    hosts: [{ id: REMOTE, hostId: REMOTE, name: 'Forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase, reconnecting }] }
   const command = vi.fn<HostsBridge['command']>(async input => ({ ...state, ...(input.type === 'select' ? { activeHostId: input.hostId } : {}) }))
   const bridge: HostsBridge = { get: async () => state, command, onChanged: () => () => undefined }
   return { bridge, command, state }
@@ -25,16 +25,13 @@ it('chooses the host explicitly and keeps local hosting separate from host selec
   await user.click(screen.getByRole('switch', { name: 'Run the local host' }))
   expect(change).toHaveBeenCalledWith(false)
 })
-it('uses pairing B and only submits the code after the user presses Pair', async () => {
-  const { bridge, command } = fixture('pairing'), user = userEvent.setup()
+it('says Reconnecting while a dropped connection retries and still offers Disconnect', async () => {
+  const { bridge, command } = fixture('connecting', true), user = userEvent.setup()
   render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
-  await user.click(await screen.findByRole('button', { name: 'Enter pairing code' }))
-  expect(screen.getByText('Read the pairing code on Forge and enter it here.')).toBeTruthy()
-  await user.type(screen.getByRole('textbox', { name: 'Pairing code' }), 'ABCD-EFGH')
-  expect(command).not.toHaveBeenCalled()
-  await user.click(screen.getByRole('button', { name: 'Pair this laptop' }))
-  await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'pair', id: REMOTE, code: 'ABCD-EFGH' }))
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(await screen.findByText(/Reconnecting/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Enter pairing code' })).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'Disconnect' }))
+  await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'disconnect', id: REMOTE }))
 })
 it('keeps the remote Open folder control visible and explains where it acts', async () => {
   const command = vi.fn(), user = userEvent.setup()

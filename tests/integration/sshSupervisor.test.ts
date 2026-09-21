@@ -40,7 +40,51 @@ it('runs the fixed remote supervisor, starts an owned host, issues explicit code
   await vi.waitFor(() => expect(remote.messages.find(message => message.type === 'revoked')).toMatchObject({ id: 'revoke', revoked: true }))
   remote.send({ type: 'close' })
   await vi.waitFor(() => expect(remote.child.exitCode).toBe(0))
-  expect(() => process.kill(ready.pid as number, 0)).toThrow()
+  expect(() => process.kill(ready.pid as number, 0)).not.toThrow()
+  try { process.kill(ready.pid as number, 'SIGTERM') } catch { /* already exited */ }
+})
+it('keeps an owned host alive after the supervisor connection ends', async () => {
+  const configuration = await fixture(), remote = supervise(configuration)
+  await vi.waitFor(() => expect(remote.messages.some(message => message.type === 'ready')).toBe(true))
+  const ready = remote.messages.find(message => message.type === 'ready')!
+  expect(ready.owned).toBe(true)
+  remote.child.stdin.end()
+  await vi.waitFor(() => expect(remote.child.exitCode).toBe(0))
+  const descriptor = JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8'))
+  const health = await fetch(`http://127.0.0.1:${descriptor.port}/v1/health`).then(response => response.json())
+  expect(health).toMatchObject({ status: 'ready', pid: ready.pid })
+  const launcher = JSON.parse(await readFile(join(configuration.dataDirectory, 'host-launcher.json'), 'utf8'))
+  expect(launcher).toMatchObject({ v: 1, pid: ready.pid })
+  try { process.kill(ready.pid as number, 'SIGTERM') } catch { /* already exited */ }
+})
+it('reconnects to a host it started earlier, reports owned, and stops it on stop-host', async () => {
+  const configuration = await fixture(), first = supervise(configuration)
+  await vi.waitFor(() => expect(first.messages.some(message => message.type === 'ready')).toBe(true))
+  const ready = first.messages.find(message => message.type === 'ready')!
+  first.child.stdin.end()
+  await vi.waitFor(() => expect(first.child.exitCode).toBe(0))
+  const second = supervise(configuration)
+  await vi.waitFor(() => expect(second.messages.some(message => message.type === 'ready')).toBe(true))
+  const again = second.messages.find(message => message.type === 'ready')!
+  expect(again).toMatchObject({ owned: true, pid: ready.pid, hostId: ready.hostId })
+  second.send({ type: 'stop-host', id: '00000000-0000-4000-8000-000000000001' })
+  await vi.waitFor(() => expect(second.messages.find(message => message.type === 'host-stopped')).toMatchObject({ id: '00000000-0000-4000-8000-000000000001', stopped: true, hostId: ready.hostId }))
+  await vi.waitFor(() => expect(second.child.exitCode).toBe(0))
+  await vi.waitFor(() => expect(() => process.kill(ready.pid as number, 0)).toThrow())
+  await expect(readFile(join(configuration.dataDirectory, 'host-launcher.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('refuses to stop a host it did not start', async () => {
+  const configuration = await fixture()
+  const existing = spawn(process.execPath, [join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true })
+  children.push(existing)
+  await vi.waitFor(async () => expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')).pid).toBe(existing.pid))
+  const remote = supervise(configuration)
+  await vi.waitFor(() => expect(remote.messages.find(message => message.type === 'ready')).toMatchObject({ owned: false, pid: existing.pid }))
+  remote.send({ type: 'stop-host', id: '00000000-0000-4000-8000-000000000002' })
+  await vi.waitFor(() => expect(remote.messages.find(message => message.type === 'host-stopped')).toMatchObject({ stopped: false }))
+  await vi.waitFor(() => expect(remote.child.exitCode).toBe(0))
+  expect(existing.exitCode).toBeNull()
+  expect(() => process.kill(existing.pid!, 0)).not.toThrow()
 })
 it('discovers an existing host and leaves it alive after the SSH supervisor closes', async () => {
   const configuration = await fixture()

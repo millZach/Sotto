@@ -11,10 +11,11 @@ export const remoteHostSchema = z.object({
 }).strict()
 export type RemoteHost = z.infer<typeof remoteHostSchema>
 export interface HostStatus extends RemoteHost {
-  phase: 'disconnected' | 'connecting' | 'pairing' | 'connected' | 'error'
+  phase: 'disconnected' | 'connecting' | 'connected' | 'error'
+  reconnecting?: boolean | undefined
   hostId?: string
   clientId?: string
-  error?: string
+  error?: string | undefined
   prompt?: { id: string; kind: 'host-key' | 'password' | 'passphrase'; text: string }
 }
 export interface HostsState { hosts: HostStatus[]; localHostEnabled: boolean; localHostRunning: boolean; activeHostId?: string; localHostId?: string }
@@ -23,7 +24,6 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('disconnect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('forget'), id: z.uuid() }).strict(),
-  z.object({ type: z.literal('pair'), id: z.uuid(), code: z.string().trim().min(1).max(32) }).strict(),
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),
   z.object({ type: z.literal('restart') }).strict(),
   z.object({ type: z.literal('select'), hostId: z.uuid() }).strict(),

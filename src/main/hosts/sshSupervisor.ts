@@ -12,9 +12,21 @@ const resolvePath = value => path.resolve(value.startsWith('~/') ? path.join(os.
 const data = resolvePath(cfg.dataDirectory);
 const entry = path.join(resolvePath(cfg.installPath), 'host', 'index.js');
 const descriptorPath = path.join(data, 'host-listener.json');
+const launcherPath = path.join(data, 'host-launcher.json');
 let child, pairing, stopping = false, ready = null, input = '';
 const emit = event => process.stdout.write(cfg.marker + JSON.stringify(event) + '\n');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const readLauncher = async () => {
+  try { const value = JSON.parse(await fs.readFile(launcherPath, 'utf8')); return value && value.v === 1 && Number.isInteger(value.pid) ? value : null; }
+  catch { return null; }
+};
+const writeLauncher = async pid => {
+  await fs.mkdir(data, { recursive: true });
+  const temporary = launcherPath + '.tmp';
+  await fs.writeFile(temporary, JSON.stringify({ v: 1, pid, startedAt: new Date().toISOString() }));
+  await fs.rename(temporary, launcherPath);
+};
+const removeLauncher = () => fs.rm(launcherPath, { force: true }).catch(() => undefined);
 const health = port => new Promise((resolve, reject) => {
   const request = http.get({ hostname: '127.0.0.1', port, path: '/v1/health', timeout: 1500 }, response => {
     let body = ''; response.on('data', chunk => { body += chunk; if (body.length > 4096) request.destroy(new Error('invalid')); });
@@ -31,7 +43,8 @@ const discover = async () => {
   try { live = await health(descriptor.port); }
   catch (error) { if (error.code === 'ECONNREFUSED') return null; throw new Error('port-taken'); }
   if (live.hostId !== descriptor.hostId || live.pid !== descriptor.pid) throw new Error('port-taken');
-  return live;
+  const launcher = await readLauncher();
+  return { ...live, owned: !!launcher && launcher.pid === live.pid };
 };
 const stopChild = async process => {
   if (!process || process.exitCode !== null || process.signalCode !== null) return;
@@ -39,9 +52,10 @@ const stopChild = async process => {
   await Promise.race([new Promise(resolve => process.once('exit', resolve)), pause(15000)]);
   if (process.exitCode === null && process.signalCode === null) process.kill('SIGKILL');
 };
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const stop = async () => {
   if (stopping) return; stopping = true;
-  await Promise.all([stopChild(pairing), stopChild(child)]);
+  await stopChild(pairing);
   process.exit(0);
 };
 process.on('SIGTERM', stop); process.on('SIGINT', stop); process.on('SIGHUP', stop);
@@ -56,6 +70,25 @@ process.stdin.on('data', chunk => {
     if (!line.startsWith(cfg.marker)) continue;
     let command; try { command = JSON.parse(line.slice(cfg.marker.length)); } catch { continue; }
     if (command.type === 'close') { void stop(); return; }
+    if (command.type === 'stop-host' && typeof command.id === 'string') {
+      const requestId = command.id;
+      void (async () => {
+        let stopped = false;
+        if (ready && ready.owned) {
+          const record = await readLauncher();
+          const pid = record && record.pid === ready.pid ? record.pid : ready.pid;
+          try { process.kill(pid, 'SIGTERM'); } catch {}
+          const deadline = Date.now() + 15000;
+          while (alive(pid) && Date.now() < deadline) await pause(100);
+          if (alive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch {} await pause(200); }
+          stopped = !alive(pid);
+          await removeLauncher();
+        }
+        emit({ type: 'host-stopped', id: requestId, stopped, hostId: ready ? ready.hostId : null });
+        await stop();
+      })();
+      return;
+    }
     if (['pairing-code', 'revoke-client'].includes(command.type) && ready && !pairing && typeof command.id === 'string') {
       const requestId = command.id;
       const revoking = command.type === 'revoke-client';
@@ -87,23 +120,27 @@ process.stdin.on('data', chunk => {
   try {
     const existing = await discover();
     if (stopping) return;
-    if (existing) { ready = existing; emit({ type: 'ready', ...existing, owned: false }); return; }
+    if (existing) { ready = existing; emit({ type: 'ready', ...existing }); return; }
+    await removeLauncher();
     try { await fs.access(entry); } catch { throw new Error('archive-missing'); }
     emit({ type: 'starting' });
-    child = spawn(process.execPath, [entry, '--data', data, '--port', String(cfg.remotePort)], { stdio: 'ignore' });
+    child = spawn(process.execPath, [entry, '--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore' });
+    child.unref();
     let childFailed = false; child.on('error', () => { childFailed = true; });
+    if (Number.isInteger(child.pid)) await writeLauncher(child.pid);
     const deadline = Date.now() + cfg.readyTimeoutMs;
     while (!stopping && Date.now() < deadline) {
       if (childFailed || child.exitCode !== null || child.signalCode !== null) throw new Error('host-start-failed');
       const current = await discover();
       if (current) {
-        if (current.pid !== child.pid) { await stopChild(child); child = undefined; }
-        ready = current; emit({ type: 'ready', ...current, owned: !!child }); return;
+        if (current.pid !== child.pid) { await stopChild(child); await removeLauncher(); child = undefined; }
+        ready = { ...current, owned: !!child }; emit({ type: 'ready', ...ready }); return;
       }
       await pause(100);
     }
     if (!stopping) throw new Error('host-timeout');
   } catch (error) {
+    if (!ready) { await stopChild(child); await removeLauncher(); }
     const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-start-failed', 'host-timeout'];
     emit({ type: 'error', reason: allowed.includes(error.message) ? error.message : 'host-start-failed' });
     await stop();

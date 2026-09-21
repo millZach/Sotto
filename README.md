@@ -89,9 +89,9 @@ A normal stop removes the host's listener descriptor and lock. After a forced te
 
 ## Desktop and iPhone clients (development)
 
-In **Settings > Hosts**, add the SSH target, extracted host installation folder and host data folder. The desktop uses your SSH configuration and asks before accepting a new host key. Connect starts or discovers the installed host and forwards its loopback listener. Disconnect stops a host started by that SSH connection; an independently running host keeps working. Run Forge independently for work that must continue after the laptop disconnects.
+In **Settings > Hosts**, add the SSH target, extracted host installation folder and host data folder. The desktop uses your SSH configuration and asks before accepting a new host key. Connect starts or discovers the installed host and forwards its loopback listener, then Sotto pairs this laptop itself over that connection; no code is typed. A host Sotto started keeps running if the connection drops and stops only on Disconnect or Forget; an independently running host is never stopped, and a dropped connection reconnects on its own. Run Forge independently for work that must continue after the laptop disconnects.
 
-Choose **Enter pairing code**. On the host, request a fresh code and enter it in Sotto:
+The iPhone enters a code shown on the host. On the host, request a fresh code:
 
 ```sh
 node host/index.js --data /path/to/sotto-data --pairing-code

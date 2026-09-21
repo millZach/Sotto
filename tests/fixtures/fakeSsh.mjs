@@ -46,7 +46,8 @@ process.stdin.on('data', chunk => {
     }
     if (!marker || !line.startsWith(marker)) continue
     const request = JSON.parse(line.slice(marker.length))
-    if (request.type === 'close') { record({ type: 'host-stopped', owned: mode !== 'discovered' }); stop() }
+    if (request.type === 'close') { stop() }
+    if (request.type === 'stop-host') { record({ type: 'host-stopped', owned: mode !== 'discovered' }); emit({ type: 'host-stopped', id: request.id, stopped: mode !== 'discovered', hostId }); stop() }
     if (request.type === 'pairing-code') { record({ type: 'pairing-requested' }); emit({ type: 'pairing-code', id: request.id, hostId, code: 'ABC123', expiresAt: new Date(Date.now() + 60_000).toISOString() }) }
   }
 })

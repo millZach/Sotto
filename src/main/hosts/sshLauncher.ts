@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import { stripVTControlCharacters } from 'node:util'
 import { z } from 'zod'
 import { validateSshHost, type SshHostConfiguration, type ValidatedSshHostConfiguration } from './sshConfiguration'
+export type { SshHostConfiguration }
 import { spawnSsh, type SpawnSsh, type SshProcess } from './sshProcess'
 import { sshSupervisorCommand } from './sshSupervisor'
 
@@ -23,6 +24,7 @@ export interface SshHostConnection {
   readonly owned: boolean
   showHostPairingCode(): Promise<SshPairingCode>
   revokeClient(clientId: string): Promise<boolean>
+  stopHost(): Promise<boolean>
   close(): Promise<void>
 }
 export interface SshLauncherDependencies {
@@ -39,6 +41,7 @@ const healthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hos
 const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boolean() })
 const pairingSchema = z.object({ type: z.literal('pairing-code'), id: z.uuid(), code: z.string().min(1).max(256), expiresAt: z.string().datetime(), hostId: z.uuid() })
 const REVOCATION_ERROR = 'Client access could not be revoked. Check the host connection and try Forget again.'
+const STOP_HOST_ERROR = 'The host could not be stopped. It may still be running on the SSH host.'
 const PAIRING_ERROR = 'The pairing code could not be read from the host. Check that the host is running and try again.'
 const ERRORS: Readonly<Record<string, string>> = {
   'archive-missing': 'The host installation was not found. Check its folder on the SSH host and reconnect.',
@@ -108,6 +111,7 @@ interface Attempt {
   resolveReady?: (ready: z.infer<typeof readySchema>) => void
   revocation?: { id: string; resolve: (revoked: boolean) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
   pairing?: { id: string; resolve: (code: SshPairingCode) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+  stopping?: { id: string; resolve: (stopped: boolean) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
 }
 
 /** One configured host connection. Reconnect closes the previous forward before creating a new socket path. */
@@ -160,7 +164,8 @@ export class SshHostLauncher {
       attempt.connected = true
       this.status(attempt, 'ready')
       return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned,
-        close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), revokeClient: clientId => this.revokeClient(attempt, clientId) }
+        close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), revokeClient: clientId => this.revokeClient(attempt, clientId),
+        stopHost: async () => { const stopped = await this.stopHost(attempt); await this.closeAttempt(attempt); return stopped } }
     } catch (error) {
       await this.closeAttempt(attempt)
       throw attempt.failure ?? (error instanceof Error ? error : new Error(ERRORS['ssh-refused']))
@@ -251,6 +256,12 @@ export class SshHostLauncher {
       if (!request || request.id !== revoked.id || revoked.hostId !== attempt.ready?.hostId) return
       clearTimeout(request.timer); delete attempt.revocation; request.resolve(revoked.revoked); return
     }
+    if (value.type === 'host-stopped') {
+      const stopped = z.object({ id: z.uuid(), hostId: z.uuid().nullable(), stopped: z.boolean() }).parse(value)
+      const request = attempt.stopping
+      if (!request || request.id !== stopped.id || (stopped.hostId !== null && stopped.hostId !== attempt.ready?.hostId)) return
+      clearTimeout(request.timer); delete attempt.stopping; request.resolve(stopped.stopped); return
+    }
     const revoke = attempt.revocation
     if (value.type === 'pairing-failed' && 'id' in value && revoke && revoke.id === value.id) {
       clearTimeout(revoke.timer); revoke.reject(new Error(REVOCATION_ERROR)); delete attempt.revocation; return
@@ -258,6 +269,10 @@ export class SshHostLauncher {
     const pending = attempt.pairing
     if (value.type === 'pairing-failed' && 'id' in value && pending && pending.id === value.id) {
       clearTimeout(pending.timer); pending.reject(new Error(PAIRING_ERROR)); delete attempt.pairing
+    }
+    const stopping = attempt.stopping
+    if (value.type === 'pairing-failed' && 'id' in value && stopping && stopping.id === value.id) {
+      clearTimeout(stopping.timer); stopping.reject(new Error(STOP_HOST_ERROR)); delete attempt.stopping
     }
   }
   private pairingCode(attempt: Attempt): Promise<SshPairingCode> {
@@ -281,6 +296,16 @@ export class SshHostLauncher {
       attempt.supervisor!.process.write(`${attempt.marker}${JSON.stringify({ type: 'revoke-client', id, clientId })}\r`)
     })
   }
+  private stopHost(attempt: Attempt): Promise<boolean> {
+    if (attempt.closed || !attempt.connected || !attempt.supervisor) return Promise.reject(new Error('Connect to the SSH host before stopping it.'))
+    if (attempt.pairing || attempt.revocation || attempt.stopping) return Promise.reject(new Error('Wait for the current host request to finish.'))
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { delete attempt.stopping; reject(new Error(STOP_HOST_ERROR)) }, 12_000)
+      attempt.stopping = { id, resolve, reject, timer }
+      attempt.supervisor!.process.write(`${attempt.marker}${JSON.stringify({ type: 'stop-host', id })}\r`)
+    })
+  }
   private status(attempt: Attempt, status: SshConnectionStatus): void { attempt.callbacks.onStatus?.(status) }
   private fail(attempt: Attempt, error: Error): void {
     if (attempt.closed) return
@@ -296,6 +321,7 @@ export class SshHostLauncher {
     if (attempt.prompt) { delete attempt.prompt; attempt.callbacks.onPrompt?.(null) }
     if (attempt.pairing) { clearTimeout(attempt.pairing.timer); attempt.pairing.reject(new Error(PAIRING_ERROR)); delete attempt.pairing }
     if (attempt.revocation) { clearTimeout(attempt.revocation.timer); attempt.revocation.reject(new Error(REVOCATION_ERROR)); delete attempt.revocation }
+    if (attempt.stopping) { clearTimeout(attempt.stopping.timer); attempt.stopping.reject(new Error(STOP_HOST_ERROR)); delete attempt.stopping }
     attempt.closing = (async () => {
       const supervisor = attempt.supervisor
       for (const record of attempt.processes) if (record !== supervisor && !record.exit) record.process.kill()

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect } from 'vitest'
+import { afterEach, beforeEach, describe, expect, vi } from 'vitest'
 import { it } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { HostCredentialEncryption } from '../../src/host/credentials'
@@ -12,18 +12,25 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import { SshHostLauncher, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
+import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHostConfiguration } from '../../src/main/hosts/sshLauncher'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
+const launchers: FixtureSsh[] = [], failures: Error[] = []
+let retryDelay: (attempt: number) => number = () => 0
 class FixtureSsh extends SshHostLauncher {
-  override async connect(): Promise<SshHostConnection> {
-    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned: false,
+  callbacks?: SshCallbacks
+  override async connect(_configuration: SshHostConfiguration, callbacks: SshCallbacks = {}): Promise<SshHostConnection> {
+    this.callbacks = callbacks
+    const failure = failures.shift()
+    if (failure) throw failure
+    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned: true,
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       revokeClient: id => host.pairing.revoke(id),
+      stopHost: async () => true,
     }
   }
   override async disconnect(): Promise<void> {}
@@ -34,7 +41,8 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, launcher: () => new FixtureSsh() })
+  launchers.length = 0; failures.length = 0; retryDelay = () => 0
+  manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => retryDelay(attempt), launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
   await manager.start()
 })
 afterEach(async () => { await manager?.close(); router?.dispose(); await host?.close(); if (root && dirname(root) === tmpdir() && root.includes('sotto-desktop-hosts-')) await rm(root, { recursive: true, force: true }) })
@@ -43,12 +51,9 @@ async function add(): Promise<RemoteHost> {
   await manager.command({ type: 'save', host: remote }); await manager.command({ type: 'connect', id: remote.id })
   return remote
 }
-async function pair(remote: RemoteHost): Promise<void> { await manager.command({ type: 'pair', id: remote.id, code: host.pairing.issuePairingCode().code }) }
 describe('desktop remote host management over a real socket', () => {
-  it('saves, pairs, selects, sends only to the remote host and revokes on Forget', async () => {
+  it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {
     const remote = await add()
-    expect(manager.get().hosts[0]!.phase).toBe('pairing')
-    await pair(remote)
     expect(manager.get().hosts[0]!.phase).toBe('connected')
     await manager.command({ type: 'select', hostId: reportedHostId })
     const client = desktopWindowClient('desktop-test')
@@ -74,32 +79,59 @@ describe('desktop remote host management over a real socket', () => {
     await expect(readFile(join(root, 'desktop', 'workspace.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('refuses changed host identity before sending the saved pairing credential', async () => {
-    const remote = await add(); await pair(remote)
+    const remote = await add()
     await manager.command({ type: 'disconnect', id: remote.id })
     reportedHostId = randomUUID()
     await manager.command({ type: 'connect', id: remote.id })
     expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', error: expect.stringContaining('identity changed') })
     expect(router.shell().connections).toEqual([])
   })
-  it('keeps the verified SSH route for pairing again after the saved token is revoked', async () => {
-    const remote = await add(); await pair(remote)
+  it('keeps the verified SSH route and pairs again by itself after the saved token is revoked', async () => {
+    const remote = await add()
     const token = credentials.get('remote-host:' + remote.id)
     const clientId = host.pairing.verifyToken(token)!
     await manager.command({ type: 'disconnect', id: remote.id })
     await host.pairing.revoke(clientId)
     await manager.command({ type: 'connect', id: remote.id })
-    expect(manager.get().hosts[0]).toMatchObject({ phase: 'pairing', error: expect.stringContaining('no longer paired') })
-    expect(credentials.has('remote-host:' + remote.id)).toBe(false)
-    await pair(remote)
     expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected', clientId: expect.any(String) })
     expect(host.pairing.verifyToken(credentials.get('remote-host:' + remote.id))).not.toBe(clientId)
   })
   it('does not remove a connected host when a duplicate saved route fails or disconnects', async () => {
-    const first = await add(); await pair(first)
+    const first = await add()
     const second = await add()
-    await expect(pair(second)).rejects.toThrow('already connected')
+    expect(manager.get().hosts.find(host => host.id === second.id)).toMatchObject({ phase: 'error', error: expect.stringContaining('already connected') })
     await manager.command({ type: 'disconnect', id: second.id })
     expect(router.shell().connections).toEqual([expect.objectContaining({ hostId: reportedHostId })])
     expect(manager.get().hosts.find(host => host.id === first.id)?.phase).toBe('connected')
+  })
+  it('reconnects a dropped established connection and resets the attempt count on success', async () => {
+    await add()
+    expect(manager.get().hosts[0]!.phase).toBe('connected')
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(launchers.length).toBe(2)
+    expect(manager.get().hosts[0]!.reconnecting).toBe(false)
+    launchers[1]!.callbacks!.onDisconnected!('dropped again')
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(launchers.length).toBe(3)
+  })
+  it('stops retrying when a reconnect fails with an error only the user can fix', async () => {
+    await add()
+    failures.push(new Error('The host installation was not found. Check its folder on the SSH host and reconnect.'))
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining('installation was not found') }))
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(launchers.length).toBe(2)
+  })
+  it('cancels a pending retry when the user disconnects', async () => {
+    const remote = await add()
+    retryDelay = () => 50
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    expect(manager.get().hosts[0]!.phase).toBe('disconnected')
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(launchers.length).toBe(1)
   })
 })

@@ -19,6 +19,8 @@ The proposed headless-host ADR is on open PR #133, not this checkout. Its 0017 n
 
 The owner selected variant B on September 21, 2026: read a pairing code from Forge and enter it on the client. Build the desktop Settings > Hosts dialog from B. Keep A as an archived alternative and C as the iOS design fixture for the same code-entry pattern. QR scanning is an optional later convenience, not a requirement of this selection. The phone is an installed iOS app, following T3 Code as a reference. The earlier Safari/browser assumption is superseded. The framework remains an implementation decision. Plan for TestFlight delivery using the owner's reported Apple developer account; enrollment, signing and build access remain unverified. HTML previews are design fixtures only; acceptance requires the iOS app on a real iPhone.
 
+On September 21 the owner changed the desktop pick to variant A after comparing with T3 Code: SSH has already authenticated the laptop, so the desktop reads its own pairing code over the tunnel and pairs itself. Variant B stays the phone's flow, where nothing else proves who is asking. In the same review the owner asked for two more T3 behaviours before merge: a host that Sotto started over SSH keeps running when the connection drops and stops only on an explicit Disconnect or Forget, and a dropped connection reconnects on its own with capped backoff.
+
 ## Pairing design acceptance
 
 Question: where should the user confirm the identity of a client connecting to Forge? This is Settings → Hosts; the decisive moment is the explicit Pair button followed by the named client appearing on the host.
@@ -37,7 +39,7 @@ Concept A: an inline confirmation inside the Forge host row after authenticated 
 
 ## Selected variant B copy
 
-Owner choice recorded September 21, 2026. The client opens Settings > Hosts, chooses Enter pairing code, reads the code on Forge, enters it, and presses Pair this laptop. The iOS fixture uses Pair this iPhone. After admission, show Paired clients with Forget; forgetting access retains the host's threads.
+Owner choice recorded September 21, 2026, and narrowed to the iOS client the same day (see Decisions and gaps). The client opens Settings > Hosts, chooses Enter pairing code, reads the code on Forge, enters it, and presses Pair this laptop. The iOS fixture uses Pair this iPhone. After admission, show Paired clients with Forget; forgetting access retains the host's threads.
 
 - Dialog: Pair with Forge
 - Instruction: Read the pairing code on Forge and enter it here.
