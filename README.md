@@ -54,6 +54,8 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
+The Tools browser contacts the HTTP(S) pages you open, including local development servers, and the subresources those pages request. Browser agents use Sotto's own pages through thread-scoped tools; providers that require MCP connect to an authenticated endpoint on `127.0.0.1` on this computer. When you authorize browser work or send selected page context, its screenshots and relevant page data go to that thread's provider under the provider's data policy. Sotto keeps browser-task evidence and page grants in memory, never in operational logs. Explicitly attached/sent material follows the existing draft and history controls. See [the browser decision](docs/adr/0020-sotto-owned-browser-tasks.md).
+
 Dictation audio is uploaded to OpenRouter and transcribed by Microsoft MAI-Transcribe-2 only while you dictate. Your personal dictionary words travel with each request as spelling hints, and the text comes back. Nothing is transcribed on this computer, so Sotto needs your OpenRouter key and a network connection to dictate; when either is missing, Sotto says so instead of transcribing elsewhere. OpenRouter charges your balance at the model's published audio rate (about $0.10 per hour of audio at the time of writing). Read [OpenRouter's privacy policy](https://openrouter.ai/privacy) for what it and its providers retain.
 
 Sotto has no analytics or crash upload. Dictation audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
@@ -99,6 +101,10 @@ While a thread is running, **Steer now** beside a queued message sends that mess
 Open **Tools → Agents** in a thread to see its reported subagents. Each row shows the task, model when reported, status and elapsed time when known. Open a row for its task and result, including earlier assignments when an agent is reused. Children appear under their reported parent. **Load earlier agents** reads older entries without loading the whole history at once.
 
 A small dot above-left of the Tools icon means agents are working in the thread Tools follows, including a pinned thread. Opening Tools keeps the tab you last used. After a disconnect or restart, **Last seen working** means current activity has not been confirmed; the clock and dot wait for fresh provider evidence. Finished agents remain in local history independently of the transcript's activity limit. **Keep local history** controls whether this roster and its task text are saved. Turning it off erases saved tasks and results while unfinished agents keep their status and generic task labels. If you turn it back on, erased assignments stay text-free, including later results; fresh assignments are saved again.
+
+Codex, Claude Code and Grok can use the browser in **Tools** to inspect and check a page. A corner thumbnail shows the active task; click it to open that same page without changing your conversation. **Pause** stops further browser actions, while dismissing the thumbnail leaves the work running. Open, navigation, click and typing requests wait for your one-time answer. Pages you open yourself must be shared before an agent can observe them.
+
+Select an element or region, add a comment, and attach it to the thread's editable draft. Finished tasks retain observed steps, screenshots and unchecked cases for the app session. Image attachments depend on the provider's capabilities. Devin's pinned native client does not support the Sotto browser connection, so its browser is available for manual use and draft feedback only. See [browser tasks](docs/agent-control.md#browser-tasks-in-tools) for details.
 
 ## Install and first run
 

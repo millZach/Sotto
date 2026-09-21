@@ -9,6 +9,7 @@ import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
+import { BrowserTaskPreview } from './BrowserTaskPreview'
 import { BrowserSurface } from './BrowserSurface'
 import { ChangesSurface } from './ChangesSurface'
 import { useThreadChanges } from './changesStore'
@@ -68,7 +69,7 @@ function bridgePlatform(): string | undefined {
 /** The area the panel shares with the panes: its parent, or the parent of a wrapper that holds only the panel. */
 function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   const parent = panel?.parentElement ?? null
-  return parent !== null && parent.childElementCount === 1 && parent.parentElement !== null ? parent.parentElement : parent
+  return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-corner')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
 function focusToggle(): void {
@@ -233,7 +234,8 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     wasOpen.current = open
   }, [open, chrome.surface])
 
-  if (!open) return null
+  const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} />
+  if (!open) return preview
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
@@ -289,7 +291,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 
-  return <aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
+  return <>{preview}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
     style={{ '--tools-width': `${Math.round(width)}px` } as React.CSSProperties} onKeyDown={onKeyDown}>
     <div className="tools-panel__sheet">
       <div className="tools-panel__resize" role="separator" aria-orientation="vertical" aria-label="Resize tools panel" tabIndex={chrome.expanded ? -1 : 0}
@@ -322,5 +324,5 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
       <div className="tools-panel__body" id={`tools-surface-${chrome.surface}`} role="tabpanel" aria-labelledby={`tools-tab-${chrome.surface}`}>{body}</div>
       <p className="tools-panel__status" role="status" aria-live="polite">{status}</p>
     </div>
-  </aside>
+  </aside></>
 }

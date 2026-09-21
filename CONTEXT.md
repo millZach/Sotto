@@ -40,6 +40,15 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy.
 
+**Browser task.** One thread's work with a page in Sotto's browser, including its current action, user decisions, checks and evidence. A browser task may be working, paused, completed or failed; its reported result states what was checked and what remains unchecked.
+
+**Browser preview.** The small corner view of a browser task's page. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work.
+
+**Shared browser page.** A browser page the user has made observable to its owning thread. Sharing observation does not approve navigation, clicks or typing, and revoking it ends that access.
+
+**Browser feedback.** A screenshot and optional selected-element or region context added to a thread's draft by the user. It is unsent draft content until the user sends it.
+
+
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
 **Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control in the sidebar's top row. Terminals open in the same pane grid as thread panes, so turning the control to Terminal from another page leads to the Threads page. A project's folder head in Terminal mode offers Settle project, the same as in the thread list; a settled project leaves the list once its terminals close. Avoid: "terminal tab", "terminal page".

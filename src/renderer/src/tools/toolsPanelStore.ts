@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { BrowserPage } from '../../../shared/browser'
+import type { BrowserPage, BrowserTask, BrowserBridge } from '../../../shared/browser'
 import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
 import { FilesBrowserStore } from './filesBrowser'
@@ -67,6 +67,15 @@ export class ToolsPanelStore {
     const pinned = this.chrome.pinnedThreadId
     if (pinned !== null && pinned !== page.workspace.threadId) return false
     this.update({ open: true, surface: 'browser' })
+    return true
+  }
+
+  /** Clicking a task is an explicit request to inspect that thread's exact retained page. */
+  async showBrowserTask(task: BrowserTask, bridge: BrowserBridge | undefined): Promise<boolean> {
+    await this.browser.activate(bridge, task.threadId)
+    if (!this.browser.thread(task.threadId)?.pages.some(page => page.id === task.pageId && page.workspace.workspaceId === task.workspaceId)) return false
+    this.browser.select(task.threadId, task.pageId)
+    this.update({ open: true, surface: 'browser', pinnedThreadId: task.threadId })
     return true
   }
 

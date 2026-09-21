@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolsResultSchema } from '../shared/tools'
 import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSnapshotSchema, terminalListingSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
-import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, type BrowserBridge } from '../shared/browser'
+import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitActionSchema, gitBranchesSchema, gitCommitDraftRequestSchema, gitCommitDraftSchema, gitDiffRequestSchema, gitWatchRequestSchema, gitListingSchema, gitDiffSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
 import { prReviewRequestSchema, prReviewSchema, prDraftRequestSchema, prDraftSchema, prActionSchema, prActionResultSchema } from '../shared/gitPullRequests'
@@ -32,6 +32,12 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       onEvent: listener => subscribe(TERMINAL_EVENT, terminalEventSchema, listener),
     }),
     browser: Object.freeze<BrowserBridge>({
+      tasks: request => call(BROWSER_CHANNEL + 'tasks', toolListRequestSchema, z.array(browserTaskSchema).max(64), request),
+      share: request => call(BROWSER_CHANNEL + 'share', browserShareSchema, browserPageSchema, request),
+      controlTask: request => call(BROWSER_CHANNEL + 'controlTask', browserControlTaskSchema, browserTaskSchema, request),
+      answerAction: request => call(BROWSER_CHANNEL + 'answerAction', browserAnswerActionSchema, browserTaskSchema, request),
+      viewport: request => call(BROWSER_CHANNEL + 'viewport', browserViewportSchema, browserPageSchema, request),
+      capture: request => call(BROWSER_CHANNEL + 'capture', browserCaptureSchema, browserCaptureResultSchema, request),
       list: request => call(BROWSER_CHANNEL + 'list', toolListRequestSchema, browserListingSchema, request),
       create: request => call(BROWSER_CHANNEL + 'create', browserCreateSchema, browserPageSchema, request),
       navigate: request => call(BROWSER_CHANNEL + 'navigate', browserNavigateSchema, browserPageSchema, request),

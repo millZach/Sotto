@@ -1,3 +1,4 @@
+import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
@@ -104,6 +105,8 @@ export interface CodexAppServerHostOptions {
 
 /** Provider session aliases isolate server-assigned Codex thread IDs from Sotto's thread interface. */
 export class CodexAppServerHost implements AgentHost {
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -476,8 +479,8 @@ export class CodexAppServerHost implements AgentHost {
       await this.watcher?.pollThread(alias.codexThreadId)
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
-      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      ...runtimePolicy(alias.runtimeMode), ...(alias.reasoningEffort ? { config: { model_reasoning_effort: alias.reasoningEffort } } : {}), excludeTurns: true }, async value => {
+      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true, ...await browserCodexConfig(alias.kind === 'personal' ? undefined : this.browserTools, id) } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
+      ...runtimePolicy(alias.runtimeMode), ...await browserCodexConfig(alias.kind === 'personal' ? undefined : this.browserTools, id, alias.reasoningEffort), excludeTurns: true }, async value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
       // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
@@ -746,7 +749,7 @@ export class CodexAppServerHost implements AgentHost {
         this.creating.add(command.threadId)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           ...(command.type === 'create-personal' ? { developerInstructions: command.developerInstructions } : {}),
-          ...runtimePolicy(command.runtimeMode), ...(command.reasoningEffort ? { config: { model_reasoning_effort: command.reasoningEffort } } : {}), ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...runtimePolicy(command.runtimeMode), ...await browserCodexConfig(command.type === 'create-personal' ? undefined : this.browserTools, command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'

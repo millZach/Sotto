@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage } from '../../../shared/browser'
+import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserTask } from '../../../shared/browser'
 import type { FileWorkspace } from '../../../shared/files'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 
@@ -52,6 +52,47 @@ function sameBounds(a: BrowserBounds | null, b: BrowserBounds | null): boolean {
  * navigation and tells main where the one visible page sits. Pages stay alive while hidden.
  */
 export class BrowserStore {
+  private tasksSnapshot: readonly BrowserTask[] = []
+  private readonly dismissedTasks = new Set<string>()
+  private readonly taskThreads = new Set<string>()
+  taskSnapshot = (): readonly BrowserTask[] => this.tasksSnapshot
+  isDismissed(id: string): boolean { return this.dismissedTasks.has(id) }
+  dismissTask(id: string): void { this.dismissedTasks.add(id); this.tasksSnapshot = [...this.tasksSnapshot]; this.emit() }
+  /** Subscribe before Tools opens, so background browser work can introduce itself in the corner. */
+  watchTasks(bridge: BrowserBridge | undefined, threadIds: readonly string[]): void {
+    if (!bridge) return
+    this.listen(bridge)
+    if (!bridge.tasks) return
+    for (const threadId of threadIds) {
+      if (this.taskThreads.has(threadId)) continue
+      this.taskThreads.add(threadId)
+      void settle(bridge.tasks({ threadId })).then(result => {
+        if (!result.ok) { this.taskThreads.delete(threadId); return }
+        for (const task of result.value) this.receiveTask(task)
+      })
+    }
+  }
+  async controlTask(bridge: BrowserBridge | undefined, task: BrowserTask, control: 'pause' | 'resume'): Promise<string | null> {
+    if (!bridge?.controlTask) return 'Browser control is unavailable.'
+    const result = await settle(bridge.controlTask({ threadId: task.threadId, workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, control }))
+    if (result.ok) { this.receiveTask(result.value); return null }
+    return result.error.message
+  }
+  async answerAction(bridge: BrowserBridge | undefined, task: BrowserTask, allow: boolean): Promise<string | null> {
+    if (!bridge?.answerAction || !task.pendingAction) return 'This action is no longer waiting.'
+    const result = await settle(bridge.answerAction({ threadId: task.threadId, workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, actionId: task.pendingAction.id, allow }))
+    if (result.ok) { this.receiveTask(result.value); return null }
+    return result.error.message
+  }
+  private receiveTask(task: BrowserTask): void {
+    const previous = this.tasksSnapshot.find(item => item.id === task.id)
+    if (previous && previous.updatedAt > task.updatedAt) return
+    // A new permission needs the user again; ordinary progress never reopens a dismissed preview.
+    if (task.pendingAction && task.pendingAction.id !== previous?.pendingAction?.id) this.dismissedTasks.delete(task.id)
+    this.tasksSnapshot = [...this.tasksSnapshot.filter(item => item.id !== task.id), task].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100)
+    this.emit()
+  }
+  private emit(): void { for (const listener of [...this.listeners]) listener() }
   private readonly threads = new Map<string, ThreadBrowser>()
   private readonly listeners = new Set<() => void>()
   private readonly listTokens = new Map<string, number>()
@@ -206,10 +247,12 @@ export class BrowserStore {
     if (this.subscribed === bridge) return
     this.unsubscribe?.()
     this.subscribed = bridge
+    this.taskThreads.clear()
     this.unsubscribe = bridge.onEvent(event => this.receive(event))
   }
 
   private receive(event: BrowserEvent): void {
+    if (event.type === 'task') { this.receiveTask(event.task); return }
     if (event.type === 'page') {
       const thread = this.threads.get(event.page.workspace.threadId)
       if (!thread || (thread.workspace !== null && thread.workspace.workspaceId !== event.page.workspace.workspaceId)) return
@@ -254,7 +297,7 @@ export class BrowserStore {
 
   private setThread(next: ThreadBrowser): void {
     this.threads.set(next.threadId, next)
-    for (const listener of [...this.listeners]) listener()
+    this.emit()
   }
 }
 
@@ -275,4 +318,8 @@ async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<
 export function useThreadBrowser(store: BrowserStore, threadId: string | null): ThreadBrowser | undefined {
   const read = useCallback(() => threadId === null ? undefined : store.thread(threadId), [store, threadId])
   return useSyncExternalStore(store.subscribe, read)
+}
+
+export function useBrowserTasks(store: BrowserStore): readonly BrowserTask[] {
+  return useSyncExternalStore(store.subscribe, store.taskSnapshot)
 }

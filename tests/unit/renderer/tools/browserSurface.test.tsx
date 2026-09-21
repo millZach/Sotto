@@ -23,6 +23,11 @@ function fakeBrowser(initial: BrowserPage[] = []) {
   let pages = initial
   const listeners = new Set<(event: BrowserEvent) => void>()
   const bridge: BrowserBridge = {
+    tasks: vi.fn(async () => ok([])),
+    share: vi.fn(async ({ pageId, enabled }) => ok(page(pageId, { sharedOrigin: enabled ? 'http://localhost:5173' : null }))),
+    viewport: vi.fn(async request => ok(page(request.pageId, { viewport: 'reset' in request ? null : { width: request.width, height: request.height } }))),
+    capture: vi.fn(async () => ok({ image: 'data:image/png;base64,YWJj', url: 'http://localhost:5173/', width: 1280, height: 800, element: null })),
+    controlTask: vi.fn(), answerAction: vi.fn(),
     list: vi.fn(async () => ok({ workspace, pages })),
     create: vi.fn(async ({ url }) => { const created = page(pages.length ? PAGE_2 : PAGE_1, { url, title: '', status: 'loading' }); pages = [...pages, created]; return ok(created) }),
     navigate: vi.fn(async ({ pageId, url }) => ok(page(pageId, { url, canGoBack: true }))),

@@ -19,14 +19,56 @@ export const browserNavigateSchema = browserRequestSchema.extend({ url: browserU
 export const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(32768), y: z.number().finite().min(0).max(32768), width: z.number().finite().positive().max(32768), height: z.number().finite().positive().max(32768) }).strict()
 export const browserMountSchema = browserRequestSchema.extend({ bounds: browserBoundsSchema.nullable() })
 export const browserOpenLinkSchema = z.object({ url: browserUrlSchema, destination: z.enum(['external', 'embedded']).optional(), target: toolTargetSchema.optional() }).strict()
-export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean() }).strict()
+export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional() }).strict()
 export const browserListingSchema = z.object({ workspace: fileWorkspaceSchema, pages: z.array(browserPageSchema).max(32) }).strict()
 export const browserOpenResultSchema = z.object({ destination: z.enum(['external', 'embedded']), page: browserPageSchema.optional() }).strict()
-export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict()])
+const coordinate = z.number().finite().min(0).max(8192)
+export const browserPointSchema = z.object({ x: coordinate, y: coordinate }).strict()
+const viewportShape = { width: z.number().int().min(240).max(2560), height: z.number().int().min(240).max(2560) }
+export const browserViewportSchema = browserRequestSchema.extend(viewportShape).or(browserRequestSchema.extend({ reset: z.literal(true) }))
+export const browserShareSchema = browserRequestSchema.extend({ enabled: z.boolean() })
+export const browserCaptureSchema = browserRequestSchema.extend({ point: browserPointSchema.optional(), region: browserBoundsSchema.optional(), captureId: z.string().uuid().optional() })
+export const browserCaptureResultSchema = z.object({ captureId: z.string().uuid().optional(), image: z.string().max(16_000_000), url: browserUrlSchema, width: z.number(), height: z.number(), element: z.object({ tag: z.string(), role: z.string(), name: z.string(), text: z.string(), selector: z.string() }).nullable() }).strict()
+export const browserActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('inspect') }).strict(), z.object({ type: z.literal('screenshot') }).strict(),
+  z.object({ type: z.literal('navigate'), url: browserUrlSchema }).strict(),
+  z.object({ type: z.literal('click'), x: coordinate, y: coordinate }).strict(),
+  z.object({ type: z.literal('type'), text: z.string().max(4000) }).strict(),
+  z.object({ type: z.literal('scroll'), x: coordinate, y: coordinate, deltaX: z.number().finite().min(-4096).max(4096), deltaY: z.number().finite().min(-4096).max(4096) }).strict(),
+  z.object({ type: z.literal('viewport'), ...viewportShape }).strict(),
+])
+export const browserTaskRequestSchema = browserRequestSchema.extend({ taskId: z.string().uuid() })
+export const browserStartTaskSchema = browserRequestSchema.extend({ description: z.string().min(1).max(300) })
+export const browserAgentOpenSchema = browserCreateSchema.extend({ description: z.string().min(1).max(300) })
+export const browserAgentActionSchema = browserTaskRequestSchema.extend({ action: browserActionSchema })
+export const browserControlTaskSchema = browserTaskRequestSchema.extend({ control: z.enum(['pause', 'resume']) })
+export const browserAnswerActionSchema = browserTaskRequestSchema.extend({ actionId: z.string().uuid(), allow: z.boolean() })
+export const browserFinishTaskSchema = browserTaskRequestSchema.extend({ status: z.enum(['completed', 'failed']), summary: z.string().max(2000), unchecked: z.array(z.string().max(500)).max(20) })
+export const browserTaskSchema = z.object({
+  id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(),
+  status: z.enum(['working', 'paused', 'completed', 'failed']), description: z.string().max(300), updatedAt: z.number(),
+  steps: z.array(z.object({ id: z.string(), action: z.string(), status: z.enum(['completed', 'failed']), at: z.number(), detail: z.string().max(2000), url: z.string().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional() })).max(40),
+  thumbnail: z.string().nullable(), summary: z.string().nullable(), unchecked: z.array(z.string()),
+  pendingAction: z.object({ id: z.string().uuid(), action: browserActionSchema, description: z.string(), expiresAt: z.number() }).nullable(),
+  output: z.string().max(200_000).nullable(),
+  evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
+}).strict()
+export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
+export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict()])
+export type BrowserTask = z.infer<typeof browserTaskSchema>
+export type BrowserAction = z.infer<typeof browserActionSchema>
+export type BrowserAgentResult = z.infer<typeof browserAgentResultSchema>
+export type BrowserCapture = z.infer<typeof browserCaptureResultSchema>
 export type BrowserPage = z.infer<typeof browserPageSchema>
 export type BrowserEvent = z.infer<typeof browserEventSchema>
 export type BrowserBounds = z.infer<typeof browserBoundsSchema>
 export interface BrowserBridge {
+  tasks(request: { threadId: string }): Promise<ToolsResult<BrowserTask[]>>
+  share(request: z.infer<typeof browserShareSchema>): Promise<ToolsResult<BrowserPage>>
+  controlTask(request: z.infer<typeof browserControlTaskSchema>): Promise<ToolsResult<BrowserTask>>
+  answerAction(request: z.infer<typeof browserAnswerActionSchema>): Promise<ToolsResult<BrowserTask>>
+  viewport(request: z.infer<typeof browserViewportSchema>): Promise<ToolsResult<BrowserPage>>
+  capture(request: z.infer<typeof browserCaptureSchema>): Promise<ToolsResult<BrowserCapture>>
   list(request: { threadId: string }): Promise<ToolsResult<z.infer<typeof browserListingSchema>>>
   create(request: z.infer<typeof browserCreateSchema>): Promise<ToolsResult<BrowserPage>>
   navigate(request: z.infer<typeof browserNavigateSchema>): Promise<ToolsResult<BrowserPage>>
