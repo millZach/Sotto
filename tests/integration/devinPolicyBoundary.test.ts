@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { devinFixture } from '../fixtures/devinFixture'
 
@@ -50,11 +52,16 @@ it('refuses integrations activated by the final observer replay before a follow-
 })
 
 
+// A refused connection reports itself in the snapshot instead of throwing, the
+// way the other providers do, so what Sotto already knows survives the attempt.
+// It is still refused: `connected` stays false and no prompt is sent.
 it('refuses connection readiness if catalog discovery activates a native integration', async () => {
   f.host.disconnect()
   await f.host.closed()
   await f.script({ enableMcpAfterNew: true })
-  await expect(f.host.connect()).rejects.toThrow(/MCP servers/u)
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(false)
+  expect(snapshot.error).toMatch(/MCP servers/u)
   expect(await prompts()).toHaveLength(0)
 })
 
@@ -62,8 +69,53 @@ it('refuses connection readiness if catalog discovery activates a native integra
 it('keeps signed-out setup actionable without sending a prompt', async () => {
   f.host.disconnect(); await f.host.closed()
   await f.script({ signedOut: true })
-  await expect(f.host.connect()).rejects.toThrow('devin auth login')
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(false)
+  expect(snapshot.error).toContain('devin auth login')
   expect((await f.host.snapshot()).connected).toBe(false)
+  expect(await prompts()).toHaveLength(0)
+})
+
+// Sotto's data folder holds one checkout per worktree-backed thread, so what
+// those checkouts contain cannot decide whether Devin connects. The catalog
+// session runs in a folder Sotto keeps empty instead of the data folder.
+it('gives the catalog session a folder of its own, not the one holding thread checkouts', async () => {
+  f.host.disconnect(); await f.host.closed()
+  const checkout = join(f.root, 'thread-worktrees', 'thread', '.devin')
+  await mkdir(checkout, { recursive: true })
+  await writeFile(join(checkout, 'mcp_config.json'), 'private native values must never be read')
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(true)
+  expect(snapshot.error).toBeUndefined()
+  const created = (await f.driver.requests()).filter(request => request.method === 'session/new')
+  expect(created).not.toHaveLength(0)
+  for (const request of created) {
+    expect((request.params as { cwd: string }).cwd).toBe(join(f.root, 'devin', 'catalog'))
+  }
+})
+
+// Replacing what this process holds is the last thing a connection does, so a
+// refusal leaves the threads and their messages rather than emptying them.
+it('keeps the threads it already knows when a reconnect is refused', async () => {
+  const id = await settledThread()
+  const before = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+  expect(before.messages.length).toBeGreaterThan(0)
+  f.host.disconnect(); await f.host.closed()
+  await f.script({ signedOut: true })
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(false)
+  expect(snapshot.threads.find(thread => thread.id === id)?.messages).toHaveLength(before.messages.length)
+})
+
+// The folder is Sotto's own, not exempt: the same checks decide it.
+it('still refuses when the catalog folder itself carries native configuration', async () => {
+  f.host.disconnect(); await f.host.closed()
+  const native = join(f.root, 'devin', 'catalog', '.devin')
+  await mkdir(native, { recursive: true })
+  await writeFile(join(native, 'mcp_config.json'), 'private native values must never be read')
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(false)
+  expect(snapshot.error).toMatch(/native configuration/u)
   expect(await prompts()).toHaveLength(0)
 })
 
@@ -78,7 +130,9 @@ it('connects to a client newer than the checked version and records which one it
 it('names the checked CLI version when the installed version is older than it', async () => {
   f.host.disconnect(); await f.host.closed()
   await f.script({ cliVersion: '2999.1.1' })
-  await expect(f.host.connect()).rejects.toThrow('3000.10.31')
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(false)
+  expect(snapshot.error).toContain('3000.10.31')
   expect((await f.host.snapshot()).connected).toBe(false)
   expect(await prompts()).toHaveLength(0)
 })

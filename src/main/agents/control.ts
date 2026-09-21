@@ -104,6 +104,16 @@ function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', 
   return { prompt: messages[prompt]!.text, reply: reply.text }
 }
 
+/** What a snapshot says about a connection that was refused, or undefined if it
+ * connected. An adapter may report a refusal in the snapshot rather than by
+ * throwing, so accepting one is not on its own evidence that it connected. */
+function connectionRefusal(snapshot: AgentHostSnapshot, provider: ProviderId | undefined, fallback: string): string | undefined {
+  const requested = provider && snapshot.providers?.find(entry => entry.id === provider)
+  if (requested && requested.connection !== 'connected') return requested.error || `${requested.name} did not confirm the connection.`
+  if (!snapshot.connected) return snapshot.error || fallback
+  return undefined
+}
+
 export interface AgentMembership {
   status(): Promise<AgentState['membership']>
   action(action: 'refresh' | 'signin' | 'checkout' | 'portal'): Promise<AgentState['membership']>
@@ -695,7 +705,11 @@ export class AgentControl {
       // The install happened whatever the connection does next, so the reading says so either way
       // rather than leaving the card spinning on a client that is already replaced.
       let reconnectFailure: string | undefined
-      try { this.acceptSnapshot(await this.dependencies.host.connect(provider)) }
+      try {
+        const snapshot = await this.dependencies.host.connect(provider)
+        this.acceptSnapshot(snapshot)
+        reconnectFailure = connectionRefusal(snapshot, provider, 'It did not reconnect.')
+      }
       catch (error) { reconnectFailure = error instanceof Error ? error.message : 'It did not reconnect.' }
       await this.checkClientUpdates()
       // The installer can finish and the client still answer with the version it did before: another
@@ -1384,9 +1398,8 @@ export class AgentControl {
         try {
           const snapshot = await (command.provider ? this.dependencies.host.connect(command.provider) : this.dependencies.host.connect())
           this.acceptSnapshot(snapshot)
-          const requested = command.provider && snapshot.providers?.find(provider => provider.id === command.provider)
-          if (requested && requested.connection !== 'connected') throw new Error(requested.error || `${requested.name} did not confirm the connection.`)
-          if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
+          const refusal = connectionRefusal(snapshot, command.provider, `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
+          if (refusal) throw new Error(refusal)
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
           // Asking the registry must not hold up the connection the user is waiting on.

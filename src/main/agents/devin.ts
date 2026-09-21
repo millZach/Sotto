@@ -225,27 +225,44 @@ export class DevinAcpHost implements AgentHost {
   private unsupported(rpc: DevinRpc, frame: DevinFrame): void {
     if (frame.method && frame.id !== undefined) rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Unsupported client method' } })
   }
+  /** The catalog session needs a working folder, and Sotto's own data folder
+   * holds every thread worktree. This one stays empty, so the compatibility
+   * checks pass on their own terms and connecting costs the same however many
+   * threads exist. They still run against it; it is not exempt. */
+  private get catalogDirectory(): string { return join(this.userDataDirectory, 'devin', 'catalog') }
   async connect(): Promise<AgentHostSnapshot> {
+    try { return await this.establish() } catch (error) {
+      // An uncertain connection has no verdict to report, and a superseded one
+      // belongs to the connect that replaced it. Both stay throws.
+      if (error instanceof DevinUncertain) throw error
+      // A refusal Devin states is reported in the snapshot instead, so a failed
+      // reconnect keeps the threads and models Sotto already has.
+      this.state.connected = false
+      this.state.error = error instanceof Error && error.message
+        ? error.message
+        : 'Devin did not confirm the connection. Your threads and drafts are kept.'
+      this.emit(); return this.current()
+    }
+  }
+  private async establish(): Promise<AgentHostSnapshot> {
     this.disconnect(); const generation = this.generation
     await this.closed()
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-    await mkdir(this.userDataDirectory, { recursive: true })
+    // The cause carries the errno; the message the user reads never does.
+    try { await mkdir(this.catalogDirectory, { recursive: true }) } catch (error) {
+      throw new Error('Sotto could not prepare its own Devin folder. Your threads and drafts are kept. Check access to Sotto’s data folder and connect again.', { cause: error })
+    }
     this.executable = this.options.executable ?? await findDevinExecutable(this.options.environment) ?? ''
     if (!isAbsolute(this.executable)) throw new Error('Install Devin CLI and run devin auth login, then connect again. Your threads and drafts are kept.')
     const version = await readDevinVersion(this.executable, this.options.args ?? [], devinEnvironment(this.options.environment))
     if (compareClientVersions(version, DEVIN_CLI_VERSION) < 0) throw new Error('This Devin version is older than the one Sotto checked. Your threads are kept. Use Devin CLI ' + DEVIN_CLI_VERSION + ' or newer before connecting.')
     const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-    this.aliases = aliases; this.state.projects = projects
-    this.threads.clear(); this.log.forgetAll()
-    for (const id of Object.keys(this.aliases)) {
-      this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
-    }
-    const catalog = await this.start(this.userDataDirectory)
+    const catalog = await this.start(this.catalogDirectory)
     try {
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
       let disposableSession: string | undefined
-      await catalog.rpc.request('session/new', { cwd: this.userDataDirectory, mcpServers: [] }, value => {
+      await catalog.rpc.request('session/new', { cwd: this.catalogDirectory, mcpServers: [] }, value => {
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         disposableSession = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
         const model = modelConfig(value)
@@ -254,12 +271,20 @@ export class DevinAcpHost implements AgentHost {
           runtimeModes: ['approval-required'], supportsImages: false, reasoningEfforts: [],
         }))
       })
-      await this.revalidate(catalog, this.userDataDirectory, generation)
+      await this.revalidate(catalog, this.catalogDirectory, generation)
       // This empty session belongs only to discovery; no inference runs at connect.
       if (disposableSession) await catalog.rpc.request('session/delete', { sessionId: disposableSession })
       if (!this.state.models.length) throw new Error('Devin returned no available models. Run devin auth login and check your account access, then reconnect. Your threads and drafts are kept.')
     } finally { catalog.intentionalClose = true; catalog.rpc.close(); await catalog.rpc.closed }
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
+    // Replace what this process holds only once discovery has succeeded. A
+    // refusal earlier leaves the threads and their messages as they were,
+    // rather than publishing empty ones over a history Sotto already had.
+    this.aliases = aliases; this.state.projects = projects
+    this.threads.clear(); this.log.forgetAll()
+    for (const id of Object.keys(this.aliases)) {
+      this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
+    }
     this.state.connected = true; this.state.version = version + ' / ACP 1'; delete this.state.error
     if (compareClientVersions(version, DEVIN_CLI_VERSION) > 0) this.state.verifiedVersion = DEVIN_CLI_VERSION
     else delete this.state.verifiedVersion
