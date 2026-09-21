@@ -26,7 +26,7 @@ Activity is now retained incrementally in the existing SQLite database. The boun
 
 The new journey starts with a legacy workspace, reads the saved message and expanded command output in the real Electron app, confirms the output is absent from organization JSON, quits, and repeats after a full restart. Manual prompt/permission separation and the settled-work shelf also pass.
 
-Captures: `artifacts/activity-performance/migrated.png` and `artifacts/activity-performance/restarted.png` (ignored generated artifacts). Both captures were visually inspected at a 1280 by 800 logical window: retained message, expanded command/output and composer are readable, with no clipping. No appearance changes or design baseline regeneration were required.
+Committed captures: [after migration](../../artifacts/activity-performance/migrated.png) and [after restart](../../artifacts/activity-performance/restarted.png). Both captures were visually inspected at a 1280 by 800 logical window: retained message, expanded command/output and composer are readable, with no clipping. No appearance changes or design baseline regeneration were required.
 
 The existing failures reproduce identically on a clean detached checkout of the base commit, with its own npm ci and build:
 
@@ -61,3 +61,5 @@ PR #167 integrates main at `93b2f0f5`, including #164, #165 and #166. Merge reso
 Independent integration review caught the distinction between missing and known-empty activity. SQLite now records that a list was observed even when it is empty or has no epoch; unchanged empty lists cause no further writes, and erasure removes the marker. Legacy missing versus empty activity survives repeated restarts.
 
 Greptile review identified interrupted saves where SQLite committed newer activity but organization JSON retained an older epoch or removed records. Five reproductions failed before the correction. Startup now trusts the committed whole list and epoch, including an empty/unversioned list, and avoids importing stale legacy messages into a newer epoch. The regression covers two successive restarts and verifies message history is preserved. The four-file persistence/cursor regression run passes all 51 tests. Final GitHub Gates (Windows) and automated reviews are required on the pushed revision before merge.
+
+Final integrated source `ca8555fa`: `npm test -- --maxWorkers=2` passed 4,115 tests (34 skipped) in 312 files (17 skipped), with zero failures in 337.68 seconds. Typecheck, lint, build and all eight Electron journeys pass on this source. The screenshots above are from that final build.
