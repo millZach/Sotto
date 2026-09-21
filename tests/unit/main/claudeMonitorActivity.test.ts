@@ -16,20 +16,33 @@ describe('Claude monitor activity classification', () => {
       expect(apply(projector, started(`monitor-${index}`, 'monitor'))).toEqual([])
       expect(apply(projector, ended(`monitor-${index}`))).toEqual([])
     }
-    expect(projector['subagentTasks'].size).toBe(0)
+    expect(projector['nonSubagentTasks'].size).toBe(0)
     expect(apply(projector, progress('monitor-0'))).toEqual([])
     expect(apply(projector, progress('monitor-4099'))).toEqual([])
   })
 
-  it('bounds positive classification while allowing fresh subagents', () => {
-    const projector = new ClaudeActivity()
-    for (let index = 0; index < 4_100; index++) apply(projector, started(`agent-${index}`))
-    expect(projector['subagentTasks'].size).toBe(4_096)
-    expect(apply(projector, progress('agent-0'))).toEqual([])
-    const rows = apply(projector, progress('agent-4099'))
+  it('updates a restored subagent after resuming beyond its start', () => {
+    const original = new ClaudeActivity()
+    let rows = apply(original, started('resumed'))
+    const resumed = new ClaudeActivity()
+    rows = apply(resumed, progress('resumed'), rows)
     expect(rows[0]).toMatchObject({ kind: 'subagent', status: 'running', title: 'Updated' })
-    expect(apply(projector, ended('agent-4099'), rows)[0]?.status).toBe('completed')
-    expect(projector['subagentTasks'].size).toBe(4_095)
+    expect(apply(new ClaudeActivity(), ended('resumed'), rows)[0]?.status).toBe('completed')
+  })
+
+  it('retains a reused-ID exclusion only while its original row remains in the activity window', () => {
+    const projector = new ClaudeActivity()
+    let rows = apply(projector, started('reused'))
+    rows = apply(projector, started('reused', 'monitor'), rows)
+    for (let index = 0; index < 4_100; index++) rows = apply(projector, started(`monitor-${index}`, 'monitor'), rows)
+    expect(projector['nonSubagentTasks'].size).toBe(1)
+    expect(apply(projector, progress('reused'), rows)).toEqual(rows)
+    expect(apply(projector, ended('reused'), rows)).toEqual(rows)
+    expect(rows[0]?.status).toBe('running')
+    expect(apply(projector, progress('reused'))).toEqual([])
+    expect(projector['nonSubagentTasks'].size).toBe(0)
+    rows = apply(projector, started('reused'), rows)
+    expect(apply(projector, ended('reused'), rows)[0]?.status).toBe('completed')
   })
 
   it('reclassifies reused IDs in both directions without reviving an old agent row', () => {

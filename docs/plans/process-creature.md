@@ -26,7 +26,8 @@ Publication checklist:
 - [x] Isolate monitoring-only changes on `feat/monitoring-creature` from current `origin/main` (`865e9484`).
 - [x] Independent standards and specification review; update the session-reaper glossary entry.
 - [x] Complete isolated local gates and Electron evidence: 4,026 unit/integration passes and seven Electron scenarios passing twice.
-- [ ] Push the PR for #125, resolve review and CI findings on the latest revision.
+- [x] Push [PR #166](https://github.com/millZach/Sotto/pull/166) for #125 and fix confirmed lifecycle/ready-notice review findings.
+- [ ] Latest pushed revision passes Windows CI and automated re-review.
 - [ ] Merge with a merge commit once checks and review are clear, as authorized by Zach.
 
 No live-account or Apple silicon run was performed. Codex/Grok/Devin monitoring stays hidden until their native events establish the same lifecycle. Verification: [process-creature.md](../verification/process-creature.md).
