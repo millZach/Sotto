@@ -2,6 +2,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentState, type AgentThread } from '../../../src/shared/agents'
+import type { AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
@@ -31,13 +32,13 @@ function mount(state = fixture()) {
  * change and then reports the level it always had.
  */
 function Live({ answer }: { answer: (effort: string) => Promise<AgentState | null> }): React.ReactElement {
-  const [state, setState] = React.useState(fixture())
-  const command = async (request: { reasoningEffort?: string }): Promise<AgentState | null> => {
-    const next = await answer(request.reasoningEffort ?? '')
+  const [state, setState] = React.useState(fixture)
+  const command: AgentConnection['command'] = async request => {
+    const next = await answer('reasoningEffort' in request ? request.reasoningEffort ?? '' : '')
     if (next) setState(next)
     return next
   }
-  return <ThreadOptions thread={state.host.threads[0]!} state={state} command={command as never} />
+  return <ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />
 }
 afterEach(cleanup)
 
@@ -219,6 +220,24 @@ describe('composer option chips', () => {
     expect(chip).toHaveTextContent('Max')
     expect(panel.querySelector('.effort-card__word')).toHaveTextContent(/^Max$/u)
     expect(slider).toHaveValue('4')
+  })
+
+  it('shows the level the provider settled on when it answers with one of its own', async () => {
+    let release!: () => void
+    render(<Live answer={async () => {
+      await new Promise<void>(resolve => { release = resolve })
+      // Taken, but the thread is left on a level of the provider's choosing rather than the one asked for.
+      return fixture({ reasoningEffort: 'medium' })
+    }} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    fireEvent.click(chip)
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
+    expect(chip).toHaveTextContent('Max')
+    await act(async () => { release() })
+    // The provider has spoken, so the press is let go of even though it was not refused.
+    expect(chip).toHaveTextContent('Medium')
+    expect(slider).toHaveValue('1')
   })
 
   it('saves where the levels stop rather than every level crossed while a save is in flight', async () => {

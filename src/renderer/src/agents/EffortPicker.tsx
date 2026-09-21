@@ -110,6 +110,8 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   const drag = useRef(false)
   const panel = useRef<HTMLDivElement>(null)
   const range = useRef<HTMLInputElement>(null)
+  /** The stop the chosen level sits on; the first stop while the level set is not one this model offers. */
+  const set = Math.max(0, actual)
   /**
    * The thumb is not a copy of the chosen level kept in step with it: a copy has to be told when to catch up,
    * and a press and the answer to it can land in one render, which leaves nothing to notice and the thumb on a
@@ -117,7 +119,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
    * itself rather than a flag beside it saying so, because the two would not have to arrive together, and a
    * thumb under a hand that is still reading a flag from before the press is a thumb that does not move.
    */
-  const position = held ?? Math.max(0, actual)
+  const position = held ?? set
   const known = actual >= 0 || held !== null
   const selected = Math.round(position)
   const shown = choices[selected]
@@ -204,7 +206,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       <span className="effort-card__thumb" aria-hidden="true" />
       <input ref={range} type="range" aria-label="Thread reasoning effort" aria-valuetext={valueText} aria-valuenow={selected}
         aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
-        onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(Math.max(0, actual)); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
+        onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(set); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
         onPointerUp={event => { if (!drag.current) return; drag.current = false; setDragging(false); choose(Math.round(Number(event.currentTarget.value))) }}
         onPointerCancel={() => { drag.current = false; setDragging(false); setHeld(null) }}
         onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) setHeld(magnet(next)); else choose(Math.round(next)) }}
@@ -253,36 +255,48 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
   const level = chosen ?? value
   const saving = useRef(false)
-  const landed = useRef<string | null>(null)
+  const pendingPress = useRef<string | null>(null)
+  /** The level the provider last reported, read inside a save that started before this render. */
+  const reported = useRef(value)
+  reported.current = value
+  const live = useRef(true)
+  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
   /**
    * Saves where the user ends up rather than every level they pass. A provider refuses a second settings
    * change while one is in flight, so a press made during a save is remembered and sent when that save
-   * answers. Whatever it answers with is then the shown level again, which takes back a refused press.
+   * answers. Whatever the provider then reports is the shown level again, which takes back a refused press.
    *
    * Nothing here compares the target against the saved level to skip a save. The rendered level is a frame
    * behind a press that has just been made, so a press that returns to the level the last save established
    * looks redundant and is dropped; landing back where a save has already been sent is what the loop's own
    * exit covers, and the card asks for a save only when the press differs from what it is showing.
+   *
+   * `onChange` is the one from the render the press was made in, deliberately: it carries the thread that was
+   * in front of the user then, and a press belongs to the thread it was made on even if another has since
+   * taken the composer.
    */
   const run = async (first: string): Promise<void> => {
     saving.current = true
     try {
       let target = first
       while (true) {
-        landed.current = null
+        pendingPress.current = null
+        const before = reported.current
         const took = await onChange(target).catch(() => false)
-        if (landed.current !== null && landed.current !== target) { target = landed.current; continue }
-        // Refused: the saved level comes back, and the error under the chips says the change was not made.
-        // Taken: the press stays until the saved level catches up with it, one render or several later, so
-        // the word never falls back to the old level for a frame on its way to the new one.
-        if (!took) setChosen(null)
+        if (!live.current) return
+        if (pendingPress.current !== null && pendingPress.current !== target) { target = pendingPress.current; continue }
+        // Refused, or answered with a level of the provider's own: it has spoken, so what it says is shown
+        // again, which is what takes a refused press back. Taken but not yet reported: the press is held, so
+        // the word does not fall back to the old level for a frame on its way to the new one, and the effect
+        // below lets go of it when the level lands.
+        if (!took || reported.current !== before) setChosen(null)
         return
       }
-    } finally { saving.current = false; landed.current = null }
+    } finally { saving.current = false; pendingPress.current = null }
   }
   const choose = (next: string): void => {
     setChosen(next)
-    if (saving.current) { landed.current = next; return }
+    if (saving.current) { pendingPress.current = next; return }
     void run(next)
   }
   // The saved level moving while nothing is being saved is the provider's own word on this thread — the level

@@ -34,6 +34,12 @@ async function runningAnimations(page: Page): Promise<number> {
   return page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)
 }
 
+/** Of those, the ones that never end: the ring's travelling run is one, and reduced motion may not have any. */
+async function endlessAnimations(page: Page): Promise<number> {
+  return page.evaluate(() => document.getAnimations()
+    .filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations === Infinity).length)
+}
+
 test('the effort card previews a drag, saves on release, plays the arrival at the top and dresses the composer, across window sizes', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
@@ -123,13 +129,15 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect.poll(() => savedEffort(page)).toBe('low')
     await expect(chip).toBeEnabled()
 
-    // Presses keep landing while a save is still in flight, and the card stays live to take them; the level
-    // landed on is the one saved, not each level crossed on the way to it. The chip says the level rather
-    // than main holding it: main has the level before the window has been told, and the press below is about
-    // what the window does with one it is still carrying.
+    // Two presses in a row, the second before the first can have been confirmed: both land on the card, which
+    // stays live to take them, and the thread ends on the level they stopped at. That only one save carried
+    // the levels crossed is the unit test's to prove; what is checked here is that neither press is dropped.
+    // The chip says the level rather than main holding it: main has a level before the window has been told.
     await expect(chip).toHaveText(/^Low/u)
     await range.press('End')
+    await expect(chip).toHaveText(/^Max/u)
     await range.press('Home')
+    await expect(chip).toHaveText(/^Low/u)
     await expect(chip).toBeEnabled()
     await expect.poll(() => savedEffort(page)).toBe('low')
     await expect(chip).toHaveAttribute('data-effort-top', 'false')
@@ -170,9 +178,11 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card).toHaveAttribute('data-arriving', 'false')
     await expect.poll(() => outlineOpacity(composer)).toBe('1')
     // Nothing keeps running, which is what reduced motion promises: the ring's travelling run is gone rather
-    // than slowed. Sampled once this would be a race — turning the setting on repaints the window, and the
+    // than slowed. An endless animation is running from the moment it starts, so that is read straight away;
+    // the count of everything running cannot be, because turning the setting on repaints the window and the
     // one-shot transitions that carries (the root's colour and scrollbar, the composer's border taking the
-    // colourway) are running for their own moment, in or out of the sample depending on when it is taken.
+    // colourway) are running for their own moment, in or out of a single sample depending on when it is taken.
+    expect(await endlessAnimations(page)).toBe(0)
     await expect.poll(() => runningAnimations(page), { timeout: 8_000 }).toBe(0)
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
