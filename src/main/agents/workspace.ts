@@ -11,7 +11,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
-import { EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
+import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
@@ -323,24 +323,38 @@ export class WorkspaceHost implements AgentHost {
       thread.summary = this.threadSummary(thread)
     }
   }
-  /** Import old JSON activity before removing it there; a committed store copy wins after an interrupted migration. */
+  /** Import old JSON activity without replacing a committed message generation after an interrupted save. */
   private adoptSavedActivities(snapshot: AgentHostSnapshot): void {
     if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
     try {
       for (const thread of snapshot.threads) {
+        const messageGeneration = this.threadStore.readMessageEpoch(thread.id)
+        if (messageGeneration) {
+          // A committed reset, including an unversioned or empty reset, outranks legacy JSON.
+          thread.messages = []
+          if (thread.historyEpoch !== messageGeneration.epoch) thread.activities = []
+          if (messageGeneration.epoch === undefined) delete thread.historyEpoch
+          else thread.historyEpoch = messageGeneration.epoch
+        }
         if (!this.threadStore.hasActivities(thread.id) && thread.activities !== undefined) {
           // Retain legacy child tasks before the activity migration removes their payload.
           this.trackSubagents(thread, false)
           this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
         }
         if (this.threadStore.hasActivities(thread.id)) {
-          const epoch = this.threadStore.readActivityEpoch(thread.id)
-          // SQLite commits before organization JSON. Do not relabel stale legacy messages
-          // or revive activity from the old generation after an interrupted JSON save.
-          if (thread.historyEpoch !== epoch) thread.messages = []
-          if (epoch === undefined) delete thread.historyEpoch
-          else thread.historyEpoch = epoch
-          thread.activities = this.threadStore.readActivities(thread.id)
+          const activityEpoch = this.threadStore.readActivityEpoch(thread.id)
+          const activityReset = this.threadStore.readActivityResetSequence(thread.id)
+          if (messageGeneration && (activityEpoch !== messageGeneration.epoch || (activityReset !== undefined && activityReset !== messageGeneration.sequence))) {
+            // The message reset may commit before activity sync. Old activity must not roll it back.
+            thread.activities = []
+            this.threadStore.syncActivities(thread.id, [], messageGeneration.epoch)
+          } else {
+            const epoch = messageGeneration ? messageGeneration.epoch : activityEpoch
+            if (thread.historyEpoch !== epoch) thread.messages = []
+            if (epoch === undefined) delete thread.historyEpoch
+            else thread.historyEpoch = epoch
+            thread.activities = this.threadStore.readActivities(thread.id)
+          }
         }
       }
     } catch {
@@ -600,7 +614,7 @@ export class WorkspaceHost implements AgentHost {
           classifications.push(activity)
           for (const agent of activity.agents ?? []) {
             const fresh = agent.observedAt !== undefined && Date.parse(agent.observedAt) >= (this.subagentLiveSince.get(thread.id) ?? this.startedAt)
-            const working = ['running', 'starting', 'pending', 'pendingInit', 'waiting', 'in_progress'].includes(agent.status)
+            const working = observedSubagentStatus(agent.status) === 'running'
             observations.push(working && (!connected || !fresh) ? { ...agent, status: 'unknown' } : agent)
           }
         }

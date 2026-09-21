@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { AgentActivity, ObservedAgent } from '../../shared/agentActivity'
-import { EMPTY_SUBAGENT_SUMMARY, SUBAGENT_ASSIGNMENT_PAGE_SIZE, SUBAGENT_PAGE_SIZE, type SubagentAssignment, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentChange, type SubagentPage, type SubagentPageRequest, type SubagentRow, type SubagentSummary } from '../../shared/subagents'
+import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, SUBAGENT_ASSIGNMENT_PAGE_SIZE, SUBAGENT_PAGE_SIZE, type SubagentAssignment, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentChange, type SubagentPage, type SubagentPageRequest, type SubagentRow, type SubagentSummary } from '../../shared/subagents'
 
 type Status = SubagentRow['status']
 type ThreadState = { epoch?: string; revision: number; sequence: number; summary: SubagentSummary }
@@ -12,15 +12,6 @@ const blankWork = (): SubagentStoreWork => ({ indexedReads: 0, rowWrites: 0, ass
 const blankThread = (): ThreadState => ({ revision: 0, sequence: 0, summary: { ...EMPTY_SUBAGENT_SUMMARY } })
 const terminal = (status: Status): boolean => status !== 'running' && status !== 'unknown'
 const counter = (status: Status): keyof SubagentSummary => status === 'running' ? 'working' : status
-function statusOf(status: string): Status {
-  switch (status.toLowerCase()) {
-    case 'running': case 'working': case 'in_progress': case 'pending': case 'pendinginit': case 'initializing': case 'starting': case 'waiting': return 'running'
-    case 'completed': case 'done': case 'finished': return 'completed'
-    case 'failed': case 'errored': case 'error': case 'notfound': return 'failed'
-    case 'interrupted': case 'shutdown': case 'closed': case 'cancelled': case 'canceled': return 'interrupted'
-    default: return 'unknown'
-  }
-}
 function privacyIdentity(threadId: string, agentId: string, assignmentId?: string): string {
   return createHash('sha256').update(JSON.stringify([threadId, agentId, assignmentId ?? null])).digest('hex')
 }
@@ -175,7 +166,7 @@ export class SubagentStore {
         const prior = record ? JSON.parse(String(record.value)) as SubagentAssignment : undefined
         const hash = fingerprint(observation)
         if (record?.fingerprint === hash) continue
-        const status = statusOf(observation.status)
+        const status = observedSubagentStatus(observation.status)
         if (prior && terminal(prior.status) && !terminal(status)) continue
         if (record && observation.observedAt && observation.observedAt < String(record.observed_at)) continue
         // Replayed cached history is not evidence a disconnected assignment is alive.

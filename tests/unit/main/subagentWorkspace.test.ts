@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import type { AgentActivity, ObservedAgent } from '../../../src/shared/agentActivity'
@@ -210,4 +211,26 @@ describe('retained agents across workspace lifecycle', () => {
     expect((await f.host.subagentPage({ threadId: f.thread.id })).rows[0]?.status).toBe('unknown')
     await expect(f.host.subagentPage({ threadId: 'missing' })).rejects.toThrow()
   })
+})
+
+
+it.each([
+  ['inProgress', 'completed', 'running'], ['inProgress', 'history', 'unknown'],
+  ['declined', 'completed', 'failed'], ['declined', 'history', 'failed'],
+] as const)('retains Codex %s during %s as %s through the workspace', async (status, phase, expected) => {
+  const f = await fixture()
+  const projection = new CodexActivityProjection()
+  projection.item(f.thread, codexItemSchema.parse({ id: 'spawn-native', type: 'collabAgentToolCall', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['native-child'], agentsStates: { 'native-child': { status } }, prompt: 'Review native state' }), { turnId: 'turn', phase })
+  f.native.emit()
+  const page = await f.host.subagentPage({ threadId: f.thread.id })
+  expect(page.rows[0]?.status).toBe(expected)
+  expect(page.summary.working).toBe(expected === 'running' ? 1 : 0)
+  expect(page.summary.failed).toBe(expected === 'failed' ? 1 : 0)
+  expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary).toEqual(page.summary)
+})
+it.each(['working', 'initializing'])('treats stale %s observations as uncertain before retention', async status => {
+  const f = await fixture()
+  f.observe([child({ status, observedAt: '2000-01-01T00:00:00.000Z' })])
+  expect((await f.host.subagentPage({ threadId: f.thread.id })).rows[0]?.status).toBe('unknown')
+  expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary?.working).toBe(0)
 })

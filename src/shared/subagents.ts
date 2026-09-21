@@ -11,6 +11,16 @@ export const subagentAssignmentsRequestSchema = z.object({ threadId: id, agentId
 export type SubagentPageRequest = z.infer<typeof subagentPageRequestSchema>
 export type SubagentAssignmentsRequest = z.infer<typeof subagentAssignmentsRequestSchema>
 export const subagentStatusSchema = z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown'])
+/** Normalize reported lifecycle names before either freshness checks or retained status counts. */
+export function observedSubagentStatus(status: string): z.infer<typeof subagentStatusSchema> {
+  switch (status.toLowerCase()) {
+    case 'running': case 'working': case 'in_progress': case 'inprogress': case 'pending': case 'pendinginit': case 'initializing': case 'starting': case 'waiting': return 'running'
+    case 'completed': case 'done': case 'finished': return 'completed'
+    case 'failed': case 'errored': case 'error': case 'declined': case 'notfound': return 'failed'
+    case 'interrupted': case 'shutdown': case 'closed': case 'cancelled': case 'canceled': return 'interrupted'
+    default: return 'unknown'
+  }
+}
 export const subagentRowSchema = z.object({
   id, parentId: id.optional(), sequence: z.number().int().positive(), revision: z.number().int().nonnegative(),
   assignmentId: id, assignmentCount: z.number().int().positive(),

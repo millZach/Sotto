@@ -263,3 +263,38 @@ it.each([
     await f.close(host)
   }
 })
+
+it.each([
+  { previous: 'old-epoch', epoch: 'new-epoch', empty: false, legacy: true },
+  { previous: 'old-epoch', epoch: undefined, empty: false, legacy: true },
+  { previous: undefined, epoch: undefined, empty: false, legacy: true },
+  { previous: undefined, epoch: undefined, empty: true, legacy: true },
+  { previous: 'old-epoch', epoch: 'new-epoch', empty: false, legacy: false },
+])('keeps the committed message generation when activity sync never committed: %j', async ({ previous, epoch, empty, legacy }) => {
+  const f = await fixture()
+  const thread = f.provider.state.threads[0]!
+  if (previous === undefined) delete thread.historyEpoch
+  else thread.historyEpoch = previous
+  const stale = { id: 'stale-message', role: 'user' as const, text: 'Stale split-commit message', createdAt: '2026-09-20T00:00:00Z' }
+  const current = { id: 'current-message', role: 'user' as const, text: 'Current split-commit message', createdAt: '2026-09-20T00:00:01Z' }
+  thread.messages = [stale]
+  if (!legacy) delete thread.activities
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  const store = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  store.open()
+  try {
+    store.replaceThreadMessages(thread.id, [stale], previous)
+    store.syncActivities(thread.id, [activity('old', 'Stale split-commit activity')], previous)
+    store.replaceThreadMessages(thread.id, empty ? [] : [current], epoch)
+    // Simulate exit after the message transaction committed, before activity sync or JSON save.
+    expect(store.readActivityResetSequence(thread.id)).not.toBe(store.readMessageEpoch(thread.id)?.sequence)
+  } finally { store.close() }
+  for (let restart = 0; restart < 2; restart++) {
+    const host = await f.open()
+    const restored = host.workspaceSnapshot().threads[0]!
+    expect(restored.historyEpoch).toBe(epoch)
+    expect(restored.activities).toEqual([])
+    expect(host.threadMessages(thread.id)).toEqual(empty ? [] : [current])
+    await f.close(host)
+  }
+})
