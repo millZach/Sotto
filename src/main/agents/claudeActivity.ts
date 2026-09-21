@@ -8,8 +8,7 @@ const json = (value: unknown): string | undefined => value === undefined ? undef
 /** Same projector for native transcript snapshots and the streaming CLI. No execution. */
 export class ClaudeActivity {
   private readonly blocks = new Map<string, { block: ClaudeFrame; input: string }>()
-  private readonly hiddenTasks = new Set<string>()
-  private readonly monitorTasks = new Set<string>()
+  private readonly subagentTasks = new Set<string>()
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string): AgentActivity[] {
     const rows: AgentActivity[] = []
     const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
@@ -60,19 +59,24 @@ export class ClaudeActivity {
       if (event?.type === 'content_block_stop') this.blocks.delete(key)
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
-      if (frame.subtype === 'task_started' && ['monitor', 'monitor_mcp'].includes(String(frame.task_type))) this.monitorTasks.add(frame.task_id)
-      // Monitor lifecycle belongs to the live watch, never to the subagent roster, even after it ends.
-      if (this.monitorTasks.has(frame.task_id)) return mergeAgentActivities(previous, rows)
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : frame.status === 'stopped' ? 'interrupted' : 'unknown' : 'running'
-      // Claude Code registers every shell command as a task too, and files housekeeping watchers as tasks the transcript should not show.
-      // Neither is a subagent: a shell task's outcome belongs to its command row, whose exit code a background command only learns here.
       const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) : undefined
-      if (frame.subtype === 'task_started' && (frame.task_type === 'local_bash' || frame.skip_transcript === true || frame.ambient === true)) this.hiddenTasks.add(frame.task_id)
-      if (this.hiddenTasks.has(frame.task_id) || owner?.kind === 'command') {
-        if (frame.subtype === 'task_notification' && owner?.kind === 'command' && status !== 'unknown') rows.push({ ...owner, status })
-        if (frame.subtype === 'task_notification') this.hiddenTasks.delete(frame.task_id)
+      if (frame.subtype === 'task_started') {
+        // Reclassify reused IDs. Only a positively observed subagent start admits later updates;
+        // monitors need no tombstones, so late progress stays hidden even in long sessions.
+        this.subagentTasks.delete(frame.task_id)
+        if (!frame.task_id || frame.task_id.length > 512 || ['monitor', 'monitor_mcp', 'local_bash'].includes(String(frame.task_type))
+          || frame.skip_transcript === true || frame.ambient === true || owner?.kind === 'command') return mergeAgentActivities(previous, rows)
+        this.subagentTasks.add(frame.task_id)
+        if (this.subagentTasks.size > 4_096) this.subagentTasks.delete(this.subagentTasks.values().next().value!)
+      }
+      // A shell notification can finish its known command even when its task start was missed.
+      if (owner?.kind === 'command') {
+        if (frame.subtype === 'task_notification' && status !== 'unknown') rows.push({ ...owner, status })
         return mergeAgentActivities(previous, rows)
       }
+      if (!this.subagentTasks.has(frame.task_id)) return mergeAgentActivities(previous, rows)
+      if (frame.subtype === 'task_notification') this.subagentTasks.delete(frame.task_id)
       const old = previous.find(row => row.id === `claude-task-${frame.task_id}`)
       rows.push({ ...base, ...old, id: `claude-task-${frame.task_id}`, kind: 'subagent', status, title: text(frame.description) ?? old?.title ?? 'Subagent',
         ...(typeof frame.tool_use_id === 'string' ? { parentId: `claude-tool-${frame.tool_use_id}` } : {}),
