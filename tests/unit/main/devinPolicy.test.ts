@@ -77,22 +77,26 @@ it('accepts only the pinned empty plugin-list response', () => {
 })
 
 
-it('refuses native configuration below the initial working directory before lazy native discovery', async () => {
+// Devin resolves `.devin` from the working folder upwards only; the pinned CLI
+// ignores the same file one level below it. `mcp_config.json` is the file the
+// descendant experiment measured, so it is the one asserted here. See
+// docs/verification/2026-09-21-devin-config-discovery.md.
+it('allows native configuration below the working directory, which the session never reads', async () => {
   const { cwd, nativeConfig } = await setup()
   const directory = join(cwd, 'package', '.devin')
   await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, 'hooks.v1.json'), '{}')
-  await expect(assertDevinWorkingDirectory(cwd, nativeConfig)).rejects.toThrow(/native configuration/u)
+  await writeFile(join(directory, 'mcp_config.json'), '{}')
+  await expect(assertDevinWorkingDirectory(cwd, nativeConfig)).resolves.toBeUndefined()
 })
 
-it('refuses a linked directory whose native settings cannot be bounded to this working tree', async () => {
+it('admits a working folder whose size and linked directories no longer decide the check', async () => {
   const { root, cwd, nativeConfig } = await setup()
   const other = join(root, 'outside')
-  await mkdir(other)
-  const link = join(cwd, 'linked')
-  await symlink(other, link, 'junction')
-  await expect(assertDevinWorkingDirectory(cwd, nativeConfig)).rejects.toThrow(/linked directories/u)
-  await rm(link)
+  await mkdir(join(other, '.devin'), { recursive: true })
+  await writeFile(join(other, '.devin', 'config.json'), '{}')
+  await symlink(other, join(cwd, 'linked'), 'junction')
+  await expect(assertDevinWorkingDirectory(cwd, nativeConfig)).resolves.toBeUndefined()
+  await rm(join(cwd, 'linked'))
 })
 
 
