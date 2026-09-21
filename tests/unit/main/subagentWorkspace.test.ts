@@ -2,14 +2,15 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
+import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import type { AgentActivity, ObservedAgent } from '../../../src/shared/agentActivity'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { SubagentChange } from '../../../src/shared/subagents'
 
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
+afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanups.splice(0).reverse()) await close() })
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-subagents-workspace-'))
   const native = new FakeProviderHost()
@@ -62,7 +63,7 @@ describe('retained agents across workspace lifecycle', () => {
   it('coalesces bursts, preserves result history on reuse and clears saved words when history is disabled', async () => {
     const f = await fixture()
     const changes: SubagentChange[] = []
-    f.host.subscribeSubagents(change => changes.push(change))
+    f.host.subscribeSubagents(change => { if (change.threadId === f.thread.id) changes.push(change) })
     const now = Date.now()
     for (let index = 0; index < 30; index++) f.observe([child({ observedAt: new Date(now + index).toISOString(), description: `Step ${index}` })])
     f.observe([child({ status: 'completed', message: 'A retained private result', observedAt: new Date(now + 31).toISOString() })])
@@ -75,12 +76,12 @@ describe('retained agents across workspace lifecycle', () => {
     await expect.poll(() => changes.length).toBe(1)
     expect(changes[0]?.rows).toHaveLength(1)
     await f.history(false)
-    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toHaveLength(0)
+    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toEqual([expect.objectContaining({ id: 'child', title: 'Agent task', status: 'running' })])
     const bytes = await readFile(join(f.directory, 'subagents.sqlite'))
     expect(bytes.includes(Buffer.from('A retained private result'))).toBe(false)
     await f.history(true)
     f.native.emit()
-    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toHaveLength(0)
+    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toEqual([expect.objectContaining({ id: 'child', title: 'Agent task', status: 'running' })])
     f.observe([child({ assignmentId: 'assignment-1', status: 'completed', title: 'Review provider mappings', prompt: 'Check the child lifecycle.', message: 'A retained private result', observedAt: new Date(now + 40).toISOString() })])
     const erased = await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' })
     expect(erased.assignments[0]?.status).toBe('completed')
@@ -131,6 +132,52 @@ describe('retained agents across workspace lifecycle', () => {
     f.thread.activities = []
     f.native.emit()
     expect(f.host.activity(f.thread.id, 'spawn')).toMatchObject({ taskUpdatesExcluded: true, title: 'Subagent' })
+  })
+  it('preserves unfinished agents and their indicator through both privacy switches without restoring words', async () => {
+    const f = await fixture()
+    const secret = 'Erased-live-task-marker'
+    const original = child({ title: secret, description: secret, prompt: secret, message: secret })
+    f.observe([original, child({ id: 'finished', assignmentId: 'finished-task', status: 'completed', title: secret, message: secret })])
+    const changes: SubagentChange[] = []
+    f.host.subscribeSubagents(change => { if (change.threadId === f.thread.id) changes.push(change) })
+    for (const enabled of [false, true]) {
+      await f.history(enabled)
+      const page = await f.host.subagentPage({ threadId: f.thread.id })
+      expect(page.rows).toEqual([expect.objectContaining({ id: 'child', status: 'running', title: 'Agent task', model: 'reported-model' })])
+      expect(page.summary).toMatchObject({ total: 1, working: 1, completed: 0 })
+      expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary?.working).toBe(1)
+      expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).not.toContain(secret)
+      f.native.emit() // Exactly the same cached payload cannot restore erased content.
+      expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).not.toContain(secret)
+      await expect.poll(() => changes.at(-1)?.reset).toBe(true)
+      expect(changes.at(-1)?.rows[0]?.status).toBe('running')
+      changes.length = 0
+    }
+    expect((await readFile(join(f.directory, 'subagents.sqlite'))).includes(Buffer.from(secret))).toBe(false)
+  })
+  it('preserves uncertain agents outside the capped activity window during privacy switches', async () => {
+    const f = await fixture()
+    f.observe([child({ prompt: 'Erased-evicted-task-marker' })])
+    f.thread.activities = Array.from({ length: 2000 }, (_, index): AgentActivity => ({ id: `later-${index}`, turnId: 'turn', sequence: index + 1, kind: 'tool', status: 'completed', title: 'Later work' }))
+    f.native.emit(); f.host.disconnect()
+    for (const enabled of [false, true]) {
+      await f.history(enabled)
+      expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toEqual([expect.objectContaining({ id: 'child', status: 'unknown', title: 'Agent task' })])
+      expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary?.working).toBe(0)
+      expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).not.toContain('Erased-evicted-task-marker')
+    }
+  })
+  it('retries an unchanged provider snapshot on refresh after a transient roster write failure', async () => {
+    const f = await fixture()
+    const ingest = vi.spyOn(SubagentStore.prototype, 'ingest').mockImplementationOnce(() => { throw new Error('Fixture transient storage failure') })
+    const original = child({ prompt: 'Retried complete task', message: 'Retried result', status: 'completed' })
+    f.observe([original])
+    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows).toHaveLength(0)
+    expect(f.host.workspaceSnapshot().error).toContain('Agent history could not be saved')
+    await f.host.refreshThread(f.thread.id)
+    expect(ingest.mock.calls.length).toBeGreaterThan(1)
+    expect((await f.host.subagentPage({ threadId: f.thread.id })).rows[0]).toMatchObject({ id: 'child', status: 'completed' })
+    expect((await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' })).assignments[0]).toMatchObject({ prompt: 'Retried complete task', result: 'Retried result' })
   })
   it('marks working children uncertain when the provider disconnects and never exposes another thread through a missing ID', async () => {
     const f = await fixture()

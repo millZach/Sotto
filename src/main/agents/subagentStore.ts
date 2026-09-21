@@ -235,6 +235,22 @@ export class SubagentStore {
       return { threadId, revision: state.revision, rows, summary: state.summary }
     } catch (error) { db.exec('ROLLBACK'); throw error }
   }
+  /** Metadata for unfinished observations only, used when an explicit privacy switch clears text. */
+  unsettled(threadId: string): ObservedAgent[] {
+    this.counts.indexedReads++
+    const records = this.requireOpen().prepare("SELECT value FROM subagent_rows WHERE thread_id = ? AND status IN ('running', 'unknown') ORDER BY sequence").all(threadId)
+    this.counts.pageRowsRead += records.length
+    return records.map(record => {
+      const row = JSON.parse(String(record.value)) as SubagentRow
+      return {
+        id: row.id, assignmentId: row.assignmentId, status: row.status, title: 'Agent task', observedAt: row.lastObservedAt,
+        ...(row.parentId !== undefined ? { parentId: row.parentId } : {}),
+        ...(row.model !== undefined ? { model: row.model } : {}),
+        ...(row.startedAt !== undefined ? { startedAt: row.startedAt } : {}),
+        ...(row.durationMs !== undefined ? { durationMs: row.durationMs } : {}),
+      }
+    })
+  }
   /** One indexed classification lookup, including activities outside the renderer's bounded history. */
   activity(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined {
     if (this.thread(threadId).epoch !== historyEpoch) return undefined

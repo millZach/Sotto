@@ -11,16 +11,25 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'onOpenAgents' | '
   const chrome = useToolsPanelChrome()
   const panes = useRef<readonly string[]>([])
   const mounted = useRef(true)
+  const latestCommand = useRef(command)
+  latestCommand.current = command
   const pin = useRef(chrome.pinnedThreadId)
   pin.current = chrome.pinnedThreadId
   const observe = useCallback((threadIds: readonly string[]): void => {
+    // Parent cleanup already released observations; ignore the child page's later teardown report.
+    if (!mounted.current) return
     panes.current = threadIds
     const ids = new Set(threadIds)
-    if (mounted.current && pin.current !== null) ids.add(pin.current)
+    if (pin.current !== null) ids.add(pin.current)
     void command({ type: 'observe-threads', threadIds: [...ids] })
   }, [command])
+  // Workspace lifetime is independent of changing command closures. Establish it before refreshing
+  // the pin, including React's StrictMode setup replay; genuine teardown uses the latest command.
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; void latestCommand.current({ type: 'observe-threads', threadIds: [] }) }
+  }, [])
   useEffect(() => { observe(panes.current) }, [chrome.pinnedThreadId, observe])
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; void command({ type: 'observe-threads', threadIds: [] }) } }, [command])
   return <ThreadsView {...props}
     tools={tools => <ToolsPanel {...tools} />}
     focusedPaneActions={<ToolsPanelToggle />}

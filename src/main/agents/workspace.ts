@@ -555,7 +555,11 @@ export class WorkspaceHost implements AgentHost {
         this.subagentsChanged(this.subagentStore.markUnknown(thread.id))
       }
       if (!this.subagentSummaries.has(thread.id)) this.subagentSummaries.set(thread.id, this.subagentStore.state(thread.id).summary)
-    } catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.' }
+    } catch {
+      // An unchanged provider snapshot still needs retrying when its store transaction failed.
+      this.subagentInputs.delete(thread.id)
+      this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.'
+    }
   }
 
   async listThreadSkills(threadId: string, forceReload = false) {
@@ -742,12 +746,16 @@ export class WorkspaceHost implements AgentHost {
   async privacyChanged(): Promise<void> {
     if (!this.subagentUnavailable && this.subagentStore.ephemeral === this.historyEnabled()) {
       try {
+        const unsettled = new Map(this.state.snapshot.threads.map(thread => [thread.id, this.subagentStore.unsettled(thread.id)]))
         this.subagentStore.privacyChanged(this.historyEnabled())
         this.subagentChanges.clear()
         for (const thread of this.state.snapshot.threads) {
+          // Retention changes do not end native work. Restore only text-free live/uncertain metadata,
+          // including children whose original activity already left the bounded provider window.
+          const seeded = this.subagentStore.ingest(thread.id, unsettled.get(thread.id) ?? [], thread.historyEpoch)
           const current = this.subagentStore.state(thread.id)
           thread.subagentSummary = current.summary
-          this.subagentsChanged({ threadId: thread.id, ...current, rows: [], reset: true })
+          this.subagentsChanged({ threadId: thread.id, ...current, rows: seeded?.rows ?? [], reset: true })
         }
       } catch { this.saveError = 'Saved agent history could not be removed. Restore access to local storage and try again.'; throw new Error(this.saveError) }
     }

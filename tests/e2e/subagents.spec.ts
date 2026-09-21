@@ -154,8 +154,18 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     const old = await reopened.page.evaluate(() => window.sotto!.subagents!.assignments({ threadId: 'workshop', agentId: 'claude:storage' }))
     expect(old.assignments).toHaveLength(2)
     expect(old.assignments.some(item => item.result === 'History survives activity eviction and restart.')).toBe(true)
-    await reopened.page.evaluate(async () => { await window.sotto!.updateSettings({ historyEnabled: false }) })
-    expect((await reopened.page.evaluate(() => window.sotto!.subagents!.page({ threadId: 'workshop' }))).rows).toHaveLength(0)
+    await activity(reopened.page, [{ ...first, assignmentId: 'privacy-live', title: 'Private live task', prompt: 'Erase this task while retaining live status.' }])
+    await expect(reopened.page.locator('.tools-toggle__agents-dot')).toBeVisible()
+    for (const historyEnabled of [false, true]) {
+      await reopened.page.evaluate(async enabled => { await window.sotto!.updateSettings({ historyEnabled: enabled }) }, historyEnabled)
+      const retained = await reopened.page.evaluate(() => window.sotto!.subagents!.page({ threadId: 'workshop' }))
+      expect(retained.summary.working).toBe(1)
+      expect(retained.rows.every(row => row.status === 'running' || row.status === 'unknown')).toBe(true)
+      expect(JSON.stringify(retained)).not.toContain('Private live task')
+      const erased = await reopened.page.evaluate(() => window.sotto!.subagents!.assignments({ threadId: 'workshop', agentId: 'claude:storage' }))
+      expect(erased.assignments.every(item => item.prompt === undefined && item.result === undefined)).toBe(true)
+      await expect(reopened.page.locator('.tools-toggle__agents-dot')).toBeVisible()
+    }
     expect(errors).toEqual([])
   } catch (error) { console.error({ errors, body: await launched.page.locator('body').innerText().catch(() => 'closed') }); await launched.page.screenshot({ path: join(shots, 'failure.png') }).catch(() => undefined); throw error } finally { if (reopened) await reopened.app.close(); await closeSotto(launched) }
 })
