@@ -800,6 +800,7 @@
   .effort-sample[data-still='false'] .effort-sample__composer::after { animation: effort-ring 4200ms linear infinite; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__card > .effort-sample__wash::before { animation: effort-wash 1500ms cubic-bezier(.3, .6, .2, 1) both; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__composer > .effort-sample__wash::before { animation: effort-wash 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+  .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word { animation: effort-word 520ms cubic-bezier(.2, .8, .2, 1) both; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word > span { animation: effort-letter 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--effort-letter) * 55ms); }
 }
 .effort-sample[data-still='true'] .effort-sample__composer::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }

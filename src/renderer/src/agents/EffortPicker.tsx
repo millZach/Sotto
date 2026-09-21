@@ -11,7 +11,7 @@ const EFFORT_LINES: Record<string, string> = {
   low: 'Fast. For small, clear tasks.',
   medium: 'The usual balance of speed and care.',
   high: 'Takes longer and catches more.',
-  xhigh: 'Much longer. For problems that resist a first pass.',
+  xhigh: 'Much longer. For stubborn problems.',
   max: "Near the model's limit. Slow and costly.",
 }
 const TOP_LINE = 'Everything the model has. Slowest, costliest.'
@@ -131,23 +131,24 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       surface.style.top = `${Math.max(12, Math.min(above >= 12 ? above : anchor.bottom + 8, innerHeight - height - 12))}px`
     }
     place()
+    // The card follows the chip itself, every frame it is open. Watching what resizes is not enough: the chip
+    // moves when a line appears under the composer, when the window resize settles a frame after its event, and
+    // when the page scrolls, and none of those resize the chip or anything above it. Placing here, before the
+    // frame is painted, also keeps a card that grew — a line that wrapped — from being painted a frame too low.
     let placementFrame = 0
-    const schedulePlace = (): void => {
-      cancelAnimationFrame(placementFrame)
-      // Window resize arrives before the composer's flex layout has settled in Electron.
-      placementFrame = requestAnimationFrame(place)
+    let placed = ''
+    const follow = (): void => {
+      placementFrame = requestAnimationFrame(follow)
+      const anchor = trigger.current?.getBoundingClientRect()
+      if (!anchor) return
+      const state = `${anchor.top} ${anchor.left} ${surface.offsetHeight} ${surface.offsetWidth} ${innerHeight} ${innerWidth}`
+      if (state === placed) return
+      placed = state
+      place()
     }
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(schedulePlace)
-    observer?.observe(surface)
-    if (trigger.current) {
-      observer?.observe(trigger.current)
-      // A capped composer can move without changing its own size. Watch the layout that places it.
-      for (let ancestor = trigger.current.parentElement; ancestor; ancestor = ancestor.parentElement) observer?.observe(ancestor)
-    }
-    window.addEventListener('resize', schedulePlace)
-    window.addEventListener('scroll', schedulePlace, true)
+    follow()
     range.current?.focus()
-    return () => { cancelAnimationFrame(placementFrame); observer?.disconnect(); window.removeEventListener('resize', schedulePlace); window.removeEventListener('scroll', schedulePlace, true); surface.hidePopover?.() }
+    return () => { cancelAnimationFrame(placementFrame); surface.hidePopover?.() }
   }, [trigger])
   const choose = async (index: number): Promise<void> => {
     if (disabled || pending.current) return

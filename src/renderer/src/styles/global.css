@@ -2477,4 +2477,9 @@ textarea.tt-input {
 @property --effort-ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 @keyframes effort-ring { to { --effort-ring-angle: 360deg; } }
 @keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
-@keyframes effort-letter { from { color: var(--tt-text); } 45% { color: var(--tt-text); transform: translateY(-1px); } to { color: var(--tt-effort-text-fill); transform: none; } }
+/* The letters take the colour in turn and the word lifts as one. Nothing inside the word may move: a colourway
+   that paints the word as a gradient clips it to the glyphs, and a transformed or positioned descendant drops
+   out of that clip in Chromium, which left Rainbow's word blank for the whole arrival. The word owns the clip,
+   so the word is what lifts. */
+@keyframes effort-letter { from { color: var(--tt-text); } 45% { color: var(--tt-text); } to { color: var(--tt-effort-text-fill); } }
+@keyframes effort-word { from { transform: translateY(0); } 45% { transform: translateY(-1px); } to { transform: none; } }

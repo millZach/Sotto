@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import sharp from 'sharp'
 import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow } from './support/sottoLaunch'
 
 const ARTIFACTS = 'artifacts/effort-slider'
@@ -11,6 +12,21 @@ async function savedEffort(page: Page): Promise<string | undefined> {
 /** The composer's outline is its ::after ring; its opacity says whether the thread wears the colourway. */
 async function outlineOpacity(composer: Locator): Promise<string> {
   return composer.evaluate(node => getComputedStyle(node, '::after').opacity)
+}
+
+/**
+ * The share of a capture that is ink rather than the surface behind it. Most of a word's box is surface, so the
+ * median luminance is the surface and everything far from it is a glyph. A word the gradient clip has dropped
+ * paints a fragment or nothing at all, which no computed style reports.
+ */
+async function inkCoverage(capture: Buffer): Promise<number> {
+  const { data, info } = await sharp(capture).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+  const luminance: number[] = []
+  for (let index = 0; index < data.length; index += info.channels) {
+    luminance.push(0.2126 * data[index]! + 0.7152 * data[index + 1]! + 0.0722 * data[index + 2]!)
+  }
+  const surface = [...luminance].sort((first, second) => first - second)[Math.floor(luminance.length / 2)]!
+  return luminance.filter(value => Math.abs(value - surface) > 25).length / luminance.length
 }
 
 async function runningAnimations(page: Page): Promise<number> {
@@ -175,6 +191,89 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
   } finally { await closeSotto(launched) }
 })
 
+test('the card holds its height through the levels and keeps a gradient colourway’s word painted while the arrival plays', async () => {
+  test.setTimeout(120_000)
+  await mkdir(ARTIFACTS, { recursive: true })
+  const launched = await launchSottoWithVoice()
+  const { page } = launched
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  try {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'rainbow' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+      await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
+      await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
+    })
+    await page.reload()
+    await resizeWindow(launched, 1280, 800)
+    await openThreads(page)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+    const chip = page.getByRole('combobox', { name: 'Thread reasoning', exact: true })
+    const card = page.getByRole('dialog', { name: 'Reasoning effort', exact: true })
+    const range = card.getByRole('slider', { name: 'Thread reasoning effort', exact: true })
+    await chip.click()
+    await expect(range).toBeFocused()
+
+    // Every level's line fits the card's width, so the card keeps its height and its bottom edge as the level
+    // climbs: a wrap would grow the card and move it again a frame later, under the pointer mid-drag.
+    const anchor = (await chip.boundingBox())!
+    const shapes: string[] = []
+    for (const [key, level] of [['1', 'low'], ['2', 'medium'], ['3', 'high'], ['4', 'xhigh'], ['5', 'max']] as const) {
+      await range.press(key)
+      await expect.poll(() => savedEffort(page)).toBe(level)
+      // The chip re-enables when the save has answered; a key pressed before that is refused, not queued.
+      await expect(chip).toBeEnabled()
+      await expect(card.locator('.effort-card__line')).not.toBeEmpty()
+      const box = (await card.boundingBox())!
+      shapes.push(`${Math.round(box.height)} ${Math.round(box.y + box.height)}`)
+    }
+    expect(new Set(shapes).size, `the card changed shape across the levels: ${shapes.join(', ')}`).toBe(1)
+    expect(Math.abs(anchor.y - Number(shapes[0]!.split(' ')[1]) - 8)).toBeLessThanOrEqual(2)
+
+    // Rainbow paints the word as a gradient clipped to its glyphs. Chromium drops a moving descendant out of
+    // that clip, so a word whose letters moved has no colour at all for the length of the arrival.
+    await expect(card).toHaveAttribute('data-arriving', 'true')
+    const word = card.locator('.effort-card__word')
+    expect(await word.evaluate(node => [...node.children]
+      .filter(letter => { const style = getComputedStyle(letter); return style.transform !== 'none' || style.position !== 'static' }).length)).toBe(0)
+    // The letters have taken the colour and the arrival is still running: the stretch where the word was blank.
+    await expect.poll(async () => word.evaluate(node => node.getAnimations({ subtree: true })
+      .filter(animation => 'animationName' in animation && String(animation.animationName) === 'effort-letter')
+      .every(animation => animation.playState === 'finished'))).toBe(true)
+    await expect(card).toHaveAttribute('data-arriving', 'true')
+    const arriving = await inkCoverage(await page.screenshot({ clip: (await word.boundingBox())! }))
+    await page.screenshot({ path: `${ARTIFACTS}/rainbow-arrival.png` })
+    await expect(card).toHaveAttribute('data-arriving', 'false', { timeout: 6_000 })
+    const settled = await inkCoverage(await page.screenshot({ clip: (await word.boundingBox())! }))
+    const measured = `arriving ${arriving.toFixed(3)}, settled ${settled.toFixed(3)}`
+    expect(settled, `the word is not painted at rest (${measured})`).toBeGreaterThan(0.08)
+    expect(arriving, `the word loses its paint while the arrival plays (${measured})`).toBeGreaterThan(settled * 0.75)
+
+    // The Appearance sample plays the same arrival on the same kind of word, which is where the blank one shows.
+    await page.getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+    const sample = page.locator('#settings-appearance .effort-sample')
+    await sample.scrollIntoViewIfNeeded()
+    const sampleWord = sample.locator('.effort-sample__word')
+    const sampleSettled = await inkCoverage(await page.screenshot({ clip: (await sampleWord.boundingBox())! }))
+    await sample.getByRole('button', { name: 'Play again', exact: true }).click()
+    await expect(sample).toHaveAttribute('data-arriving', 'true')
+    await expect.poll(async () => sampleWord.evaluate(node => node.getAnimations({ subtree: true })
+      .filter(animation => 'animationName' in animation && String(animation.animationName) === 'effort-letter')
+      .every(animation => animation.playState === 'finished'))).toBe(true)
+    await expect(sample).toHaveAttribute('data-arriving', 'true')
+    const sampleArriving = await inkCoverage(await page.screenshot({ clip: (await sampleWord.boundingBox())! }))
+    await page.screenshot({ path: `${ARTIFACTS}/rainbow-appearance-sample.png` })
+    const sampleMeasured = `arriving ${sampleArriving.toFixed(3)}, settled ${sampleSettled.toFixed(3)}`
+    expect(sampleSettled, `the sample's word is not painted at rest (${sampleMeasured})`).toBeGreaterThan(0.08)
+    expect(sampleArriving, `the sample's word loses its paint while the arrival plays (${sampleMeasured})`).toBeGreaterThan(sampleSettled * 0.75)
+    expect(errors).toEqual([])
+  } finally { await closeSotto(launched) }
+})
+
 test('Settings → Appearance offers the effort colourways, paints the pick at once and carries it to the composer', async () => {
   test.setTimeout(90_000)
   await mkdir(ARTIFACTS, { recursive: true })
@@ -207,6 +306,16 @@ test('Settings → Appearance offers the effort colourways, paints the pick at o
     await expect(group.getByRole('button', { name: 'Use Cyberpunk as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
     await expect(sample).toHaveAttribute('data-arriving', 'true')
     await page.screenshot({ path: `${ARTIFACTS}/appearance-cyberpunk.png` })
+    // Play again starts an arrival that is already running over again, which asking for the same attribute twice
+    // never did: wait until the tide is well into its run, then press it and find the tide back at its beginning.
+    const washTimes = async (): Promise<number[]> => sample.evaluate(node => node.getAnimations({ subtree: true })
+      .filter(animation => 'animationName' in animation && String(animation.animationName) === 'effort-wash')
+      .map(animation => Math.round(Number(animation.currentTime ?? 0))))
+    await expect.poll(async () => Math.min(...await washTimes(), Number.POSITIVE_INFINITY)).toBeGreaterThan(600)
+    await sample.getByRole('button', { name: 'Play again', exact: true }).click()
+    const restarted = await washTimes()
+    expect(restarted.length, 'the tide runs in the card and in the composer').toBe(2)
+    expect(Math.max(...restarted), 'Play again starts the tide over').toBeLessThan(300)
     await expect.poll(async () => (await page.evaluate(async () => window.sotto!.getSettings())).effortColor).toBe('cyberpunk')
     await expect(sample).toHaveAttribute('data-arriving', 'false', { timeout: 6_000 })
     // The colourway is a setting, so it survives a reload, and the thread at its highest level wears it.

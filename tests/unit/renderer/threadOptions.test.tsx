@@ -76,6 +76,12 @@ describe('composer option chips', () => {
     fireEvent.click(chip)
     const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
     expect(panel).toHaveAttribute('data-top', 'false')
+    // The line under the word fits the card's width at every level; the Electron spec measures that it does.
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: '4' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'xhigh' }))
+    state.host.threads[0]!.reasoningEffort = 'xhigh'
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAccessibleDescription('Much longer. For stubborn problems.')
     fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'End' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'max' }))
     state.host.threads[0]!.reasoningEffort = 'max'
