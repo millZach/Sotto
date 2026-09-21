@@ -1,5 +1,6 @@
 import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { calculateRms, resampleMono } from './audioMath'
+import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from './microphoneConstraints'
 export type { MicrophoneConstraints } from './microphoneConstraints'
 
@@ -156,7 +157,14 @@ function defaultDependencies(): AudioRecorderDependencies {
   return {
     audioWorkletModuleUrl: new URL('audio-capture-worklet.js', browser.document.baseURI).href,
     mediaDevices: {
-      getUserMedia: (constraints) => browser.navigator.mediaDevices.getUserMedia(constraints),
+      getUserMedia: async (constraints) => {
+        if (!await ensureMicrophoneAccess()) {
+          const error = new Error('Microphone access is blocked.')
+          error.name = 'NotAllowedError'
+          throw error
+        }
+        return browser.navigator.mediaDevices.getUserMedia(constraints)
+      },
     },
     createAudioContext: () => new browser.AudioContext(),
     createAudioWorkletNode: (context, processorName) =>

@@ -56,6 +56,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -364,6 +365,7 @@ describe('typed preload bridge', () => {
           'chatPrompts',
         'checkForUpdates',
         'checkTranscriptionKey',
+        'ensureMicrophoneAccess',
         'clearHistory',
         'downloadUpdate',
         'deleteHistory',
@@ -865,6 +867,29 @@ describe('IPC validation and lifecycle', () => {
     expect(app.reload).toHaveBeenCalledOnce()
   })
 
+  it('asks the operating system for microphone access when a gate is installed', async () => {
+    const harness = createIpcHarness()
+    await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
+    harness.cleanup()
+    const ensure = vi.fn(async () => false)
+    const ipc = new FakeIpcMain(harness.trustedEvent)
+    const cleanup = registerIpc(ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+      microphoneAccess: { ensure },
+    })
+    try {
+      await expect(ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(false)
+      expect(ensure).toHaveBeenCalledOnce()
+    } finally {
+      cleanup()
+    }
+  })
+
   it.each([
     SETTINGS_GET,
     SETTINGS_UPDATE,
@@ -876,6 +901,7 @@ describe('IPC validation and lifecycle', () => {
     TRANSCRIPTION_TRANSCRIBE,
     TRANSCRIPTION_CANCEL,
     TRANSCRIPTION_CHECK_KEY,
+    MICROPHONE_ENSURE_ACCESS,
   ])(
     'denies widget renderer invocation of main-only channel %s',
     async (channel) => {
@@ -941,6 +967,7 @@ describe('IPC validation and lifecycle', () => {
     await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({ ok: true })
     expect(transcription.cancel).toHaveBeenCalledWith('r1')
     await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({ ok: true })
+    await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
 
     // A header-only buffer, an unbounded one, and a non-buffer payload are all
     // rejected before the service ever sees them.

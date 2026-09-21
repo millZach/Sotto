@@ -23,6 +23,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -297,6 +298,7 @@ export interface RegisterIpcDependencies {
   readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
+  readonly microphoneAccess?: { ensure(): Promise<boolean> }
 }
 
 export interface WidgetIpcService {
@@ -607,6 +609,10 @@ export function registerIpc(
     register(TRANSCRIPTION_CHECK_KEY, noPayloadSchema, 0, async (): Promise<TranscriptionKeyCheck> => {
       if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
       return dependencies.transcription.checkKey()
+    })
+    register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
+      if (dependencies.microphoneAccess === undefined) return true
+      return dependencies.microphoneAccess.ensure()
     })
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {

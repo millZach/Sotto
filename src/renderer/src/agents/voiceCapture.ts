@@ -1,5 +1,6 @@
 import type { AgentVoiceTiming } from '../../../shared/agents'
 import { calculateRms, resampleMono } from '../audio/audioMath'
+import { ensureMicrophoneAccess } from '../audio/ensureMicrophoneAccess'
 import {
   AUDIO_CAPTURE_PROCESSOR_NAME,
   LEVEL_EMIT_INTERVAL_MS,
@@ -100,6 +101,9 @@ export class BrowserVoiceCapture implements VoiceCapture {
       session.gain.gain.value = 0
       session.worklet.connect(session.gain)
       session.gain.connect(context.destination)
+      if (!await ensureMicrophoneAccess()) {
+        throw new Error('Microphone access is blocked.')
+      }
       session.stream = await browser.navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: this.options.selectedDeviceId === undefined

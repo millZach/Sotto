@@ -344,6 +344,8 @@ export interface SottoBridge {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
   checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
+  /** Asks the operating system for the microphone before Chromium captures. */
+  ensureMicrophoneAccess(): Promise<boolean>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>

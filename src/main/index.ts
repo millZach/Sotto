@@ -1236,6 +1236,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         recoveryNotices: {
           list: () => recoveryNotices.list(),
         },
+        ...(microphoneAccess === null ? {} : { microphoneAccess }),
       })
       const unsubscribeRecoveryNotices = recoveryNotices.subscribe((notice) => {
         void messageDelivery.sendToMain(RECOVERY_NOTICE, notice).then((delivered) => {
