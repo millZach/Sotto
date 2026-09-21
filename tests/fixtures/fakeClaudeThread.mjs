@@ -1,5 +1,5 @@
 // Scripted native Claude 2.1.268 stream-json process; protocol from Anthropic SDK query.py.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
@@ -35,6 +35,8 @@ const timer = setInterval(() => {
   let action; try { action = JSON.parse(readFileSync(control, 'utf8')) } catch { return }
   if (lastAction === action.id) return
   lastAction = action.id
+  // Consume before delivery so a resumed process cannot replay this as a new live event.
+  unlinkSync(control)
   if (action.type === 'exit') { process.exit(1) }
   if (action.type === 'raw-burst') { process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join('')); return }
   if (action.type === 'raw') { if (action.persist) persist(action.frame); output(action.frame); return }
