@@ -1,0 +1,110 @@
+[
+  {
+    "variant": "A",
+    "width": 1600,
+    "height": 1000,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "A",
+    "width": 1600,
+    "height": 1000,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "A",
+    "width": 1280,
+    "height": 800,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "A",
+    "width": 1280,
+    "height": 800,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "A",
+    "width": 820,
+    "height": 560,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "A",
+    "width": 820,
+    "height": 560,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "B",
+    "width": 1280,
+    "height": 800,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "B",
+    "width": 1280,
+    "height": 800,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 390,
+    "height": 844,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 390,
+    "height": 844,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 375,
+    "height": 667,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 375,
+    "height": 667,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 700,
+    "height": 850,
+    "mode": "dark",
+    "overflow": false
+  },
+  {
+    "variant": "C",
+    "width": 700,
+    "height": 850,
+    "mode": "light",
+    "overflow": false
+  },
+  {
+    "escapeClosesDialog": true,
+    "focusReturns": true
+  },
+  {
+    "reducedMotion": "none"
+  },
+  {
+    "errors": []
+  }
+]

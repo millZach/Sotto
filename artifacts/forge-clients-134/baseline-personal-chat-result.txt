@@ -1,0 +1,11 @@
+Baseline revision: d0fbf3e8f5babc3eacf24039df6c11b4cdafdb4f
+Checkout: .worktrees/forge-baseline (detached HEAD; independent npm ci; no node_modules links)
+Build: npm run build passed
+Command: npx playwright test tests/e2e/phase-four-personal-providers.spec.ts --trace on --reporter=list
+Result: 1 failed, 34.2 seconds
+Failure: tests/e2e/phase-four-personal-providers.spec.ts:44, clicking Disconnect after resizing to 820x560/light.
+Playwright: button visible, enabled and stable; SVG from threads-view__winctl subtree intercepts pointer events; locator.click timeout 30000ms.
+Visual inspection: native minimize/maximize/close controls visibly overlap Disconnect at the top right in the baseline screenshot.
+Conclusion: identical failure and overlap occur on the unmodified starting revision. It predates the headless-host/client-identity batch.
+Trace: .worktrees/forge-baseline/test-results/phase-four-personal-provid-1483b-yboard-composer-in-Electron/trace.zip
+Parent source untouched by this baseline comparison. Baseline checkout retained.
