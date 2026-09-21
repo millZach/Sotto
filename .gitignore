@@ -60,6 +60,7 @@ artifacts/thread-sidebar/
 artifacts/terminal-loading/
 
 artifacts/process-creature/
+artifacts/queued-steering/
 
 # Question panel verification captures
 artifacts/question-choices/

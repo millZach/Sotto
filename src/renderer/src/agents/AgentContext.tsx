@@ -172,7 +172,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // A thread's own follow-up queue, steering and skills catalog never wait behind another thread's work;
     // telling main which panes are open grants nothing and must not wait either.
     const threadLane = request.type === 'queue-followup' || request.type === 'edit-followup' || request.type === 'remove-followup'
-      || request.type === 'reorder-followups' || request.type === 'resume-followups' || request.type === 'steer' || request.type === 'refresh-thread-skills'
+      || request.type === 'reorder-followups' || request.type === 'resume-followups' || request.type === 'steer-followup' || request.type === 'steer' || request.type === 'refresh-thread-skills'
       || request.type === 'observe-threads'
     if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation || threadLane) return run()
     const operation = session.tail.then(run)

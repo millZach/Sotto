@@ -31,6 +31,7 @@ export const e2eScenarioSchema = z.enum([
   'design-threads',
   'design-threads-empty',
   'phase3-workspace',
+  'queued-steering',
 ])
 
 export const e2eSnapshotSchema = z.object({
