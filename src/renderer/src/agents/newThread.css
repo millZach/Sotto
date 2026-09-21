@@ -48,3 +48,32 @@
 .thread-working-copy-fields > .thread-working-copy-fields__check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .thread-working-copy-fields__check > input { width: 16px; min-height: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
 .thread-working-copy-fields p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+
+/* The body scrolls independently so the creation action never leaves the window. */
+.new-thread-dialog--thread { width: min(680px, calc(100vw - 48px)); }
+.new-thread-dialog--thread .new-thread-dialog__form { display: flex; flex-direction: column; gap: 0; padding: 0; max-height: calc(100vh - 132px); overflow: hidden; }
+.new-thread-dialog--thread .new-thread-dialog__body { display: grid; gap: 20px; min-height: 0; overflow-y: auto; padding: 6px 25px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.new-thread-dialog--thread .new-thread-dialog__submit { flex: none; align-items: center; justify-content: space-between; gap: 16px; margin: 0; padding: 16px 25px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface); }
+.new-thread-dialog--thread .new-thread-dialog__submit > span { color: var(--tt-text-muted); font-size: 14px; }
+.new-thread-dialog--thread .new-thread-dialog__submit .tt-button { flex: none; }
+.new-thread-dialog--thread .new-thread-dialog__options { min-width: 0; }
+.new-thread-dialog--thread .new-thread-dialog__options summary { color: var(--tt-text-2); cursor: pointer; font-size: 14px; line-height: 1.6; border-radius: 4px; }
+.new-thread-dialog--thread .new-thread-dialog__options summary span { color: var(--tt-text-muted); }
+.new-thread-dialog--thread .new-thread-dialog__options summary:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 3px; }
+.new-thread-dialog--thread .new-thread-dialog__option-fields { display: grid; gap: 18px; padding-top: 18px; }
+.new-thread-dialog--thread .new-thread-dialog__option-fields > label { display: grid; gap: 8px; font-size: 14px; color: var(--tt-text-muted); }
+.new-thread-dialog--thread .new-thread-dialog__folder span, .new-thread-dialog--thread .new-thread-dialog__folder .tt-button { font-size: 14px; }
+.new-thread-dialog--thread .new-thread-dialog__search > span { font-size: 20px; }
+.new-thread-dialog--thread .new-thread-working-copy legend, .new-thread-dialog--thread .new-thread-working-copy__choice { font-size: 14px; }
+.new-thread-dialog--thread .thread-working-copy-fields p { font-size: 14px; }
+.new-thread-working-copy__choices--three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.new-thread-working-copy__choices--three .new-thread-working-copy__choice { justify-content: center; padding: 11px 8px; }
+.new-thread-working-copy__choices--three .new-thread-working-copy__choice > span { white-space: normal; overflow: visible; }
+.new-thread-working-copy__choice:has(input:disabled) { opacity: .6; cursor: default; }
+@media (max-width: 900px) { .working-copy__selection .new-thread-working-copy__choices--three { grid-template-columns: 1fr; } }
+
+.new-thread-dialog--thread .new-thread-dialog__folder span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-height: 650px) {
+  .new-thread-dialog--thread .new-thread-dialog__body { gap: 14px; padding-top: 0; padding-bottom: 16px; }
+  .new-thread-dialog--thread .new-thread-dialog__folder { padding: 6px 0; border-bottom: 0; }
+}

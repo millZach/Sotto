@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
-import { PROVIDER_LABELS, defaultThreadModelId, type AgentModel, type AgentProject, type AgentState } from '../../../shared/agents'
+import { PROVIDER_LABELS, defaultThreadModelId, isSubscriptionReasoning, type AgentModel, type AgentProject, type AgentState } from '../../../shared/agents'
 import { TERMINAL_PERMISSIONS, TERMINAL_PERMISSION_LABELS, commandLine, nativeModelName, providerCommand, type TerminalPermission } from '../../../shared/terminalCommands'
 import { terminalProviderSchema, type TerminalProvider, type TerminalLaunch, type TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
 import type { AgentConnection } from '../agents/AgentContext'
@@ -54,15 +54,33 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const [title, setTitle] = useState('')
   // A terminal usually wants the project itself; a worktree is a deliberate choice, and takes a moment to check out.
   const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('shared')
-  const providers = useMemo(() => providersOf(state.host.models), [state.host.models])
-  const defaultModel = state.host.models.find(model => model.id === defaultThreadModelId(state.configuration, state.host.models))
-  const defaultProvider = defaultModel ? providerOf(defaultModel) : undefined
-  const [provider, setProvider] = useState<TerminalProvider | null>(() => defaultProvider ?? providers[0] ?? null)
-  const models = useMemo(() => state.host.models.filter(model => providerOf(model) === provider), [state.host.models, provider])
-  const [modelId, setModelId] = useState(() => defaultModel && defaultProvider === provider ? defaultModel.id : models[0]?.id ?? '')
-  const model = models.find(item => item.id === modelId)
+  const catalogProviders = useMemo(() => providersOf(state.host.models), [state.host.models])
+  const inheritedModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
+  const defaultModel = state.host.models.find(model => model.id === inheritedModelId)
+  const nativeAgent = isSubscriptionReasoning(state.configuration.reasoning) ? state.configuration.reasoning : null
+  const defaultProvider = nativeAgent ?? (defaultModel ? providerOf(defaultModel) : undefined) ?? catalogProviders[0] ?? null
+  const defaultModelId = nativeAgent || (defaultModel && providerOf(defaultModel) === defaultProvider) ? inheritedModelId
+    : state.host.models.find(model => providerOf(model) === defaultProvider)?.id ?? ''
+  const [provider, setProvider] = useState<TerminalProvider | null>(defaultProvider)
+  const [modelId, setModelId] = useState(defaultModelId)
+  const choiceMade = useRef(false)
+  const providers = [...new Set([...catalogProviders, ...(provider ? [provider] : [])])]
+  const catalogModels = state.host.models.filter(model => providerOf(model) === provider)
+  const accountModel = state.reasoningAccounts.find(account => account.provider === provider)?.models.find(model => model.id === nativeModelName(modelId))
+  const model: AgentModel | undefined = catalogModels.find(item => item.id === modelId) ?? (provider && modelId ? {
+    id: modelId, name: accountModel?.name ?? nativeModelName(modelId) ?? PROVIDER_LABELS[provider],
+    providerId: provider, provider: PROVIDER_LABELS[provider], ready: false,
+  } : undefined)
+  const models = model && !catalogModels.some(item => item.id === model.id) ? [...catalogModels, model] : catalogModels
   const [reasoning, setReasoning] = useState<string | undefined>()
   const [permission, setPermission] = useState<TerminalPermission>('ask')
+  useEffect(() => {
+    if (choiceMade.current) return
+    setProvider(defaultProvider)
+    setModelId(defaultModelId)
+    setReasoning(undefined)
+    setPermission('ask')
+  }, [defaultProvider, defaultModelId])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const latestState = useRef(state)
@@ -84,9 +102,10 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   useEffect(() => { if (selectedFolder) nameInput.current?.focus(); else focusSearch.current() }, [selectedFolder])
   // A provider change moves the model to that provider's default; the reasoning and permissions start over with it.
   const chooseProvider = (next: TerminalProvider | null): void => {
+    choiceMade.current = true
     setProvider(next)
     const candidates = state.host.models.filter(item => providerOf(item) === next)
-    setModelId(defaultModel && defaultProvider === next ? defaultModel.id : candidates[0]?.id ?? '')
+    setModelId(defaultProvider === next ? defaultModelId : candidates[0]?.id ?? '')
     setReasoning(undefined)
     setPermission('ask')
   }
@@ -134,7 +153,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
           <option value="">None, just a shell</option>
           {providers.map(id => <option key={id} value={id}>{PROVIDER_LABELS[id]}</option>)}
         </select></label>
-        {provider !== null && models.length ? <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={submitting} onChange={id => { setModelId(id); setReasoning(undefined) }} /></div> : null}
+        {provider !== null && models.length ? <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={submitting} onChange={id => { choiceMade.current = true; setModelId(id); setReasoning(undefined) }} /></div> : null}
         {provider !== null && !!model?.reasoningEfforts?.length ? <label><span>Reasoning</span><select aria-label="Terminal reasoning" title="Reasoning" value={effort ?? ''} disabled={submitting} onChange={event => setReasoning(event.target.value)}>
           {effort !== null && !model.reasoningEfforts.includes(effort) ? <option value={effort} disabled>{effort}</option> : null}
           {model.reasoningEfforts.map(item => <option key={item} value={item}>{item.charAt(0).toUpperCase() + item.slice(1)}</option>)}

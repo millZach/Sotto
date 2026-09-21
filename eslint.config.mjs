@@ -4,6 +4,8 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/new-thread-setup/**',
+      '.cache/**',
       'artifacts/settled-folder-new-thread/**',
       'artifacts/agents-view/**',
       'artifacts/queued-steering/**',

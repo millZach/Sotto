@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, ChevronDown, FolderPlus, List, Mic, MicOff, Plus, RefreshCw, Settings2, VolumeX, Workflow } from 'lucide-react'
 
-import { PROVIDER_LABELS, capabilitiesForThread, isThreadBusy, isThreadProviderConnected, threadSummaryOf, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { defaultThreadModelId, PROVIDER_LABELS, capabilitiesForThread, isThreadBusy, isThreadProviderConnected, threadSummaryOf, supportsAgentSupervision, isSubscriptionReasoning, type SubscriptionProvider, type AgentAttachment, type AgentConfiguration, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import './agents.css'
@@ -204,7 +204,6 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
   const save = async (): Promise<void> => {
     const result = await command({ type: 'configure', patch: {
       projectsDirectory: configuration.projectsDirectory,
-      defaultModelId: configuration.defaultModelId,
       followupLimit: configuration.followupLimit,
       speak: configuration.speak,
       speechProvider: configuration.speechProvider,
@@ -227,10 +226,7 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
   return <section className="agent-settings" aria-label="Agent connection settings">
     <div className="agent-fields">
       <label className="agent-field-wide">Default projects directory<input value={configuration.projectsDirectory} onChange={(event) => change('projectsDirectory', event.target.value)} placeholder="D:\Projects" /></label>
-      <label>Default agent model<select value={configuration.defaultModelId} onChange={(event) => change('defaultModelId', event.target.value)}>
-        <option value="">Choose a model after connecting</option>
-        {state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}{!model.ready ? ' · unavailable' : ''}</option>)}
-      </select></label>
+
       <label>Automatic follow-up limit<input type="number" min={0} max={100} value={configuration.followupLimit} onChange={(event) => change('followupLimit', Math.min(100, Math.max(0, Number(event.target.value))))} /></label>
       <label>Sotto reasoning<select ref={providerInput} value={configuration.reasoning} disabled={checking} onChange={(event) => chooseReasoning(event.target.value as AgentConfiguration['reasoning'])}>
         <option value="none">Not configured</option>
@@ -313,12 +309,14 @@ function AgentNewThread({ state, command, project, onCreated }: { readonly state
   const [modelOverride, setModelOverride] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const details = useRef<HTMLDetailsElement>(null)
-  const modelId = modelOverride || state.configuration.defaultModelId
+  const modelId = modelOverride || defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
+  const inheritedLabel = isSubscriptionReasoning(state.configuration.reasoning)
+    ? PROVIDER_LABELS[state.configuration.reasoning] + ' · ' + (state.configuration.reasoningModel || 'Default') : 'Selected model'
   const model = state.host.models.find(entry => entry.id === modelId)
   const provider = state.host.providers?.find(entry => entry.id === model?.providerId)
   const available = model?.ready === true && (provider ? provider.connection === 'connected' && provider.capabilities.threads : state.connection === 'connected' && state.host.capabilities.threads)
   const create = async (): Promise<void> => {
-    if (submitting) return
+    if (submitting || !available) return
     setSubmitting(true)
     try {
       // A name the user typed is theirs from the start; Sotto's stand-in name is not.
@@ -333,7 +331,7 @@ function AgentNewThread({ state, command, project, onCreated }: { readonly state
   }
   return <details ref={details} className="agent-new-thread" open={onCreated === undefined ? undefined : true}><summary>Open a new thread in {project.title}</summary><form onSubmit={(event) => { event.preventDefault(); void create() }}>
     <label>Thread name<input value={threadName} onChange={(event) => setThreadName(event.target.value)} placeholder="New thread" /></label>
-    <label>Agent model<select aria-label="Agent model" value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">Choose an available model</option>{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
+    <label>Agent model<select aria-label="Agent model" value={modelId} onChange={(event) => setModelOverride(event.target.value)}><option value="">{!modelOverride && isSubscriptionReasoning(state.configuration.reasoning) ? inheritedLabel + ' · unavailable' : 'Choose an available model'}</option>{modelId && !model ? <option value={modelId} disabled>{inheritedLabel} · unavailable</option> : null}{state.host.models.map((model) => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
     <Button type="submit" disabled={state.globalLaneBusy || submitting || !modelId || !available}><Plus size={14} aria-hidden="true" />Open thread</Button>
   </form></details>
 }
