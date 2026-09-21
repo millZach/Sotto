@@ -3,13 +3,13 @@ import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { common, createLowlight } from 'lowlight'
 import { agentAttachmentPreviewDataSchema, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from './diagrams/diagramSource'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
+import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
 import './rich-messages.css'
 
 /** Anything the Threads page can show for one attachment: a full reference, or the `{ id, name }` of a pending send. */
@@ -36,7 +36,6 @@ export type LinkOpenResult = Readonly<{ ok: boolean }>
 
 /** Code longer than this is shown without highlighting so a huge paste cannot stall the transcript. */
 export const MAX_HIGHLIGHTED_CODE_LENGTH = 20_000
-const lowlight = createLowlight(common)
 const LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 // Bidirectional overrides can make "gpj.exe" read as "exe.jpg".
 const BIDI_CONTROLS = /\p{Bidi_Control}/gu
@@ -137,17 +136,24 @@ function hastToReact(nodes: readonly ElementContent[], prefix = 'h'): ReactNode[
   })
 }
 
-function highlight(code: string, language: string | undefined): ReactNode {
-  if (!language || code.length > MAX_HIGHLIGHTED_CODE_LENGTH || !lowlight.registered(language)) return code
+function highlight(code: string, language: string | undefined, highlighter: Highlighter | null): ReactNode {
+  if (!highlighter || !language || code.length > MAX_HIGHLIGHTED_CODE_LENGTH || !highlighter.registered(language)) return code
   try {
-    const tree: Root = lowlight.highlight(language, code)
+    const tree: Root = highlighter.highlight(language, code)
     return hastToReact(tree.children as ElementContent[])
   } catch { return code }
 }
 
 const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; language: string | undefined }) {
   const [feedback, showFeedback] = useTransientFlag()
-  const highlighted = useMemo(() => highlight(code, language), [code, language])
+  const [highlighter, setHighlighter] = useState(highlighterNow)
+  useEffect(() => {
+    if (highlighter !== null || !language || code.length > MAX_HIGHLIGHTED_CODE_LENGTH) return
+    let live = true
+    void loadHighlighter().then(loaded => { if (live) setHighlighter(loaded) }, () => undefined)
+    return () => { live = false }
+  }, [highlighter, language, code])
+  const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
   const label = language ? language.slice(0, 24) : 'Code'
   const copy = (): void => { void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
   return <div className="rich-code" data-language={language}>

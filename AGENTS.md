@@ -25,8 +25,8 @@ Only what the tree does not say for itself.
 - `src/renderer/src/agents/` is the Threads page: panes, composer, sidebar, pickers. `features/` holds the other pages, `state/` the app context and hooks, `widget/` the floating widget's own renderer.
 - `src/shared/` is what both processes use: types, zod schemas, `settings.ts`, `channels.ts`, `themes/`. The renderer reaches main only through `src/preload/` (`window.sotto`).
 - Tests live under `tests/`, never in `src/`: `unit/` mirrored by source area, `integration/` over real child processes and the fake providers in `fixtures/`, `e2e/` Playwright specs that launch the built app locally, `perf/` benchmarks. Every adapter passes `tests/integration/adapterContract.ts`.
-- `docs/`: `adr/` decisions, `verification/` evidence notes, `perf/` measurements, `research/` source studies, `plans/` implementation plans, `ci.md`, `release/`, `agents/`. `artifacts/<slug>/` holds the screenshots and JSON a verification note cites.
-- Archival, not authoritative: `design/`, `handoff/`, `.superpowers/`, `notes.md`, the root `.docx`. Code, `CONTEXT.md` and ADRs win.
+- `docs/`: `adr/` decisions, `verification/` evidence notes, `perf/` measurements, `research/` source studies, `plans/` implementation plans, `ci.md`, `release/`, `agents/`. `artifacts/<slug>/` holds the screenshots and JSON a verification note cites: the images the note names or describes, not every intermediate capture. The folder is 190 MB of committed images and every clone downloads all of it.
+- Archival, not authoritative: `design/` (including `design/archive/`, where the early notes and the memory-first prototype spec now live), `handoff/`, `.superpowers/`. Code, `CONTEXT.md` and ADRs win.
 
 ## Design direction
 
@@ -43,7 +43,7 @@ Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by defa
 
 - A new setting goes in `src/shared/settings.ts` (type, schema, default) and on the patch allow-list in `src/main/ipc/registerIpc.ts`. Miss the list and the toggle snaps back on save; `tests/integration/ipc.test.ts` catches it.
 - The renderer has no network. Anything that fetches runs in main behind a preload bridge.
-- Production dependencies are exactly `zod`. Everything else is a devDependency or a Node builtin (`node:sqlite` is the memory store, `fetch` in main is the network). `scripts/release-external-dependencies.mjs` fails the release when a second name appears and the test suite will not warn you first. A new runtime dependency is an ADR.
+- Production dependencies are exactly `zod` and `node-pty` (the terminal, loaded on demand and kept external so its helper layout survives packaging; ADR-0018). Everything else is a devDependency or a Node builtin (`node:sqlite` is the memory store, `fetch` in main is the network). `scripts/release-external-dependencies.mjs` fails the release when another name appears and the test suite will not warn you first. A new runtime dependency is an ADR.
 - Waiting is not the assertion. Test deadlines are generous on purpose (`vitest.config.ts`, `docs/ci.md`), and a deadline that is never reached costs nothing. A slow suite is slow because of real sleeps, real child processes and repeated setup, so that is where to make it faster. A test that needs a lost acknowledgement scripts one instead of shortening a deadline. Stopwatch budgets are opt-in through `SOTTO_PERF_ASSERT=1`; live provider suites are gated by `SOTTO_*_LIVE` and never run in CI.
 - `npm run design:verify` compares captures against committed baselines. Regenerate with `npm run design:capture` only when the look changed on purpose, and say so in the PR.
 - Worktrees go under `.worktrees/` or `.claude/worktrees/`, and a new generated `artifacts/` folder gets a line in `.gitignore` and `eslint.config.mjs`. Anywhere else, lint and the suite go red on the copies.

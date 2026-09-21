@@ -81,10 +81,10 @@ export class FollowupStore {
       }
     })
   }
-  claim(id: string): Promise<void> {
+  claim(id: string, mode: 'send' | 'steer' = 'send'): Promise<void> {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
-      if (!item || item.status !== 'queued' || state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error('This follow-up is no longer ready to send.')
+      if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error('This follow-up is no longer ready to send.')
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: randomUUID(), updatedAt: new Date().toISOString() })
     })
   }

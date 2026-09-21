@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRequestSchema, providerIdSchema, type AgentHostSnapshot, type AgentThread, type ProviderId } from './agents'
+import { agentRequestSchema, providerIdSchema, type AgentHostSnapshot, type AgentRequest, type AgentThread, type ProviderId } from './agents'
 
 const id = z.string().min(1).max(256)
 export const requestDraftOwnerSchema = z.object({ kind: z.enum(['thread', 'personal']), ownerId: id, providerId: providerIdSchema }).strict()
@@ -55,3 +55,10 @@ export function requestDraftProvider(host: AgentHostSnapshot, thread: AgentThrea
 export const requestDraftKey = (target: RequestDraftTarget): string => JSON.stringify([target.kind, target.providerId, target.ownerId, target.requestId, requestQuestionsSignature(target.questions)])
 export const requestQuestionsSignature = (questions: RequestDraftTarget['questions']): string => JSON.stringify(agentRequestSchema.shape.questions.unwrap().parse(questions))
 export const sameRequestQuestions = (a: RequestDraftTarget['questions'], b: RequestDraftTarget['questions']): boolean => requestQuestionsSignature(a) === requestQuestionsSignature(b)
+
+/** Draft identity for native question forms and the single choice offered by a legacy request. */
+export function requestDraftQuestions(request: AgentRequest): NonNullable<AgentRequest['questions']> {
+  if (request.kind !== 'question') return []
+  if (request.questions?.length) return request.questions
+  return request.options.length ? [{ id: request.id, question: request.text, multiSelect: false, allowFreeText: false, options: request.options }] : []
+}

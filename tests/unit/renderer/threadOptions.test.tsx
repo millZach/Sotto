@@ -36,7 +36,7 @@ describe('composer option chips', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
-  it('opens the effort slider at the current level and saves a supported stop without closing', async () => {
+  it('opens the effort card at the current level, says what the level costs, and saves a step without closing', async () => {
     const { command } = mount()
     const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
     fireEvent.click(chip)
@@ -44,13 +44,74 @@ describe('composer option chips', () => {
     const slider = within(panel).getByRole('slider', { name: 'Thread reasoning effort' })
     expect(slider).toHaveAttribute('aria-valuetext', 'High')
     expect(slider).toHaveFocus()
-    for (const label of ['Low', 'Medium', 'High', 'Extra high', 'Max']) expect(within(panel).getByRole('button', { name: `${label} effort` })).toBeVisible()
-    fireEvent.click(within(panel).getByRole('button', { name: 'Extra high effort' }))
+    expect(slider).toHaveAccessibleDescription('Takes longer and catches more.')
+    // The word is set letter by letter so the arrival can light it in turn; read whole, it is the level.
+    expect(panel.querySelector('.effort-card__word')).toHaveTextContent(/^High$/u)
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'xhigh' }))
     expect(panel).toBeInTheDocument()
     fireEvent.keyDown(slider, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
     expect(chip).toHaveFocus()
+  })
+
+  it('jumps to a level by its digit and returns to the model default from the Default button', async () => {
+    const { command } = mount()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: '5' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'max' }))
+    const reset = screen.getByRole('button', { name: 'Default' })
+    expect(reset).toHaveAttribute('title', "Use Claude Code model's default, Medium")
+    fireEvent.click(reset)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'medium' }))
+  })
+
+  it('marks the chip and the card at the model’s highest level, and plays the arrival once on reaching it', async () => {
+    const state = fixture()
+    const command = vi.fn(async () => state)
+    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    expect(chip).toHaveAttribute('data-effort-top', 'false')
+    fireEvent.click(chip)
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    expect(panel).toHaveAttribute('data-top', 'false')
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'End' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'max' }))
+    state.host.threads[0]!.reasoningEffort = 'max'
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    expect(chip).toHaveAttribute('data-effort-top', 'true')
+    expect(panel).toHaveAttribute('data-top', 'true')
+    expect(panel).toHaveAttribute('data-arriving', 'true')
+    expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAccessibleDescription('Everything the model has. Slowest, costliest.')
+    // The arrival belongs to the chip's wrapper, which the composer reads, so closing the card does not cut the tide short.
+    const anchor = chip.closest('.effort-picker-anchor')!
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'true')
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'true')
+    fireEvent.click(chip)
+    expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toHaveAttribute('data-arriving', 'true')
+    // Lowering the level ends the arrival at once; the Electron spec watches it run its course.
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Home' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'low' }))
+    state.host.threads[0]!.reasoningEffort = 'low'
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
+    const reopened = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    expect(reopened).toHaveAttribute('data-arriving', 'false')
+    expect(reopened).toHaveAttribute('data-top', 'false')
+    expect(anchor).toHaveAttribute('data-effort-arriving', 'false')
+    expect(chip).toHaveAttribute('data-effort-top', 'false')
+  })
+
+  it('shows the settled state without an arrival when the card opens already at the highest level', () => {
+    mount(fixture({ reasoningEffort: 'max' }))
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    expect(chip).toHaveAttribute('data-effort-top', 'true')
+    fireEvent.click(chip)
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    expect(panel).toHaveAttribute('data-top', 'true')
+    expect(panel).toHaveAttribute('data-arriving', 'false')
   })
 
   it('closes the effort panel when focus leaves it by Tab', () => {
@@ -65,12 +126,14 @@ describe('composer option chips', () => {
     state.host.models.find(model => model.id === 'codex:model')!.reasoningEfforts!.push('ultra')
     const { command } = mount(state)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Ultra effort' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(slider).toHaveAttribute('max', '5')
+    fireEvent.keyDown(slider, { key: 'End' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'ultra' }))
     cleanup()
     mount()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    expect(screen.queryByRole('button', { name: 'Ultra effort' })).toBeNull()
+    expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAttribute('max', '4')
   })
 
   it('keeps the confirmed setting and allows retry when a settings command rejects', async () => {
@@ -78,26 +141,29 @@ describe('composer option chips', () => {
     const command = vi.fn().mockRejectedValueOnce(new Error('Transport closed')).mockResolvedValue(state)
     render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm this change. Try again.')
     expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('High')
     expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    expect(slider).toHaveValue('2')
+    fireEvent.keyDown(slider, { key: 'End' })
     await waitFor(() => expect(command).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
-  it('keeps the effort panel mounted while a selection is being confirmed', async () => {
+  it('keeps the effort card mounted while a selection is being confirmed', async () => {
     const state = fixture()
     let release!: () => void
     const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
     render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
-    fireEvent.click(screen.getByRole('button', { name: 'Max effort' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
     expect(panel).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Low effort' }))
+    fireEvent.keyDown(slider, { key: 'Home' })
     expect(command).toHaveBeenCalledTimes(1)
     release()
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
@@ -109,10 +175,12 @@ describe('composer option chips', () => {
     expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Legacy')
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     expect(command).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'High effort' })).toBeInTheDocument()
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    expect(panel).toHaveAttribute('data-unknown', 'true')
+    expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAccessibleDescription('Legacy is set. Choose a level this model offers.')
   })
 
-  it('retains the open effort panel when a provider-default choice is confirmed', async () => {
+  it('retains the open effort card when a provider-default choice is confirmed', async () => {
     const state = fixture()
     delete state.host.threads[0]!.reasoningEffort
     delete state.host.models.find(model => model.id === 'claude:model')!.defaultReasoningEffort
@@ -120,8 +188,9 @@ describe('composer option chips', () => {
     const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
-    fireEvent.click(screen.getByRole('button', { name: 'High effort' }))
-    await waitFor(() => expect(command).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Default' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: '3' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'high' }))
     state.host.threads[0]!.reasoningEffort = 'high'
     rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toBe(panel)
@@ -153,7 +222,8 @@ describe('composer option chips', () => {
     fireEvent.keyDown(slider, { key: 'Home' })
     expect(slider).toHaveValue('0')
     expect(slider).toHaveAttribute('aria-valuetext', 'High')
-    expect(screen.getByRole('button', { name: 'High effort' })).toHaveAttribute('aria-pressed', 'true')
+    // One level is not a highest level: nothing tints and nothing arrives.
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveAttribute('data-effort-top', 'false')
     expect(command).not.toHaveBeenCalled()
   })
 

@@ -22,10 +22,12 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   </section>
 }
 
-export function AgentComposer({ state, command, compact = false, footerControls, enterToSend = false }: {
+export function AgentComposer({ state, command, compact = false, footerControls, enterToSend = false, ornament }: {
   readonly state: AgentState; readonly command: Command; readonly compact?: boolean; readonly footerControls?: ReactNode
   /** The Threads workspace sends on Enter (Shift+Enter for a new line); dictation surfaces keep Enter as a newline. */
   readonly enterToSend?: boolean
+  /** Observational composer decoration supplied only by the thread pane. */
+  readonly ornament?: ReactNode
 }): ReactNode {
   const hasLegacyDraft = state.composing || state.draftThreadId !== null || state.draft.length > 0 || Boolean(state.draftAttachments?.length)
   const pausedDraft = !hasLegacyDraft ? state.threadDrafts?.find(entry => entry.threadId === state.activeThreadId) : undefined
@@ -79,7 +81,8 @@ export function AgentComposer({ state, command, compact = false, footerControls,
   }
   const sendDisabled = Boolean(pausedDraft) || state.globalLaneBusy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
   if ((target === undefined || !assigned) && !hasDraft && !pausedDraft) return null
-  return <section className="agent-composer">
+  return <section className="agent-composer" data-monitoring={Boolean(ornament) || undefined}>
+    {ornament}
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>
     {target !== undefined && target.id !== state.activeThreadId ? <div className="agent-draft-target"><span>This draft stays with {target.title}.</span><Button variant="ghost" onClick={() => void command({ type: 'select-thread', threadId: target.id })}>Return to draft thread</Button></div> : null}

@@ -10,6 +10,8 @@ import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelSt
 import { threadsStateFixture } from '../liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
 
+vi.mock('../../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
+
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
@@ -84,6 +86,20 @@ const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 const output = (id: string, sequence: number, data: string): TerminalEvent => ({ type: 'output', threadId: 'visual-gate', workspaceId: TOKEN_A, sessionId: id, data, sequence })
 
 describe('Terminal surface', () => {
+  it('reports a failed terminal view without leaving a running session busy', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    const store = new ToolsPanelStore()
+    store.setOpen(true)
+    store.setSurface('terminal')
+    render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} terminal={terminal.bridge} store={store} />)
+    expect(await screen.findByText('The terminal view could not load. Your terminal and its output are still here.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reload window' })).toBeEnabled()
+    expect(screen.getByLabelText('PowerShell, terminal')).not.toHaveAttribute('aria-busy', 'true')
+    expect(terminal.bridge.close).not.toHaveBeenCalled()
+    expect(terminal.bridge.reopen).not.toHaveBeenCalled()
+    expect(terminal.bridge.create).not.toHaveBeenCalled()
+  })
+
   it('replays the snapshot with input off, then applies only newer output in order', async () => {
     const terminal = fakeTerminal([session(ID_1)], { [ID_1]: { session: session(ID_1), output: 'old output', sequence: 5 } })
     terminal.hold.read = true

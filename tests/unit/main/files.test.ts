@@ -179,5 +179,5 @@ describe('thread-bound Files service', () => {
     }
     const listing = value(await service.list({ threadId: 'thread', path: '' }))
     expect(listing.entries).toHaveLength(1000); expect(listing.truncated).toBe(true)
-  })
+  }, 60_000) // Creating 1005 real files can exceed the default deadline on a busy Windows runner.
 })

@@ -4,6 +4,7 @@ import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
+import { agentMonitoringSchema } from './agentMonitoring'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -38,7 +39,7 @@ const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => 
 export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
 export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
 
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok'])
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 
 const id = z.string().min(1).max(512)
@@ -186,6 +187,8 @@ export const agentThreadSchema = z.object({
   /** True when the thread store holds messages older than the window `messages` carries (issue #119). */
   earlierAvailable: z.boolean().optional(),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+  /** Ephemeral provider-confirmed watches; never reconstructed from saved activity. */
+  monitoring: agentMonitoringSchema.optional(),
   usage: threadUsageSchema.optional(),
   compaction: compactionSchema.optional(),
   manualCompactionSupported: z.boolean().optional(),
@@ -251,7 +254,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
 const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 const orbColorSchema = z.enum(ORB_COLORS)
@@ -259,7 +262,7 @@ export type OrbColor = z.infer<typeof orbColorSchema>
 const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
-  enabledProviders: z.array(providerIdSchema).max(3).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  enabledProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
@@ -427,10 +430,15 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')
   const lastAssistant = messages.findLast(message => message.role === 'assistant')
-  const lastMessageAt = messages.reduce<string | undefined>((latest, message) => {
+  let latestAt = Number.NaN
+  let lastMessageAt: string | undefined
+  for (const message of messages) {
     const at = Date.parse(message.createdAt)
-    return Number.isFinite(at) && (latest === undefined || at > Date.parse(latest)) ? message.createdAt : latest
-  }, undefined)
+    if (Number.isFinite(at) && (lastMessageAt === undefined || at > latestAt)) {
+      latestAt = at
+      lastMessageAt = message.createdAt
+    }
+  }
   const running = activities.filter(record => record.kind === 'turn' && record.status === 'running')
     .sort((first, second) => first.sequence - second.sequence).at(-1)
   return { messageCount: messages.length, activityCount: activities.length,
@@ -472,6 +480,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('steer-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),

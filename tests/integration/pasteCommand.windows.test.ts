@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { spawn } from 'node:child_process'
 
 import { chromium } from '@playwright/test'

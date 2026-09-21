@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
@@ -82,7 +83,7 @@ export class ConfiguredProviderHost implements AgentHost {
   private accept(id: ProviderId, snapshot: AgentHostSnapshot): void {
     const slot = this.slots.get(id)!
     // A transport disappearing must not discard the identities and recovery material it already supplied.
-    slot.snapshot = snapshot.connected ? structuredClone(snapshot) : { ...slot.snapshot, ...snapshot,
+    slot.snapshot = snapshot.connected ? cloneHostSnapshot(snapshot) : { ...slot.snapshot, ...snapshot,
       threads: snapshot.threads.length ? snapshot.threads : slot.snapshot.threads,
       projects: snapshot.projects.length ? snapshot.projects : slot.snapshot.projects,
       models: snapshot.models.length ? snapshot.models : slot.snapshot.models }

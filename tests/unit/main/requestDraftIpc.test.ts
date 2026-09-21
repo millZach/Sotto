@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { registerRequestDraftIpc } from '../../../src/main/agents/requestDraftIpc'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, type RequestDraftTarget } from '../../../src/shared/requestDrafts'

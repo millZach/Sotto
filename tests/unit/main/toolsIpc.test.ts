@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { registerToolsIpc } from '../../../src/main/tools/ipc'
 import { createToolsBridges } from '../../../src/preload/tools'

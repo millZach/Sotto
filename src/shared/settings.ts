@@ -18,6 +18,13 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
 export type ReducedMotion = 'system' | 'on'
+/**
+ * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
+ * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
+ */
+export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma' | 'accent'
+export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
+export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
@@ -60,6 +67,8 @@ export interface AppSettings {
   appearanceContrast: number
   /** How solid dialogs, menus and floating panels are, 40-100 percent. */
   glassOpacity: number
+  /** The colour the effort control turns at a model's highest level. */
+  effortColor: EffortColor
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   webLinkDestination: 'external' | 'embedded'
@@ -142,6 +151,7 @@ const fieldSchemas = {
   darkTheme: z.string().refine(isThemeId),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
+  effortColor: z.enum(EFFORT_COLORS),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
@@ -199,6 +209,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   darkTheme: DEFAULT_THEME_ID,
   appearanceContrast: APPEARANCE_CONTRAST.default,
   glassOpacity: GLASS_OPACITY.default,
+  // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
+  effortColor: 'ember',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -288,6 +300,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
     glassOpacity: parseField(persisted, 'glassOpacity', defaults),
+    effortColor: parseField(persisted, 'effortColor', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),

@@ -41,3 +41,31 @@ A profile of the pane (`Profiler` around its header, transcript and composer) pu
 cost in the transcript, and inside it in the message that actually changed: re-parsing the Markdown block
 being written. The header is about 0.4 ms per update, so it was left alone rather than memoised. The composer
 area is about 6 ms per update and is the next place to look.
+
+## Two messages, one commit
+
+The table above was measured with one whole state per update. Since the shell and detail split
+(`state-pipeline.md`), a streamed chunk reaches the window as two IPC messages, the shell and then the
+open thread's detail delta, and for the first 2,000 characters of a reply the shell changes on every
+chunk too, because the sidebar's excerpt is still growing. `tests/perf/shellDetailCommits.perf.test.tsx`
+drives `useAgentConnection` with a fake bridge and counts renders per chunk:
+
+| Arrival order | Commits per chunk, before | after |
+| --- | ---: | ---: |
+| shell, then detail | 2 | 1 |
+| detail, then shell (not the order main sends) | 2 | 2 |
+
+Main sends the shell first, so the second row is the fixture's order rather than the app's. Each chunk's
+frame finishes before the next chunk begins; a detail-first pair still costs two commits.
+Swapping the order main sends in would not have helped: each message changed something and each was
+committed. Instead the window holds a shell for one animation frame when it has a detail channel. A
+detail arriving inside that frame commits together with the held shell; a shell nothing follows commits
+in the frame it would have painted in; a second shell inside the frame commits the first, so nothing
+main publishes is skipped. Command responses, the first `get()` and the cached shell stay immediate,
+which is what the 100 ms feedback budgets in `docs/ci.md` measure. The widget has no detail channel and
+is unchanged.
+
+Hidden main windows commit shell updates immediately, because Electron can suspend their animation frames.
+Hiding the window also flushes a shell already waiting for its frame. Widget microphone commands therefore
+still reach the main renderer's voice controller while the main window is hidden. Visible windows keep
+the shell-first batching measured above.

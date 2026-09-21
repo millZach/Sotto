@@ -1,4 +1,4 @@
-import type { ProviderId } from '../agents'
+import type { TerminalProvider } from '../terminalWorkspace'
 import { claudeCommand } from './claude'
 import { codexCommand } from './codex'
 import { grokCommand } from './grok'
@@ -13,10 +13,10 @@ export const TERMINAL_PERMISSION_LABELS: Readonly<Record<TerminalPermission, str
 
 export interface TerminalLaunchOptions extends ProviderCommandOptions {
   /** Null opens a plain shell. */
-  readonly provider: ProviderId | null
+  readonly provider: TerminalProvider | null
 }
 
-const COMMANDS: Readonly<Record<ProviderId, (options: ProviderCommandOptions) => string[]>> = { claude: claudeCommand, codex: codexCommand, grok: grokCommand }
+const COMMANDS: Readonly<Record<TerminalProvider, (options: ProviderCommandOptions) => string[]>> = { claude: claudeCommand, codex: codexCommand, grok: grokCommand }
 
 /** The CLI and its flags for a launch; empty when there is no provider, since the shell alone is the command. */
 export function providerCommand(launch: TerminalLaunchOptions): string[] {

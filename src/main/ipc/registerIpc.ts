@@ -4,6 +4,7 @@ import { externalLinkSchema } from '../../shared/externalLinks'
 import {
   APP_HIDE,
   APP_MINIMIZE,
+  APP_RELOAD,
   APP_TOGGLE_MAXIMIZE,
   APP_MAXIMIZED,
   APP_QUIT,
@@ -78,6 +79,7 @@ const settingKeys = [
   'darkTheme',
   'appearanceContrast',
   'glassOpacity',
+  'effortColor',
   'customThemes',
   'reducedMotion',
   'microphoneId',
@@ -218,6 +220,7 @@ export interface AppIpcService {
   show(): void | Promise<void>
   hide(): void | Promise<void>
   minimize(): void | Promise<void>
+  reload(): void | Promise<void>
   toggleMaximize(): void | Promise<void>
   isMaximized(): boolean
   quit(): void | Promise<void>
@@ -492,6 +495,7 @@ export function registerIpc(
       try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
     })
     register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
+    register(APP_RELOAD, noPayloadSchema, 0, () => dependencies.app.reload())
     register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
     register(APP_TOGGLE_MAXIMIZE, noPayloadSchema, 0, () => dependencies.app.toggleMaximize())
     register(APP_MAXIMIZED, noPayloadSchema, 0, () => dependencies.app.isMaximized())

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from 'vitest'
 import { e2eAgentEventSchema } from '../../../src/shared/e2e'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'

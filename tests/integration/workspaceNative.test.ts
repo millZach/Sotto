@@ -12,7 +12,7 @@ async function fixture() {
   const f = await codexFixture(undefined, true)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => 'codex',
     threadProvider: id => f.registry.byThread(id)?.provider,
-    hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost() } })
+    hosts: { codex: f.host, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
   const workspace = new WorkspaceHost(native, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged(); workspace.dispose(); await f.cleanup() })
   await workspace.connect('codex')

@@ -131,7 +131,7 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner}: an unsent a
     await countAnswers(launched, owner)
     await emit(page, owner, id, form); await open(page, owner)
     const card = liveCard(page)
-    await card.getByRole('radio', { name: 'Other', exact: true }).click()
+    await card.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
     await card.getByRole('textbox', { name: 'Other answer to: Where should we go?' }).fill('A quiet shore')
     await card.getByRole('checkbox', { name: 'Unit checks' }).click()
     await card.getByRole('checkbox', { name: 'Type checks' }).click()

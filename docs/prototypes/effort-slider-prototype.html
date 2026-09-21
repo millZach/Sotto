@@ -1,0 +1,550 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Zach chose the Wash arrival for the effort slider (Codex's slider shape; on reaching the top level a
+  warm tide rises through the card and on through the composer, and both borders tint and fade). He wants to see
+  it in other colours before it is built: a cyberpunk pair, a techno rainbow, and whatever else would look good.
+  Which colourway should the wash, the top-level fill and the tinted word use?
+
+  The slider and the arrival are identical in every variant; only the palette changes. On ?variant=…, bar at
+  the top (← → keys too when nothing in the composer has focus):
+
+   ember    The warning role, as the shipped effort tokens map it. Gold in dark, burnt orange in light.
+   cyber    Magenta into electric cyan through violet. Neon on a dark room.
+   rainbow  A full spectrum sweep across the fill and the wash; the word takes the gradient too.
+   aurora   Mint into teal into violet, northern lights.
+   plasma   Deep violet through hot pink to amber, the plasma colour map.
+   accent   The theme's own accent role, and nothing else: the colourway that needs no new token.
+
+  Every colour below is expressed as a palette of three hues (bottom to top of the wash, left to right of the
+  fill), a text tint and a border tint. In the app these would become effort tokens in tokens.css, either derived
+  from theme roles (ember, accent) or a fixed effort palette a theme may override (ADR-0011 says colour comes
+  from the theme; a fixed palette is a decision to record).
+
+  Slider, shared: header is the level word and one line saying what it costs, with Default at the right; a 22px
+  pill track with the stops as dots, a fill that warms as the level climbs, a 26px round thumb; magnetic snapping,
+  save on release, wheel over the track, arrows, Home/End and digits 1..N; the chip tints at the top level;
+  Escape, Tab out or a pointer outside closes it; Ultrathink is a check row on Claude threads.
+
+  Level lists stand in for what the providers report: Claude Code low/medium/high/xhigh/max, Codex GPT-6 Astra
+  low/medium/high/xhigh/max/ultra, Grok 4.6 low/medium/high/xhigh.
+
+  Target: desktop only, inherited from Sotto. Reviewed at 1600x1000, 1280x800 and the 820x560 minimum in dark,
+  light and reduced motion (Still).
+
+  Extras in the bar: Open, Replay (re-runs the arrival), Claude / Codex / Grok (level lists), Still, Light.
+  Open the file in a browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — effort slider, wash colourways</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* The Sotto palette through the roles tokens.css derives; names follow the --tt-* tokens the stylesheet would use. */
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280);
+  --surface: oklch(0.26 0.019 280);
+  --surface-raised: oklch(0.305 0.021 280);
+  --surface-elevated: oklch(0.305 0.021 280);
+  --sidebar: oklch(0.205 0.016 282);
+  --text: oklch(0.985 0.005 280);
+  --text-2: oklch(0.86 0.01 272);
+  --text-muted: oklch(0.72 0.014 265);
+  --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270);
+  --border-faint: oklch(0.36 0.026 272);
+  --field-border: oklch(0.40 0.03 272);
+  --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220);
+  --accent-text: oklch(0.86 0.09 215);
+  --on-accent: oklch(0.2 0.02 280);
+  --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent);
+  --selected: oklch(0.35 0.04 262);
+  --focus: oklch(0.79 0.13 220);
+  --warning: oklch(0.829017 0.171221 81.038);
+  --provider-claude: #e3b58e;
+  --shadow: 0 16px 48px rgb(0 0 0 / 73%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --effort-track: var(--surface-raised);
+  --effort-dot: color-mix(in srgb, var(--text-muted) 55%, var(--surface-raised));
+  --effort-fill-cool: var(--text-muted);
+  --effort-thumb: var(--text);
+  --effort-thumb-edge: color-mix(in srgb, var(--text) 10%, transparent);
+  /* Palette-derived: the word and chip tint reads the palette's text hue directly in dark. */
+  --hot-text: var(--p-text);
+  --fill-white: transparent;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85);
+  --surface: oklch(0.99 0.003 85);
+  --surface-raised: oklch(0.955 0.006 85);
+  --surface-elevated: oklch(0.975 0.005 85);
+  --sidebar: oklch(0.955 0.008 85);
+  --text: oklch(0.235 0.014 75);
+  --text-2: oklch(0.36 0.014 75);
+  --text-muted: oklch(0.5 0.014 75);
+  --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80);
+  --border-faint: oklch(0.9 0.01 80);
+  --field-border: oklch(0.82 0.016 80);
+  --accent: oklch(0.52 0.13 235);
+  --accent-text: oklch(0.42 0.1 235);
+  --on-accent: oklch(0.99 0.003 85);
+  --accent-surface: oklch(0.9 0.03 230);
+  --selected: oklch(0.885 0.03 235);
+  --focus: oklch(0.52 0.13 235);
+  --warning: oklch(0.546927 0.155556 45.359);
+  --provider-claude: color-mix(in srgb, #e3b58e 55%, var(--text));
+  --shadow: 0 16px 48px rgb(20 24 22 / 18%);
+  --effort-track: oklch(0.93 0.008 85);
+  --effort-dot: color-mix(in srgb, var(--text-muted) 40%, var(--effort-track));
+  --effort-fill-cool: oklch(0.78 0.02 80);
+  --effort-thumb: white;
+  --effort-thumb-edge: var(--border);
+  /* Light: the text tint mixes toward the text role for contrast; fills tint toward white so they stay a light surface. */
+  --hot-text: color-mix(in oklab, var(--p-text) 72%, var(--text));
+  --fill-white: rgb(255 255 255 / 38%);
+}
+
+/* The colourways. Three hues run bottom to top through the wash and left to right along the fill. */
+:root[data-palette='ember'] { --p-a: var(--warning); --p-b: var(--warning); --p-c: color-mix(in srgb, var(--warning) 60%, var(--text)); --p-text: color-mix(in oklab, var(--warning) 70%, var(--text)); --p-border: var(--warning); }
+:root[data-palette='cyber'] { --p-a: oklch(0.7 0.3 345); --p-b: oklch(0.62 0.27 305); --p-c: oklch(0.86 0.15 200); --p-text: oklch(0.86 0.15 200); --p-border: oklch(0.7 0.3 345); }
+:root[data-palette='rainbow'] { --p-a: oklch(0.7 0.24 20); --p-b: oklch(0.8 0.2 130); --p-c: oklch(0.7 0.24 300); --p-text: transparent; --p-border: oklch(0.7 0.22 300);
+  --p-spectrum: linear-gradient(90deg, oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340));
+  --p-fill-image: var(--p-spectrum); --p-text-image: var(--p-spectrum); }
+:root[data-palette='rainbow'] { --hot-text: transparent; }
+:root[data-theme='light'][data-palette='rainbow'] { --p-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340)); }
+:root[data-palette='aurora'] { --p-a: oklch(0.86 0.18 160); --p-b: oklch(0.82 0.14 200); --p-c: oklch(0.68 0.22 300); --p-text: oklch(0.87 0.16 165); --p-border: oklch(0.82 0.14 200); }
+:root[data-palette='plasma'] { --p-a: oklch(0.42 0.25 300); --p-b: oklch(0.68 0.29 350); --p-c: oklch(0.86 0.18 75); --p-text: oklch(0.8 0.2 20); --p-border: oklch(0.68 0.29 350); }
+:root[data-palette='accent'] { --p-a: var(--accent); --p-b: var(--accent); --p-c: color-mix(in srgb, var(--accent) 55%, var(--text)); --p-text: var(--accent-text); --p-border: var(--accent); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--canvas); color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { padding: 0; border: 0; background: none; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.i.xs { width: 12px; height: 12px; }
+svg.mark { flex: none; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The Threads page around the composer: enough of it to judge density, no more. */
+.window { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.sidebar { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background: var(--sidebar); border-right: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; }
+.sidebar__top { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px; margin-bottom: 8px; color: var(--text); font-weight: 500; }
+.sidebar__top i { width: 14px; height: 14px; border-radius: 4px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--text))); }
+.sidebar__group { padding: 10px 8px 4px; font-size: 12px; color: var(--text-faint); }
+.row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+.row > span { overflow: hidden; text-overflow: ellipsis; }
+.row[aria-current] { background: var(--selected); color: var(--text); }
+.row i { flex: none; width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 50%; }
+.row i[data-on] { background: var(--accent); border-color: var(--accent); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 12px 0 18px; }
+.pane__head h2 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
+.pane__crumb { display: flex; align-items: center; gap: 7px; margin-right: auto; color: var(--text-muted); font-size: 12.5px; }
+.pane__crumb::before { content: '/'; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--text-muted); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 20px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.turn { max-width: 760px; margin: 0 auto 22px; font-size: 15px; line-height: 1.55; }
+.turn--user { width: fit-content; max-width: 78%; margin-right: 0; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--surface-raised); }
+.turn p { margin: 0 0 10px; }
+.turn p:last-child { margin: 0; }
+.turn .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--text-muted); font-size: 12.5px; }
+.turn .who .mark { color: var(--provider-claude); }
+
+/* Compose area: the field, then the usage line, as the app draws them. The composer's border takes the palette's tint. */
+.compose { flex: none; padding: 6px max(24px, calc((100% - 760px) / 2)) 14px; }
+.composer { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid color-mix(in srgb, var(--p-border) max(var(--tint, 0%), var(--rest, 0%)), var(--field-border)); border-radius: 16px; background: var(--surface); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); --rest: 0%; }
+.composer[data-tinting='true'] { transition: border-color 220ms cubic-bezier(.2, .8, .2, 1); }
+.composer:focus-within { border-color: color-mix(in srgb, var(--p-border) max(var(--tint, 0%), var(--rest, 0%)), color-mix(in srgb, var(--accent) 55%, var(--field-border))); }
+/* While the thread sits at its highest level the composer wears a thin outline in the colourway, with a brighter
+   run travelling round it: the room says the thread is set to everything the model has. */
+@property --ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.composer[data-top='true'] { --rest: 30%; }
+.composer::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
+  background: conic-gradient(from var(--ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--p-a) 70%, transparent) .66turn, var(--p-b) .76turn, var(--p-c) .84turn, transparent .94turn, transparent 1turn);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; }
+.composer[data-top='true']::after { opacity: 1; }
+:root[data-ring='ring'] .composer::after { background: conic-gradient(from var(--ring-angle), var(--p-a), var(--p-b), var(--p-c), var(--p-a)); }
+:root[data-ring='ring'] .composer[data-top='true']::after { opacity: .85; }
+:root[data-palette='rainbow'] .composer::after { background: conic-gradient(from var(--ring-angle), transparent 0turn, transparent .5turn, oklch(0.7 0.24 20) .6turn, oklch(0.82 0.18 70) .68turn, oklch(0.85 0.2 130) .76turn, oklch(0.85 0.14 200) .82turn, oklch(0.65 0.24 280) .88turn, oklch(0.7 0.28 340) .93turn, transparent .97turn); }
+:root[data-ring='ring'][data-palette='rainbow'] .composer::after { background: conic-gradient(from var(--ring-angle), oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340), oklch(0.7 0.24 20)); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-still='true']) .composer[data-top='true']::after { animation: ring-run 4200ms linear infinite; } }
+@keyframes ring-run { to { --ring-angle: 360deg; } }
+:root[data-still='true'] .composer::after { background: conic-gradient(color-mix(in srgb, var(--p-a) 55%, transparent), color-mix(in srgb, var(--p-b) 55%, transparent), color-mix(in srgb, var(--p-c) 55%, transparent), color-mix(in srgb, var(--p-a) 55%, transparent)); }
+.composer textarea { grid-column: 1 / -1; display: block; width: 100%; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 15px; line-height: 1.5; }
+.composer textarea::placeholder { color: var(--text-muted); }
+.composer__clip { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; width: 26px; height: 26px; color: var(--text-muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+.composer__clip:hover { background: var(--hover); color: var(--text); }
+.composer__foot { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.composer__meta { display: flex; flex: 1; min-width: 0; }
+.composer__actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.disc { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 50%; background: var(--accent-text); color: var(--on-accent); }
+.disc:disabled { opacity: .45; }
+.usage { display: flex; justify-content: flex-end; gap: 14px; margin: 6px 4px 0; color: var(--text-muted); font-size: 12px; }
+.usage b { font-weight: 500; color: var(--text-2); }
+
+/* The option chips as shipped (threadChips.css). The effort chip's word takes the palette at the top level. */
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 9px; border: 1px solid var(--field-border); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.chip:hover:not(:disabled), .chip[aria-expanded='true'] { border-color: var(--border-faint); background: var(--hover); color: var(--text); }
+.chip .mark { width: 13px; height: 13px; color: var(--provider-claude); }
+.chip[data-top='true'] > span { color: var(--hot-text); font-weight: 500; }
+:root[data-palette='rainbow'] .chip[data-top='true'] > span { background: var(--p-text-image); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.anchor { position: relative; display: inline-flex; }
+
+/* The card. It shares the sibling lists' surface and their one rise motion. */
+.card { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 4; width: 292px; padding: 12px 14px 12px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--surface-elevated); box-shadow: var(--shadow); color: var(--text); --heat: 0; transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
+.card[data-arriving='true'] { border-color: color-mix(in srgb, var(--p-border) 55%, var(--field-border)); transition-duration: 200ms; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-still='true']) .card { animation: card-rise 140ms cubic-bezier(.2, .8, .2, 1); } }
+@keyframes card-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
+.card__word { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--text); }
+.card__word[data-top='true'] { color: var(--hot-text); }
+:root[data-palette='rainbow'] .card__word[data-top='true'] { background: var(--p-text-image); -webkit-background-clip: text; background-clip: text; }
+.card__word[data-unknown='true'] { color: var(--text-muted); font-weight: 500; }
+.card__word > span { display: inline-block; }
+.card__default { flex: none; color: var(--text-muted); font-size: 12.5px; padding: 0 4px; border-radius: 4px; }
+.card__default:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.card__default:disabled { opacity: .5; }
+.card__line { margin: 1px 0 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; min-height: 18px; }
+
+/* The track: a 22px pill. The fill warms toward the palette as the level climbs; at the top the palette's own
+   gradient shows through. Dots mark the stops; the thumb is a 26px disc. */
+.track { position: relative; height: 26px; margin: 12px 0 0; }
+.track__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 999px; background: var(--effort-track); overflow: hidden; }
+.track__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--x) * (100% - 26px)); border-radius: 999px; overflow: hidden; background: linear-gradient(90deg, color-mix(in srgb, var(--p-a) calc(30% + 50% * var(--heat)), var(--effort-fill-cool)), color-mix(in srgb, var(--p-b) calc(45% + 50% * var(--heat)), var(--effort-fill-cool))); }
+.track__fill::before { content: ''; position: absolute; inset: 0; background: var(--p-fill-image, linear-gradient(90deg, var(--p-a), var(--p-b), var(--p-c))); opacity: calc(var(--heat) * var(--heat) * var(--heat)); }
+.track__fill::after { content: ''; position: absolute; inset: 0; background: var(--fill-white); }
+.card[data-unknown='true'] .track__fill { opacity: .35; }
+.track__dot { position: absolute; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: var(--effort-dot); transform: translate(-50%, -50%); }
+.track__dot[data-under='true'] { background: color-mix(in srgb, var(--surface-elevated) 55%, var(--p-b)); }
+.track__thumb { position: absolute; top: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--effort-thumb); box-shadow: 0 1px 3px rgb(0 0 0 / 35%), 0 0 0 1px var(--effort-thumb-edge); transform: translateX(-50%); left: calc(13px + var(--x) * (100% - 26px)); pointer-events: none; }
+.card[data-unknown='true'] .track__thumb { opacity: .45; }
+.track input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; appearance: none; background: transparent; border: 0; cursor: ew-resize; touch-action: none; outline: 0; }
+.track input::-webkit-slider-thumb { appearance: none; width: 26px; height: 26px; background: transparent; border: 0; }
+.track:has(input:focus-visible) .track__thumb { box-shadow: 0 1px 3px rgb(0 0 0 / 35%), 0 0 0 2px var(--surface-elevated), 0 0 0 4px var(--focus); }
+.track__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--text-faint); font-size: 11.5px; line-height: 1.2; }
+.check { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border-radius: 6px; color: var(--text-2); font-size: 13px; text-align: left; }
+.check:hover { background: var(--hover); color: var(--text); }
+.check i { flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border); border-radius: 4px; display: inline-grid; place-items: center; }
+.check i svg { width: 10px; height: 10px; stroke: var(--on-accent); stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; display: none; }
+.check[aria-pressed='true'] i { background: var(--accent); border-color: var(--accent); }
+.check[aria-pressed='true'] i svg { display: block; }
+
+/* The arrival. The letters take the tint in turn, and a tide of the palette rises through the card from the
+   track and on through the composer; the two borders tint and fade over a couple of seconds. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-still='true']) .card[data-arriving='true'] .card__word[data-top='true'] > span { animation: letter-warm 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--i) * 55ms); }
+}
+@keyframes letter-warm { from { color: var(--text); } 45% { color: var(--text); transform: translateY(-1px); } to { color: var(--hot-text); transform: none; } }
+.wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.wash::before { content: ''; position: absolute; left: 0; right: 0; height: 220%; top: 100%;
+  background: var(--p-wash-image, linear-gradient(to top, transparent 0%, color-mix(in srgb, var(--p-a) 46%, transparent) 34%, color-mix(in srgb, var(--p-b) 40%, transparent) 50%, color-mix(in srgb, var(--p-c) 16%, transparent) 66%, transparent 100%)); }
+:root[data-palette='rainbow'] .wash::before { background: var(--p-spectrum); opacity: .5; -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-still='true']) .card[data-arriving='true'] > .wash::before { animation: wash-rise 1500ms cubic-bezier(.3, .6, .2, 1) both; }
+  :root:not([data-still='true']) .composer[data-washing='true'] > .wash::before { animation: wash-rise 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+}
+@keyframes wash-rise { from { top: 100%; } to { top: -220%; } }
+
+/* The card has a true still state. */
+:root[data-still='true'] .card, :root[data-still='true'] .card *, :root[data-still='true'] .composer, :root[data-still='true'] .composer::after, :root[data-still='true'] .composer > .wash::before { animation: none !important; transition: none !important; }
+
+/* The prototype's own bar: not part of the design. */
+.switcher { position: fixed; top: 10px; left: 50%; z-index: 99; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); white-space: nowrap; }
+.switcher button { height: 24px; padding: 0 9px; border-radius: 999px; color: #111; }
+.switcher button:hover { background: #ddd; }
+.switcher button[aria-pressed='true'] { background: #111; color: #fff; }
+.switcher .label { padding: 0 6px; }
+.switcher .label b { font-weight: 600; }
+.switcher .sep { width: 1px; height: 16px; background: #ccc; margin: 0 2px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+</svg>
+
+<div class="window">
+  <aside class="sidebar" aria-hidden="true">
+    <div class="sidebar__top"><i></i>Sotto</div>
+    <div class="sidebar__group">plant-net</div>
+    <div class="row" aria-current="page"><i data-on></i><span>Fieldbus trunk isolators</span></div>
+    <div class="row"><i></i><span>Rack 4 loop check</span></div>
+    <div class="row"><i></i><span>Alarm shelving report</span></div>
+    <div class="sidebar__group">sotto</div>
+    <div class="row"><i></i><span>Effort control</span></div>
+    <div class="row"><i></i><span>New thread dialog</span></div>
+  </aside>
+  <section class="pane">
+    <header class="pane__head">
+      <svg class="mark" width="16" height="16" style="color:var(--provider-claude)"><use href="#m-claude"/></svg>
+      <h2>Fieldbus trunk isolators</h2>
+      <span class="pane__crumb">plant-net</span>
+      <button class="icon-btn" type="button" aria-label="Open Tools"><svg class="i"><use href="#i-columns"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
+    </header>
+    <div class="transcript">
+      <div class="turn turn--user"><p>Can the two PICs on segment 3 come out without dropping the trunk? Grok said no.</p></div>
+      <div class="turn">
+        <div class="who"><svg class="mark" width="13" height="13"><use href="#m-claude"/></svg>Claude Code</div>
+        <p>Yes, if they are power conditioners and not isolators. A PIC on that trunk is a pass-through: pulling one breaks the segment for the racks past it, but the trunk itself recovers once the bridge is fitted.</p>
+        <p>One thing to confirm before cutting: that neither unit is an FBI isolator. Removing one of those is the case where Grok's "not allowed" applies.</p>
+      </div>
+    </div>
+    <div class="compose">
+      <form class="composer" onsubmit="return false">
+        <label class="vh" for="prompt">Prompt</label>
+        <div class="wash" aria-hidden="true"></div>
+        <textarea id="prompt" rows="3" placeholder="What would you like to do next?"></textarea>
+        <button class="composer__clip" type="button" aria-label="Attach a screenshot"><svg class="i"><use href="#i-clip"/></svg></button>
+        <div class="composer__foot">
+          <div class="composer__meta"><div class="chips" data-chips></div></div>
+          <div class="composer__actions"><button type="submit" class="disc" aria-label="Send prompt" disabled><svg class="i sm"><use href="#i-up"/></svg></button></div>
+        </div>
+      </form>
+      <div class="usage"><span title="82,000 of 480,000 tokens in the context window"><b>17%</b> context</span><span title="Estimated at standard API text-token rates">$21.90</span></div>
+    </div>
+  </section>
+</div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button type="button" data-prev aria-label="Previous colourway">←</button>
+  <span class="label"><b data-key></b> — <span data-name></span></span>
+  <button type="button" data-next aria-label="Next colourway">→</button>
+  <span class="sep"></span>
+  <button type="button" data-open>Open</button>
+  <button type="button" data-replay>Replay</button>
+  <span class="sep"></span>
+  <button type="button" data-provider="claude">Claude</button>
+  <button type="button" data-provider="codex">Codex</button>
+  <button type="button" data-provider="grok">Grok</button>
+  <span class="sep"></span>
+  <button type="button" data-ring="comet">Comet</button>
+  <button type="button" data-ring="ring">Ring</button>
+  <span class="sep"></span>
+  <button type="button" data-still>Still</button>
+  <button type="button" data-theme-toggle>Light</button>
+</div>
+
+<script>
+const VARIANTS = [['ember', 'Ember'], ['cyber', 'Cyberpunk'], ['rainbow', 'Techno rainbow'], ['aurora', 'Aurora'], ['plasma', 'Plasma'], ['accent', 'Theme accent']]
+const PROVIDERS = {
+  claude: { name: 'Fable 5.1', levels: ['low', 'medium', 'high', 'xhigh', 'max'], fallback: 'medium', ultrathink: true },
+  codex: { name: 'GPT-6 Astra', levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], fallback: 'medium', ultrathink: false },
+  grok: { name: 'Grok 4.6', levels: ['low', 'medium', 'high', 'xhigh'], fallback: 'high', ultrathink: false },
+}
+const WORD = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' }
+// One line per level: what it does and what it costs.
+const LINE = {
+  low: 'Fast. For small, clear tasks.',
+  medium: 'The usual balance of speed and care.',
+  high: 'Takes longer and catches more.',
+  xhigh: 'Much longer. For problems that resist a first pass.',
+  max: "Near the model's limit. Slow and costly.",
+  ultra: 'Everything the model has. Slowest, costliest.',
+}
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+
+const url = new URL(location.href)
+const state = {
+  variant: VARIANTS.some(([k]) => k === url.searchParams.get('variant')) ? url.searchParams.get('variant') : 'ember',
+  provider: PROVIDERS[url.searchParams.get('provider')] ? url.searchParams.get('provider') : 'claude',
+  effort: 'high', open: url.searchParams.get('open') === '1', ultrathink: false,
+}
+if (url.searchParams.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+if (url.searchParams.get('still') === '1') document.documentElement.dataset.still = 'true'
+if (url.searchParams.get('ring') === 'ring') document.documentElement.dataset.ring = 'ring'
+const still = () => document.documentElement.dataset.still === 'true' || matchMedia('(prefers-reduced-motion: reduce)').matches
+const provider = () => PROVIDERS[state.provider]
+const levels = () => provider().levels
+const known = () => levels().includes(state.effort)
+const index = () => Math.max(0, levels().indexOf(state.effort))
+const isTop = id => levels().indexOf(id) === levels().length - 1
+const atTop = () => known() && isTop(state.effort)
+
+const composer = document.querySelector('.composer')
+const chipsEl = composer.querySelector('[data-chips]')
+const textarea = composer.querySelector('textarea')
+let card = null
+
+function save() {
+  const u = new URL(location.href)
+  u.searchParams.set('variant', state.variant); u.searchParams.set('provider', state.provider)
+  if (state.open) u.searchParams.set('open', '1'); else u.searchParams.delete('open')
+  history.replaceState(null, '', u)
+  document.documentElement.dataset.palette = state.variant
+  composer.dataset.top = atTop()
+}
+function setUltrathink(on) {
+  state.ultrathink = on
+  const text = textarea.value
+  if (on && !/\bultrathink\b/iu.test(text)) textarea.value = text ? `${text}${/\s$/u.test(text) ? '' : '\n\n'}ultrathink` : 'ultrathink'
+  if (!on) textarea.value = text.replace(/(\n\n)?\bultrathink\b\s*$/iu, '')
+  card?.refresh()
+}
+const chev = '<svg class="i xs"><use href="#i-chev"/></svg>'
+
+function renderChips() {
+  save()
+  const p = provider()
+  chipsEl.innerHTML = `<button type="button" class="chip" aria-label="Thread model" title="Thread model"><svg class="mark"><use href="#m-claude"/></svg><span>${p.name}</span>${chev}</button>
+    <span class="anchor" data-anchor><button type="button" class="chip" data-effort-chip data-top="${atTop()}" role="combobox" aria-haspopup="dialog" aria-expanded="${state.open}" aria-label="Thread reasoning" title="Thread reasoning"><span>${WORD[state.effort] ?? 'Effort'}</span>${chev}</button></span>
+    <button type="button" class="chip" aria-label="Thread permissions" title="Thread permissions"><span>Auto</span>${chev}</button>`
+  chipsEl.querySelector('[data-effort-chip]').addEventListener('click', () => open(!state.open))
+  renderBar()
+}
+function renderBar() {
+  for (const b of document.querySelectorAll('[data-provider]')) b.setAttribute('aria-pressed', b.dataset.provider === state.provider)
+  document.querySelector('[data-open]').setAttribute('aria-pressed', state.open)
+  document.querySelector('[data-still]').setAttribute('aria-pressed', document.documentElement.dataset.still === 'true')
+  document.querySelector('[data-theme-toggle]').setAttribute('aria-pressed', document.documentElement.dataset.theme === 'light')
+  document.querySelector('[data-key]').textContent = String(VARIANTS.findIndex(([k]) => k === state.variant) + 1)
+  document.querySelector('[data-name]').textContent = VARIANTS.find(([k]) => k === state.variant)[1]
+  for (const b of document.querySelectorAll('[data-ring]')) b.setAttribute('aria-pressed', (document.documentElement.dataset.ring ?? 'comet') === b.dataset.ring)
+}
+for (const b of document.querySelectorAll('[data-ring]')) b.addEventListener('click', () => { document.documentElement.dataset.ring = b.dataset.ring; renderBar() })
+/* The chip's word and tint follow the level without rebuilding the row, so an open card keeps its DOM. */
+function updateChip() {
+  save()
+  const chip = chipsEl.querySelector('[data-effort-chip]')
+  if (!chip) return
+  chip.querySelector('span').textContent = WORD[state.effort] ?? 'Effort'
+  chip.dataset.top = atTop()
+}
+function render() {
+  card?.teardown(); card = null
+  renderChips()
+  if (state.open) card = mountCard(chipsEl.querySelector('[data-anchor]'))
+}
+function open(on) { state.open = on; render(); if (!on) chipsEl.querySelector('[data-effort-chip]')?.focus() }
+
+/* The card: header, track, end labels, optional Ultrathink. One instance owns the drag and the arrival. */
+function mountCard(anchor) {
+  const n = levels().length, fallback = provider().fallback
+  const el = document.createElement('div')
+  el.className = 'card'
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Reasoning effort')
+  el.innerHTML = `<div class="card__head"><p class="card__word" id="card-word"></p>
+      <button type="button" class="card__default" title="Use ${provider().name}'s default, ${WORD[fallback]}">Default</button></div>
+    <p class="card__line" id="card-line"></p>
+    <div class="track">
+      <div class="track__pill"><div class="track__fill"></div>${levels().map((id, i) => `<span class="track__dot" data-i="${i}" style="left:calc(13px + ${n === 1 ? 0 : i / (n - 1)} * (100% - 26px))"></span>`).join('')}</div>
+      <span class="track__thumb" aria-hidden="true"></span>
+      <input type="range" min="0" max="${n - 1}" step=".001" value="${known() ? index() : 0}" aria-label="Thread reasoning effort" aria-describedby="card-line">
+    </div>
+    <div class="track__ends" aria-hidden="true"><span>Faster</span><span>More thorough</span></div>
+    ${provider().ultrathink ? `<button type="button" class="check" aria-pressed="${state.ultrathink}"><i><svg viewBox="0 0 24 24"><use href="#i-check"/></svg></i><span></span></button>` : ''}
+    <div class="wash" aria-hidden="true"></div>`
+  anchor.append(el)
+  const input = el.querySelector('input'), word = el.querySelector('.card__word'), line = el.querySelector('.card__line'), dots = [...el.querySelectorAll('.track__dot')], check = el.querySelector('.check'), def = el.querySelector('.card__default')
+  let position = known() ? index() : 0, painted = position, dragging = false, raf = 0, previous = performance.now(), arriving = 0
+  const magnet = raw => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < .2 ? near + d * Math.pow(Math.abs(d) / .2, 2) : raw }
+  const shown = () => levels()[Math.round(position)]
+  const paintWord = (id, top) => { word.innerHTML = Array.from(WORD[id] ?? id, (ch, i) => `<span style="--i:${i}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join(''); word.dataset.top = top }
+  const refresh = () => {
+    const id = shown(), top = known() && isTop(state.effort) && !dragging
+    el.dataset.top = top; el.dataset.unknown = !known()
+    if (!known()) { paintWord(state.effort, false); word.dataset.unknown = 'true'; line.textContent = `${WORD[state.effort] ?? state.effort} is set. Choose a level this model offers.` }
+    else { paintWord(dragging ? id : state.effort, top); word.dataset.unknown = 'false'; line.textContent = LINE[dragging ? id : state.effort] }
+    input.setAttribute('aria-valuetext', known() ? WORD[state.effort] : 'Not set')
+    def.disabled = state.effort === fallback
+    if (check) { check.setAttribute('aria-pressed', state.ultrathink); check.querySelector('span').textContent = state.ultrathink ? 'ultrathink is in this prompt' : 'Add ultrathink to this prompt' }
+    chipsEl.querySelector('[data-effort-chip]')?.setAttribute('data-top', top)
+  }
+  const frame = now => {
+    raf = 0
+    const dt = Math.min(64, now - previous); previous = now
+    painted = still() || dragging ? position : painted + (position - painted) * (1 - Math.exp(-dt / 60))
+    if (Math.abs(painted - position) < .001) painted = position
+    const x = n === 1 ? 0 : painted / (n - 1)
+    el.style.setProperty('--x', x.toFixed(4)); el.style.setProperty('--heat', x.toFixed(3))
+    for (const d of dots) d.dataset.under = +d.dataset.i <= painted + .01
+    if (painted !== position) raf = requestAnimationFrame(frame)
+  }
+  const wake = () => { if (!raf) { previous = performance.now(); raf = requestAnimationFrame(frame) } }
+  // The arrival: once, on reaching the top level from below. Replay re-runs it.
+  const arrive = () => {
+    clearTimeout(arriving); el.dataset.arriving = 'false'; composer.dataset.washing = 'false'
+    requestAnimationFrame(() => {
+      el.dataset.arriving = 'true'
+      if (!still()) {
+        composer.dataset.tinting = 'true'; composer.style.setProperty('--tint', '70%')
+        composer.dataset.washing = 'true'
+        setTimeout(() => { composer.dataset.tinting = 'false'; composer.style.setProperty('--tint', '0%') }, 900)
+        setTimeout(() => { composer.dataset.washing = 'false' }, 2000)
+      }
+      arriving = setTimeout(() => { el.dataset.arriving = 'false' }, 1900)
+    })
+  }
+  const choose = i => {
+    const wasTop = atTop(), id = levels()[i]
+    position = i; input.value = i; state.effort = id
+    dragging = false; refresh(); wake(); updateChip()
+    if (atTop() && !wasTop) arrive()
+    if (!atTop()) { el.dataset.arriving = 'false'; composer.style.setProperty('--tint', '0%') }
+  }
+  input.addEventListener('pointerdown', e => { dragging = true; input.setPointerCapture?.(e.pointerId); el.dataset.arriving = 'false' })
+  input.addEventListener('input', () => { position = dragging ? magnet(+input.value) : Math.round(+input.value); if (dragging) { refresh(); wake() } else choose(Math.round(position)) })
+  const release = () => { if (!dragging) return; dragging = false; choose(Math.round(position)) }
+  input.addEventListener('pointerup', release); input.addEventListener('pointercancel', release)
+  input.addEventListener('wheel', e => { e.preventDefault(); const next = clamp(Math.round(position) + (e.deltaY < 0 ? 1 : -1), 0, n - 1); if (next !== Math.round(position) || !known()) choose(next) }, { passive: false })
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); return }
+    const digit = /^[1-9]$/.test(e.key) ? +e.key - 1 : -1
+    const map = { ArrowRight: 1, ArrowUp: 1, PageUp: 1, ArrowLeft: -1, ArrowDown: -1, PageDown: -1 }
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : digit >= 0 && digit < n ? digit : map[e.key] !== undefined ? clamp(Math.round(position) + map[e.key], 0, n - 1) : null
+    if (next === null) return
+    e.preventDefault(); e.stopPropagation(); choose(next)
+  })
+  def.addEventListener('click', () => { choose(levels().indexOf(fallback)); input.focus() })
+  check?.addEventListener('click', () => { setUltrathink(!state.ultrathink); textarea.focus() })
+  refresh(); frame(performance.now()); input.focus()
+  const r = el.getBoundingClientRect()
+  if (r.right > innerWidth - 12) el.style.left = `${Math.round(innerWidth - 12 - r.right)}px`
+  return { teardown: () => { cancelAnimationFrame(raf); clearTimeout(arriving); el.remove() }, refresh, replay: () => { if (atTop()) arrive() } }
+}
+
+/* Dismissal: Escape, Tab out, or a pointer outside, as the sibling lists do. */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.open) { e.preventDefault(); open(false); return }
+  const inComposer = composer.contains(document.activeElement)
+  if (inComposer || ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') step(e.key === 'ArrowRight' ? 1 : -1)
+})
+document.addEventListener('pointerdown', e => { if (state.open && !chipsEl.contains(e.target) && !e.target.closest('.switcher')) open(false) }, true)
+composer.addEventListener('focusout', e => { if (state.open && e.relatedTarget && !chipsEl.contains(e.relatedTarget) && !e.relatedTarget.closest('.switcher')) open(false) })
+
+/* Switching colourways keeps the card open; only the palette attribute and the bar change. */
+function step(d) { const i = VARIANTS.findIndex(([k]) => k === state.variant); state.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]; save(); renderBar(); card?.refresh() }
+document.querySelector('[data-prev]').addEventListener('click', () => step(-1))
+document.querySelector('[data-next]').addEventListener('click', () => step(1))
+document.querySelector('[data-open]').addEventListener('click', () => open(!state.open))
+document.querySelector('[data-replay]').addEventListener('click', () => { if (!state.open) { state.open = true; render() } card?.replay() })
+for (const b of document.querySelectorAll('[data-provider]')) b.addEventListener('click', () => { state.provider = b.dataset.provider; if (!PROVIDERS[state.provider].ultrathink) state.ultrathink = false; composer.style.setProperty('--tint', '0%'); render() })
+document.querySelector('[data-still]').addEventListener('click', () => { document.documentElement.dataset.still = document.documentElement.dataset.still === 'true' ? 'false' : 'true'; render() })
+document.querySelector('[data-theme-toggle]').addEventListener('click', () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'light' ? '' : 'light'; render() })
+render()
+</script>
+</body>
+</html>

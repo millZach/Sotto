@@ -26,7 +26,7 @@ async function fixture() {
   let configuration: AgentConfiguration = { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] }
   const host = new ConfiguredProviderHost({
     directory: root,
-    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry) },
+    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost() },
     provider: () => configuration.provider, enabledProviders: () => enabledThreadProviders(configuration), threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -49,13 +49,17 @@ describe('independent thread providers', () => {
     const legacy = { ...defaultAgentConfiguration(), provider: 'claude' as const }
     expect(enabledThreadProviders(agentConfigurationSchema.parse(legacy))).toEqual(['claude'])
     expect(enabledThreadProviders({ ...legacy, enabledProviders: [] })).toEqual([])
+    expect(enabledThreadProviders(agentConfigurationSchema.parse({ ...legacy, enabledProviders: ['codex', 'claude', 'grok'] }))).toEqual(['codex', 'claude', 'grok'])
+    expect(agentConfigurationSchema.parse({ ...legacy, enabledProviders: ['codex', 'claude', 'grok', 'devin'] }).enabledProviders).toHaveLength(4)
+    expect(agentCommandSchema.parse({ type: 'connect', provider: 'devin' })).toEqual({ type: 'connect', provider: 'devin' })
+    expect(agentConfigurationSchema.safeParse({ ...legacy, reasoning: 'devin' }).success).toBe(false)
     expect(agentCommandSchema.parse({ type: 'configure', patch: { reasoning: 'grok' } })).toEqual({ type: 'configure', patch: { reasoning: 'grok' } })
     expect(agentCommandSchema.parse({ type: 'connect', provider: 'grok' })).toEqual({ type: 'connect', provider: 'grok' })
     expect(agentConfigurationSchema.safeParse({ ...legacy, enabledProviders: ['codex', 'codex'] }).success).toBe(false)
   })
   it('aggregates colliding native IDs and routes durable threads independently of the default provider', async () => {
     const f = await fixture(); const snapshot = await f.host.connect()
-    expect(snapshot.providers?.map(provider => provider.connection)).toEqual(['connected', 'connected', 'connected'])
+    expect(snapshot.providers?.map(provider => provider.connection)).toEqual(['connected', 'connected', 'connected', 'disconnected'])
     expect(new Set(snapshot.models.map(model => model.id)).size).toBe(3)
     expect(new Set(snapshot.projects.map(project => project.id)).size).toBe(3)
     expect(new Set(snapshot.threads.map(thread => thread.id)).size).toBe(6)
@@ -184,7 +188,7 @@ describe('independent thread providers', () => {
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude'],
       threadProvider: id => registry.byThread(id)?.provider,
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     await host.connect()
     await expect(host.execute({ ...create, commandId: 'retry' })).rejects.toThrow('earlier project registration')
@@ -208,7 +212,7 @@ describe('independent thread providers', () => {
     let configuration = defaultAgentConfiguration()
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => configuration.provider, enabledProviders: () => enabledThreadProviders(configuration),
       threadProvider: id => registry.byThread(id)?.provider,
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     const restored = await coordinator({ ...f, host, configuration: value => { configuration = value } })
     expect(restored.get()).toMatchObject({ draft: 'Recover this Claude draft.', draftThreadId: claude.id,
@@ -233,7 +237,7 @@ describe('independent thread providers', () => {
     f.host.disconnect()
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'grok', enabledProviders: () => ['codex', 'claude', 'grok'],
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry) } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry), devin: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     const restarted = await host.connect()
     for (const project of restarted.projects) {

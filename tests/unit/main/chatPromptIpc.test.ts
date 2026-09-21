@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from 'vitest'
 import { registerChatPromptIpc } from '../../../src/main/agents/chatPromptIpc'
 import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY } from '../../../src/shared/chatPrompts'

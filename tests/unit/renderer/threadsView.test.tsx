@@ -300,7 +300,7 @@ describe('ThreadsView workspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
-    fireEvent.click(screen.getByRole('button', { name: 'High effort' }))
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'End' })
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, reasoningEffort: 'high' })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
@@ -520,4 +520,48 @@ describe('sidebar foot rooms', () => {
     view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
     expect(rooms()).toEqual(['Dictate', 'Agents', 'Threads'])
   })
+})
+
+
+describe('monitoring in the thread composer', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  })
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('keeps the draft and creature while live evidence updates, then removes only the perch', () => {
+    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
+    const thread = state.host.threads.find(item => item.id === 'footer-links')!
+    thread.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
+    const view = renderThreads(state)
+    const prompt = screen.getByRole('textbox', { name: 'Prompt', exact: true })
+    fireEvent.change(prompt, { target: { value: 'Keep my draft' } })
+    const creature = view.container.querySelector('.thread-monitor__creature')
+    expect(creature).not.toBeNull()
+    thread.monitoring[0]!.label = 'Waiting for build completion'
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(view.container.querySelector('.thread-monitor__creature')).toBe(creature)
+    expect(screen.getByText('Waiting for build completion')).toBeVisible()
+    thread.monitoring = []
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(view.container.querySelector('.thread-monitor')).toBeNull()
+    expect(prompt).toHaveValue('Keep my draft')
+  })
+
+  it.each(['unconfirmed', 'disconnected', 'settled', 'archived', 'error', 'permission', 'question', 'blocked'] as const)(
+    'hides the creature for %s even if old evidence is present', reason => {
+      const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
+      const thread = state.host.threads.find(item => item.id === 'footer-links')!
+      thread.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
+      if (reason === 'unconfirmed') delete thread.monitoring
+      if (reason === 'disconnected') state.host.connected = false
+      if (reason === 'settled') thread.settledOverride = 'settled'
+      if (reason === 'archived') thread.archivedAt = new Date(NOW).toISOString()
+      if (reason === 'error') thread.status = 'error'
+      if (reason === 'blocked') state.queue.push({ id: 'monitor-blocked', threadId: thread.id, kind: 'blocked', text: 'Your decision is needed.', createdAt: new Date(NOW).toISOString(), deferred: false })
+      if (reason === 'permission' || reason === 'question') thread.requests = [{ id: 'monitor-attention', kind: reason, text: 'Your answer is needed.', options: [] }]
+      const view = renderThreads(state)
+      expect(view.container.querySelector('.thread-monitor')).toBeNull()
+    })
 })

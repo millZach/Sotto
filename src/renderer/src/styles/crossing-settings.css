@@ -122,7 +122,7 @@
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
 /* Nested production account and provider controls share the focused form. */
 .settings-view .providers-workspace { grid-template-columns: minmax(0, 1fr); min-height: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
-.settings-view .providers-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 6px 0 24px; border: 0; border-bottom: 1px solid var(--tt-hairline); }
+.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 6px 0 24px; border: 0; border-bottom: 1px solid var(--tt-hairline); }
 .settings-view .providers-list__row { flex-direction: column; align-items: stretch; gap: 0; padding: 6px 12px 12px; }
 .settings-view .providers-list__select { padding: 10px 0; gap: 8px; }
 .settings-view .providers-list__select strong { font-size: 14px; }
@@ -160,9 +160,9 @@
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
   .settings-view .settings-rows .tt-field:has(.segmented-control) { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field:has(.segmented-control) .segmented-control { justify-self: start; }
-  .settings-view .providers-list { gap: 4px; }
+  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
   .settings-view .providers-list__row { padding-inline: 8px; }
-  .settings-view .providers-list__select > svg { display: none; }
+  .settings-view .providers-list__select > .provider-mark { display: none; }
 }
 @media (max-height: 650px) {
   .settings-sidebar { padding-top: 22px; }
@@ -199,7 +199,7 @@
   .settings-view .providers-list { padding-top: 4px; padding-bottom: 14px; }
   .settings-view .providers-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 8px; }
   .settings-view .providers-list__select { padding: 4px 0; }
-  .settings-view .providers-list__select > svg { display: none; }
+  .settings-view .providers-list__select > .provider-mark { display: none; }
   .settings-view .providers-list__select > span { gap: 5px; }
   .settings-view .providers-list__row .tt-toggle { align-self: center; }
   .settings-view .provider-detail__header { min-height: 50px; padding: 12px 0 10px; }

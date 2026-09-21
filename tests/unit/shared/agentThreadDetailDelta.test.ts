@@ -45,6 +45,15 @@ describe('diffing the detail of one thread', () => {
     expect(delta.activityDeltas).toEqual([{ id: 'one', removed: true }, { record: record('two', { status: 'completed' }) }])
   })
 
+  it('carries task classification changes without changing the historical identity or status', () => {
+    const old = record('agent', { kind: 'subagent', status: 'completed' })
+    const held = base([], [old])
+    const next = { ...old, taskUpdatesExcluded: true }
+    const delta = diffAgentThreadDetail(held, { messages: [], activities: [next] }, 5)!
+    expect(delta.activityDeltas).toEqual([{ record: next }])
+    expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
+  })
+
   it('copies what it carries, so the snapshot it builds never references the live thread', () => {
     const live = message('a', 'Indigo it is.')
     const delta = diffAgentThreadDetail(base([]), { messages: [live] }, 5)!

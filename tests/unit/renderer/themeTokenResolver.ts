@@ -43,27 +43,37 @@ export function parseTokenBlocks(css: string = readFileSync(TOKENS_PATH, 'utf8')
   return blocks
 }
 
-function selectorApplies(selector: string, mode: Mode): number | null {
-  if (!selector.startsWith(':root')) return null
-  const rest = selector.slice(':root'.length)
-  const attributes = [...rest.matchAll(/\[data-([a-z-]+)='([a-z]+)'\]/gu)]
-  if (rest.replace(/\[data-[a-z-]+='[a-z]+'\]/gu, '') !== '') return null
+/**
+ * Whether a tokens.css selector reaches the root painted in `mode` with `effortColor`, and its specificity if so.
+ * The root carries `data-theme` and `data-effort-color`; a bare attribute selector (the effort colourway blocks,
+ * which a Settings swatch also wears) matches the root too, at the same specificity as `:root`.
+ */
+function selectorApplies(selector: string, mode: Mode, effortColor: string): number | null {
+  const attributes = [...selector.matchAll(/\[data-([a-z-]+)(?:='([a-z]+)')?\]/gu)]
+  const rest = selector.replace(/\[data-[a-z-]+(?:='[a-z]+')?\]/gu, '')
+  if (rest !== ':root' && rest !== '') return null
+  if (rest === '' && attributes.length === 0) return null
   for (const [, name, value] of attributes) {
-    if (name !== 'theme' || value !== mode) return null
+    if (name === 'theme') { if (value !== mode) return null }
+    else if (name === 'effort-color') { if (value !== undefined && value !== effortColor) return null }
+    else return null
   }
-  return 1 + attributes.length
+  return (rest === ':root' ? 1 : 0) + attributes.length
 }
 
 export interface PaintOptions {
   readonly colors?: ThemeColors
   readonly contrast?: number
   readonly glass?: number
+  /** The effort colourway on the root; Ember, the default, when unsaid. */
+  readonly effortColor?: string
 }
 
 /** The custom properties on the root for one mode, with a palette and strengths written inline as applyAppearance does. */
 export function rootDeclarations(mode: Mode, themeId = 'ocean', options: PaintOptions = {}, blocks: readonly Block[] = parseTokenBlocks()): Map<string, string> {
+  const effortColor = options.effortColor ?? 'ember'
   const applicable = blocks
-    .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode) ?? -1)) }))
+    .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode, effortColor) ?? -1)) }))
     .filter(({ specificity }) => specificity > 0)
     .sort((first, second) => first.specificity - second.specificity || first.block.index - second.block.index)
   const result = new Map<string, string>()

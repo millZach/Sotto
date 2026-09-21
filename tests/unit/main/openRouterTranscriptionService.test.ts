@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'

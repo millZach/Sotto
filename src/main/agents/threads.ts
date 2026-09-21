@@ -155,7 +155,7 @@ export class SottoThreadHost implements AgentHost {
     await this.registry.load()
     const mine = threads.flatMap(thread => {
       const binding = this.registry.byThread(thread.threadId)
-      return binding?.provider === this.provider ? [{ threadId: binding.sessionId, messages: thread.messages }] : []
+      return binding?.provider === this.provider ? [{ ...thread, threadId: binding.sessionId }] : []
     })
     if (mine.length) await this.inner.restoreThreadHistory(mine)
   }
@@ -193,6 +193,10 @@ export class SottoThreadHost implements AgentHost {
         const binding = this.registry.bySession(this.provider, sessionId)
         return binding ? source.messageIdentities(binding.threadId) : []
       },
+      ...(source.activities ? { activities: (sessionId: string, historyEpoch?: string) => {
+        const binding = this.registry.bySession(this.provider, sessionId)
+        return binding ? source.activities?.(binding.threadId, historyEpoch) : undefined
+      } } : {}),
     })
   }
 

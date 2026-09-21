@@ -1,8 +1,11 @@
 import { existsSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { dirname } from 'node:path'
-import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
+import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqlite'
 
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
@@ -40,7 +43,31 @@ const migrations = [{
     CREATE INDEX messages_thread_message ON messages(thread_id, message_id);
     CREATE TABLE meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
   `,
+}, {
+  version: 2,
+  sql: `
+    CREATE TABLE activities (
+      thread_id TEXT NOT NULL,
+      activity_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      PRIMARY KEY (thread_id, activity_id)
+    );
+    CREATE INDEX activities_thread_position ON activities(thread_id, position);
+    CREATE TABLE activity_epochs (thread_id TEXT PRIMARY KEY NOT NULL, epoch TEXT);
+    CREATE TABLE activity_redactions (identity_hash TEXT PRIMARY KEY NOT NULL);
+  `,
 }]
+
+interface ActivityState {
+  known: boolean
+  epoch: string | undefined
+  records: Map<string, { position: number; activity: AgentActivity }>
+}
+
+function activityIdentityHash(threadId: string, activityId: string): string {
+  return createHash('sha256').update(`${threadId.length}:`).update(threadId).update(activityId).digest('hex')
+}
 
 /** One window of a thread's history, newest first in the store's own order (oldest to newest here). */
 export interface ThreadMessageWindow {
@@ -83,6 +110,14 @@ function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
 export class ThreadStore {
   private db: DatabaseSync | undefined
   private memory = false
+  /** Prepared once per connection; a statement is bound to its database, so `close` clears the map. */
+  private readonly statements = new Map<string, StatementSync>()
+  /** Independent successful values: providers may mutate their records after a publish. */
+  private readonly activityStates = new Map<string, ActivityState>()
+  private readonly activityRedactions = new Set<string>()
+  private readonly redactionChecks = new Map<string, Map<string, boolean>>()
+  /** While history is off, this connection writes identity hashes alone, never activity text. */
+  private durableRedactions: ThreadStore | undefined
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string) {}
@@ -91,19 +126,30 @@ export class ThreadStore {
   open(options: { ephemeral?: boolean } = {}): void {
     if (this.db !== undefined) return
     const ephemeral = options.ephemeral === true
+    let redactions: string[] = []
     // Keep local history was turned off while Sotto was not running: the words an earlier run kept come out first.
-    if (ephemeral && existsSync(this.path)) { this.open(); this.redactAll(); this.close() }
+    if (ephemeral && existsSync(this.path)) {
+      this.open(); this.redactAll(); redactions = [...this.activityRedactions]; this.close()
+    }
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {
-      migrate(db)
+      prepareThreadDatabase(db)
       if (readMeta(db, 'projectionVersion') !== String(PROJECTION_VERSION)) {
         rebuildProjection(db)
         writeMeta(db, 'projectionVersion', String(PROJECTION_VERSION))
       }
       this.db = db
       this.memory = ephemeral
+      for (const row of this.statement('SELECT identity_hash FROM activity_redactions').all()) {
+        this.activityRedactions.add(String(row.identity_hash))
+      }
+      for (const hash of redactions) this.activityRedactions.add(hash)
     } catch (error) {
+      this.statements.clear()
+      this.activityRedactions.clear()
+      this.db = undefined
+      this.memory = false
       db.close()
       throw error
     }
@@ -136,9 +182,156 @@ export class ThreadStore {
   }
 
   close(): void {
+    this.durableRedactions?.close()
+    this.durableRedactions = undefined
+    this.statements.clear()
+    this.activityStates.clear()
+    this.activityRedactions.clear()
+    this.redactionChecks.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
+  }
+
+  private statement(sql: string): StatementSync {
+    let statement = this.statements.get(sql)
+    if (statement === undefined) {
+      statement = this.requireOpen().prepare(sql)
+      this.statements.set(sql, statement)
+    }
+    return statement
+  }
+
+
+  private activityIdentityHashes(threadId?: string): string[] {
+    const rows = threadId === undefined
+      ? this.statement('SELECT thread_id, activity_id FROM activities').all()
+      : this.statement('SELECT thread_id, activity_id FROM activities WHERE thread_id = ?').all(threadId)
+    return rows.map(row => activityIdentityHash(String(row.thread_id), String(row.activity_id)))
+  }
+
+  private rememberActivityRedactions(hashes: readonly string[]): void {
+    const added = hashes.filter(hash => !this.activityRedactions.has(hash))
+    if (added.length === 0) return
+    this.requireOpen()
+    if (this.memory) {
+      // Persist before accepting the activity in memory. Quitting while history is off must
+      // not make a later provider replay eligible for retention.
+      if (this.durableRedactions === undefined) {
+        const durable = new ThreadStore(this.path)
+        durable.open()
+        this.durableRedactions = durable
+      }
+      this.durableRedactions.rememberActivityRedactions(added)
+    } else {
+      const db = this.requireOpen()
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    }
+    for (const hash of added) this.activityRedactions.add(hash)
+    this.redactionChecks.clear()
+  }
+
+  /** Suppresses later replay of unsaved records without reading or persisting their payloads. */
+  redactActivityIdentities(threadId: string, activityIds: readonly string[]): void {
+    this.requireOpen()
+    this.rememberActivityRedactions(activityIds.map(id => activityIdentityHash(threadId, id)))
+  }
+
+  private activityWasRedacted(threadId: string, activityId: string): boolean {
+    if (this.memory || this.activityRedactions.size === 0) return false
+    let checks = this.redactionChecks.get(threadId)
+    if (checks === undefined) { checks = new Map(); this.redactionChecks.set(threadId, checks) }
+    let redacted = checks.get(activityId)
+    if (redacted === undefined) {
+      redacted = this.activityRedactions.has(activityIdentityHash(threadId, activityId))
+      checks.set(activityId, redacted)
+    }
+    return redacted
+  }
+
+  private activityState(threadId: string): ActivityState {
+    let state = this.activityStates.get(threadId)
+    if (state === undefined) {
+      const epochRow = this.statement('SELECT epoch FROM activity_epochs WHERE thread_id = ?').get(threadId)
+      const epoch = epochRow?.epoch
+      const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
+      const records: ActivityState['records'] = new Map()
+      for (const row of rows) {
+        const activity = agentActivitySchema.parse(JSON.parse(String(row.payload)))
+        if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
+        records.set(activity.id, { position: Number(row.position), activity })
+      }
+      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), records }
+      this.activityStates.set(threadId, state)
+    }
+    return state
+  }
+
+  /** True once an authoritative list has been stored, even when that list is empty. */
+  hasActivities(threadId: string): boolean {
+    return this.activityState(threadId).known
+  }
+
+  /** The epoch committed with the list; hasActivities distinguishes unknown from unversioned. */
+  readActivityEpoch(threadId: string): string | undefined {
+    return this.activityState(threadId).epoch
+  }
+
+  /** A caller owns its returned records, including nested plan steps and file changes. */
+  readActivities(threadId: string): AgentActivity[] {
+    return [...this.activityState(threadId).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
+  }
+
+  /** Persists the bounded authoritative list, encoding only records whose values changed. */
+  syncActivities(threadId: string, activities: readonly AgentActivity[], epoch?: string): void {
+    const db = this.requireOpen()
+    if (activities.length > MAX_AGENT_ACTIVITIES) throw new Error('Too many thread activities')
+    const previous = this.activityState(threadId)
+    const reset = previous.epoch !== epoch
+    const next: ActivityState = { known: true, epoch, records: new Map() }
+    const changed: { position: number; activity: AgentActivity }[] = []
+    const moved: { id: string; position: number }[] = []
+    const seen = new Set<string>()
+    for (const activity of activities) {
+      if (seen.has(activity.id)) throw new Error('Duplicate thread activity identity')
+      seen.add(activity.id)
+      if (this.activityWasRedacted(threadId, activity.id)) continue
+      const position = next.records.size
+      const prior = reset ? undefined : previous.records.get(activity.id)
+      if (prior !== undefined && isDeepStrictEqual(prior.activity, activity)) {
+        next.records.set(activity.id, { position, activity: prior.activity })
+        if (prior.position !== position) moved.push({ id: activity.id, position })
+      } else {
+        const record = { position, activity: agentActivitySchema.parse(activity) }
+        next.records.set(activity.id, record)
+        changed.push(record)
+      }
+    }
+    const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
+    if (previous.known && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
+    if (this.memory) this.redactActivityIdentities(threadId, changed.map(({ activity }) => activity.id))
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      if (reset) {
+        this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
+      } else {
+        for (const id of removed) this.statement('DELETE FROM activities WHERE thread_id = ? AND activity_id = ?').run(threadId, id)
+      }
+      if (!previous.known || reset) {
+        this.statement('INSERT INTO activity_epochs (thread_id, epoch) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch').run(threadId, epoch ?? null)
+      }
+      for (const { position, activity } of changed) {
+        this.statement('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id, activity_id) DO UPDATE SET position = excluded.position, payload = excluded.payload')
+          .run(threadId, activity.id, position, JSON.stringify(activity))
+      }
+      for (const { id, position } of moved) this.statement('UPDATE activities SET position = ? WHERE thread_id = ? AND activity_id = ?').run(position, threadId, id)
+      db.exec('COMMIT')
+    } catch (error) { db.exec('ROLLBACK'); throw error }
+    this.activityStates.set(threadId, next)
   }
 
   /** Writes one event and applies it to the projection in a single transaction. */
@@ -155,10 +348,10 @@ export class ThreadStore {
     try {
       for (const event of events) {
         const parsed = threadEventSchema.parse(event)
-        db.prepare('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
+        this.statement('INSERT INTO events (thread_id, kind, at, payload) VALUES (?, ?, ?, ?)')
           .run(threadId, parsed.kind, parsed.at, JSON.stringify(parsed))
-        seq = Number(db.prepare('SELECT last_insert_rowid() AS seq').get()!.seq)
-        applyEvent(db, threadId, parsed)
+        seq = Number(this.statement('SELECT last_insert_rowid() AS seq').get()!.seq)
+        applyEvent(db, threadId, parsed, sql => this.statement(sql))
       }
       db.exec('COMMIT')
     } catch (error) {
@@ -174,22 +367,21 @@ export class ThreadStore {
    * whole history, which is what a one-time read at start asks for.
    */
   readMessages(threadId: string, options: ThreadWindowOptions = {}): ThreadMessageWindow {
-    const db = this.requireOpen()
     const bound = options.beforePosition
     const clause = bound === undefined ? '' : ' AND position < ?'
     const parameters = bound === undefined ? [threadId] : [threadId, bound]
-    const last = db.prepare(`SELECT MAX(position) AS last FROM messages WHERE thread_id = ?${clause}`).get(...parameters)?.last
+    const last = this.statement(`SELECT MAX(position) AS last FROM messages WHERE thread_id = ?${clause}`).get(...parameters)?.last
     if (last === null || last === undefined) return EMPTY_WINDOW
     const lastPosition = Number(last)
     let firstPosition = 0
     if (options.turns !== undefined) {
-      const starts = db.prepare(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user'${clause} ORDER BY position DESC LIMIT ?`)
+      const starts = this.statement(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user'${clause} ORDER BY position DESC LIMIT ?`)
         .all(...parameters, options.turns).map(row => Number(row.position))
       firstPosition = starts.length < options.turns ? 0 : starts.at(-1)!
     } else if (options.limit !== undefined) {
       firstPosition = Math.max(0, lastPosition - options.limit + 1)
     }
-    const rows = db.prepare('SELECT * FROM messages WHERE thread_id = ? AND position BETWEEN ? AND ? ORDER BY position')
+    const rows = this.statement('SELECT * FROM messages WHERE thread_id = ? AND position BETWEEN ? AND ? ORDER BY position')
       .all(threadId, firstPosition, lastPosition)
     return { messages: rows.map(messageOf), earlierAvailable: firstPosition > 0, firstPosition, lastPosition }
   }
@@ -197,20 +389,19 @@ export class ThreadStore {
   /** Every message this thread holds, by ID and role, oldest first: what an adapter needs to recognise
    * a message the store already has without reading the words back out of it. */
   messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant' }[] {
-    return this.requireOpen().prepare('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
+    return this.statement('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
       .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant' }))
   }
 
   messageCount(threadId: string): number {
-    return Number(this.requireOpen().prepare('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
+    return Number(this.statement('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
   }
 
   /** The sidebar's facts about a thread, taken from the projection rather than from its history. */
   summary(threadId: string): AgentThreadSummary {
-    const db = this.requireOpen()
     const count = this.messageCount(threadId)
     const newest = (role: 'user' | 'assistant'): AgentMessage | undefined => {
-      const row = db.prepare('SELECT * FROM messages WHERE thread_id = ? AND role = ? ORDER BY position DESC LIMIT 1').get(threadId, role)
+      const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND role = ? ORDER BY position DESC LIMIT 1').get(threadId, role)
       return row === undefined ? undefined : messageOf(row)
     }
     const user = newest('user')
@@ -221,45 +412,58 @@ export class ThreadStore {
 
   /** Everything after `seq`, in the order it was written. */
   eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
-    const db = this.requireOpen()
     const rows = threadId === undefined
-      ? db.prepare('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq').all(seq)
-      : db.prepare('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq').all(seq, threadId)
+      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq').all(seq)
+      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq').all(seq, threadId)
     return rows.map(row => ({ seq: Number(row.seq), threadId: String(row.thread_id), event: JSON.parse(String(row.payload)) as ThreadEvent }))
   }
 
   latestSeq(): number {
-    const row = this.requireOpen().prepare('SELECT MAX(seq) AS seq FROM events').get()
+    const row = this.statement('SELECT MAX(seq) AS seq FROM events').get()
     return row?.seq === null || row?.seq === undefined ? 0 : Number(row.seq)
   }
 
   /** Drops one thread's projection and takes the words out of its log, leaving only that it happened. */
   forget(threadId: string): void {
     const db = this.requireOpen()
+    const hashes = this.activityIdentityHashes(threadId)
     db.exec('BEGIN IMMEDIATE')
     try {
-      db.prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      this.statement('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+      this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
+      this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
       redactEvents(db, threadId)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
+    this.activityStates.delete(threadId)
+    for (const hash of hashes) this.activityRedactions.add(hash)
+    this.redactionChecks.clear()
     scrub(db)
   }
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
   redactAll(): void {
     const db = this.requireOpen()
+    const hashes = this.activityIdentityHashes()
     db.exec('BEGIN IMMEDIATE')
     try {
       db.exec('DELETE FROM messages')
+      for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+      db.exec('DELETE FROM activities')
+      db.exec('DELETE FROM activity_epochs')
       redactEvents(db)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
+    this.activityStates.clear()
+    for (const hash of hashes) this.activityRedactions.add(hash)
+    this.redactionChecks.clear()
     scrub(db)
   }
 
@@ -285,30 +489,31 @@ export class ThreadStore {
   }
 }
 
-function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent): void {
+function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
+  prepare: (sql: string) => StatementSync = sql => db.prepare(sql)): void {
   switch (event.kind) {
     case 'message-added': {
-      const row = db.prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
+      const row = prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
       const position = row?.last === null || row?.last === undefined ? 0 : Number(row.last) + 1
       const { message } = event
-      db.prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(threadId, position, message.id, message.role, message.text, message.createdAt,
           message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments))
       return
     }
     case 'message-text-appended':
-      db.prepare('UPDATE messages SET text = text || ? WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET text = text || ? WHERE thread_id = ? AND message_id = ?')
         .run(event.appendText, threadId, event.messageId)
       return
     case 'message-replaced': {
       const { message } = event
-      db.prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ? WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ? WHERE thread_id = ? AND message_id = ?')
         .run(message.role, message.text, message.createdAt, message.commandId ?? null,
           message.attachments === undefined ? null : JSON.stringify(message.attachments), threadId, message.id)
       return
     }
     case 'messages-reset':
-      db.prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      prepare('DELETE FROM messages WHERE thread_id = ?').run(threadId)
       return
     case 'answer-given':
       return
@@ -381,9 +586,10 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
 }
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
-function migrate(db: DatabaseSync): void {
+export function prepareThreadDatabase(db: DatabaseSync): void {
+  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')

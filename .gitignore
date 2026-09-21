@@ -42,6 +42,7 @@ scripts/memeval/results/*.json
 artifacts/voice-perf/
 
 artifacts/effort-furnace/
+artifacts/effort-slider/
 artifacts/new-thread-saved-draft/
 artifacts/codex-stream-freeze/
 
@@ -50,5 +51,17 @@ artifacts/codex-images/
 artifacts/issue-146/
 artifacts/codex-connection-recovery/
 
+artifacts/shell-detail-visibility/
+artifacts/devin-local-provider/
+
 # Resizable thread sidebar verification
 artifacts/thread-sidebar/
+
+artifacts/terminal-loading/
+
+artifacts/activity-performance/
+artifacts/process-creature/
+artifacts/queued-steering/
+
+# Question panel verification captures
+artifacts/question-choices/

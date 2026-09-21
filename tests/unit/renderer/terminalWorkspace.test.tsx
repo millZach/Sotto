@@ -15,7 +15,9 @@ import type { TerminalViewFactory, TerminalViewHandlers } from '../../../src/ren
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
 import { paneMenuItem } from './paneMenu'
 
-vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../../src/renderer/src/tools/terminalView', () => { throw new Error('Chunk unavailable') })
+
+vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn(), useOptionalAgents: () => null }))
 
 const NOW = E2E_THREADS_NOW
 const WIDE = 1400
@@ -94,9 +96,13 @@ function fakeViews() {
   return { views, factory }
 }
 
-function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean } = {}) {
+function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean } = {}) {
   localStorage.setItem(SIDEBAR_MODE_KEY, options.mode ?? 'terminals')
   const state = threadsStateFixture()
+  if (options.devinDefault) {
+    state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
+    state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
+  }
   state.assignments = []
   state.queue = []
   const live = liveAgentState(state)
@@ -105,7 +111,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const fake = fakeBridge(initial)
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
-  const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, viewFactory: factory, layoutStore: new SplitLayoutStore(), platform: 'win32' }
+  const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
   render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
@@ -119,6 +125,17 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); localStorage.clear() })
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('Terminal mode', () => {
+  it('reports a failed terminal view without restarting the running terminal', async () => {
+    const view = mount([terminal(ID_1)], { lazy: true })
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build', exact: true }))
+    expect(await screen.findByText('The terminal view could not load. Your terminal and its output are still here.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reload window' })).toBeEnabled()
+    expect(screen.getByLabelText('Build, terminal')).not.toHaveAttribute('aria-busy', 'true')
+    expect(view.bridge.restart).not.toHaveBeenCalled()
+    expect(view.bridge.close).not.toHaveBeenCalled()
+    expect(view.bridge.open).not.toHaveBeenCalled()
+  })
+
   it('switches the sidebar between threads and terminals, changing only the rows, the search and the shelf', async () => {
     mount([terminal(ID_1)], { mode: 'threads' })
     expect(sidebar('Thread sidebar')).toBeInTheDocument()
@@ -138,6 +155,18 @@ describe('Terminal mode', () => {
     fireEvent.click(modeSwitch().getByRole('radio', { name: 'Threads' }))
     expect(search().placeholder).toBe('Search threads')
     expect(within(sidebar('Thread sidebar')).getByRole('button', { name: 'Visual gate flake' })).toBeInTheDocument()
+  })
+
+  it('excludes Devin from terminal choices even when it is the default thread model', async () => {
+    const view = mount([], { devinDefault: true })
+    await waitFor(() => expect(view.store.getSnapshot().shell).toBe('pwsh'))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'New terminal' }))
+    const dialog = screen.getByRole('dialog', { name: 'New terminal' })
+    fireEvent.click(within(dialog).getByRole('button', { name: /workshop/ }))
+    const providers = within(dialog).getByRole('combobox', { name: 'Terminal provider' })
+    expect(within(providers).queryByRole('option', { name: 'Devin' })).toBeNull()
+    expect(providers).toHaveValue('claude')
+    expect(within(dialog).getByLabelText('Runs')).toHaveTextContent('claude --model claude:sonnet')
   })
 
   it('opens a provider terminal from the dialog with the mapped command in the Runs box, then shows its pane', async () => {

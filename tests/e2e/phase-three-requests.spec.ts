@@ -92,7 +92,7 @@ async function selectThread(page: Page, title: string): Promise<void> {
 }
 
 const transcript = (page: Page): Locator => page.getByLabel('Thread transcript', { exact: true })
-const card = (page: Page): Locator => transcript(page).locator('.agent-request')
+const card = (page: Page): Locator => page.locator('.agent-request')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
@@ -102,19 +102,29 @@ async function resize(launched: LaunchedSotto, width: number, height: number): P
   await expect.poll(() => launched.page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
 }
 
-/** The card sits inside the transcript: the composer stays whole, the transcript keeps room, nothing scrolls sideways. */
+/** Questions scroll above the message bar; permissions stay in the transcript, with neither clipping the composer. */
 async function expectRoomy(page: Page, minimumLog: number): Promise<void> {
   const layout = await page.evaluate(() => {
     const log = document.querySelector('[aria-label="Thread transcript"]')!
     const compose = document.querySelector('.thread-workspace__compose')!.getBoundingClientRect()
     const request = document.querySelector('.agent-request')!
+    const questions = document.querySelector('.thread-questions')
+    const prompt = document.querySelector('.thread-prompt textarea')?.getBoundingClientRect()
     return { logHeight: log.clientHeight, composeBottom: compose.bottom, composeTop: compose.top, height: window.innerHeight,
       pageOverflow: document.documentElement.scrollWidth - window.innerWidth, cardOverflow: request.scrollWidth - request.clientWidth,
-      logBottom: log.getBoundingClientRect().bottom }
+      logBottom: log.getBoundingClientRect().bottom,
+      questionsHeight: questions?.clientHeight ?? null, questionsBottom: questions?.getBoundingClientRect().bottom ?? null,
+      promptTop: prompt?.top ?? null }
   })
   expect(layout.composeBottom).toBeLessThanOrEqual(layout.height + 1)
   expect(layout.logBottom).toBeLessThanOrEqual(layout.composeTop + 1)
-  expect(layout.logHeight).toBeGreaterThanOrEqual(minimumLog)
+  expect(layout.logHeight).toBeGreaterThanOrEqual(layout.questionsHeight === null ? minimumLog : 60)
+  if (layout.questionsHeight !== null) {
+    expect(layout.questionsHeight).toBeGreaterThan(0)
+    expect(layout.questionsHeight).toBeLessThan(layout.height)
+    expect(layout.promptTop).not.toBeNull()
+    expect(layout.questionsBottom).toBeLessThanOrEqual(layout.promptTop! + 1)
+  }
   expect(layout.pageOverflow).toBeLessThanOrEqual(0)
   expect(layout.cardOverflow).toBeLessThanOrEqual(0)
 }
@@ -206,12 +216,13 @@ test('answers every native question in the thread that asked, keeping simultaneo
     await capture(launched, 'workshop-form-footer', send)
     expect(await answers(app)).toEqual([])
 
-    // Keyboard only from here: finish the text answer and send it with Enter.
+    // Keyboard only from here: finish the text answer, then activate the explicit Send answers button.
     const branch = form.getByRole('textbox', { name: 'Name the branch for this work.' })
     await branch.focus()
     await page.keyboard.press('End')
     await page.keyboard.type('t')
     await expect(form.getByText('Ready to send')).toBeVisible()
+    await send.focus()
     await page.keyboard.press('Enter')
     await expect(card(page)).toHaveCount(0)
 
@@ -304,5 +315,245 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     expect(await pending(page, 'docs')).toEqual(['network-profile'])
     expect((await state(page)).assignments).toEqual([])
     expect(await outbox(launched.userData)).toEqual([])
+  } finally { await closeSotto(launched) }
+})
+
+
+test('keeps model choices above the message bar until an explicit answer, preserving a separate prompt draft', async () => {
+  test.setTimeout(120_000)
+  const launched = await launchSotto()
+  const { page, app } = launched
+  const question = 'How should we organize the settings page?'
+  const request: AgentRequest = {
+    id: 'question-choices', kind: 'question', text: question, options: [], questions: [{
+      id: 'layout', question, multiSelect: false, allowFreeText: true,
+      options: [
+        { id: 'sidebar (Recommended)', label: 'Sections in a sidebar (Recommended)', description: 'Keep each section easy to find as settings grow.' },
+        { id: 'tabs', label: 'Tabs across the top', description: 'Show one section at a time in a familiar layout.' },
+        { id: 'single', label: 'One scrolling page', description: 'Keep all settings together in one place.' },
+      ],
+    }],
+  }
+  try {
+    await prepare(launched)
+    await selectThread(page, 'Workshop')
+    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('Keep keyboard navigation consistent with the rest of the app.')
+    await emit(page, 'workshop', request)
+    const panel = page.locator('.thread-workspace__compose .thread-questions')
+    const form = panel.locator('.agent-request')
+    await expect(form).toBeVisible()
+    await expect(transcript(page).locator('.agent-request')).toHaveCount(0)
+    await expect(form.getByText('(recommended)', { exact: true })).toBeVisible()
+    const recommended = form.getByRole('radio', { name: /Sections in a sidebar/u })
+    const custom = form.getByRole('textbox', { name: `Other answer to: ${question}` })
+    const customChoice = form.getByRole('radio', { name: 'Write my own answer', exact: true })
+    const send = form.getByRole('button', { name: 'Send answer', exact: true })
+    await expect(custom).toBeVisible()
+    await expect(recommended).not.toBeChecked()
+    await expect(customChoice).not.toBeChecked()
+    await expect(send).toBeDisabled()
+    await recommended.click()
+    await expect(recommended).toBeChecked()
+    await expect(send).toBeEnabled()
+    expect(await answers(app)).toEqual([])
+
+    // The user's custom response survives both another choice and a collapsed panel.
+    await custom.fill('Use the sidebar layout')
+    await expect(customChoice).toBeChecked()
+    await custom.press('End')
+    await custom.press('Enter')
+    await custom.pressSequentially('with a search field.')
+    await expect(custom).toHaveValue('Use the sidebar layout\nwith a search field.')
+    expect(await answers(app)).toEqual([])
+    await recommended.click()
+    await expect(custom).toHaveValue('Use the sidebar layout\nwith a search field.')
+    await customChoice.click()
+    await custom.focus()
+    await custom.press('Escape')
+    const reopen = form.getByRole('button', { name: 'Show question', exact: true })
+    await expect(reopen).toBeFocused()
+    await expect(custom).toBeHidden()
+    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    await reopen.press('Enter')
+    await expect(custom).toBeVisible()
+    await expect(customChoice).toBeChecked()
+    await expect(custom).toHaveValue('Use the sidebar layout\nwith a search field.')
+    expect(await answers(app)).toEqual([])
+
+    // Retain the approved stacked-choice state in every required window, theme and motion mode.
+    await recommended.click()
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resize(launched, width, height)
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+        for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+          await page.emulateMedia({ reducedMotion })
+          if (reducedMotion === 'reduce') expect(await form.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+          await page.screenshot({ path: `artifacts/question-choices/choices-${width}x${height}-${appearance}-${reducedMotion}.png`, animations: 'disabled' })
+          await expectRoomy(page, 60)
+          await expect(prompt).toBeInViewport()
+        }
+      }
+    }
+
+    // The app's reduced-motion setting also overrides a system with motion enabled.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    expect(await form.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+
+    // Keyboard focus reveals the action in the minimum window before the explicit send.
+    await send.focus()
+    await expect(send).toBeInViewport()
+    await expect.poll(() => send.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
+    })).toBe(true)
+    await page.screenshot({ path: 'artifacts/question-choices/choices-820x560-light-send-focused.png', animations: 'disabled' })
+    // Sending a recommendation retains the provider's exact ID, including its suffix.
+    await send.press('Enter')
+    await expect(panel).toHaveCount(0)
+    expect(await answers(app)).toEqual([{ type: 'answer', threadId: 'workshop', requestId: request.id, answer: '',
+      questionAnswers: { layout: { optionIds: ['sidebar (Recommended)'] } } }])
+    await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
+    expect(await pending(page, 'workshop')).toEqual([])
+  } finally { await closeSotto(launched) }
+})
+
+
+test('keeps a question and its message bar reachable in a short stacked pane', async () => {
+  test.setTimeout(120_000)
+  const launched = await launchSotto('design-threads')
+  const { page, app } = launched
+  try {
+    await prepare(launched)
+    await resize(launched, 1280, 620)
+    await selectThread(page, 'Grok voice previews')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    for (const title of ['Footer links', 'Weekly note']) {
+      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
+    }
+    const panes = page.getByRole('group', { name: 'Thread panes' })
+    await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(3)
+    const pane = panes.locator('section.thread-pane[data-thread-id="footer-links"]')
+    const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('Keep this independent follow-up draft.')
+    await emit(page, 'footer-links', { id: 'short-question', kind: 'question', text: 'Choose the next step.', options: [], questions: [{
+      id: 'next', question: 'Choose the next step.', multiSelect: false, allowFreeText: true,
+      options: [{ id: 'review', label: 'Review the links (Recommended)', description: 'Check every footer destination before editing.' },
+        { id: 'edit', label: 'Edit the footer', description: 'Start changing the current layout.' }],
+    }] })
+    const form = pane.locator('.thread-questions .agent-request')
+    await expect(form.getByRole('radio', { name: /Review the links/u })).toBeEnabled()
+    await page.screenshot({ path: 'artifacts/question-choices/choices-short-stacked-pane-before-choice-dark.png', animations: 'disabled' })
+    await form.getByRole('radio', { name: /Edit the footer/u }).click()
+    await form.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
+    const custom = form.getByRole('textbox', { name: 'Other answer to: Choose the next step.' })
+    await custom.click()
+    await custom.fill('Check keyboard access first.')
+    await form.getByRole('radio', { name: /Review the links/u }).click()
+    await expect(pane.getByLabel('Thread transcript', { exact: true })).toBeHidden()
+    await form.getByRole('button', { name: 'Collapse question', exact: true }).click()
+    await expect(pane.getByLabel('Thread transcript', { exact: true })).toBeVisible()
+    await form.getByRole('button', { name: 'Show question', exact: true }).click()
+    await expect(pane.getByLabel('Thread transcript', { exact: true })).toBeHidden()
+    await expect(form.getByRole('radio', { name: /Review the links/u })).toBeChecked()
+    const send = form.getByRole('button', { name: 'Send answer', exact: true })
+    await send.focus()
+    await resize(launched, 1280, 620)
+    await page.screenshot({ path: 'artifacts/question-choices/choices-short-stacked-pane-dark.png', animations: 'disabled' })
+    const layout = await pane.evaluate(element => {
+      const paneBox = element.getBoundingClientRect()
+      const compose = element.querySelector('.thread-workspace__compose')!.getBoundingClientRect()
+      const questions = element.querySelector('.thread-questions')!.getBoundingClientRect()
+      return { paneHeight: paneBox.height, paneBottom: paneBox.bottom, composeBottom: compose.bottom, questionHeight: questions.height,
+        overflow: element.scrollHeight - element.clientHeight }
+    })
+    expect(layout.paneHeight).toBeLessThanOrEqual(320)
+    expect(layout.composeBottom).toBeLessThanOrEqual(layout.paneBottom + 1)
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+    expect(layout.questionHeight).toBeGreaterThanOrEqual(48)
+    await expect(send).toBeInViewport()
+    await expect(prompt).toBeInViewport()
+    await expect.poll(() => send.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
+    })).toBe(true)
+    expect(await answers(app)).toEqual([])
+    await send.press('Enter')
+    await expect(form).toHaveCount(0)
+    await expect(prompt).toHaveValue('Keep this independent follow-up draft.')
+    expect(await answers(app)).toHaveLength(1)
+  } finally { await closeSotto(launched) }
+})
+
+
+test('keeps simultaneous question and permission controls reachable in a short stacked pane', async () => {
+  test.setTimeout(120_000)
+  const launched = await launchSotto('design-threads')
+  const { page, app } = launched
+  try {
+    await prepare(launched)
+    await resize(launched, 1280, 620)
+    await selectThread(page, 'Grok voice previews')
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    for (const title of ['Footer links', 'Weekly note']) {
+      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
+    }
+    const pane = page.locator('section.thread-pane[data-thread-id="footer-links"]')
+    const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('Keep this follow-up separate from both decisions.')
+    await emit(page, 'footer-links', { id: 'mixed-question', kind: 'question', text: 'Which links should be checked?', options: [], questions: [{
+      id: 'links', question: 'Which links should be checked?', multiSelect: false, allowFreeText: true,
+      options: [{ id: 'all', label: 'Every footer link (Recommended)' }, { id: 'changed', label: 'Changed links only' }],
+    }] })
+    await emit(page, 'footer-links', testPermission)
+    await resize(launched, 1280, 620)
+    const transcript = pane.getByLabel('Thread transcript', { exact: true })
+    const approval = transcript.locator('.agent-request[data-kind="permission"]')
+    const question = pane.locator('.thread-questions .agent-request')
+    await expect(transcript).toBeVisible()
+    await expect(approval).toBeVisible()
+    await expect(question).toBeVisible()
+    const layout = await pane.evaluate(element => ({
+      paneHeight: element.clientHeight,
+      transcriptHeight: element.querySelector('.thread-transcript')!.clientHeight,
+      questionHeight: element.querySelector('.thread-questions')!.clientHeight,
+      overflow: element.scrollHeight - element.clientHeight,
+    }))
+    expect(layout.paneHeight).toBeLessThanOrEqual(320)
+    expect(layout.transcriptHeight).toBe(160)
+    expect(layout.questionHeight).toBeLessThanOrEqual(160)
+    expect(layout.overflow).toBeGreaterThan(0)
+
+    await question.getByRole('radio', { name: /Every footer link/u }).click()
+    await expect(question.getByRole('radio', { name: /Every footer link/u })).toBeChecked()
+    expect(await answers(app)).toEqual([])
+    await page.screenshot({ path: 'artifacts/question-choices/choices-short-mixed-question-dark.png', animations: 'disabled' })
+    // Keyboard focus must reveal the native decision even while the question stays expanded.
+    const deny = approval.getByRole('button', { name: 'Deny', exact: true })
+    await deny.focus()
+    await expect.poll(() => deny.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
+    })).toBe(true)
+    await page.screenshot({ path: 'artifacts/question-choices/choices-short-mixed-permission-dark.png', animations: 'disabled' })
+    await deny.press('Enter')
+    await expect(approval).toHaveCount(0)
+    await expect(transcript).toBeHidden()
+    await expect(question.getByRole('radio', { name: /Every footer link/u })).toBeChecked()
+    const send = question.getByRole('button', { name: 'Send answer', exact: true })
+    await send.click()
+    await expect(question).toHaveCount(0)
+    await expect(transcript).toBeVisible()
+    await expect(prompt).toHaveValue('Keep this follow-up separate from both decisions.')
+    expect(await answers(app)).toEqual([
+      { type: 'answer', threadId: 'footer-links', requestId: testPermission.id, answer: 'Deny', approved: false, permissionChoice: 'reject' },
+      { type: 'answer', threadId: 'footer-links', requestId: 'mixed-question', answer: '', questionAnswers: { links: { optionIds: ['all'] } } },
+    ])
   } finally { await closeSotto(launched) }
 })

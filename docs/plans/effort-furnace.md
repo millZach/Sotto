@@ -1,5 +1,7 @@
 # Effort furnace
 
+Superseded September 20, 2026 by `docs/plans/effort-slider.md` and ADR-0019: the furnace popover was replaced by the effort card, its colourways and the composer outline. Kept as the record of the earlier decision.
+
 Implement the approved B popover from `design/effort-prototype/furnace.html`, revision 6. This is a desktop composer control: selecting the highest effort burns the tokens, then pours their gold into the bar and the word below it.
 
 ## Acceptance

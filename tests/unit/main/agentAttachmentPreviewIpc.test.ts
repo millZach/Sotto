@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
 import { AGENT_ATTACHMENT_PREVIEW, type AgentState } from '../../../src/shared/agents'

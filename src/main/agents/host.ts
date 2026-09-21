@@ -1,3 +1,4 @@
+import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
@@ -16,7 +17,12 @@ export type AgentHostCommand =
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
-export interface RestoredThreadHistory { readonly threadId: string; readonly messages: readonly AgentMessage[] }
+export interface RestoredThreadHistory {
+  readonly threadId: string
+  readonly messages: readonly AgentMessage[]
+  readonly activities?: readonly AgentActivity[]
+  readonly historyEpoch?: string
+}
 /** One change to what a thread said, addressed by Sotto thread ID (ADR-0016). */
 export interface ThreadHostEvent { readonly threadId: string; readonly event: ThreadEvent }
 /** One message the event store already holds, as an adapter needs to recognise it: its ID and its role. */
@@ -29,6 +35,8 @@ export interface StoredMessageIdentity { readonly id: string; readonly role: 'us
 export interface ThreadHistorySource {
   /** Every message the store holds for a thread, by ID and role, oldest first. */
   messageIdentities(threadId: string): readonly StoredMessageIdentity[]
+  /** Bounded activity evidence for this history epoch; undefined means it must be read afresh. */
+  activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
 }
 /**
  * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;

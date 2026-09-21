@@ -1,4 +1,5 @@
-﻿import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest'
 
 import { NativeDictationLifecycle } from '../../src/main/app/nativeDictationLifecycle'
 import { NativeMessageDelivery } from '../../src/main/app/nativeMessageDelivery'

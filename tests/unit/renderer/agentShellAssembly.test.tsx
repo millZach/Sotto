@@ -178,3 +178,94 @@ describe('the startup shell cache', () => {
     expect(readShellCache()).toBeNull()
   })
 })
+
+describe('a shell held for its frame', () => {
+  it('commits before a command response, so the older shell never lands after it', async () => {
+    const wire = shellBridge(fullState([thread('workshop', [])], 'workshop'))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    // The shell arrives and is held for the frame; the command that follows answers before the frame fires.
+    act(() => { wire.publish({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the shell' }) })
+    expect(result.current.state?.notice).not.toBe('from the shell')
+    vi.mocked(wire.bridge.command).mockResolvedValueOnce({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the command' })
+    await act(async () => { await result.current.command({ type: 'configure', patch: { orbColor: 'amber' } }) })
+    expect(result.current.state?.notice).toBe('from the command')
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    await act(async () => undefined)
+    expect(result.current.state?.notice).toBe('from the command')
+  })
+})
+
+describe('shell updates while the main window is hidden', () => {
+  it('delivers a widget mute without waiting for a suspended animation frame', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+    const initial = fullState([])
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    act(() => wire.publish({ ...initial, voice: { ...initial.voice, action: 'mute', revision: 1 } }))
+    expect(result.current.state?.voice.action).toBe('mute')
+    expect(frame).not.toHaveBeenCalled()
+  })
+
+  it('flushes a pending shell when hidden and resumes batching when shown', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+    const initial = fullState([])
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    act(() => wire.publish({ ...initial, notice: 'pending' }))
+    expect(result.current.state?.notice).toBe('')
+    act(() => {
+      hidden.mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(result.current.state?.notice).toBe('pending')
+    expect(cancel).toHaveBeenCalledWith(1)
+    act(() => wire.publish({ ...initial, notice: 'hidden' }))
+    expect(result.current.state?.notice).toBe('hidden')
+    act(() => {
+      hidden.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      wire.publish({ ...initial, notice: 'visible' })
+    })
+    expect(result.current.state?.notice).toBe('hidden')
+    act(() => wire.emit({ threadId: 'workshop', revision: 1, messages: [] }))
+    expect(result.current.state?.notice).toBe('visible')
+  })
+
+  it('cancels the pending frame and visibility listener on unmount', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(7)
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const initial = fullState([])
+    const wire = shellBridge(initial)
+    const { result, unmount } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    act(() => wire.publish({ ...initial, notice: 'pending' }))
+    const listener = add.mock.calls.find(([event]) => event === 'visibilitychange')?.[1]
+    expect(listener).toBeTypeOf('function')
+    unmount()
+    expect(cancel).toHaveBeenCalledWith(7)
+    expect(remove).toHaveBeenCalledWith('visibilitychange', listener)
+  })
+})
+
+it('keeps monitoring on the live shell but never caches or restores it', () => {
+  const watched = thread('workshop', [])
+  watched.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch only while connected' }]
+  const live = fullState([watched])
+  expect(agentShell(live).host.threads[0]!.monitoring).toEqual(watched.monitoring)
+  writeShellCache(live)
+  expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('Watch only while connected')
+  expect(readShellCache()!.host.threads[0]!.monitoring).toBeUndefined()
+  // An older cache or a manually copied live shell cannot resurrect an observation either.
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
+  expect(readShellCache()!.host.threads[0]!.monitoring).toBeUndefined()
+  expect(watched.monitoring).toHaveLength(1)
+})

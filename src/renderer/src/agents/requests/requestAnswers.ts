@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -156,7 +156,8 @@ const draftError = (error: unknown): string => error instanceof Error ? error.me
 
 /** Include the question definition: a provider reusing IDs must never inherit another form's answers. */
 export function requestAnswerOwnerKey(ownerId: string, request: AgentRequest, owner?: RequestDraftOwner): string {
-  return owner && requestMode(request) === 'structured' ? `${requestDraftOwnerKey(owner)}\0${JSON.stringify(request.questions)}` : ownerId
+  const questions = requestDraftQuestions(request)
+  return owner && questions.length > 0 ? `${requestDraftOwnerKey(owner)}\0${JSON.stringify(questions)}` : ownerId
 }
 
 interface DraftBinding {
@@ -186,12 +187,33 @@ export class RequestAnswerStore {
     return this.entries.get(RequestAnswerStore.key(ownerId, requestId)) ?? EMPTY_ENTRY
   }
 
+  /** A reload must not discard a bound answer whose latest revision has no save acknowledgement. */
+  canReload(): boolean {
+    return [...this.bindings.keys()].every(key => this.entries.get(key)?.save === 'saved')
+  }
+
+  /** Save retained local answers even when their live cards (and Save actions) have gone away. */
+  async flushForReload(): Promise<boolean> {
+    for (;;) {
+      const revisions = new Map([...this.bindings.keys()].map(key => [key, this.entries.get(key)?.revision]))
+      await Promise.all([...this.bindings].map(async ([key, binding]) => {
+        await binding.loading
+        await binding.writing
+        if (this.entries.get(key)?.save === 'saved') return
+        const split = key.lastIndexOf('\0')
+        await this.flush(key.slice(0, split), key.slice(split + 1))
+      }))
+      if ([...this.bindings.keys()].some(key => revisions.get(key) !== this.entries.get(key)?.revision)) continue
+      return this.canReload()
+    }
+  }
+
   /** Stable recovery status for this owner's bindings, including ones a remounted view never saw live. */
   recoverySnapshot(owner: RequestDraftOwner, live: readonly AgentRequest[]): string {
     const ownerKey = requestDraftOwnerKey(owner)
     return JSON.stringify([...this.bindings].flatMap(([key, binding]) => {
-      if (requestDraftOwnerKey(binding.target) !== ownerKey || live.some(request => requestMode(request) === 'structured'
-        && request.id === binding.target.requestId && sameRequestQuestions(request.questions ?? [], binding.target.questions))) return []
+      if (requestDraftOwnerKey(binding.target) !== ownerKey || live.some(request => request.id === binding.target.requestId
+        && sameRequestQuestions(requestDraftQuestions(request), binding.target.questions))) return []
       const entry = this.entries.get(key) ?? EMPTY_ENTRY
       return [[key, entry.save === 'saving' || entry.save === 'loading' ? 'pending' : entry.revision, entry.save, entry.phase]]
     }))
@@ -239,6 +261,8 @@ export class RequestAnswerStore {
     if (!binding.loaded) {
       await this.connect(ownerId, requestId, binding.target)
       if (!binding.loaded) return false
+      // A successful restore already proves durability when no local edits were made.
+      if (this.get(ownerId, requestId).save === 'saved') return true
     }
     const entry = this.get(ownerId, requestId)
     const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),
