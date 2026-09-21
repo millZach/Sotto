@@ -239,6 +239,19 @@ describe('AudioRecorder', () => {
     })
   })
 
+  it('keeps the selected input when extra constraints are rejected', async () => {
+    const harness = createHarness()
+    const overconstrained = new Error('constraints')
+    overconstrained.name = 'OverconstrainedError'
+    harness.getUserMedia
+      .mockRejectedValueOnce(overconstrained)
+      .mockResolvedValueOnce(harness.stream)
+
+    await harness.recorder({ selectedDeviceId: 'mic-c922' }).start()
+
+    expect(harness.getUserMedia).toHaveBeenNthCalledWith(2, { audio: { deviceId: { exact: 'mic-c922' } } })
+  })
+
   it('throttles level callbacks to the emit interval while chunks arrive at audio rate', async () => {
     vi.useFakeTimers()
     try {

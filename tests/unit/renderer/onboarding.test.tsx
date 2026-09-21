@@ -62,6 +62,39 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
   })
 
+  it('lists detected inputs on the microphone step and saves the chosen device', async () => {
+    const user = userEvent.setup()
+    const onUpdateSettings = vi.fn(async () => true)
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        onUpdateSettings={onUpdateSettings}
+        microphoneState="idle"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    const picker = await screen.findByRole('combobox', { name: 'Microphone' })
+    expect(screen.getByRole('option', { name: 'System default' })).toBeVisible()
+    expect(screen.getByRole('option', { name: 'MacBook Pro Microphone' })).toHaveValue('mic-builtin')
+    expect(screen.getByRole('option', { name: 'C922 Pro Stream Webcam' })).toHaveValue('mic-c922')
+    await user.selectOptions(picker, 'mic-c922')
+    expect(onUpdateSettings).toHaveBeenCalledWith({ microphoneId: 'mic-c922' })
+  })
+
   it('requests microphone access, displays live level, and provides Windows recovery guidance', async () => {
     const user = userEvent.setup()
     const request = vi.fn()

@@ -9,10 +9,12 @@ import React, {
 import type { TranscriptionKeyCheck } from '../../../../shared/contracts'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
+import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
+import { Select } from '../../components/Select'
 import { VoiceWave } from '../../components/VoiceWave'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
@@ -26,7 +28,8 @@ export interface OnboardingProps {
   readonly microphoneLevel?: number
   readonly shortcut: string
   readonly platform: SottoPlatform
-  readonly onRequestMicrophone: () => void | Promise<void>
+  readonly mediaDevices?: MediaDevicesAdapter | undefined
+  readonly onRequestMicrophone: (selectedDeviceId?: string | null) => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
   readonly onComplete: (
     outcome: { readonly microphoneSkipped: boolean },
@@ -48,6 +51,7 @@ export function Onboarding({
   microphoneLevel = 0,
   shortcut,
   platform,
+  mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   onRequestMicrophone,
   onStopMicrophone,
   onComplete,
@@ -59,6 +63,8 @@ export function Onboarding({
   const [completionError, setCompletionError] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const copy = platformCopy(platform)
+  const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
+  const microphoneKnown = settings.microphoneId === null || microphones.some(({ deviceId }) => deviceId === settings.microphoneId)
 
   useEffect(() => {
     headingRef.current?.focus()
@@ -128,7 +134,27 @@ export function Onboarding({
           <section>
             <p className="onboarding-eyebrow">Microphone</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Check your microphone</h1>
-            <p className="onboarding-lead">Sotto needs microphone access only while you record or run this test. Test your microphone or choose Skip for now to continue.</p>
+            <p className="onboarding-lead">Sotto needs microphone access only while you record or run this test. Choose the input you will speak into if more than one is available. Test your microphone or choose Skip for now to continue.</p>
+            <Field
+              className="onboarding-microphone-picker"
+              label="Microphone"
+              {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
+            >
+              <Select
+                value={settings.microphoneId ?? ''}
+                onChange={(event) => {
+                  const next = event.currentTarget.value || null
+                  void onUpdateSettings({ microphoneId: next })
+                  void onRequestMicrophone(next)
+                }}
+              >
+                <option value="">{copy.settingsMicrophoneDefaultOption}</option>
+                {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
+                {microphones.map((microphone, index) => (
+                  <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>
+                ))}
+              </Select>
+            </Field>
             <div className="onboarding-microphone-test" data-state={microphoneState}>
               {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
               <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" />

@@ -44,12 +44,14 @@ import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
+  useAudioInputDevices,
+  type MediaDevicesAdapter,
+} from '../../audio/useAudioInputDevices'
+import {
   WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from '../onboarding/microphoneTest'
-
-type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
 export interface SettingsViewProps {
   readonly openRouterKeyMigrationFailed?: boolean
@@ -152,13 +154,12 @@ export function SettingsView({
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
-  const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState | 'closed'>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const microphonePeakRef = useRef(0)
   const microphoneTestRef = useRef<MicrophoneTestController | null>(null)
   const microphoneTestGeneration = useRef(0)
-  const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
@@ -178,39 +179,6 @@ export function SettingsView({
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   settingsRef.current = settings
-
-  useEffect(() => {
-    if (mediaDevices === undefined) {
-      setDeviceState('error')
-      return
-    }
-    let current = true
-    let refreshVersion = 0
-    const refresh = async (): Promise<void> => {
-      const version = ++refreshVersion
-      try {
-        const devices = await mediaDevices.enumerateDevices()
-        if (!current || version !== refreshVersion) return
-        setMicrophones(devices.filter((candidate) => candidate.kind === 'audioinput'))
-        setDeviceState('ready')
-      } catch {
-        if (current && version === refreshVersion) setDeviceState('error')
-      }
-    }
-    const onDeviceChange = (): void => { void refresh() }
-    void refresh()
-    try {
-      mediaDevices.addEventListener('devicechange', onDeviceChange)
-    } catch {
-      // Enumeration still works when device-change observation is unavailable.
-    }
-    return () => {
-      current = false
-      try { mediaDevices.removeEventListener('devicechange', onDeviceChange) } catch {
-        // Enumeration remains disposable even on older media-device implementations.
-      }
-    }
-  }, [mediaDevices])
 
   const save = useCallback(async (patch: SettingsPatch, successText = 'Setting saved.'): Promise<boolean> => {
     const sequence = ++saveSequenceRef.current
@@ -260,7 +228,6 @@ export function SettingsView({
    */
   const runMicrophoneTest = async (): Promise<void> => {
     const generation = ++microphoneTestGeneration.current
-    const selectedDeviceId = settingsRef.current.microphoneId ?? undefined
     const previous = microphoneTestRef.current
     microphoneTestRef.current = null
     setMicrophoneLevel(0)
@@ -274,6 +241,7 @@ export function SettingsView({
       return
     }
     microphoneTestRef.current = controller
+    const selectedDeviceId = settingsRef.current.microphoneId ?? undefined
     const outcome = await controller.start((level) => {
       if (microphoneTestRef.current !== controller) return
       const safeLevel = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
