@@ -61,7 +61,7 @@ createInterface({input:process.stdin}).on('line', line => {
  }
  const p = frame.params ?? {}; const script = read('script.json', {})
  if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalog}}})
- else if (frame.method === 'authenticate') send({id:frame.id,result:{}})
+ else if (frame.method === 'authenticate') { if (!script.ignoreAuthenticate) send({id:frame.id,result:{}}) }
  else if (frame.method === 'session/new') {
   checkPolicy(p._meta)
   const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta)}; resident.add(sessionId); save()
@@ -95,7 +95,10 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === '_x.ai/session/updates') {
   if (script.ignoreHistory) return
   const updates = (sessions[p.sessionId]?.updates ?? []).slice(0,script.historyVisibleCount); const page = updates.slice(p.offset,p.offset+p.limit)
-  send({id:frame.id,result:{updates:page,totalCount:updates.length,hasMore:p.offset+page.length<updates.length}})
+  // A real page carries whatever the session's tools printed. The padding is a field the adapter's
+  // schema drops, so the line is page-sized without the test keeping a page-sized message.
+  const padding = script.historyPadBytes ? {padding:'x'.repeat(script.historyPadBytes)} : {}
+  send({id:frame.id,result:{updates:page,totalCount:updates.length,hasMore:p.offset+page.length<updates.length,...padding}})
  }
  else if (frame.method === 'session/prompt') {
   if (script.writeCwd) writeFileSync(join(sessions[p.sessionId].cwd, 'native-cwd-proof.txt'), p.prompt[0].text)
