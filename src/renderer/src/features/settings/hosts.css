@@ -1,0 +1,20 @@
+.hosts-settings { display: grid; gap: 24px; }
+.hosts-settings h3, .hosts-settings h4 { margin: 0; font-weight: 600; }
+.hosts-settings h3 { font-size: 18px; }
+.hosts-settings h4 { font-size: 16px; }
+.hosts-settings p { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 14px; }
+.hosts-local, .hosts-heading, .hosts-restart { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.hosts-local { padding-bottom: 24px; border-bottom: 1px solid var(--tt-hairline); }
+.hosts-local > div { max-width: 470px; }
+.hosts-row { display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--tt-hairline); padding: 12px 0 24px; }
+.hosts-row > svg { flex-shrink: 0; color: var(--tt-accent-text); }
+.hosts-row__info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hosts-row__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hosts-fields { display: grid; gap: 16px; margin-top: 16px; }
+.hosts-fields p { font-size: 14px; color: var(--tt-text-muted); margin: 0; }
+.hosts-fields input { min-height: 44px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; }
+.hosts-challenge { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text); font: inherit; }
+.hosts-error { color: var(--tt-text) !important; }
+@media (max-width: 1000px) { .hosts-row { flex-wrap: wrap; } .hosts-row__actions { flex-basis: 100%; padding-left: 40px; } .hosts-local { align-items: flex-start; } }
+
+.hosts-settings .tt-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }

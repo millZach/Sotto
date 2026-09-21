@@ -376,6 +376,7 @@ describe('typed preload bridge', () => {
         'getWindowMaximized',
         'gitChanges',
         'hideApp',
+        'hosts',
         'installUpdate',
         'listHistory',
         'listRecoveryNotices',

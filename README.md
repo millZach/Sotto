@@ -54,6 +54,9 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
+When you connect a remote host, Sotto sends your thread reads, prompts and explicit request answers to the host you configured. The host socket listens only on its own loopback address. The desktop uses your SSH connection; the iOS app uses your private Tailscale HTTPS address. Pairing identifies each client and can be revoked. Provider credentials stay on the host, and pairing does not approve permission requests. No public listener, relay account, analytics or new provider service is enabled by connecting a client.
+
+
 Dictation audio is uploaded to OpenRouter and transcribed by Microsoft MAI-Transcribe-2 only while you dictate. Your personal dictionary words travel with each request as spelling hints, and the text comes back. Nothing is transcribed on this computer, so Sotto needs your OpenRouter key and a network connection to dictate; when either is missing, Sotto says so instead of transcribing elsewhere. OpenRouter charges your balance at the model's published audio rate (about $0.10 per hour of audio at the time of writing). Read [OpenRouter's privacy policy](https://openrouter.ai/privacy) for what it and its providers retain.
 
 Sotto has no analytics or crash upload. Dictation audio is never persisted. Transcript history is local, optional, bounded, searchable, and clearable.
@@ -66,11 +69,53 @@ Automatic update checks are on by default. Shortly after launch and then every f
 
 Optional AI cleanup is off by default. When you enable it, the finished transcript (never audio) is sent to OpenRouter with the same key for punctuation and self-correction cleanup. If the network is slow or offline, Sotto delivers the raw transcript instead. Optional agent control also sends the prompts you submit to the connected harness and, when configured, sends assignment text and relevant thread context to your selected reasoning provider. Agent replies default to Grok Altair, which sends reply text to xAI using a separately saved xAI API key. Kokoro Heart is a lower-cost choice that sends reply text through OpenRouter using the existing OpenRouter key. Voice previews incur the same provider usage charges; neither option silently falls back to another provider. The optional natural voice is generated on this computer after a one-time voice download. Provider usage is billed separately from Sotto access. Credentials are encrypted using the operating system credential store and are not returned to the UI.
 
+## Headless host (development)
+
+The host can run under Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
+
+```sh
+node out/host/index.js --data /path/to/sotto-data --key-file /path/to/private/sotto-key
+```
+
+`SOTTO_HOST_DATA` and `SOTTO_HOST_KEY_FILE` provide the same options. The data folder must be explicit. Use a dedicated host folder; desktop credentials use the operating system store and cannot be opened with a host key file.
+
+The key file contains a user-supplied secret of at least 16 characters. Keep it outside the data folder, restrict access to your account, and back it up separately. Sotto encrypts credentials with scrypt and authenticated AES-256-GCM using Node builtins. It never saves the key beside them. A missing or wrong key, or a damaged credential file, stops startup without replacing that file. You may omit the key file while no credentials have been saved; saving a credential then requires restarting with one. Native provider sign-ins remain with their installed clients.
+
+Settings are read from the data folder at startup. The headless entry exposes `startHeadlessHost({ dataDirectory, keyFile })` in-process; its `service` is the same `HostService` that the desktop uses. `close()` drains provider and reasoning processes and durable writes. The command-line host handles SIGINT and SIGTERM and opens an authenticated loopback listener. Add `--port 4319` to keep a fixed port, or omit it to choose an available port. Readiness output names the host and port. The private `host-listener.json` file includes a local administration credential; do not share it. An embedded host opens a listener only when given a `port` option.
+
+Run `npm run test:host` for the plain-Node lifecycle and `npm run test:socket` for authenticated child-process client journeys. `npm run package:host` creates an archive and checksum with the platform in its filename, then extracts and smoke-tests it. See [host packaging](docs/release/releasing.md). Forge deployment still needs a live Linux check.
+
+A normal stop removes the host's listener descriptor and lock. After a forced termination, startup refuses the remaining `host-listener.lock`. Verify that no host still uses that data folder before removing that one lock file and restarting.
+
+## Desktop and iPhone clients (development)
+
+In **Settings > Hosts**, add the SSH target, extracted host installation folder and host data folder. The desktop uses your SSH configuration and asks before accepting a new host key. Connect starts or discovers the installed host and forwards its loopback listener. Disconnect stops a host started by that SSH connection; an independently running host keeps working. Run Forge independently for work that must continue after the laptop disconnects.
+
+Choose **Enter pairing code**. On the host, request a fresh code and enter it in Sotto:
+
+```sh
+node host/index.js --data /path/to/sotto-data --pairing-code
+```
+
+The code expires after five minutes. Pairing admits this device; permission answers need a separate policy grant from the host's user. Use the client ID shown by the iPhone or saved desktop connection to grant, deny or revoke access explicitly:
+
+```sh
+node host/index.js --data /path/to/sotto-data --allow-answers CLIENT_UUID
+node host/index.js --data /path/to/sotto-data --deny-answers CLIENT_UUID
+node host/index.js --data /path/to/sotto-data --revoke-client CLIENT_UUID
+```
+
+Choose **Use this host** for host-wide actions. Threads from connected hosts share one sidebar and show their host name when more than one is connected. Their identities, drafts and actions stay separate. Turning **Run the local host** off takes effect after **Restart Sotto**, leaves saved data intact and keeps dictation available. Folder and terminal tools for a remote thread explain that they run on the host machine. Dictation and paste remain on the desktop computer. Provider credentials, account setup and host administration stay on the host.
+
+**Forget** revokes this laptop's pairing and removes the connection; thread history stays on the host. Connect first so the host can confirm revocation. After an interrupted command, reconnect and check its result before choosing to send again; Sotto never automatically repeats it.
+
+The native iOS client is in [apps/ios](apps/ios/README.md). It uses the same code-entry pairing through a private, certificate-validated Tailscale HTTPS address. The first version reads existing threads, replies, interrupts and answers requests explicitly. Configure Tailscale Serve on Forge to reach its fixed loopback port and install Tailscale on the iPhone. Native build, signing, real-device verification and TestFlight upload are separate steps; source and HTML design previews are not an installed iPhone app.
+
 ## Agent control center (development beta)
 
 Codex model, effort and permission changes use its native settings update and wait for confirmation. An interrupted change does not disconnect the provider. If Codex cannot confirm it, the affected thread asks you to choose its settings again before sending. Other threads remain available; reconnecting does not replay the settings change.
 
-The **Agents** view coordinates threads running in installed Codex, Claude Code, Grok Build and Devin clients, collects prompts until you say **“send it,”** and supervises only the threads you assign. It queues questions one at a time and yields a thread to manual control when you send directly in the native client. Connect clients independently in **Settings → Providers** and choose a model for each thread. **Settings → Agents**, directly below Providers, configures Sotto's separate coordinator inline for deep reasoning and thread management. The floating widget retains click-to-dictate and dragging. In a thread composer, open the effort chip to slide between the model’s supported reasoning levels; each level says what it costs. Release to save, or use the wheel, the arrow keys, Home, End or the digits, and **Default** returns to the model’s own level. At the model’s highest level the word, the chip and the composer’s outline take the **Effort color** chosen in **Settings → Appearance** (Ember, Cyberpunk, Rainbow, Aurora, Plasma or Theme accent), and reaching it plays a short wash of that color; reduced motion shows the finished state. Claude’s **Add Ultrathink to prompt** puts a visible instruction in the current draft without changing effort or permissions. Ultracode workflow orchestration is not currently exposed in Sotto.
+The **Agents** view coordinates threads running in installed Codex, Claude Code, Grok Build and Devin clients, collects prompts until you say **“send it,”** and supervises only the threads you assign. It queues questions one at a time and yields a thread to manual control when you send directly in the native client. Connect clients independently in **Settings → Providers** and choose a model for each thread. **Settings → Agents**, below Hosts, configures Sotto's separate coordinator inline for deep reasoning and thread management. The floating widget retains click-to-dictate and dragging. In a thread composer, open the effort chip to slide between the model’s supported reasoning levels; each level says what it costs. Release to save, or use the wheel, the arrow keys, Home, End or the digits, and **Default** returns to the model’s own level. At the model’s highest level the word, the chip and the composer’s outline take the **Effort color** chosen in **Settings → Appearance** (Ember, Cyberpunk, Rainbow, Aurora, Plasma or Theme accent), and reaching it plays a short wash of that color; reduced motion shows the finished state. Claude’s **Add Ultrathink to prompt** puts a visible instruction in the current draft without changing effort or permissions. Ultracode workflow orchestration is not currently exposed in Sotto.
 
 Model questions with choices appear above the thread's message bar. Pick an answer or type in **Write my own answer**, then press **Send answer**. The model's suggested option is marked **(recommended)** when it supplies one; nothing is selected for you. Enter adds a line to a custom answer. Escape collapses the question, and reopening it keeps your answer. Prepared choices also survive restarting Sotto. Long forms scroll inside the panel, while your message draft stays separate. In a very short split pane, collapse the question to return to reading the thread. Pending permissions and saved-answer recovery remain reachable by scrolling the pane. Questions without supplied choices keep their text-answer path.
 
@@ -174,7 +219,7 @@ Unit and integration tests cover settings recovery, history privacy, audio math 
 
 The deterministic boundary is rejected in packaged builds and accepts calls only from the trusted main renderer. It never logs transcript text or PCM.
 
-Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). End-to-end tests, live provider suites and packaging stay local. See the [continuous integration guide](docs/ci.md) for what each step does and how to read a failed check.
+Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). Desktop end-to-end tests and live provider suites stay local. Separate Linux host and macOS iOS jobs check their own build paths. See the [continuous integration guide](docs/ci.md) for what each step does and how to read a failed check.
 
 ## Build Windows artifacts
 

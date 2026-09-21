@@ -85,8 +85,8 @@
 .settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
 .settings-subnav button[aria-selected='true'] { color: var(--tt-text); background: var(--theme-sidebar-row-active); }
 .settings-subnav button[aria-selected='true'] > svg:first-child { color: var(--theme-accent); }
-.settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(7) { margin-top: 32px; }
-.settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(7)::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 32px; }
+.settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
 .settings-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 42px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
 .settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
@@ -153,8 +153,8 @@
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
   .settings-subnav button { padding: 8px 10px; gap: 8px; min-height: 38px; }
   .settings-subnav button > svg:last-child:not(:first-child) { display: none; }
-  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(7) { margin-top: 24px; }
-  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(7)::before { top: -14px; }
+  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 24px; }
+  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -14px; }
   .settings-view .settings-scroll { padding: 28px; }
   .settings-feedback { padding-inline: 28px; }
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
@@ -168,8 +168,8 @@
   .settings-sidebar { padding-top: 22px; }
   .settings-sidebar h1 { margin-bottom: 22px; }
   .settings-subnav button { min-height: 36px; padding-block: 8px; }
-  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(7) { margin-top: 20px; }
-  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(7)::before { top: -12px; }
+  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 20px; }
+  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -12px; }
   .settings-view .settings-scroll { padding-top: 22px; }
   .settings-view .settings-section__heading { padding-bottom: 13px; margin-bottom: 5px; }
   .settings-view .settings-section__heading h2 { margin-bottom: 7px; font-size: 26px; }

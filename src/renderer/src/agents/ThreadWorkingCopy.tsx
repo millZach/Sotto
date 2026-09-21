@@ -11,7 +11,7 @@ import './newThread.css'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
-export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted' | 'workingDirectory' | 'worktree'> & Partial<Pick<AgentThread, 'projectId'>>
+export type WorkingCopyThread = Pick<AgentThread, 'id' | 'nativeSessionStarted' | 'workingDirectory' | 'worktree'> & Partial<Pick<AgentThread, 'projectId' | 'remoteHost'>>
 export interface ThreadWorkingCopyProps {
   readonly thread: WorkingCopyThread
   /** The thread's original Sotto project, never a provider's project alias. */
@@ -133,8 +133,9 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.status === 'pending' && !configurable ? <div><dt>Status</dt><dd>Preparing the working copy.</dd></div> : null}
         {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
       </dl>
+      {thread.remoteHost ? <p>This folder is on the host machine. Open it there.</p> : null}
       <div className="working-copy__actions">
-        {facts.directory ? <Button variant="secondary" aria-disabled={running !== null} onClick={() => void run('open-thread-folder')}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
+        {facts.directory ? <Button variant="secondary" aria-disabled={running !== null || thread.remoteHost === true} onClick={() => { if (!thread.remoteHost) void run('open-thread-folder') }}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
         {thread.worktree ? <Button variant="ghost" aria-disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? 'Checking...' : 'Refresh'}</Button> : null}
       </div>
       {error ? <p className="agent-error" role="alert">{error}</p> : null}

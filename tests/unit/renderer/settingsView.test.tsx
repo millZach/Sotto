@@ -82,7 +82,7 @@ describe('SettingsView', () => {
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
-    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application']
+    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application']
     for (const name of categories) {
       await selectCategory(name)
       expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
@@ -91,7 +91,7 @@ describe('SettingsView', () => {
       expect(screen.getByRole('tab', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
       // The sidebar foot's room switch is a tablist of its own, so the count is scoped to the sections.
       expect(within(screen.getByRole('tablist', { name: 'Settings sections' })).getAllByRole('tab', { selected: true })).toHaveLength(1)
-      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(8)
+      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(9)
     }
     screen.getByRole('tab', { name: 'Application', exact: true }).focus()
     await user.keyboard('{Home}')
@@ -785,7 +785,7 @@ describe('SettingsView', () => {
     expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
   })
 
-  it('places Agents immediately after Providers and exposes Reasoning account inline', async () => {
+  it('places Hosts and Agents after Providers and exposes Reasoning account inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
@@ -804,7 +804,7 @@ describe('SettingsView', () => {
     await selectCategory('Agents')
     const nav = screen.getByRole('tablist', { name: 'Settings sections' })
     expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application',
+      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application',
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()

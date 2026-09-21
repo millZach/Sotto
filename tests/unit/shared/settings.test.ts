@@ -61,6 +61,7 @@ const customSettings = {
   commitMessages: false,
   streamingAsr: false,
   autoUpdateCheck: false,
+  localHostEnabled: false,
   voiceCoordinatorEnabled: true,
   memoryEnabled: true,
 } satisfies AppSettings
@@ -204,6 +205,7 @@ describe('settings', () => {
       commitMessages: true,
       streamingAsr: true,
       autoUpdateCheck: true,
+      localHostEnabled: true,
     })
   })
 

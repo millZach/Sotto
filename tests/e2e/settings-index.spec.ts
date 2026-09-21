@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice, type LaunchedSotto } from './support/sottoLaunch'
 
 const evidence = resolve('artifacts/settings-index')
-const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Agents', 'Output', 'Appearance', 'Application'] as const
+const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application'] as const
 const sizes = [[1280, 800], [1600, 1000], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {

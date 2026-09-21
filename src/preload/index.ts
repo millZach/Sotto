@@ -1,3 +1,7 @@
+import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type HostsState } from '../shared/hosts'
+import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
+
+import { hostClientBridge } from './hostClientBridge'
 import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONAL_CHAT_STATE, personalChatStateSchema, personalChatCommandSchema, personalSkillsInputSchema, type PersonalChatBridge, type PersonalChatCommand } from '../shared/personalChats'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
@@ -232,6 +236,11 @@ function createPersonalChatBridge(renderer: IpcRendererAdapter): PersonalChatBri
   })
 }
 
+function validatedRoutedCommand(command: import('../shared/agents').AgentCommand): import('../shared/agents').AgentCommand {
+  agentCommandSchema.parse(mapHostReferences(command, id => parseHostEntityKey(id)?.id ?? id))
+  return command
+}
+
 function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentBridge {
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
@@ -253,7 +262,7 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     } : {}),
-    command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, agentCommandSchema.parse(command)),
+    command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, validatedRoutedCommand(command)),
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
       trustedState<import('../shared/agents').AgentState>('host'), listener),
   })
@@ -288,6 +297,7 @@ export function createSottoBridge(
     1,
   )
   const bridge: SottoBridge = {
+    hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener) }),
     ...createToolsBridges(renderer),
     terminals: createTerminalWorkspaceBridge(renderer),
     themes: createThemesBridge(renderer),
@@ -377,7 +387,7 @@ export function createSottoBridge(
     onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
-  return Object.freeze(bridge)
+  return hostClientBridge(bridge)
 }
 
 export function createSottoWidgetBridge(
@@ -478,7 +488,13 @@ export function exposeE2EBridge(
   const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
   if (!scenario.success) return
   const bridge: SottoE2EBridge = Object.freeze({
-    agentEvent: (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => invokeParsed(renderer, AGENT_E2E, voidSchema, event),
+    agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
+      const key = parseHostEntityKey(event.threadId)
+      if (key === null) return invokeParsed(renderer, AGENT_E2E, voidSchema, event)
+      const state = await invokeParsed(renderer, AGENT_GET, agentStateSchema)
+      if (key.hostId !== (state.hostId ?? state.host.hostId)) throw new Error('This test event belongs to another host.')
+      return invokeParsed(renderer, AGENT_E2E, voidSchema, { ...event, threadId: key.id })
+    },
     scenario: scenario.data,
     snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
     triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),

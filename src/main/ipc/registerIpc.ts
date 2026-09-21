@@ -113,6 +113,7 @@ const settingKeys = [
   'autoUpdateCheck',
   'webLinkDestination',
   'responseStreaming',
+  'localHostEnabled',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
 ] as const satisfies readonly (keyof SettingsPatch)[]
