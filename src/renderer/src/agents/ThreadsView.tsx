@@ -20,7 +20,7 @@ import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { takeNewThreadIntent } from './threadIntent'
 import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
-import { isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
+import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
 
@@ -104,7 +104,9 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId), [state, rows, query]))
-  const stored = useSplitLayout(layoutStore)
+  const originalStored = useSplitLayout(layoutStore)
+  const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
+  useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
   const activeId = state?.activeThreadId != null && rowsById.has(state.activeThreadId) ? state.activeThreadId : null
   const pendingFocus = pending?.threadId ?? null
   const focusedId = pendingFocus !== null && rowsById.has(pendingFocus) ? pendingFocus : activeId

@@ -36,6 +36,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
     .filter(item => `${item.title} ${item.path}`.toLowerCase().includes(query.toLowerCase()))
   useEffect(() => { document.querySelector('.new-thread-dialog [data-highlighted]')?.scrollIntoView?.({ block: 'nearest' }) }, [highlight])
   const browse = async (): Promise<void> => {
+    if (state.connections?.find(host => host.hostId === state.hostId)?.kind === 'remote') { setError('This folder browser runs on this computer. Select a project already on the host.'); return }
     setError(null)
     try {
       const picker = window.sotto?.agents?.chooseProjectDirectory

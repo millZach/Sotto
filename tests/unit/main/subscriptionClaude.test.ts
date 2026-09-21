@@ -79,6 +79,30 @@ afterEach(async () => {
   }
 })
 
+describe('Claude reasoning shutdown', () => {
+  it('cancels a running native decision and waits for its process to close', async () => {
+    const f = await fixture({ mode: 'timeout' })
+    const shutdown = new AbortController()
+    const result = f.client.complete('Return JSON.', { text: 'Synthetic shutdown prompt' }, 'sonnet', undefined, shutdown.signal)
+    const rejected = expect(result).rejects.toThrow('Sotto reasoning stopped.')
+    try {
+      let pid = 0
+      await expect.poll(async () => {
+        const calls = await f.calls().catch(() => [])
+        const completion = calls.find(call => call.args.includes('--output-format') && call.args.includes('json'))
+        pid = completion?.pid ?? 0
+        return pid > 0
+      }).toBe(true)
+      shutdown.abort()
+      await rejected
+      expect(() => process.kill(pid, 0)).toThrow()
+      const count = (await f.calls()).length
+      await expect(f.client.complete('Return JSON.', {}, 'sonnet', undefined, shutdown.signal)).rejects.toThrow()
+      expect(await f.calls()).toHaveLength(count)
+    } finally { shutdown.abort(); await result.catch(() => undefined) }
+  })
+})
+
 describe('Claude native subscription client', () => {
   it('reports only public account readiness and keeps prompts in stdin with all native tools disabled', async () => {
     const f = await fixture()

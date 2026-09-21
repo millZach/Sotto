@@ -1,3 +1,4 @@
+import { hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -36,8 +37,8 @@ async function capture(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled' })
 }
 async function focusThread(page: Page, id: string, title: string): Promise<void> {
-  const tab = page.getByRole('tab', { name: title, exact: true })
-  if (await tab.isVisible()) await tab.click()
+  // The sidebar stays available while a restored split changes from narrow tabs to wide panes.
+  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
   await page.locator(`section.thread-pane[data-thread-id="${id}"]`).getByRole('textbox', { name: 'Prompt', exact: true }).click()
 }
 async function beside(page: Page, title: string): Promise<void> {
@@ -163,7 +164,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     // Faithful GitHub UI fixture, explicitly separate from the real service/IPC/Git lane above.
     const inspected = await page.evaluate(async threadId => window.sotto!.gitChanges!.reviewPullRequest!({ threadId }), first)
     if (!inspected.ok) throw new Error(inspected.error.message)
-    const fixture = { ...inspected.value, repository: 'https://github.com/sotto-fixture/owned', remoteUrl: 'https://github.com/sotto-fixture/owned.git', base: 'main', error: null }
+    const fixture = { ...mapHostReferences(inspected.value, id => parseHostEntityKey(id)?.id ?? id), repository: 'https://github.com/sotto-fixture/owned', remoteUrl: 'https://github.com/sotto-fixture/owned.git', base: 'main', error: null }
     const pr = { number: 74, title: 'Make the daily greeting friendlier', url: 'https://github.com/sotto-fixture/owned/pull/74', state: 'OPEN', base: 'main', head: fixture.branch!, draft: false, review: 'REVIEW_REQUIRED', checks: [{ name: 'Owned build', status: 'SUCCESS', url: null }] }
     await app.evaluate(({ ipcMain }, { fixture, pr }) => {
       let creates = 0
@@ -207,7 +208,9 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: 'Grok voice previews', exact: true }).click()
     await beside(page, 'Footer links')
-    const pane = (id: string) => page.locator(`section.thread-pane[data-thread-id="${id}"]`)
+    const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
+    const key = (id: string): string => hostEntityKey(hostId, id)
+    const pane = (id: string) => page.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
     const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt('grok-previews').fill('Unsent Claude draft for tomorrow.')
     await prompt('footer-links').fill('Queued Codex follow-up after this turn.')
@@ -225,21 +228,21 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await expect(sidebar.getByRole('region', { name: 'Projects' }).getByRole('button', { name: 'Grok voice previews', exact: true })).toHaveCount(0)
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'restore-thread', threadId: 'grok-previews' }))
     await expect(sidebar.getByRole('region', { name: 'Projects' }).getByRole('button', { name: 'Grok voice previews', exact: true })).toBeVisible()
-    await focusThread(page, 'grok-previews', 'Grok voice previews')
+    await focusThread(page, key('grok-previews'), 'Grok voice previews')
     await pane('grok-previews').getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await panel.getByRole('button', { name: 'Pin to Grok voice previews', exact: true }).click()
-    await focusThread(page, 'footer-links', 'Footer links')
+    await focusThread(page, key('footer-links'), 'Footer links')
     await expect(panel.getByRole('button', { name: 'Unpin from Grok voice previews', exact: true })).toBeVisible()
-    const drafts = async () => page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts?.filter(draft => ['grok-previews', 'footer-links'].includes(draft.threadId)).map(draft => [draft.threadId, draft.text]).sort())
-    const expected = [['footer-links', 'Newer unsent Codex draft.'], ['grok-previews', 'Unsent Claude draft for tomorrow.']]
+    const drafts = async () => page.evaluate(async ids => (await window.sotto!.agents!.get()).threadDrafts?.filter(draft => ids.includes(draft.threadId)).map(draft => [draft.threadId, draft.text]).sort(), [key('grok-previews'), key('footer-links')])
+    const expected = [[key('footer-links'), 'Newer unsent Codex draft.'], [key('grok-previews'), 'Unsent Claude draft for tomorrow.']]
     await expect.poll(drafts).toEqual(expected)
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'disconnect', threadId: 'footer-links', text: '' }))
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
     const before = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(before.followups).toEqual([expect.objectContaining({ threadId: 'footer-links', text: 'Queued Codex follow-up after this turn.' })])
+    expect(before.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect(before.host.threads.flatMap(thread => thread.messages).some(message => message.text === 'Queued Codex follow-up after this turn.')).toBe(false)
     await capture(page, 'reconnect-pinned-drafts-light')
     await closeSotto(launched)
@@ -247,9 +250,9 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     launched = await launchSotto('phase3-workspace', directory); page = launched.page
     await connect(page); await size(launched)
     await openThreads(page)
-    await focusThread(page, 'grok-previews', 'Grok voice previews')
+    await focusThread(page, key('grok-previews'), 'Grok voice previews')
     await expect(prompt('grok-previews')).toHaveValue('Unsent Claude draft for tomorrow.')
-    await focusThread(page, 'footer-links', 'Footer links')
+    await focusThread(page, key('footer-links'), 'Footer links')
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')
     // Tools chrome is explicitly session-scoped; reopening follows the currently focused thread.
     await expect(page.getByRole('complementary', { name: 'Tools' })).toBeHidden()
@@ -258,7 +261,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 'ocean', webLinkDestination: 'embedded' })
     const restored = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(restored.followups).toEqual([expect.objectContaining({ threadId: 'footer-links', text: 'Queued Codex follow-up after this turn.' })])
+    expect(restored.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)
     expect(restored.assignments).toEqual([])
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'footer-links', text: 'The original Codex turn is complete.' }))
@@ -268,7 +271,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
     const delivered = await page.evaluate(async () => window.sotto!.agents!.get())
     expect((await userMessageTexts(page, 'footer-links')).filter(text => text === 'Queued Codex follow-up after this turn.')).toHaveLength(1)
-    for (const thread of delivered.host.threads.filter(thread => thread.id !== 'footer-links')) {
+    for (const thread of delivered.host.threads.filter(thread => thread.id !== key('footer-links'))) {
       expect((await userMessageTexts(page, thread.id)).some(text => text === 'Queued Codex follow-up after this turn.'), thread.id).toBe(false)
     }
     await expect(prompt('footer-links')).toHaveValue('Newer unsent Codex draft.')

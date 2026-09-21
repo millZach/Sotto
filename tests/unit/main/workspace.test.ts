@@ -290,6 +290,34 @@ describe('durable project/thread organization', () => {
     expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
   })
 
+  it('drains a pending branch name without renaming Git after shutdown starts', async () => {
+    const f = await workspaceFixture()
+    cleanup.push(async () => { f.native.disconnect(); await f.registry.flush(); await f.remove() })
+    const repository = f.adapters.codex.state.projects[0]!.path
+    await git(repository, ['init'])
+    await writeFile(join(repository, 'tracked.txt'), 'baseline')
+    await git(repository, ['add', '.'])
+    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    let finish!: (name: string) => void
+    const writer = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    f.host.setBranchNameWriter(writer)
+    await local(f)
+    await f.host.execute(send())
+    await vi.waitFor(() => expect(writer).toHaveBeenCalledOnce())
+    const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
+    const rename = vi.spyOn(ThreadWorktrees.prototype, 'renameTemporaryBranch')
+    f.host.disconnect()
+    const settled = vi.fn()
+    const closed = f.host.close().then(settled)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+    finish('sotto/late-generated-name')
+    await closed
+    expect(rename).not.toHaveBeenCalled()
+    expect((await git(thread.workingDirectory!, ['branch', '--show-current'])).trim()).toBe(thread.worktree!.branch)
+  })
+
   it('leaves an agent branch alone when it changes while descriptive naming is pending', async () => {
     const f = await fixture()
     const repository = f.adapters.codex.state.projects[0]!.path

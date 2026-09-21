@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:host": "vitest run tests/integration/headlessHost.test.ts tests/integration/headlessProcess.test.ts tests/integration/adapterContract.test.ts tests/integration/claudeAdapter.test.ts tests/integration/grokAdapter.test.ts tests/integration/devinAdapter.test.ts tests/unit/main/headlessCredentials.test.ts tests/unit/main/agentRuntimeShutdown.test.ts tests/unit/main/agentReasonerShutdown.test.ts --maxWorkers=2",
     "test:tts-bench": "node --test scripts/tts-bench/*.test.mjs",
     "memeval": "node scripts/memeval/bench-memeval.mjs --backend none --cases scripts/memeval/cases/v1.json",
     "test:coverage": "vitest run --coverage",
@@ -26,7 +27,11 @@
     "package:dir:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
     "package:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-0.1.11-arm64.dmg\"",
     "perf:voice": "node scripts/voice-perf/run.mjs",
-    "test:voice-perf": "node --test scripts/voice-perf/*.test.mjs"
+    "test:voice-perf": "node --test scripts/voice-perf/*.test.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "package:host": "node scripts/package-host.mjs",
+    "host:verify": "node scripts/verify-host-archive.mjs",
+    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/integration/headlessProcess.test.ts --maxWorkers=2"
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",

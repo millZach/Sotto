@@ -1,3 +1,4 @@
+import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { useSyncExternalStore } from 'react'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
 
@@ -17,7 +18,7 @@ export const PANE_DRAG_TYPE = 'application/x-sotto-pane'
 export const LAYOUT_STORAGE_KEY = 'sotto.threadWorkspace.layout'
 const LAYOUT_VERSION = 1
 const MAX_STORED_PANES = 32
-const MAX_THREAD_ID_LENGTH = 256
+const MAX_THREAD_ID_LENGTH = 560
 
 /** `grid` is the snapping arrangement (one, two side by side, a third across the row below, a 2-by-2 grid, and on); `row` keeps every pane in one row. */
 export type PaneArrangement = 'grid' | 'row'
@@ -360,4 +361,13 @@ export const splitLayoutStore = new SplitLayoutStore(browserStorage())
 
 export function useSplitLayout(store: SplitLayoutStore): SplitLayout {
   return useSyncExternalStore(store.subscribe, store.get)
+}
+
+/** The pre-host layout belongs to this install's host; already-scoped panes keep their owner. */
+export function qualifyLegacyLayout(layout: SplitLayout, hostId: string | undefined): SplitLayout {
+  if (!hostId) return layout
+  const qualify = (id: string): string => parseHostEntityKey(id) ? id : hostEntityKey(hostId, id)
+  const panes = layout.panes.map(qualify)
+  const focused = layout.focused === null ? null : qualify(layout.focused)
+  return panes.every((id, index) => id === layout.panes[index]) && focused === layout.focused ? layout : { ...layout, panes, focused }
 }

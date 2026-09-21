@@ -10,6 +10,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
   const add = async (): Promise<void> => {
     if (adding) return
     setError(null)
+    if (state.connections?.find(host => host.hostId === state.hostId)?.kind === 'remote') { setError('Project folders are on the host machine. Add the project there, then reconnect.'); return }
     const picker = window.sotto?.agents?.chooseProjectDirectory
     if (!picker) { setError('Folder browsing is unavailable. Reopen Sotto and try again.'); return }
     setAdding(true)

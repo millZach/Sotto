@@ -431,10 +431,10 @@ export class ThreadStore {
   }
 
   /** Everything after `seq`, in the order it was written. */
-  eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
+  eventsAfter(seq: number, threadId?: string, limit = -1): StoredThreadEvent[] {
     const rows = threadId === undefined
-      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq').all(seq)
-      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq').all(seq, threadId)
+      ? this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? ORDER BY seq LIMIT ?').all(seq, limit)
+      : this.statement('SELECT seq, thread_id, payload FROM events WHERE seq > ? AND thread_id = ? ORDER BY seq LIMIT ?').all(seq, threadId, limit)
     return rows.map(row => ({ seq: Number(row.seq), threadId: String(row.thread_id), event: JSON.parse(String(row.payload)) as ThreadEvent }))
   }
 

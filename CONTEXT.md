@@ -16,7 +16,9 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Pull request draft.** The title and body the writing model drafts when the pull request form opens on a branch with commits, from the branch's commit subjects and its capped diff against the base alone. It replaces the form's prefill from the last commit, not words the user has typed; the user edits, clears or regenerates it, and only the Create button creates anything. With no OpenRouter key or generated pull request text off, the form opens as it always did.
 
-**Sotto thread ID.** An opaque ID that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session and is the only thread identity that agent state, queue items and assignments carry.
+**Host ID.** The permanent identity of the Sotto host that owns a workspace. Together with a Sotto thread ID, it distinguishes a thread from threads on every other host.
+
+**Sotto thread ID.** An opaque ID, unique within its host, that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session. Agent state, queue items and assignments refer to this ID; a client pairs it with the Host ID when it shows more than one host.
 
 **Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build or Devin. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 

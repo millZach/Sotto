@@ -34,6 +34,47 @@ const body = (fetchFn: ReturnType<typeof vi.fn>): { model: string; messages: { r
 const exchange = { prompt: 'The palette is unreadable in dark mode.', reply: 'I raised the foreground contrast on the two dark themes.' }
 
 describe('the short-text writing path', () => {
+  it('aborts an active request, drains it, and refuses new writing after shutdown', async () => {
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    let signal: AbortSignal | null | undefined
+    const { writer, fetchFn, failures } = createWriter({ fetchFn: async (_url, init) => {
+      signal = init?.signal
+      entered()
+      return new Promise<Response>((_resolve, reject) => {
+        signal!.addEventListener('abort', () => reject(signal!.reason), { once: true })
+      })
+    } })
+    const pending = writer.write(threadTitleRequest(exchange))
+    await started
+    await writer.close()
+    expect(signal!.aborted).toBe(true)
+    await expect(pending).resolves.toBeNull()
+    await expect(writer.write(threadTitleRequest(exchange))).resolves.toBeNull()
+    expect(fetchFn).toHaveBeenCalledOnce()
+    expect(failures).toEqual([])
+  })
+
+  it('waits for a delayed response body and discards its title when shutdown has started', async () => {
+    let entered!: () => void, finish!: (value: unknown) => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const response = answer('Unused')
+    vi.spyOn(response, 'json').mockImplementation(() => {
+      entered()
+      return new Promise(resolve => { finish = resolve })
+    })
+    const { writer } = createWriter({ fetchFn: async () => response })
+    const pending = writer.write(threadTitleRequest(exchange))
+    await started
+    const closed = vi.fn()
+    const shutdown = writer.close().then(closed)
+    await Promise.resolve()
+    expect(closed).not.toHaveBeenCalled()
+    finish({ choices: [{ message: { content: 'Late title' } }] })
+    await shutdown
+    await expect(pending).resolves.toBeNull()
+  })
+
   it('sends the chosen writing model with the stored key and returns the trimmed line', async () => {
     const { fetchFn, writer } = createWriter()
     await expect(writer.write(threadTitleRequest(exchange))).resolves.toBe('Palette contrast pass')

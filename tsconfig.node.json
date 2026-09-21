@@ -11,6 +11,7 @@
     "playwright.config.ts",
     "vitest.config.ts",
     "src/main/**/*.ts",
+    "src/host/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
     "tests/**/*.ts",

@@ -53,16 +53,33 @@ export interface ShortTextWriterDependencies {
 export class ShortTextWriter {
   private readonly fetchFn: typeof fetch
   private readonly now: () => number
+  private readonly shutdown = new AbortController()
+  private readonly operations = new Set<Promise<string | null>>()
 
   constructor(private readonly dependencies: ShortTextWriterDependencies) {
     this.fetchFn = dependencies.fetchFn ?? globalThis.fetch.bind(globalThis)
     this.now = dependencies.now ?? Date.now
   }
 
-  async write(request: ShortTextRequest): Promise<string | null> {
+  /** A host shutdown cancels writing and waits until response bodies have stopped reading. */
+  async close(): Promise<void> {
+    this.shutdown.abort()
+    await Promise.allSettled([...this.operations])
+  }
+
+  write(request: ShortTextRequest): Promise<string | null> {
+    if (this.shutdown.signal.aborted) return Promise.resolve(null)
+    const pending = this.performWrite(request)
+    this.operations.add(pending)
+    void pending.then(() => this.operations.delete(pending), () => this.operations.delete(pending))
+    return pending
+  }
+
+  private async performWrite(request: ShortTextRequest): Promise<string | null> {
     let settings: AppSettings
     try { settings = await this.dependencies.getSettings() }
     catch { return this.fail(request.purpose, 'settings') }
+    if (this.shutdown.signal.aborted) return null
     if (settings.llmApiKey.length === 0) return this.fail(request.purpose, 'no-key')
 
     try {
@@ -81,13 +98,15 @@ export class ShortTextWriter {
           max_tokens: request.maxTokens ?? 200,
           reasoning: { enabled: false },
         }),
-        signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+        signal: AbortSignal.any([this.shutdown.signal, AbortSignal.timeout(WRITE_TIMEOUT_MS)]),
       })
       if (!response.ok) return this.fail(request.purpose, `http-${response.status}`)
       const content = extractContent(await response.json())
+      if (this.shutdown.signal.aborted) return null
       const text = request.shape === 'text' ? trimToText(content, request.maxCharacters) : trimToLine(content, request.maxCharacters)
       return text ?? this.fail(request.purpose, 'empty')
     } catch (error) {
+      if (this.shutdown.signal.aborted) return null
       const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
       return this.fail(request.purpose, timedOut ? 'timeout' : 'network')
     }

@@ -71,6 +71,7 @@ export interface PersonalChatOptions {
   userDataPath: string
   configuration: () => { reasoning: string; reasoningModel: string; reasoningEffort: string }
   host?: PersonalConversationHost
+  claudeHistoryModulePath?: string
   hosts?: Partial<Record<PersonalChat['providerId'], PersonalConversationHost>>
   preferences?: Pick<MemoryProfile, 'retrieve'>
   bindRequestDraftDecision?: BindRequestDraftDecision
@@ -109,7 +110,7 @@ export class PersonalChatService {
     this.cwd = join(directory, 'native-workspace')
     this.store = new AtomicJsonStore(join(directory, 'chats.json'), savedSchema.parse, () => ({ selectedChatId: null, chats: [] }))
     this.hosts = { codex: options.hosts?.codex ?? options.host ?? new CodexAppServerHost({ userDataPath: directory }),
-      claude: options.hosts?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory }),
+      claude: options.hosts?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}) }),
       grok: options.hosts?.grok ?? new GrokAcpHost(directory) }
   }
   async start(): Promise<void> {
@@ -411,5 +412,14 @@ export class PersonalChatService {
     }
   }
   async settled(): Promise<void> { await Promise.all(this.jobs); await this.writing }
-  async close(): Promise<void> { await this.disconnect(); await this.settled(); for (const unsubscribe of this.unsubscribers) unsubscribe(); await Promise.all(Object.values(this.hosts).map(host => host.closed())) }
+  async close(): Promise<void> {
+    const disconnecting = this.disconnect()
+    // Remove producers before capturing the last write. A provider callback can enqueue another
+    // atomic save while an earlier one settles; leaving it subscribed lets that save outlive close.
+    for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe()
+    const closures = await Promise.allSettled([disconnecting, ...Object.values(this.hosts).map(host => host.closed())])
+    await this.settled()
+    const failure = closures.find(result => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+  }
 }

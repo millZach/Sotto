@@ -106,7 +106,7 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
 })
-export const agentProjectSchema = z.object({ id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
+export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
   options: z.array(z.object({ id, label: text })).default([]),
@@ -166,6 +166,8 @@ export const AGENT_WORKING_COPY_OPTIONS = 'sotto:agents:working-copy-options'
 export const agentWorkingCopyOptionsRequestSchema = z.string().min(1).max(512)
 
 export const agentThreadSchema = z.object({
+  hostLabel: z.string().max(80).optional(), remoteHost: z.boolean().optional(), clientConnected: z.boolean().optional(),
+  hostId: z.uuid().optional(),
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   /** Who named this thread: the user by hand, Sotto's writing model, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
@@ -222,6 +224,10 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
 export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
 
 export const agentHostSnapshotSchema = z.object({
+  /** Desktop projection only: catalogs stay with their host when a window combines threads. */
+  clientHosts: z.array(z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
+    capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional() })).optional(),
+  hostId: z.uuid().optional(),
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
   error: z.string().optional(),
@@ -338,6 +344,9 @@ export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
+  clientScoped: z.boolean().optional(),
+  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
+  hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
@@ -533,6 +542,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('membership'), action: z.enum(['refresh', 'signin', 'checkout', 'portal']) }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
+/** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
 export interface AgentBridge {
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
   chooseProjectDirectory?(): Promise<string | null>
@@ -564,7 +574,12 @@ export const EMPTY_AGENT_HOST: AgentHostSnapshot = {
 export function enabledThreadProviders(configuration: AgentConfiguration): ProviderId[] {
   return [...(configuration.enabledProviders ?? [configuration.provider])]
 }
+export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread, 'hostId'>): AgentHostSnapshot {
+  const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
+  return source ? { ...host, ...source, providers: source.providers } : host
+}
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
+  host = hostForThread(host, thread)
   if (!host.providers || !thread.providerId) return host.capabilities
   return host.providers.find(provider => provider.id === thread.providerId)?.capabilities ?? EMPTY_AGENT_HOST.capabilities
 }
@@ -594,6 +609,7 @@ export function isThreadBusy(state: { readonly busyThreadIds?: readonly string[]
   return threadId ? state.busyThreadIds?.includes(threadId) === true : false
 }
 export function isThreadProviderConnected(host: AgentHostSnapshot, thread: AgentThread): boolean {
+  if (thread.clientConnected !== undefined) return thread.clientConnected
   if (!host.providers || !thread.providerId) return host.connected
   return host.providers.some(provider => provider.id === thread.providerId && provider.connection === 'connected')
 }
