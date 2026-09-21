@@ -65,4 +65,6 @@ artifacts/queued-steering/
 
 # Question panel verification captures
 artifacts/question-choices/
+
+/artifacts/settled-folder-new-thread/
 artifacts/agents-view/
