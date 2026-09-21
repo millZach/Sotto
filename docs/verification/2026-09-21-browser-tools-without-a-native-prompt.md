@@ -16,12 +16,13 @@ Each client is told that Sotto's own browser server needs no native prompt, scop
 
 - `npm run typecheck`, `npm run lint`: passed.
 - `tests/integration/browserProviders.test.ts`, `browserAgentServer.test.ts`, `browserAgentTools.test.ts`, `browserTools.test.ts`: 36 tests passed. The Claude case now asserts the allowance holds exactly the endpoint's own tool names; it previously asserted the opposite.
-- Native discovery with `SOTTO_BROWSER_LIVE=1`, run twice: **Codex and Claude Code passed** — each launched with the new setting, connected to the local endpoint and requested `tools/list` with zero model turns and zero tool calls.
-- Grok's `--allow <RULE>` and its `MCPTool(server__*)` form were read from the pinned 1.0.5 binary's own `--help`, which lists `--allow` as a global option ahead of the subcommand, matching where Sotto passes it.
+- Native discovery with `SOTTO_BROWSER_LIVE=1`: **all three clients passed** — each launched with the new setting, connected to the local endpoint and requested `tools/list` with zero model turns and zero tool calls.
+- Grok's `--allow <RULE>` and its `MCPTool(server__*)` form were also read from the 1.0.5 binary's own `--help`, which lists `--allow` as a global option ahead of the subcommand, matching where Sotto passes it.
+- Grok was checkable only after merging `origin/main`. Against the branch's original base the probe could not connect at all: the installed client had moved to 1.0.40 while the adapter pinned 1.0.5 exactly. It failed identically with this change reverted, so it was never a regression here, and the provider-client-update work on `main` has since turned that pin into a floor. The passing run is against the installed 1.0.40.
 
 ## Unchecked
 
-- **Grok was not verified live and its flag may be inert.** `~/.grok/bin/grok.exe` on this computer is 1.0.40; Sotto pins 1.0.5, so the probe cannot connect. It fails identically with the change reverted, so this is a pre-existing version mismatch rather than a regression, but it means nothing about Grok here is evidence. Grok also runs in leader mode, where `--allow` rules are reported upstream not to apply, so the rule may be accepted and ignored.
+- **Grok's rule may be accepted and inert.** Grok runs in leader mode, where `--allow` rules are reported upstream not to apply. The probe shows the rule is accepted and that discovery still works; it does not show the rule has any effect.
 - That the prompt is actually gone is not proven for any client. Native discovery sends no model turn, and only a real turn against a paid client raises an approval. What is proven is that each client accepts the new setting and still reaches the endpoint.
 - Codex's `default_tools_approval_mode` was accepted at `thread/start` without error; that it suppresses an approval was not observed.
 - No packaged build, no macOS, no model-driven browser journey.
