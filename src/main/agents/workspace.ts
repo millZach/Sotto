@@ -11,7 +11,7 @@ import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadSto
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
-import { isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
 const WORKTREE_REFRESH_DELAY_MS = 1_500
@@ -249,7 +249,7 @@ export class WorkspaceHost implements AgentHost {
       // handed every thread's whole history before it has read anything.
       if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.flatMap(thread => {
         const messages = this.readWindow(thread.id)?.messages ?? []
-        return messages.length ? [{ threadId: thread.id, messages }] : []
+        return messages.length ? [{ threadId: thread.id, messages, ...(thread.activities ? { activities: thread.activities.slice(-MAX_AGENT_ACTIVITIES) } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }] : []
       }))
       this.ready = true
       await this.privacyChanged()
@@ -377,6 +377,12 @@ export class WorkspaceHost implements AgentHost {
     this.writeEvents()
     try { return this.threadStore.messageIdentities(threadId) }
     catch { return [] }
+  }
+  /** Historical classification only; live monitoring is never handed back to an adapter. */
+  activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread?.activities || thread.historyEpoch !== historyEpoch) return undefined
+    return structuredClone(thread.activities.slice(-MAX_AGENT_ACTIVITIES))
   }
   /**
    * Records what a provider published and answers with the messages this thread keeps in memory: the

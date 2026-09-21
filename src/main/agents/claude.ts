@@ -26,7 +26,7 @@ import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
-import type { AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 /**
@@ -84,7 +84,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
-  private readonly restoredHistory = new Map<string, readonly AgentMessage[]>()
+  private readonly restoredHistory = new Map<string, RestoredThreadHistory>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
   private readonly messageLog = new ThreadMessageLog()
   /** What the host's event store already holds, asked per thread before its transcript is read. */
@@ -149,7 +149,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
-    const held = new Map([...this.threads.keys()].map(id => [id, this.messageLog.messages(id) as readonly AgentMessage[]]))
+    const held = new Map([...this.threads].map(([id, thread]) => [id, {
+      threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
+    }]))
     this.messageLog.forgetAll()
     this.threads.clear(); this.logs.clear(); this.activity.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
@@ -464,7 +466,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async pollSessionLogs(): Promise<void> { for (const log of this.logs.values()) await log.poll() }
   /** Messages the workspace still holds; a thread whose history is handed back may resume its cursor. */
   restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
-    for (const thread of threads) if (thread.messages.length) this.restoredHistory.set(thread.threadId, thread.messages)
+    for (const thread of threads) if (thread.messages.length) this.restoredHistory.set(thread.threadId, thread)
     return Promise.resolve()
   }
   disconnect(): void {
@@ -640,17 +642,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return log
   }
   /**
-   * A stored cursor stands for the entries behind it, so it is only usable when those messages are back
-   * in hand. Without them the transcript is read from its first byte, as it always was.
+   * A stored cursor stands for both authored messages and activity classification behind it.
+   * Missing activity evidence requires a full replay, even when message identities are available.
    */
-  private seedHistory(id: string, alias: Alias, restored: readonly AgentMessage[] | undefined): void {
+  private seedHistory(id: string, alias: Alias, restored: RestoredThreadHistory | undefined): void {
     const cursor = alias.transcriptCursor
-    // Without the messages in hand the store is asked whether it holds the entries the cursor stands for.
-    const stored = restored?.length ? restored : this.history?.messageIdentities(id) ?? []
-    if (!cursor || cursor.sessionId !== alias.sessionId || !stored.length) { delete alias.transcriptCursor; return }
+    if (!cursor || cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; return }
+    const matching = restored?.historyEpoch === alias.historyEpoch ? restored : undefined
+    const stored = matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
+    const activities = matching?.activities ?? this.history?.activities?.(id, alias.historyEpoch)
+    if (!stored.length || activities === undefined) { delete alias.transcriptCursor; return }
     this.messageLog.seed(id, stored)
+    this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
     // A later block of an assistant message already projected must add to its text, not replace it.
-    for (const message of restored ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
+    for (const message of matching?.messages ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
     this.logOrigins.set(id, new Set(cursor.consumedOriginIds))
     if (cursor.lastDigest) this.lastLogDigest.set(id, cursor.lastDigest)
     this.log(id).resume(cursor)
@@ -672,7 +677,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.cursorTimer.unref()
   }
   private ensureThread(id: string, alias: Alias): void {
-    this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [] })
+    this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
     this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.resumeCompactionDismissed)

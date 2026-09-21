@@ -62,3 +62,7 @@ The adapter reads native history within a 16 MiB text limit and a 20,000-message
 Native resume, reconciliation, and polling therefore cost a bounded read of the provider transcript, not only its new tail. A long Devin thread can take longer to reconnect or send to. If native history exceeds the supported limit, Sotto refuses that read and cannot safely reconcile or continue the thread through Devin; saved Sotto history remains readable, and uncertain work is never resent automatically. The limit is a safe refusal, not a claim that only the newest part was read.
 
 This exception accepts a verified protocol limitation instead of inventing a cursor or weakening delivery evidence. It does not change history retention, permission authority, or provider data policies. See the [native compatibility evidence](../verification/2026-09-19-devin-native-compatibility.md) and [Devin data-policy decision](0017-devin-native-provider-data-policies.md).
+
+## Amendment: activity beside a resumed transcript cursor (September 20, 2026, #125)
+
+The history source also exposes the retained, bounded activity projection for one Sotto thread at a time. Claude needs it before seeking to a saved transcript cursor: a subagent start may be behind the cursor while its completion arrives after it. The workspace supplies historical activity, including a task identity that has ended or been reassigned, through the same thread-ID mapping as message identities. Live monitoring remains ephemeral and is never restored through this handoff.

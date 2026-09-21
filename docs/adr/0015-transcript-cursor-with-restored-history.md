@@ -25,3 +25,5 @@ Takeover detection is unchanged. It runs on what is appended, with the consumed 
 ## Consequences
 
 Reconnect cost follows what was appended, not what was said. `WorkspaceHost` holds the history of record between runs, so a lost or cleared workspace cache costs a full re-read rather than a gap. Other adapters may implement `restoreThreadHistory` when they want the same, and ignoring it keeps today's behaviour.
+
+Amended September 20, 2026 for confirmed monitoring: the cursor must also be accompanied by the retained activity it accounts for. Claude restores the bounded activity projection before consuming the transcript tail, including historical task-lifecycle exclusions. This is history evidence only: no live monitor is restored, and provider lifecycle events remain the sole source of a live watch.
