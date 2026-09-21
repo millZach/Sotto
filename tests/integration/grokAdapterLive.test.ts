@@ -14,7 +14,8 @@ it.skipIf(process.env.SOTTO_GROK_LIVE !== '1')('native Grok creates, prompts, an
  let host = new GrokAcpHost(root,{pollIntervalMs:1000})
  try {
   const initial = await host.connect()
-  expect(initial.version).toBe('1.0.5 / ACP 1')
+  // The pin is a floor, not an exact version (ADR-0020): whatever is installed reports itself here.
+  expect(initial.version).toContain(' / ACP 1')
   const threadId = randomUUID()
   await host.execute({type:'create-project',commandId:randomUUID(),projectId:'smoke',title:'Synthetic smoke',path:root})
   await host.execute({type:'create-thread',commandId:randomUUID(),threadId,projectId:'smoke',title:'Sotto synthetic adapter smoke',modelId:initial.models[0]!.id})

@@ -34,6 +34,12 @@ async function runningAnimations(page: Page): Promise<number> {
   return page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)
 }
 
+/** Of those, the ones that never end: the ring's travelling run is one, and reduced motion may not have any. */
+async function endlessAnimations(page: Page): Promise<number> {
+  return page.evaluate(() => document.getAnimations()
+    .filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations === Infinity).length)
+}
+
 test('the effort card previews a drag, saves on release, plays the arrival at the top and dresses the composer, across window sizes', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
@@ -62,6 +68,9 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await chip.click()
     await expect(range).toBeFocused()
     await expect(range).toHaveAttribute('aria-valuetext', 'Low')
+    // The card can open on the catalog the provider reported first, which carries two levels, and the drag
+    // below reads the track as fifths. Wait for the full set of stops rather than for a level both sets hold.
+    await expect(range).toHaveAttribute('max', '4')
     await expect(card.getByText('Fast. For small, clear tasks.')).toBeVisible()
     // The fixture model reports Low as its default, so Default has nothing to do yet.
     await expect(card.getByRole('button', { name: 'Default', exact: true })).toBeDisabled()
@@ -72,9 +81,11 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await page.mouse.move(track.x + 13, track.y + track.height / 2)
     await page.mouse.down()
     await page.mouse.move(track.x + 13 + (track.width - 26) * .38, track.y + track.height / 2, { steps: 12 })
-    const preview = await range.inputValue()
-    expect(Number(preview)).toBeGreaterThan(1)
-    expect(Number(preview)).toBeLessThan(2)
+    // The move returns once the events are sent, not once the window has drawn them, so the thumb has to be
+    // waited for: read once, this lands on whichever step of the drag had been handled, which is a stop the
+    // hand passed through rather than where it stopped.
+    await expect.poll(async () => Number(await range.inputValue())).toBeGreaterThan(1)
+    expect(Number(await range.inputValue())).toBeLessThan(2)
     expect(await savedEffort(page)).toBe('low')
     await page.mouse.up()
     await expect.poll(() => savedEffort(page)).toBe('high')
@@ -118,6 +129,19 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect.poll(() => savedEffort(page)).toBe('low')
     await expect(chip).toBeEnabled()
 
+    // Two presses in a row, the second before the first can have been confirmed: both land on the card, which
+    // stays live to take them, and the thread ends on the level they stopped at. That only one save carried
+    // the levels crossed is the unit test's to prove; what is checked here is that neither press is dropped.
+    // The chip says the level rather than main holding it: main has a level before the window has been told.
+    await expect(chip).toHaveText(/^Low/u)
+    await range.press('End')
+    await expect(chip).toHaveText(/^Max/u)
+    await range.press('Home')
+    await expect(chip).toHaveText(/^Low/u)
+    await expect(chip).toBeEnabled()
+    await expect.poll(() => savedEffort(page)).toBe('low')
+    await expect(chip).toHaveAttribute('data-effort-top', 'false')
+
     // Escape, a pointer outside and Tab out of the card all close it; Escape hands focus back to the chip.
     await page.keyboard.press('Escape')
     await expect(card).toHaveCount(0)
@@ -153,7 +177,13 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card).toHaveAttribute('data-top', 'true')
     await expect(card).toHaveAttribute('data-arriving', 'false')
     await expect.poll(() => outlineOpacity(composer)).toBe('1')
-    expect(await runningAnimations(page)).toBe(0)
+    // Nothing keeps running, which is what reduced motion promises: the ring's travelling run is gone rather
+    // than slowed. An endless animation is running from the moment it starts, so that is read straight away;
+    // the count of everything running cannot be, because turning the setting on repaints the window and the
+    // one-shot transitions that carries (the root's colour and scrollbar, the composer's border taking the
+    // colourway) are running for their own moment, in or out of a single sample depending on when it is taken.
+    expect(await endlessAnimations(page)).toBe(0)
+    await expect.poll(() => runningAnimations(page), { timeout: 8_000 }).toBe(0)
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {

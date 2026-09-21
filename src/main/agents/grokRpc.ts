@@ -7,6 +7,13 @@ import { z } from 'zod'
 export const GROK_CLI_VERSION = '1.0.5'
 export const GROK_ACP_VERSION = 1
 export class GrokUncertain extends Error {}
+/**
+ * The client answered, and the answer was not one Sotto can use: a version or a protocol it refuses, or
+ * a shape it does not know. Separate from a lost connection, because only this one is the client's word.
+ */
+export class GrokUnreadable extends GrokUncertain {}
+/** A client Sotto will not drive: an older CLI, another protocol version, or no subscription sign-in. */
+export class GrokUnsupported extends Error {}
 export class GrokRejected extends Error {}
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'home', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 export function grokEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -26,6 +33,16 @@ const frameSchema = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(
 export type GrokFrame = z.infer<typeof frameSchema>
 type Waiter = { resolve(): void; reject(error: Error): void; apply(value: unknown): Promise<void> | void; timer: ReturnType<typeof setTimeout> | undefined }
 
+// A Grok response is one line, and `_x.ai/session/updates` answers with a whole page of durable history
+// on it: 100 entries carrying whatever that session's tools printed. One real project thread measured
+// 1.5 MB, 2.6 MB, 1.6 MB and 0.5 MB across its four pages, so a line over a megabyte is not a runaway
+// client, it is an ordinary read of an ordinary thread. Capping it there refused every connection that
+// loaded such a thread. These caps are a runaway guard, sized like the Codex transport's.
+const MAX_FRAME_BYTES = 128 * 1024 * 1024
+const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
+/** Diagnostics, not protocol: a client that answers nothing and only floods stderr is still lost. */
+const MAX_STDERR_BYTES = 1024 * 1024
+
 /** Bounded stdio transport. Late responses still apply; mutation timeouts never trigger retries. */
 export class GrokRpc {
   private readonly child: ChildProcessWithoutNullStreams
@@ -42,17 +59,19 @@ export class GrokRpc {
     // exits those inherited handles must not keep the adapter's shutdown barrier open.
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
-    let buffer = ''; let queued = 0; let stderr = 0
+    let buffer = ''; let bufferedBytes = 0; let queued = 0; let stderr = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
-      buffer += chunk
-      if (Buffer.byteLength(buffer) > 1024 * 1024) { this.fail(); return }
+      buffer += chunk; bufferedBytes += Buffer.byteLength(chunk)
+      // Measured as it arrives; re-measuring the whole buffer on every chunk is quadratic in a large frame.
+      if (bufferedBytes > MAX_FRAME_BYTES) { this.fail(); return }
       let end: number
       while ((end = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1)
+        const size = Buffer.byteLength(line); bufferedBytes -= size + 1
         if (!line.trim()) continue
-        const size = Buffer.byteLength(line); queued += size
-        if (queued > 1024 * 1024) { this.fail(); return }
+        queued += size
+        if (queued > MAX_QUEUED_BYTES) { this.fail(); return }
         this.frames = this.frames.then(async () => {
           try {
             if (this.stopped) return
@@ -63,14 +82,15 @@ export class GrokRpc {
               if (frame.error !== undefined) waiter.reject(new GrokRejected('Grok rejected the operation. Review the thread before retrying.'))
               else {
                 try { await waiter.apply(frame.result); waiter.resolve() }
-                catch { waiter.reject(new GrokUncertain('Grok sent an invalid response.')); this.fail() }
+                // Sotto's own refusal is the one answer worth repeating; anything else is a shape it could not read.
+                catch (error) { waiter.reject(error instanceof GrokUnsupported ? error : new GrokUnreadable('Grok sent an invalid response.')); this.fail() }
               }
             } else await this.receive(frame)
           } finally { queued -= size }
         }).catch(() => this.fail())
       }
     })
-    this.child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.length; if (stderr > 1024 * 1024) this.fail() })
+    this.child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.length; if (stderr > MAX_STDERR_BYTES) this.fail() })
   }
   request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false): Promise<void> {
     return new Promise((resolve, reject) => {

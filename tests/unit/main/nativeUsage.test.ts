@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../../src/main/agents/nativeUsage'
+import { USAGE_RATE_VERSION } from '../../../src/main/agents/usageRates'
 
 const roots: string[] = []
 async function usage(provider: 'codex' | 'claude' | 'grok') {
@@ -103,7 +104,7 @@ describe('native usage observations', () => {
     const reopened = new NativeUsage(root, 'claude'); await reopened.load()
     reopened.claude('thread', { type: 'assistant', message }, 'sonnet')
     expect(reopened.get('thread')?.estimatedUsd).toBeCloseTo(0.006675, 8)
-    expect(reopened.get('thread')?.rateVersions).toEqual(['2026-09-15-standard-v2'])
+    expect(reopened.get('thread')?.rateVersions).toEqual([USAGE_RATE_VERSION])
     await reopened.flushed()
   })
   it('does not charge an ambiguous counter reset twice, and keeps replay identities across restart', async () => {
@@ -165,7 +166,7 @@ describe('native usage observations', () => {
       entries: { a: { tokens, model: 'claude-opus-5', rate: '2026-09-13-standard-v1' }, b: { tokens: { input: 0, output: 0 }, model: '<synthetic>', rate: '2026-09-13-standard-v1' } },
       seen: [], incomplete: false } }))
     const reopened = new NativeUsage(root, 'claude'); await reopened.load()
-    expect(reopened.get('old')).toMatchObject({ total: { input: 1502, output: 300 }, partial: false, rateVersions: ['2026-09-15-standard-v2'] })
+    expect(reopened.get('old')).toMatchObject({ total: { input: 1502, output: 300 }, partial: false, rateVersions: [USAGE_RATE_VERSION] })
     expect(reopened.get('old')?.estimatedUsd).toBeCloseTo((10 + 500 + 5000 + 300 * 25) / 1_000_000, 10)
     await reopened.flushed()
   })
