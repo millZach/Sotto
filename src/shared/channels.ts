@@ -32,6 +32,7 @@ export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 export const TRANSCRIPTION_TRANSCRIBE = 'sotto:transcription:transcribe' as const
 export const TRANSCRIPTION_CANCEL = 'sotto:transcription:cancel' as const
 export const TRANSCRIPTION_CHECK_KEY = 'sotto:transcription:check-key' as const
+export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const
 export const UPDATE_CHECK = 'sotto:update:check' as const

@@ -130,6 +130,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),

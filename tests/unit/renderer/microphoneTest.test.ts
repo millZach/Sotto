@@ -99,17 +99,35 @@ describe('browser microphone setup test', () => {
     expect(harness.dependencies.cancelFrame).toHaveBeenCalledOnce()
   })
 
+  it('asks the operating system before Chromium captures, and reports denied without opening the device', async () => {
+    const harness = createHarness()
+    const ensureAccess = vi.fn(async () => false)
+    const test = new BrowserMicrophoneTest({ ...harness.dependencies, ensureAccess })
+
+    await expect(test.start(vi.fn())).resolves.toBe('denied')
+    expect(ensureAccess).toHaveBeenCalledOnce()
+    expect(harness.dependencies.getUserMedia).not.toHaveBeenCalled()
+    expect(harness.context.close).toHaveBeenCalledOnce()
+  })
+
   it('opens the audio context before asking for the microphone so a permission dialog cannot swallow the click', async () => {
     const harness = createHarness()
+    const osGrant = deferred<boolean>()
     const permission = deferred<typeof harness.stream>()
+    const ensureAccess = vi.fn(() => osGrant.promise)
     vi.mocked(harness.dependencies.getUserMedia).mockReturnValueOnce(permission.promise)
-    const test = new BrowserMicrophoneTest(harness.dependencies)
+    const test = new BrowserMicrophoneTest({ ...harness.dependencies, ensureAccess })
 
     const starting = test.start(vi.fn())
     await Promise.resolve()
     expect(harness.dependencies.createAudioContext).toHaveBeenCalledOnce()
-    expect(harness.dependencies.getUserMedia).toHaveBeenCalledOnce()
+    expect(ensureAccess).toHaveBeenCalledOnce()
+    expect(harness.dependencies.getUserMedia).not.toHaveBeenCalled()
     expect(harness.context.createAnalyser).not.toHaveBeenCalled()
+
+    osGrant.resolve(true)
+    await Promise.resolve()
+    expect(harness.dependencies.getUserMedia).toHaveBeenCalledOnce()
 
     permission.resolve(harness.stream)
     await expect(starting).resolves.toBe('ready')
@@ -159,10 +177,12 @@ describe('browser microphone setup test', () => {
     const harness = createHarness()
     const permission = deferred<typeof harness.stream>()
     vi.mocked(harness.dependencies.getUserMedia).mockReturnValueOnce(permission.promise)
-    const test = new BrowserMicrophoneTest(harness.dependencies)
+    const test = new BrowserMicrophoneTest({ ...harness.dependencies, ensureAccess: async () => true })
 
     const starting = test.start(vi.fn())
     await Promise.resolve()
+    await Promise.resolve()
+    expect(harness.dependencies.getUserMedia).toHaveBeenCalledOnce()
     await test.stop()
     permission.resolve(harness.stream)
 

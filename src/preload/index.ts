@@ -51,6 +51,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -409,6 +410,7 @@ export function createSottoBridge(
     cancelTranscription: (requestId) =>
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
     checkTranscriptionKey: () => invokeParsed(renderer, TRANSCRIPTION_CHECK_KEY, transcriptionKeyCheckSchema),
+    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
