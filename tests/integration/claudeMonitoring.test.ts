@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { access } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 
@@ -45,6 +47,8 @@ it('clears an interrupted watch and ignores saved monitor starts after reconnect
   expect((await thread(f)).monitoring ?? []).toEqual([])
   await raw(f, { ...started, task_id: 'second' }, true)
   await expect.poll(async () => (await thread(f)).monitoring?.length).toBe(1)
+  // A delivered fixture action must be consumed, or a resumed CLI would replay it as live.
+  await expect(access(join(f.root, 'control-' + await f.realId('thread') + '.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   f.host.disconnect()
   expect((await thread(f)).monitoring ?? []).toEqual([])
   await f.adapter.closed()
