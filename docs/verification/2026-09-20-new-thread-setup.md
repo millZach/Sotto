@@ -40,4 +40,12 @@ On September 21, Zach explicitly chose: new threads always inherit the agent set
 
 ADR-0008 records the changed policy, compatibility with old serialized settings, and the existing native-provider fallback when Agents has no native account. No live preferences were edited. Standards and behavior review corrected terminal and folder-registration fallbacks that could still select another provider; four of eight new regressions failed before those corrections and all eight passed afterward.
 
-The existing current-branch starting policy is preserved. This work is saved and built locally, not installed, pushed, or released. Windows fixture verification does not establish live native-provider or macOS behavior.
+The existing current-branch starting policy is preserved. At initial verification, this work was saved and built locally, not installed, pushed, or released. Windows fixture verification does not establish live native-provider or macOS behavior.
+
+## PR review follow-up (September 21)
+
+PR #174 received independent standards and requirements reviews with no findings. Windows Gates passed on the initial commit. Greptile could not review because the account had reached its trial quota. Cursor Bugbot found that a delayed terminal model default could erase an explicit permission or reasoning choice. Both cases failed in new regressions before correction.
+
+Automatic model inheritance now preserves those choices within the same provider; inherited and explicit provider changes still reset them. A follow-up requirements review identified model-specific reasoning capabilities: an inherited model that explicitly excludes the chosen effort now uses its own default (or no effort), while missing metadata preserves the choice. Limited/no-capability regressions failed before that correction; missing-capability metadata retains the choice.
+
+The final focused run passed 25 tests across inheritedAgentCreation and terminalWorkspace. Typecheck and lint passed. A fresh build followed by new-thread-settings and thread-agent-inheritance passed both Electron journeys. No visual styling changed in this follow-up; initial selected captures remain the visual evidence.

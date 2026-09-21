@@ -78,9 +78,12 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
     if (choiceMade.current) return
     setProvider(defaultProvider)
     setModelId(defaultModelId)
-    setReasoning(undefined)
-    setPermission('ask')
-  }, [defaultProvider, defaultModelId])
+    // A late model default must not erase choices made for this provider.
+    if (provider !== defaultProvider) {
+      setReasoning(undefined)
+      setPermission('ask')
+    }
+  }, [defaultProvider, defaultModelId, provider])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const latestState = useRef(state)
@@ -109,7 +112,8 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
     setReasoning(undefined)
     setPermission('ask')
   }
-  const effort = reasoning ?? model?.defaultReasoningEffort ?? null
+  const effort = reasoning !== undefined && (!model?.reasoningEfforts || model.reasoningEfforts.includes(reasoning))
+    ? reasoning : model?.defaultReasoningEffort ?? null
   const launch: TerminalLaunch = provider === null ? { provider: null, modelId: null, reasoning: null, permission: null }
     : { provider, modelId: model?.id ?? null, reasoning: effort, permission }
   const runs = launchCommandLine(launch, shell)

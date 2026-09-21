@@ -50,6 +50,67 @@ describe('inherited agent in terminal creation', () => {
     expect(screen.getByLabelText('Runs')).toHaveTextContent('claude --model sonnet')
   })
 
+  it('retains an explicit permission while the account default arrives', async () => {
+    const state = fixture()
+    state.configuration.reasoningModel = ''
+    const view = terminal(state)
+    fireEvent.change(screen.getByLabelText('Terminal permissions'), { target: { value: 'edits' } })
+    view.update({ ...state, reasoningAccounts: [claudeAccount('opus')] })
+    expect(screen.getByLabelText('Terminal permissions')).toHaveValue('edits')
+    expect(screen.getByLabelText('Runs')).toHaveTextContent('claude --model opus --permission-mode acceptEdits')
+    fireEvent.change(screen.getByLabelText('Terminal name'), { target: { value: 'Review' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }))
+    await waitFor(() => expect(view.open).toHaveBeenCalledWith(view.props.bridge, expect.objectContaining({ launch: expect.objectContaining({ modelId: opus.id, permission: 'edits' }) })))
+  })
+
+  it('retains an explicit reasoning effort while the account default arrives', async () => {
+    const state = fixture()
+    state.configuration.reasoningModel = ''
+    state.host.models = [grok, { ...opus, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
+    const view = terminal(state)
+    fireEvent.change(screen.getByLabelText('Terminal reasoning'), { target: { value: 'high' } })
+    view.update({ ...state, host: { ...state.host, models: [...state.host.models, { ...sonnet, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }] }, reasoningAccounts: [claudeAccount('sonnet')] })
+    expect(screen.getByLabelText('Terminal reasoning')).toHaveValue('high')
+    expect(screen.getByLabelText('Runs')).toHaveTextContent('claude --model sonnet --effort high')
+    fireEvent.change(screen.getByLabelText('Terminal name'), { target: { value: 'Review' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }))
+    await waitFor(() => expect(view.open).toHaveBeenCalledWith(view.props.bridge, expect.objectContaining({ launch: expect.objectContaining({ modelId: sonnet.id, reasoning: 'high' }) })))
+  })
+
+  it.each(['inherited', 'explicit'] as const)('resets provider-specific options for an %s provider change', mode => {
+    const state = fixture()
+    state.configuration.reasoning = 'codex'
+    state.configuration.reasoningModel = 'gpt-5'
+    state.host.models = [{ id: 'native:codex:model:gpt-5', name: 'GPT-5', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'xhigh'], defaultReasoningEffort: 'low' }, { ...opus, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
+    const view = terminal(state)
+    fireEvent.change(screen.getByLabelText('Terminal reasoning'), { target: { value: 'xhigh' } })
+    fireEvent.change(screen.getByLabelText('Terminal permissions'), { target: { value: 'everything' } })
+    if (mode === 'inherited') view.update({ ...state, configuration: { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus' } })
+    else fireEvent.change(screen.getByLabelText('Terminal provider'), { target: { value: 'claude' } })
+    expect(screen.getByLabelText('Terminal provider')).toHaveValue('claude')
+    expect(screen.getByLabelText('Terminal reasoning')).toHaveValue('low')
+    expect(screen.getByLabelText('Terminal permissions')).toHaveValue('ask')
+    expect(screen.getByLabelText('Runs')).toHaveTextContent('claude --model opus --effort low')
+    expect(screen.getByLabelText('Runs')).not.toHaveTextContent('xhigh')
+    expect(screen.getByLabelText('Runs')).not.toHaveTextContent('skip-permissions')
+  })
+
+  it.each(['limited', 'none', 'missing'] as const)('uses the inherited model effort capabilities when metadata is %s', async metadata => {
+    const state = fixture()
+    state.configuration.reasoningModel = ''
+    state.host.models = [grok, { ...opus, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }]
+    const view = terminal(state)
+    fireEvent.change(screen.getByLabelText('Terminal reasoning'), { target: { value: 'high' } })
+    const nextModel = { ...sonnet, ...(metadata === 'limited' ? { reasoningEfforts: ['low'], defaultReasoningEffort: 'low' } : metadata === 'none' ? { reasoningEfforts: [] } : {}) }
+    view.update({ ...state, host: { ...state.host, models: [grok, nextModel] }, reasoningAccounts: [claudeAccount('sonnet')] })
+    const expectedEffort = metadata === 'limited' ? 'low' : metadata === 'none' ? null : 'high'
+    fireEvent.change(screen.getByLabelText('Terminal name'), { target: { value: 'Review' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }))
+    await waitFor(() => expect(view.open).toHaveBeenCalledWith(view.props.bridge, expect.objectContaining({ launch: expect.objectContaining({ modelId: sonnet.id, reasoning: expectedEffort }) })))
+    if (metadata === 'limited') expect(screen.getByLabelText('Terminal reasoning')).toHaveValue('low')
+    if (metadata === 'none') expect(screen.getByLabelText('Runs')).not.toHaveTextContent('--effort')
+  })
+
   it.each(['grok', ''] as const)('keeps an explicit terminal provider choice %s through account and catalog changes', provider => {
     const state = fixture()
     const view = terminal(state)
