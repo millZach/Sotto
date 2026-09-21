@@ -118,3 +118,12 @@ Both predate this change and both were proved on `origin/main`'s own build befor
 
 - `tests/unit/renderer/threadOptions.test.tsx` renders the chips over a parent that applies main's answer before the command resolves, the way `AgentContext` does, because a static fixture confirms a change and then reports the level it always had. Three tests fail against the old code and pass against the new: the press shows at once and holds when the answer agrees with it; the card stays mounted and live while a selection is being confirmed, where the other two chips are fixed; and presses made during a save land on the card but only the level landed on is sent.
 - The existing rejection test still holds the other end: a refused change takes the press back to the saved level and the error under the chips says so.
+
+## After the two-axis review
+
+Both axes found the same defect and it is fixed in its own commit, with a test that fails without it: the press was let go of only when the saved level moved while no save was running, and on the ordinary path the saved level arrives while the save is still in flight, so that never fired. A provider that answered with a level of its own rather than the one asked for left the control showing the press with nothing to correct it. Each pass of the save loop now notes the level reported before it asked and lets go of the press when that has moved.
+
+- `npm run typecheck`, `npm run lint`: clean. `npm test -- --maxWorkers=2`: 4319 passed, 37 skipped, 0 failed. `npm run notices:verify`: 174. `npx playwright test tests/e2e/effort-picker.spec.ts`: 3 passed, three runs in a row.
+- The standards axis also called the README out: it described the old rule and now describes this one. The spec axis called two assertions weaker than the ones they replaced, and both were strengthened — endless animations are read straight away, since one is running from the moment it starts, and the two-press check watches the chip through both presses rather than only the level they end on.
+- Left as it is, with the reason: the card's save keeps the `onChange` it was given rather than the newest, because a press belongs to the thread it was made on. Effort no longer reads the coordinator's busy mark at all, not only this save's own mark, so a press made while a send or an interrupt is in flight now reaches the provider and can be refused out loud rather than being impossible; a turn under way and an unanswered request still fix the card, which is what a provider itself refuses on.
+
