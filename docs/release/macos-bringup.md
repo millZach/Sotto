@@ -64,7 +64,7 @@ tccutil reset Accessibility com.sotto.desktop
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier'      release/mac-arm64/Sotto.app/Contents/Info.plist  # expect com.sotto.desktop
 ```
 
-The README's Requirements table says macOS 12, the minimum for Electron 38 and later. If `LSMinimumSystemVersion` says otherwise, correct the README to the bundle's value and commit.
+The README's Requirements table says macOS 12, the minimum for Electron 38 and later. If `LSMinimumSystemVersion` says otherwise, correct the README to the bundle's value and commit. The 0.1.10 arm64 bundle reported `12.0`.
 
 ## 5. Hardened-runtime measurement (one-time decision)
 
