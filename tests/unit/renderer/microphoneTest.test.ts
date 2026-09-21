@@ -22,10 +22,15 @@ function createHarness() {
     disconnect: vi.fn(),
     getFloatTimeDomainData: vi.fn((samples: Float32Array) => samples.fill(0.2)),
   }
+  const mute = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
+  const destination = { connect: vi.fn(), disconnect: vi.fn() }
   const context = {
     state: 'running',
+    destination,
     createMediaStreamSource: vi.fn(() => source),
     createAnalyser: vi.fn(() => analyser),
+    createGain: vi.fn(() => mute),
+    resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   }
   const frames = new Map<number, () => void>()
@@ -40,7 +45,7 @@ function createHarness() {
     }),
     cancelFrame: vi.fn((handle) => { frames.delete(handle) }),
   }
-  return { analyser, context, dependencies, events, frames, source, stream, track }
+  return { analyser, context, destination, dependencies, events, frames, mute, source, stream, track }
 }
 
 describe('browser microphone setup test', () => {
@@ -89,8 +94,45 @@ describe('browser microphone setup test', () => {
     expect(harness.track.stop).toHaveBeenCalledOnce()
     expect(harness.source.disconnect).toHaveBeenCalledOnce()
     expect(harness.analyser.disconnect).toHaveBeenCalledOnce()
+    expect(harness.mute.disconnect).toHaveBeenCalledOnce()
     expect(harness.context.close).toHaveBeenCalledOnce()
     expect(harness.dependencies.cancelFrame).toHaveBeenCalledOnce()
+  })
+
+  it('opens the audio context before asking for the microphone so a permission dialog cannot swallow the click', async () => {
+    const harness = createHarness()
+    const permission = deferred<typeof harness.stream>()
+    vi.mocked(harness.dependencies.getUserMedia).mockReturnValueOnce(permission.promise)
+    const test = new BrowserMicrophoneTest(harness.dependencies)
+
+    const starting = test.start(vi.fn())
+    await Promise.resolve()
+    expect(harness.dependencies.createAudioContext).toHaveBeenCalledOnce()
+    expect(harness.dependencies.getUserMedia).toHaveBeenCalledOnce()
+    expect(harness.context.createAnalyser).not.toHaveBeenCalled()
+
+    permission.resolve(harness.stream)
+    await expect(starting).resolves.toBe('ready')
+  })
+
+  it('keeps the analyser in a muted running graph so Chromium delivers samples', async () => {
+    const harness = createHarness()
+    const test = new BrowserMicrophoneTest(harness.dependencies)
+
+    await expect(test.start(vi.fn())).resolves.toBe('ready')
+    expect(harness.source.connect).toHaveBeenCalledWith(harness.analyser)
+    expect(harness.analyser.connect).toHaveBeenCalledWith(harness.mute)
+    expect(harness.mute.connect).toHaveBeenCalledWith(harness.destination)
+    expect(harness.mute.gain.value).toBe(0)
+  })
+
+  it('resumes a context that is still suspended after the permission dialog', async () => {
+    const harness = createHarness()
+    harness.context.state = 'suspended'
+    const test = new BrowserMicrophoneTest(harness.dependencies)
+
+    await expect(test.start(vi.fn())).resolves.toBe('ready')
+    expect(harness.context.resume).toHaveBeenCalled()
   })
 
   it.each([
@@ -109,7 +151,8 @@ describe('browser microphone setup test', () => {
     expect(harness.dependencies.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
       audio: expect.objectContaining({ deviceId: { exact: 'selected-headset' } }),
     }))
-    expect(harness.dependencies.createAudioContext).not.toHaveBeenCalled()
+    expect(harness.context.createAnalyser).not.toHaveBeenCalled()
+    expect(harness.context.close).toHaveBeenCalledOnce()
   })
 
   it('stops a late permission stream after cancellation without creating an audio graph', async () => {
@@ -125,7 +168,8 @@ describe('browser microphone setup test', () => {
 
     await expect(starting).resolves.toBe('error')
     expect(harness.track.stop).toHaveBeenCalledOnce()
-    expect(harness.dependencies.createAudioContext).not.toHaveBeenCalled()
+    expect(harness.context.createMediaStreamSource).not.toHaveBeenCalled()
+    expect(harness.context.close).toHaveBeenCalledOnce()
   })
 
   it('lets an immediate stop invalidate start before permission is requested', async () => {
