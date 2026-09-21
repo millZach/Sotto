@@ -1,3 +1,4 @@
+import type { BrowserAgentTools } from './browserAgentServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
@@ -58,6 +59,9 @@ export class ConfiguredProviderHost implements AgentHost {
     }
   }
   /** Each provider asks the store about the threads it owns; a thread it does not own answers nothing. */
+  useBrowserTools(tools: BrowserAgentTools): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useBrowserTools?.(tools)
+  }
   useThreadHistory(source: ThreadHistorySource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
   }

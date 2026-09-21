@@ -81,6 +81,7 @@ import {
 import { settingsSchema } from '../shared/settings'
 import { recoveryNoticeSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
+  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema,
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
@@ -478,6 +479,7 @@ export function exposeE2EBridge(
   const scenario = e2eScenarioSchema.safeParse(environment.SOTTO_E2E_SCENARIO ?? 'success')
   if (!scenario.success) return
   const bridge: SottoE2EBridge = Object.freeze({
+    browserAgent: (request: Parameters<NonNullable<SottoE2EBridge['browserAgent']>>[0]) => invokeParsed(renderer, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentResultSchema, e2eBrowserAgentSchema.parse(request)),
     agentEvent: (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => invokeParsed(renderer, AGENT_E2E, voidSchema, event),
     scenario: scenario.data,
     snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
