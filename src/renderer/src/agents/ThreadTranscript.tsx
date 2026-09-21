@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, ChevronRight, MessageSquare } from 'lucide-react'
+import { ArrowDown, Check, ChevronRight, Copy, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { isThreadBusy, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -10,6 +10,8 @@ import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissi
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
+import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
+import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } from './ThreadActivity'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -82,6 +84,55 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
 const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
 
 /**
+ * The per-message copy control (#128): one quiet mark pinned to the message's top-right corner,
+ * revealed while the message is hovered or holds focus. A press copies the message's source
+ * Markdown; right-click, Shift+F10 or the ContextMenu key offers plain text instead.
+ */
+function MessageCopy({ message, article }: { readonly message: AgentMessage; readonly article: React.RefObject<HTMLElement | null> }): ReactNode {
+  const [feedback, showFeedback] = useTransientFlag()
+  const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number } | null>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const reply = message.role === 'assistant'
+  const name = reply ? 'Copy reply as Markdown' : 'Copy message as Markdown'
+  const copied = feedback !== null && feedback !== 'Copy failed'
+  const copy = (format: 'markdown' | 'plain'): void => {
+    const rendered = article.current?.querySelector('.rich-message')
+    const text = format === 'markdown' || !rendered ? message.text : renderedPlainText(rendered)
+    void writeClipboard(text).then(
+      () => showFeedback(format === 'markdown' ? `Copied ${reply ? 'reply' : 'message'} as Markdown` : 'Copied as plain text'),
+      () => showFeedback('Copy failed'))
+  }
+  const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
+    const rect = button.current?.getBoundingClientRect()
+    setMenuAt(point ?? { x: rect?.left ?? 0, y: (rect?.bottom ?? 0) + 4 })
+  }
+  const menuItems: LinkMenuItem[] = [
+    { id: 'markdown', label: 'Copy as Markdown', run: () => copy('markdown') },
+    { id: 'plain', label: 'Copy as plain text', run: () => copy('plain') },
+  ]
+  return <>
+    <button type="button" ref={button} className="thread-message__copy tt-focusable" aria-label={name} title={name}
+      aria-haspopup="menu" aria-expanded={menuAt ? true : undefined} data-copied={copied || undefined}
+      onClick={() => copy('markdown')}
+      onContextMenu={event => {
+        event.preventDefault()
+        // A keyboard-invoked context menu reports no pointer position, so it opens beside the control.
+        openMenu(event.clientX === 0 && event.clientY === 0 ? null : { x: event.clientX, y: event.clientY })
+      }}
+      onKeyDown={event => {
+        if (!(event.key === 'F10' && event.shiftKey) && event.key !== 'ContextMenu') return
+        event.preventDefault()
+        openMenu(null)
+      }}>
+      {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+      {feedback ? <span className="thread-message__copy-label">{copied ? 'Copied' : feedback}</span> : null}
+    </button>
+    <span className="tt-visually-hidden" role="status" aria-live="polite">{feedback}</span>
+    {menuAt ? <LinkMenu at={menuAt} label="Copy options" items={menuItems} returnFocus={button.current} onClose={() => setMenuAt(null)} /> : null}
+  </>
+}
+
+/**
  * One message in the transcript. Memoised on the message itself: the state the window receives shares the
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
@@ -90,8 +141,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
 }): ReactNode {
-  return <article className="thread-message" data-role={message.role}>
-    <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
+  const article = useRef<HTMLElement>(null)
+  return <article className="thread-message" data-role={message.role} ref={article}>
+    <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
+      {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}</header>
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={message.text} streaming={writing} />}
