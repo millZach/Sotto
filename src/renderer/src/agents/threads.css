@@ -84,10 +84,20 @@
  * request card that steps the Jump button aside all measure it, and an estimate there would land short.
  */
 .thread-transcript__content > :nth-last-child(-n + 12) { content-visibility: visible; }
-.thread-message { margin: 0 0 28px; }
+.thread-message { position: relative; margin: 0 0 28px; }
 .thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
 .thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+/* The copy control floats on the message's top-right corner and appears while the message is
+   hovered, holds focus, or is mid-confirmation. Replies pin it to the header line's right edge —
+   the header's padding keeps the time clear of it; user bubbles pin it inside the padding. */
+.thread-message__copy { position: absolute; top: -4px; right: 0; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; padding: 0 4px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
+.thread-message__copy[data-copied] { color: var(--tt-success); }
+.thread-message__copy[data-copied] svg { animation: rich-confirm 220ms cubic-bezier(.2, .9, .3, 1.3); }
+.thread-message:not([data-role='user']) > header:has(> .thread-message__copy) { padding-right: 36px; }
+.thread-message[data-role='user'] .thread-message__copy { top: 10px; right: 10px; }
+.thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
 .thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: 15px; }
 .thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
@@ -256,3 +266,11 @@
   .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
   .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 }
+
+/* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */
+@media (prefers-reduced-motion: reduce) {
+  .thread-message__copy { transition: none; }
+  .thread-message__copy[data-copied] svg { animation: none; }
+}
+:root[data-reduced-motion='on'] .thread-message__copy { transition: none; }
+:root[data-reduced-motion='on'] .thread-message__copy[data-copied] svg { animation: none; }

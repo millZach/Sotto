@@ -86,6 +86,8 @@ When Claude Code reports an active monitoring task, a small pixel creature walks
 
 The Threads sidebar keeps each thread’s provider, status and last activity beneath its project. Drag its right edge to resize it; a wider sidebar reveals the branch, model and working copy. Collapse sidebar makes more room for the conversation, and Expand sidebar restores the width you chose. With the divider focused, arrow keys resize it, Home and End choose the limits, and a double-click resets it.
 
+Hovering a message or a finished reply shows a copy control at its top corner. One press copies it as Markdown, so code blocks, lists and tables paste intact somewhere else. Right-click the control, or press Shift+F10 with it focused, to copy as plain text instead. A reply still being written has no copy control, and each code block keeps a copy button of its own.
+
 You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.
 
 New threads use the **Project folder** by default, including its uncommitted edits. Threads in that folder share files and branch; choose **New worktree** for independent parallel work. A new worktree is created on the first send from the selected base branch, or you can reuse an existing worktree. Before that send, change the choice in the thread's working-copy control. Settings under Application sets the global default, and New thread can override it for a project. Existing threads keep their folders and unfinished work.
