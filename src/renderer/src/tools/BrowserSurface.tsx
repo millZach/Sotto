@@ -1,8 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
-import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
+import type { BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
-import { normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { useOptionalAgents } from '../agents/AgentContext'
+import { BrowserTaskDetails } from './BrowserTaskPreview'
+import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
+import { useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
 
 export interface BrowserSurfaceProps {
   readonly threadId: string
@@ -68,6 +71,13 @@ function useOverlayOpen(inside: React.RefObject<HTMLElement | null>, viewport: R
  */
 export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSurfaceProps): ReactNode {
   const browser = useThreadBrowser(store, threadId)
+  const tasks = useBrowserTasks(store)
+  const agents = useOptionalAgents()
+  const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
+  const owningModel = agents?.state?.host.models.find(item => item.id === owningThread?.modelId)
+  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin'
+  const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
   const address = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -75,6 +85,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   const surface = useRef<HTMLDivElement>(null)
   const active = browser?.pages.find(page => page.id === browser.activePageId) ?? null
   const activeId = active?.id ?? null
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+  const [selectedTask, setSelectedTask] = useState<string | null>(null)
+  const pageTasks = tasks.filter(item => item.threadId === threadId && item.pageId === activeId)
+  const task = pageTasks.find(item => item.id === selectedTask) ?? pageTasks[0]
+  useEffect(() => { setFeedback(null) }, [activeId])
 
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
@@ -110,6 +126,27 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
     setDraft({ pageId: null, text: '' })
     setProblem(null)
     requestAnimationFrame(() => address.current?.focus())
+  }
+
+  const reviewPage = async (action: 'share' | 'capture' | 'viewport', size?: string): Promise<void> => {
+    if (!bridge || !active) return
+    setReviewBusy(true); setProblem(null)
+    const request = { threadId, workspaceId: active.workspace.workspaceId, pageId: active.id }
+    try {
+      if (action === 'capture') {
+        const result = await bridge.capture(request)
+        if (activeIdRef.current !== active.id) return
+        if (result.ok) setFeedback(result.value)
+        else setProblem(result.error.message)
+      } else {
+        const [width, height] = (size || '1280x800').split('x').map(Number)
+        const result = action === 'share' ? await bridge.share({ ...request, enabled: !active.sharedOrigin }) : await bridge.viewport(size === 'fit' ? { ...request, reset: true } : { ...request, width: width!, height: height! })
+        if (activeIdRef.current !== active.id) return
+        if (result.ok) store.adopt(result.value)
+        else setProblem(result.error.message)
+      }
+    } catch { setProblem('The browser did not answer. Try again.') }
+    finally { setReviewBusy(false) }
   }
 
   return <div className="browser-surface" ref={surface}>
@@ -162,10 +199,28 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
       {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>Open</button>
         : active ? <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button> : null}
     </form>
+    {active && !newPage ? <div className="browser-review-bar">
+      <select className="tt-focusable" aria-label="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
+        <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
+        {active.viewport && !['1600x1000', '1280x800', '820x560', '390x844'].includes(`${active.viewport.width}x${active.viewport.height}`) ? <option value={`${active.viewport.width}x${active.viewport.height}`}>{active.viewport.width} x {active.viewport.height}</option> : null}
+      </select>
+      <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>Comment on page</button>
+      {!agentToolsUnavailable ? <button type="button" className="browser-review-link browser-review-bar__share tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)} title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</button> : <span className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</span>}
+    </div> : null}
+    {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
+    {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}
+    {active?.error && active.status !== 'unavailable' && !task?.pendingAction ? <p className="browser-problem" role="status">{active.error}</p> : null}
     {browser.notice ? <p className="terminal-notice" role="alert">{browser.notice}</p> : null}
 
-    {newPage ? <div className="files-problem browser-empty" role="status">
+    {feedback && active && bridge ? <BrowserFeedback key={active.id} page={active} initial={feedback} bridge={bridge} onClose={() => { setFeedback(null); requestAnimationFrame(() => address.current?.focus()) }} onAdd={(capture, comment) => {
+      if (!agents) return 'The draft for this thread is not available.'
+      const thread = agents.state?.host.threads.find(item => item.id === threadId)
+      const model = agents.state?.host.models.find(item => item.id === thread?.modelId)
+      const error = appendBrowserFeedback(agents.threadDrafts, threadId, capture, comment, model?.supportsImages === true)
+      if (!error) onStatus(`Added to the draft for ${thread?.title ?? 'this thread'}`)
+      return error
+    }} /> : newPage ? <div className="files-problem browser-empty" role="status">
       <strong>{pages.length === 0 ? 'Open a page' : 'Open another page'}</strong>
       <p>Enter a website or local server address above. Pages keep their place while you work elsewhere.</p>
     </div> : active ? <PageViewport key={active.id} page={active} threadId={threadId} store={store} bridge={bridge} surface={surface}

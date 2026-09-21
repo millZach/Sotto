@@ -1,3 +1,4 @@
+import type { BrowserAgentTools } from './browserAgentServer'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -119,6 +120,17 @@ export class SottoThreadHost implements AgentHost {
     })
   }
 
+  useBrowserTools(tools: BrowserAgentTools): void {
+    const thread = (sessionId: string): string => {
+      const binding = this.registry.bySession(this.provider, sessionId)
+      if (!binding) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+      return binding.threadId
+    }
+    this.inner.useBrowserTools?.({ definitions: tools.definitions,
+      call: (id, name, args) => tools.call(thread(id), name, args),
+      mcpServer: id => tools.mcpServer(thread(id)),
+    })
+  }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
     if (this.observed) this.observeThreads(this.observed)

@@ -1,3 +1,4 @@
+import type { BrowserAgentTools } from './browserAgentServer'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
@@ -109,6 +110,13 @@ export interface GrokAcpOptions {
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
 export class GrokAcpHost implements AgentHost {
+  private browserHttp = false
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
+  private async browserServers(id: string) {
+    if (!this.browserTools || this.aliases[id]?.kind === 'personal' || !this.browserHttp) return []
+    return [await this.browserTools.mcpServer(id)]
+  }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -181,9 +189,9 @@ export class GrokAcpHost implements AgentHost {
     if (this.loaded.has(id)) return Promise.resolve()
     const pending = this.loading.get(id); if (pending) return pending
     const rpc = this.rpc
-    const work = rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.pendingRuntimeMode ?? alias.runtimeMode) }, async value => {
+    const work = this.browserServers(id).then(mcpServers => rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: sessionPolicy(alias.pendingRuntimeMode ?? alias.runtimeMode) }, async value => {
       this.confirmLoad(id, alias, value); await this.persist()
-    }).then(() => {
+    })).then(() => {
       if (rpc !== this.rpc) return
       this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
     }).finally(() => { if (this.loading.get(id) === work) this.loading.delete(id) })
@@ -245,8 +253,9 @@ export class GrokAcpHost implements AgentHost {
     this.rpc = rpc; this.stopping = rpc.closed
     try {
       await rpc.request('initialize', { protocolVersion: GROK_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '1' } }, value => {
-        const response = z.object({ protocolVersion: z.literal(GROK_ACP_VERSION), agentCapabilities: z.object({ loadSession: z.literal(true) }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.literal(GROK_CLI_VERSION), modelState: catalogSchema }) }).parse(value)
+        const response = z.object({ protocolVersion: z.literal(GROK_ACP_VERSION), agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.literal(GROK_CLI_VERSION), modelState: catalogSchema }) }).parse(value)
         if (!response.authMethods.some(auth => auth.id === 'cached_token') || response.authMethods.some(auth => /api.?key/iu.test(auth.id))) throw new Error('Subscription authentication required.')
+        this.browserHttp = response.agentCapabilities.mcpCapabilities?.http === true
         this.state.version = `${GROK_CLI_VERSION} / ACP ${GROK_ACP_VERSION}`
         this.state.models = response._meta.modelState.availableModels.map(model => ({ id: model.modelId, name: model.name, provider: 'Grok', ready: true, runtimeModes: [...grokRuntimeModes], supportsImages: false,
           reasoningEfforts: model._meta?.supportsReasoningEffort ? model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? [] : [], ...(model._meta?.reasoningEffort ? { defaultReasoningEffort: model._meta.reasoningEffort } : {}) }))
@@ -469,7 +478,7 @@ export class GrokAcpHost implements AgentHost {
         const project = command.type === 'create-thread' ? this.state.projects.find(project => project.id === command.projectId) : undefined; if (command.type === 'create-thread' && !project) throw new Error('Choose a Grok project first.')
         const alias: Alias = { ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}), ...(command.runtimeMode ? { runtimeMode: grokRuntimeMode(command.runtimeMode) } : {}) }
         this.aliases[command.threadId] = alias; await this.persist()
-        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.runtimeMode) }, async value => {
+        await rpc.request('session/new', { cwd: alias.cwd, mcpServers: await this.browserServers(command.threadId), _meta: sessionPolicy(alias.runtimeMode) }, async value => {
           const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
           alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
         })
@@ -478,7 +487,7 @@ export class GrokAcpHost implements AgentHost {
         })
         if (alias.reasoningEffort && this.selections.get(alias.grokSessionId!)?.effort !== alias.reasoningEffort) {
           // Grok can reply before model_changed. Read its owned session's native state; never infer success.
-          await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(alias.runtimeMode) }, value => {
+          await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: await this.browserServers(command.threadId), _meta: sessionPolicy(alias.runtimeMode) }, value => {
             const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
             if (response.models.currentModelId !== alias.modelId || response.models.availableModels.find(model => model.modelId === alias.modelId)?._meta?.reasoningEffort !== alias.reasoningEffort) throw new Error('Grok did not confirm the requested reasoning effort.')
           })
@@ -505,7 +514,7 @@ export class GrokAcpHost implements AgentHost {
               // Until the reload is confirmed, sends are blocked and reconnect finishes the change.
               alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
               await this.closeSession(rpc, alias)
-              await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: [], _meta: sessionPolicy(mode) }, async value => {
+              await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers: await this.browserServers(command.threadId), _meta: sessionPolicy(mode) }, async value => {
                 this.confirmLoad(command.threadId, alias, value); await this.persist()
               })
               thread.status = alias.settingsConfirmed ? 'idle' : 'error'
