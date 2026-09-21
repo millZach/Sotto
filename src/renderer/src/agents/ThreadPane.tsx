@@ -105,8 +105,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const assigned = coordinated ? row.assignment : undefined
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
-  // Monitoring is observation, independent of the voice coordinator's authority.
-  const liveMonitors = rowConnected && !closed && !row.attention && thread.status !== 'error' && thread.requests.length === 0 ? thread.monitoring ?? [] : []
+  // Monitoring is observation, independent of the voice coordinator's authority. A ready notice reports
+  // a finished foreground turn; only requests or a coordinator block interrupt a surviving watch.
+  const monitoringBlocked = state.queue.some(item => item.threadId === thread.id && item.kind !== 'ready')
+  const liveMonitors = rowConnected && !closed && !monitoringBlocked && thread.status !== 'error' && thread.requests.length === 0 ? thread.monitoring ?? [] : []
   const monitor = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} /> : undefined
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = hasDraftContent(paneDraft.draft)

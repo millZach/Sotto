@@ -222,7 +222,7 @@ test('process perch fits every supported size in light and dark and honors both 
   } finally { await closeSotto(launched) }
 })
 
-test('managed composer keeps its draft and send action usable under the process perch', async () => {
+test('managed completion notice keeps the live process perch, draft, and send action usable', async () => {
   test.setTimeout(120_000)
   const launched = await launchSottoWithVoice()
   const { page } = launched
@@ -234,6 +234,13 @@ test('managed composer keeps its draft and send action usable under the process 
     await prompt.fill('Continue after the build checks.')
     await monitoring(page)
     await expect(indicator(page)).toBeVisible()
+    await expect(prompt).toHaveValue('Continue after the build checks.')
+    const creature = await indicator(page).locator('.thread-monitor__creature').elementHandle()
+    await event(page, { type: 'ready', threadId: 'workshop', text: 'The implementation is ready; I am still watching the build checks.', status: 'idle' })
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).queue
+      .filter(item => item.threadId === 'workshop').map(item => item.kind))).toContain('ready')
+    await expect(indicator(page)).toBeVisible()
+    expect(await creature!.evaluate(element => element === document.querySelector('.thread-monitor__creature'))).toBe(true)
     await expect(prompt).toHaveValue('Continue after the build checks.')
     await expectWhole(page)
     await capture(page, 'managed-minimum')
