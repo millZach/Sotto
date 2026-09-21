@@ -21,7 +21,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
-import { ThreadMonitor, ThreadWaiting, useWaitingAction } from './ThreadMonitor'
+import { ThreadMonitor, ThreadHeld, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -75,7 +75,7 @@ export interface ThreadPaneProps {
   readonly notice?: ReactNode
   /** Opens this thread in a second pane. The More menu leaves the item out where the page cannot split. */
   readonly onOpenBeside?: (() => void) | undefined
-  /** A held clock where the page holds one still (a capture run); the waiting ornament then reads from it. */
+  /** A fixed clock where the page holds one still (a capture run); the held ornament reads from it. */
   readonly now?: number | undefined
 }
 
@@ -115,9 +115,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const monitor = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} /> : undefined
   // Waiting is the weaker claim of the two, so a confirmed watch keeps the track: it names the task, and this
   // only names the clock. One ornament either way, because the composer reserves room for exactly one.
-  const waitingAction = useWaitingAction(thread, ornamentAllowed && monitor === undefined, now)
-  const ornament = monitor ?? (waitingAction === undefined ? undefined
-    : <ThreadWaiting key={`waiting:${thread.id}`} action={waitingAction} now={now} />)
+  const held = useHeldAction(thread, ornamentAllowed && monitor === undefined, now)
+  const ornament = monitor ?? (held === undefined ? undefined
+    : <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />)
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = hasDraftContent(paneDraft.draft)
     || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))

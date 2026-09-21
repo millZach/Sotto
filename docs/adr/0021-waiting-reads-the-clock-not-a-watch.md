@@ -62,3 +62,29 @@ beside **Monitoring task**. The pose shares the creature's body, so both are one
 scaffolding both use is `usePixelLoop`, which keeps the 30fps throttle, the held pose under system or app
 reduced motion, and the stopped loop while the window is hidden. No new setting, no new IPC, no new host,
 and nothing is persisted: like a live monitor, a waiting ornament is never restored from history.
+
+## Amendment, September 21 2026: the noun, and two limits
+
+Review caught three things worth recording.
+
+**The word.** `waiting` already meant *waiting on you* in this codebase — `ThreadRow.waitingFor`, rendered as
+`data-waiting` in the sidebar and read as *Needs your approval* or *Needs your answer*. That is precisely the
+case this ornament excludes, so the new sense was the opposite of the old one, which is the failure
+`CONTEXT.md` exists to prevent. The domain noun is therefore **held action** (`heldAction`, `heldLongEnough`,
+`HELD_AFTER_MS`, `useHeldAction`, `ThreadHeld`). The reader still sees the plain word **Waiting**, because
+that is what it says to a person. The composer's reserved-space attribute is `data-ornament`, not
+`data-monitoring`, since it now gates a pose that must not claim to be monitoring; the ornament itself
+carries `data-ornament="monitoring"` or `data-ornament="held"`.
+
+**The glass must not carry a turn between cycles.** The first implementation rotated the whole glass group
+by a further half turn each cycle. The sand rows live inside that group, so on every odd cycle the chamber
+the code was emptying was the one the reader saw at the bottom, and the sand climbed for six seconds out of
+every twelve. The rotation now runs only during the flip and never carries over. Because the vessel is
+symmetric, ending a flip at half a turn looks exactly like starting the next cycle upright, so there is no
+snap. `tests/e2e/thread-held.spec.ts` pins the invariant that says it — a chamber with sand in it is only
+ever drawn upright — and that assertion was confirmed to fail against the rotation it replaced.
+
+**Elapsed time is local.** `heldLongEnough` parses the provider's `startedAt` against the local clock. For a
+child process on this machine that is exact. For a cloud provider it carries that provider's clock skew, so
+the figure can be out by whatever the two clocks disagree by. This is accepted rather than corrected: the
+readout is a rough sense of how long something has taken, it grants nothing, and no decision is made from it.

@@ -20,7 +20,7 @@ export default tseslint.config(
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',
-      'artifacts/waiting-creature/**',
+      'artifacts/held-action/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',

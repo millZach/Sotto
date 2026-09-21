@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import {
-  activityLabel, blockingAction, currentAction, fenced, formatDuration, groupSummary, hasWaited, liveTurnId, openActivityLabel, placeActivities,
-  statusText, timingNote, turnHeadline, waitingLabel, WAITING_AFTER_MS,
+  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, openActivityLabel, placeActivities,
+  statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
@@ -158,27 +158,27 @@ describe('the action a thread is waiting on', () => {
   })
 
   it('offers the running action whatever its age, and leaves the clock to the caller', () => {
-    const action = blockingAction(live())
+    const action = heldAction(live())
     expect(action?.id).toBe('action')
-    expect(hasWaited(action!, startedMs + WAITING_AFTER_MS - 1)).toBe(false)
-    expect(hasWaited(action!, startedMs + WAITING_AFTER_MS)).toBe(true)
+    expect(heldLongEnough(action!, startedMs + HELD_AFTER_MS - 1)).toBe(false)
+    expect(heldLongEnough(action!, startedMs + HELD_AFTER_MS)).toBe(true)
   })
 
   it('offers nothing for kinds that are the model working rather than waiting', () => {
     for (const kind of ['reasoning', 'plan', 'status', 'file-change', 'compaction'] as const) {
-      expect(blockingAction(live({ kind }))).toBeUndefined()
+      expect(heldAction(live({ kind }))).toBeUndefined()
     }
     for (const kind of ['command', 'tool', 'subagent'] as const) {
-      expect(blockingAction(live({ kind }))?.id).toBe('action')
+      expect(heldAction(live({ kind }))?.id).toBe('action')
     }
   })
 
   it('offers nothing without a start, a live turn, or a finished action', () => {
-    expect(blockingAction(live({ startedAt: undefined }))).toBeUndefined()
-    expect(blockingAction(live({ status: 'completed' }))).toBeUndefined()
-    expect(blockingAction({ ...live(), status: 'idle' })).toBeUndefined()
-    expect(hasWaited({ startedAt: undefined }, startedMs + WAITING_AFTER_MS)).toBe(false)
-    expect(hasWaited({ startedAt: 'not a time' }, startedMs + WAITING_AFTER_MS)).toBe(false)
+    expect(heldAction(live({ startedAt: undefined }))).toBeUndefined()
+    expect(heldAction(live({ status: 'completed' }))).toBeUndefined()
+    expect(heldAction({ ...live(), status: 'idle' })).toBeUndefined()
+    expect(heldLongEnough({ startedAt: undefined }, startedMs + HELD_AFTER_MS)).toBe(false)
+    expect(heldLongEnough({ startedAt: 'not a time' }, startedMs + HELD_AFTER_MS)).toBe(false)
   })
 
   it('follows the latest running record, so a new action restarts the wait', () => {
@@ -188,15 +188,15 @@ describe('the action a thread is waiting on', () => {
       activities: [turn({ status: 'running' }), record({ id: 'first', status: 'running', startedAt: started, sequence: 1 }),
         record({ id: 'second', status: 'running', startedAt: later, sequence: 2 })],
     }
-    const action = blockingAction(thread)
+    const action = heldAction(thread)
     expect(action?.id).toBe('second')
-    expect(hasWaited(action!, Date.parse(later) + WAITING_AFTER_MS - 1)).toBe(false)
+    expect(heldLongEnough(action!, Date.parse(later) + HELD_AFTER_MS - 1)).toBe(false)
   })
 
   it('reads the command as it was run, and falls back to the title the provider gave', () => {
-    expect(waitingLabel({ command: 'npm test -- --maxWorkers=2', title: 'Bash' })).toBe('npm test -- --maxWorkers=2')
-    expect(waitingLabel({ command: '  npm test\n  --watch  ', title: 'Bash' })).toBe('npm test --watch')
-    expect(waitingLabel({ command: undefined, title: 'WebFetch' })).toBe('WebFetch')
-    expect(waitingLabel({ command: '   ', title: '  ' })).toBe('Running')
+    expect(heldLabel({ command: 'npm test -- --maxWorkers=2', title: 'Bash' })).toBe('npm test -- --maxWorkers=2')
+    expect(heldLabel({ command: '  npm test\n  --watch  ', title: 'Bash' })).toBe('npm test --watch')
+    expect(heldLabel({ command: undefined, title: 'WebFetch' })).toBe('WebFetch')
+    expect(heldLabel({ command: '   ', title: '  ' })).toBe('Running')
   })
 })

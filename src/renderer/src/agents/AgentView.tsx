@@ -81,7 +81,7 @@ export function AgentComposer({ state, command, compact = false, footerControls,
   }
   const sendDisabled = Boolean(pausedDraft) || state.globalLaneBusy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
   if ((target === undefined || !assigned) && !hasDraft && !pausedDraft) return null
-  return <section className="agent-composer" data-monitoring={Boolean(ornament) || undefined}>
+  return <section className="agent-composer" data-ornament={Boolean(ornament) || undefined}>
     {ornament}
     <div className="agent-section-title"><label htmlFor={compact ? 'widget-agent-prompt' : 'agent-prompt'}>{answering ? 'Your answer' : 'Prompt'}</label>
       <span>{target === undefined ? 'Select a thread' : `${project?.title ?? 'Project'} / ${target.title}`}</span></div>

@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { AgentActivity } from '../../../shared/agentActivity'
+import React, { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { AgentMonitoringTask } from '../../../shared/agentMonitoring'
 import type { AgentThread } from '../../../shared/agents'
-import { blockingAction, formatDuration, hasWaited, waitingLabel, WAITING_AFTER_MS } from './threadActivityView'
+import { formatDuration, heldAction, heldLabel, heldLongEnough, HELD_AFTER_MS, type HeldAction } from './threadActivityView'
 import './threadMonitor.css'
 
 /** One frame of a pixel pose: seconds since the pose appeared, whether motion is held, and the track it stands on. */
@@ -18,7 +17,9 @@ interface PixelFrame {
  */
 function usePixelLoop(actor: RefObject<HTMLDivElement | null>, paint: (frame: PixelFrame) => void): void {
   const painter = useRef(paint)
-  painter.current = paint
+  // Assigned after the commit rather than during render, so a double-rendered pass cannot install a
+  // painter whose render was thrown away. The loop below only ever reads it from a frame callback.
+  useEffect(() => { painter.current = paint })
   useEffect(() => {
     const node = actor.current
     const track = node?.parentElement
@@ -112,8 +113,10 @@ function MonitoringCreature(): ReactNode {
  */
 const TOP_ROWS = [[31, 10, 5], [31, 11, 5], [32, 12, 3]] as const
 const BOTTOM_ROWS = [[32, 16, 3], [31, 17, 5], [31, 18, 5]] as const
+/** A path that draws nothing, for a chamber with no sand in it and a grain that is not falling. */
+const EMPTY_PATH = 'M0 0h0v0z'
 const sandPath = (rows: readonly (readonly [number, number, number])[]): string =>
-  rows.map(([x, y, width]) => `M${x} ${y}h${width}v1h-${width}z`).join(' ') || 'M0 0h0v0z'
+  rows.map(([x, y, width]) => `M${x} ${y}h${width}v1h-${width}z`).join(' ') || EMPTY_PATH
 /** A full turn of the glass, and the part of it spent flipping rather than running. */
 const GLASS_PERIOD = 6, GLASS_FLIP = 0.5
 
@@ -121,7 +124,7 @@ const GLASS_PERIOD = 6, GLASS_FLIP = 0.5
  * The same creature stood still, holding an hourglass. It says only that time is passing on work the
  * thread started; nothing here claims the provider is watching, and it grants no authority.
  */
-function WaitingCreature(): ReactNode {
+function HeldCreature(): ReactNode {
   const actor = useRef<HTMLDivElement>(null)
   const body = useRef<SVGGElement>(null)
   const eyes = useRef<SVGPathElement>(null)
@@ -132,18 +135,20 @@ function WaitingCreature(): ReactNode {
   usePixelLoop(actor, ({ time, still }) => {
     // Held motion keeps a half-run glass: the pose still reads as waiting without a frame of movement.
     const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
-    const turns = still ? 0 : Math.floor(time / GLASS_PERIOD)
     const running = GLASS_PERIOD - GLASS_FLIP
     const drain = Math.min(1, phase / running)
     const spin = phase > running ? (phase - running) / GLASS_FLIP : 0
     const gone = Math.min(3, Math.floor(drain * 3))
     body.current?.setAttribute('transform', !still && Math.floor(time * 1.2) % 2 === 1 ? 'translate(0 -1)' : '')
     eyes.current?.setAttribute('d', !still && time % 5 > 4.86 ? SHUT_EYES : OPEN_EYES)
-    // Each flip turns the glass a further half circle, so the chamber that just emptied is the one that refills.
-    glass.current?.setAttribute('transform', `rotate(${(turns % 2) * 180 + spin * 180} 33.5 14.5)`)
+    // The rotation only ever runs during the flip, and never carries over: the sand rows live in the
+    // rotated group, so a half turn that outlasted the flip would empty the chamber the reader sees
+    // filling, and the sand would climb. Because the vessel is symmetric, ending a flip at half a turn
+    // looks exactly like starting the next cycle upright, so the full chamber stays where the eye left it.
+    glass.current?.setAttribute('transform', `rotate(${spin * 180} 33.5 14.5)`)
     topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
     bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-    grain.current?.setAttribute('d', drain < 1 && !still ? `M33 ${13 + Math.floor(time * 8) % 3}h1v1h-1z` : 'M0 0h0v0z')
+    grain.current?.setAttribute('d', drain < 1 && !still ? `M33 ${13 + Math.floor(time * 8) % 3}h1v1h-1z` : EMPTY_PATH)
   })
   return <div className="thread-monitor__actor" ref={actor} aria-hidden="true">
     <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">
@@ -157,9 +162,9 @@ function WaitingCreature(): ReactNode {
         <path className="thread-monitor__color" d="M28 14h2v2h-2z" />
         <g ref={glass}>
           <path className="thread-monitor__color" opacity=".28" d="M31 10h5v2h-5z M32 12h3v1h-3z M33 13h1v3h-1z M32 16h3v1h-3z M31 17h5v2h-5z" />
-          <path ref={topSand} className="thread-monitor__color" d={sandPath(TOP_ROWS)} />
-          <path ref={bottomSand} className="thread-monitor__color" d="M0 0h0v0z" />
-          <path ref={grain} className="thread-monitor__color" d="M0 0h0v0z" />
+          <path ref={topSand} className="thread-monitor__color thread-monitor__sand" d={sandPath(TOP_ROWS)} />
+          <path ref={bottomSand} className="thread-monitor__color thread-monitor__sand" d={EMPTY_PATH} />
+          <path ref={grain} className="thread-monitor__color" d={EMPTY_PATH} />
           {/* Caps and tapering walls last, so the outline holds the shape over body or surface alike. */}
           <path className="thread-monitor__shine" d="M30 9h7v1h-7z M30 19h7v1h-7z M30 10h1v2h-1z M36 10h1v2h-1z M31 12h1v1h-1z M35 12h1v1h-1z M32 13h1v3h-1z M34 13h1v3h-1z M31 16h1v1h-1z M35 16h1v1h-1z M30 17h1v2h-1z M36 17h1v2h-1z" />
         </g>
@@ -186,44 +191,62 @@ function WaitedFor({ startedAt, now }: { readonly startedAt: string; readonly no
 
 /**
  * The action this thread has been held on long enough to say so, with one timer that fires as the
- * threshold passes. A held clock — a capture — answers from that clock and schedules nothing.
+ * threshold passes. A fixed clock — a capture — answers from that clock and schedules nothing.
  */
-export function useWaitingAction(thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>, eligible: boolean,
-  now: number | undefined): AgentActivity | undefined {
+export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>, eligible: boolean,
+  now: number | undefined): HeldAction | undefined {
   const [, setTick] = useState(0)
-  const action = eligible ? blockingAction(thread) : undefined
+  // Finding the action filters and sorts the activity window, which is bounded at 2,000 records, so it
+  // waits on the records themselves rather than repeating on every keystroke the composer re-renders for.
+  const { status, activities, messages } = thread
+  const action = useMemo(() => eligible ? heldAction({ status, activities, messages }) : undefined,
+    [eligible, status, activities, messages])
   const startedAt = action?.startedAt
   useEffect(() => {
     if (now !== undefined || startedAt === undefined) return
-    const remaining = WAITING_AFTER_MS - (Date.now() - Date.parse(startedAt))
+    const remaining = HELD_AFTER_MS - (Date.now() - Date.parse(startedAt))
     if (!Number.isFinite(remaining) || remaining <= 0) return
     const timer = window.setTimeout(() => setTick(value => value + 1), remaining)
     return () => window.clearTimeout(timer)
   }, [startedAt, now])
-  return action !== undefined && hasWaited(action, now ?? Date.now()) ? action : undefined
+  return action !== undefined && heldLongEnough(action, now ?? Date.now()) ? action : undefined
+}
+
+/**
+ * The one shape both poses wear: a creature on its track, and a readout naming what it stands for.
+ * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
+ */
+function ThreadOrnament({ kind, creature, label, title, status }: {
+  readonly kind: 'monitoring' | 'held'
+  readonly creature: ReactNode
+  readonly label: string
+  readonly title: string
+  readonly status: ReactNode
+}): ReactNode {
+  return <div className="thread-monitor" data-ornament={kind} role="status" aria-live="polite" aria-atomic="true">
+    <div className="thread-monitor__track">{creature}</div>
+    <div className="thread-monitor__task" title={title}>
+      <span className="thread-monitor__label">{label}</span>
+      <span className="thread-monitor__status">{status}</span>
+    </div>
+  </div>
 }
 
 /** Observational only. The caller supplies live, eligible tasks from this thread's adapter. */
 export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitoringTask[] }): ReactNode {
   const first = tasks[0]
   if (!first) return null
-  return <div className="thread-monitor" role="status" aria-live="polite" aria-atomic="true">
-    <div className="thread-monitor__track"><MonitoringCreature key={first.id} /></div>
-    <div className="thread-monitor__task" title={tasks.map(task => task.label).join('\n')}>
-      <span className="thread-monitor__label">{first.label}</span>
-      <span className="thread-monitor__status">{tasks.length === 1 ? 'Monitoring' : `Monitoring ${tasks.length} tasks`}</span>
-    </div>
-  </div>
+  return <ThreadOrnament kind="monitoring" creature={<MonitoringCreature key={first.id} />}
+    label={first.label} title={tasks.map(task => task.label).join('\n')}
+    status={tasks.length === 1 ? 'Monitoring' : `Monitoring ${tasks.length} tasks`} />
 }
 
-/** Observational only. One action has held this thread past the threshold; the caller judged that. */
-export function ThreadWaiting({ action, now }: { readonly action: AgentActivity; readonly now: number | undefined }): ReactNode {
-  const label = waitingLabel(action)
-  return <div className="thread-monitor" data-waiting="" role="status" aria-live="polite" aria-atomic="true">
-    <div className="thread-monitor__track"><WaitingCreature key={action.id} /></div>
-    <div className="thread-monitor__task" title={label}>
-      <span className="thread-monitor__label">{label}</span>
-      <span className="thread-monitor__status">Waiting{action.startedAt === undefined ? null : <WaitedFor startedAt={action.startedAt} now={now} />}</span>
-    </div>
-  </div>
+/**
+ * Observational only. One action has held this thread past the threshold; the caller judged that.
+ * The reader is told "Waiting", which is the plain word for it whatever the code calls the record.
+ */
+export function ThreadHeld({ action, now }: { readonly action: HeldAction; readonly now: number | undefined }): ReactNode {
+  const label = heldLabel(action)
+  return <ThreadOrnament kind="held" creature={<HeldCreature key={action.id} />} label={label} title={label}
+    status={<>Waiting<WaitedFor startedAt={action.startedAt} now={now} /></>} />
 }

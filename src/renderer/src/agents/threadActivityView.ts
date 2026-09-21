@@ -128,37 +128,46 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
 }
 
-/** How long one action holds the turn before the thread says it is waiting on it. Below this, nothing is shown. */
-export const WAITING_AFTER_MS = 20_000
+/**
+ * How long one action holds the turn before the thread says so. Below this, nothing is shown.
+ *
+ * "Held", not "waiting": `ThreadRow.waitingFor` already means waiting on *you* for an approval or an
+ * answer, which is the one case this excludes. The reader still sees the plain word "Waiting".
+ */
+export const HELD_AFTER_MS = 20_000
+
+/** An action Sotto can time, so the readout never has to answer what it would say without a start. */
+export type HeldAction = AgentActivity & { readonly startedAt: string }
 
 /**
  * Kinds that can hold a turn on something outside the model. Reasoning and planning are the model
- * working rather than waiting, and a long one of either says nothing a reader can act on.
+ * working rather than held, and a long one of either says nothing a reader can act on.
  */
-const waitingKinds = new Set<AgentActivity['kind']>(['command', 'tool', 'subagent'])
+const heldKinds = new Set<AgentActivity['kind']>(['command', 'tool', 'subagent'])
 
 /**
  * The running action the live turn is currently held on, whatever its age. Provider neutral: it reads
  * the same `activities` every adapter writes, so it needs no `monitor` lifecycle event to exist.
  */
-export function blockingAction(thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>): AgentActivity | undefined {
+export function heldAction(thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>): HeldAction | undefined {
   const turnId = liveTurnId(thread)
   if (turnId === null) return undefined
   const action = currentAction(thread, turnId)
-  return action !== undefined && waitingKinds.has(action.kind) && action.startedAt !== undefined ? action : undefined
+  return action !== undefined && heldKinds.has(action.kind) && action.startedAt !== undefined
+    ? action as HeldAction : undefined
 }
 
 /**
  * Whether an action has run long enough to be worth saying so. Elapsed time is the whole claim: unlike a
  * monitor this is not evidence that the provider is watching anything, and it grants no authority.
  */
-export function hasWaited(action: Pick<AgentActivity, 'startedAt'>, now: number): boolean {
+export function heldLongEnough(action: Pick<AgentActivity, 'startedAt'>, now: number): boolean {
   const started = action.startedAt === undefined ? Number.NaN : Date.parse(action.startedAt)
-  return Number.isFinite(started) && now - started >= WAITING_AFTER_MS
+  return Number.isFinite(started) && now - started >= HELD_AFTER_MS
 }
 
-/** What the waiting readout calls the action: the command as it was run, else the provider's own title. */
-export function waitingLabel(action: Pick<AgentActivity, 'command' | 'title'>): string {
+/** What the readout calls the action: the command as it was run, else the provider's own title. */
+export function heldLabel(action: Pick<AgentActivity, 'command' | 'title'>): string {
   return oneLine(action.command ?? '') || oneLine(action.title) || 'Running'
 }
 

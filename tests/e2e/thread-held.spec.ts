@@ -6,14 +6,14 @@ import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
-const evidence = resolve('artifacts/waiting-creature')
-/** Mirrors WAITING_AFTER_MS. A copy, so a change to the rule has to be made deliberately here too. */
-const WAITING_AFTER_MS = 20_000
+const evidence = resolve('artifacts/held-action')
+/** Mirrors HELD_AFTER_MS. A copy, so a change to the rule has to be made deliberately here too. */
+const HELD_AFTER_MS = 20_000
 const command = 'npm test -- --maxWorkers=2'
 const watch = { id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watching the build checks' }
 const pane = (page: Page): Locator => page.locator('section.thread-pane[data-thread-id="workshop"]')
 const ornament = (page: Page): Locator => pane(page).locator('.thread-monitor')
-const waiting = (page: Page): Locator => pane(page).locator('.thread-monitor[data-waiting]')
+const waiting = (page: Page): Locator => pane(page).locator('.thread-monitor[data-ornament="held"]')
 
 async function event(page: Page, value: HostEvent): Promise<void> {
   await page.evaluate(async value => { await window.sottoE2E!.agentEvent!(value) }, value)
@@ -59,6 +59,36 @@ async function contentSize(launched: LaunchedSotto, width: number, height: numbe
     main.setContentSize(width, height)
   }, [width, height] as const)
   await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+}
+
+/**
+ * One sample per painted frame: how many grains each chamber draws, and how far the glass is turned.
+ *
+ * The sand rows live inside the rotated group, so a half turn that outlasted the flip would empty the
+ * chamber the reader sees filling and the sand would climb. Counting distinct frames cannot see that;
+ * the angle beside the grain counts can.
+ */
+async function sandRuns(page: Page, ms: number): Promise<{ top: number; bottom: number; angle: number }[]> {
+  return waiting(page).locator('.thread-monitor__creature').evaluate(async (element, ms) => {
+    const EMPTY = 'M0 0h0v0z'
+    const grains = (path: Element | undefined): number => {
+      const drawn = path?.getAttribute('d') ?? EMPTY
+      return drawn === EMPTY ? 0 : (drawn.match(/M/gu) ?? []).length
+    }
+    const samples: { top: number; bottom: number; angle: number }[] = []
+    const began = performance.now()
+    await new Promise<void>(resolve => {
+      const sample = (): void => {
+        const sand = [...element.querySelectorAll('.thread-monitor__sand')]
+        const turned = /rotate\(\s*(-?[\d.]+)/u.exec(element.querySelector('g > g')?.getAttribute('transform') ?? '')
+        samples.push({ top: grains(sand[0]), bottom: grains(sand[1]), angle: turned ? Number(turned[1]) : 0 })
+        if (performance.now() - began < ms) requestAnimationFrame(sample)
+        else resolve()
+      }
+      sample()
+    })
+    return samples
+  }, ms)
 }
 
 /** Sand falling is the pose's only motion, so the sand is what says whether it is animating. */
@@ -124,12 +154,12 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
     await expect(ornament(page)).toHaveCount(0)
 
     // Reasoning is the model working, not waiting, however long it runs.
-    await acting(page, WAITING_AFTER_MS + 5_000, { kind: 'reasoning', title: 'Reasoning', command: undefined })
+    await acting(page, HELD_AFTER_MS + 5_000, { kind: 'reasoning', title: 'Reasoning', command: undefined })
     await expect(waiting(page)).toHaveCount(0)
 
     // A draft survives the ornament arriving, exactly as it does for the walk.
     await prompt.fill('Keep this draft while waiting.')
-    await acting(page, WAITING_AFTER_MS - 2_000)
+    await acting(page, HELD_AFTER_MS - 2_000)
     await expect(waiting(page)).toHaveCount(0)
     // The threshold passes on its own timer; the deadline is a UI response budget, not a timed sleep.
     await expect(waiting(page)).toBeVisible({ timeout: 15_000 })
@@ -141,7 +171,7 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
     // The clock counts up without replacing the creature, so the sand keeps running across the update.
     const creature = await waiting(page).locator('.thread-monitor__creature').elementHandle()
     await expect(waiting(page).locator('.thread-monitor__status')).toContainText(/Waiting · \S/u)
-    expect(await creature!.evaluate(element => element === document.querySelector('.thread-monitor[data-waiting] .thread-monitor__creature'))).toBe(true)
+    expect(await creature!.evaluate(element => element === document.querySelector('.thread-monitor[data-ornament="held"] .thread-monitor__creature'))).toBe(true)
 
     // A provider-confirmed watch is the stronger claim: it takes the one track the composer reserves.
     await event(page, { type: 'monitoring', threadId: 'workshop', text: '', monitoring: [watch], status: 'running' })
@@ -157,12 +187,19 @@ test('the hourglass waits out the threshold, names the command, and yields to a 
       await expect(ornament(page)).toHaveCount(0)
       // Fixture reset only; observing never supplies an answer or approves a permission.
       await event(page, { type: 'history', threadId: 'workshop', text: '', messages: [] })
-      await acting(page, WAITING_AFTER_MS + 1_000)
+      await acting(page, HELD_AFTER_MS + 1_000)
       await expect(waiting(page)).toBeVisible()
     }
     await idle(page)
     await expect(ornament(page)).toHaveCount(0)
-    await acting(page, WAITING_AFTER_MS + 1_000)
+
+    // An errored thread clears it too, through the same flag the walk reads.
+    await acting(page, HELD_AFTER_MS + 1_000)
+    await expect(waiting(page)).toBeVisible()
+    await event(page, { type: 'failure', threadId: 'workshop', text: 'The suite could not start.' })
+    await expect(ornament(page)).toHaveCount(0)
+
+    await acting(page, HELD_AFTER_MS + 1_000)
     await expect(waiting(page)).toBeVisible()
     await event(page, { type: 'disconnect', threadId: 'workshop', text: '' })
     await expect(ornament(page)).toHaveCount(0)
@@ -177,7 +214,7 @@ test('the hourglass fits every supported size in light and dark and holds still 
     await start(launched)
     await mkdir(evidence, { recursive: true })
     await page.emulateMedia({ reducedMotion: 'no-preference' })
-    await acting(page, WAITING_AFTER_MS + 1_000)
+    await acting(page, HELD_AFTER_MS + 1_000)
     await expect(waiting(page)).toBeVisible()
     expect(await sandFrames(page)).toBeGreaterThan(1)
 
@@ -216,13 +253,13 @@ test('the hourglass fits every supported size in light and dark and holds still 
         await page.emulateMedia({ reducedMotion: 'no-preference' })
         await idle(page)
         await expect(ornament(page)).toHaveCount(0)
-        await acting(page, WAITING_AFTER_MS + 1_000)
+        await acting(page, HELD_AFTER_MS + 1_000)
         await expect(waiting(page)).toBeVisible()
         await expectWhole(page)
         await page.screenshot({ path: resolve(evidence, `${appearance}-${width}x${height}.png`), animations: 'disabled', caret: 'hide' })
 
         // A long command still fits: the readout ellipsizes and nothing under it is covered.
-        await acting(page, WAITING_AFTER_MS + 1_000, { command: `${command} --reporter=verbose --testNamePattern="${'very long pattern '.repeat(8)}"` })
+        await acting(page, HELD_AFTER_MS + 1_000, { command: `${command} --reporter=verbose --testNamePattern="${'very long pattern '.repeat(8)}"` })
         await expect(waiting(page)).toBeVisible()
         await expectWhole(page)
       }
@@ -230,7 +267,7 @@ test('the hourglass fits every supported size in light and dark and holds still 
 
     // Both reduced-motion settings hold one pose; the sand stops where it is.
     await contentSize(launched, 1280, 800)
-    await acting(page, WAITING_AFTER_MS + 1_000)
+    await acting(page, HELD_AFTER_MS + 1_000)
     await expect(waiting(page)).toBeVisible()
     await page.emulateMedia({ reducedMotion: 'reduce' })
     expect(await sandFrames(page)).toBe(1)
@@ -239,5 +276,31 @@ test('the hourglass fits every supported size in light and dark and holds still 
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     expect(await sandFrames(page)).toBe(1)
     await page.screenshot({ path: resolve(evidence, 'reduced-motion.png'), animations: 'disabled', caret: 'hide' })
+  } finally { await closeSotto(launched) }
+})
+
+test('the sand only ever falls, and the glass is upright whenever it is running', async () => {
+  test.setTimeout(180_000)
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await start(launched)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await acting(page, HELD_AFTER_MS + 1_000)
+    await expect(waiting(page)).toBeVisible()
+    // Longer than one full turn of the glass, so a flip and the cycle after it are both observed.
+    const samples = await sandRuns(page, 8_000)
+    expect(samples.length).toBeGreaterThan(30)
+
+    // A whole run is seen: the top chamber starts full and empties, and the bottom takes what it loses.
+    expect(samples.some(sample => sample.top === 3)).toBe(true)
+    expect(samples.some(sample => sample.top === 0 && sample.bottom === 3)).toBe(true)
+    expect(samples.some(sample => sample.angle > 0)).toBe(true)
+    for (const sample of samples) expect(sample.top + sample.bottom).toBe(3)
+
+    // The invariant the pose lives by. A half turn that outlasted its flip would leave the glass upside
+    // down while the sand ran, which reads as sand climbing; upright whenever a chamber is draining
+    // is the same statement, and it is the one that can be checked from outside.
+    for (const sample of samples) if (sample.top > 0) expect(sample.angle).toBe(0)
   } finally { await closeSotto(launched) }
 })
