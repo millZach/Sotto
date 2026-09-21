@@ -1,3 +1,8 @@
+import {
+  AudioRecorder,
+  AudioRecorderError,
+  type AudioRecorderOptions,
+} from '../../audio/audioRecorder'
 import { ensureMicrophoneAccess } from '../../audio/ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from '../../audio/microphoneConstraints'
 
@@ -266,5 +271,56 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     if (context === null || this.context !== context) return
     this.context = null
     await this.safeClose(context)
+  }
+}
+
+type LevelRecorder = {
+  start(): Promise<void>
+  cancel(): Promise<void>
+}
+
+/** Live meter used in the app: same capture graph as dictation, not AnalyserNode. */
+export class WorkletMicrophoneTest implements MicrophoneTestController {
+  private recorder: LevelRecorder | null = null
+  private generation = 0
+
+  constructor(
+    private readonly createRecorder: (options: AudioRecorderOptions) => LevelRecorder = (options) =>
+      new AudioRecorder(options),
+  ) {}
+
+  async start(onLevel: (level: number) => void): Promise<MicrophoneTestOutcome> {
+    const generation = ++this.generation
+    await this.stopRecorder()
+    if (generation !== this.generation) return 'error'
+    const recorder = this.createRecorder({ onLevel })
+    this.recorder = recorder
+    try {
+      await recorder.start()
+      if (generation !== this.generation) {
+        await this.stopRecorder()
+        return 'error'
+      }
+      return 'ready'
+    } catch (error: unknown) {
+      if (this.recorder === recorder) this.recorder = null
+      await recorder.cancel().catch(() => undefined)
+      if (generation !== this.generation) return 'error'
+      if (error instanceof AudioRecorderError) {
+        return classifyMicrophoneFailure({ name: error.startFailureName ?? error.name })
+      }
+      return classifyMicrophoneFailure(error)
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.generation += 1
+    await this.stopRecorder()
+  }
+
+  private async stopRecorder(): Promise<void> {
+    const recorder = this.recorder
+    this.recorder = null
+    if (recorder !== null) await recorder.cancel().catch(() => undefined)
   }
 }

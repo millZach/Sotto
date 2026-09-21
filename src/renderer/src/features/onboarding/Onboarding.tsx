@@ -64,12 +64,14 @@ export function Onboarding({
     headingRef.current?.focus()
   }, [step])
 
+  const stopMicrophoneRef = useRef(onStopMicrophone)
+  stopMicrophoneRef.current = onStopMicrophone
   useEffect(() => {
-    if (step !== 2) void Promise.resolve(onStopMicrophone?.()).catch(() => undefined)
+    if (step !== 2) void Promise.resolve(stopMicrophoneRef.current?.()).catch(() => undefined)
     return () => {
-      if (step === 2) void Promise.resolve(onStopMicrophone?.()).catch(() => undefined)
+      if (step === 2) void Promise.resolve(stopMicrophoneRef.current?.()).catch(() => undefined)
     }
-  }, [onStopMicrophone, step])
+  }, [step])
 
   const advance = (): void => setStep((current) => Math.min(STEP_COUNT, current + 1))
   const goBack = (): void => setStep((current) => Math.max(1, current - 1))
@@ -132,7 +134,7 @@ export function Onboarding({
               <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" />
               <p role="status">
                 {microphoneState === 'ready' ? 'Microphone ready. Access is confirmed; retest any time to check current input activity.' : null}
-                {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
+                {microphoneState === 'requesting' ? 'Checking the microphone...' : null}
                 {microphoneState === 'idle' ? 'Run a quick input-level test.' : null}
                 {microphoneState === 'denied' ? 'Microphone access is blocked.' : null}
                 {microphoneState === 'missing' ? 'No microphone was found.' : null}

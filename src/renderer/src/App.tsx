@@ -13,7 +13,7 @@ import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFl
 import { releaseUrl } from '../../shared/releases'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
 import {
-  BrowserMicrophoneTest,
+  WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
@@ -90,7 +90,7 @@ function FooterStatus({ navigation, settings, historyKept }: {
   }
 }
 
-export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }: AppProps): ReactNode {
+export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
   const voiceCoordinator = useVoiceCoordinatorEnabled()
   const memoryEnabled = useMemoryEnabled()

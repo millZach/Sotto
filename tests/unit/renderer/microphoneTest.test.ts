@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { AudioRecorderError } from '../../../src/renderer/src/audio/audioRecorder'
 import {
   BrowserMicrophoneTest,
+  WorkletMicrophoneTest,
   type MicrophoneTestDependencies,
 } from '../../../src/renderer/src/features/onboarding/microphoneTest'
 
@@ -212,5 +214,29 @@ describe('browser microphone setup test', () => {
     expect(harness.track.stop).toHaveBeenCalledOnce()
     expect(harness.source.disconnect).toHaveBeenCalledOnce()
     expect(harness.context.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('worklet microphone setup test', () => {
+  it('reports ready from the dictation recorder and cancels it on stop', async () => {
+    const start = vi.fn(async () => undefined)
+    const cancel = vi.fn(async () => undefined)
+    const test = new WorkletMicrophoneTest(() => ({ start, cancel }))
+    const onLevel = vi.fn()
+
+    await expect(test.start(onLevel)).resolves.toBe('ready')
+    expect(start).toHaveBeenCalledOnce()
+    await test.stop()
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it('maps a blocked recorder start to denied', async () => {
+    const error = new AudioRecorderError('START_FAILED', 'Unable to start microphone capture.', 'NotAllowedError')
+    const test = new WorkletMicrophoneTest(() => ({
+      start: async () => { throw error },
+      cancel: vi.fn(async () => undefined),
+    }))
+
+    await expect(test.start(vi.fn())).resolves.toBe('denied')
   })
 })

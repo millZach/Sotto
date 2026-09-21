@@ -44,7 +44,7 @@ import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
-  BrowserMicrophoneTest,
+  WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from '../onboarding/microphoneTest'
@@ -140,7 +140,7 @@ export function SettingsView({
   statusText,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
-  createMicrophoneTest = () => new BrowserMicrophoneTest(),
+  createMicrophoneTest = () => new WorkletMicrophoneTest(),
   onUpdateSettings,
   onNotice,
   onReplaceHotkey,
