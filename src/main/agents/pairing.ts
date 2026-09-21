@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -10,8 +11,8 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
  * authority: a paired client may speak to the host, and a policy record decides whether its answers
  * count as grants (ADR-0004, `Authority.mayGrant`).
  *
- * Nothing here listens on a port. No socket exists until the owner decides which remote path ships
- * first, and the first change that opens one is a README "Privacy and cost" change before it is a patch.
+ * The loopback listener admits clients through this store; the separate permission policy still
+ * decides whether an admitted client may answer. See ADR-0020 for the shipped connection path.
  */
 
 /** How long a pairing code is good for. Long enough to read out, short enough to be worth nothing later. */
@@ -32,7 +33,7 @@ export type PairedClient = z.infer<typeof pairedClientSchema>
 
 const pairedClientsFileSchema = z.object({
   /** Base64url; generated once per install and never leaves this machine. */
-  secret: z.string().min(1).max(512),
+  secret: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   clients: z.array(pairedClientSchema).max(1_000),
 }).strict()
 type PairedClientsFile = z.infer<typeof pairedClientsFileSchema>
@@ -76,11 +77,14 @@ export class PairedClients {
   private readonly store: AtomicJsonStore<PairedClientsFile>
   private file: PairedClientsFile = { secret: '', clients: [] }
   private loaded = false
+  private mutations: Promise<unknown> = Promise.resolve()
+  private readonly filePath: string
   private readonly codes = new Map<string, { expiresAt: number }>()
   private readonly now: () => number
   private readonly createId: () => string
 
   constructor(directory: string, options: { now?: () => number; createId?: () => string } = {}) {
+    this.filePath = join(directory, 'paired-clients.json')
     this.now = options.now ?? Date.now
     this.createId = options.createId ?? randomUUID
     this.store = new AtomicJsonStore(join(directory, 'paired-clients.json'), pairedClientsFileSchema.parse,
@@ -89,18 +93,24 @@ export class PairedClients {
 
   /** Reads the file, minting the per-install secret on the first run. Call before anything else. */
   async load(): Promise<void> {
-    this.file = await this.store.read()
-    if (!this.file.secret) this.file = { ...this.file, secret: newSecret() }
+    // Authentication state fails closed. Recovery must never silently replace the signing secret.
+    try { this.file = pairedClientsFileSchema.parse(JSON.parse(await readFile(this.filePath, 'utf8'))) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Paired devices could not be read. Restore the host pairing file before starting it.', { cause: error })
+      this.file = { secret: newSecret(), clients: [] }
+      await this.store.write(this.file)
+    }
     this.loaded = true
   }
 
-  list(): readonly PairedClient[] { return this.file.clients }
+  list(): readonly PairedClient[] { return this.file.clients.map(client => ({ ...client })) }
 
   /** A short-lived, single-use code for the user to read to the machine being paired. */
   issuePairingCode(): PairingCode {
     this.requireLoaded()
     const at = this.now()
     for (const [code, entry] of this.codes) if (entry.expiresAt <= at) this.codes.delete(code)
+    if (this.codes.size >= 100) throw new Error('Too many pairing codes are open. Wait five minutes and try again.')
     let code = randomCode()
     while (this.codes.has(code)) code = randomCode()
     const expiresAt = at + PAIRING_CODE_LIFETIME_MS
@@ -124,7 +134,10 @@ export class PairedClients {
       clientId, name: name.trim() || 'Paired client',
       pairedAt: new Date(this.now()).toISOString(), tokenHash: hash(this.file.secret, `token:${token}`),
     })
-    await this.write({ ...this.file, clients: [...this.file.clients, client] })
+    await this.mutate(async () => {
+      if (this.file.clients.length >= 1000) throw new Error('Remove a paired device before adding another.')
+      await this.write({ ...this.file, clients: [...this.file.clients, client] })
+    })
     return { clientId, token }
   }
 
@@ -161,11 +174,20 @@ export class PairedClients {
   /** Unpairs a client. Its token and every session signed for it stop working at once. */
   async revoke(clientId: string): Promise<boolean> {
     this.requireLoaded()
-    const clients = this.file.clients.filter(client => client.clientId !== clientId)
-    if (clients.length === this.file.clients.length) return false
-    await this.write({ ...this.file, clients })
-    return true
+    return this.mutate(async () => {
+      const clients = this.file.clients.filter(client => client.clientId !== clientId)
+      if (clients.length === this.file.clients.length) return false
+      await this.write({ ...this.file, clients })
+      return true
+    })
   }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.mutations.then(operation)
+    this.mutations = task.catch(() => undefined)
+    return task
+  }
+  async settled(): Promise<void> { await this.mutations }
 
   private async write(file: PairedClientsFile): Promise<void> {
     await this.store.write(file)
@@ -189,6 +211,7 @@ export function originAllowed(origin: string | undefined, configured: readonly s
   if (configured.includes(origin)) return true
   let url: URL
   try { url = new URL(origin) } catch { return false }
+  if (url.username || url.password || url.search || url.hash) return false
   if (url.pathname !== '/' && url.pathname !== '') return false
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
   return LOOPBACK_HOSTS.has(url.hostname === '::1' ? '[::1]' : url.hostname)

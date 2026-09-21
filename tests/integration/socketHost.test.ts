@@ -1,0 +1,183 @@
+// @vitest-environment node
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, dirname } from 'node:path'
+import { randomUUID, randomBytes, createHash } from 'node:crypto'
+import { request as httpRequest } from 'node:http'
+import { SocketFrames } from '../../src/host/socketFrames'
+import { startSocketServer } from '../../src/host/socketServer'
+import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
+import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { startHeadlessHost } from '../../src/host'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
+import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+
+let root: string
+let host: Awaited<ReturnType<typeof startHeadlessHost>>
+let clients: SocketHostService[]
+let url: string
+let native: E2EAgentHost
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'sotto-socket-'))
+  native = new E2EAgentHost()
+  host = await startHeadlessHost({ dataDirectory: root, port: 0, providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  url = 'http://127.0.0.1:' + host.descriptor!.port; clients = []
+})
+afterEach(async () => { await Promise.all(clients.map(client => client.close())); await host?.close(); if (root && dirname(root) === tmpdir() && root.includes('sotto-socket-')) await rm(root, { recursive: true, force: true }) })
+async function pair(name = 'Socket test') {
+  const result = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, name)
+  const client = new SocketHostService({ url, token: result.token, expectedHostId: result.hostId }); clients.push(client)
+  await client.connect(); return { client, result }
+}
+describe('authenticated host socket', () => {
+  it('exposes only loopback health before pairing and rejects unsigned operations', async () => {
+    expect(await (await fetch(url + '/v1/health')).json()).toMatchObject({ v: 1, hostId: host.service.shell().hostId, port: host.descriptor!.port })
+    expect((await fetch(url + '/v1/session', { method: 'POST' })).status).toBe(401)
+    expect((await fetch(url + '/v1/admin/pairing-code', { method: 'POST' })).status).toBe(401)
+    const client = new SocketHostService({ url, token: 'bad' }); clients.push(client)
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    expect((await fetch(url + '/v1/health', { headers: { Origin: 'https://untrusted.example' } })).status).toBe(401)
+  })
+  it('pairs once, negotiates a shell and revokes a live session immediately', async () => {
+    const { client, result } = await pair()
+    expect(client.shell().hostId).toBe(result.hostId)
+    expect((await client.connect()).capabilities.mayAnswer).toBe(false)
+    await client.revokePairing()
+    expect(host.pairing.verifyToken(result.token)).toBeUndefined()
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+  })
+  it('deduplicates commands by authenticated client and refuses a changed payload', async () => {
+    const { client } = await pair()
+    const commandId = randomUUID()
+    const command = { type: 'configure', patch: { enabled: false } } as const
+    await client.command(command, undefined, commandId)
+    expect(await client.receipt(commandId)).toEqual({ status: 'completed' })
+    await client.command(command, undefined, commandId)
+    await expect(client.command({ type: 'configure', patch: { enabled: true } }, undefined, commandId)).rejects.toMatchObject({ code: 'invalid_request' })
+    expect(host.service.shell().configuration.enabled).toBe(false)
+    const other = await pair('Other')
+    expect(await other.client.receipt(commandId)).toEqual({ status: 'unknown' })
+  })
+  it('refuses grant-equivalent permission changes and host-local administration without authority', async () => {
+    const { client } = await pair()
+    await expect(client.command({ type: 'configure-thread', threadId: 'missing', runtimeMode: 'full-access' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Bypass', modelId: 'fixture-model', runtimeMode: 'full-access' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'configure', patch: { membershipEndpoint: 'https://untrusted.example' } })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'credential', slot: 'reasoning', value: 'not-a-real-key' })).rejects.toMatchObject({ code: 'forbidden' })
+  })
+  it('accepts an explicitly authorized answer and refuses the same device after policy revocation', async () => {
+    const { client, result } = await pair()
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const policy = async (action: string) => {
+      const response = await fetch(url + '/v1/admin/' + action, { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })
+      expect(response.status).toBe(200)
+    }
+    await policy('allow-answers')
+    expect((await client.connect()).capabilities.mayAnswer).toBe(true)
+    native.event({ type: 'permission', threadId: 'workshop', requestId: 'permission-one', text: 'Build?' })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
+    expect((await client.command({ type: 'answer', threadId, requestId: 'permission-one', answer: '', approved: true })).error).toBeNull()
+    expect(host.service.events(0, threadId)).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ kind: 'answer-given', attribution: expect.objectContaining({ clientId: result.clientId, transport: 'socket' }) }) }))
+    await policy('deny-answers')
+    native.event({ type: 'permission', threadId: 'workshop', requestId: 'permission-two', text: 'Again?' })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.some(request => request.id === 'permission-two')).toBe(true)
+    await expect(client.command({ type: 'answer', threadId, requestId: 'permission-two', answer: '', approved: true })).rejects.toMatchObject({ code: 'forbidden' })
+    expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.requests).toContainEqual(expect.objectContaining({ id: 'permission-two' }))
+  })
+  it('refuses a second listener before it can open or overwrite the running host stores', async () => {
+    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow('already locked')
+    expect((await fetch(url + '/v1/health')).status).toBe(200)
+  })
+  it('does not turn caller-supplied IPC identity into permission authority', async () => {
+    const { client } = await pair()
+    await expect(client.command({ type: 'answer', threadId: 'missing', requestId: 'missing', answer: '', approved: true }, { clientId: 'desktop-window', user: 'owner', transport: 'ipc' })).rejects.toMatchObject({ code: 'forbidden' })
+  })
+})
+
+
+describe('socket client isolation and reconnect', () => {
+  it('resyncs after a dropped connection without sending the old command again', async () => {
+    const { client } = await pair()
+    const id = randomUUID()
+    await client.command({ type: 'configure', patch: { enabled: false } }, undefined, id)
+    await client.close()
+    await host.service.command({ type: 'configure', patch: { enabled: true } }, desktopWindowClient())
+    await client.connect()
+    expect(client.shell().configuration.enabled).toBe(true)
+    expect(await client.receipt(id)).toEqual({ status: 'completed' })
+  })
+  it('keeps each client selection and observation independent after another client disconnects', async () => {
+    const first = await pair('First'), second = await pair('Second')
+    await first.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await first.client.command({ type: 'connect', provider: 'codex' })
+    const threads = first.client.shell().host.threads
+    expect(threads.length).toBeGreaterThanOrEqual(2)
+    const firstId = threads[0]!.id, secondId = threads[1]!.id
+    await first.client.command({ type: 'select-thread', threadId: firstId })
+    await second.client.command({ type: 'select-thread', threadId: secondId })
+    await first.client.observe([firstId]); await second.client.observe([secondId])
+    const firstDetails: string[] = [], secondDetails: string[] = []
+    first.client.subscribeThreadDetail(detail => firstDetails.push(detail.threadId))
+    second.client.subscribeThreadDetail(detail => secondDetails.push(detail.threadId))
+    await first.client.command({ type: 'rename-thread', threadId: firstId, title: 'Changed first' })
+    await expect.poll(() => secondDetails.length).toBeGreaterThan(0)
+    expect(firstDetails).toContain(firstId); expect(firstDetails).not.toContain(secondId)
+    expect(secondDetails).toContain(secondId); expect(secondDetails).not.toContain(firstId)
+    expect((await first.client.readShell()).activeThreadId).toBe(firstId)
+    expect((await second.client.readShell()).activeThreadId).toBe(secondId)
+    await first.client.close()
+    secondDetails.length = 0
+    await second.client.command({ type: 'rename-thread', threadId: secondId, title: 'Still observed' })
+    expect(secondDetails).toContain(secondId)
+  })
+  it('rechecks session expiry on every operation, even on an already opened socket', async () => {
+    let now = Date.now()
+    const pairing = new PairedClients(join(root, 'expiry'), { now: () => now }); await pairing.load()
+    const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Expiring')
+    const server = await startSocketServer({ service: host.service, pairing })
+    const session = pairing.signSession(paired.clientId)
+    const key = randomBytes(16).toString('base64')
+    let resolveMessage: (value: unknown) => void = () => undefined
+    const reply = new Promise<unknown>(resolve => { resolveMessage = resolve })
+    const frames = await new Promise<SocketFrames>((resolve, reject) => {
+      const request = httpRequest('http://127.0.0.1:' + server.descriptor.port + '/v1/socket', { headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, Authorization: 'Bearer ' + session } })
+      request.on('error', reject)
+      request.on('upgrade', (response, stream, head) => {
+        expect(response.headers['sec-websocket-accept']).toBe(createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64'))
+        const socket = new SocketFrames(stream, true, text => resolveMessage(JSON.parse(text))); socket.onClose(() => resolveMessage({ closed: true })); socket.feed(head); resolve(socket)
+      }); request.end()
+    })
+    try {
+      now += SESSION_LIFETIME_MS + 1
+      frames.send({ v: 1, id: 'expired', session, op: 'shell' })
+      const refused = await reply
+      if (refused && typeof refused === 'object' && 'closed' in refused) expect(refused).toEqual({ closed: true })
+      else expect(refused).toMatchObject({ v: 1, id: 'expired', ok: false, error: { code: 'unauthenticated' } })
+    } finally { frames.close(); await server.close() }
+  })
+})
+
+
+it('drains a pushed catch-up page even when the host never publishes another shell', async () => {
+  let rows: import('../../src/shared/threadEvents').StoredThreadEvent[] = []
+  let publish = (): void => undefined
+  const service: HostService = {
+    shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+    command: (command, identity) => host.service.command(command, identity),
+    events: (afterSeq, threadId, limit) => rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit),
+    subscribe: listener => { publish = () => listener(host.service.shell()); return () => undefined },
+  }
+  const server = await startSocketServer({ service, pairing: host.pairing })
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Catch-up')
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(client)
+  try {
+    await client.connect()
+    rows = Array.from({ length: 300 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset', at: new Date().toISOString() } }))
+    publish()
+    await expect.poll(() => client.events(0).length).toBe(300)
+  } finally { await client.close(); await server.close() }
+})
