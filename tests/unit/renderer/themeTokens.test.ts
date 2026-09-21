@@ -175,6 +175,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/history/history.css',
       'src/renderer/src/features/memory/memory.css',
+      'src/renderer/src/tools/agentsSurface.css',
     ]
     for (const path of owned) {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')

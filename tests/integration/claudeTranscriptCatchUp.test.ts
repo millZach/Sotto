@@ -126,7 +126,11 @@ describe('Claude transcript catch-up', () => {
         await workspace.connect()
       } else await f.host.connect()
       const resumed = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
-      expect(resumed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ title: 'Retained task' })
+      expect(resumed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ title: mode === 'event-store' ? 'Subagent' : 'Retained task' })
+      if (workspace) {
+        const retained = (await workspace.subagentPage({ threadId: sottoId })).rows.find(row => row.id === 'claude-agent-task-retained-task')
+        expect(retained?.title).toBe('Retained task')
+      }
       expect(resumed.monitoring ?? []).toEqual([])
       expect(workspace?.threadMessages(sottoId).some(message => message.text.includes('Tampered')) ?? resumed.messages.some(message => message.text.includes('Tampered'))).toBe(false)
       await append([
@@ -135,15 +139,17 @@ describe('Claude transcript catch-up', () => {
       ])
       const progressed = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
       expect(progressed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ status: 'running', text: 'Fresh progress after reconnect' })
-      expect(progressed.activities?.find(row => row.id === 'claude-task-reused-task')).toMatchObject({ status: 'completed', text: 'Earlier result', taskUpdatesExcluded: true })
+      expect(progressed.activities?.find(row => row.id === 'claude-task-reused-task')).toMatchObject({ status: 'completed', ...(mode !== 'event-store' ? { text: 'Earlier result' } : {}), taskUpdatesExcluded: true })
       await append([
         { type: 'system', subtype: 'task_notification', task_id: 'retained-task', status: 'completed', summary: 'Fresh completion after reconnect' },
         { type: 'system', subtype: 'task_notification', task_id: 'reused-task', status: 'failed', summary: 'Monitor outcome must stay hidden' },
       ])
       const completed = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
       expect(completed.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ status: 'completed', text: 'Fresh completion after reconnect' })
-      expect(completed.activities?.find(row => row.id === 'claude-task-reused-task')).toMatchObject({ status: 'completed', text: 'Earlier result', taskUpdatesExcluded: true })
+      expect(completed.activities?.find(row => row.id === 'claude-task-reused-task')).toMatchObject({ status: 'completed', ...(mode !== 'event-store' ? { text: 'Earlier result' } : {}), taskUpdatesExcluded: true })
       if (workspace) {
+        expect(completed.activities?.find(row => row.id === 'claude-task-reused-task')?.text).toBeUndefined()
+        expect((await workspace.subagentAssignments({ threadId: sottoId, agentId: 'claude-agent-task-reused-task' })).assignments[0]?.result).toBe('Earlier result')
         const published = (await workspace.snapshot()).threads.find(thread => thread.id === sottoId)!
         expect(published.activities?.find(row => row.id === 'claude-task-retained-task')).toMatchObject({ status: 'completed', text: 'Fresh completion after reconnect' })
       }

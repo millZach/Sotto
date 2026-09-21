@@ -20,7 +20,7 @@ describe('native activity projection', () => {
     expect(rows[0]).toMatchObject({ kind: 'file-change', changes: [{ path: '/p/a', kind: 'Edit' }] })
     rows = projector.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'task', tool_use_id: 'spawn', description: 'Review' }, 't', 'm', '/p')
     rows = projector.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'task', status: 'completed', summary: 'Checked' }, 't', 'm2', '/p')
-    expect(rows[1]).toMatchObject({ kind: 'subagent', status: 'completed', agents: [{ id: 'task', status: 'completed' }], afterMessageId: 'm' })
+    expect(rows[1]).toMatchObject({ kind: 'subagent', status: 'completed', agents: [{ id: 'claude-agent-spawn', status: 'completed' }], afterMessageId: 'm' })
   })
   it('keeps Claude shell tasks and housekeeping tasks out of the subagent rows, and gives a background command its real outcome', () => {
     const projector = new ClaudeActivity()
@@ -49,7 +49,7 @@ describe('native activity projection', () => {
   it('maps Grok native subagent attempts as observational history without routable addresses', () => {
     const context = { turnId: 'turn', afterMessageId: 'user', cwd: '/p' }
     const running = grokActivities({ sessionUpdate: 'subagent_spawned', subagent_id: 'child', child_session_id: 'child', attempt_id: 'attempt', description: 'Review', agentAddress: 'private-address' }, context)
-    expect(running[0]).toMatchObject({ kind: 'subagent', status: 'running', title: 'Review', agents: [{ id: 'child', status: 'running' }] })
+    expect(running[0]).toMatchObject({ kind: 'subagent', status: 'running', title: 'Review', agents: [{ id: 'grok-child-child', status: 'running' }] })
     const finished = grokActivities({ sessionUpdate: 'subagent_finished', subagent_id: 'child', child_session_id: 'child', attempt_id: 'attempt', status: 'failed', error: 'Tool rejected', duration_ms: 30 }, context, running)
     expect(finished[0]).toMatchObject({ status: 'failed', error: 'Tool rejected', durationMs: 30 })
     expect(JSON.stringify(finished)).not.toContain('private-address')

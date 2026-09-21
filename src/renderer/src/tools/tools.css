@@ -36,8 +36,8 @@
 .tools-surfaces__tab:hover { color: var(--tt-text-2); }
 .tools-surfaces__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
 .tools-panel__actions { display: flex; align-items: center; gap: 2px; padding-bottom: 5px; }
-/* Four tabs share a 320px panel: below 440px they drop their icons and tighten, and never scroll out of view. */
-@container tools-sheet (max-width: 439px) {
+/* Five tabs stay visible at the minimum width; folder actions use their own line when narrow. */
+@container tools-sheet (max-width: 579px) {
   .tools-panel__bar { gap: 4px; padding-left: 6px; }
   .tools-surfaces__tab { padding: 0 7px; }
   .tools-surfaces__icon { display: none; }
@@ -307,3 +307,9 @@
 .git-pr button { min-height: 32px; font-size: 14px; }
 
 .git-pr button:disabled { opacity: .5; cursor: default; }
+
+@container tools-sheet (max-width: 479px) {
+  .tools-panel__bar { flex-wrap: wrap; }
+  .tools-panel__folder-actions { margin-left: auto; }
+  .tools-panel__folder-actions:empty { display: none; }
+}

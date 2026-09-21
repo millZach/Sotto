@@ -1,19 +1,34 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
 
-export function grokActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string | undefined; cwd: string }, previous: readonly AgentActivity[] = []): AgentActivity[] {
+export function grokActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string | undefined; cwd: string }, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
   let truncated = false
   const bounded = (value: string) => { if (value.length > MAX_ACTIVITY_TEXT) truncated = true; return value.slice(0, MAX_ACTIVITY_TEXT) }
   if (['subagent_spawned', 'subagent_progress', 'subagent_finished'].includes(String(update.sessionUpdate)) && typeof update.subagent_id === 'string') {
+    const childId = `grok-child-${update.subagent_id}`
     const attempt = typeof update.attempt_id === 'string' ? update.attempt_id : update.sessionUpdate === 'subagent_spawned' && typeof update.parent_prompt_id === 'string' ? update.parent_prompt_id : undefined
-    const prior = previous.findLast(row => row.kind === 'subagent' && row.agents?.some(agent => agent.id === update.subagent_id))
-    const id = attempt ? `grok-agent-${update.subagent_id}-${attempt}` : prior?.id ?? `grok-agent-${update.subagent_id}`
+    const prior = previous.findLast(row => row.kind === 'subagent' && row.agents?.some(agent => agent.id === childId))
+    const id = attempt ? `grok-agent-${update.subagent_id}-${attempt}` : update.sessionUpdate === 'subagent_spawned' ? `grok-agent-${update.subagent_id}-${context.turnId}` : prior?.id ?? `grok-agent-${update.subagent_id}`
     const old = previous.find(row => row.id === id)
+    const oldAgent = old?.agents?.[0]
     const status = update.sessionUpdate === 'subagent_finished' ? update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed' : update.status === 'cancelled' ? 'interrupted' : 'unknown' : 'running'
-    return [{ ...context, ...old, id, sequence: old?.sequence ?? 0, kind: 'subagent', status, title: typeof update.description === 'string' ? bounded(update.description) : old?.title ?? 'Subagent',
-      agents: [{ id: update.subagent_id, status }], ...(typeof update.output === 'string' ? { output: bounded(update.output) } : {}),
+    const observedAt = live ? new Date().toISOString() : oldAgent?.observedAt
+    const title = typeof update.description === 'string' ? bounded(update.description) : typeof update.prompt === 'string' ? bounded(update.prompt.split(/\r?\n/u)[0]!) : oldAgent?.title
+    const model = typeof update.model === 'string' ? update.model : typeof update.model_id === 'string' ? update.model_id : undefined
+    const durationMs = typeof update.duration_ms === 'number' && Number.isFinite(update.duration_ms) && update.duration_ms >= 0 ? update.duration_ms : undefined
+    return [{ ...context, ...old, id, sequence: old?.sequence ?? 0, kind: 'subagent', status, title: title ?? old?.title ?? 'Subagent',
+      agents: [{ ...oldAgent, id: childId, ...(attempt || oldAgent?.assignmentId || update.sessionUpdate === 'subagent_spawned' ? { assignmentId: oldAgent?.assignmentId ?? id } : {}), status,
+        ...(title ? { title } : {}), ...(typeof update.description === 'string' ? { description: bounded(update.description) } : {}),
+        ...(typeof update.prompt === 'string' ? { prompt: bounded(update.prompt) } : {}), ...(model ? { model: bounded(model) } : {}),
+        ...(typeof update.parent_subagent_id === 'string' ? { parentId: `grok-child-${update.parent_subagent_id}` } : {}),
+        ...(observedAt ? { observedAt } : {}),
+        ...(update.sessionUpdate === 'subagent_spawned' && !oldAgent?.startedAt && observedAt ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
+        ...(update.sessionUpdate === 'subagent_finished' && status !== 'unknown' && observedAt ? { completedAt: oldAgent?.completedAt ?? observedAt } : {}),
+        ...(typeof update.output === 'string' ? { message: bounded(update.output) } : typeof update.error === 'string' ? { message: bounded(update.error) } : {}),
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      }], ...(typeof update.output === 'string' ? { output: bounded(update.output) } : {}),
       ...(typeof update.error === 'string' ? { error: bounded(update.error) } : {}),
-      ...(typeof update.duration_ms === 'number' && Number.isFinite(update.duration_ms) && update.duration_ms >= 0 ? { durationMs: update.duration_ms, timingSource: 'provider' as const } : {}), ...(truncated ? { truncated: true } : {}) }]
+      ...(durationMs !== undefined ? { durationMs, timingSource: 'provider' as const } : {}), ...(truncated ? { truncated: true } : {}) }]
   }
   // Grok replaces its whole plan on every update, so the turn keeps one plan row rather than a row per revision.
   if (update.sessionUpdate === 'plan' && Array.isArray(update.entries)) {

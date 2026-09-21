@@ -57,11 +57,18 @@ const migrations = [{
     CREATE TABLE activity_epochs (thread_id TEXT PRIMARY KEY NOT NULL, epoch TEXT);
     CREATE TABLE activity_redactions (identity_hash TEXT PRIMARY KEY NOT NULL);
   `,
+}, {
+  version: 3,
+  sql: `
+    CREATE INDEX events_thread_resets ON events(thread_id, seq) WHERE kind = 'messages-reset';
+    ALTER TABLE activity_epochs ADD COLUMN message_reset_seq INTEGER;
+  `,
 }]
 
 interface ActivityState {
   known: boolean
   epoch: string | undefined
+  resetSequence: number | undefined
   records: Map<string, { position: number; activity: AgentActivity }>
 }
 
@@ -256,7 +263,7 @@ export class ThreadStore {
   private activityState(threadId: string): ActivityState {
     let state = this.activityStates.get(threadId)
     if (state === undefined) {
-      const epochRow = this.statement('SELECT epoch FROM activity_epochs WHERE thread_id = ?').get(threadId)
+      const epochRow = this.statement('SELECT epoch, message_reset_seq FROM activity_epochs WHERE thread_id = ?').get(threadId)
       const epoch = epochRow?.epoch
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
@@ -265,7 +272,7 @@ export class ThreadStore {
         if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
         records.set(activity.id, { position: Number(row.position), activity })
       }
-      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), records }
+      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
       this.activityStates.set(threadId, state)
     }
     return state
@@ -276,6 +283,18 @@ export class ThreadStore {
     return this.activityState(threadId).known
   }
 
+  /** Latest committed message reset; a present unversioned reset differs from no reset at all. */
+  readMessageEpoch(threadId: string): { epoch: string | undefined; sequence: number } | undefined {
+    const row = this.statement("SELECT seq, payload FROM events WHERE thread_id = ? AND kind = 'messages-reset' ORDER BY seq DESC LIMIT 1").get(threadId)
+    if (!row) return undefined
+    const event = threadEventSchema.parse(JSON.parse(String(row.payload)))
+    if (event.kind !== 'messages-reset') throw new Error('Stored message reset does not match its event')
+    return { epoch: event.historyEpoch, sequence: Number(row.seq) }
+  }
+  /** Reset sequence committed beside activity; undefined identifies a pre-marker activity snapshot. */
+  readActivityResetSequence(threadId: string): number | undefined {
+    return this.activityState(threadId).resetSequence
+  }
   /** The epoch committed with the list; hasActivities distinguishes unknown from unversioned. */
   readActivityEpoch(threadId: string): string | undefined {
     return this.activityState(threadId).epoch
@@ -291,8 +310,9 @@ export class ThreadStore {
     const db = this.requireOpen()
     if (activities.length > MAX_AGENT_ACTIVITIES) throw new Error('Too many thread activities')
     const previous = this.activityState(threadId)
-    const reset = previous.epoch !== epoch
-    const next: ActivityState = { known: true, epoch, records: new Map() }
+    const resetSequence = this.readMessageEpoch(threadId)?.sequence ?? 0
+    const reset = previous.epoch !== epoch || (previous.resetSequence !== undefined && previous.resetSequence !== resetSequence)
+    const next: ActivityState = { known: true, epoch, resetSequence, records: new Map() }
     const changed: { position: number; activity: AgentActivity }[] = []
     const moved: { id: string; position: number }[] = []
     const seen = new Set<string>()
@@ -312,7 +332,7 @@ export class ThreadStore {
       }
     }
     const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
-    if (previous.known && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
+    if (previous.known && previous.resetSequence === resetSequence && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
     if (this.memory) this.redactActivityIdentities(threadId, changed.map(({ activity }) => activity.id))
     db.exec('BEGIN IMMEDIATE')
     try {
@@ -321,8 +341,8 @@ export class ThreadStore {
       } else {
         for (const id of removed) this.statement('DELETE FROM activities WHERE thread_id = ? AND activity_id = ?').run(threadId, id)
       }
-      if (!previous.known || reset) {
-        this.statement('INSERT INTO activity_epochs (thread_id, epoch) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch').run(threadId, epoch ?? null)
+      if (!previous.known || reset || previous.resetSequence !== resetSequence) {
+        this.statement('INSERT INTO activity_epochs (thread_id, epoch, message_reset_seq) VALUES (?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch, message_reset_seq = excluded.message_reset_seq').run(threadId, epoch ?? null, resetSequence)
       }
       for (const { position, activity } of changed) {
         this.statement('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id, activity_id) DO UPDATE SET position = excluded.position, payload = excluded.payload')

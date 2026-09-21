@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/agents-view/**',
       'artifacts/queued-steering/**',
       '.worktrees/**',
       '.claude/tmp/**',
