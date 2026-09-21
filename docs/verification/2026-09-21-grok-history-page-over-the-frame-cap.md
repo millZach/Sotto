@@ -79,7 +79,7 @@ The second holds the wording: a client that stops answering is told the connecti
 told about the version, which is the half of the report that was a lie rather than a failure. The two
 refusal cases now assert the sentence each requirement earns, and that a refusal does not offer a retry.
 
-`tests/integration/grokAdapterLive.test.ts` no longer asserts the exact string `1.0.5 / ACP 1`. ADR-0020
+`tests/integration/grokAdapterLive.test.ts` no longer asserts the exact string `1.0.5 / ACP 1`. ADR-0021
 made the pin a floor, so the live probe could not have passed against the client the machine runs.
 
 ## The fixed transport, against the real client

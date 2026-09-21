@@ -1,6 +1,6 @@
 # Tell the user a provider client is behind, and offer to install it
 
-Branch: `feat/provider-client-updates`. Decision: `docs/adr/0020-provider-client-updates.md`. Mock-up: `design/provider-updates/provider-update-notice.html`.
+Branch: `feat/provider-client-updates`. Decision: `docs/adr/0021-provider-client-updates.md`. Mock-up: `design/provider-updates/provider-update-notice.html`.
 
 ## What was asked
 

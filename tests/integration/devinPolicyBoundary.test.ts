@@ -119,7 +119,7 @@ it('still refuses when the catalog folder itself carries native configuration', 
   expect(await prompts()).toHaveLength(0)
 })
 
-it('connects to a client newer than the checked version and records which one it checked (ADR-0020)', async () => {
+it('connects to a client newer than the checked version and records which one it checked (ADR-0021)', async () => {
   f.host.disconnect(); await f.host.closed()
   await f.script({ cliVersion: '3000.11.02' })
   const snapshot = await f.host.connect()
