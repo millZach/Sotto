@@ -246,7 +246,9 @@ export class GrokAcpHost implements AgentHost {
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
     this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear(); this.histories.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
-    const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', 'agent', '--leader', 'stdio'], this.userDataDirectory,
+    // The allow rule covers Sotto's own browser server and nothing else, on this spawned process
+    // rather than in Grok's own configuration. Tools still asks before any page action (ADR-0020).
+    const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', '--allow', 'MCPTool(sotto_browser__*)', 'agent', '--leader', 'stdio'], this.userDataDirectory,
       grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame), () => {
         if (this.rpc === rpc) { this.state.connected = false; clearInterval(this.pollTimer); for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected.')); this.deliveries.clear(); this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []; this.emit() }
       })

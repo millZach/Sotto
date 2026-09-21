@@ -113,7 +113,9 @@ export async function browserCodexConfig(tools: BrowserAgentTools | undefined, t
   const config: Record<string, unknown> = reasoningEffort ? { model_reasoning_effort: reasoningEffort } : {}
   if (tools) {
     const server = await tools.mcpServer(threadId)
-    config.mcp_servers = { sotto_browser: { url: server.url, tool_timeout_sec: 360, http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
+    // Sotto's own browser tools carry no native prompt; the answer that matters is the one the user
+    // gives in Tools (ADR-0020). The mode is scoped to this server alone and changes no global config.
+    config.mcp_servers = { sotto_browser: { url: server.url, tool_timeout_sec: 360, default_tools_approval_mode: 'auto', http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
   }
   return Object.keys(config).length ? { config } : {}
 }
