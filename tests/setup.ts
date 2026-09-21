@@ -1,8 +1,17 @@
-import { promises as fsPromises } from 'node:fs'
+import { promises as fsPromises, realpathSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
+import { tmpdir } from 'node:os'
 import { afterEach } from 'vitest'
 import { configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+
+// macOS: /var/folders is a symlink to /private/var/folders. Git, fs.realpath and PATH
+// lookups return the physical path, so a test that builds expected paths from os.tmpdir()
+// never matches — the same class of mismatch as the Windows runner's 8.3 TEMP
+// (see .github/workflows/ci.yml). Point TMPDIR at the real path before any fixture runs.
+if (process.platform === 'darwin') {
+  process.env.TMPDIR = realpathSync(tmpdir())
+}
 
 // jsdom keeps one web storage per test file, so whatever a test leaves behind is read by the next one.
 // The renderer paints the cached agent shell on its first frame, so a leftover shell makes the first

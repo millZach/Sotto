@@ -6,7 +6,8 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 
 - Apple Silicon Mac (arm64). Intel is not supported.
 - Xcode command-line tools: `xcode-select --install`
-- Node 22+, `gh` authenticated (for the release upload at the end).
+- Node 24 (same as CI in `.github/workflows/ci.yml`). Node 22 can install and typecheck; the unit suite needs Node 24's `node:sqlite` builtin listing.
+- `gh` authenticated (for the release upload at the end).
 - Network on first build (~400 MB: Electron darwin-arm64, electron-builder icns/dmg toolsets, the bundled model) and ~5 GB free disk.
 - A real `git clone` (not a source zip) — build provenance runs `git rev-parse HEAD`.
 

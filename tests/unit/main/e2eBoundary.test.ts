@@ -9,13 +9,15 @@ import {
 import { parseAccelerator } from '../../../src/shared/accelerator'
 import { E2E_CONFLICTING_HOTKEY, e2eScenarioSchema } from '../../../src/shared/e2e'
 
+const e2eUserData = process.platform === 'win32' ? 'C:\\temp\\sotto-e2e' : '/tmp/sotto-e2e'
+
 describe('development-only E2E admission', () => {
   it('rejects the boundary in packaged builds', () => {
     for (const scenario of e2eScenarioSchema.options) {
       expect(resolveE2EConfiguration(true, {
         SOTTO_E2E: '1',
         SOTTO_E2E_SCENARIO: scenario,
-        SOTTO_E2E_USER_DATA: 'C:\\temp\\sotto-e2e',
+        SOTTO_E2E_USER_DATA: e2eUserData,
       })).toBeNull()
     }
   })
@@ -33,8 +35,8 @@ describe('development-only E2E admission', () => {
     expect(resolveE2EConfiguration(false, {
       SOTTO_E2E: '1',
       SOTTO_E2E_SCENARIO: 'paste-failure',
-      SOTTO_E2E_USER_DATA: 'C:\\temp\\sotto-e2e',
-    })).toEqual({ scenario: 'paste-failure', userDataPath: 'C:\\temp\\sotto-e2e' })
+      SOTTO_E2E_USER_DATA: e2eUserData,
+    })).toEqual({ scenario: 'paste-failure', userDataPath: e2eUserData })
   })
 
   it('admits the deterministic processing capture only in a non-packaged app', () => {
@@ -42,8 +44,8 @@ describe('development-only E2E admission', () => {
       expect(resolveE2EConfiguration(false, {
         SOTTO_E2E: '1',
         SOTTO_E2E_SCENARIO: scenario,
-        SOTTO_E2E_USER_DATA: 'C:\\temp\\sotto-e2e',
-      })).toEqual({ scenario, userDataPath: 'C:\\temp\\sotto-e2e' })
+        SOTTO_E2E_USER_DATA: e2eUserData,
+      })).toEqual({ scenario, userDataPath: e2eUserData })
     }
   })
 

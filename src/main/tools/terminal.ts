@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { basename, join } from 'node:path'
+import { basename, join, win32 as win32Path } from 'node:path'
 import { z } from 'zod'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { FileWorkspace } from '../../shared/files'
@@ -84,8 +84,10 @@ export class TerminalService extends ToolOperations {
     env.TERM = 'xterm-256color'
     env.COLORTERM = 'truecolor'
     env.TERM_PROGRAM = 'Sotto'
-    const shell = platform === 'win32' ? join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
-    const record: LiveTerminal = { session: { id: randomUUID(), workspace: owner, title: basename(shell), shell, status: 'running', cols, rows, exitCode: null, createdAt: Date.now() }, output: '', sequence: 0, subscriptions: [] }
+    const shell = platform === 'win32'
+      ? win32Path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
+    const record: LiveTerminal = { session: { id: randomUUID(), workspace: owner, title: (platform === 'win32' ? win32Path.basename(shell) : basename(shell)), shell, status: 'running', cols, rows, exitCode: null, createdAt: Date.now() }, output: '', sequence: 0, subscriptions: [] }
     this.sessions.set(record.session.id, record)
     try {
       const spawn = this.dependencies.spawn ?? (await import('node-pty')).spawn
