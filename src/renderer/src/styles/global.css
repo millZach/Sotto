@@ -463,7 +463,8 @@ textarea.tt-input {
 .tt-toast-region {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* The client update card holds this corner while it is up and says how tall it is. */
+  bottom: var(--tt-corner-inset, 20px);
   z-index: 10;
   display: grid;
   max-width: min(360px, calc(100vw - 40px));
@@ -2477,4 +2478,9 @@ textarea.tt-input {
 @property --effort-ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 @keyframes effort-ring { to { --effort-ring-angle: 360deg; } }
 @keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
-@keyframes effort-letter { from { color: var(--tt-text); } 45% { color: var(--tt-text); transform: translateY(-1px); } to { color: var(--tt-effort-text-fill); transform: none; } }
+/* The letters take the colour in turn and the word lifts as one. Nothing inside the word may move: a colourway
+   that paints the word as a gradient clips it to the glyphs, and a transformed or positioned descendant drops
+   out of that clip in Chromium, which left Rainbow's word blank for the whole arrival. The word owns the clip,
+   so the word is what lifts. */
+@keyframes effort-letter { from { color: var(--tt-text); } 45% { color: var(--tt-text); } to { color: var(--tt-effort-text-fill); } }
+@keyframes effort-word { from { transform: translateY(0); } 45% { transform: translateY(-1px); } to { transform: none; } }

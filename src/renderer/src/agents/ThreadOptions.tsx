@@ -15,6 +15,12 @@ const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
 }
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
 
+/** The choices used when creating a thread, visible while its optional controls are collapsed. */
+export function threadOptionsSummary(model: AgentModel | undefined, effort: string | undefined, mode: AgentRuntimeMode | undefined): string {
+  const reasoning = effort ?? model?.defaultReasoningEffort
+  return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, mode ? RUNTIME_LABELS[mode] : 'Provider default'].filter(Boolean).join(' · ')
+}
+
 interface ChoiceOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
 
 /** The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. */

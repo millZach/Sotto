@@ -37,6 +37,7 @@ import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
+import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
   BrowserMicrophoneTest,
@@ -586,6 +587,7 @@ export function SettingsView({
                   <Field label="Web links in threads" description="Where a link in a thread opens when you click it. Right-click a link, or press Shift+F10, to choose for that link."><SegmentedControl label="Web links in threads" value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: 'System browser' }, { value: 'embedded', label: 'Sotto browser' }]} /></Field>
                   <Field label="Replies in threads" description="Stream a reply word by word as the agent writes it, or show it once it is finished. Commands and tool calls always appear as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
                   <Field label="New threads work in" description="Project defaults can override this. Existing threads keep their working folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
+                  <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)

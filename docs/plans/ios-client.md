@@ -1,6 +1,6 @@
 # Native iOS client
 
-Owner authorized implementation September 21, 2026: an installed iOS app like T3 Code, private Tailscale access, code-entry pairing B, existing-thread reading/replies/interruption/explicit request answers. TestFlight is planned; signing/account/build-host access is not verified. ADR-0020 records the native boundary before source changes.
+Owner authorized implementation September 21, 2026: an installed iOS app like T3 Code, private Tailscale access, code-entry pairing B, existing-thread reading/replies/interruption/explicit request answers. TestFlight is planned; signing/account/build-host access is not verified. ADR-0021 records the native boundary before source changes.
 
 ## Implementation and acceptance
 

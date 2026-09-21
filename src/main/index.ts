@@ -58,7 +58,7 @@ import { buildApplicationMenuTemplate } from './app/applicationMenu'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
-import { registerIpc } from './ipc/registerIpc'
+import { isAuthorizedIpcSender, registerIpc } from './ipc/registerIpc'
 import { createMicrophoneAccessGate } from './media/microphoneAccess'
 import {
   createSpawnProcessAdapter,
@@ -139,7 +139,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { SecureSettings } from './agents/secureSettings'
@@ -161,6 +161,7 @@ import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
 import { BrowserService } from './tools/browser'
+import { createBrowserAgentServer } from './tools/browserAgentTools'
 import { GitChangesService } from './tools/gitChanges'
 import { TERMINAL_EVENT } from '../shared/terminal'
 import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
@@ -597,6 +598,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
+  let browserService: BrowserService | undefined
+  const browserAgentServer = createBrowserAgentServer(() => browserService)
+  agentHost.useBrowserTools(browserAgentServer)
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
@@ -986,14 +990,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
         emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
       }), () => windows.getTrustedRenderers())
+      browserService = new BrowserService({ files,
+        getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
+        emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
+        destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
+        openExternal: url => shell.openExternal(url),
+      })
       const cleanupTools = registerToolsIpc(ipcMain, {
         terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
-        browser: new BrowserService({ files,
-          getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
-          emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
-          destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
-          openExternal: url => shell.openExternal(url),
-        }),
+        browser: browserService,
         gitChanges,
       }, () => windows.getTrustedRenderers())
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
@@ -1090,6 +1095,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupSubagents()
         cleanupTerminals()
         cleanupTools()
+        browserService = undefined
+        void browserAgentServer.close()
         cleanupThemes()
         cleanupMemory()
         unsubscribeRecoveryNotices()
@@ -1099,6 +1106,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc
+      ipcMain.handle(E2E_BROWSER_AGENT_CHANNEL, (event, payload: unknown) => {
+        if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+        const request = e2eBrowserAgentSchema.parse(payload)
+        return browserAgentServer.call(request.threadId, request.name, request.arguments)
+      })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
         const parsed = e2eAgentEventSchema.parse(payload)
@@ -1128,6 +1140,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
       })
       return () => {
+        ipcMain.removeHandler(E2E_BROWSER_AGENT_CHANNEL)
         ipcMain.removeHandler(AGENT_E2E)
         ipcMain.removeHandler(E2E_SNAPSHOT_CHANNEL)
         ipcMain.removeHandler(E2E_TRIGGER_SHORTCUT_CHANNEL)
@@ -1148,6 +1161,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
 registerModelSchemesAsPrivileged(protocol)
 enableWasmThreadSupport(app.commandLine)
+// Hidden browser captures need a native surface on Windows (ADR-0020).
+// Preserve any caller-supplied feature switches; background throttling remains per-view.
+if (process.platform === 'win32') {
+  const disabled = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
+  disabled.add('CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('disable-features', [...disabled].join(','))
+}
+
 app.setAppUserModelId(APP_ID)
 // Sotto lives in the tray/menu bar, so losing every window must not quit it —
 // Electron's unhandled default does exactly that.

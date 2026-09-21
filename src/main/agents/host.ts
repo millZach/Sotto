@@ -1,3 +1,4 @@
+import type { BrowserAgentTools } from './browserAgentServer'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
@@ -45,6 +46,8 @@ export interface ThreadHistorySource {
  * prompt = execute send; cancel = execute interrupt; status = snapshot; events = subscribe.
  */
 export interface AgentHost {
+  /** Inject shared browser tools before connecting the native providers. */
+  useBrowserTools?(tools: BrowserAgentTools): void
   rollbackCapability?(threadId: string): { supported: boolean; reason?: string }
   /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
    * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */

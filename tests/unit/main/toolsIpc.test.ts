@@ -9,20 +9,35 @@ describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink']), gitChanges: make(['list', 'diff', 'copyPath', 'reveal', 'watch', 'act', 'branches', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint', 'draftCommitMessage', 'reviewPullRequest', 'draftPullRequestText', 'actPullRequest']) } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'viewport', 'capture']), gitChanges: make(['list', 'diff', 'copyPath', 'reveal', 'watch', 'act', 'branches', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint', 'draftCommitMessage', 'reviewPullRequest', 'draftPullRequestText', 'actPullRequest']) } as unknown as Parameters<typeof registerToolsIpc>[1]
     const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
     const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
     const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(32)
+    expect(handlers.size).toBe(38)
     for (const handler of handlers.values()) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
       handler({ sender, senderFrame: mainFrame }, {})
     }
-    expect(operation).toHaveBeenCalledTimes(32)
+    expect(operation).toHaveBeenCalledTimes(38)
     sender.getURL = () => 'https://example.invalid'
     for (const handler of handlers.values()) expect(() => handler({ sender, senderFrame: mainFrame }, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
     cleanup(); expect(handlers.size).toBe(0)
+  })
+  it('rejects invalid browser grants and actions before crossing the bridge', async () => {
+    const invoke = vi.fn()
+    const { browser } = createToolsBridges({ invoke, on: vi.fn(), removeListener: vi.fn() })
+    const page = { threadId: 'thread', workspaceId: 'a'.repeat(64), pageId: 'f6a804fd-77c9-497c-bc16-ce0d0a7b7a59' }
+    await expect(browser.share({ ...page, enabled: 'yes' } as never)).rejects.toThrow()
+    await expect(browser.answerAction({ ...page, taskId: page.pageId, actionId: page.pageId, allow: 'true' } as never)).rejects.toThrow()
+    await expect(browser.viewport({ ...page, width: 0, height: 800 })).rejects.toThrow()
+    await expect(browser.capture({ ...page, point: { x: -1, y: 0 } })).rejects.toThrow()
+    expect(invoke).not.toHaveBeenCalled()
+    invoke.mockResolvedValue({ ok: false, error: { code: 'blocked', message: 'The page is no longer shared.' } })
+    await browser.share({ ...page, enabled: false })
+    expect(invoke).toHaveBeenLastCalledWith('sotto:browser:share', { ...page, enabled: false })
+    await browser.answerAction({ ...page, taskId: page.pageId, actionId: page.pageId, allow: false })
+    expect(invoke).toHaveBeenLastCalledWith('sotto:browser:answerAction', { ...page, taskId: page.pageId, actionId: page.pageId, allow: false })
   })
   it('validates reviewed Git mutations and explicit checkpoint confirmation before crossing IPC', async () => {
     const rejected = { ok: false as const, error: { code: 'blocked' as const, message: 'A native operation is pending.' } }

@@ -78,16 +78,18 @@
 .effort-card__ultrathink[data-on='true'] i { border-color: var(--tt-accent); background: var(--tt-accent); }
 .effort-card__ultrathink[data-on='true'] i svg { display: block; }
 
-/* The arrival. The letters take the colourway in turn, and a tide of it rises through the card from the track;
-   threads.css carries the same tide through the composer and its border tint. */
+/* The arrival. The letters take the colourway in turn, the word lifts and settles as one, and a tide of the
+   colourway rises through the card from the track; threads.css carries the same tide through the composer and
+   its border tint. */
 .effort-card__wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
 .effort-card__wash::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 220%; background: var(--tt-effort-wash-image); opacity: .5;
   -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
 @media (prefers-reduced-motion: no-preference) {
+  .effort-card[data-still='false'][data-arriving='true'] .effort-card__word[data-top='true'] { animation: effort-word 520ms cubic-bezier(.2, .8, .2, 1) both; }
   .effort-card[data-still='false'][data-arriving='true'] .effort-card__word[data-top='true'] > span { animation: effort-letter 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--effort-letter) * 55ms); }
   .effort-card[data-still='false'][data-arriving='true'] .effort-card__wash::before { animation: effort-wash 1500ms cubic-bezier(.3, .6, .2, 1) both; }
 }
-/* The effort-letter and effort-wash keyframes live in global.css, shared with the composer and the Appearance sample. */
+/* The effort-letter, effort-word and effort-wash keyframes live in global.css, shared with the composer and the Appearance sample. */
 
 /* Reduced motion is a true still state, inherited control transitions and the global focus rings' pseudo-elements included. */
 .effort-card[data-still='true'], .effort-card[data-still='true'] *, .effort-card[data-still='true'] *::before, .effort-card[data-still='true'] *::after {

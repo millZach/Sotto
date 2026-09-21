@@ -841,3 +841,71 @@ describe('SettingsView', () => {
     expect(within(agents).getByText('Advanced wake settings')).toBeInTheDocument()
   })
 })
+
+function withProjects(): void {
+  const state: AgentState = {
+    configuration: defaultAgentConfiguration(), connection: 'disconnected',
+    host: {
+      connected: false, name: 'Providers', version: '', models: [], threads: [],
+      capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
+      projects: [{ id: 'one', title: 'One', path: 'C:/One' }, { id: 'two', title: 'Two', path: 'C:/Two' }],
+    },
+    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
+    voice: { status: 'off', error: null, action: 'none', revision: 0 },
+    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+    membership: { status: 'beta', label: 'Test', expiresAt: null },
+  }
+  vi.mocked(useOptionalAgents).mockReturnValue({
+    state, command: vi.fn(async () => state), error: null, voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(),
+    attention: { items: [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) },
+  })
+}
+
+describe('Project thread defaults in Application settings', () => {
+  it('edits one project without losing other overrides and can restore inheritance', async () => {
+    withProjects()
+    const onUpdateSettings = vi.fn(async () => true)
+    const props = baseProps({ settings: { ...DEFAULT_SETTINGS, projectThreadWorkingCopyDefaults: { one: 'independent', missing: 'shared' } }, onUpdateSettings })
+    const { rerender } = render(<SettingsView {...props} />)
+    await selectCategory('Application')
+    await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
+    const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
+    expect(choice).toHaveValue('independent')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Project', exact: true }), 'two')
+    expect(choice).toHaveValue('inherit')
+    await userEvent.selectOptions(choice, 'independent')
+    expect(onUpdateSettings).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: { one: 'independent', missing: 'shared', two: 'independent' } })
+    rerender(<SettingsView {...props} settings={{ ...props.settings, projectThreadWorkingCopyDefaults: { one: 'independent', missing: 'shared', two: 'independent' } }} />)
+    await userEvent.selectOptions(choice, 'inherit')
+    expect(onUpdateSettings).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: { one: 'independent', missing: 'shared' } })
+    choice.focus()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Project defaults' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Project defaults' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('disables edits during save and retains the previous value with a visible failure', async () => {
+    withProjects()
+    const pending = deferred<boolean>()
+    const onUpdateSettings = vi.fn(() => pending.promise)
+    render(<SettingsView {...baseProps({ onUpdateSettings })} />)
+    await selectCategory('Application')
+    await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
+    const choice = screen.getByRole('combobox', { name: 'New threads in this project work in' })
+    await userEvent.selectOptions(choice, 'independent')
+    expect(choice).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Project', exact: true })).toBeDisabled()
+    await act(async () => pending.resolve(false))
+    expect(choice).toBeEnabled()
+    expect(choice).toHaveValue('inherit')
+    expect(screen.getByText('That setting could not be saved. Your previous setting is still active.')).toBeVisible()
+  })
+
+  it('explains how to add a project when there are none', async () => {
+    render(<SettingsView {...baseProps()} />)
+    await selectCategory('Application')
+    await userEvent.click(screen.getByRole('button', { name: 'Project defaults' }))
+    expect(screen.getByText('Add a project in Threads to set its default working copy.')).toBeVisible()
+  })
+})

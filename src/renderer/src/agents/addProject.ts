@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { defaultThreadModelId, type AgentState } from '../../../shared/agents'
+import { defaultThreadModelId, isSubscriptionReasoning, type AgentState } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { folderKey, folderName } from './ProjectChooser'
 
@@ -19,8 +19,9 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       if (!path) return
       const existing = state.host.projects.find(project => folderKey(project.path) === folderKey(path))
       if (existing) { await command({ type: 'select-project', projectId: existing.id }); return }
-      const defaultModelId = defaultThreadModelId(state.configuration, state.host.models)
-      const provider = state.host.models.find(model => model.id === defaultModelId)?.providerId
+      const defaultModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
+      const provider = isSubscriptionReasoning(state.configuration.reasoning) ? state.configuration.reasoning
+        : state.host.models.find(model => model.id === defaultModelId)?.providerId
       const result = await command({ type: 'create-project', title: folderName(path), path, useExisting: true, ...(provider ? { provider } : {}) })
       if (result === null || result.error !== null) setError(result?.error ?? 'Could not confirm the new project. Choose the folder again to check; it will not be added twice.')
     } catch { setError('Could not open the folder browser. Try again.') }

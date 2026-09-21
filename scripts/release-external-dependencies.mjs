@@ -21,6 +21,7 @@ const reviewedInventories = Object.freeze({
       'node:crypto',
       'node:fs',
       'node:fs/promises',
+      'node:http',
       'node:https',
       'node:module',
       'node:os',

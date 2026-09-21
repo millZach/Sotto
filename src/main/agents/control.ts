@@ -9,7 +9,7 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type SubscriptionProvider,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -22,6 +22,8 @@ import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
+import { clientVersionOf } from './clientVersions'
+import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
@@ -136,6 +138,8 @@ export class AgentControl {
   private readonly considered = new Map<string, string>()
   private readonly recoveredQueueIds = new Map<string, Set<string>>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
+  private readonly clients: ProviderClients
+  private updatingClient: ProviderId | null = null
   private serial: Promise<unknown> = Promise.resolve()
   private unsubscribe: (() => void) | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
@@ -204,8 +208,13 @@ export class AgentControl {
     logFailure?: (code: string, detail: string) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
     schedule?: PublishScheduler
+    /** What each installed client publishes, and the press that installs it. */
+    clients?: ProviderClients
+    /** Where a client is installed. Injected so a test never reads the machine's real PATH. */
+    locateClient?: (provider: ProviderId) => Promise<string | undefined>
   }) {
     this.followupStore = new FollowupStore(dependencies.directory)
+    this.clients = dependencies.clients ?? new ProviderClients()
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -617,6 +626,97 @@ export class AgentControl {
     this.accountChecks.set(provider, check)
     try { await check } finally { this.accountChecks.delete(provider) }
   }
+  /**
+   * What every connected client publishes, against what it is running. A provider that is not
+   * connected has no known installed version, so nothing is claimed about it. Findings from an
+   * update already run are kept, so "is now 2.1.278" survives the next check.
+   */
+  private async checkClientUpdates(fresh = false): Promise<void> {
+    if (!this.state.configuration.checkClientUpdates) { delete this.state.clientUpdates; return }
+    const previous = this.state.clientUpdates ?? []
+    const readings: ProviderClientUpdate[] = []
+    for (const provider of this.state.host.providers ?? []) {
+      if (provider.connection !== 'connected') continue
+      const installed = clientVersionOf(provider.version)
+      if (!installed) continue
+      const executable = await this.clientPath(provider.id)
+      const reading = await this.clients.check(provider.id, installed, executable)
+      const before = fresh ? undefined : previous.find(item => item.id === provider.id)
+      readings.push(before && before.state !== 'idle' && before.installed === reading.installed
+        ? { ...reading, state: before.state, ...(before.error ? { error: before.error } : {}) } : reading)
+    }
+    if (this.disposed) return
+    // A client that updated, failed or did not change still has something to say after its provider
+    // drops: losing the record here would take the sentence about it off the card with it.
+    for (const before of previous) {
+      if (before.state !== 'idle' && !readings.some(item => item.id === before.id)) readings.push(before)
+    }
+    if (readings.length) this.state.clientUpdates = readings
+    else delete this.state.clientUpdates
+    if (fresh) delete this.state.clientUpdatesDismissedAt
+    else if (this.state.clientUpdatesDismissedAt && readings.some(item => item.behind
+      && !previous.some(before => before.id === item.id && before.published === item.published))) delete this.state.clientUpdatesDismissedAt
+  }
+  private clientPath(provider: ProviderId): Promise<string | undefined> {
+    return (this.dependencies.locateClient ?? locateClientOnDisk)(provider)
+  }
+  private setClientUpdate(provider: ProviderId, patch: Partial<ProviderClientUpdate>): void {
+    this.state.clientUpdates = (this.state.clientUpdates ?? []).map(item => item.id === provider ? { ...item, ...patch } : item)
+  }
+  /**
+   * Replace one client, with nothing of Sotto's using it. The provider disconnects first because
+   * Windows will not overwrite a running executable and a turn in flight would be lost either way,
+   * and reconnects after so the new version is the one on screen. A thread still working refuses
+   * until the user says so; the disconnect that follows is the reason the sentence names it.
+   */
+  private async updateClient(provider: ProviderId, force: boolean): Promise<void> {
+    if (this.updatingClient) throw new Error('Another client is updating. Wait for it to finish.')
+    const record = this.state.clientUpdates?.find(item => item.id === provider)
+    if (!record) throw new Error(`Sotto has not checked ${PROVIDER_LABELS[provider]} yet. Check again, then update it.`)
+    if (!record.canInstall) {
+      throw new Error(record.channel === 'devin-app' ? 'Devin updates with the Devin app.'
+        : !record.behind ? `${PROVIDER_LABELS[provider]} is already at the published version.`
+        : record.command ? `Sotto did not install ${PROVIDER_LABELS[provider]}, so it will not replace it. Run ${record.command} yourself.`
+        : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.`)
+    }
+    const working = this.state.host.threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
+    if (working > 0 && !force) {
+      throw new Error(`${PROVIDER_LABELS[provider]} has ${working === 1 ? 'a thread' : `${working} threads`} working now. Updating stops ${working === 1 ? 'it' : 'them'}.`)
+    }
+    this.updatingClient = provider
+    this.setClientUpdate(provider, { state: 'updating' })
+    this.state.clientUpdates?.forEach(item => { if (item.id === provider) delete item.error })
+    this.publish()
+    try {
+      const executable = await this.clientPath(provider)
+      this.dependencies.host.disconnect(provider)
+      const result = await this.clients.install(provider, executable)
+      if (!result.ok) {
+        this.setClientUpdate(provider, { state: 'failed', ...(result.detail ? { error: result.detail } : {}) })
+        // The client was not replaced, so put the connection back the way it was.
+        await this.dependencies.host.connect(provider).then(snapshot => this.acceptSnapshot(snapshot)).catch(() => undefined)
+        throw new Error(`${PROVIDER_LABELS[provider]} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged.`)
+      }
+      // The install happened whatever the connection does next, so the reading says so either way
+      // rather than leaving the card spinning on a client that is already replaced.
+      let reconnectFailure: string | undefined
+      try { this.acceptSnapshot(await this.dependencies.host.connect(provider)) }
+      catch (error) { reconnectFailure = error instanceof Error ? error.message : 'It did not reconnect.' }
+      await this.checkClientUpdates()
+      // The installer can finish and the client still answer with the version it did before: another
+      // window holding the old client open is enough. Saying "updated" then would be a lie the user
+      // can check, so the reading says what the client actually reports.
+      const running = this.state.clientUpdates?.find(item => item.id === provider)?.installed
+      const moved = running !== undefined && running !== record.installed
+      this.setClientUpdate(provider, { state: moved ? 'updated' : 'unchanged',
+        ...(reconnectFailure ? { error: reconnectFailure } : {}) })
+      if (reconnectFailure) throw new Error(`${PROVIDER_LABELS[provider]} updated, but did not reconnect. ${reconnectFailure}`)
+      if (running === record.installed) {
+        throw new Error(`${PROVIDER_LABELS[provider]} still reports ${record.installed}. The update ran, but this client is the one still open. Close other windows using it and connect again.`)
+      }
+      this.say(`${PROVIDER_LABELS[provider]} updated.`)
+    } finally { this.updatingClient = null }
+  }
   private observe(...threadIds: string[]): void {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
@@ -874,6 +974,9 @@ export class AgentControl {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.get()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
+    // An install runs for as long as npm takes. It belongs on the provider lane with connect and
+    // disconnect, never on the one global lane, which would lock every other surface while it ran.
+    if (command.type === 'update-client' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
@@ -1198,7 +1301,7 @@ export class AgentControl {
       expectedLastUserMessageId: this.thread(command.threadId).messages.findLast(m => m.role === 'user')?.id ?? null }, turn, validate, command.draftId)
     this.say(`Steered ${this.thread(command.threadId).title}.`)
   }
-  private async providerCommand(command: Extract<AgentCommand, { type: 'connect' | 'disconnect' | 'refresh' }>): Promise<AgentState> {
+  private async providerCommand(command: Extract<AgentCommand, { type: 'connect' | 'disconnect' | 'refresh' | 'update-client' | 'check-client-updates' | 'dismiss-client-updates' }>): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: command.type, text: '' })
     let failure: string | undefined
     try { this.state.error = null; await this.execute(command, turn); await this.persist() }
@@ -1304,6 +1407,8 @@ export class AgentControl {
           if (!snapshot.connected) throw new Error(snapshot.error || `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
+          // Asking the registry must not hold up the connection the user is waiting on.
+          if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)
         } catch (error) {
           if (!this.state.host.providers) this.disconnect()
           throw error
@@ -1324,6 +1429,9 @@ export class AgentControl {
         return
       case 'refresh': this.observe(); this.acceptSnapshot(await this.dependencies.host.snapshot(command.provider)); return
       case 'check-reasoning': await this.checkReasoning(command.provider); return
+      case 'check-client-updates': await this.checkClientUpdates(true); return
+      case 'update-client': await this.updateClient(command.provider, command.force === true); return
+      case 'dismiss-client-updates': this.state.clientUpdatesDismissedAt = new Date().toISOString(); return
       case 'utterance': await this.utterance(command.text.trim(), turn, selectionRevision); return
       case 'compose': {
         if (!this.state.composing) this.startDraft()
@@ -2023,7 +2131,7 @@ export class AgentControl {
     const intentStarted = Date.now()
     let intent
     try {
-      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, defaultThreadModelId(this.state.configuration, this.state.host.models), this.state.activeThreadId, preferences)
+      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, defaultThreadModelId(this.state.configuration, this.state.host.models, this.state.reasoningAccounts), this.state.activeThreadId, preferences)
       if (turn) turn.intentResolvedAtMs = Date.now()
     } finally {
       if (turn) turn.intentMs += Date.now() - intentStarted

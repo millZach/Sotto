@@ -17,6 +17,12 @@ export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
 export const E2E_SNAPSHOT_CHANNEL = 'sotto:e2e:snapshot'
 export const E2E_TRIGGER_SHORTCUT_CHANNEL = 'sotto:e2e:trigger-shortcut'
+export const E2E_BROWSER_AGENT_CHANNEL = 'sotto:e2e:browser-agent'
+export const e2eBrowserAgentSchema = z.object({ threadId: z.string().min(1).max(512), name: z.string().min(1).max(80), arguments: z.unknown() }).strict()
+export const e2eBrowserAgentResultSchema = z.object({ content: z.array(z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }),
+])), isError: z.boolean().optional() })
 
 export const e2eScenarioSchema = z.enum([
   'success',
@@ -55,6 +61,7 @@ export const e2eAgentEventSchema = z.object({
 }).strict()
 
 export interface SottoE2EBridge {
+  browserAgent?(request: z.infer<typeof e2eBrowserAgentSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario
   snapshot(): Promise<E2ESnapshot>

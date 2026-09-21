@@ -35,6 +35,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const host = {
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
+    useBrowserTools: idle,
     dispose: idle, disconnect: idle, close: async () => undefined,
   }
   const refuseMissing = <T extends object>(value: T): T => new Proxy(value, {

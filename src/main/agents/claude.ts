@@ -1,3 +1,4 @@
+import type { BrowserAgentTools } from './browserAgentServer'
 import { ClaudeHistory } from './claudeHistory'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
@@ -60,6 +61,8 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
 
 /** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -149,6 +152,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }))
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
+    // Without this the version is only known once a session runs, so an idle provider could not be
+    // compared against what its channel publishes (ADR-0020).
+    this.state.version = await this.client.version(executable) || this.state.version
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
@@ -497,11 +503,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const resume = await this.log(id).exists()
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (!resume && alias.origins.length) throw new Error('Claude native history is unavailable. Restore its session before continuing; Sotto will not recreate or resend an uncertain turn.')
-    const args = [...(this.options.args ?? []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    const browser = alias.kind !== 'personal' ? await this.browserTools?.mcpServer(id) : undefined
+    const browserArguments = browser ? ['--mcp-config', JSON.stringify({ mcpServers: { [browser.name]: {
+      type: browser.type, url: browser.url, headers: Object.fromEntries(browser.headers.map(header => [header.name, header.value])),
+    } } })] : []
+    const args = [...(this.options.args ?? []), ...browserArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       ...(alias.kind === 'personal' ? ['--append-system-prompt', this.personalContexts.get(id) ?? personalContext()] : []),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
-    const runtime: Runtime = { requests: new Map(), answered: new Set(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, this.client.environment(), this.options.requestTimeoutMs ?? 15000,
+    const runtime: Runtime = { requests: new Map(), answered: new Set(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
         this.clearMonitoring(id)

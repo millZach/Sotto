@@ -4,7 +4,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 ## Threads
 
-**Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. Threads are a core Sotto function: memory, goals, assignments and the attention queue refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
+**Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. A new thread starts with the native agent and model selected in Settings → Agents; a model chosen for that thread overrides its starting choice without changing the setting. Threads are a core Sotto function: memory, goals, assignments and the attention queue refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 
 **Thread title.** The thread's name in every surface that names it: sidebar, pane header, attention queue, widget and spoken summaries. It is Sotto's own record, renamed at any time from the sidebar row or the pane header and never pushed to the provider. A thread records whether its title was set by hand (`titleSource`): a name the user typed, in the New thread dialog or a rename, is `user`; a name Sotto's writing model wrote is `generated`; the stand-in "New thread" and any name a provider supplied are `default`. Anything that generates a title leaves a `user` one alone.
 
@@ -21,6 +21,10 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 **Sotto thread ID.** An opaque ID, unique within its host, that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session. Agent state, queue items and assignments refer to this ID; a client pairs it with the Host ID when it shows more than one host.
 
 **Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build or Devin. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
+
+**Client update.** What Sotto knows about one installed client: the version the adapter connected to, the version that client's own install channel publishes, and the one press that installs it. The **channel** is what installed it — npm (including a client whose package npm owns but whose binary lives elsewhere), the client's own updater, or the Devin app — and it decides both where the published version is read and what an update runs. A client whose channel Sotto will not drive shows the command instead of a button. Say "client update", not "provider update": the provider is connected or not, the client is what gets replaced (ADR-0020).
+
+**Verified version.** The client version an adapter was checked against. Sotto connects to that version or newer and notes when the installed client is past it; older is refused. Not a pin: an exact pin is what kept an installed client old while newer ones were published.
 
 **Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
@@ -41,6 +45,15 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 **File mention.** A file of a thread's working copy named in a draft by typing `@` and picking it, like a native skill's `$`: both are mentions, a sigil and a name written into the draft's own text. The mention is the reference — deleting its token removes the file from the send — and it reaches every provider as the same `@path` relative to the working copy. Files outside the working copy, git-administrative entries and paths containing a space are never offered.
 
 **Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy.
+
+**Browser task.** One thread's work with a page in Sotto's browser, including its current action, user decisions, checks and evidence. A browser task may be working, paused, completed or failed; its reported result states what was checked and what remains unchecked.
+
+**Browser preview.** The small corner view of a browser task's page. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work.
+
+**Shared browser page.** A browser page the user has made observable to its owning thread. Sharing observation does not approve navigation, clicks or typing, and revoking it ends that access.
+
+**Browser feedback.** A screenshot and optional selected-element or region context added to a thread's draft by the user. It is unsent draft content until the user sends it.
+
 
 **Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
@@ -213,7 +226,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Effort color.** The colourway a thread's effort control turns at a model's highest level: one of Ember, Cyberpunk, Rainbow, Aurora, Plasma or Theme accent, chosen on Settings → Appearance and painted on the window root as `data-effort-color` (ADR-0019). It colours the card's fill and tinted word, the effort chip, and the composer's outline and arrival. Ember and Theme accent come from theme roles; the other four are fixed palettes no theme carries, the one place the main window's colour does not come from the theme. Avoid: "effort theme"; a theme is a palette of roles, and this is one choice across all of them.
 
-**Highest level.** The last effort level a model reports, whatever it is called (Max on Claude Code, Ultra on GPT-6 Astra). A model that reports one level has no highest level. The composer wears the effort color's outline while a thread sits there, and the arrival is what plays on reaching it from below: a tide of the colourway through the card and the composer, the letters of the level taking the colour in turn, both borders tinting and fading. Reduced motion shows the settled state. Avoid: "max" or "gold" for the state; the name belongs to the level, and the colour is the user's.
+**Highest level.** The last effort level a model reports, whatever it is called (Max on Claude Code, Ultra on GPT-6 Astra). A model that reports one level has no highest level. The composer wears the effort color's outline while a thread sits there, and the arrival is what plays on reaching it from below: a tide of the colourway through the card and the composer, the letters of the level taking the colour in turn while the word lifts and settles as one, both borders tinting and fading. Reduced motion shows the settled state. Avoid: "max" or "gold" for the state; the name belongs to the level, and the colour is the user's.
 
 **Theme editor.** The floating panel that creates or edits a custom theme and paints it live over the saved look until Save or Cancel. Pick app color (the inspector) chooses a colour role by pointing at the page; a role's label spotlights everywhere it is used.
 

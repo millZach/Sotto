@@ -156,6 +156,7 @@ For the local HEAD/current startup, update and memory comparison, run `node test
 `npm run test:host` runs the Node-only host lifecycle and credential checks, shared adapter contracts and HostService journeys with fake providers. The normal unit/integration gate includes these tests. The process test builds a temporary plain-Node entry and checks its import graph for Electron; it does not use the shipped Electron executable. On Windows its SIGTERM handler is exercised through an owned IPC signal fixture because Windows process termination cannot deliver a graceful POSIX SIGTERM. The separate Linux host job delivers a real SIGTERM to both the lifecycle fixture and the extracted archive smoke test.
 
 `tests/e2e/host-identity.spec.ts` launches the real desktop with a legacy workspace, verifies durable host identity and raw persisted Sotto IDs, then checks host-scoped panes and a saved draft after restart. Run it with the daily-workspace and coordinator journeys when changing the host/client boundary.
+
 ## Linux host archive and socket contract
 
 The **Host archive and socket contract (Linux)** job runs on `ubuntu-latest` with Node 24, read-only repository access and no provider credentials. It installs the locked dependencies without downloading Electron, then runs:
@@ -175,3 +176,16 @@ Run `npm run package:host` locally for the same extraction and startup check. Th
 **Native iOS client (macOS)** runs `sh apps/ios/Scripts/verify.sh` on `macos-15`, selecting `/Applications/Xcode_16.4.app/Contents/Developer` explicitly. [The runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md) lists that toolchain and its iOS 18.5 simulator SDK, which satisfy the package's Swift 5.9 tools and app's iOS 17 minimum. The job prints its actual Xcode/Swift versions, runs the native SottoCore package tests, and builds the unsigned iOS simulator app with the shared Xcode scheme. It needs no signing secrets, never uploads to TestFlight, and does not run npm or Electron.
 
 The workflow has no path filters, so changes under `apps/ios` and the host protocol both run this gate. Passing establishes native tests and compilation, not simulator interaction, VoiceOver/design inspection, real-device networking, signing or Forge availability. On a Windows-only development machine this job's result remains unverified until GitHub actually runs it; adding the job is not a green CI result.
+
+## Browser provider and desktop verification
+
+`tests/integration/browserProviders.test.ts` verifies thread-bound MCP injection and reconnection with scripted native clients. `browserAgentServer.test.ts` checks local transport admission and rejection; browser host and dispatcher tests check page grants, exact actions and observation redaction. These run in the normal two-worker suite.
+
+The opt-in native discovery test starts the installed Codex, Claude Code and Grok clients and waits for their MCP tool catalog request. It sends no model turn and does not prove model-driven browser interaction:
+
+```powershell
+$env:SOTTO_BROWSER_LIVE = '1'
+npx vitest run tests/integration/browserProvidersLive.test.ts --maxWorkers=1
+```
+
+Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/phase-three-tools-bridge.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/agent-browser/`. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.

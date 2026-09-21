@@ -15,7 +15,7 @@ First parallel batch authorized September 20, 2026: #135 headless runtime, #136 
 
 ## Decisions and gaps
 
-The proposed headless-host ADR is on open PR #133, not this checkout. Its 0017 number is occupied by Devin. Record host decisions as ADR-0020 without overwriting Devin or claiming PR #133 merged. The current production dependency allow-list is zod and node-pty; the older map's zod-only statement predates ADR-0018.
+The proposed headless-host ADR is on open PR #133, not this checkout. Its 0017 number is occupied by Devin. Record host decisions as ADR-0021 without overwriting Devin or main's two 0020 decisions or claiming PR #133 merged. The current production dependency allow-list is zod and node-pty; the older map's zod-only statement predates ADR-0018.
 
 The owner selected variant B on September 21, 2026: read a pairing code from Forge and enter it on the client. Build the desktop Settings > Hosts dialog from B. Keep A as an archived alternative and C as the iOS design fixture for the same code-entry pattern. QR scanning is an optional later convenience, not a requirement of this selection. The phone is an installed iOS app, following T3 Code as a reference. The earlier Safari/browser assumption is superseded. The framework remains an implementation decision. Plan for TestFlight delivery using the owner's reported Apple developer account; enrollment, signing and build access remain unverified. HTML previews are design fixtures only; acceptance requires the iOS app on a real iPhone.
 
@@ -61,7 +61,7 @@ Default shell, image viewer and node REPL currently fail Windows sandbox ACL ini
 
 ## Implementation batch resumed September 21
 
-User authorized implementation after accepting B, Tailscale, existing-thread scope and the TestFlight plan. Work is shared among the socket, SSH and iOS agents; parent owns desktop integration and verification. SwiftUI/URLSession/Keychain is the selected native implementation, without mobile third-party runtime dependencies; ADR-0020 records the tradeoff. The desktop shows both local and remote threads using host-qualified IDs.
+User authorized implementation after accepting B, Tailscale, existing-thread scope and the TestFlight plan. Work is shared among the socket, SSH and iOS agents; parent owns desktop integration and verification. SwiftUI/URLSession/Keychain is the selected native implementation, without mobile third-party runtime dependencies; ADR-0021 records the tradeoff. The desktop shows both local and remote threads using host-qualified IDs.
 
 - [x] #137: authenticated loopback WebSocket service, per-client observations, reconnect, native-friendly protocol, child-process shared contract. Local evidence only; no remote peer has connected.
 - [x] #138: validated direct SSH spawn, prompts, discover/start/forward and owned-host shutdown, fake-process integration coverage. The real Forge journey in its acceptance is still owed.

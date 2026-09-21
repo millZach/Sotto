@@ -1,4 +1,5 @@
 import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot } from './hostIdentity'
+import type { BrowserAgentTools } from './browserAgentServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -74,6 +75,7 @@ const WRITE_WINDOW_MS = 250
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost {
+  useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   private readonly store: AtomicJsonStore<Workspace>

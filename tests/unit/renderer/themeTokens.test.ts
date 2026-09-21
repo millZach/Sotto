@@ -171,12 +171,14 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/newThread.css',
       'src/renderer/src/agents/providerRecovery.css',
       'src/renderer/src/agents/providers.css',
+      'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/room.css',
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/history/history.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
+      'src/renderer/src/tools/browserReview.css',
     ]
     for (const path of owned) {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')

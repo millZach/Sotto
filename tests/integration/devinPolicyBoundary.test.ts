@@ -67,9 +67,17 @@ it('keeps signed-out setup actionable without sending a prompt', async () => {
   expect(await prompts()).toHaveLength(0)
 })
 
-it('names the compatible CLI version when the installed version is unsupported', async () => {
+it('connects to a client newer than the checked version and records which one it checked (ADR-0020)', async () => {
   f.host.disconnect(); await f.host.closed()
-  await f.script({ cliVersion: '9999.0.0' })
+  await f.script({ cliVersion: '3000.11.02' })
+  const snapshot = await f.host.connect()
+  expect(snapshot.connected).toBe(true)
+  expect(snapshot.verifiedVersion).toBe('3000.10.31')
+})
+
+it('names the checked CLI version when the installed version is older than it', async () => {
+  f.host.disconnect(); await f.host.closed()
+  await f.script({ cliVersion: '2999.1.1' })
   await expect(f.host.connect()).rejects.toThrow('3000.10.31')
   expect((await f.host.snapshot()).connected).toBe(false)
   expect(await prompts()).toHaveLength(0)

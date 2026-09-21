@@ -218,6 +218,8 @@ export const agentCapabilitiesSchema = z.object({
 export const agentProviderStatusSchema = z.object({
   id: providerIdSchema, connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
+  /** Set when the connected client is newer than the version Sotto's adapter was checked against. */
+  verifiedVersion: z.string().max(64).optional(),
 })
 export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
 /** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
@@ -230,6 +232,8 @@ export const agentHostSnapshotSchema = z.object({
   hostId: z.uuid().optional(),
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
+  /** Set when the connected client is newer than the version this adapter was checked against. */
+  verifiedVersion: z.string().max(64).optional(),
   error: z.string().optional(),
   capabilities: agentCapabilitiesSchema,
   models: z.array(agentModelSchema), projects: z.array(agentProjectSchema),
@@ -287,13 +291,14 @@ export const agentConfigurationSchema = z.object({
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
   membershipEndpoint: z.string().max(2_048),
+  checkClientUpdates: z.boolean().default(true),
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   orbColor: 'teal',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '',
+  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '', checkClientUpdates: true,
 })
 
 export const agentAssignmentSchema = z.object({
@@ -343,6 +348,26 @@ export const agentDeliverySchema = z.object({
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
+/**
+ * What Sotto knows about one installed client: the version it connected to, the version its own
+ * install channel publishes, and what a press would run. `canInstall` is false when the channel
+ * is one Sotto names but will not drive, so the card shows the command instead of a button.
+ */
+export const clientChannelSchema = z.enum(['npm', 'self-update', 'devin-app', 'unknown'])
+export type ClientChannel = z.infer<typeof clientChannelSchema>
+export const providerClientUpdateSchema = z.object({
+  id: providerIdSchema,
+  installed: z.string().max(64),
+  published: z.string().max(64).optional(),
+  behind: z.boolean(),
+  channel: clientChannelSchema,
+  command: z.string().max(300).optional(),
+  canInstall: z.boolean(),
+  checkedAt: z.string(),
+  state: z.enum(['idle', 'updating', 'updated', 'unchanged', 'failed']).default('idle'),
+  error: z.string().max(600).optional(),
+})
+export type ProviderClientUpdate = z.infer<typeof providerClientUpdateSchema>
 export const agentStateSchema = z.object({
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
@@ -350,6 +375,9 @@ export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
+  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(),
+  /** The card stays down until the next check finds something else. */
+  clientUpdatesDismissedAt: z.string().optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
   assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
@@ -473,13 +501,16 @@ export function agentShell(state: AgentState): AgentState {
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional() }) }).strict(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional(), checkClientUpdates: z.boolean().optional() }) }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
+  z.object({ type: z.literal('check-client-updates') }).strict(),
+  z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('dismiss-client-updates') }).strict(),
   z.object({ type: z.literal('preview-voice') }).strict(),
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
@@ -588,18 +619,21 @@ export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'pr
   return `native:${provider}:${kind}:${encodeURIComponent(value)}`
 }
 /**
- * The model a new thread starts with: the default chosen for new threads, then the agent account's model
- * (or that provider's first model), then the legacy provider's first model, then any ready model.
+ * New threads inherit the native agent selected in Settings. Keep its explicit or account-default
+ * model even while unavailable, so the caller can explain what needs to connect instead of changing
+ * providers. Without a native agent (none or an API account), use a ready thread provider. The old
+ * separate defaultModelId preference no longer participates in this choice.
  */
-export function defaultThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[]): string {
+export function defaultThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[], accounts: readonly SubscriptionAccount[] = []): string {
+  if (isSubscriptionReasoning(configuration.reasoning)) {
+    const provider = configuration.reasoning
+    const nativeModelId = configuration.reasoningModel || accounts.find(account => account.provider === provider)?.defaultModelId
+    if (nativeModelId) return publicProviderEntityId(provider, 'model', nativeModelId)
+    const candidates = models.filter(model => model.providerId === provider)
+    return (candidates.find(model => model.ready) ?? candidates[0])?.id ?? ''
+  }
   const ready = models.filter(model => model.ready)
-  const agent = isSubscriptionReasoning(configuration.reasoning) ? configuration.reasoning : null
-  const chosen = ready.find(model => model.id === configuration.defaultModelId)
-    ?? (agent && configuration.reasoningModel ? ready.find(model => model.id === publicProviderEntityId(agent, 'model', configuration.reasoningModel)) : undefined)
-    ?? (agent ? ready.find(model => model.providerId === agent) : undefined)
-    ?? ready.find(model => model.providerId === configuration.provider)
-    ?? ready[0]
-  return chosen?.id ?? ''
+  return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**
  * Whether this thread's own lane is running a command right now. Every control that acts on one thread
