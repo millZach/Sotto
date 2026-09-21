@@ -20,7 +20,15 @@ export function isComparableVersion(value: string): boolean {
   return /^v?\d+(\.\d+)*/u.test(value.trim())
 }
 
-/** The client's own version, without the protocol note an adapter adds to it ("1.0.5 / ACP 1"). */
+/**
+ * The client's own version, out of whatever the adapter reports. Grok and Devin add a protocol note
+ * ("1.0.5 / ACP 1"); Codex answers with a user agent that names the product first and carries both
+ * its version and the OS's ("sotto/0.155.1 (Windows 10.0.26200; x86_64) unknown (sotto; 1.0)").
+ * Nothing version-shaped at all reads as no version, and nothing is then claimed about the client.
+ */
 export function clientVersionOf(reported: string): string {
-  return reported.trim().split(/[\s/]/u)[0] ?? ''
+  const value = reported.trim()
+  const agent = /^[^/\s]+\/(\d+(?:\.\d+)+[\w.+-]*)/u.exec(value)
+  if (agent?.[1]) return agent[1]
+  return /\d+(?:\.\d+)+[\w.+-]*/u.exec(value)?.[0] ?? ''
 }

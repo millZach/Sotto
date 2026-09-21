@@ -17,6 +17,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (!update) return `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not run${update.error ? `: ${update.error}` : '.'}${past}`
+  if (update.state === 'unchanged') return `The update ran, but this client still reports ${update.installed}. Close other windows using it, then connect again.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
   if (!update.published) return `${update.installed} is installed. Sotto could not reach the registry to see what is published.${past}`
   if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`

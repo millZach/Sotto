@@ -689,8 +689,15 @@ export class AgentControl {
       try { this.acceptSnapshot(await this.dependencies.host.connect(provider)) }
       catch (error) { reconnectFailure = error instanceof Error ? error.message : 'It did not reconnect.' }
       await this.checkClientUpdates()
-      this.setClientUpdate(provider, { state: 'updated' })
+      // The installer can finish and the client still answer with the version it did before: another
+      // window holding the old client open is enough. Saying "updated" then would be a lie the user
+      // can check, so the reading says what the client actually reports.
+      const running = this.state.clientUpdates?.find(item => item.id === provider)?.installed
+      this.setClientUpdate(provider, { state: running === undefined || running === record.installed ? 'unchanged' : 'updated' })
       if (reconnectFailure) throw new Error(`${PROVIDER_LABELS[provider]} updated, but did not reconnect. ${reconnectFailure}`)
+      if (running === record.installed) {
+        throw new Error(`${PROVIDER_LABELS[provider]} still reports ${record.installed}. The update ran, but this client is the one still open. Close other windows using it and connect again.`)
+      }
       this.say(`${PROVIDER_LABELS[provider]} updated.`)
     } finally { this.updatingClient = null }
   }

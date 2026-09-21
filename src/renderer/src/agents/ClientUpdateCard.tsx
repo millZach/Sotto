@@ -33,7 +33,7 @@ export function ClientUpdateCard(): ReactNode {
   const updates = state?.clientUpdates ?? []
   const dismissed = Boolean(state?.clientUpdatesDismissedAt)
   const shown: ProviderClientUpdate[] = updates.filter(update => update.state === 'updating' || update.state === 'failed'
-    || (update.state === 'updated' && !dismissed) || (update.behind && !dismissed))
+    || update.state === 'unchanged' || (update.state === 'updated' && !dismissed) || (update.behind && !dismissed))
   const updating = shown.some(update => update.state === 'updating')
 
   // The transient toasts share this corner; keep them clear of whatever height the card is.
@@ -67,10 +67,12 @@ export function ClientUpdateCard(): ReactNode {
   const behind = shown.filter(update => update.behind && update.state !== 'updated')
   const installable = behind.filter(update => update.canInstall)
   const failed = shown.filter(update => update.state === 'failed')
+  const unchanged = shown.filter(update => update.state === 'unchanged')
   const heading = updating ? 'Updating clients' : failed.length ? 'A client did not update'
-    : behind.length ? 'Client updates' : 'Clients updated'
+    : unchanged.length ? 'A client did not change' : behind.length ? 'Client updates' : 'Clients updated'
   const under = updating ? 'Leave this open until it finishes'
     : failed.length ? 'Your installed version is unchanged'
+    : unchanged.length ? 'The update ran, but this client is the one still open'
     : behind.length ? `${behind.length} of ${updates.length} clients ${behind.length === 1 ? 'has' : 'have'} a newer version`
     : 'Reconnect to use the new version'
   const checkedAt = shown.map(update => update.checkedAt).sort().at(-1) ?? new Date().toISOString()
@@ -88,6 +90,7 @@ export function ClientUpdateCard(): ReactNode {
           <span>{name}</span>
           <small>
             {update.state === 'updated' ? `Now ${update.installed}`
+              : update.state === 'unchanged' ? `Still ${update.installed}. Close other windows using it, then connect again.`
               : update.state === 'failed' ? (update.error ?? 'The installer reported a failure')
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}
@@ -100,7 +103,7 @@ export function ClientUpdateCard(): ReactNode {
           </small>
         </div>
         {update.state === 'updating' ? <span className="client-updates__spinner" aria-label="Updating" /> : null}
-        {update.canInstall && update.state !== 'updating' && update.state !== 'updated'
+        {update.canInstall && update.state !== 'updating' && update.state !== 'updated' && update.state !== 'unchanged'
           ? <Button variant="secondary" disabled={busy || updating}
             onClick={() => void run('update-client', update.id, working > 0)}>
             {update.state === 'failed' ? 'Try again' : working > 0 ? 'Update anyway' : 'Update'}

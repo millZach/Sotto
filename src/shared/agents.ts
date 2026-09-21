@@ -347,7 +347,7 @@ export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migrat
  * install channel publishes, and what a press would run. `canInstall` is false when the channel
  * is one Sotto names but will not drive, so the card shows the command instead of a button.
  */
-export const clientChannelSchema = z.enum(['npm', 'claude-installer', 'devin-app', 'unknown'])
+export const clientChannelSchema = z.enum(['npm', 'self-update', 'devin-app', 'unknown'])
 export type ClientChannel = z.infer<typeof clientChannelSchema>
 export const providerClientUpdateSchema = z.object({
   id: providerIdSchema,
@@ -358,7 +358,7 @@ export const providerClientUpdateSchema = z.object({
   command: z.string().max(300).optional(),
   canInstall: z.boolean(),
   checkedAt: z.string(),
-  state: z.enum(['idle', 'updating', 'updated', 'failed']).default('idle'),
+  state: z.enum(['idle', 'updating', 'updated', 'unchanged', 'failed']).default('idle'),
   error: z.string().max(600).optional(),
 })
 export type ProviderClientUpdate = z.infer<typeof providerClientUpdateSchema>
