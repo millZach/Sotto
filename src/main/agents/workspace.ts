@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { readdir, unlink } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
@@ -40,10 +42,10 @@ const markOf = (message: AgentMessage): MessageMark =>
  * One thread as `workspace.json` keeps it: no messages, and no summary either, because the summary
  * quotes them. Both are read back from the thread store, which is what the history switch governs.
  */
-function organizationOnly(thread: AgentThread): AgentThread {
-  const { summary, earlierAvailable, monitoring, ...rest } = thread
+function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
+  const { summary, earlierAvailable, activities, monitoring, ...rest } = thread
   void summary; void earlierAvailable; void monitoring
-  return { ...rest, messages: [] }
+  return { ...rest, messages: [], ...(keepActivities && activities ? { activities } : {}) }
 }
 
 const workspaceSchema = z.object({
@@ -73,6 +75,12 @@ export class WorkspaceHost implements AgentHost {
   /** Someone asked for the state to be on disk before they continue, so a write in flight is followed by another. */
   private flushWanted = false
   private saveError: string | undefined
+  /** Only a successfully committed organization snapshot can suppress another write. */
+  private savedOrganization: Workspace | undefined
+  /** A failed activity migration keeps the legacy JSON payload recoverable this run. */
+  private activityStoreUnavailable = false
+  /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
+  private activityJsonFallbackAllowed = true
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
@@ -237,7 +245,17 @@ export class WorkspaceHost implements AgentHost {
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
       for (const thread of snapshot.threads) delete thread.monitoring
-      if (!this.historyEnabled()) for (const thread of snapshot.threads) { thread.messages = []; thread.requests = []; delete thread.activities }
+      if (!this.historyEnabled()) {
+        this.activityJsonFallbackAllowed = false
+        for (const thread of snapshot.threads) {
+          if (!this.storeUnavailable) {
+            try { this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id)) }
+            catch { this.activityStoreUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
+          }
+          thread.messages = []; thread.requests = []; delete thread.activities
+        }
+      }
+      this.adoptSavedActivities(snapshot)
       // Cached running activity is evidence of an unfinished observation, not a live process.
       for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
       this.adoptSavedMessages(snapshot)
@@ -279,6 +297,35 @@ export class WorkspaceHost implements AgentHost {
       thread.messages = []
       delete thread.earlierAvailable
       thread.summary = this.threadSummary(thread)
+    }
+  }
+  /** Import old JSON activity before removing it there; a committed store copy wins after an interrupted migration. */
+  private adoptSavedActivities(snapshot: AgentHostSnapshot): void {
+    if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
+    try {
+      for (const thread of snapshot.threads) {
+        if (!this.threadStore.hasActivities(thread.id) && thread.activities !== undefined) {
+          this.threadStore.syncActivities(thread.id, thread.activities, thread.historyEpoch)
+        }
+        if (this.threadStore.hasActivities(thread.id)) {
+          const epoch = this.threadStore.readActivityEpoch(thread.id)
+          // SQLite commits before organization JSON. Do not relabel stale legacy messages
+          // or revive activity from the old generation after an interrupted JSON save.
+          if (thread.historyEpoch !== epoch) thread.messages = []
+          if (epoch === undefined) delete thread.historyEpoch
+          else thread.historyEpoch = epoch
+          thread.activities = this.threadStore.readActivities(thread.id)
+        }
+      }
+    } catch {
+      this.activityStoreUnavailable = true
+      this.saveError = 'Thread activity could not be saved. Saved activity remains available. Restore local storage and restart Sotto.'
+    }
+  }
+  private saveActivities(): void {
+    if (this.storeUnavailable || this.activityStoreUnavailable) return
+    for (const thread of this.state.snapshot.threads) {
+      if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, thread.activities, thread.historyEpoch)
     }
   }
   /** One window of a thread's messages, or nothing when the store cannot answer. */
@@ -458,7 +505,14 @@ export class WorkspaceHost implements AgentHost {
     return this.threadStore.eventsAfter(seq, threadId)
   }
   /** Closes the history store. Called when the app quits, after the last flush. */
-  dispose(): void { this.writeEvents(); this.threadStore.close() }
+  dispose(): void {
+    clearTimeout(this.publishTimer); clearTimeout(this.writeTimer)
+    for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
+    this.worktreeRefreshes.clear()
+    try { this.writeEvents(); this.saveActivities() }
+    catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
+    finally { this.threadStore.close() }
+  }
 
   async listThreadSkills(threadId: string, forceReload = false) {
     await this.initialize()
@@ -477,7 +531,7 @@ export class WorkspaceHost implements AgentHost {
   }
   workspaceSnapshot(): AgentHostSnapshot {
     this.applyEvents()
-    const snapshot = structuredClone(this.state.snapshot)
+    const snapshot = cloneHostSnapshot(this.state.snapshot)
     if (this.saveError) snapshot.error = this.saveError
     return snapshot
   }
@@ -616,8 +670,10 @@ export class WorkspaceHost implements AgentHost {
           this.dirty = false
           // Messages live in the thread store, never here: `workspace.json` keeps organization alone,
           // so what it costs to write follows the number of threads rather than what they said (#119).
+          try { this.saveActivities() }
+          catch (error) { this.dirty = true; throw error }
           const saved = structuredClone({ ...this.state,
-            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(organizationOnly) } })
+            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable))) } })
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
             thread.requests = []
             delete thread.activities
@@ -626,7 +682,13 @@ export class WorkspaceHost implements AgentHost {
               delete thread.historyError
             }
           }
-          try { await this.store.write(saved); this.saveError = undefined }
+          try {
+            if (!isDeepStrictEqual(this.savedOrganization, saved)) {
+              await this.store.write(saved)
+              this.savedOrganization = saved
+            }
+            if (!this.activityStoreUnavailable) this.saveError = undefined
+          }
           catch (error) { this.dirty = true; throw error }
         }
         if (this.dirty) this.writeSoon()
@@ -640,12 +702,20 @@ export class WorkspaceHost implements AgentHost {
    * back on hands the file over from here, and what was not kept is gone.
    */
   async privacyChanged(): Promise<void> {
+    if (!this.historyEnabled()) this.activityJsonFallbackAllowed = false
     if (!this.storeUnavailable) {
       const wanted = this.historyEnabled()
       if (wanted === this.threadStore.ephemeral) {
         try {
-          if (wanted) this.threadStore.becomeDurable()
-          else this.threadStore.becomeEphemeral()
+          if (wanted) {
+            this.saveActivities()
+            this.threadStore.becomeDurable()
+          } else {
+            // Identity suppression needs no output validation. Even if it fails, erase the durable text.
+            try {
+              for (const thread of this.state.snapshot.threads) this.threadStore.redactActivityIdentities(thread.id, (thread.activities ?? []).map(activity => activity.id))
+            } finally { this.threadStore.becomeEphemeral() }
+          }
         } catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
         // The switch emptied the store either way, so what mirrored it is no longer true.
         this.known.clear()

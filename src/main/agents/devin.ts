@@ -8,6 +8,7 @@ import { mergeAgentActivities } from '../../shared/agentActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -146,7 +147,7 @@ export class DevinAcpHost implements AgentHost {
     return thread
   }
   private current(): AgentHostSnapshot {
-    return structuredClone({ ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) })
+    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) })
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {

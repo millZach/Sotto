@@ -13,6 +13,7 @@ import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSch
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -748,7 +749,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private persist(): Promise<void> { return this.aliasStore.write(structuredClone(this.aliases)) }
   private view(): AgentHostSnapshot {
-    return structuredClone({ ...this.state, threads: [...this.threads.values()]
+    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) })
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }

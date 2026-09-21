@@ -63,6 +63,16 @@ Native resume, reconciliation, and polling therefore cost a bounded read of the 
 
 This exception accepts a verified protocol limitation instead of inventing a cursor or weakening delivery evidence. It does not change history retention, permission authority, or provider data policies. See the [native compatibility evidence](../verification/2026-09-19-devin-native-compatibility.md) and [Devin data-policy decision](0017-devin-native-provider-data-policies.md).
 
+
+## Amendment: incremental activity persistence (September 20, 2026)
+
+Retained thread activity moves out of `workspace.json` into indexed rows in the same `threads.sqlite`. The previous message migration left activity output in the organization snapshot; one small provider update still copied and rewrote the entire archive. Activity keeps its existing bounded timeline, ordering, IDs, nested output and history-epoch behavior. Changed records are upserted, missing records are removed, and unchanged records require no JSON encoding or database transaction. This is a retained observation table, not a change to the append-only message event protocol.
+
+Legacy JSON activity is imported before the JSON copy is removed. A committed SQLite list and its epoch take precedence if an interrupted save leaves both copies; legacy activity is imported only when no committed list exists. An explicit marker preserves the distinction between an observed empty list and missing activity evidence, including an unversioned list. Stale legacy messages from a different epoch are not relabeled and re-imported. A failed activity migration keeps the legacy copy available and reports the storage problem. WAL and `synchronous=FULL` remain unchanged. Organization JSON remains an atomic, ordered save; an identical value is skipped only against the last successfully completed save.
+
+Keep local history governs activity too. Turning it off scrubs durable output and continues the current view in memory. Hashes of erased thread/activity identities are retained without text, so re-enabling history or replaying a provider cannot restore erased activity. New activity identities may be retained after history is enabled again. Migration, replay, restart and privacy transitions are regression-tested.
+
+Internal provider and workspace snapshots still isolate mutable objects and arrays for their consumers. Their plain-data copy preserves immutable string values instead of serializing large output strings again. This changes copy cost, not the renderer transport, history window, permission behavior or user-visible timeline.
 ## Amendment: activity beside a resumed transcript cursor (September 20, 2026, #125)
 
 The history source also exposes the retained, bounded activity projection for one Sotto thread at a time. Claude needs it before seeking to a saved transcript cursor: a subagent start may be behind the cursor while its completion arrives after it. The workspace supplies historical activity, including a task identity that has ended or been reassigned, through the same thread-ID mapping as message identities. Live monitoring remains ephemeral and is never restored through this handoff.
