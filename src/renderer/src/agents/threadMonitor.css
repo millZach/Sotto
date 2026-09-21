@@ -1,0 +1,13 @@
+/* The ornament belongs to the composer; its reserved space keeps notices and transcripts above it. */
+.thread-prompt[data-monitoring], .thread-workspace__compose .agent-composer[data-monitoring] { position: relative; margin-top: 68px; }
+.thread-monitor { position: absolute; left: 0; right: 0; bottom: 100%; height: 64px; padding: 0 14px; display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, min(172px, 45%)); align-items: end; pointer-events: none; }
+.thread-monitor__track { position: relative; height: 64px; min-width: 0; }
+.thread-monitor__actor { position: absolute; bottom: 0; left: 0; width: 80px; height: 64px; }
+.thread-monitor__creature { display: block; width: 80px; height: 64px; overflow: visible; }
+.thread-monitor__color { fill: var(--tt-activity); }
+.thread-monitor__ink { fill: var(--tt-canvas); }
+.thread-monitor__shine { fill: var(--tt-text); }
+.thread-monitor__handle { fill: var(--tt-border); }
+.thread-monitor__task { pointer-events: auto; min-width: 0; padding: 8px 12px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--tt-surface); }
+.thread-monitor__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text); font-size: 13px; line-height: 1.5; }
+.thread-monitor__status { display: block; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }

@@ -13,6 +13,7 @@ export default tseslint.config(
       'coverage/**',
       'artifacts/question-choices/**',
       'artifacts/agent-control-smoke/**',
+      'artifacts/process-creature/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',

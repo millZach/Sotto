@@ -14,7 +14,7 @@ import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 class RestoringProviderHost extends FakeProviderHost {
   restored: RestoredThreadHistory[] = []
   async restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
-    this.restored = threads.map(thread => ({ threadId: thread.threadId, messages: [...thread.messages] }))
+    this.restored = threads.map(thread => ({ ...thread, messages: [...thread.messages] }))
   }
 }
 
@@ -276,4 +276,40 @@ describe('a provider host that appends events instead of rebuilding a history', 
     expect(saved).not.toContain('Prompt events 0')
     expect(await onDisk(directory)).toContain('Kept')
   })
+})
+
+it('hands back known activity evidence without treating an older missing snapshot as empty', async () => {
+  const directory = await root()
+  const adapter = new FakeProviderHost()
+  const host = await opened(directory, adapter)
+  await host.connect()
+  const thread = adapter.state.threads[0]!
+  thread.messages = conversation('activity-evidence', 1)
+  delete thread.activities
+  adapter.emit()
+  await host.snapshot()
+  expect(host.activities(thread.id)).toBeUndefined()
+
+  const oldReader = new RestoringProviderHost()
+  const oldWorkspace = await opened(directory, oldReader)
+  expect(oldReader.restored.find(item => item.threadId === thread.id)?.activities).toBeUndefined()
+  expect(oldWorkspace.activities(thread.id)).toBeUndefined()
+
+  thread.activities = []
+  adapter.emit()
+  await host.snapshot()
+  expect(host.activities(thread.id)).toEqual([])
+  const emptyReader = new RestoringProviderHost()
+  await opened(directory, emptyReader)
+  expect(emptyReader.restored.find(item => item.threadId === thread.id)?.activities).toEqual([])
+
+  thread.historyEpoch = '35127cf4-53ec-4c62-bab6-022af82385ef'
+  thread.activities = [{ id: 'task', turnId: 'turn', sequence: 0, kind: 'subagent', status: 'completed', title: 'Prior task', taskUpdatesExcluded: true }]
+  adapter.emit()
+  expect(host.activities(thread.id)).toBeUndefined()
+  expect(host.activities(thread.id, 'f87f46cb-7e3e-42c2-807f-ee026bf16b5c')).toBeUndefined()
+  const evidence = host.activities(thread.id, thread.historyEpoch)!
+  expect(evidence[0]).toMatchObject({ taskUpdatesExcluded: true })
+  evidence[0]!.title = 'Caller mutation'
+  expect(host.activities(thread.id, thread.historyEpoch)?.[0]?.title).toBe('Prior task')
 })

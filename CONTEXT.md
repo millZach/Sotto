@@ -71,7 +71,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Codex session log.** Codex's own persisted transcript of a provider session (`rollout-*.jsonl` under `$CODEX_HOME/sessions`). Sotto reads only its user-authored entries to tell its own dispatched messages from text typed directly in Codex: a dispatched message's digest suppresses every consecutive log entry with the same digest, and any other authored entry is a takeover. Sotto never copies or logs the log's content.
 
-**Transcript cursor.** How far a thread's provider transcript had been read when Sotto last stopped, stored by the adapter beside the thread's alias: the byte after the last complete line, the identity of the file it was read from, and what the reader had already matched there. Reconnecting seeks to it instead of reading the file again, and it is only trusted beside the messages it accounts for, which `WorkspaceHost` hands back through `restoreThreadHistory` before anything connects (ADR-0015). Claude has one; a thread whose history is not handed back is read from its first byte. Avoid: "bookmark", "watermark".
+**Transcript cursor.** How far a thread's provider transcript had been read when Sotto last stopped, stored by the adapter beside the thread's alias: the byte after the last complete line, the identity of the file it was read from, and what the reader had already matched there. Reconnecting seeks to it instead of reading the file again, and it is only trusted beside the messages and bounded activity it accounts for in the same history epoch. `WorkspaceHost` supplies that evidence through the per-thread history source, or through `restoreThreadHistory` on the legacy path (ADR-0015, ADR-0016). Claude has one; a thread whose history is not handed back is read from its first byte. Avoid: "bookmark", "watermark".
 
 **Takeover.** The user sends a message to an assigned thread directly through the provider (for example `codex resume` in the Codex CLI). The adapter reports that message as a user message with no command ID, so the coordinator switches the assignment to manual mode and keeps watching. Opening or reading a thread is not a takeover.
 
@@ -87,9 +87,11 @@ Answering a question or permission request and creating a project are also part 
 
 **History window.** How much of a thread's history a pane holds: the newest ten turns when it opens, then twenty more each time the user presses **Show earlier messages**. A turn here is a user message and the assistant messages that follow it. The detail says whether anything older exists (`earlierAvailable`), so opening a long thread costs the same as opening a short one.
 
+**Monitoring task.** A live, provider-confirmed watch on background work. A running command or unattended process is not enough evidence. The little creature above the thread composer appears while that watch is active and leaves when it ends or needs your answer. Monitoring is observation, never permission to act, and is not restored from history.
+
 **Watched set.** The threads the host keeps in memory and keeps a provider session for: the threads on screen, plus assigned or queued ones. It is what `observeThreads` names. A thread outside it carries its summary alone, so startup and publish cost follow the open panes rather than the whole archive. Avoid: "active threads", "open threads".
 
-**Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
+**Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, one with a confirmed live monitoring task, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
 
 **Host.** The process that owns the providers, the worktrees and the event store. Today it is Electron main, and the word is also the suffix of the interfaces inside it (`AgentHost`, `WorkspaceHost`); in the host-and-client sense it means the whole owning side, whichever machine it runs on. Avoid: "server", "backend".
 
