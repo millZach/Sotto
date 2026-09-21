@@ -37,6 +37,8 @@ export interface ThreadHistorySource {
   messageIdentities(threadId: string): readonly StoredMessageIdentity[]
   /** Bounded activity evidence for this history epoch; undefined means it must be read afresh. */
   activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
+  /** Indexed text-free classification for a native task older than the activity window. */
+  activity?(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined
 }
 /**
  * Sotto thread interface: create = execute create-thread; resume = observeThreads then snapshot;

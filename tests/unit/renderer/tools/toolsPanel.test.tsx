@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState } from '../../../../src/shared/agents'
+import { EMPTY_SUBAGENT_SUMMARY } from '../../../../src/shared/subagents'
 import type { FilesBridge } from '../../../../src/shared/files'
 import { ToolsPanel, ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { MAX_RENDERED_MARKDOWN_LENGTH, trustedImageSource } from '../../../../src/renderer/src/tools/FilePreview'
@@ -63,7 +64,7 @@ describe('shared tools panel', () => {
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
     const tabs = within(panel()).getAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
-    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'terminal', 'files', 'changes'])
+    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'terminal', 'files', 'changes', 'agents'])
     expect(within(panel()).getByRole('tab', { name: 'Files' })).toHaveFocus()
     expect(within(panel()).getByRole('tabpanel')).toBeInTheDocument()
     expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()
@@ -71,6 +72,22 @@ describe('shared tools panel', () => {
     expect(store.getSnapshot().open).toBe(false)
     expect(screen.queryByRole('navigation', { name: 'Collapsed tools' })).toBeNull()
     expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools', exact: true })])
+  })
+
+  it('shows working agents for the actual tools target while closed without switching tabs', () => {
+    const state = threadsStateFixture()
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, total: 1, working: 1 } } : thread)
+    const { store, rerender } = setup({ state, inPane: true })
+    const dot = () => document.querySelector('.tools-toggle__agents-dot')
+    expect(dot()).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAccessibleDescription('Agents are working')
+    expect(store.getSnapshot()).toMatchObject({ open: false, surface: 'files' })
+    act(() => store.pin('visual-gate'))
+    rerender('grok-previews')
+    expect(dot()).not.toBeNull()
+    act(() => store.unpin())
+    expect(dot()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({ open: false, surface: 'files' })
   })
 
   it('follows the focused thread, keeps each thread’s browsing, and never sends agent commands', async () => {

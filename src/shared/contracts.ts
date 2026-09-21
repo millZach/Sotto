@@ -321,6 +321,7 @@ export interface SottoBridge {
   readonly browser?: import('./browser').BrowserBridge
   readonly themes?: import('./themes/bridge').ThemesBridge
   readonly gitChanges?: import('./gitChanges').GitChangesBridge
+  readonly subagents?: import('./subagents').SubagentsBridge
   readonly files?: import('./files').FilesBridge
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentBridge

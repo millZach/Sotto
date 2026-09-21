@@ -20,12 +20,41 @@ export const agentActivitySchema = z.object({
   /** Context size in tokens either side of a compaction, as the provider reported it or as the ledger bracketed it. */
   context: z.object({ before: z.number().int().nonnegative().optional(), after: z.number().int().nonnegative().optional() }).optional(),
   /** Display identities only. These cannot address provider sessions or grant authority. */
-  agents: z.array(z.object({ id: z.string(), status: detail, message: detail.optional() })).max(200).optional(),
+  agents: z.array(z.object({
+    id: z.string(), status: detail, message: detail.optional(),
+    /** Stable observational assignment and parent identities, never provider addresses. */
+    assignmentId: z.string().optional(), parentId: z.string().optional(),
+    /** Hashed identity aliases for adapter point lookups; never routable native addresses. */
+    aliasIds: z.array(z.string().max(128)).max(8).optional(),
+    title: detail.optional(), description: detail.optional(), prompt: detail.optional(), model: detail.optional(),
+    startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+    observedAt: z.string().datetime().optional(),
+    timingSource: z.enum(['provider', 'observed']).optional(), durationMs: z.number().nonnegative().optional(),
+  })).max(200).optional(),
   /** Its native task ended or its identity was reassigned; retained history rejects later lifecycle events. */
   taskUpdatesExcluded: z.boolean().optional(),
   truncated: z.boolean().optional(),
 })
 export type AgentActivity = z.infer<typeof agentActivitySchema>
+export type ObservedAgent = NonNullable<AgentActivity['agents']>[number]
+
+/** Adapter lookup caches retain identity and small metadata; task/result content lives in the bounded activity window and roster store. */
+export function compactAgentIdentity(agent: ObservedAgent): ObservedAgent {
+  return {
+    id: agent.id, status: agent.status,
+    ...(agent.assignmentId !== undefined ? { assignmentId: agent.assignmentId } : {}),
+    ...(agent.parentId !== undefined ? { parentId: agent.parentId } : {}),
+    ...(agent.aliasIds !== undefined ? { aliasIds: agent.aliasIds.slice(0, 8).map(id => id.slice(0, 128)) } : {}),
+    ...(agent.title !== undefined ? { title: agent.title.slice(0, 240) } : {}),
+    ...(agent.model !== undefined ? { model: agent.model.slice(0, 512) } : {}),
+    ...(agent.startedAt !== undefined ? { startedAt: agent.startedAt } : {}),
+    ...(agent.completedAt !== undefined ? { completedAt: agent.completedAt } : {}),
+    ...(agent.observedAt !== undefined ? { observedAt: agent.observedAt } : {}),
+    ...(agent.timingSource !== undefined ? { timingSource: agent.timingSource } : {}),
+    ...(agent.durationMs !== undefined ? { durationMs: agent.durationMs } : {}),
+  }
+}
+
 
 export type PlanStep = NonNullable<AgentActivity['steps']>[number]
 
@@ -57,7 +86,7 @@ export function mergeAgentActivities(previous: readonly AgentActivity[] = [], in
       ...(old.completedAt && isTerminalActivity(old.status) ? { completedAt: old.completedAt } : {}),
       ...(record.agents ? { agents: record.agents.map(agent => {
         const prior = old.agents?.find(candidate => candidate.id === agent.id)
-        return prior && terminalAgent(prior.status) && !terminalAgent(agent.status) ? prior : agent
+        return prior && prior.assignmentId === agent.assignmentId && terminalAgent(prior.status) && !terminalAgent(agent.status) ? prior : { ...prior, ...agent }
       }) } : {}),
     } : { ...record, sequence: sequence++ })
   }

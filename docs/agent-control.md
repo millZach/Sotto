@@ -84,3 +84,11 @@ Coordinator actions append bounded turn records containing timings, acted-on thr
 Every build without a configured membership service, installed or unpackaged, runs as private beta with agent actions available; that is not a paid entitlement. Production billing and deployment remain separate work. Native protocol evidence, automated tests and live checks are documented separately; a fixture test does not prove native compatibility or microphone performance.
 
 See [native-host removal and current verification](verification/issue-24-closeout.md), [native adapter verification](verification/issues-17-22-23.md), [Claude protocol evidence](research/issue-22-claude-native-verification.md), [Grok protocol evidence](research/2026-09-11-issue-23-grok-acp-verification.md), and [Codex adapter decision](adr/0005-codex-app-server-adapter.md).
+
+## Reported subagents in Tools
+
+Choose **Agents** in Tools to inspect the current or pinned thread's subagents. A row shows the provider's task title, a brief task preview, the reported model, status and elapsed time when available. Expand it for the task, result and earlier assignments. Nested children follow their reported parent; siblings keep their spawn order. Missing model metadata reads **Model not reported**. Providers without child observations show an empty view.
+
+The dot above-left of the outside Tools icon appears only for confirmed working agents. It does not open Tools, switch its tab or grant permission. A pinned thread remains observed even after its conversation pane closes. Disconnecting or restarting changes unfinished agents to **Last seen working** and freezes the clock until activity is confirmed.
+
+Agent and assignment history uses bounded pages, independently of ordinary transcript activity. It follows **Keep local history**. There are no child command controls or full child transcripts in this view.

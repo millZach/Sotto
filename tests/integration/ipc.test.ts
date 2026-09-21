@@ -400,6 +400,7 @@ describe('typed preload bridge', () => {
         'requestDrafts',
         'resetSettings',
         'searchHistory',
+        'subagents',
         'setStartup',
         'showApp',
         'terminal',
@@ -416,7 +417,7 @@ describe('typed preload bridge', () => {
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.agents)).toBe(true)
     expect(Object.isFrozen(bridge.memory)).toBe(true)
-    for (const surface of [bridge.browser, bridge.gitChanges, bridge.personalChats, bridge.terminal, bridge.themes]) {
+    for (const surface of [bridge.browser, bridge.gitChanges, bridge.personalChats, bridge.subagents, bridge.terminal, bridge.themes]) {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])

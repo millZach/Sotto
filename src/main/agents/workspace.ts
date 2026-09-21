@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readdir, unlink } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
@@ -8,6 +8,8 @@ import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../sha
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
+import { SubagentStore, subagentActivityClassification } from './subagentStore'
+import { EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
@@ -39,11 +41,13 @@ const markOf = (message: AgentMessage): MessageMark =>
 /**
  * One thread as `workspace.json` keeps it: no messages, and no summary either, because the summary
  * quotes them. Both are read back from the thread store, which is what the history switch governs.
+ * Subagent activity stays in the live timeline, but its only durable copy is the roster store.
+ * Saving the provider's cached payload here would restore erased words after history is enabled again.
  */
 function organizationOnly(thread: AgentThread): AgentThread {
-  const { summary, earlierAvailable, monitoring, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring
-  return { ...rest, messages: [] }
+  const { summary, earlierAvailable, monitoring, subagentSummary, activities, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void subagentSummary
+  return { ...rest, messages: [], ...(activities ? { activities: activities.map(activity => activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined ? subagentActivityClassification(activity) : activity) } : {}) }
 }
 
 const workspaceSchema = z.object({
@@ -85,6 +89,15 @@ export class WorkspaceHost implements AgentHost {
   /** One pending worktree re-read per thread, so a busy turn asks for a single read rather than one per record. */
   private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
   /** A thread's own history: the log and the message projection every window reads (issue #119). */
+  private readonly subagentStore: SubagentStore
+  private subagentUnavailable = false
+  private readonly subagentSummaries = new Map<string, SubagentSummary>()
+  private readonly subagentInputs = new Map<string, { epoch: string | undefined; records: Map<string, string>; activities: readonly AgentActivity[] | undefined }>()
+  private readonly subagentListeners = new Set<(change: SubagentChange) => void>()
+  private readonly subagentChanges = new Map<string, SubagentChange>()
+  private subagentTimer: ReturnType<typeof setTimeout> | undefined
+  private readonly subagentLiveSince = new Map<string, number>()
+  private readonly startedAt = Date.now()
   private readonly threadStore: ThreadStore
   /** True once opening the history database failed; this run then keeps its messages in memory alone. */
   private storeUnavailable = false
@@ -204,6 +217,7 @@ export class WorkspaceHost implements AgentHost {
     this.concurrentProviders = inner.concurrentProviders === true
     this.worktrees = new ThreadWorktrees(directory)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
+    this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
     inner.subscribe(snapshot => {
       if (!this.ready) return
@@ -230,6 +244,8 @@ export class WorkspaceHost implements AgentHost {
       }
       try { this.threadStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
+      try { this.subagentStore.open({ ephemeral: !this.historyEnabled() }) }
+      catch { this.subagentUnavailable = true; this.saveError = 'Agent history could not be opened. Restore access to local storage and restart Sotto.' }
       this.state = await this.store.peek()
       const snapshot = this.state.snapshot
       snapshot.connected = false
@@ -240,6 +256,10 @@ export class WorkspaceHost implements AgentHost {
       if (!this.historyEnabled()) for (const thread of snapshot.threads) { thread.messages = []; thread.requests = []; delete thread.activities }
       // Cached running activity is evidence of an unfinished observation, not a live process.
       for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
+      for (const thread of snapshot.threads) {
+        this.trackSubagents(thread, false)
+        thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
+      }
       this.adoptSavedMessages(snapshot)
       if (!this.storeUnavailable) this.inner.useThreadHistory?.(this)
       await this.inner.initialize?.()
@@ -378,6 +398,12 @@ export class WorkspaceHost implements AgentHost {
     try { return this.threadStore.messageIdentities(threadId) }
     catch { return [] }
   }
+  /** Indexed historical task classification, never live monitoring or task/result text. */
+  activity(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined {
+    if (this.subagentUnavailable) return undefined
+    try { return this.subagentStore.activity(threadId, activityId, historyEpoch) }
+    catch { return undefined }
+  }
   /** Historical classification only; live monitoring is never handed back to an adapter. */
   activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
@@ -458,7 +484,79 @@ export class WorkspaceHost implements AgentHost {
     return this.threadStore.eventsAfter(seq, threadId)
   }
   /** Closes the history store. Called when the app quits, after the last flush. */
-  dispose(): void { this.writeEvents(); this.threadStore.close() }
+  dispose(): void {
+    this.writeEvents(); this.threadStore.close(); this.subagentStore.close()
+    if (this.subagentTimer) clearTimeout(this.subagentTimer)
+    this.subagentChanges.clear(); this.subagentListeners.clear()
+  }
+
+  async subagentPage(request: SubagentPageRequest) {
+    await this.initialize(); this.thread(request.threadId)
+    if (this.subagentUnavailable) throw new Error('Agent history is unavailable. Restore access to local storage and restart Sotto.')
+    return this.subagentStore.page(request)
+  }
+  async subagentAssignments(request: SubagentAssignmentsRequest) {
+    await this.initialize(); this.thread(request.threadId)
+    if (this.subagentUnavailable) throw new Error('Agent history is unavailable. Restore access to local storage and restart Sotto.')
+    return this.subagentStore.assignments(request)
+  }
+  subscribeSubagents(listener: (change: SubagentChange) => void): () => void {
+    this.subagentListeners.add(listener)
+    return () => this.subagentListeners.delete(listener)
+  }
+  private subagentsChanged(change: SubagentChange | undefined): void {
+    if (!change) return
+    this.subagentSummaries.set(change.threadId, change.summary)
+    const pending = this.subagentChanges.get(change.threadId)
+    const rows = new Map((change.reset ? [] : pending?.rows ?? []).map(row => [row.id, row]))
+    for (const row of change.rows) rows.set(row.id, row)
+    this.subagentChanges.set(change.threadId, { ...change, rows: [...rows.values()], ...(pending?.reset ? { reset: true } : {}) })
+    if (this.subagentTimer) return
+    this.subagentTimer = setTimeout(() => {
+      this.subagentTimer = undefined
+      const changes = [...this.subagentChanges.values()]; this.subagentChanges.clear()
+      for (const next of changes) for (const listener of this.subagentListeners) listener(next)
+    }, PUBLISH_WINDOW_MS)
+    this.subagentTimer.unref?.()
+  }
+  /** Only changed native observations enter the indexed roster; its archive never enters a host snapshot. */
+  private trackSubagents(thread: AgentThread, connected: boolean): void {
+    if (this.subagentUnavailable) return
+    try {
+      let input = this.subagentInputs.get(thread.id)
+      if (!input || input.epoch !== thread.historyEpoch) {
+        input = { epoch: thread.historyEpoch, records: new Map(), activities: undefined }
+        this.subagentInputs.set(thread.id, input)
+        this.subagentsChanged(this.subagentStore.ingest(thread.id, [], thread.historyEpoch))
+      }
+      if (input.activities !== thread.activities) {
+        const observations: NonNullable<AgentActivity['agents']> = []
+        const classifications: AgentActivity[] = []
+        const retained = new Set<string>()
+        for (const activity of thread.activities ?? []) {
+          if (activity.kind !== 'subagent' && !activity.agents?.length && activity.taskUpdatesExcluded === undefined) continue
+          retained.add(activity.id)
+          const fingerprint = createHash('sha256').update(JSON.stringify([subagentActivityClassification(activity), activity.agents])).digest('hex')
+          if (input.records.get(activity.id) === fingerprint) continue
+          input.records.set(activity.id, fingerprint)
+          classifications.push(activity)
+          for (const agent of activity.agents ?? []) {
+            const fresh = agent.observedAt !== undefined && Date.parse(agent.observedAt) >= (this.subagentLiveSince.get(thread.id) ?? this.startedAt)
+            const working = ['running', 'starting', 'pending', 'pendingInit', 'waiting', 'in_progress'].includes(agent.status)
+            observations.push(working && (!connected || !fresh) ? { ...agent, status: 'unknown' } : agent)
+          }
+        }
+        for (const id of input.records.keys()) if (!retained.has(id)) input.records.delete(id)
+        input.activities = thread.activities
+        if (observations.length || classifications.length) this.subagentsChanged(this.subagentStore.ingest(thread.id, observations, thread.historyEpoch, classifications))
+      }
+      if (!connected) {
+        this.subagentLiveSince.set(thread.id, Date.now())
+        this.subagentsChanged(this.subagentStore.markUnknown(thread.id))
+      }
+      if (!this.subagentSummaries.has(thread.id)) this.subagentSummaries.set(thread.id, this.subagentStore.state(thread.id).summary)
+    } catch { this.saveError = 'Agent history could not be saved. Restore access to local storage and refresh.' }
+  }
 
   async listThreadSkills(threadId: string, forceReload = false) {
     await this.initialize()
@@ -523,11 +621,13 @@ export class WorkspaceHost implements AgentHost {
     const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
+      this.trackSubagents(thread, isThreadProviderConnected(snapshot, thread))
       const creation = this.state.creations.find(item => item.threadId === thread.id)
       if (creation) creation.phase = 'started'
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       const merged: AgentThread = { ...thread,
+        subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
         // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
@@ -640,6 +740,17 @@ export class WorkspaceHost implements AgentHost {
    * back on hands the file over from here, and what was not kept is gone.
    */
   async privacyChanged(): Promise<void> {
+    if (!this.subagentUnavailable && this.subagentStore.ephemeral === this.historyEnabled()) {
+      try {
+        this.subagentStore.privacyChanged(this.historyEnabled())
+        this.subagentChanges.clear()
+        for (const thread of this.state.snapshot.threads) {
+          const current = this.subagentStore.state(thread.id)
+          thread.subagentSummary = current.summary
+          this.subagentsChanged({ threadId: thread.id, ...current, rows: [], reset: true })
+        }
+      } catch { this.saveError = 'Saved agent history could not be removed. Restore access to local storage and try again.'; throw new Error(this.saveError) }
+    }
     if (!this.storeUnavailable) {
       const wanted = this.historyEnabled()
       if (wanted === this.threadStore.ephemeral) {
@@ -1034,7 +1145,11 @@ export class WorkspaceHost implements AgentHost {
     snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
-    for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) delete thread.monitoring
+    for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) {
+      delete thread.monitoring
+      this.trackSubagents(thread, false)
+      thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
+    }
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
