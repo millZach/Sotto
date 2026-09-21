@@ -4,14 +4,17 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/queued-steering/**',
       '.worktrees/**',
       '.claude/tmp/**',
       // Agent worktrees are whole checkouts of this repository, so linting them would lint
       // every file twice and confuse the parser about which tsconfig root it is under.
       '.claude/worktrees/**',
       'coverage/**',
+      'artifacts/question-choices/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
+      'artifacts/process-creature/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',

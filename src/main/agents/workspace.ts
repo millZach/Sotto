@@ -13,7 +13,7 @@ import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadSto
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
-import { isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
 const WORKTREE_REFRESH_DELAY_MS = 1_500
@@ -43,8 +43,8 @@ const markOf = (message: AgentMessage): MessageMark =>
  * quotes them. Both are read back from the thread store, which is what the history switch governs.
  */
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, activities, ...rest } = thread
-  void summary; void earlierAvailable
+  const { summary, earlierAvailable, activities, monitoring, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities } : {}) }
 }
 
@@ -244,6 +244,7 @@ export class WorkspaceHost implements AgentHost {
       snapshot.models.forEach(model => { model.ready = false })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
+      for (const thread of snapshot.threads) delete thread.monitoring
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads) {
@@ -266,7 +267,7 @@ export class WorkspaceHost implements AgentHost {
       // handed every thread's whole history before it has read anything.
       if (!this.eventSourced) await this.inner.restoreThreadHistory?.(this.storeUnavailable ? [] : snapshot.threads.flatMap(thread => {
         const messages = this.readWindow(thread.id)?.messages ?? []
-        return messages.length ? [{ threadId: thread.id, messages }] : []
+        return messages.length ? [{ threadId: thread.id, messages, ...(thread.activities ? { activities: thread.activities.slice(-MAX_AGENT_ACTIVITIES) } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }] : []
       }))
       this.ready = true
       await this.privacyChanged()
@@ -417,6 +418,12 @@ export class WorkspaceHost implements AgentHost {
     try { return this.threadStore.messageIdentities(threadId) }
     catch { return [] }
   }
+  /** Historical classification only; live monitoring is never handed back to an adapter. */
+  activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread?.activities || thread.historyEpoch !== historyEpoch) return undefined
+    return structuredClone(thread.activities.slice(-MAX_AGENT_ACTIVITIES))
+  }
   /**
    * Records what a provider published and answers with the messages this thread keeps in memory: the
    * loaded window while a pane is looking at it, nothing at all while none is.
@@ -560,7 +567,7 @@ export class WorkspaceHost implements AgentHost {
       }
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
-    const threads = new Map(previous.threads.map(thread => [thread.id, thread]))
+    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
       const creation = this.state.creations.find(item => item.threadId === thread.id)
@@ -596,6 +603,7 @@ export class WorkspaceHost implements AgentHost {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = { ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }
+    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) delete thread.monitoring
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
       const old = previous.threads.find(item => item.id === thread.id)
@@ -1089,6 +1097,7 @@ export class WorkspaceHost implements AgentHost {
     snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
+    for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) delete thread.monitoring
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()

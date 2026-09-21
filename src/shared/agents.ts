@@ -4,6 +4,7 @@ import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
+import { agentMonitoringSchema } from './agentMonitoring'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -186,6 +187,8 @@ export const agentThreadSchema = z.object({
   /** True when the thread store holds messages older than the window `messages` carries (issue #119). */
   earlierAvailable: z.boolean().optional(),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
+  /** Ephemeral provider-confirmed watches; never reconstructed from saved activity. */
+  monitoring: agentMonitoringSchema.optional(),
   usage: threadUsageSchema.optional(),
   compaction: compactionSchema.optional(),
   manualCompactionSupported: z.boolean().optional(),
@@ -477,6 +480,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentsSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
+  z.object({ type: z.literal('steer-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('remove-followup'), threadId: id, itemId: z.uuid() }).strict(),
   z.object({ type: z.literal('reorder-followups'), threadId: id, itemIds: z.array(z.uuid()).max(100) }).strict(),
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),

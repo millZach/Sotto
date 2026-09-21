@@ -108,7 +108,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -119,6 +119,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly composerId?: string
   /** Manage or Resume is carrying this draft to Sotto; sending it meanwhile would race the handoff. Typing stays open. */
   readonly handingOff?: boolean
+  /** Live observation drawn on the top edge without changing composer interaction. */
+  readonly ornament?: ReactNode
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError } = useThreadComposer(store, threadId)
@@ -245,9 +247,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
       onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
-    <form className="thread-prompt" data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
+    <form className="thread-prompt" data-monitoring={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { picker.leave(); files.leave() } }}>
+      {ornament}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />

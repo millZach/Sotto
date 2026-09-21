@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -156,7 +156,8 @@ const draftError = (error: unknown): string => error instanceof Error ? error.me
 
 /** Include the question definition: a provider reusing IDs must never inherit another form's answers. */
 export function requestAnswerOwnerKey(ownerId: string, request: AgentRequest, owner?: RequestDraftOwner): string {
-  return owner && requestMode(request) === 'structured' ? `${requestDraftOwnerKey(owner)}\0${JSON.stringify(request.questions)}` : ownerId
+  const questions = requestDraftQuestions(request)
+  return owner && questions.length > 0 ? `${requestDraftOwnerKey(owner)}\0${JSON.stringify(questions)}` : ownerId
 }
 
 interface DraftBinding {
@@ -211,8 +212,8 @@ export class RequestAnswerStore {
   recoverySnapshot(owner: RequestDraftOwner, live: readonly AgentRequest[]): string {
     const ownerKey = requestDraftOwnerKey(owner)
     return JSON.stringify([...this.bindings].flatMap(([key, binding]) => {
-      if (requestDraftOwnerKey(binding.target) !== ownerKey || live.some(request => requestMode(request) === 'structured'
-        && request.id === binding.target.requestId && sameRequestQuestions(request.questions ?? [], binding.target.questions))) return []
+      if (requestDraftOwnerKey(binding.target) !== ownerKey || live.some(request => request.id === binding.target.requestId
+        && sameRequestQuestions(requestDraftQuestions(request), binding.target.questions))) return []
       const entry = this.entries.get(key) ?? EMPTY_ENTRY
       return [[key, entry.save === 'saving' || entry.save === 'loading' ? 'pending' : entry.revision, entry.save, entry.phase]]
     }))

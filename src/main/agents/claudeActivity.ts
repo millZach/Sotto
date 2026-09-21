@@ -8,7 +8,6 @@ const json = (value: unknown): string | undefined => value === undefined ? undef
 /** Same projector for native transcript snapshots and the streaming CLI. No execution. */
 export class ClaudeActivity {
   private readonly blocks = new Map<string, { block: ClaudeFrame; input: string }>()
-  private readonly hiddenTasks = new Set<string>()
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string): AgentActivity[] {
     const rows: AgentActivity[] = []
     const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
@@ -59,18 +58,32 @@ export class ClaudeActivity {
       if (event?.type === 'content_block_stop') this.blocks.delete(key)
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
-      const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : frame.status === 'stopped' ? 'interrupted' : 'unknown' : 'running'
-      // Claude Code registers every shell command as a task too, and files housekeeping watchers as tasks the transcript should not show.
-      // Neither is a subagent: a shell task's outcome belongs to its command row, whose exit code a background command only learns here.
+      const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
       const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) : undefined
-      if (frame.subtype === 'task_started' && (frame.task_type === 'local_bash' || frame.skip_transcript === true || frame.ambient === true)) this.hiddenTasks.add(frame.task_id)
-      if (this.hiddenTasks.has(frame.task_id) || owner?.kind === 'command') {
-        if (frame.subtype === 'task_notification' && owner?.kind === 'command' && status !== 'unknown') rows.push({ ...owner, status })
-        if (frame.subtype === 'task_notification') this.hiddenTasks.delete(frame.task_id)
+      const old = previous.find(row => row.id === `claude-task-${frame.task_id}`)
+      // A restored row is positive task evidence even when this projector resumed after its start.
+      // Retire a reassigned identity on that history row so cursor resume preserves the exclusion.
+      if (frame.subtype === 'task_started') {
+        if (!frame.task_id || frame.task_id.length > 512 || ['monitor', 'monitor_mcp', 'local_bash'].includes(String(frame.task_type))
+          || frame.skip_transcript === true || frame.ambient === true || owner?.kind === 'command') {
+          if (old?.kind === 'subagent') rows.push({ ...old, taskUpdatesExcluded: true })
+          return mergeAgentActivities(previous, rows)
+        }
+        // Clearing historical classification must survive the terminal-status merge guard.
+        if (old && old.taskUpdatesExcluded !== false) rows.push({ ...old, taskUpdatesExcluded: false })
+      }
+      // A shell notification can finish its known command even when its task start was missed.
+      if (owner?.kind === 'command') {
+        if (frame.subtype === 'task_notification' && status !== 'unknown') rows.push({ ...owner, status })
         return mergeAgentActivities(previous, rows)
       }
-      const old = previous.find(row => row.id === `claude-task-${frame.task_id}`)
-      rows.push({ ...base, ...old, id: `claude-task-${frame.task_id}`, kind: 'subagent', status, title: text(frame.description) ?? old?.title ?? 'Subagent',
+      if (frame.subtype !== 'task_started' && (old?.kind !== 'subagent' || old.taskUpdatesExcluded)) return mergeAgentActivities(previous, rows)
+      if (frame.subtype === 'task_notification' && old) {
+        // Persist closure even if an unknown outcome is rejected by the terminal-status guard.
+        rows.push({ ...old, taskUpdatesExcluded: true })
+        if (isTerminalActivity(old.status) && old.taskUpdatesExcluded !== false) return mergeAgentActivities(previous, rows)
+      }
+      rows.push({ ...base, ...old, id: `claude-task-${frame.task_id}`, kind: 'subagent', status, ...(frame.subtype === 'task_notification' ? { taskUpdatesExcluded: true } : frame.subtype === 'task_started' && old ? { taskUpdatesExcluded: false } : {}), title: text(frame.description) ?? old?.title ?? 'Subagent',
         ...(typeof frame.tool_use_id === 'string' ? { parentId: `claude-tool-${frame.tool_use_id}` } : {}),
         ...(text(frame.summary ?? frame.last_tool_name) ? { text: text(frame.summary ?? frame.last_tool_name) } : {}),
         agents: [{ id: frame.task_id, status, ...(text(frame.summary) ? { message: text(frame.summary) } : {}) }] })
