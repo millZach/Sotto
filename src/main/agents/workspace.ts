@@ -304,13 +304,18 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
     try {
       for (const thread of snapshot.threads) {
-        const retained = this.threadStore.readActivities(thread.id)
-        if (thread.activities?.length) {
-          const merged = mergeAgentActivities(thread.activities, retained)
-          this.threadStore.syncActivities(thread.id, merged, thread.historyEpoch)
+        if (!this.threadStore.hasActivities(thread.id) && thread.activities !== undefined) {
+          this.threadStore.syncActivities(thread.id, thread.activities, thread.historyEpoch)
         }
-        const activities = this.threadStore.readActivities(thread.id)
-        if (activities.length || thread.activities !== undefined) thread.activities = activities
+        if (this.threadStore.hasActivities(thread.id)) {
+          const epoch = this.threadStore.readActivityEpoch(thread.id)
+          // SQLite commits before organization JSON. Do not relabel stale legacy messages
+          // or revive activity from the old generation after an interrupted JSON save.
+          if (thread.historyEpoch !== epoch) thread.messages = []
+          if (epoch === undefined) delete thread.historyEpoch
+          else thread.historyEpoch = epoch
+          thread.activities = this.threadStore.readActivities(thread.id)
+        }
       }
     } catch {
       this.activityStoreUnavailable = true
@@ -319,7 +324,9 @@ export class WorkspaceHost implements AgentHost {
   }
   private saveActivities(): void {
     if (this.storeUnavailable || this.activityStoreUnavailable) return
-    for (const thread of this.state.snapshot.threads) this.threadStore.syncActivities(thread.id, thread.activities ?? [], thread.historyEpoch)
+    for (const thread of this.state.snapshot.threads) {
+      if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, thread.activities, thread.historyEpoch)
+    }
   }
   /** One window of a thread's messages, or nothing when the store cannot answer. */
   private readWindow(threadId: string, turns?: number) {

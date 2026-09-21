@@ -54,12 +54,13 @@ const migrations = [{
       PRIMARY KEY (thread_id, activity_id)
     );
     CREATE INDEX activities_thread_position ON activities(thread_id, position);
-    CREATE TABLE activity_epochs (thread_id TEXT PRIMARY KEY NOT NULL, epoch TEXT NOT NULL);
+    CREATE TABLE activity_epochs (thread_id TEXT PRIMARY KEY NOT NULL, epoch TEXT);
     CREATE TABLE activity_redactions (identity_hash TEXT PRIMARY KEY NOT NULL);
   `,
 }]
 
 interface ActivityState {
+  known: boolean
   epoch: string | undefined
   records: Map<string, { position: number; activity: AgentActivity }>
 }
@@ -255,7 +256,8 @@ export class ThreadStore {
   private activityState(threadId: string): ActivityState {
     let state = this.activityStates.get(threadId)
     if (state === undefined) {
-      const epoch = this.statement('SELECT epoch FROM activity_epochs WHERE thread_id = ?').get(threadId)?.epoch
+      const epochRow = this.statement('SELECT epoch FROM activity_epochs WHERE thread_id = ?').get(threadId)
+      const epoch = epochRow?.epoch
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
@@ -263,10 +265,20 @@ export class ThreadStore {
         if (activity.id !== row.activity_id) throw new Error('Stored activity identity does not match its record')
         records.set(activity.id, { position: Number(row.position), activity })
       }
-      state = { epoch: epoch === undefined ? undefined : String(epoch), records }
+      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), records }
       this.activityStates.set(threadId, state)
     }
     return state
+  }
+
+  /** True once an authoritative list has been stored, even when that list is empty. */
+  hasActivities(threadId: string): boolean {
+    return this.activityState(threadId).known
+  }
+
+  /** The epoch committed with the list; hasActivities distinguishes unknown from unversioned. */
+  readActivityEpoch(threadId: string): string | undefined {
+    return this.activityState(threadId).epoch
   }
 
   /** A caller owns its returned records, including nested plan steps and file changes. */
@@ -280,7 +292,7 @@ export class ThreadStore {
     if (activities.length > MAX_AGENT_ACTIVITIES) throw new Error('Too many thread activities')
     const previous = this.activityState(threadId)
     const reset = previous.epoch !== epoch
-    const next: ActivityState = { epoch, records: new Map() }
+    const next: ActivityState = { known: true, epoch, records: new Map() }
     const changed: { position: number; activity: AgentActivity }[] = []
     const moved: { id: string; position: number }[] = []
     const seen = new Set<string>()
@@ -300,16 +312,17 @@ export class ThreadStore {
       }
     }
     const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
-    if (!reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
+    if (previous.known && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
     if (this.memory) this.redactActivityIdentities(threadId, changed.map(({ activity }) => activity.id))
     db.exec('BEGIN IMMEDIATE')
     try {
       if (reset) {
         this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
-        if (epoch === undefined) this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
-        else this.statement('INSERT INTO activity_epochs (thread_id, epoch) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch').run(threadId, epoch)
       } else {
         for (const id of removed) this.statement('DELETE FROM activities WHERE thread_id = ? AND activity_id = ?').run(threadId, id)
+      }
+      if (!previous.known || reset) {
+        this.statement('INSERT INTO activity_epochs (thread_id, epoch) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch').run(threadId, epoch ?? null)
       }
       for (const { position, activity } of changed) {
         this.statement('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id, activity_id) DO UPDATE SET position = excluded.position, payload = excluded.payload')

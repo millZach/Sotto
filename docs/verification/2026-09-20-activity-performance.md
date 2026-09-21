@@ -52,3 +52,12 @@ The installed app and active user threads were not replaced or restarted. This v
 - `git diff --check`: clean.
 
 Final standalone measurement used the actual TypeScript-transpiled helper on four threads, each with 96 records and 65,536-character output strings (24 MiB total), Node 24.14.1 on this Windows machine. Median of 11 copies: structuredClone 23.555 ms; cloneHostSnapshot 0.152 ms, about 155 times faster for this operation. This measures snapshot copying only, not whole-app CPU or provider execution. The unit fixture independently checks semantic equivalence and its opt-in timing threshold.
+
+
+## Integration with current main and PR review
+
+PR #167 integrates main at `93b2f0f5`, including #164, #165 and #166. Merge resolution preserves ephemeral monitoring exclusion, question-choice documentation, and the retained activity handoff before Claude resumes a transcript cursor. The eight combined activity migration, thread workspace and monitoring Electron cases pass after integration; the two queue failures documented above are historical findings from the earlier base, now fixed by #165.
+
+Independent integration review caught the distinction between missing and known-empty activity. SQLite now records that a list was observed even when it is empty or has no epoch; unchanged empty lists cause no further writes, and erasure removes the marker. Legacy missing versus empty activity survives repeated restarts.
+
+Greptile review identified interrupted saves where SQLite committed newer activity but organization JSON retained an older epoch or removed records. Five reproductions failed before the correction. Startup now trusts the committed whole list and epoch, including an empty/unversioned list, and avoids importing stale legacy messages into a newer epoch. The regression covers two successive restarts and verifies message history is preserved. The four-file persistence/cursor regression run passes all 51 tests. Final GitHub Gates (Windows) and automated reviews are required on the pushed revision before merge.

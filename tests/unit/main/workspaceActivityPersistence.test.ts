@@ -216,3 +216,50 @@ it('never falls back to JSON containing private activity when enabling history f
   const saved = await readFile(join(f.directory, 'workspace.json'), 'utf8')
   expect(saved.includes('Retained tool output')).toBe(false)
 })
+
+
+it.each([false, true])('preserves legacy activity evidence across restarts when known-empty is %s', async known => {
+  const f = await fixture()
+  const thread = f.provider.state.threads[0]!
+  if (known) thread.activities = []
+  else delete thread.activities
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  for (let restart = 0; restart < 2; restart++) {
+    const host = await f.open()
+    expect(host.activities(thread.id)).toEqual(known ? [] : undefined)
+    expect(JSON.parse(await readFile(join(f.directory, 'workspace.json'), 'utf8')).snapshot.threads[0]).not.toHaveProperty('activities')
+    await f.close(host)
+  }
+})
+
+
+it.each([
+  { legacy: true, epoch: 'new-epoch', empty: false },
+  { legacy: true, epoch: 'new-epoch', empty: true },
+  { legacy: true, epoch: undefined, empty: false },
+  { legacy: false, epoch: 'new-epoch', empty: false },
+  { legacy: true, epoch: 'old-epoch', empty: false },
+])('keeps the committed activity generation after an interrupted JSON save: %j', async ({ legacy, epoch, empty }) => {
+  const f = await fixture()
+  const thread = f.provider.state.threads[0]!
+  thread.historyEpoch = 'old-epoch'
+  if (!legacy) delete thread.activities
+  thread.messages = epoch === 'old-epoch' ? [] : [{ id: 'stale-message', role: 'user', text: 'Stale old-generation message', createdAt: '2026-09-20T00:00:00Z' }]
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  const committed = empty ? [] : [activity('fresh', 'New committed output')]
+  const retainedMessage = { id: 'current-message', role: 'user' as const, text: 'Current generation message', createdAt: '2026-09-20T00:00:01Z' }
+  const store = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  store.open()
+  try {
+    store.replaceThreadMessages(thread.id, [retainedMessage], epoch)
+    store.syncActivities(thread.id, committed, epoch)
+  } finally { store.close() }
+  for (let restart = 0; restart < 2; restart++) {
+    const host = await f.open()
+    const restored = host.workspaceSnapshot().threads[0]!
+    expect(restored.historyEpoch).toBe(epoch)
+    expect(restored.activities).toEqual(committed)
+    expect(host.threadMessages(thread.id)).toEqual([retainedMessage])
+    await f.close(host)
+  }
+})

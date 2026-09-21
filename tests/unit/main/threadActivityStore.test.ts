@@ -46,6 +46,61 @@ async function onDisk(root: string): Promise<string> {
 }
 
 describe('thread activity store', () => {
+
+  it('distinguishes unknown activity from an authoritative empty list across restart', async () => {
+    const { store } = await fixture()
+    expect(store.hasActivities('thread')).toBe(false)
+    expect(store.readActivities('thread')).toEqual([])
+    expect(store.hasActivities('thread')).toBe(false)
+    store.syncActivities('thread', [])
+    expect(store.hasActivities('thread')).toBe(true)
+    const exec = vi.spyOn(DatabaseSync.prototype, 'exec')
+    store.syncActivities('thread', [])
+    expect(exec).not.toHaveBeenCalled()
+    store.close()
+    store.open()
+    exec.mockClear()
+    expect(store.hasActivities('thread')).toBe(true)
+    expect(store.hasActivities('unknown')).toBe(false)
+    expect(store.readActivities('thread')).toEqual([])
+    store.syncActivities('thread', [])
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('keeps known-empty evidence when an epoch becomes absent and clears it when history is erased', async () => {
+    const { store } = await fixture()
+    store.syncActivities('thread', [activity('a')], 'first')
+    store.syncActivities('thread', [])
+    store.close()
+    store.open()
+    expect(store.hasActivities('thread')).toBe(true)
+    expect(store.readActivities('thread')).toEqual([])
+    store.syncActivities('other', [], 'epoch')
+    store.forget('thread')
+    expect(store.hasActivities('thread')).toBe(false)
+    expect(store.hasActivities('other')).toBe(true)
+    store.redactAll()
+    expect(store.hasActivities('other')).toBe(false)
+    store.close()
+    store.open()
+    expect(store.hasActivities('thread')).toBe(false)
+    expect(store.hasActivities('other')).toBe(false)
+  })
+
+  it('does not mark an empty list as known until its transaction succeeds', async () => {
+    const { path, store } = await fixture()
+    const db = inspect(path)
+    db.exec(`CREATE TRIGGER reject_activity_epoch BEFORE INSERT ON activity_epochs
+      BEGIN SELECT RAISE(ABORT, 'injected marker failure'); END;`)
+    expect(() => store.syncActivities('thread', [])).toThrow('injected marker failure')
+    expect(store.hasActivities('thread')).toBe(false)
+    db.exec('DROP TRIGGER reject_activity_epoch')
+    store.syncActivities('thread', [])
+    store.close()
+    store.open()
+    expect(store.hasActivities('thread')).toBe(true)
+  })
+
   it('writes only changed activities and does no serialization or transaction for an unchanged replay', async () => {
     const { path, store } = await fixture()
     const records = [activity('a', 'x'.repeat(65_536)), activity('b')]

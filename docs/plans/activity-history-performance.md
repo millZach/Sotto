@@ -19,3 +19,5 @@ Acceptance checks:
 Decision: amend ADR-0016 to keep bounded activity records alongside messages. Small organization JSON saves remain ordered and are skipped only against the last successful save. Hashes of erased activity identities prevent provider replay restoring removed output. Snapshot copies retain string values while isolating every mutable container. No UI redesign or new network host.
 
 Verification: [activity performance evidence](../verification/2026-09-20-activity-performance.md). The full suite passed 4,017 tests; the two neighboring queue E2E failures also reproduce on the clean base. The installed app is unchanged.
+
+PR #167 integrates main `93b2f0f5`. The newer queue fixes resolve the historical E2E failures. Integration review added persistent known-empty activity evidence, and PR review added authoritative committed-epoch recovery after interrupted JSON saves. Merge waits for current-head CI and reviews.
