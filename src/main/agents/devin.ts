@@ -18,6 +18,7 @@ import { markTurnActivity } from './turnActivity'
 import { devinActivities } from './devinActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations } from './devinPolicy'
+import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 
 const MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024
@@ -232,7 +233,7 @@ export class DevinAcpHost implements AgentHost {
     this.executable = this.options.executable ?? await findDevinExecutable(this.options.environment) ?? ''
     if (!isAbsolute(this.executable)) throw new Error('Install Devin CLI and run devin auth login, then connect again. Your threads and drafts are kept.')
     const version = await readDevinVersion(this.executable, this.options.args ?? [], devinEnvironment(this.options.environment))
-    if (version !== DEVIN_CLI_VERSION) throw new Error('This Devin version has not passed compatibility checks. Your threads are kept. Use Devin CLI ' + DEVIN_CLI_VERSION + ' before connecting.')
+    if (compareClientVersions(version, DEVIN_CLI_VERSION) < 0) throw new Error('This Devin version is older than the one Sotto checked. Your threads are kept. Use Devin CLI ' + DEVIN_CLI_VERSION + ' or newer before connecting.')
     const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.aliases = aliases; this.state.projects = projects
@@ -260,6 +261,8 @@ export class DevinAcpHost implements AgentHost {
     } finally { catalog.intentionalClose = true; catalog.rpc.close(); await catalog.rpc.closed }
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.state.connected = true; this.state.version = version + ' / ACP 1'; delete this.state.error
+    if (compareClientVersions(version, DEVIN_CLI_VERSION) > 0) this.state.verifiedVersion = DEVIN_CLI_VERSION
+    else delete this.state.verifiedVersion
     for (const id of this.observed) if (this.aliases[id]?.devinSessionId) await this.open(id)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.reaper.start()

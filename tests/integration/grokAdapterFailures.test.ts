@@ -16,10 +16,17 @@ async function setup() {
  return id
 }
 const send = (id:string,messageId='own',text='Synthetic prompt')=>f!.host.execute({type:'send',commandId:messageId,threadId:id,messageId,text})
-it.each([{cliVersion:'1.0.6'},{protocolVersion:2}])('rejects unpinned native versions before authentication (%j)',async script=>{
+it.each([{cliVersion:'1.0.4'},{protocolVersion:2}])('rejects a client older than the verified version, or another protocol, before authentication (%j)',async script=>{
  f=await grokFixture();await f.script(script)
- await expect(f.host.connect()).rejects.toThrow('requires Grok CLI 1.0.5, ACP 1')
+ await expect(f.host.connect()).rejects.toThrow('requires Grok CLI 1.0.5 or newer, ACP 1')
  expect((await f.driver.requests()).some(request=>request.method==='authenticate')).toBe(false)
+})
+it('connects to a client newer than the verified version and says which version is running (ADR-0020)',async()=>{
+ f=await grokFixture();await f.script({cliVersion:'1.0.40'})
+ const snapshot=await f.host.connect()
+ expect(snapshot.connected).toBe(true)
+ expect(snapshot.version).toBe('1.0.40 / ACP 1')
+ expect(snapshot.verifiedVersion).toBe('1.0.5')
 })
 it('rejects screenshots before sending when the native Grok client cannot accept images',async()=>{
  const id=await setup()

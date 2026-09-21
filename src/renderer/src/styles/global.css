@@ -463,7 +463,8 @@ textarea.tt-input {
 .tt-toast-region {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* The client update card holds this corner while it is up and says how tall it is. */
+  bottom: var(--tt-corner-inset, 20px);
   z-index: 10;
   display: grid;
   max-width: min(360px, calc(100vw - 40px));

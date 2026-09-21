@@ -1,0 +1,129 @@
+/* The client update card (ADR-0020): one card in the window's bottom-right corner, above the
+   transient toasts, which move up by --tt-corner-inset while it is there. */
+.client-updates {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 11;
+  width: min(360px, calc(100vw - 40px));
+  border: 1px solid var(--tt-hairline);
+  border-left: 2px solid var(--tt-update);
+  border-radius: 12px;
+  background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-lg);
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.client-updates__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--tt-hairline);
+}
+
+.client-updates__head strong {
+  color: var(--tt-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.client-updates__head span {
+  color: var(--tt-text-muted);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.client-updates__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+}
+
+.client-updates__row + .client-updates__row {
+  border-top: 1px solid var(--tt-hairline);
+}
+
+.client-updates__row > div {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.client-updates__row span {
+  color: var(--tt-text);
+}
+
+.client-updates__row small {
+  color: var(--tt-text-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.client-updates__row[data-state='failed'] small {
+  color: var(--tt-error);
+}
+
+.client-updates__row .tt-button {
+  flex: none;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.client-updates__spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--tt-border);
+  border-top-color: var(--tt-update);
+  border-radius: 50%;
+  animation: client-updates-spin 900ms linear infinite;
+}
+
+@keyframes client-updates-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .client-updates__spinner { animation: none; border-top-color: var(--tt-border); }
+}
+
+.client-updates__error {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--tt-hairline);
+  color: var(--tt-error);
+  line-height: 1.5;
+}
+
+.client-updates__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+}
+
+.client-updates__foot > span {
+  color: var(--tt-text-muted);
+  font-size: 11.5px;
+}
+
+.client-updates__foot > div {
+  display: flex;
+  gap: 8px;
+}
+
+.client-updates__foot .tt-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}

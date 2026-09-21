@@ -20,6 +20,10 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Provider.** The installed native client that runs the agent for a thread: Codex, Claude Code, Grok Build or Devin. Providers keep their own sign-ins and may be connected together; each thread's chosen model belongs to one provider.
 
+**Client update.** What Sotto knows about one installed client: the version the adapter connected to, the version that client's own install channel publishes, and the one press that installs it. The **channel** is what installed it — npm, Claude Code's own installer, or the Devin app — and it decides both where the published version is read and what an update runs. A client whose channel Sotto will not drive shows the command instead of a button. Say "client update", not "provider update": the provider is connected or not, the client is what gets replaced (ADR-0020).
+
+**Verified version.** The client version an adapter was checked against. Sotto connects to that version or newer and notes when the installed client is past it; older is refused. Not a pin: an exact pin is what kept an installed client old while newer ones were published.
+
 **Provider session.** The native client's own identifier for a thread, distinct from the Sotto thread ID. In prose and user-facing text say "provider session", not "session" on its own or "remote ID".
 
 **Project.** A working folder the provider knows about, with an ID, a title and a path. A thread belongs to exactly one project.
