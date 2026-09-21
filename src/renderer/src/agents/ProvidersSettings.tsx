@@ -1,6 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderId } from '../../../shared/agents'
+import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
@@ -9,6 +9,23 @@ import { ProviderMark } from './ProviderMark'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI' }
+
+/** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
+function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, working = 0): string {
+  const past = verified ? ` It is newer than the ${verified} Sotto has checked.` : ''
+  const stops = working > 0 && update?.behind && update.canInstall
+    ? ` ${working === 1 ? 'A thread is' : `${working} threads are`} working now; updating stops ${working === 1 ? 'it' : 'them'}.` : ''
+  if (!checking) return `Client update checks are off, so Sotto does not know what is published.${past}`
+  if (!update) return `Connect this provider to read its installed version.${past}`
+  if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
+  if (update.state === 'failed') return `${update.installed} is installed. The last update did not run${update.error ? `: ${update.error}` : '.'}${past}`
+  if (update.state === 'unchanged') return `The update ran, but this client still reports ${update.installed}. Close other windows using it, then connect again.${past}`
+  if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
+  if (!update.published) return `${update.installed} is installed. Sotto could not reach the registry to see what is published.${past}`
+  if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`
+  if (!update.canInstall) return `${update.installed} is installed; ${update.published} is published. Sotto does not know how it was installed, so update it with ${update.command ?? 'the installer you used'}.${past}`
+  return `${update.installed} is installed; ${update.published} is published.${past}${stops}`
+}
 
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
@@ -23,7 +40,7 @@ export function ProvidersSettings(): ReactNode {
   if (!state || !command) return <p role="status">Loading providers…</p>
   const enabled = enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => state.host.providers?.find(provider => provider.id === id)
-    ?? { connection: id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined }
+    ?? { connection: id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
   const status = statusFor(selected)
   const connected = status.connection === 'connected'
   const working = pending[selected] || status.connection === 'connecting'
@@ -31,6 +48,20 @@ export function ProvidersSettings(): ReactNode {
     || (!model.providerId && model.provider === PROVIDER_LABELS[selected])))
   const label = PROVIDER_LABELS[selected]
   const detailError = errors[selected] ?? status.error
+  const update = state.clientUpdates?.find(item => item.id === selected)
+  const updating = (state.clientUpdates ?? []).some(item => item.state === 'updating')
+  const check = async (): Promise<void> => {
+    const result = await command({ type: 'check-client-updates' })
+    if (result?.error) setErrors(previous => ({ ...previous, [selected]: result.error }))
+  }
+  const workingThreads = (provider: ProviderId): number =>
+    state.host.threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
+  /** Forcing is the press the user reads as "anyway", never one Sotto decides for them. */
+  const runUpdate = async (provider: ProviderId, force: boolean): Promise<void> => {
+    setErrors(previous => ({ ...previous, [provider]: undefined }))
+    const result = await command({ type: 'update-client', provider, ...(force ? { force: true } : {}) })
+    if (result?.error) setErrors(previous => ({ ...previous, [provider]: result.error }))
+  }
   const perform = async (provider: ProviderId, type: 'connect' | 'disconnect' | 'refresh'): Promise<void> => {
     if (inFlight.current.has(provider)) return
     inFlight.current.add(provider)
@@ -69,12 +100,33 @@ export function ProvidersSettings(): ReactNode {
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working)} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
             </div>
+            <div className="provider-client">
+              <div>
+                <h4>Installed client</h4>
+                <p>{clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates, workingThreads(selected))}</p>
+              </div>
+              <div className="provider-client__actions">
+                {update?.canInstall && update.state !== 'updating'
+                  ? <Button variant="primary" disabled={Boolean(working) || updating} onClick={() => void runUpdate(selected, workingThreads(selected) > 0)}>
+                    {update.state === 'failed' ? 'Try again' : workingThreads(selected) > 0 ? 'Update anyway' : 'Update'}</Button>
+                  : null}
+                <Button variant="secondary" disabled={updating || !state.configuration.checkClientUpdates} onClick={() => void check()}>Check again</Button>
+              </div>
+            </div>
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and usage analytics; Sotto's local history setting does not control them.</p>}
             <p className="provider-models__empty">New threads use the agent selected in Settings → Agents.</p>
           </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedModelId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>
       </section>
+    </div>
+    <div className="providers-updates">
+      <div>
+        <h4>Check for client updates</h4>
+        <p>Asks the npm registry, at most once an hour for each client, which version it publishes. Only a package name is sent. Off, Sotto says nothing about versions and never offers to install one.</p>
+      </div>
+      <Toggle label="Check for client updates" checked={state.configuration.checkClientUpdates}
+        onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value } })} />
     </div>
   </div>
 }

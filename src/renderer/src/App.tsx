@@ -23,6 +23,7 @@ import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider } from './agents/AgentContext'
+import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { FinishedThreadWatch } from './agents/finishedThreads'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
@@ -469,6 +470,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           {content}
         </AppShell>
       )}
+      <ClientUpdateCard />
     </AgentProvider>
   )
 }

@@ -94,6 +94,7 @@ export class ConfiguredProviderHost implements AgentHost {
     slot.status = { id, name: PROVIDER_LABELS[id], version: snapshot.version || slot.status.version,
       capabilities: snapshot.connected ? snapshot.capabilities : slot.status.capabilities,
       connection: snapshot.connected ? 'connected' : snapshot.error ? 'error' : slot.connecting ? 'connecting' : 'disconnected',
+      ...(snapshot.verifiedVersion ? { verifiedVersion: snapshot.verifiedVersion } : {}),
       ...(snapshot.error ? { error: snapshot.error } : {}) }
   }
   private failed(id: ProviderId, error: unknown): void {

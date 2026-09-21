@@ -38,6 +38,25 @@ const ENVIRONMENT_KEYS = new Set([
 ])
 
 /** Runs the user's unmodified Claude CLI; OAuth credentials never enter Sotto. */
+/** Claude Code's own installer owns ~/.local/bin; PATH follows it. Used by the client and by the update check. */
+export async function findClaudeExecutable(environment: NodeJS.ProcessEnv = process.env, override?: string): Promise<string | null> {
+  const path = Object.entries(environment).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? ''
+  const filename = process.platform === 'win32' ? 'claude.exe' : 'claude'
+  const candidates = override ? [override] : [
+    join(homedir(), '.local', 'bin', filename),
+    ...path.split(delimiter).map(directory => directory.replace(/^"|"$/gu, '')).filter(isAbsolute).map(directory => join(directory, filename)),
+  ]
+  for (const candidate of candidates) {
+    if (!isAbsolute(candidate)) continue
+    try {
+      if (!(await stat(candidate)).isFile()) continue
+      await access(candidate, constants.X_OK)
+      return candidate
+    } catch { /* Try the next user-installed native executable. */ }
+  }
+  return null
+}
+
 export class ClaudeSubscriptionClient implements SubscriptionClient {
   constructor(private readonly workingDirectory: string, private readonly options: ClaudeSubscriptionOptions = {}) {
     if (!isAbsolute(workingDirectory)) throw new Error('Claude reasoning needs an absolute working directory.')
@@ -121,22 +140,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
   }
 
   async findExecutable(): Promise<string | null> {
-    const environment = this.options.environment ?? process.env
-    const path = Object.entries(environment).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? ''
-    const filename = process.platform === 'win32' ? 'claude.exe' : 'claude'
-    const candidates = this.options.executable ? [this.options.executable] : [
-      join(homedir(), '.local', 'bin', filename),
-      ...path.split(delimiter).map(directory => directory.replace(/^"|"$/gu, '')).filter(isAbsolute).map(directory => join(directory, filename)),
-    ]
-    for (const candidate of candidates) {
-      if (!isAbsolute(candidate)) continue
-      try {
-        if (!(await stat(candidate)).isFile()) continue
-        await access(candidate, constants.X_OK)
-        return candidate
-      } catch { /* Try the next user-installed native executable. */ }
-    }
-    return null
+    return findClaudeExecutable(this.options.environment ?? process.env, this.options.executable)
   }
 
   environment(): NodeJS.ProcessEnv {
