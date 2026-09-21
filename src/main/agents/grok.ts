@@ -22,7 +22,7 @@ import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequ
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
-import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokUncertain, type GrokFrame } from './grokRpc'
+import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
 
 // Only strip our suffix after durable origin/digest matching; foreign native
@@ -254,11 +254,12 @@ export class GrokAcpHost implements AgentHost {
     this.rpc = rpc; this.stopping = rpc.closed
     try {
       await rpc.request('initialize', { protocolVersion: GROK_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '1' } }, value => {
-        const response = z.object({ protocolVersion: z.literal(GROK_ACP_VERSION), agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.string().min(1).max(64), modelState: catalogSchema }) }).parse(value)
+        const response = z.object({ protocolVersion: z.number(), agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.string().min(1).max(64), modelState: catalogSchema }) }).parse(value)
         // The pin is a floor, not one exact version (ADR-0020): an exact pin is what kept an installed
         // client on 1.0.5 while 1.0.40 was published. Older than the checked version is still refused.
-        if (compareClientVersions(response._meta.agentVersion, GROK_CLI_VERSION) < 0) throw new Error(`Grok CLI ${GROK_CLI_VERSION} or newer is required.`)
-        if (!response.authMethods.some(auth => auth.id === 'cached_token') || response.authMethods.some(auth => /api.?key/iu.test(auth.id))) throw new Error('Subscription authentication required.')
+        if (response.protocolVersion !== GROK_ACP_VERSION) throw new GrokUnsupported(`Sotto speaks ACP ${GROK_ACP_VERSION}, and this client answered ACP ${response.protocolVersion}.`)
+        if (compareClientVersions(response._meta.agentVersion, GROK_CLI_VERSION) < 0) throw new GrokUnsupported(`Grok CLI ${GROK_CLI_VERSION} or newer is required, and this client is ${response._meta.agentVersion}.`)
+        if (!response.authMethods.some(auth => auth.id === 'cached_token') || response.authMethods.some(auth => /api.?key/iu.test(auth.id))) throw new GrokUnsupported('Grok must be signed in to its own subscription; Sotto never connects it with an API key.')
         this.browserHttp = response.agentCapabilities.mcpCapabilities?.http === true
         this.state.version = `${response._meta.agentVersion} / ACP ${GROK_ACP_VERSION}`
         if (compareClientVersions(response._meta.agentVersion, GROK_CLI_VERSION) > 0) this.state.verifiedVersion = GROK_CLI_VERSION
@@ -289,7 +290,16 @@ export class GrokAcpHost implements AgentHost {
       await this.pollHistory()
       this.pollTimer = setInterval(() => { void this.pollHistory().catch(() => { this.state.error = 'Grok history could not be checked. Reconnect before sending automatic replies.'; this.emit() }) }, this.options.pollIntervalMs ?? 1500); this.pollTimer.unref()
       this.emit(); return this.current()
-    } catch (error) { this.disconnect(); throw new Error(`Could not connect Grok. Sotto requires Grok CLI ${GROK_CLI_VERSION} or newer, ACP ${GROK_ACP_VERSION}, and native subscription sign-in. ${error instanceof GrokUncertain ? error.message : ''}`.trim(), { cause: error }) }
+    } catch (error) {
+      this.disconnect()
+      // What the user reads is what happened. A client Sotto will not drive names the requirement it
+      // missed, and pressing again will not change it. Anything else, an answer Sotto could not read or
+      // a connection lost partway through, says so and is worth another press. The version and the
+      // sign-in are named only by the refusal that found them, never over a failure that passed both.
+      const refused = error instanceof GrokUnsupported
+      const detail = refused || error instanceof GrokUncertain ? error.message : ''
+      throw new Error(['Could not connect Grok.', detail, refused ? '' : 'Connect again to retry.'].filter(Boolean).join(' '), { cause: error })
+    }
   }
   /**
    * Take the watched set as given and load the sessions that have entered it. A thread that has left the
