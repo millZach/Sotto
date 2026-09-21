@@ -1,4 +1,4 @@
-import type { BrowserAgentTools } from './browserAgentServer'
+import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
@@ -46,6 +46,15 @@ function grokRuntimeMode(mode: AgentRuntimeMode): GrokRuntimeMode {
 /** Both flags are always explicit; a missing mode keeps the original approval-required policy. */
 function sessionPolicy(mode: GrokRuntimeMode | undefined): { yoloMode: boolean; autoMode: boolean } {
   return { yoloMode: mode === 'full-access', autoMode: mode === 'auto' }
+}
+/**
+ * How Sotto spawns the native client. The allow rule covers Sotto's own browser server and nothing
+ * else, and lives on this process rather than in Grok's own configuration; Tools still asks before
+ * any page action (ADR-0020). One leader serves every thread, so the rule cannot be per-thread: on a
+ * personal chat, which never receives a browser server, it matches nothing.
+ */
+export function grokArguments(): string[] {
+  return ['--permission-mode', 'default', '--allow', `MCPTool(${BROWSER_MCP_SERVER}__*)`, 'agent', '--leader', 'stdio']
 }
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
@@ -247,7 +256,7 @@ export class GrokAcpHost implements AgentHost {
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
     this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear(); this.histories.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
-    const rpc = new GrokRpc(executable, this.options.args ?? ['--permission-mode', 'default', 'agent', '--leader', 'stdio'], this.userDataDirectory,
+    const rpc = new GrokRpc(executable, this.options.args ?? grokArguments(), this.userDataDirectory,
       grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame), () => {
         if (this.rpc === rpc) { this.state.connected = false; clearInterval(this.pollTimer); for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected.')); this.deliveries.clear(); this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []; this.emit() }
       })

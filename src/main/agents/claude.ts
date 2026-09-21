@@ -50,6 +50,14 @@ function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): stri
   // The CLI only accepts bypassPermissions when bypassing is explicitly allowed at launch.
   return ['--permission-mode', nativePermissionModes[mode], '--permission-prompts', 'host', ...(mode === 'full-access' ? ['--allow-dangerously-skip-permissions'] : [])]
 }
+// Sotto's own browser tools carry no native prompt. Admission is not authority: opening a page,
+// navigating, clicking and typing still need the user's one-time answer in Tools (ADR-0020), and
+// the native prompt asked the same question a second time without naming the browser. The names are
+// listed one by one because the CLI does not match a wildcard against a tool added at launch, and
+// the flag is variadic, so it is only ever followed here by another option.
+function browserAllowance(server: string, definitions: readonly { name: string }[]): string[] {
+  return definitions.length ? ['--allowedTools', ...definitions.map(tool => `mcp__${server}__${tool.name}`)] : []
+}
 export interface ClaudeStreamJsonHostOptions {
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
@@ -504,7 +512,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const browser = alias.kind !== 'personal' ? await this.browserTools?.mcpServer(id) : undefined
     const browserArguments = browser ? ['--mcp-config', JSON.stringify({ mcpServers: { [browser.name]: {
       type: browser.type, url: browser.url, headers: Object.fromEntries(browser.headers.map(header => [header.name, header.value])),
-    } } })] : []
+    } } }), ...browserAllowance(browser.name, this.browserTools?.definitions ?? [])] : []
     const args = [...(this.options.args ?? []), ...browserArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       ...(alias.kind === 'personal' ? ['--append-system-prompt', this.personalContexts.get(id) ?? personalContext()] : []),
