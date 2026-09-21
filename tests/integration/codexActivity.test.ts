@@ -1,7 +1,10 @@
 // @vitest-environment node
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { agentActivitySchema } from '../../src/shared/agentActivity'
 import { afterEach, describe, expect, it } from 'vitest'
+import { subagentActivityClassification } from '../../src/main/agents/subagentStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { codexFixture } from '../fixtures/codexFixture'
 import { activityItems } from '../fixtures/codexActivityFixture'
@@ -26,6 +29,18 @@ async function fixture() {
     await event
   }
   return { f, workspace, turnId, thread, notify, setHistory: (value: boolean) => { history = value } }
+}
+
+function savedActivities(root: string) {
+  const db = new DatabaseSync(join(root, 'threads.sqlite'), { readOnly: true })
+  try {
+    return db.prepare('SELECT payload FROM activities WHERE thread_id = ? ORDER BY position').all('thread')
+      .map(row => agentActivitySchema.parse(JSON.parse(String(row.payload))))
+  } finally { db.close() }
+}
+async function savedActivityBytes(root: string): Promise<string> {
+  const files = (await readdir(root)).filter(name => name.startsWith('threads.sqlite'))
+  return (await Promise.all(files.map(name => readFile(join(root, name), 'latin1')))).join(' ')
 }
 
 describe('Codex activity through native transport and workspace persistence', () => {
@@ -66,7 +81,14 @@ describe('Codex activity through native transport and workspace persistence', ()
     await workspace.snapshot()
     const before = structuredClone(thread())
     const savedText = await readFile(join(f.root, 'workspace.json'), 'utf8')
-    expect(savedText).toContain('2 tests passed')
+    expect(savedText).not.toContain('2 tests passed')
+    expect(JSON.parse(savedText).snapshot.threads[0]).not.toHaveProperty('activities')
+    expect(savedActivities(f.root)).toEqual(before.activities?.map(record => record.kind === 'subagent' || record.agents?.length ? subagentActivityClassification(record) : record))
+    expect(await savedActivityBytes(f.root)).not.toContain('Review the fixture')
+    const activityText = await savedActivityBytes(f.root)
+    expect(activityText).toContain('2 tests passed')
+    expect(activityText).not.toContain('PRIVATE_REASONING')
+    expect(activityText).not.toContain('native-child')
     expect(savedText).not.toContain('PRIVATE_REASONING')
     expect(savedText).not.toContain('native-child')
     workspace.disconnect(); await f.adapter.closed(); await workspace.privacyChanged()
@@ -94,19 +116,31 @@ describe('Codex activity through native transport and workspace persistence', ()
     const { f, workspace, thread, notify, setHistory } = await fixture()
     await notify('item/completed', { item: activityItems.commandDone }, true)
     await workspace.privacyChanged()
-    expect(await readFile(join(f.root, 'workspace.json'), 'utf8')).toContain('2 tests passed')
+    expect(savedActivities(f.root).some(record => record.output === '2 tests passed\n')).toBe(true)
     setHistory(false); await workspace.privacyChanged()
     expect(thread().activities?.some(record => record.output)).toBe(true) // current live work remains visible
     const saved = await readFile(join(f.root, 'workspace.json'), 'utf8')
     expect(saved).not.toContain('2 tests passed')
     expect(saved).not.toContain('npm test')
     expect(JSON.parse(saved).snapshot.threads[0]).not.toHaveProperty('activities')
-    // Exercise reading a previously enabled cache with privacy disabled at startup.
+    expect(savedActivities(f.root)).toEqual([])
+    const erasedBytes = await savedActivityBytes(f.root)
+    expect(erasedBytes).not.toContain('2 tests passed')
+    expect(erasedBytes).not.toContain('npm test')
+    // Exercise reading a newly retained activity with privacy disabled at startup.
     setHistory(true); await workspace.privacyChanged()
+    expect(savedActivities(f.root)).toEqual([]) // re-enabling never restores erased activity
+    await notify('item/completed', { item: { ...activityItems.commandDone, id: 'new-command', aggregatedOutput: 'Fresh retained output' } }, true)
+    await workspace.privacyChanged()
+    expect(savedActivities(f.root).some(record => record.output === 'Fresh retained output')).toBe(true)
     const restored = new WorkspaceHost(new FakeProviderHost(), f.root, () => false)
     await restored.initialize()
     expect(restored.workspaceSnapshot().threads[0]).not.toHaveProperty('activities')
     expect(await readFile(join(f.root, 'workspace.json'), 'utf8')).not.toContain('npm test')
+    expect(savedActivities(f.root)).toEqual([])
+    const startupBytes = await savedActivityBytes(f.root)
+    expect(startupBytes).not.toContain('Fresh retained output')
+    expect(startupBytes).not.toContain('npm test')
     restored.dispose()
   })
 

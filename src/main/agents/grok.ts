@@ -10,6 +10,7 @@ import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type Agen
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -203,7 +204,7 @@ export class GrokAcpHost implements AgentHost {
     await this.closeSession(rpc, alias)
   }
   private current(): AgentHostSnapshot {
-    return structuredClone({ ...this.state, threads: [...this.threads.values()]
+    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) })
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }

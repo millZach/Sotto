@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -109,7 +109,11 @@ describe('retained agents across workspace lifecycle', () => {
     emit('running', new Date().toISOString())
     await f.host.privacyChanged()
     expect(await saved()).not.toContain(secret)
-    expect(await saved()).toContain('Ordinary output')
+    expect(await saved()).not.toContain('Ordinary output')
+    const activityFiles = (await readdir(f.directory)).filter(name => name.startsWith('threads.sqlite'))
+    const activityBytes = (await Promise.all(activityFiles.map(name => readFile(join(f.directory, name), 'latin1')))).join(' ')
+    expect(activityBytes).not.toContain(secret)
+    expect(activityBytes).toContain('Ordinary output')
     expect(JSON.stringify(f.host.workspaceSnapshot())).toContain(secret)
     expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).toContain(secret)
     await f.history(false)
@@ -119,7 +123,7 @@ describe('retained agents across workspace lifecycle', () => {
     emit('completed', new Date(Date.now() + 1_000).toISOString())
     await f.host.privacyChanged()
     expect(await saved()).not.toContain(secret)
-    expect(await saved()).toContain('Ordinary output')
+    expect(await saved()).not.toContain('Ordinary output')
     expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).not.toContain(secret)
   })
   it('persists exclusion-only classification changes without new child observations', async () => {
@@ -166,6 +170,25 @@ describe('retained agents across workspace lifecycle', () => {
       expect(f.host.workspaceSnapshot().threads[0]?.subagentSummary?.working).toBe(0)
       expect(JSON.stringify(await f.host.subagentAssignments({ threadId: f.thread.id, agentId: 'child' }))).not.toContain('Erased-evicted-task-marker')
     }
+  })
+  it('preserves evicted current classification and aliases across privacy switches and restart without restoring completed history', async () => {
+    const f = await fixture()
+    const alias = `claude-agent-alias-${'a'.repeat(64)}`
+    f.observe([child({ aliasIds: [alias], prompt: 'Erased-active-classification-marker' }), child({ id: 'finished', assignmentId: 'done', status: 'completed', prompt: 'Erased-finished-classification-marker' })])
+    f.thread.activities = Array.from({ length: 2000 }, (_, index): AgentActivity => ({ id: `later-${index}`, turnId: 'turn', sequence: index + 1, kind: 'tool', status: 'completed', title: 'Later work' }))
+    f.native.emit()
+    await f.history(false); await f.history(true)
+    expect(f.host.activity(f.thread.id, 'spawn')?.agents?.map(agent => agent.id)).toEqual(['child'])
+    expect(f.host.activity(f.thread.id, alias)?.agents?.[0]?.id).toBe('child')
+    f.host.dispose()
+    const reopened = new WorkspaceHost(new FakeProviderHost(f.native.state), f.directory)
+    await reopened.initialize(); cleanups.push(async () => { reopened.dispose() })
+    expect(reopened.activity(f.thread.id, 'spawn')?.agents?.map(agent => agent.id)).toEqual(['child'])
+    expect(reopened.activity(f.thread.id, alias)?.agents?.[0]?.assignmentId).toBe('assignment-1')
+    expect((await reopened.subagentPage({ threadId: f.thread.id })).rows).toEqual([expect.objectContaining({ id: 'child', status: 'unknown' })])
+    const retained = await reopened.subagentAssignments({ threadId: f.thread.id, agentId: 'child' })
+    expect(JSON.stringify(retained)).not.toContain('Erased-')
+    expect((await readFile(join(f.directory, 'subagents.sqlite'))).includes(Buffer.from('Erased-'))).toBe(false)
   })
   it('retries an unchanged provider snapshot on refresh after a transient roster write failure', async () => {
     const f = await fixture()

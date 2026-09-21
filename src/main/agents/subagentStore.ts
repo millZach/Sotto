@@ -251,6 +251,21 @@ export class SubagentStore {
       }
     })
   }
+  /** Explicit retention changes preserve only the text-free identity evidence needed by unfinished tasks. */
+  unsettledActivities(threadId: string, observations: readonly ObservedAgent[]): AgentActivity[] {
+    if (!observations.length) return []
+    const identities = new Set(observations.map(agent => JSON.stringify([agent.id, agent.assignmentId ?? `${agent.id}:initial`])))
+    const retained = new Map<string, AgentActivity>()
+    this.counts.indexedReads++
+    // This scan happens only when changing retention, never on startup or a provider progress update.
+    for (const record of this.requireOpen().prepare('SELECT value FROM subagent_classifications WHERE thread_id = ?').iterate(threadId)) {
+      this.counts.pageRowsRead++
+      const activity = JSON.parse(String(record.value)) as AgentActivity
+      const agents = activity.agents?.filter(agent => identities.has(JSON.stringify([agent.id, agent.assignmentId ?? `${agent.id}:initial`])))
+      if (agents?.length) retained.set(activity.id, subagentActivityClassification({ ...activity, agents }))
+    }
+    return [...retained.values()]
+  }
   /** One indexed classification lookup, including activities outside the renderer's bounded history. */
   activity(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined {
     if (this.thread(threadId).epoch !== historyEpoch) return undefined

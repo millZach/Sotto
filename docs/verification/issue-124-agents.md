@@ -8,7 +8,7 @@ Tools has an Agents tab for its selected or pinned thread. Rows show the reporte
 
 Provider observations feed a separate indexed SQLite roster. Ordinary activity eviction cannot discard its assignments. Restart and disconnect turn unconfirmed work into “Last seen working”; fresh provider evidence restores live status. A parent or spawn tool finishing does not complete its child.
 
-History-off erases saved task and result text. Content-free hashes prevent native replay from restoring erased assignments, including after restart. Erased assignments remain text-free even if they later complete; fresh assignment identities can retain new text. Only text-free subagent identity and classification are retained beside workspace organization. Indexed classification lookups also recognize late completion after activity eviction and restart; task text has no second saved copy.
+History-off erases saved task and result text. Content-free hashes prevent native replay from restoring erased assignments, including after restart. Erased assignments remain text-free even if they later complete; fresh assignment identities can retain new text. Only text-free subagent identity and classification are retained in ordinary activity history and its migration fallback. Indexed classification lookups also recognize late completion after activity eviction and restart; task text has no second saved copy.
 
 ## Verification
 
@@ -28,7 +28,7 @@ Structural regressions cover 5,000 saved assignments, 20 live agents and 600 upd
 
 Independent standards and specification reviews found and fixed Claude error status, provider payload retention, oversized Codex metadata truncation, erased-text replay and duplicate workspace persistence. The final standards re-review reports no remaining material findings.
 
-## PR branch verification
+## Initial PR branch verification
 
 The issue-only branch starts from main at `93b2f0f5`, preserving the merged monitoring lifecycle and lazy terminal loading.
 
@@ -40,3 +40,11 @@ The issue-only branch starts from main at `93b2f0f5`, preserving the merged moni
 - Independent standards and spec re-reviews found no remaining material issues after the restart/classification and streamed-reuse fixes.
 
 Live paid providers and macOS were not exercised. Existing design baselines were not regenerated for this PR; the new Agents evidence is retained separately.
+
+## Review fixes and current-main integration
+
+PR #168 review found transient write retries, privacy-toggle live status and pinned observation lifetime gaps. The fixes preserve generic unfinished rows and their text-free classification/aliases, invalidate failed observation caches, and keep pinned observations through callback changes and StrictMode replay. A regression also confirms batched privacy resets discard expanded current and previous task/result text even when the same agent ID and revision return immediately.
+
+The branch integrates main at `80b2207e` (#167). Ordinary activity persists incrementally in `threads.sqlite`; only sanitized child classification reaches that store or the JSON migration fallback. Both legacy JSON and SQLite migration tests preserve existing child assignments in the roster before sanitization and recover them after restart. A native Claude regression covers eviction, privacy off/on, restart, late completion and streamed reuse without restoring erased words.
+
+The integrated revision passes typecheck, lint, 174 notices and six rebuilt Electron journeys (`subagents`, `tools-sidecar`, `thread-monitoring`, `activity-persistence`) in 47.9 seconds. The final full suite passed 322 files and 4,174 tests, with 17 files and 34 tests skipped, in 384.13 seconds. Timing results are recorded in the performance note. The initial full-suite count above describes the pre-integration revision.

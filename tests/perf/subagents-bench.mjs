@@ -103,7 +103,7 @@ async function measure(bundle, seedBundle, count, directory) {
     startupRssDeltaMiB: (startupMemory.rss - before.rss) / 1048576,
     retainedRssDeltaMiB: (after.rss - before.rss) / 1048576,
     retainedHeapDeltaMiB: (after.heapUsed - before.heapUsed) / 1048576, publications, rosterPublications, publishedBytes }
-  if (process.env.SOTTO_PERF_ASSERT === '1') assert.ok(report.heartbeatMaxMs <= 250, `Main heartbeat ${report.heartbeatMaxMs} ms exceeds 250 ms`)
+  if (process.env.SOTTO_PERF_ASSERT === '1') assert.ok(report.heartbeatMaxMs <= 250, `Main heartbeat ${report.heartbeatMaxMs} ms exceeds 250 ms: ${JSON.stringify(report)}`)
   return Object.fromEntries(Object.entries(report).map(([key, value]) => [key, value === null ? null : round(value)]))
 }
 

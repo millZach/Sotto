@@ -134,7 +134,7 @@ export function AgentsSurface({ threadId, store, bridge }: { readonly threadId: 
   return <div className="subagents-surface">
     <div className="subagents-roster">
       {!rows.length && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? 'Loading agents…' : 'No agents spawned in this thread yet.'}</p></div> : null}
-      <ul className="subagents-list" aria-label="Spawned agents">{rows.map(({ row, depth }) => <AgentRow key={row.id} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>
+      <ul className="subagents-list" aria-label="Spawned agents">{rows.map(({ row, depth }) => <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>
       {state.error ? <p role="status">{state.error} <button type="button" className="files-link tt-focusable" onClick={() => void store.page(threadId)}>Try again</button></p> : null}
       {state.before !== undefined ? <button type="button" className="files-link tt-focusable subagents-older" disabled={state.loading} onClick={() => void store.page(threadId, true)}>{state.loading ? 'Loading agents…' : 'Load earlier agents'}</button> : null}
     </div>

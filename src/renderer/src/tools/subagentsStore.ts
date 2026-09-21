@@ -3,13 +3,15 @@ import { EMPTY_SUBAGENT_SUMMARY, SUBAGENT_PAGE_SIZE, type SubagentChange, type S
 
 export interface ThreadSubagents {
   readonly rows: readonly SubagentRow[]
+  /** Changes only when locally cached words must be discarded, independently of provider revisions. */
+  readonly resetVersion: number
   readonly revision: number
   readonly summary: SubagentSummary
   readonly before?: number | undefined
   readonly loading: boolean
   readonly error: string | null
 }
-const EMPTY: ThreadSubagents = { rows: [], revision: -1, summary: EMPTY_SUBAGENT_SUMMARY, loading: false, error: null }
+const EMPTY: ThreadSubagents = { rows: [], resetVersion: 0, revision: -1, summary: EMPTY_SUBAGENT_SUMMARY, loading: false, error: null }
 
 /** Current rows only. Full tasks and results belong to the open detail, never this cache or agent state. */
 export class SubagentsStore {
@@ -19,9 +21,11 @@ export class SubagentsStore {
   private bridge: SubagentsBridge | undefined
   private unsubscribe: (() => void) | undefined
   private generation = 0
+  private resetVersion = 0
+  private empty = EMPTY
   private active: string | null = null
 
-  thread = (id: string): ThreadSubagents => this.threads.get(id) ?? EMPTY
+  thread = (id: string): ThreadSubagents => this.threads.get(id) ?? this.empty
   subscribe(id: string, listener: () => void): () => void {
     const listeners = this.listeners.get(id) ?? new Set<() => void>()
     this.listeners.set(id, listeners)
@@ -31,7 +35,10 @@ export class SubagentsStore {
 
   activate(bridge: SubagentsBridge | undefined, threadId: string): void {
     this.deactivate()
-    if (this.bridge !== bridge) { this.unsubscribe?.(); this.unsubscribe = undefined; this.threads.clear() }
+    if (this.bridge !== bridge) {
+      this.unsubscribe?.(); this.unsubscribe = undefined; this.threads.clear()
+      this.empty = { ...EMPTY, resetVersion: ++this.resetVersion }
+    }
     this.bridge = bridge
     this.active = threadId
     this.capacities.set(threadId, SUBAGENT_PAGE_SIZE)
@@ -68,7 +75,7 @@ export class SubagentsStore {
       const ordered = [...held.values()].sort((a, b) => a.sequence - b.sequence)
       const capacity = this.capacities.get(threadId) ?? SUBAGENT_PAGE_SIZE
       const kept = ordered.slice(-capacity)
-      this.publish(threadId, { rows: kept, revision: Math.max(page.revision, latest.revision),
+      this.publish(threadId, { rows: kept, resetVersion: latest.resetVersion, revision: Math.max(page.revision, latest.revision),
         summary: latest.revision > page.revision ? latest.summary : page.summary, before: ordered.length > capacity ? kept[0]?.sequence : page.before, loading: false, error: null })
     } catch {
       if (generation === this.generation) this.publish(threadId, { ...this.thread(threadId), loading: false, error: 'Could not load agents. Saved work is unchanged. Try again.' })
@@ -77,8 +84,10 @@ export class SubagentsStore {
 
   private changed(change: SubagentChange): void {
     if (change.reset) {
-      this.threads.delete(change.threadId)
-      for (const listener of this.listeners.get(change.threadId) ?? []) listener()
+      if (this.active !== change.threadId && !this.threads.has(change.threadId)) return
+      // React may batch this reset with a new copy of the same live row. A separate version
+      // makes the boundary observable even when the empty roster never reaches the screen.
+      this.publish(change.threadId, { ...EMPTY, resetVersion: ++this.resetVersion })
       if (this.active === change.threadId) { this.generation++; void this.page(change.threadId) }
       return
     }

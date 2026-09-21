@@ -46,6 +46,32 @@ describe('Agents roster', () => {
     expect(button).toHaveFocus()
   })
 
+  it('discards expanded assignment words across a batched privacy reset that retains the same live row', async () => {
+    const live = row('first', 2, { assignmentCount: 2 })
+    const { bridge, emit } = fixture([live])
+    const cache = store()
+    render(<AgentsSurface threadId="thread" store={cache} bridge={bridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Task first/ }))
+    expect(await screen.findByText('Full task instructions')).toBeVisible()
+    fireEvent.click(screen.getByText(/Previous assignment/))
+    expect(screen.getByText('Earlier result')).toBeVisible()
+    vi.mocked(bridge.assignments).mockResolvedValue({ threadId: 'thread', agentId: 'first', assignments: [{ id: live.assignmentId, sequence: 2, title: 'Live task', status: 'running' }] })
+    // Main can retain the running identity and its metadata revision after deleting saved text.
+    // A following live publication can land in the same React batch as the reset.
+    act(() => {
+      emit({ threadId: 'thread', revision: 1, rows: [], summary, reset: true })
+      emit({ threadId: 'thread', revision: 1, rows: [live], summary })
+    })
+    expect(cache.thread('thread').rows[0]).toMatchObject({ id: live.id, revision: live.revision })
+    expect(screen.queryByText('Full task instructions')).not.toBeInTheDocument()
+    expect(screen.queryByText('Returned findings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Earlier result')).not.toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /Task first/ })
+    if (button.getAttribute('aria-expanded') === 'false') fireEvent.click(button)
+    expect(await screen.findByText('Live task')).toBeVisible()
+    expect(screen.queryByText(/Previous assignment/)).not.toBeInTheDocument()
+  })
+
   it('requests earlier roster pages on demand without asking for results', async () => {
     const { bridge } = fixture([row('newer', 2)])
     render(<AgentsSurface threadId="thread" store={store()} bridge={bridge} />)

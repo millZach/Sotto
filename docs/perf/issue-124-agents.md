@@ -7,7 +7,7 @@ Issue #124 adds an independently paged agent roster. Acceptance combines bounded
 ```powershell
 $env:SOTTO_PERF_ASSERT = '1'
 $env:SOTTO_PERF_SAMPLES = '5'
-$env:SOTTO_PERF_BASE_REF = '93b2f0f5de9736eb47fc77b0e2938ae6a2700830'
+$env:SOTTO_PERF_BASE_REF = '80b2207ec46c2e66d008ddc0f9de69a1b6646e2b'
 node tests/perf/subagents-bench.mjs
 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=1
 ```
@@ -18,7 +18,7 @@ Both revisions receive identical provider snapshots: three threads, twenty live 
 
 Subscriptions serialize published workspace snapshots to approximate a real consumer. Measurements include provider emission time, the longest gap in a 5 ms main-process heartbeat, bounded first-page lookup, post-GC heap and process RSS. They exclude Electron window startup, IPC transport, layout and paint. Separate queue-feedback and native streaming tests exercise the existing 100 ms and 250 ms budgets.
 
-## Final PR branch measurements
+## Initial PR branch measurements
 
 Measured September 20, 2026 on Windows 11 (`win32 10.0.26200`), Node `v24.14.1`, Intel Core Ultra 9 275HX, 24 logical CPUs. The isolated issue branch was compared with main at `93b2f0f5de9736eb47fc77b0e2938ae6a2700830`. Five fresh-process samples per cell alternated baseline/current order with `SOTTO_PERF_ASSERT=1`. The full test suite and other development tasks were running on the host; these are shared-host measurements, not an idle-machine baseline. [Raw samples](../../artifacts/agents-view/pr-performance.json) preserve every result.
 
@@ -37,6 +37,22 @@ At 5,000 assignments, median final heap was 15.169 MiB on the baseline and 16.07
 
 The separate opt-in responsiveness command passed four files and 62 tests in 11.36 seconds. Queue feedback met the existing 100 ms gate and Codex, Claude and Grok streaming met the 250 ms heartbeat gate. No additional precise renderer timings were emitted.
 
+## Integrated revision measurements
+
+After merging main at `80b2207ec46c2e66d008ddc0f9de69a1b6646e2b`, a five-sample run alongside the build and full suite failed on the fifth 50-assignment current-source sample with a 506.134 ms heartbeat gap. That run did not pass. The benchmark failure now includes the complete sample metrics for diagnosis.
+
+With the local build, Electron journeys and full suite stopped, the same five-sample benchmark and 250 ms assertion passed against that newer main revision. No production change was made between those two runs. This supports sensitivity to concurrent host load; it does not prove which competing task caused the failed gap. Other background work on the shared Windows host was not controlled. [Final raw samples](../../artifacts/agents-view/pr-final-performance.json) record the passing rerun.
+
+| Saved assignments | Revision | Startup | Event median | Event p95 | Worst heartbeat | First page | Retained heap MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 50 | Baseline | 12.058 | 0.055 | 0.084 | 5.375 | unavailable | 0.440 |
+| 50 | Current | 23.748 | 1.206 | 1.815 | 66.957 | 0.419 | 0.879 |
+| 5,000 | Baseline | 20.012 | 0.059 | 0.098 | 5.250 | unavailable | 0.421 |
+| 5,000 | Current | 18.536 | 1.240 | 2.121 | 123.625 | 0.665 | 0.896 |
+
+The integrated feature adds about 1.18 ms median event time and 0.48 MiB retained heap at 5,000 assignments. The 600 unpaced updates took 45.948 ms on the baseline and 955.796 ms with the feature. Small/large feature event times (1.206/1.240 ms) and heap (0.879/0.896 MiB) remain comparable. The lower measured large-archive feature startup is noise, not evidence of an optimization. Median final RSS was 131.504/159.973 MiB and RSS growth was 0.246/12.301 MiB; the native-memory caveats above still apply.
+
+The integrated opt-in feedback/streaming command passed all four files and 62 tests in 13.87 seconds. Observed backend feedback was 0.695 ms against 47 ms simulated provider latency. No new timing budget or relaxed assertion was introduced.
 ## Regression coverage and limits
 
 CI verifies constant archive work for 600 updates with 5,000 saved assignments: 1,830 indexed reads, 600 row writes, 600 assignment writes and zero archive-page reads. Separate classification tests verify conditional source/alias writes, duplicate suppression and indexed lookup without startup archive reads. Tests retain every saved result, page roster and assignments independently, preserve unaffected renderer rows and stop hidden or uncertain clocks. Provider tests exercise 5,000 assignments and ordinary activity eviction with bounded metadata caches.
