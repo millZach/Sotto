@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
-import type { AgentActivity } from '../../../src/shared/agentActivity'
+import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 const started = (id: string, type = 'local_agent'): ClaudeFrame => ({ type: 'system', subtype: 'task_started', task_id: id, task_type: type, description: type })
@@ -16,7 +16,6 @@ describe('Claude monitor activity classification', () => {
       expect(apply(projector, started(`monitor-${index}`, 'monitor'))).toEqual([])
       expect(apply(projector, ended(`monitor-${index}`))).toEqual([])
     }
-    expect(projector['nonSubagentTasks'].size).toBe(0)
     expect(apply(projector, progress('monitor-0'))).toEqual([])
     expect(apply(projector, progress('monitor-4099'))).toEqual([])
   })
@@ -30,17 +29,18 @@ describe('Claude monitor activity classification', () => {
     expect(apply(new ClaudeActivity(), ended('resumed'), rows)[0]?.status).toBe('completed')
   })
 
-  it('retains a reused-ID exclusion only while its original row remains in the activity window', () => {
+  it('persists a reused-ID exclusion on its history row across cursor resume', () => {
     const projector = new ClaudeActivity()
     let rows = apply(projector, started('reused'))
     rows = apply(projector, started('reused', 'monitor'), rows)
     for (let index = 0; index < 4_100; index++) rows = apply(projector, started(`monitor-${index}`, 'monitor'), rows)
-    expect(projector['nonSubagentTasks'].size).toBe(1)
-    expect(apply(projector, progress('reused'), rows)).toEqual(rows)
-    expect(apply(projector, ended('reused'), rows)).toEqual(rows)
+    rows = JSON.parse(JSON.stringify(rows)).map((row: unknown) => agentActivitySchema.parse(row))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.taskUpdatesExcluded).toBe(true)
+    expect(apply(new ClaudeActivity(), progress('reused'), rows)).toEqual(rows)
+    expect(apply(new ClaudeActivity(), ended('reused'), rows)).toEqual(rows)
     expect(rows[0]?.status).toBe('running')
     expect(apply(projector, progress('reused'))).toEqual([])
-    expect(projector['nonSubagentTasks'].size).toBe(0)
     rows = apply(projector, started('reused'), rows)
     expect(apply(projector, ended('reused'), rows)[0]?.status).toBe('completed')
   })
@@ -54,6 +54,9 @@ describe('Claude monitor activity classification', () => {
     rows = apply(projector, started('reused', 'monitor'), rows)
     expect(apply(projector, progress('reused'), rows)).toEqual(rows)
     expect(rows[0]?.status).toBe('completed')
+    rows = apply(new ClaudeActivity(), started('reused'), rows)
+    expect(rows[0]?.taskUpdatesExcluded).toBe(false)
+    expect(apply(new ClaudeActivity(), { ...ended('reused'), status: 'failed', summary: 'New task failed' }, rows)[0]).toMatchObject({ status: 'failed', text: 'New task failed' })
   })
 
   it('finishes a known shell command even without a task start', () => {
