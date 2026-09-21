@@ -1,7 +1,7 @@
 import type { UsageTokens } from '../../shared/threadUsage'
 
 /** Immutable standard text-token price inputs, USD/million. New pricing needs a new version. */
-export const USAGE_RATE_VERSION = '2026-09-15-standard-v2'
+export const USAGE_RATE_VERSION = '2026-09-21-standard-v3'
 
 interface Tier { readonly input: number; readonly cached?: number; readonly output: number; readonly write?: number }
 interface Rate extends Tier {
@@ -16,7 +16,7 @@ interface Rate extends Tier {
   readonly maxInput?: number
 }
 const openAiLong = 272_001
-// 2026-09-15: developers.openai.com/api/docs/pricing, docs.x.ai/docs/models, platform.claude.com/docs/en/about-claude/pricing.
+// 2026-09-15: developers.openai.com/api/docs/pricing, platform.claude.com/docs/en/about-claude/pricing. 2026-09-21: docs.x.ai/docs/models.
 const rates: Record<string, Rate> = {
   'codex:gpt-6-astra': { input: 10, cached: 1, output: 50, write: 12.5, long: { from: openAiLong, input: 20, cached: 2, output: 75, write: 25 } },
   'codex:gpt-5.6-sol': { input: 4, cached: 0.4, output: 20, write: 5, long: { from: openAiLong, input: 8, cached: 0.8, output: 30, write: 10 } },
@@ -25,6 +25,7 @@ const rates: Record<string, Rate> = {
   // Long-context cached input is not published for these two, so long requests stay unpriced.
   'codex:gpt-5.5': { input: 5, cached: 0.5, output: 30, maxInput: 272_000 },
   'codex:gpt-5.4': { input: 2.5, cached: 0.25, output: 15, maxInput: 272_000 },
+  'grok:grok-4.7': { input: 2, cached: 0.5, output: 6, long: { from: 200_000, input: 4, cached: 1, output: 12 } },
   'grok:grok-4.6': { input: 2, cached: 0.5, output: 6, long: { from: 200_000, input: 4, cached: 1, output: 12 } },
   'grok:grok-4.5': { input: 2, cached: 0.3, output: 6, long: { from: 200_000, input: 4, cached: 0.6, output: 12 } },
   'claude:claude-opus-5': { input: 5, cached: 0.5, output: 25, write5m: 6.25, write1h: 10 },
