@@ -7,8 +7,10 @@ export interface BrowserToolResult {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   isError?: boolean
 }
+/** The one name every client addresses this server by. A rename that misses a client is silent. */
+export const BROWSER_MCP_SERVER = 'sotto_browser'
 export interface BrowserMcpServer {
-  name: 'sotto_browser'; type: 'http'; url: string; headers: { name: string; value: string }[]
+  name: typeof BROWSER_MCP_SERVER; type: 'http'; url: string; headers: { name: string; value: string }[]
 }
 export interface BrowserAgentTools {
   readonly definitions: readonly BrowserToolDefinition[]
@@ -38,7 +40,7 @@ export class BrowserAgentServer implements BrowserAgentTools {
     const url = await (this.starting ??= this.start())
     let token = this.threads.get(threadId)
     if (!token) { token = randomBytes(32).toString('base64url'); this.threads.set(threadId, token); this.tokens.set(token, threadId) }
-    return { name: 'sotto_browser', type: 'http', url, headers: [{ name: 'Authorization', value: `Bearer ${token}` }] }
+    return { name: BROWSER_MCP_SERVER, type: 'http', url, headers: [{ name: 'Authorization', value: `Bearer ${token}` }] }
   }
   revoke(threadId: string): void {
     const token = this.threads.get(threadId)
@@ -115,7 +117,7 @@ export async function browserCodexConfig(tools: BrowserAgentTools | undefined, t
     const server = await tools.mcpServer(threadId)
     // Sotto's own browser tools carry no native prompt; the answer that matters is the one the user
     // gives in Tools (ADR-0020). The mode is scoped to this server alone and changes no global config.
-    config.mcp_servers = { sotto_browser: { url: server.url, tool_timeout_sec: 360, default_tools_approval_mode: 'auto', http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
+    config.mcp_servers = { [server.name]: { url: server.url, tool_timeout_sec: 360, default_tools_approval_mode: 'auto', http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
   }
   return Object.keys(config).length ? { config } : {}
 }

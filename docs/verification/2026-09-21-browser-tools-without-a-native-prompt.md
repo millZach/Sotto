@@ -1,6 +1,6 @@
 # Browser tools without a native prompt
 
-Windows, September 21, 2026, on top of `133ea38c`. Zach reported that a Claude Code thread found the browser tools, asked to open a page and was refused without ever showing him anything he could answer. This note records what was actually checked.
+Windows, September 21, 2026. Written against `133ea38c` and re-run after merging `origin/main`, which is what made the Grok run below possible. Zach reported that a Claude Code thread found the browser tools, asked to open a page and was refused without ever showing him anything he could answer. This note records what was actually checked.
 
 ## What was wrong
 
@@ -23,6 +23,7 @@ Each client is told that Sotto's own browser server needs no native prompt, scop
 ## Unchecked
 
 - **Grok's rule may be accepted and inert.** Grok runs in leader mode, where `--allow` rules are reported upstream not to apply. The probe shows the rule is accepted and that discovery still works; it does not show the rule has any effect.
+- **The allowance was exercised under a synthetic name.** The native probe registers one tool called `browser_probe`, so what each client accepted is the shape of the setting, not the six real tool names. Those are covered by fixture only.
 - That the prompt is actually gone is not proven for any client. Native discovery sends no model turn, and only a real turn against a paid client raises an approval. What is proven is that each client accepts the new setting and still reaches the endpoint.
 - Codex's `default_tools_approval_mode` was accepted at `thread/start` without error; that it suppresses an approval was not observed.
 - No packaged build, no macOS, no model-driven browser journey.
