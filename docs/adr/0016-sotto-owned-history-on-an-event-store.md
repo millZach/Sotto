@@ -62,3 +62,14 @@ The adapter reads native history within a 16 MiB text limit and a 20,000-message
 Native resume, reconciliation, and polling therefore cost a bounded read of the provider transcript, not only its new tail. A long Devin thread can take longer to reconnect or send to. If native history exceeds the supported limit, Sotto refuses that read and cannot safely reconcile or continue the thread through Devin; saved Sotto history remains readable, and uncertain work is never resent automatically. The limit is a safe refusal, not a claim that only the newest part was read.
 
 This exception accepts a verified protocol limitation instead of inventing a cursor or weakening delivery evidence. It does not change history retention, permission authority, or provider data policies. See the [native compatibility evidence](../verification/2026-09-19-devin-native-compatibility.md) and [Devin data-policy decision](0017-devin-native-provider-data-policies.md).
+
+
+## Amendment: incremental activity persistence (September 20, 2026)
+
+Retained thread activity moves out of `workspace.json` into indexed rows in the same `threads.sqlite`. The previous message migration left activity output in the organization snapshot; one small provider update still copied and rewrote the entire archive. Activity keeps its existing bounded timeline, ordering, IDs, nested output and history-epoch behavior. Changed records are upserted, missing records are removed, and unchanged records require no JSON encoding or database transaction. This is a retained observation table, not a change to the append-only message event protocol.
+
+Legacy JSON activity is imported before the JSON copy is removed. Committed SQLite records take precedence if an interrupted migration leaves both copies. A failed activity migration keeps the legacy copy available and reports the storage problem. WAL and `synchronous=FULL` remain unchanged. Organization JSON remains an atomic, ordered save; an identical value is skipped only against the last successfully completed save.
+
+Keep local history governs activity too. Turning it off scrubs durable output and continues the current view in memory. Hashes of erased thread/activity identities are retained without text, so re-enabling history or replaying a provider cannot restore erased activity. New activity identities may be retained after history is enabled again. Migration, replay, restart and privacy transitions are regression-tested.
+
+Internal provider and workspace snapshots still isolate mutable objects and arrays for their consumers. Their plain-data copy preserves immutable string values instead of serializing large output strings again. This changes copy cost, not the renderer transport, history window, permission behavior or user-visible timeline.

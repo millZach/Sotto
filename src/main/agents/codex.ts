@@ -17,6 +17,7 @@ import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
+import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
@@ -341,7 +342,7 @@ export class CodexAppServerHost implements AgentHost {
   /** The threads whose native session this connection is holding. The app-server has no close to observe. */
   resumedThreads(): readonly string[] { return [...this.live] }
   private current(): AgentHostSnapshot {
-    return structuredClone({ ...this.state, threads: [...this.threads.values()]
+    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) })
   }
   personalSnapshot(): CodexPersonalConversation[] {
