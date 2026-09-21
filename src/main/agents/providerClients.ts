@@ -5,12 +5,11 @@ import { delimiter, dirname, isAbsolute, join, sep } from 'node:path'
 import { z } from 'zod'
 import { PROVIDER_LABELS, type ClientChannel, type ProviderClientUpdate, type ProviderId } from '../../shared/agents'
 import { compareClientVersions, isComparableVersion } from './clientVersions'
+import { installerDetail } from './installerDetail'
 import { findDevinExecutable } from './devinRpc'
 import { findGrokExecutable } from './grokRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
-
-export { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
 
 /** The package whose `latest` tag says what each client has published. Devin ships inside its own app. */
 export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
@@ -94,9 +93,8 @@ export interface UpdateAction { readonly command: string; readonly executable: s
  * answer or from anything the user typed.
  *
  * npm is run as `npm-cli.js` under this process's own Node rather than through `npm.cmd`, because
- * the shell hop is where the first live run of this broke: `cmd /s /c "C:\path
-pm.cmd" install …`
- * loses its quoting and answers "operable program or batch file". No shell, no quoting, same npm.
+ * the shell hop is where the first live run of this broke: a `cmd /s /c` line naming npm's batch
+ * file loses its quoting and answers "operable program or batch file". No shell, no quoting, same npm.
  */
 export async function updateActionFor(provider: ProviderId, channel: ClientChannel, executable: string | undefined,
   npmPath: () => Promise<string | undefined> = defaultNpmPath): Promise<UpdateAction | undefined> {
@@ -136,9 +134,8 @@ const defaultRun: RunLike = (executable, args, asNode) => new Promise(resolve =>
   execFile(executable, [...args], { env, windowsHide: true, shell: false, timeout: UPDATE_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024, encoding: 'utf8' },
     (error, _stdout, stderr) => {
       if (!error) { resolve({ ok: true }); return }
-      // The installer's own last words, bounded, with no path or token echoed back beyond them.
-      const tail = String(stderr).split('\n').map(line => line.trim()).filter(Boolean).at(-1)
-      resolve(tail ? { ok: false, detail: tail.slice(0, 200) } : { ok: false })
+      const detail = installerDetail(String(stderr))
+      resolve(detail ? { ok: false, detail } : { ok: false })
     })
 })
 

@@ -94,6 +94,11 @@
   .client-updates__spinner { animation: none; border-top-color: var(--tt-border); }
 }
 
+[data-reduced-motion='on'] .client-updates__spinner {
+  animation: none;
+  border-top-color: var(--tt-border);
+}
+
 .client-updates__error {
   margin: 0;
   padding: 10px 14px;

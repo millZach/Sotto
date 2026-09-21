@@ -166,6 +166,18 @@ describe('the installed client, in provider settings', () => {
     expect(screen.getByText(/newer than the 0\.150\.0 Sotto has checked/u)).toBeTruthy()
   })
 
+  it('says a working thread will stop, and makes that the press', async () => {
+    const state = fixture()
+    state.host.threads = [{ id: 'busy', providerId: 'codex', projectId: 'project', title: 'Codex work', modelId: 'codex:same-native-model', status: 'running', messages: [], requests: [] }]
+    state.clientUpdates = [{ id: 'codex', installed: '0.155.1', published: '0.156.0', behind: true, channel: 'npm',
+      command: 'npm install -g @openai/codex@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.getByText(/A thread is working now; updating stops it/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Update anyway' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'codex', force: true }))
+  })
+
   it('turns the whole check off from one switch', async () => {
     const { command } = provide(fixture())
     render(<ProvidersSettings />)

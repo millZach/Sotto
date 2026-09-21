@@ -458,7 +458,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
   return (
     <AgentProvider settings={app.settings} dictation={app.dictation}>
       <FinishedThreadWatch />
-      <ClientUpdateCard />
       {management ? content : (
         <AppShell
           navigation={null}
@@ -471,6 +470,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           {content}
         </AppShell>
       )}
+      <ClientUpdateCard />
     </AgentProvider>
   )
 }

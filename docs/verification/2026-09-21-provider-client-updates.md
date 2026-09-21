@@ -48,11 +48,23 @@ grok  connected  "1.0.40 / ACP 1"  verifiedVersion "1.0.5"
 grok  installed 1.0.40  published 1.0.40  behind false
 ```
 
-![Settings, after the update](../../artifacts/provider-client-updates/03-settings-after-update.png)
+![Settings at 1600x1000, dark](../../artifacts/provider-client-updates/03-settings-1600x1000-dark.png)
 
 That last line is the pin change proved live: **Sotto is running a Grok client the old exact pin would have refused**, it says so ("It is newer than the 1.0.5 Sotto has checked"), and a read-only ACP `initialize` against 1.0.40 confirms the protocol it was checked against — ACP 1, `cached_token`, and the same catalog with `grok-4.7` current.
 
-The machine was left on the published version: package `@xai-official/grok` 1.0.40, binary 1.0.40. The "Clients updated" card is the one state with no photograph; it needs a second behind client, and re-staging one by downgrading leaves the installer's own copies behind rather than a clean 1.0.5.
+The machine was left on the published version: package `@xai-official/grok` 1.0.40, binary 1.0.40.
+
+## The design gate
+
+The Installed client block and its switch were checked in the running app at **1600x1000, 1280x800 and 820x560**, in dark and in light, measuring `scrollWidth`/`clientWidth` on the block at each: nothing overflows or clips at any of them, and the sentence wraps to two lines at the 820 minimum rather than being cut.
+
+![Settings at 820x560, light](../../artifacts/provider-client-updates/04-settings-820x560-light.png)
+
+The card could not be re-staged at those sizes. Every installed client is now current, and the one that was behind cannot be put back: copying the older binary over `~/.grok/bin/grok.exe` fails with `Device or resource busy`, because a running client holds it — the same constraint the update sequence is built around. The card was captured at the window's default size while Grok was genuinely behind (above); its width is `min(360px, calc(100vw - 40px))` fixed to the bottom-right corner, so the 820 minimum leaves it a 20px gutter, and its reduced-motion and light-mode rules are in `clientUpdates.css` beside the tokens the rest of the app uses. A run at the three sizes with a behind client is worth doing the next time one appears.
+
+## The review
+
+Both axes of `/code-review` ran against `origin/main...HEAD` before merge. Fixed from them: the Settings press forced an update past a working thread while its label still read "Update" (it now reads "Update anyway" and the line says what will stop); "Update all" did the same for every row; a reading was dropped when its provider would not reconnect, taking the sentence about it off the card; a dismissal did not take a failed or unchanged card down; npm's last line could carry a home folder and user name to the card, to Settings and to the turn record, which is now dropped and redacted; a refusal claimed Sotto did not know how a client was installed even when the real reason was that it was already current; and `CLIENT_NAMES` was duplicated with two different names for Devin. Left as they are: the POSIX npm roots (macOS is a supported target), and the `--tt-corner-inset` name for a measured layout value.
 
 ## What the tests prove
 

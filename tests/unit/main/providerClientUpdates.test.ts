@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
+import { installerDetail } from '../../../src/main/agents/installerDetail'
 import { detectClientChannel, ProviderClients, type RunLike } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
@@ -75,6 +76,25 @@ describe('what a client publishes', () => {
     expect(reading).toMatchObject({ channel: 'devin-app', behind: false, canInstall: false })
     expect(asked).toBe(0)
     expect(await clients.install('devin', undefined)).toEqual({ ok: false, detail: 'Devin updates with the Devin app.' })
+  })
+})
+
+describe('what the installer is allowed to say back', () => {
+  it('drops npm\u2019s log line and the home folder in it', () => {
+    const stderr = ['npm ERR! code EACCES', 'npm ERR! syscall rename',
+      String.raw`npm ERR! A complete log of this run can be found in: C:\Users\zache\AppData\Local\npm-cache\_logs\2026-09-21.log`].join('\n')
+    expect(installerDetail(stderr)).toBe('npm ERR! syscall rename')
+  })
+
+  it('replaces a path left in the line it does show', () => {
+    expect(installerDetail(String.raw`EPERM: operation not permitted, rename C:\Users\zache\.grok\bin\grok.exe`))
+      .toBe('EPERM: operation not permitted, rename \u2026')
+    expect(installerDetail('EACCES: permission denied, open /Users/zache/.npm/_cacache'))
+      .toBe('EACCES: permission denied, open \u2026')
+  })
+
+  it('says nothing rather than something empty', () => {
+    expect(installerDetail('   \n  \n')).toBeUndefined()
   })
 })
 
@@ -238,7 +258,9 @@ describe('updating a client from the app', () => {
       await control.command({ type: 'check-client-updates' })
       const result = await control.command({ type: 'update-client', provider: 'grok', force: true })
       expect(result.error).toMatch(/updated, but did not reconnect/u)
-      expect(control.get().clientUpdates ?? []).not.toContainEqual(expect.objectContaining({ state: 'updating' }))
+      // The reading has to outlive the connection, or the sentence about it has nowhere to appear.
+      expect(control.get().clientUpdates).toEqual([expect.objectContaining({ id: 'grok', state: 'unchanged',
+        error: 'Grok CLI 1.0.40 sent an invalid response.' })])
     } finally { control.dispose() }
   })
 

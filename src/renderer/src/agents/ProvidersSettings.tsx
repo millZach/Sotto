@@ -11,8 +11,10 @@ import './providers.css'
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI' }
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
-function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean): string {
+function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, working = 0): string {
   const past = verified ? ` It is newer than the ${verified} Sotto has checked.` : ''
+  const stops = working > 0 && update?.behind && update.canInstall
+    ? ` ${working === 1 ? 'A thread is' : `${working} threads are`} working now; updating stops ${working === 1 ? 'it' : 'them'}.` : ''
   if (!checking) return `Client update checks are off, so Sotto does not know what is published.${past}`
   if (!update) return `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
@@ -22,7 +24,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (!update.published) return `${update.installed} is installed. Sotto could not reach the registry to see what is published.${past}`
   if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`
   if (!update.canInstall) return `${update.installed} is installed; ${update.published} is published. Sotto does not know how it was installed, so update it with ${update.command ?? 'the installer you used'}.${past}`
-  return `${update.installed} is installed; ${update.published} is published.${past}`
+  return `${update.installed} is installed; ${update.published} is published.${past}${stops}`
 }
 
 export function ProvidersSettings(): ReactNode {
@@ -52,10 +54,12 @@ export function ProvidersSettings(): ReactNode {
     const result = await command({ type: 'check-client-updates' })
     if (result?.error) setErrors(previous => ({ ...previous, [selected]: result.error }))
   }
-  const runUpdate = async (provider: ProviderId): Promise<void> => {
+  const workingThreads = (provider: ProviderId): number =>
+    state.host.threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
+  /** Forcing is the press the user reads as "anyway", never one Sotto decides for them. */
+  const runUpdate = async (provider: ProviderId, force: boolean): Promise<void> => {
     setErrors(previous => ({ ...previous, [provider]: undefined }))
-    const working = state.host.threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
-    const result = await command({ type: 'update-client', provider, ...(working > 0 ? { force: true } : {}) })
+    const result = await command({ type: 'update-client', provider, ...(force ? { force: true } : {}) })
     if (result?.error) setErrors(previous => ({ ...previous, [provider]: result.error }))
   }
   const perform = async (provider: ProviderId, type: 'connect' | 'disconnect' | 'refresh'): Promise<void> => {
@@ -99,11 +103,12 @@ export function ProvidersSettings(): ReactNode {
             <div className="provider-client">
               <div>
                 <h4>Installed client</h4>
-                <p>{clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates)}</p>
+                <p>{clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates, workingThreads(selected))}</p>
               </div>
               <div className="provider-client__actions">
                 {update?.canInstall && update.state !== 'updating'
-                  ? <Button variant="primary" disabled={Boolean(working) || updating} onClick={() => void runUpdate(selected)}>{update.state === 'failed' ? 'Try again' : 'Update'}</Button>
+                  ? <Button variant="primary" disabled={Boolean(working) || updating} onClick={() => void runUpdate(selected, workingThreads(selected) > 0)}>
+                    {update.state === 'failed' ? 'Try again' : workingThreads(selected) > 0 ? 'Update anyway' : 'Update'}</Button>
                   : null}
                 <Button variant="secondary" disabled={updating || !state.configuration.checkClientUpdates} onClick={() => void check()}>Check again</Button>
               </div>

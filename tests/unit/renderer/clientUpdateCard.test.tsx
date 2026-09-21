@@ -76,10 +76,29 @@ describe('the client update card', () => {
     expect(screen.queryByRole('button', { name: /Update|Not now/u })).toBeNull()
   })
 
-  it('goes down on Escape, and stays down until a check finds something else', async () => {
+  it('goes down on Escape while it holds focus, and leaves Escape alone otherwise', async () => {
     const command = provide(fixture([behind()]))
     render(<ClientUpdateCard />)
+    // Escape belongs to whatever the user is in: a press elsewhere is not for this card.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(command).not.toHaveBeenCalled()
+    screen.getByRole('button', { name: 'Update' }).focus()
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'dismiss-client-updates' }))
+  })
+
+  it('takes a failed reading down with the rest when it is dismissed', () => {
+    provide({ ...fixture([behind({ state: 'failed', error: 'npm ERR! code EACCES' })]), clientUpdatesDismissedAt: new Date().toISOString() })
+    const { container } = render(<ClientUpdateCard />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('updates every behind client without answering the working-thread question for any of them', async () => {
+    const command = provide(fixture([behind(), behind({ id: 'codex', installed: '0.155.1', published: '0.156.0' })], true))
+    render(<ClientUpdateCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Update all 2' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'grok' }))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ force: true }))
   })
 })

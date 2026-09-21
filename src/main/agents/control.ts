@@ -22,7 +22,8 @@ import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
-import { clientVersionOf, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
+import { clientVersionOf } from './clientVersions'
+import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
@@ -640,6 +641,11 @@ export class AgentControl {
         ? { ...reading, state: before.state, ...(before.error ? { error: before.error } : {}) } : reading)
     }
     if (this.disposed) return
+    // A client that updated, failed or did not change still has something to say after its provider
+    // drops: losing the record here would take the sentence about it off the card with it.
+    for (const before of previous) {
+      if (before.state !== 'idle' && !readings.some(item => item.id === before.id)) readings.push(before)
+    }
     if (readings.length) this.state.clientUpdates = readings
     else delete this.state.clientUpdates
     if (fresh) delete this.state.clientUpdatesDismissedAt
@@ -662,9 +668,12 @@ export class AgentControl {
     if (this.updatingClient) throw new Error('Another client is updating. Wait for it to finish.')
     const record = this.state.clientUpdates?.find(item => item.id === provider)
     if (!record) throw new Error(`Sotto has not checked ${PROVIDER_LABELS[provider]} yet. Check again, then update it.`)
-    if (!record.canInstall) throw new Error(record.channel === 'devin-app'
-      ? 'Devin updates with the Devin app.'
-      : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it. Run ${record.command ?? 'the installer you used'} yourself.`)
+    if (!record.canInstall) {
+      throw new Error(record.channel === 'devin-app' ? 'Devin updates with the Devin app.'
+        : !record.behind ? `${PROVIDER_LABELS[provider]} is already at the published version.`
+        : record.command ? `Sotto did not install ${PROVIDER_LABELS[provider]}, so it will not replace it. Run ${record.command} yourself.`
+        : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.`)
+    }
     const working = this.state.host.threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
     if (working > 0 && !force) {
       throw new Error(`${PROVIDER_LABELS[provider]} has ${working === 1 ? 'a thread' : `${working} threads`} working now. Updating stops ${working === 1 ? 'it' : 'them'}.`)
@@ -693,7 +702,9 @@ export class AgentControl {
       // window holding the old client open is enough. Saying "updated" then would be a lie the user
       // can check, so the reading says what the client actually reports.
       const running = this.state.clientUpdates?.find(item => item.id === provider)?.installed
-      this.setClientUpdate(provider, { state: running === undefined || running === record.installed ? 'unchanged' : 'updated' })
+      const moved = running !== undefined && running !== record.installed
+      this.setClientUpdate(provider, { state: moved ? 'updated' : 'unchanged',
+        ...(reconnectFailure ? { error: reconnectFailure } : {}) })
       if (reconnectFailure) throw new Error(`${PROVIDER_LABELS[provider]} updated, but did not reconnect. ${reconnectFailure}`)
       if (running === record.installed) {
         throw new Error(`${PROVIDER_LABELS[provider]} still reports ${record.installed}. The update ran, but this client is the one still open. Close other windows using it and connect again.`)

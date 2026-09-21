@@ -1,11 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
+import { PROVIDER_LABELS, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOptionalAgents } from './AgentContext'
 import { ProviderMark } from './ProviderMark'
 import './clientUpdates.css'
-
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
 
 function workingThreads(threads: readonly { readonly providerId?: ProviderId | undefined; readonly status: string }[], provider: ProviderId): number {
   return threads.filter(thread => thread.providerId === provider && thread.status === 'running').length
@@ -32,8 +30,10 @@ export function ClientUpdateCard(): ReactNode {
   const command = agents?.command
   const updates = state?.clientUpdates ?? []
   const dismissed = Boolean(state?.clientUpdatesDismissedAt)
-  const shown: ProviderClientUpdate[] = updates.filter(update => update.state === 'updating' || update.state === 'failed'
-    || update.state === 'unchanged' || (update.state === 'updated' && !dismissed) || (update.behind && !dismissed))
+  // An update in flight is the one thing a dismissal does not take down. Everything else the card
+  // says stays in Settings → Providers, which is where it lives when the card is gone.
+  const shown: ProviderClientUpdate[] = updates.filter(update => update.state === 'updating'
+    || (!dismissed && (update.state === 'failed' || update.state === 'unchanged' || update.state === 'updated' || update.behind)))
   const updating = shown.some(update => update.state === 'updating')
 
   // The transient toasts share this corner; keep them clear of whatever height the card is.
@@ -44,9 +44,13 @@ export function ClientUpdateCard(): ReactNode {
     root.style.setProperty('--tt-corner-inset', `${Math.round(height) + 28}px`)
     return () => { root.style.removeProperty('--tt-corner-inset') }
   })
+  // Escape belongs to whatever the user is in. The card answers it only while it holds focus, so a
+  // press meant for an open dialog or the effort card never puts this down as a side effect.
   useEffect(() => {
     if (!shown.length || updating) return
-    const close = (event: KeyboardEvent): void => { if (event.key === 'Escape') void dismiss() }
+    const close = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && card.current?.contains(document.activeElement)) void dismiss()
+    }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   })
@@ -83,14 +87,14 @@ export function ClientUpdateCard(): ReactNode {
     </div>
     {shown.map(update => {
       const working = workingThreads(state.host.threads, update.id)
-      const name = CLIENT_NAMES[update.id]
+      const name = PROVIDER_LABELS[update.id]
       return <div className="client-updates__row" key={update.id} data-state={update.state}>
         <ProviderMark provider={update.id} name={name} size={16} />
         <div>
           <span>{name}</span>
           <small>
             {update.state === 'updated' ? `Now ${update.installed}`
-              : update.state === 'unchanged' ? `Still ${update.installed}. Close other windows using it, then connect again.`
+              : update.state === 'unchanged' ? update.error ?? `Still ${update.installed}. Close other windows using it, then connect again.`
               : update.state === 'failed' ? (update.error ?? 'The installer reported a failure')
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}
@@ -117,7 +121,7 @@ export function ClientUpdateCard(): ReactNode {
       <div>
         {installable.length > 1 && !updating
           ? <Button variant="primary" disabled={busy}
-            onClick={() => void (async () => { for (const update of installable) await run('update-client', update.id, workingThreads(state.host.threads, update.id) > 0) })()}>
+            onClick={() => void (async () => { for (const update of installable) await run('update-client', update.id) })()}>
             Update all {installable.length}
           </Button>
           : null}
