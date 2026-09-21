@@ -39,6 +39,18 @@ describe('independent provider settings', () => {
     expect(state.configuration.reasoning).toBe('claude')
     expect(command).toHaveBeenCalledTimes(1)
   })
+  it('keeps the Agents choice authoritative without a competing provider thread-default control', () => {
+    const state = fixture()
+    state.configuration.defaultModelId = 'grok:same-native-model'
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    for (const provider of providerIdSchema.options) {
+      fireEvent.click(screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }))
+      expect(screen.queryByRole('combobox', { name: /default thread model/i })).toBeNull()
+    }
+    expect(state.configuration.reasoning).toBe('claude')
+    expect(command).not.toHaveBeenCalled()
+  })
   it('keeps Devin disabled on upgrade and explains native setup and data handling', async () => {
     const state = fixture()
     const devin = state.host.providers!.find(provider => provider.id === 'devin')!

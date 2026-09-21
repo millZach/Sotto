@@ -604,18 +604,21 @@ export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'pr
   return `native:${provider}:${kind}:${encodeURIComponent(value)}`
 }
 /**
- * The model a new thread starts with: the default chosen for new threads, then the agent account's model
- * (or that provider's first model), then the legacy provider's first model, then any ready model.
+ * New threads inherit the native agent selected in Settings. Keep its explicit or account-default
+ * model even while unavailable, so the caller can explain what needs to connect instead of changing
+ * providers. Without a native agent (none or an API account), use a ready thread provider. The old
+ * separate defaultModelId preference no longer participates in this choice.
  */
-export function defaultThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[]): string {
+export function defaultThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[], accounts: readonly SubscriptionAccount[] = []): string {
+  if (isSubscriptionReasoning(configuration.reasoning)) {
+    const provider = configuration.reasoning
+    const nativeModelId = configuration.reasoningModel || accounts.find(account => account.provider === provider)?.defaultModelId
+    if (nativeModelId) return publicProviderEntityId(provider, 'model', nativeModelId)
+    const candidates = models.filter(model => model.providerId === provider)
+    return (candidates.find(model => model.ready) ?? candidates[0])?.id ?? ''
+  }
   const ready = models.filter(model => model.ready)
-  const agent = isSubscriptionReasoning(configuration.reasoning) ? configuration.reasoning : null
-  const chosen = ready.find(model => model.id === configuration.defaultModelId)
-    ?? (agent && configuration.reasoningModel ? ready.find(model => model.id === publicProviderEntityId(agent, 'model', configuration.reasoningModel)) : undefined)
-    ?? (agent ? ready.find(model => model.providerId === agent) : undefined)
-    ?? ready.find(model => model.providerId === configuration.provider)
-    ?? ready[0]
-  return chosen?.id ?? ''
+  return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**
  * Whether this thread's own lane is running a command right now. Every control that acts on one thread

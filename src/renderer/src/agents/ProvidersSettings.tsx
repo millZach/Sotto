@@ -1,6 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
+import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
@@ -69,10 +69,7 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
-  const setDefault = async (modelId: string): Promise<void> => {
-    const result = await command({ type: 'configure', patch: { defaultModelId: modelId } })
-    if (!result || result.error) setErrors(previous => ({ ...previous, [selected]: result?.error ?? 'Could not save the default model.' }))
-  }
+  const inheritedModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
   return <div className="providers-settings">
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.map(provider => {
@@ -112,9 +109,8 @@ export function ProvidersSettings(): ReactNode {
               </div>
             </div>
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and usage analytics; Sotto's local history setting does not control them.</p>}
-            <label className="provider-default">Default for new threads<select aria-label={`${label} default thread model`} value={models.some(model => model.id === state.configuration.defaultModelId) ? state.configuration.defaultModelId : ''}
-              disabled={!connected || Boolean(working)} onChange={event => void setDefault(event.target.value)}><option value="">Choose a model</option>{models.map(model => <option key={model.id} value={model.id} disabled={!model.ready}>{model.name}</option>)}</select></label>
-          </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === state.configuration.defaultModelId ? 'Default' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
+            <p className="provider-models__empty">New threads use the agent selected in Settings → Agents.</p>
+          </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedModelId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>
       </section>

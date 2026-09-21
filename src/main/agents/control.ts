@@ -2102,7 +2102,7 @@ export class AgentControl {
     const intentStarted = Date.now()
     let intent
     try {
-      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, defaultThreadModelId(this.state.configuration, this.state.host.models), this.state.activeThreadId, preferences)
+      intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, defaultThreadModelId(this.state.configuration, this.state.host.models, this.state.reasoningAccounts), this.state.activeThreadId, preferences)
       if (turn) turn.intentResolvedAtMs = Date.now()
     } finally {
       if (turn) turn.intentMs += Date.now() - intentStarted

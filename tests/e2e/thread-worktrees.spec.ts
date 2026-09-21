@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
-const SHOTS = 'artifacts/issue-146'
+const SHOTS = 'artifacts/new-thread-setup'
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim()
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase()
 const countWorktrees = (repo: string): number => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).length
@@ -39,6 +39,8 @@ async function captureMatrix(launched: LaunchedSotto): Promise<void> {
       for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         await launched.page.emulateMedia({ reducedMotion })
         await expect.poll(() => launched.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await expect(launched.page.getByRole('button', { name: 'Create thread', exact: true })).toBeInViewport()
+        await expect(launched.page.locator('.new-thread-dialog summary')).toBeInViewport()
         await launched.page.screenshot({ path: `${SHOTS}/new-worktree-${width}x${height}-${appearance}-${reducedMotion}.png`, animations: 'disabled' })
       }
     }
@@ -55,9 +57,10 @@ async function openCreation(page: Page, project: string, title: string): Promise
   await page.keyboard.type(project)
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
-  await expect(dialog.getByRole('textbox', { name: 'Thread name' })).toBeFocused()
-  await page.keyboard.type(title)
-  await page.keyboard.press('Tab')
+  await dialog.locator('summary').click()
+  await dialog.getByRole('textbox', { name: 'Thread name' }).fill(title)
+  await dialog.locator('summary').click()
+  await dialog.getByRole('radio', { name: 'Project folder', exact: true }).focus()
   await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeFocused()
   await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeChecked()
 }
@@ -66,7 +69,7 @@ async function createByKeyboard(page: Page, project: string, title: string, inde
   if (independent) await page.keyboard.press('ArrowRight')
   const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
   await expect(dialog.getByRole('radio', { name: independent ? 'New worktree' : 'Project folder', exact: true })).toBeChecked()
-  if (independent) await dialog.getByRole('checkbox', { name: 'Start from origin', exact: true }).uncheck()
+  if (independent) await dialog.getByRole('combobox', { name: 'Start from', exact: true }).selectOption('local:')
   await dialog.getByRole('button', { name: 'Create thread', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(dialog).toHaveCount(0)
@@ -126,22 +129,21 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     await page.screenshot({ path: `${SHOTS}/shared-default-dialog.png`, animations: 'disabled' })
     await page.keyboard.press('ArrowRight')
     const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
-    await expect(dialog.getByRole('combobox', { name: 'Base branch', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('combobox', { name: 'Start from', exact: true })).toBeVisible()
     await captureMatrix(launched)
     await resize(launched, 820, 560)
     // Keyboard focus scrolls each remaining field into view at the minimum size.
     await dialog.getByRole('radio', { name: 'New worktree', exact: true }).focus()
     await page.keyboard.press('Tab')
-    await expect(dialog.getByRole('combobox', { name: 'Worktree', exact: true })).toBeFocused()
+    await expect(dialog.getByRole('combobox', { name: 'Start from', exact: true })).toBeFocused()
     await page.keyboard.press('Tab')
-    await expect(dialog.getByRole('combobox', { name: 'Base branch', exact: true })).toBeFocused()
+    await expect(dialog.locator('summary')).toBeFocused()
+    await page.keyboard.press('Enter')
     await page.keyboard.press('Tab')
-    const origin = dialog.getByRole('checkbox', { name: 'Start from origin', exact: true })
-    await expect(origin).toBeFocused()
-    await page.keyboard.press('Space')
-    await expect(origin).not.toBeChecked()
-    await page.keyboard.press('Space')
-    await expect(origin).toBeChecked()
+    await expect(dialog.getByRole('textbox', { name: 'Thread name' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog.locator('summary')).toBeFocused()
+    await expect(dialog.locator('details')).not.toHaveAttribute('open')
     await dialog.getByRole('button', { name: 'Create thread', exact: true }).focus()
     await page.screenshot({ path: `${SHOTS}/new-worktree-820x560-bottom.png`, animations: 'disabled' })
     await page.keyboard.press('Escape')
@@ -168,7 +170,7 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
     await resize(launched, 820, 560)
     await page.getByRole('button', { name: 'Working copy: New worktree', exact: true }).click()
-    await details.getByRole('combobox', { name: 'Base branch', exact: true }).selectOption('release')
+    await details.getByRole('combobox', { name: 'Start from', exact: true }).selectOption('local:release')
     await details.getByRole('button', { name: 'Apply working copy', exact: true }).focus()
     const editorBounds = await details.boundingBox()
     const paneBounds = await page.locator(`section.thread-pane[data-thread-id="${pending.id}"]`).boundingBox()
@@ -202,7 +204,8 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     await send(page, 'Continue on the task branch.')
     await openCreation(page, 'repo-app', 'Continue existing worktree')
     await page.keyboard.press('ArrowRight')
-    const worktreeChoice = dialog.getByRole('combobox', { name: 'Worktree', exact: true })
+    await dialog.getByRole('radio', { name: 'Existing worktree', exact: true }).check()
+    const worktreeChoice = dialog.getByRole('combobox', { name: 'Existing worktree', exact: true })
     await expect(worktreeChoice.locator('option').filter({ hasText: 'feat/task-branch' })).toHaveCount(1)
     await worktreeChoice.selectOption({ label: await worktreeChoice.locator('option').filter({ hasText: 'feat/task-branch' }).innerText() })
     await dialog.getByRole('button', { name: 'Create thread', exact: true }).click()
