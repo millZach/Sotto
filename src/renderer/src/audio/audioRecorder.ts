@@ -142,7 +142,7 @@ function defaultDependencies(): AudioRecorderDependencies {
   const browser = globalThis as unknown as {
     navigator: {
       mediaDevices: {
-        getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
+        getUserMedia(constraints: MicrophoneConstraints | { audio: true }): Promise<MediaStreamAdapter>
       }
     }
     document: { readonly baseURI: string }
@@ -163,7 +163,13 @@ function defaultDependencies(): AudioRecorderDependencies {
           error.name = 'NotAllowedError'
           throw error
         }
-        return browser.navigator.mediaDevices.getUserMedia(constraints)
+        try {
+          return await browser.navigator.mediaDevices.getUserMedia(constraints)
+        } catch (error: unknown) {
+          const name = error instanceof Error ? error.name : ''
+          if (name !== 'OverconstrainedError' && name !== 'ConstraintNotSatisfiedError') throw error
+          return browser.navigator.mediaDevices.getUserMedia({ audio: true })
+        }
       },
     },
     createAudioContext: () => new browser.AudioContext(),
