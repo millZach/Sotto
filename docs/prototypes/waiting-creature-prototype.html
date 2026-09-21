@@ -1,0 +1,243 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - waiting poses for Sotto's process creature. Synthetic data only.
+     ?variant=W/A/B/C. Not wired to any thread, no adapter evidence, outside every entrypoint. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto — waiting creature</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;font-display:swap;src:url(../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2")}
+:root{color-scheme:dark;--tt-bg:oklch(.235 .018 280);--tt-sidebar:oklch(.205 .016 282);--tt-field:oklch(.26 .019 280);--tt-raised:oklch(.305 .021 280);--tt-text:oklch(.985 .005 280);--tt-muted:oklch(.76 .014 265);--tt-border:oklch(.42 .03 270);--tt-accent:oklch(.79 .13 220);--tt-ink:oklch(.2 .02 280);--tt-selected:oklch(.35 .04 262);--tt-shadow:oklch(.1 0 0/.3)}
+:root[data-theme=light]{color-scheme:light;--tt-bg:oklch(.978 .004 85);--tt-sidebar:oklch(.955 .008 85);--tt-field:oklch(.99 .003 85);--tt-raised:oklch(.935 .006 85);--tt-text:oklch(.235 .014 75);--tt-muted:oklch(.46 .014 75);--tt-border:oklch(.78 .016 80);--tt-accent:oklch(.49 .13 235);--tt-ink:oklch(.99 .003 85);--tt-selected:oklch(.90 .03 230);--tt-shadow:oklch(.1 0 0/.12)}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:14px/1.5 Figtree,system-ui,sans-serif;color:var(--tt-text);background:var(--tt-bg);overflow:hidden}
+button,textarea,select{font:inherit;color:inherit}button,select{cursor:pointer}button{border:0;background:none}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--tt-accent);outline-offset:4px}
+.window{height:calc(100% - 108px);display:grid;grid-template-columns:244px minmax(0,1fr)}
+.sidebar{padding:14px 8px;background:var(--tt-sidebar);border-right:1px solid color-mix(in srgb,var(--tt-border) 45%,transparent)}
+.brand{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;margin-bottom:20px;font-weight:600}
+.brand i{width:14px;height:14px;border-radius:4px;background:var(--tt-accent)}
+.group{color:var(--tt-muted);font-size:12px;padding:12px 10px 5px}
+.row{padding:8px 10px;display:flex;gap:9px;align-items:center;border-radius:8px}
+.row.active{background:var(--tt-selected)}.row small{margin-left:auto;color:var(--tt-muted);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;border:1px solid var(--tt-muted);flex:none}
+.active .dot{background:var(--tt-accent);border-color:var(--tt-accent)}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column}
+.head{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid color-mix(in srgb,var(--tt-border) 25%,transparent)}
+.head strong{font-size:14px;font-weight:500}.head span{color:var(--tt-muted);font-size:12px}
+.transcript{flex:1;min-height:0;overflow:auto;padding:30px max(24px,calc((100% - 760px)/2)) 12px}
+.turn{font-size:16px;line-height:1.6;margin-bottom:28px}
+.user{margin-left:auto;max-width:85%;width:fit-content;background:var(--tt-raised);padding:11px 16px;border-radius:14px 14px 4px 14px}
+.who{color:var(--tt-muted);font-size:12px;margin-bottom:9px}.turn p{margin:0 0 14px}
+.activity{display:flex;gap:10px;align-items:center;color:var(--tt-muted);font-size:14px;margin-top:22px}
+.activity code{font:13px ui-monospace,monospace;color:var(--tt-text)}
+.ask{border:1px solid var(--tt-border);border-radius:12px;background:var(--tt-raised);padding:14px 16px;margin-top:20px}
+.ask code{display:block;font:13px ui-monospace,monospace;background:var(--tt-bg);border-radius:7px;padding:8px 10px;margin:9px 0 12px}
+.ask .acts{display:flex;gap:8px}
+.ask .acts button{border:1px solid var(--tt-border);border-radius:8px;padding:6px 13px;font-size:13px}
+.ask .acts button:first-child{background:var(--tt-accent);color:var(--tt-ink);border-color:transparent}
+.compose{flex:none;padding:76px max(24px,calc((100% - 760px)/2)) 12px}
+.composer{position:relative;border:1px solid var(--tt-border);background:var(--tt-field);border-radius:16px;padding:14px 16px 10px}
+textarea{display:block;width:100%;height:70px;resize:none;background:none;border:0;outline:none!important;font-size:15px;line-height:1.5;padding:0}
+textarea::placeholder{color:var(--tt-muted)}
+.foot{display:flex;align-items:center;gap:8px;margin-top:6px}
+.chip{border:1px solid var(--tt-border);border-radius:20px;padding:3px 9px;font-size:12px;color:var(--tt-muted)}
+.send{margin-left:auto;display:grid;place-items:center;background:var(--tt-accent);color:var(--tt-ink);border-radius:50%;width:30px;height:30px}
+.usage{display:flex;justify-content:space-between;margin-top:7px;color:var(--tt-muted);font-size:12px}
+.walkway{position:absolute;left:14px;right:14px;top:-64px;height:64px;pointer-events:none;display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,min(172px,45%));align-items:end}
+.track{position:relative;height:64px;min-width:0}
+canvas.creature{position:absolute;left:0;bottom:0;width:80px;height:64px;image-rendering:pixelated}
+.readout{min-width:0;padding:8px 12px;border:1px solid var(--tt-border);border-bottom:0;border-radius:8px 8px 0 0;background:var(--tt-raised)}
+.readout b{display:block;font-weight:400;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.readout small{display:block;color:var(--tt-muted);font-size:12px}
+.bar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--tt-text);color:var(--tt-bg);border-radius:18px;box-shadow:0 8px 30px var(--tt-shadow);white-space:nowrap}
+.bar button{border-radius:8px;padding:7px 9px;min-height:36px}
+.bar button:hover{background:color-mix(in srgb,var(--tt-bg) 12%,transparent)}
+.bar button[aria-pressed=true]{background:var(--tt-bg);color:var(--tt-text)}
+.vlabel{min-width:200px;text-align:center;font-weight:600}
+.bar select{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--tt-bg) 30%,transparent);border-radius:8px;padding:7px;font-size:14px}
+.bar option{background:var(--tt-bg);color:var(--tt-text)}
+.fb{position:fixed;bottom:62px;left:16px;right:16px;text-align:center;color:var(--tt-muted);font-size:12px}
+.fb b{color:var(--tt-text);font-weight:500}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="window">
+<aside class="sidebar"><div class="brand"><i></i>Sotto</div>
+<div class="group">Talk to Text Application</div>
+<div class="row active"><i class="dot"></i>devin connector<small>Working</small></div>
+<div class="row"><i class="dot"></i>Grok connector<small>Done</small></div>
+<div class="row"><i class="dot"></i>Effort Slider<small>Working</small></div></aside>
+<main class="pane">
+<header class="head"><strong>devin connector</strong><span>/ Talk to Text Application</span></header>
+<div class="transcript">
+<div class="turn user">try the full-suite again</div>
+<div class="turn"><div class="who">claude</div><p id="say">Running.</p>
+<div class="activity" id="actrow"><span>&rsaquo;</span><code id="actcmd">npm test</code><span id="actstate">Running</span></div>
+<div class="ask" id="ask" hidden><div class="who" id="askwho">claude wants to run a command</div><code id="askcmd">npm test</code><div class="acts"><button>Allow</button><button>Deny</button></div></div>
+</div></div>
+<div class="compose"><div class="composer">
+<div class="walkway" id="walkway" aria-hidden="true" hidden><div class="track" id="track"><canvas class="creature" id="cv" width="40" height="32"></canvas></div><div class="readout"><b id="rlabel">Full test suite</b><small id="rstatus">Monitoring</small></div></div>
+<label class="sr" for="p">Draft a follow-up</label><textarea id="p" placeholder="What would you like to do next?"></textarea>
+<div class="foot"><span class="chip">Opus (1M context)</span><span class="chip">High</span><span class="chip">Auto</span><button class="send">&uarr;</button></div>
+</div><div class="usage"><span id="ustate">Working</span><span>288,619 tokens context</span></div></div>
+</main></div>
+<nav class="bar"><button id="prev" aria-label="Previous pose">&larr;</button><span class="vlabel" id="vlabel"></span><button id="next" aria-label="Next pose">&rarr;</button>
+<select id="scn" aria-label="Simulated thread state">
+<option value="monitor">Background watch (today's trigger)</option>
+<option value="permission">Waiting on you &middot; permission</option>
+<option value="question">Waiting on you &middot; question</option>
+<option value="longcmd">Waiting on a long command</option>
+<option value="shortcmd">Short command (under threshold)</option>
+<option value="both">Watch + permission at once</option>
+<option value="done">Turn finished</option>
+</select>
+<button id="still" aria-pressed="false">Still</button><button id="theme" aria-pressed="false">Light</button></nav>
+<div class="fb" id="fb" role="status"></div>
+<script>
+var VAR=[["W","W · today's monitoring walk"],["A","A · the sit-down"],["B","B · the foot-tap"],["C","C · the hourglass"]];
+var root=document.documentElement,cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+var walkway=document.getElementById("walkway"),track=document.getElementById("track");
+var q=new URLSearchParams(location.search),variant="A";
+for(var vi=0;vi<4;vi++){if(VAR[vi][0]===q.get("variant"))variant=VAR[vi][0];}
+var scn="longcmd",paused=false,start=performance.now(),C={};
+var mq=matchMedia("(prefers-reduced-motion: reduce)");
+function pal(){var s=getComputedStyle(root);["accent","text","bg","border"].forEach(function(k){C[k]=s.getPropertyValue("--tt-"+k).trim();});}
+function r(x,y,w,h,c,a){ctx.globalAlpha=(a===undefined)?1:a;ctx.fillStyle=c;ctx.fillRect(x,y,w,h);ctx.globalAlpha=1;}
+
+/* Same 40x32 pixel body as the shipped creature. Only the hands and feet change per pose. */
+function torso(dy,t,blink,ear){
+ r(9,8+dy,4,8,t);r(21,7+dy-ear,4,9,t);r(11,6+dy,2,5,t);r(23,5+dy-ear,2,5,t);
+ r(9,13+dy,17,15,t);r(7,16+dy,21,9,t);r(11,11+dy,12,18,t);
+ r(10,14+dy,3,9,C.text,.24);r(13,25+dy,10,3,C.bg,.24);
+ r(15,17+dy,2,blink?1:3,C.bg);r(22,17+dy,2,blink?1:3,C.bg);r(20,22+dy,2,1,C.bg);
+}
+function loupe(x,y,t){
+ r(x+3,y+8,2,7,C.border);r(x+2,y+12,4,2,t);
+ r(x+1,y+1,7,7,C.accent,.28);
+ r(x+2,y,5,1,C.text);r(x+2,y+8,5,1,C.text);r(x,y+2,1,5,C.text);r(x+8,y+2,1,5,C.text);
+ r(x+1,y+1,1,1,C.text);r(x+7,y+1,1,1,C.text);r(x+1,y+7,1,1,C.text);r(x+7,y+7,1,1,C.text);r(x+2,y+2,2,1,C.text);
+}
+/* The loupe set down on the floor, handle laid flat. */
+function loupeDown(x,y,t){
+ r(x+1,y+1,7,7,C.accent,.28);
+ r(x+2,y,5,1,C.text);r(x+2,y+8,5,1,C.text);r(x,y+2,1,5,C.text);r(x+8,y+2,1,5,C.text);
+ r(x+1,y+1,1,1,C.text);r(x+7,y+1,1,1,C.text);r(x+1,y+7,1,1,C.text);r(x+7,y+7,1,1,C.text);
+ r(x+9,y+3,3,2,C.border);r(x+7,y+3,2,3,t);
+}
+/* Hourglass 7x11. Three grains fall from the top chamber, then it flips. */
+var TOP=[[1,5],[1,5],[2,3]],BOT=[[2,3],[1,5],[1,5]];
+function hourglass(x,y,t,drain,spin){
+ if(spin){r(x-2,y+4,11,3,C.text);r(x-1,y+5,9,1,t);return;}
+ r(x,y,7,1,C.text);r(x,y+10,7,1,C.text);
+ TOP.forEach(function(a,i){r(x+a[0],y+1+i,a[1],1,C.accent,.28);});
+ r(x+3,y+4,1,3,C.accent,.28);
+ BOT.forEach(function(a,i){r(x+a[0],y+7+i,a[1],1,C.accent,.28);});
+ var gone=Math.min(3,Math.floor(drain*3+1e-6)),left=3-gone,i,a;
+ for(i=0;i<left;i++){a=TOP[2-i];r(x+a[0],y+3-i,a[1],1,t);}
+ for(i=0;i<gone;i++){a=BOT[2-i];r(x+a[0],y+9-i,a[1],1,t);}
+ if(drain<1)r(x+3,y+4+Math.floor((performance.now()/120)%3),1,1,t);
+}
+function draw(t,moving,dir,tone){
+ ctx.clearRect(0,0,40,32);ctx.save();
+ if(dir<0){ctx.translate(40,0);ctx.scale(-1,1);}
+ if(variant==="W"){
+  var st=moving?Math.floor(t*7)%4:-1,bob=(moving&&st%2===1)?-1:0;
+  r(moving?[9,11,13,11][st]:11,29,5,3,tone);r(moving?[23,21,19,21][st]:21,29,5,3,tone);
+  torso(bob,tone,moving&&t%6>5.8,0);
+  if(moving)loupe(29,17+bob,tone);else loupe(25,14+bob,tone);
+  r(25,25+bob,5,2,tone);
+ }
+ if(variant==="A"){
+  var br=Math.floor(t*1.4)%2?1:0,fl=t%2.6,tail=fl<.22?-2:(fl<.44?1:0);
+  r(3,26+tail,6,3,tone);
+  r(10,30,16,2,tone);r(6,27,5,4,tone);
+  torso(3+br,tone,t%5>4.86,(t%7>3&&t%7<3.2)?1:0);
+  r(23,26+br,5,2,tone);
+  loupeDown(28,23,tone);
+ }
+ if(variant==="B"){
+  var be=t%.9,up=be<.16,b2=up?-1:0;
+  r(11,29,5,3,tone);r(21,up?27:29,5,3,tone);
+  if(!up&&be<.28)r(27,30,1,1,tone,.5);
+  torso(b2,tone,t%4.5>4.36,up?1:0);
+  loupe(29,17+b2,tone);r(25,25+b2,5,2,tone);
+ }
+ if(variant==="C"){
+  var cy=t%6,drain=Math.min(1,cy/5.2),spin=cy>5.65,b3=Math.floor(t*1.2)%2?1:0;
+  r(11,29,5,3,tone);r(21,29,5,3,tone);
+  torso(b3,tone,t%5>4.86,spin?1:0);
+  r(24,13+b3,3,2,tone);
+  hourglass(26,9+b3,tone,drain,spin);
+  r(25,25+b3,5,2,tone);
+ }
+ ctx.restore();
+}
+/* Prototype-only gate. Production takes monitoring from adapter evidence; the long-command
+   case would be a new elapsed-time rule over the live running tool record. */
+var S={
+ monitor:{show:"monitor",label:"Full test suite",status:"Monitoring",say:"The suite is running in the background. I am watching for its result.",cmd:"npm test -- --maxWorkers=2",usage:"Working",note:"Provider-confirmed watch · walks, exactly as today"},
+ permission:{show:"wait",ask:"permission",label:"npm test -- --maxWorkers=2",status:"Waiting for your approval",say:"I need to run the suite before I can say anything about the gates.",cmd:"npm test -- --maxWorkers=2",usage:"Needs your approval",note:"Pending permission · today the ornament is HIDDEN here"},
+ question:{show:"wait",ask:"question",label:"Commit these, or retry the suite first?",status:"Waiting for your answer",say:"Nothing is committed — 7 files changed. Commit and open a PR, or retry the full suite first?",cmd:"npm test -- --maxWorkers=2",usage:"Needs your answer",note:"Pending question · today the ornament is HIDDEN here"},
+ longcmd:{show:"wait",label:"npm test -- --maxWorkers=2",status:"Waiting · 4:12",say:"Running — takes about 7 minutes. I will report the result when it lands.",cmd:"npm test -- --maxWorkers=2",usage:"Working",note:"One tool call past the threshold · there is no signal for this today"},
+ shortcmd:{show:"none",label:"git status --short",status:"",say:"Checking the working folder.",cmd:"git status --short",usage:"Working",note:"Under the threshold · nothing appears, and that is the point"},
+ both:{show:"wait",ask:"permission",label:"npm test -- --maxWorkers=2",status:"Waiting for your approval",say:"The suite is still running in the background, and I need you for this one.",cmd:"npm test -- --maxWorkers=2",usage:"Needs your approval",note:"Both at once · proposed rule: waiting outranks the watch, one ornament"},
+ done:{show:"none",label:"",status:"",say:"229 of 229 passed. Nothing is committed yet.",cmd:"npm test -- --maxWorkers=2",usage:"Done",note:"Finished turn · ornament hidden, as today"}
+};
+function setScene(v){
+ scn=v;start=performance.now();var s=S[v];
+ document.getElementById("say").textContent=s.say;
+ document.getElementById("actcmd").textContent=s.cmd;
+ document.getElementById("askcmd").textContent=s.cmd;
+ document.getElementById("actstate").textContent=(v==="done")?"Completed":"Running";
+ document.getElementById("actrow").hidden=!!s.ask;
+ document.getElementById("ask").hidden=!s.ask;
+ document.getElementById("askwho").textContent=(s.ask==="question")?"claude has a question":"claude wants to run a command";
+ document.getElementById("ustate").textContent=s.usage;
+ document.getElementById("rlabel").textContent=s.label;
+ document.getElementById("rstatus").textContent=s.status;
+ document.getElementById("scn").value=v;render();
+}
+function render(){
+ for(var i=0;i<4;i++){if(VAR[i][0]===variant)document.getElementById("vlabel").textContent=VAR[i][1];}
+ document.getElementById("still").setAttribute("aria-pressed",String(paused||mq.matches));
+ pal();var s=S[scn];
+ var show=(variant==="W")?(s.show==="monitor"):(s.show!=="none");
+ walkway.hidden=!show;
+ document.getElementById("fb").innerHTML="<b>"+(show?"SHOWN":"HIDDEN")+"</b> · "+s.note;
+}
+function cyc(d){var i=0;for(var n=0;n<4;n++){if(VAR[n][0]===variant)i=n;}
+ variant=VAR[(i+d+4)%4][0];
+ var u=new URL(location);u.searchParams.set("variant",variant);history.replaceState(null,"",u);
+ start=performance.now();render();}
+document.getElementById("prev").onclick=function(){cyc(-1);};
+document.getElementById("next").onclick=function(){cyc(1);};
+document.getElementById("scn").onchange=function(e){setScene(e.target.value);};
+document.getElementById("still").onclick=function(){paused=!paused;render();};
+document.getElementById("theme").onclick=function(e){var l=root.dataset.theme!=="light";root.dataset.theme=l?"light":"dark";e.currentTarget.setAttribute("aria-pressed",String(l));pal();};
+mq.onchange=render;
+document.addEventListener("keydown",function(e){
+ if(e.target.closest("input,textarea,select"))return;
+ if(e.key==="ArrowLeft"){e.preventDefault();cyc(-1);}
+ if(e.key==="ArrowRight"){e.preventDefault();cyc(1);}});
+function frame(now){
+ if(walkway.hidden){requestAnimationFrame(frame);return;}
+ var still=paused||mq.matches,t=still?1.3:(now-start)/1000;
+ var x=0,dir=1,moving=false;
+ if(variant==="W"){
+  var reach=Math.max(0,track.clientWidth-80),p=t%14;
+  if(still)x=reach;
+  else if(p<4){x=reach*p/4;moving=true;}
+  else if(p<9)x=reach;
+  else if(p<13){x=reach*(1-(p-9)/4);dir=-1;moving=true;}
+  else{x=0;dir=-1;}
+ }else{x=Math.min(18,Math.max(0,track.clientWidth-80));}
+ cv.style.transform="translateX("+(Math.round(x/2)*2)+"px)";
+ draw(t,moving,dir,C.accent);
+ requestAnimationFrame(frame);
+}
+setScene("longcmd");requestAnimationFrame(frame);
+</script>
+</body></html>

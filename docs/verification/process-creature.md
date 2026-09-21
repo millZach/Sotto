@@ -48,3 +48,17 @@ A ready notification no longer hides a live watch; permission, question and coor
 The final cursor/reused-ID fix passed 72 focused unit/integration tests, typecheck and lint. Coverage includes a schema/JSON round trip into a fresh projector, excluded progress and completion, ordinary reclassification of terminal history, flag-only detail deltas, cursor catch-up and the Claude adapter. An independent source review found no remaining issue. The later fixes change no UI code. Each final pushed revision must pass Windows CI and automated review before merge.
 
 Final adapter validation: the actual Claude reconnect path now receives retained activity through same-process state, the legacy history handoff and the workspace history source, all addressed through Sotto thread IDs. Missing activity evidence or a mismatched history epoch triggers replay; an explicitly empty projection permits cursor resume. Three actual-adapter regressions failed before the handoff and pass after it. Notification closure also covers cancellation aliases, duplicate/late events, legacy terminal rows and explicit reclassification. The combined change passed 123 tests across 11 affected files, typecheck, lint and notices. No live monitor is restored.
+
+## Amendment, September 21 2026: what elapsed time is enough for
+
+The rule at the top of this note — no elapsed-time buffer, no assistant-text classification, no ordinary
+command or surviving-shell heuristic — still holds for **monitoring**, and for the same reason: monitoring
+claims the provider is watching background work, and only `monitor`/`monitor_mcp` lifecycle events are
+evidence for that claim.
+
+ADR-0021 adds a second pose that makes a weaker claim. **Waiting** says only that one action of the live
+turn has run for twenty seconds or more, and names it. That sentence is true by construction from the
+record it is read off, so elapsed time is sufficient evidence for it where it was never sufficient for
+monitoring. The hourglass is not the walk, does not say anything is being watched, is not restored from
+history, and grants nothing. A confirmed monitoring task still outranks it for the single track the
+composer reserves. Assistant prose remains rejected as evidence for either pose.

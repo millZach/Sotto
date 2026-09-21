@@ -128,6 +128,40 @@ export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: s
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
 }
 
+/** How long one action holds the turn before the thread says it is waiting on it. Below this, nothing is shown. */
+export const WAITING_AFTER_MS = 20_000
+
+/**
+ * Kinds that can hold a turn on something outside the model. Reasoning and planning are the model
+ * working rather than waiting, and a long one of either says nothing a reader can act on.
+ */
+const waitingKinds = new Set<AgentActivity['kind']>(['command', 'tool', 'subagent'])
+
+/**
+ * The running action the live turn is currently held on, whatever its age. Provider neutral: it reads
+ * the same `activities` every adapter writes, so it needs no `monitor` lifecycle event to exist.
+ */
+export function blockingAction(thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>): AgentActivity | undefined {
+  const turnId = liveTurnId(thread)
+  if (turnId === null) return undefined
+  const action = currentAction(thread, turnId)
+  return action !== undefined && waitingKinds.has(action.kind) && action.startedAt !== undefined ? action : undefined
+}
+
+/**
+ * Whether an action has run long enough to be worth saying so. Elapsed time is the whole claim: unlike a
+ * monitor this is not evidence that the provider is watching anything, and it grants no authority.
+ */
+export function hasWaited(action: Pick<AgentActivity, 'startedAt'>, now: number): boolean {
+  const started = action.startedAt === undefined ? Number.NaN : Date.parse(action.startedAt)
+  return Number.isFinite(started) && now - started >= WAITING_AFTER_MS
+}
+
+/** What the waiting readout calls the action: the command as it was run, else the provider's own title. */
+export function waitingLabel(action: Pick<AgentActivity, 'command' | 'title'>): string {
+  return oneLine(action.command ?? '') || oneLine(action.title) || 'Running'
+}
+
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return ''
   if (ms < 10_000) return `${(Math.floor(ms / 100) / 10).toFixed(1)}s`

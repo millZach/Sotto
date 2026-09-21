@@ -102,6 +102,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Monitoring task.** A live, provider-confirmed watch on background work. A running command or unattended process is not enough evidence. The little creature above the thread composer appears while that watch is active and leaves when it ends or needs your answer. Monitoring is observation, never permission to act, and is not restored from history.
 
+**Waiting.** One action of the live turn — a command, a tool call or a subagent — has held the thread for twenty seconds or more. The same creature stands above the composer holding an hourglass and names the command and how long it has run. Waiting claims only elapsed time: unlike a monitoring task it is no evidence that the provider is watching anything, it grants nothing, and it reads the `activities` every adapter writes rather than any one provider's events. A confirmed monitoring task outranks it, because the composer reserves room for one creature and the watch is the stronger claim.
+
 **Watched set.** The threads the host keeps in memory and keeps a provider session for: the threads on screen, plus assigned or queued ones. It is what `observeThreads` names. A thread outside it carries its summary alone, so startup and publish cost follow the open panes rather than the whole archive. Avoid: "active threads", "open threads".
 
 **Session reaper.** The host's sweep, every five minutes, that stops a provider session idle for thirty minutes. It never stops a session with a running turn, one with a pending request, one with a confirmed live monitoring task, or one in the watched set, and stopping one costs only a resume because the resume cursor stays on the host.
