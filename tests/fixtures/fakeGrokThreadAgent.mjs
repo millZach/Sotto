@@ -37,6 +37,8 @@ function complete(sessionId, text, reason = 'end_turn') {
 }
 function validate(frame, request) {
  const result = frame.result
+ // A request Sotto cannot read is refused at the protocol level, which is the whole point of the case.
+ if (request.kind === 'unreadable') return frame.error ? undefined : 'Expected a refusal for an unreadable request'
  if (request.kind === 'permission') {
   if (!result || Object.keys(result).join() !== 'outcome' || !result.outcome || !['selected','cancelled'].includes(result.outcome.outcome)) return 'Expected ACP permission outcome'
   if (result.outcome.outcome === 'selected' && (Object.keys(result.outcome).sort().join() !== 'optionId,outcome' || !['yes','no'].includes(result.outcome.optionId))) return 'Unknown permission optionId'
@@ -131,6 +133,14 @@ const control = setInterval(() => {
  if (command.type === 'permission' || command.type === 'question') {
   const id = ++serial; pending.set(id,{kind:command.type,text:command.text})
   if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
+  // 1.0.40 puts a question's own parameters straight under the underscored method; earlier clients
+  // wrapped them in an envelope naming the method again. Both are the same request.
+  else if (command.unwrapped) send({id,method:'_x.ai/ask_user_question',params:{sessionId:command.sessionId,toolCallId:String(id),questions:[{question:command.text,options:[]}],mode:'default'}})
   else send({id,method:'_x.ai/ask_user_question',params:{method:'x.ai/ask_user_question',params:{sessionId:command.sessionId,toolCallId:String(id),questions:[{question:command.text,options:[]}],mode:'default'}}})
+ }
+ // A future client asking for a person under a name this Sotto has never mapped.
+ if (command.type === 'unreadable') {
+  const id = ++serial; pending.set(id,{kind:'unreadable'})
+  send({id,method:command.method,params:{sessionId:command.sessionId,toolCallId:String(id),questions:[{question:command.text,options:[]}]}})
  }
 },10)

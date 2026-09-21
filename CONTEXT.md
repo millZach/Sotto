@@ -200,6 +200,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Risk boundary.** An action the user says Sotto must always confirm, captured by the questionnaire and stored as `always-confirm` policy records with source `questionnaire`, never as inferred memory.
 
+**Approval surface.** The place a provider client sends the requests only a person can answer. Sotto claims it at launch, per thread, in every runtime mode, and a client that does not grant it answers those requests itself: Claude Code denies them and withholds its question tool, so a thread keeps working while nothing reaches the user. Because that looks exactly like a model choosing not to ask, an adapter that finds the surface missing, or that receives a request for the user it cannot read, says so on the provider instead of staying quiet. See ADR-0021. Avoid: "permission channel", "prompt host".
+
 ## Memory evaluation
 
 **SottoMemEval.** The product-specific memory benchmark in `scripts/memeval/`: labelled memory cases run against a pluggable backend, scored per category (recall, abstention, temporal adaptation, temporary exception, project leak, authority leak), printed as a table and saved with the backend name and case-set version. Run it with `npm run memeval`.

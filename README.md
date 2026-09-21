@@ -232,6 +232,7 @@ Builds are ad-hoc signed and not notarized, so anyone installing the disk image 
 - **AI cleanup not applied:** Check that AI cleanup is enabled and that the computer is online. When cleanup fails or times out, Sotto delivers the raw transcript instead of failing the dictation.
 - **Terminal view could not load:** Press **Reload window** to try again. Terminals keep running and retain their output. Sotto saves thread drafts first and keeps the window open if any thread draft or question answer is not saved. Save those drafts, then try again.
 - **Window disappeared:** Sotto is probably hidden in the Windows notification area or the macOS menu bar. Open it from that icon or start Sotto again; the existing instance will be shown.
+- **"Claude Code is not letting Sotto answer its permission prompts" / "asked for something only you can answer in a form Sotto could not read":** The installed client is not routing the requests only you can answer, so it declines them itself and the thread keeps working without asking. Update that client in **Settings → Providers**, then reconnect it. Until then, answer in the native client; nothing in the thread is lost.
 
 ### Windows
 
