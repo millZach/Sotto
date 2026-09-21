@@ -58,3 +58,16 @@ The integrated opt-in feedback/streaming command passed all four files and 62 te
 CI verifies constant archive work for 600 updates with 5,000 saved assignments: 1,830 indexed reads, 600 row writes, 600 assignment writes and zero archive-page reads. Separate classification tests verify conditional source/alias writes, duplicate suppression and indexed lookup without startup archive reads. Tests retain every saved result, page roster and assignments independently, preserve unaffected renderer rows and stop hidden or uncertain clocks. Provider tests exercise 5,000 assignments and ordinary activity eviction with bounded metadata caches.
 
 The benchmark keeps production SQLite writes and workspace publication scheduling. Its deterministic provider does no parsing or child-process I/O; mapping, cursor recovery and projector retention require their separate regressions. It does not measure complete app memory or prove paid live-provider behavior. The heartbeat timing assertion is opt-in; structural bounds run in ordinary CI.
+
+## Final status and migration follow-up
+
+The final status-normalization, reset-marker and migration-order fixes were measured with the same five-sample workload against main `80b2207e`, after the local build and full suite stopped. All heartbeat assertions passed; the worst current-source gap was 198.706 ms. Shared-host background work remains uncontrolled. [Raw samples](../../artifacts/agents-view/pr-latest-performance.json) retain the final observations.
+
+| Saved assignments | Revision | Startup ms | Event median ms | Event p95 ms | Worst heartbeat ms | First page ms | Retained heap MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 50 | Baseline | 14.997 | 0.081 | 0.120 | 5.168 | unavailable | 0.446 |
+| 50 | Current | 23.613 | 1.381 | 2.009 | 83.125 | 0.541 | 0.895 |
+| 5,000 | Baseline | 31.011 | 0.079 | 0.110 | 5.207 | unavailable | 0.426 |
+| 5,000 | Current | 41.168 | 1.385 | 2.271 | 198.706 | 0.611 | 0.850 |
+
+The final 5,000-assignment sample medians show about 1.31 ms additional event time and 0.42 MiB retained heap. Small and large event times remain comparable. The separate 100 ms queue/250 ms native streaming command passed 62 tests in 12.02 seconds; observed backend feedback was 0.417 ms against 48 ms simulated provider latency. These passing runs do not erase the previously recorded concurrent-load failure or establish a new startup budget.

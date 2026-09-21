@@ -328,7 +328,7 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) { this.activityStoreUnavailable = true; return }
     try {
       for (const thread of snapshot.threads) {
-        const messageGeneration = this.threadStore.readMessageEpoch(thread.id)
+        let messageGeneration = this.threadStore.readMessageEpoch(thread.id)
         if (messageGeneration) {
           // A committed reset, including an unversioned or empty reset, outranks legacy JSON.
           thread.messages = []
@@ -337,6 +337,13 @@ export class WorkspaceHost implements AgentHost {
           else thread.historyEpoch = messageGeneration.epoch
         }
         if (!this.threadStore.hasActivities(thread.id) && thread.activities !== undefined) {
+          if (!messageGeneration && thread.messages.length) {
+            // Both legacy projections describe the same JSON generation. Commit its first message
+            // reset before activity so even an exit before the later flush leaves a matching marker.
+            this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch)
+            thread.messages = []
+            messageGeneration = this.threadStore.readMessageEpoch(thread.id)
+          }
           // Retain legacy child tasks before the activity migration removes their payload.
           this.trackSubagents(thread, false)
           this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)

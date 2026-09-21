@@ -298,3 +298,35 @@ it.each([
     await f.close(host)
   }
 })
+it.each(['none', 'before-activity', 'after-activity'])('keeps legacy messages and activity through restart with interrupted migration=%s', async interrupted => {
+  const f = await fixture()
+  const thread = f.provider.state.threads[0]!
+  thread.messages = [{ id: 'legacy-message', role: 'user', text: 'Legacy message beside retained activity', createdAt: '2026-09-20T00:00:00Z' }]
+  const messages = structuredClone(thread.messages)
+  const activities = structuredClone(thread.activities!)
+  await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
+  if (interrupted !== 'none') {
+    const sync = ThreadStore.prototype.syncActivities
+    let calls = 0
+    const failure = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(function (this: ThreadStore, ...args) {
+      if (++calls > (interrupted === 'before-activity' ? 0 : 1)) throw new Error('Fixture interrupted activity migration')
+      return sync.apply(this, args)
+    })
+    const host = new WorkspaceHost(f.provider, f.directory)
+    try {
+      if (interrupted === 'before-activity') {
+        await host.initialize()
+        expect(host.workspaceSnapshot().error).toContain('Thread activity could not be saved')
+      } else await expect(host.initialize()).rejects.toThrow('Fixture interrupted activity migration')
+    } finally { host.dispose(); failure.mockRestore() }
+  } else {
+    const host = await f.open()
+    expect(host.threadMessages(thread.id)).toEqual(messages)
+    expect(host.workspaceSnapshot().threads[0]?.activities).toEqual(activities)
+    await f.close(host)
+  }
+  const reopened = await f.open()
+  expect(reopened.threadMessages(thread.id)).toEqual(messages)
+  expect(reopened.workspaceSnapshot().threads[0]?.activities).toEqual(activities)
+  await f.close(reopened)
+})
