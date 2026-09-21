@@ -37,10 +37,19 @@ function createDeferred<Value>() {
 describe('createMicrophoneAccessGate', () => {
   it('allows an already granted microphone without prompting', async () => {
     const adapter = createAdapter('granted')
+    const gate = createMicrophoneAccessGate(adapter)
 
-    await expect(createMicrophoneAccessGate(adapter).ensure()).resolves.toBe(true)
+    expect(gate.isGranted()).toBe(true)
+    await expect(gate.ensure()).resolves.toBe(true)
     expect(adapter.requestCalls).not.toHaveBeenCalled()
   })
+
+  it.each(['not-determined', 'denied', 'restricted', 'unknown'] as const)(
+    'does not pre-grant a %s microphone to Chromium checks',
+    (status) => {
+      expect(createMicrophoneAccessGate(createAdapter(status)).isGranted()).toBe(false)
+    },
+  )
 
   it.each(['denied', 'restricted'] as const)(
     'refuses a %s microphone without prompting',

@@ -132,6 +132,10 @@ export function installSessionPermissionPolicy(
   // Omitted means no OS-level microphone gate exists on this platform, and the
   // grant stays synchronous exactly as it was before the gate was introduced.
   mediaAccess?: MediaAccessGate,
+  // Chromium's check handler skips the prompt when it returns true. On macOS
+  // that must wait until the OS has actually granted the microphone, or
+  // getUserMedia succeeds with silence and no TCC dialog.
+  mediaAccessGranted?: () => boolean,
 ): () => void {
   const previous = permissionOwners.get(session) ?? null
 
@@ -167,11 +171,20 @@ export function installSessionPermissionPolicy(
     permission,
     _requestingOrigin,
     details,
-  ) =>
-    permission === 'media' &&
-    details.isMainFrame === true &&
-    details.mediaType === 'audio' &&
-    findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
+  ) => {
+    const trusted =
+      permission === 'media' &&
+      details.isMainFrame === true &&
+      details.mediaType === 'audio' &&
+      findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
+    if (!trusted) return false
+    if (mediaAccessGranted === undefined) return true
+    try {
+      return mediaAccessGranted()
+    } catch {
+      return true
+    }
+  }
 
   const installed: InstalledPermissionPolicy = {
     checkHandler,

@@ -2144,6 +2144,44 @@ describe('permission policy', () => {
     mediaTypes: ['audio'],
   }
 
+  it('does not pre-grant microphone checks until the operating system has granted them', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => false,
+    )
+
+    expect(
+      harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: gatedUrl,
+      }),
+    ).toBe(false)
+  })
+
+  it('pre-grants microphone checks only after the operating system has granted them', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => true,
+    )
+
+    expect(
+      harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: gatedUrl,
+      }),
+    ).toBe(true)
+  })
+
   it('grants synchronously when no media gate is configured', () => {
     const harness = createSession()
     const trustedContents = { getURL: () => gatedUrl }

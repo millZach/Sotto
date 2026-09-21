@@ -1147,6 +1147,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         // Omitted where no OS microphone gate exists, which keeps the grant
         // synchronous exactly as it is today.
         microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
+        microphoneAccess === null ? undefined : () => microphoneAccess.isGranted(),
       ),
     installProtocols: runtimeSource === null
       ? () => () => undefined
