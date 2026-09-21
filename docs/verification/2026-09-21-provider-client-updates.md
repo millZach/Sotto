@@ -54,6 +54,25 @@ That last line is the pin change proved live: **Sotto is running a Grok client t
 
 The machine was left on the published version: package `@xai-official/grok` 1.0.40, binary 1.0.40.
 
+## What 0.1.12 shipped without
+
+Claude Code showed "Connect this provider to read its installed version" while it was connected. Its
+adapter only learns a version from a running session's `system/init` frame, so a connected but idle
+provider had none, and the check skips a provider whose installed version it cannot read. Codex takes
+its version from `initialize` and Grok and Devin from theirs; Claude had no equivalent. It is now
+asked for `--version` at connect, and the four read together:
+
+```
+claude  2.1.278     published 2.1.278     channel self-update
+codex   0.155.1     published 0.155.1     channel npm
+grok    1.0.40      published 1.0.40      channel npm
+devin   3000.10.31  not asked             channel devin-app
+```
+
+![Claude Code's version, read at connect](../../artifacts/provider-client-updates/05-claude-version.png)
+
+A provider that is connected but has no reading yet no longer reads as one that needs connecting.
+
 ## The design gate
 
 The Installed client block and its switch were checked in the running app at **1600x1000, 1280x800 and 820x560**, in dark and in light, measuring `scrollWidth`/`clientWidth` on the block at each: nothing overflows or clips at any of them, and the sentence wraps to two lines at the 820 minimum rather than being cut.

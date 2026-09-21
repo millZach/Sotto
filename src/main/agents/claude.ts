@@ -150,6 +150,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }))
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
+    // Without this the version is only known once a session runs, so an idle provider could not be
+    // compared against what its channel publishes (ADR-0020).
+    this.state.version = await this.client.version(executable) || this.state.version
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.

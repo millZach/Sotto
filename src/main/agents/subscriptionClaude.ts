@@ -152,6 +152,14 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     return filtered
   }
 
+  /**
+   * The installed client's own version. Claude Code otherwise only says it in a running session's
+   * init frame, which leaves a connected-but-idle provider with no version to compare or show.
+   */
+  async version(executable: string, timeoutMs = 10_000): Promise<string> {
+    try { return (await this.run(executable, ['--version'], '', timeoutMs)).trim().slice(0, 200) } catch { return '' }
+  }
+
   private run(executable: string, args: string[], input: string, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
       let child: ChildProcessWithoutNullStreams

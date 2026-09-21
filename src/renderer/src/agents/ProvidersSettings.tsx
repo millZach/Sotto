@@ -11,12 +11,13 @@ import './providers.css'
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI' }
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
-function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, working = 0): string {
+function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, working = 0, connected = false): string {
   const past = verified ? ` It is newer than the ${verified} Sotto has checked.` : ''
   const stops = working > 0 && update?.behind && update.canInstall
     ? ` ${working === 1 ? 'A thread is' : `${working} threads are`} working now; updating stops ${working === 1 ? 'it' : 'them'}.` : ''
   if (!checking) return `Client update checks are off, so Sotto does not know what is published.${past}`
-  if (!update) return `Connect this provider to read its installed version.${past}`
+  if (!update) return connected ? `Sotto has not read this client's version yet. Check again to read it.${past}`
+    : `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not run${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return `The update ran, but this client still reports ${update.installed}. Close other windows using it, then connect again.${past}`
@@ -103,7 +104,7 @@ export function ProvidersSettings(): ReactNode {
             <div className="provider-client">
               <div>
                 <h4>Installed client</h4>
-                <p>{clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates, workingThreads(selected))}</p>
+                <p>{clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates, workingThreads(selected), connected)}</p>
               </div>
               <div className="provider-client__actions">
                 {update?.canInstall && update.state !== 'updating'
