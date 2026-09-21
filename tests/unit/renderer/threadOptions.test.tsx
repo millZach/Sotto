@@ -23,6 +23,22 @@ function mount(state = fixture()) {
   render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
   return { command }
 }
+
+/**
+ * The chips over a thread whose settings actually move when a command is confirmed, the way `AgentContext`
+ * moves them: main's answer is applied to the state before the command's own promise resolves. Tests that
+ * care what the control shows before and after a confirmation need that, because a static fixture confirms a
+ * change and then reports the level it always had.
+ */
+function Live({ answer }: { answer: (effort: string) => Promise<AgentState | null> }): React.ReactElement {
+  const [state, setState] = React.useState(fixture())
+  const command = async (request: { reasoningEffort?: string }): Promise<AgentState | null> => {
+    const next = await answer(request.reasoningEffort ?? '')
+    if (next) setState(next)
+    return next
+  }
+  return <ThreadOptions thread={state.host.threads[0]!} state={state} command={command as never} />
+}
 afterEach(cleanup)
 
 describe('composer option chips', () => {
@@ -158,7 +174,7 @@ describe('composer option chips', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
-  it('keeps the effort card mounted while a selection is being confirmed', async () => {
+  it('keeps the effort card mounted and live while a selection is being confirmed', async () => {
     const state = fixture()
     let release!: () => void
     const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
@@ -168,12 +184,66 @@ describe('composer option chips', () => {
     const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
     fireEvent.keyDown(slider, { key: 'End' })
     expect(panel).toBeInTheDocument()
+    // The other chips wait for the provider. Effort does not: it is showing the press, so it has to take another.
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
-    fireEvent.keyDown(slider, { key: 'Home' })
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled()
+    expect(slider).not.toHaveAttribute('aria-disabled', 'true')
     expect(command).toHaveBeenCalledTimes(1)
     release()
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeEnabled())
     expect(panel).toBeInTheDocument()
+  })
+
+  it('shows the level pressed before the provider has confirmed it, and holds it when the answer lands', async () => {
+    let release!: () => void
+    const asked: string[] = []
+    render(<Live answer={async effort => {
+      asked.push(effort)
+      await new Promise<void>(resolve => { release = resolve })
+      return fixture({ reasoningEffort: effort })
+    }} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    fireEvent.click(chip)
+    const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
+    // Nothing is confirmed yet, and the whole control has already moved: the word, the line, the chip and the
+    // top mark that lights the composer are the press itself rather than the provider's answer.
+    expect(panel.querySelector('.effort-card__word')).toHaveTextContent(/^Max$/u)
+    expect(slider).toHaveAccessibleDescription('Everything the model has. Slowest, costliest.')
+    expect(chip).toHaveTextContent('Max')
+    expect(chip).toHaveAttribute('data-effort-top', 'true')
+    expect(asked).toEqual(['max'])
+    await act(async () => { release() })
+    // The answer agrees with the press, so nothing moves on the way: no frame shows the level it came from.
+    expect(chip).toHaveTextContent('Max')
+    expect(panel.querySelector('.effort-card__word')).toHaveTextContent(/^Max$/u)
+    expect(slider).toHaveValue('4')
+  })
+
+  it('saves where the levels stop rather than every level crossed while a save is in flight', async () => {
+    const releases: Array<() => void> = []
+    const asked: string[] = []
+    render(<Live answer={async effort => {
+      asked.push(effort)
+      await new Promise<void>(resolve => { releases.push(resolve) })
+      return fixture({ reasoningEffort: effort })
+    }} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    fireEvent.keyDown(slider, { key: 'End' })
+    expect(asked).toEqual(['max'])
+    // Two more presses while the provider is still answering the first. A provider refuses a second settings
+    // change while one is in flight, so the levels crossed are shown and only the last one is sent.
+    fireEvent.keyDown(slider, { key: 'Home' })
+    fireEvent.keyDown(slider, { key: '2' })
+    expect(asked).toEqual(['max'])
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Medium')
+    await act(async () => { releases[0]!() })
+    expect(asked).toEqual(['max', 'medium'])
+    await act(async () => { releases[1]!() })
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Medium')
+    expect(slider).toHaveValue('1')
   })
 
   it('preserves an unavailable saved level until the user chooses a supported one', () => {

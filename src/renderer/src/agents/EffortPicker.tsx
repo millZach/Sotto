@@ -91,33 +91,43 @@ function useArrival(top: boolean, still: boolean): boolean {
   return arriving
 }
 
+/**
+ * The card. Its `value` is the level the user last chose rather than the one the provider has confirmed, so
+ * every press lands here in the frame it happens; the wrapper owns the save and hands back the saved level
+ * if the provider refuses.
+ */
 function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, id, trigger, arriving, still }: {
-  value: string; options: readonly EffortOption[]; disabled: boolean; onChange: (id: string) => Promise<boolean>
+  value: string; options: readonly EffortOption[]; disabled: boolean; onChange: (id: string) => void
   onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; defaultValue?: string | undefined; modelName?: string | undefined
   id: string; trigger: RefObject<HTMLButtonElement | null>; arriving: boolean; still: boolean
 }): ReactNode {
   const choices = options.filter(option => !option.disabled)
   const count = choices.length
   const actual = choices.findIndex(option => option.id === value)
-  const [position, setPosition] = useState(Math.max(0, actual))
-  const [known, setKnown] = useState(actual >= 0)
+  /** Where the hand is, while the hand is on the thumb; null the rest of the time, which is most of it. */
+  const [held, setHeld] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const drag = useRef(false)
-  const pending = useRef(false)
-  const mounted = useRef(true)
   const panel = useRef<HTMLDivElement>(null)
   const range = useRef<HTMLInputElement>(null)
+  /**
+   * The thumb is not a copy of the chosen level kept in step with it: a copy has to be told when to catch up,
+   * and a press and the answer to it can land in one render, which leaves nothing to notice and the thumb on a
+   * level that was refused. It is the chosen level, until a hand lifts it off. Where the hand is says so
+   * itself rather than a flag beside it saying so, because the two would not have to arrive together, and a
+   * thumb under a hand that is still reading a flag from before the press is a thumb that does not move.
+   */
+  const position = held ?? Math.max(0, actual)
+  const known = actual >= 0 || held !== null
   const selected = Math.round(position)
   const shown = choices[selected]
   const top = known && count > 1 && actual === count - 1
   const defaultIndex = defaultValue === undefined ? -1 : choices.findIndex(option => option.id === defaultValue)
   usePaintedPosition(panel, position, count, dragging, still)
-  useEffect(() => { if (!pending.current) { setPosition(Math.max(0, actual)); setKnown(actual >= 0) } }, [actual])
   useEffect(() => {
     if (!disabled || !drag.current) return
-    drag.current = false; setDragging(false); setPosition(Math.max(0, actual)); setKnown(actual >= 0)
-  }, [disabled, actual])
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+    drag.current = false; setDragging(false); setHeld(null)
+  }, [disabled])
   useLayoutEffect(() => {
     const surface = panel.current
     if (!surface) return
@@ -150,18 +160,12 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
     range.current?.focus()
     return () => { cancelAnimationFrame(placementFrame); surface.hidePopover?.() }
   }, [trigger])
-  const choose = async (index: number): Promise<void> => {
-    if (disabled || pending.current) return
+  const choose = (index: number): void => {
+    if (disabled) return
     const next = Math.max(0, Math.min(count - 1, index)), option = choices[next]
     if (!option) return
-    setPosition(next); setKnown(true); setDragging(false); drag.current = false
-    if (option.id === value) return
-    pending.current = true
-    let saved = false
-    try { saved = await onChange(option.id) } catch { saved = false } finally {
-      pending.current = false
-      if (!saved && mounted.current) { setPosition(Math.max(0, actual)); setKnown(actual >= 0) }
-    }
+    setHeld(null); setDragging(false); drag.current = false
+    if (option.id !== value) onChange(option.id)
   }
   // The wheel steps a level. React registers wheel listeners as passive, so the page would scroll behind the card without this.
   useEffect(() => {
@@ -171,7 +175,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       event.preventDefault()
       if (disabled || event.deltaY === 0) return
       const next = Math.max(0, Math.min(count - 1, Math.round(position) + (event.deltaY < 0 ? 1 : -1)))
-      if (next !== Math.round(position) || !known) void choose(next)
+      if (next !== Math.round(position) || !known) choose(next)
     }
     input.addEventListener('wheel', wheel, { passive: false })
     return () => input.removeEventListener('wheel', wheel)
@@ -189,7 +193,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
         {Array.from(word, (letter, index) => <span key={`${word}-${index}`} style={{ '--effort-letter': index } as CSSProperties}>{letter === ' ' ? '\u00a0' : letter}</span>)}
       </p>
       {defaultIndex >= 0 && <button type="button" className="effort-card__default tt-focusable" disabled={disabled || value === defaultValue}
-        title={`Use ${modelName ?? 'the model'}'s default, ${effortLabel(defaultValue!)}`} onClick={() => void choose(defaultIndex)}>Default</button>}
+        title={`Use ${modelName ?? 'the model'}'s default, ${effortLabel(defaultValue!)}`} onClick={() => choose(defaultIndex)}>Default</button>}
     </div>
     <p id={`${id}-description`} className="effort-card__line">{line}</p>
     <div className="effort-card__track">
@@ -200,10 +204,10 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       <span className="effort-card__thumb" aria-hidden="true" />
       <input ref={range} type="range" aria-label="Thread reasoning effort" aria-valuetext={valueText} aria-valuenow={selected}
         aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
-        onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
-        onPointerUp={event => { if (!drag.current) return; drag.current = false; setDragging(false); void choose(Math.round(Number(event.currentTarget.value))) }}
-        onPointerCancel={() => { drag.current = false; setDragging(false); setPosition(Math.max(0, actual)); setKnown(actual >= 0) }}
-        onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) { setPosition(magnet(next)); setKnown(true) } else void choose(Math.round(next)) }}
+        onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(Math.max(0, actual)); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
+        onPointerUp={event => { if (!drag.current) return; drag.current = false; setDragging(false); choose(Math.round(Number(event.currentTarget.value))) }}
+        onPointerCancel={() => { drag.current = false; setDragging(false); setHeld(null) }}
+        onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) setHeld(magnet(next)); else choose(Math.round(next)) }}
         onKeyDown={event => {
           if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); return }
           const digit = /^[1-9]$/u.test(event.key) ? Number(event.key) - 1 : -1
@@ -211,7 +215,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
           const next = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : digit >= 0 && digit < count ? digit : steps[event.key] !== undefined ? selected + steps[event.key]! : null
           if (next === null) return
           event.preventDefault(); event.stopPropagation()
-          void choose(next)
+          choose(next)
         }} />
     </div>
     <div className="effort-card__ends" aria-hidden="true"><span>Faster</span><span>More thorough</span></div>
@@ -224,9 +228,11 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
 }
 
 /**
- * The effort chip and its card. A preview is local until release; the provider remains authoritative for
- * supported values and saves. The chip wears the colourway at the model's highest level, and the composer
- * around it reads that mark for its outline and this wrapper's arrival mark for its tide (ADR-0019).
+ * The effort chip and its card. The chosen level is what the whole control shows — the word, the line, the
+ * chip and the arrival — from the frame it is pressed, and the save runs behind it; the provider is still
+ * authoritative, so the level it answers with is what remains, and a refusal takes the press back (ADR-0019).
+ * The chip wears the colourway at the model's highest level, and the composer around it reads that mark for
+ * its outline and this wrapper's arrival mark for its tide.
  */
 export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => Promise<boolean>
@@ -236,17 +242,57 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   readonly modelName?: string | undefined
 }): ReactNode {
   const [open, setOpen] = useState(false)
+  const [chosen, setChosen] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const wrapper = useRef<HTMLDivElement>(null)
   const id = useId()
   const returnFocus = useRef(false)
   const close = (): void => { returnFocus.current = true; setOpen(false) }
   const choices = options.filter(option => !option.disabled)
-  const top = choices.length > 1 && choices[choices.length - 1]?.id === value
+  // What the control shows: the press until the provider answers, the provider's own level from then on.
+  // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
+  const level = chosen ?? value
+  const saving = useRef(false)
+  const landed = useRef<string | null>(null)
+  /**
+   * Saves where the user ends up rather than every level they pass. A provider refuses a second settings
+   * change while one is in flight, so a press made during a save is remembered and sent when that save
+   * answers. Whatever it answers with is then the shown level again, which takes back a refused press.
+   *
+   * Nothing here compares the target against the saved level to skip a save. The rendered level is a frame
+   * behind a press that has just been made, so a press that returns to the level the last save established
+   * looks redundant and is dropped; landing back where a save has already been sent is what the loop's own
+   * exit covers, and the card asks for a save only when the press differs from what it is showing.
+   */
+  const run = async (first: string): Promise<void> => {
+    saving.current = true
+    try {
+      let target = first
+      while (true) {
+        landed.current = null
+        const took = await onChange(target).catch(() => false)
+        if (landed.current !== null && landed.current !== target) { target = landed.current; continue }
+        // Refused: the saved level comes back, and the error under the chips says the change was not made.
+        // Taken: the press stays until the saved level catches up with it, one render or several later, so
+        // the word never falls back to the old level for a frame on its way to the new one.
+        if (!took) setChosen(null)
+        return
+      }
+    } finally { saving.current = false; landed.current = null }
+  }
+  const choose = (next: string): void => {
+    setChosen(next)
+    if (saving.current) { landed.current = next; return }
+    void run(next)
+  }
+  // The saved level moving while nothing is being saved is the provider's own word on this thread — the level
+  // it settled on, or a change made somewhere else — and it replaces the press the control was holding.
+  useEffect(() => { if (!saving.current) setChosen(null) }, [value])
+  const top = choices.length > 1 && choices[choices.length - 1]?.id === level
   const still = useStill()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {
-    // Hide the native popover before restoring focus; a pending save temporarily disables the chip.
+    // Hide the native popover before restoring focus; saving the model or the permissions disables the chip.
     if (open || disabled || !returnFocus.current) return
     returnFocus.current = false
     if (!document.activeElement || document.activeElement === document.body || wrapper.current?.contains(document.activeElement)) trigger.current?.focus()
@@ -262,9 +308,9 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={trigger} type="button" role="combobox" aria-label="Thread reasoning" title="Thread reasoning" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       className="thread-chip tt-focusable" data-effort-top={top} disabled={disabled} onClick={() => setOpen(current => !current)}>
-      <span>{value ? effortLabel(value) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
+      <span>{level ? effortLabel(level) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && <EffortSurface value={value} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
+    {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={choose} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
       defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}
   </div>
 }
