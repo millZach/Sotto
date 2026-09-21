@@ -66,7 +66,7 @@ export class ThreadWorktrees {
     const base = baseBranch ? `${selection.startFromOrigin ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
     if (selection.startFromOrigin) {
       try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
-      catch { throw new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or turn off Start from origin.`) }
+      catch { throw new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`) }
     }
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`])).trim() }

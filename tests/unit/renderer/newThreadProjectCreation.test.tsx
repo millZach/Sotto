@@ -28,6 +28,7 @@ function setup(command: (command: AgentCommand) => Promise<AgentState | null>, s
 }
 async function browse() {
   fireEvent.click(screen.getByRole('button', { name: /Local folder/ }))
+  fireEvent.click(await screen.findByText('Thread options'))
   await screen.findByLabelText('Thread name')
   fireEvent.change(screen.getByLabelText('Thread name'), { target: { value: 'My work' } })
 }
@@ -51,9 +52,9 @@ describe('native folder project resolution', () => {
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
-  it('starts with the selected agent model when no default for new threads is chosen', async () => {
+  it('uses the Agents model even when an older saved thread default and model order prefer Grok', async () => {
     const state = fixture([actual])
-    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus[1m]', defaultModelId: '' }
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus[1m]', defaultModelId: 'native:grok:model:grok-4.6' }
     // Grok comes first in the saved model order, as in an installed profile.
     state.host.models = [{ id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok', ready: true },
       { id: 'native:claude:model:default', name: 'Default', provider: 'Claude', providerId: 'claude', ready: true },
@@ -64,19 +65,59 @@ describe('native folder project resolution', () => {
     expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: 'native:claude:model:opus%5B1m%5D' }))
   })
 
-  it('moves to the selected agent model when it becomes ready after the dialog opens, unless a model was chosen', async () => {
-    const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok' as const, ready: true }
-    const claude = { id: 'native:claude:model:default', name: 'Default', provider: 'Claude', providerId: 'claude' as const, ready: false }
+  it('follows the Agents account default when its resolved model changes before a thread choice', async () => {
     const state = fixture([actual])
-    state.configuration = { ...state.configuration, reasoning: 'claude', defaultModelId: '' }
-    state.host.models = [grok, claude]
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: '' }
+    state.host.models = [
+      { id: 'native:claude:model:sonnet', name: 'Sonnet', provider: 'Claude', providerId: 'claude', ready: true },
+      { id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true },
+    ]
+    const account = { provider: 'claude' as const, label: 'Claude', installed: true, ready: true, detail: '', models: [{ id: 'sonnet', name: 'Sonnet' }, { id: 'opus', name: 'Opus' }], defaultModelId: 'sonnet' }
+    state.reasoningAccounts = [account]
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
     const view = setup(command, state)
+    await browse()
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet')
+    view.update({ ...state, reasoningAccounts: [{ ...account, defaultModelId: 'opus' }] })
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Opus')
+    await submit()
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: 'native:claude:model:opus' }))
+  })
+  it.each(['missing', 'unavailable'] as const)('waits for the Agents model when it is %s instead of creating with ready Grok', async availability => {
+    const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok' as const, ready: true }
+    const claude = { id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude', providerId: 'claude' as const, ready: false }
+    const state = fixture([actual])
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus', defaultModelId: grok.id }
+    state.host.models = [grok, ...(availability === 'unavailable' ? [claude] : [])]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
+    const view = setup(command, state)
+    await browse()
+    expect(screen.getByRole('button', { name: 'Create thread' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
+    expect(command).not.toHaveBeenCalled()
     view.update({ ...state, host: { ...state.host, models: [grok, { ...claude, ready: true }] } })
-    await browse(); await submit()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create thread' })).toBeEnabled())
+    await submit()
     expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: claude.id }))
   })
 
+  it('keeps a model deliberately chosen for this thread when Agents settings change', async () => {
+    const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok', providerId: 'grok' as const, ready: true }
+    const claude = { id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude', providerId: 'claude' as const, ready: true }
+    const state = fixture([actual])
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus' }
+    state.host.models = [grok, claude, ...state.host.models]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
+    const view = setup(command, state)
+    await browse()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Grok', exact: true }))
+    fireEvent.click(screen.getByRole('option', { name: 'Grok 4.6', exact: true }))
+    view.update({ ...state, configuration: { ...state.configuration, reasoning: 'codex', reasoningModel: 'model' } })
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Grok 4.6')
+    await submit()
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', modelId: grok.id }))
+  })
   it('reuses an existing Windows path without creating a duplicate project', async () => {
     const state = fixture([{ ...actual, path: actual.path.toUpperCase() + '\\' }])
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
@@ -202,7 +243,10 @@ describe('a client-minted thread id', () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
     vi.stubGlobal('sotto', { agents: { chooseProjectDirectory: vi.fn(async () => path) } })
     const onCreating = vi.fn<(start: ThreadCreationStart) => void>()
-    render(<NewThreadDialog state={fixture([actual])} command={command} onCreated={vi.fn()} onClose={vi.fn()} onCreating={onCreating}
+    const state = fixture([actual])
+    state.configuration = { ...state.configuration, reasoning: 'claude', reasoningModel: 'opus' }
+    state.host.models.push({ id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude', providerId: 'claude', ready: true })
+    render(<NewThreadDialog state={state} command={command} onCreated={vi.fn()} onClose={vi.fn()} onCreating={onCreating}
       initialChoices={{ projectId: actual.id, title: 'Second attempt', modelId: 'codex:model', workingCopy: 'shared', reasoningEffort: 'high' }}
       initialError="Send or clear your draft before creating another thread." />)
     expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft')
@@ -210,7 +254,7 @@ describe('a client-minted thread id', () => {
     expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
     await waitFor(() => expect(onCreating).toHaveBeenCalledOnce())
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', title: 'Second attempt', workingCopy: 'shared', reasoningEffort: 'high' }))
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', title: 'Second attempt', modelId: 'codex:model', workingCopy: 'shared', reasoningEffort: 'high' }))
   })
 })
 
@@ -238,8 +282,8 @@ describe('working copy choice', () => {
     })
     render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
     await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
-    fireEvent.change(await screen.findByLabelText('Base branch'), { target: { value: 'develop' } })
-    expect(screen.getByLabelText('Start from origin')).toBeChecked()
+    fireEvent.change(await screen.findByLabelText('Start from'), { target: { value: 'origin:develop' } })
+    expect(screen.getByLabelText('Start from')).toHaveValue('origin:develop')
     expect(command).not.toHaveBeenCalled()
     await submit()
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: true }))
@@ -251,9 +295,10 @@ describe('working copy choice', () => {
     vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [{ path: 'C:/work/task', branch: 'feat/task' }] })) } })
     render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
     fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    fireEvent.change(await screen.findByLabelText('Worktree'), { target: { value: 'C:/work/task' } })
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Existing worktree' })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('radio', { name: 'Existing worktree' }))
     expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this worktree.')
-    expect(screen.queryByLabelText('Base branch')).toBeNull()
+    expect(screen.queryByLabelText('Start from')).toBeNull()
     await submit()
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', existingWorktreePath: 'C:/work/task' }))
   })
@@ -264,22 +309,20 @@ describe('working copy choice', () => {
     vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] })) } })
     render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
     fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    fireEvent.click(await screen.findByLabelText('Start from origin'))
+    fireEvent.change(await screen.findByLabelText('Start from'), { target: { value: 'local:' } })
     await submit()
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', startFromOrigin: false }))
   })
 
-  it('saves and clears a project override without changing a global preference', async () => {
+  it('keeps project defaults out of the creation flow and starts with collapsed options', () => {
     const state = fixture([actual])
-    const getSettings = vi.fn(async () => ({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} }))
-    const updateSettings = vi.fn(async (patch: object) => ({ ...await getSettings(), ...patch }))
-    vi.stubGlobal('sotto', { getSettings, updateSettings })
     render(<NewThreadDialog state={state} command={vi.fn()} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
-    fireEvent.change(screen.getByLabelText('Default for this project'), { target: { value: 'independent' } })
-    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ projectThreadWorkingCopyDefaults: { [actual.id]: 'independent' } }))
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
-    fireEvent.change(screen.getByLabelText('Default for this project'), { target: { value: 'inherit' } })
-    await waitFor(() => expect(updateSettings).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: {} }))
+    expect(screen.queryByLabelText('Default for this project')).toBeNull()
+    expect(screen.getByText('Thread options').closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Create thread' })).toBeVisible()
+    fireEvent.click(screen.getByText('Thread options'))
+    fireEvent.keyDown(screen.getByLabelText('Thread name'), { key: 'Escape' })
+    expect(screen.getByText('Thread options')).toHaveFocus()
   })
 
   it('uses the project folder by default and explains shared files and branch', async () => {
@@ -300,7 +343,7 @@ describe('working copy choice', () => {
     const view = setup(command, fixture([actual]))
     await browse()
     fireEvent.click(screen.getByRole('radio', { name: 'Project folder' }))
-    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this folder.')
+    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this folder, including uncommitted edits.')
     await submit()
     expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable.')
     expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
@@ -311,12 +354,27 @@ describe('working copy choice', () => {
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
-  it('continues keyboard creation in the thread name once a folder is chosen', async () => {
+  it('starts keyboard creation at the working-copy choice once a folder is chosen', async () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
     setup(command, fixture([actual]))
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'ArrowDown' })
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'Enter' })
-    await waitFor(() => expect(screen.getByLabelText('Thread name')).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Project folder' })).toHaveFocus())
+  })
+
+  it('keeps the name focused when working-copy defaults finish loading', async () => {
+    let finish!: (settings: object) => void
+    vi.stubGlobal('sotto', { getSettings: vi.fn(() => new Promise(resolve => { finish = resolve })) })
+    const state = fixture([actual])
+    render(<NewThreadDialog state={state} command={vi.fn()} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
+    fireEvent.click(screen.getByText('Thread options'))
+    const name = screen.getByLabelText('Thread name')
+    name.focus()
+    fireEvent.change(name, { target: { value: 'Keep typing' } })
+    finish({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: {} })
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    expect(name).toHaveFocus()
+    expect(name).toHaveValue('Keep typing')
   })
 
   it('locks the choice while creation is in flight', async () => {
