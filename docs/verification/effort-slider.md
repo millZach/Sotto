@@ -47,3 +47,39 @@ Captures in `artifacts/effort-slider/`, taken by the Electron spec with the synt
 
 - The New thread and New terminal dialogs keep their native Reasoning select, as before.
 - Design baselines (`npm run design:capture`) were not regenerated in this pass; the Threads baselines show the composer without a thread at its highest level, which this change does not alter.
+
+## Repairs, September 21 2026
+
+Three faults Zach found in the running app (#175), all in the arrival or the card around it. Amendment in ADR-0019; the mock-up the two look choices were made from is `docs/prototypes/effort-arrival-repair-prototype.html`, where he chose the word lifting as one (over the letters standing still, and over each letter carrying its own copy of the spectrum) and the shorter Extra high line (over a wider card, and over a line area always two lines tall).
+
+- **The word went blank in Rainbow.** The arrival lifted each letter 1px, and Chromium drops a transformed or positioned descendant out of an ancestor's `background-clip: text`, so the one colourway that paints its word as a gradient had no word for the 1.9 seconds the arrival ran. The letters now take the colour without moving (`effort-letter`) and the word lifts and settles as one (`effort-word`).
+- **The Appearance sample would not replay.** `play()` turned `data-arriving` off and on inside one frame, which is never painted, so the browser had nothing to restart. The scene now mounts fresh on every play.
+- **The card grew at Extra high.** "Much longer. For problems that resist a first pass." wrapped at the card's width, so the card grew 18px as a drag crossed that level. It now reads "Much longer. For stubborn problems." and every level's line fits one line.
+
+One thing the repairs turned up: the card was placed by watching what resizes, and at the 820x560 minimum the chip moves 6px when a line appears under the composer without anything around it changing size, leaving the card behind. The Electron spec's placement check was failing about half its runs on that. The card now follows its chip every frame it is open.
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` | Clean. |
+| `npm run lint` | Clean. |
+| `npm test -- --maxWorkers=2` | 4201 passed, 34 skipped, 0 failed (325 files, 17 skipped). |
+| `npm run notices:verify` | 174 components verified; no dependency changes. |
+| `npm run build && npx playwright test tests/e2e/effort-picker.spec.ts --workers=1` | 3 passed. The placement check passed every run after the card was made to follow its chip, where it had been failing about every other run. |
+| `npm run design:verify` | Red on `settings-providers.png`, and red the same way on `main` at the same commit: the baseline was last taken on September 18 and the Devin tile reached the page on September 20, so the Providers section no longer matches. Nothing of this change is in it. The captures these repairs could touch were not reached, since the run stops at the first difference; the repairs change motion, not the resting look, and the Extra high line lives in a card no baseline holds open. Baselines were not regenerated: the branch that added the tile owns that capture. |
+
+## Evidence for the repairs
+
+Captures the spec writes to `artifacts/effort-slider/`, in Rainbow:
+
+- `rainbow-arrival.png`: the card mid-arrival, the letters of Max wearing the spectrum, the tide rising. The same frame before the repair showed a fragment of the M and nothing else.
+- `rainbow-appearance-sample.png`: Settings → Appearance with Rainbow chosen, the Live appearance sample mid-arrival after Play again: the sample's own Max wearing the spectrum.
+
+## Checked in the running app through the spec
+
+- The word keeps its paint through the arrival: the share of the word's box that is ink is the same while the arrival runs as it is at rest (0.250 either way, measured from the window's own pixels). With the letters moving it fell to 0.167, which is the fragment in the capture. Nothing inside the word is transformed or positioned while the arrival plays.
+- The Appearance sample's word is measured the same way, since that is the surface the fault was reported on.
+- The card is the same height and sits at the same place at every level from Low to Max, and its bottom edge stays 8px above the chip.
+- Play again pressed mid-arrival: the tide in the card and in the composer is back under 300ms of its run after being more than 600ms into it.
+- `tests/unit/renderer/effortArrival.test.ts` holds the stylesheets to the rule: the letters' keyframes carry colour and nothing else, the word's carry the lift, and no rule moves a letter on either surface.
+- `tests/unit/renderer/themeLibrary.test.tsx`: the sample's scene is a fresh element on every play, mid-arrival included.
+- `tests/unit/renderer/threadOptions.test.tsx`: the Extra high line reads as the card's description at that level.
