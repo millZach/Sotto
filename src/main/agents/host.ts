@@ -84,6 +84,8 @@ export interface AgentHost {
   configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
+  /** Remove the thread's own worktree folder and keep its branch (ADR-0019). */
+  reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean }): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string

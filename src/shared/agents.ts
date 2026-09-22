@@ -163,6 +163,9 @@ export const agentWorktreeSchema = z.object({
   /** The branch this worktree was on when Sotto last sent to the thread. Absent before the first send,
    * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
   sentBranch: z.string().optional(),
+  /** When Sotto reclaimed this worktree's folder. The branch and the thread stay; the next send puts
+   * the folder back on that branch (ADR-0019). Absent while the folder is there. */
+  reclaimedAt: z.string().optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -237,6 +240,8 @@ export const agentProviderStatusSchema = z.object({
 export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
 /** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
 export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
+/** What main answers when reclaiming a worktree would discard uncommitted work; the pane opens its confirmation on this exact sentence. */
+export const RECLAIM_WORKTREE_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. Removing it loses them, so confirm it first.'
 
 export const agentHostSnapshotSchema = z.object({
   providers: z.array(agentProviderStatusSchema).optional(),
@@ -560,6 +565,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
   z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
+  /** Remove the thread's own worktree folder and keep its branch (ADR-0019). `withUncommittedChanges`
+   * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),

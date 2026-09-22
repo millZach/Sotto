@@ -515,6 +515,60 @@ describe('durable project/thread organization', () => {
     expect(worktree()).toMatchObject({ status: 'ready', error: undefined })
   })
 
+  it('reclaims a thread’s own worktree on request, keeps the record, and lets only a send put the folder back', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    // Its own folder, so no other thread of the project shares it.
+    const checkout = join(project.path, 'own-worktree'); await mkdir(checkout)
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: checkout, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let present = true
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'checkoutIdentity').mockImplementation(async path => path.toLowerCase())
+    const restore = vi.spyOn(ThreadWorktrees.prototype, 'restore').mockImplementation(async metadata => { present = true; return { ...metadata, status: 'ready', error: undefined, reclaimedAt: undefined } })
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
+      if (!present) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
+      return { ...metadata, status: 'ready', branch: 'sotto/thread-fixture', dirty: false, reclaimedAt: undefined }
+    })
+    const reclaim = vi.spyOn(ThreadWorktrees.prototype, 'reclaim').mockImplementation(async (metadata, options) => {
+      if (options?.automatic) throw new Error('This folder holds ignored files besides installed dependencies, so a rule leaves it alone.')
+      present = false; return { ...metadata, status: 'ready', dirty: undefined, reclaimedAt: '2026-09-22T00:00:00.000Z' }
+    })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    // A running thread keeps its folder; so does one something else still works in.
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('still working')
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    f.host.setWorktreeInUse(() => true)
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('terminal is open')
+    f.host.setWorktreeInUse(() => false)
+    // A rule's refusal is the folder's own, and the record is untouched by it.
+    await expect(f.host.reclaimThreadWorktree('local', { automatic: true })).rejects.toThrow('rule leaves it alone')
+    expect(worktree()?.reclaimedAt).toBeUndefined()
+    const published: AgentHostSnapshot[] = []
+    f.host.subscribe(snapshot => published.push(snapshot))
+    await f.host.reclaimThreadWorktree('local')
+    expect(reclaim).toHaveBeenLastCalledWith(expect.objectContaining({ path: checkout }), {})
+    expect(worktree()).toMatchObject({ status: 'ready', branch: 'sotto/thread-fixture', reclaimedAt: '2026-09-22T00:00:00.000Z' })
+    expect(published.at(-1)?.threads.find(thread => thread.id === 'local')?.worktree?.reclaimedAt).toBe('2026-09-22T00:00:00.000Z')
+    // Asking twice changes nothing; a refresh reads but does not put the folder back.
+    await f.host.reclaimThreadWorktree('local')
+    expect(reclaim).toHaveBeenCalledTimes(2)
+    restore.mockClear()
+    await f.host.updateThreadWorktree('local', false)
+    expect(restore).not.toHaveBeenCalled()
+    expect(worktree()).toMatchObject({ status: 'ready', reclaimedAt: '2026-09-22T00:00:00.000Z' })
+    // The next send puts it back on its branch and the record says so.
+    await expect(f.host.threadWorkingDirectory('local')).resolves.toBe(checkout)
+    expect(restore).toHaveBeenCalled()
+    expect(worktree()).toMatchObject({ status: 'ready', branch: 'sotto/thread-fixture', reclaimedAt: undefined })
+    await expect(f.host.reclaimThreadWorktree('other')).rejects.toThrow('not known to Sotto')
+  })
+
   it('marks the working copy error when its preparation fails, without turning creation into a rejection', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
