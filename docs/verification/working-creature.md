@@ -7,25 +7,33 @@ the glossary term is **Background work**.
 
 ## What the provider sends
 
-The brief asked for one cheap live capture of the frames with the installed CLI. It was not made: this session's
-permission classifier refused to launch a headless `claude -p` that spawns an agent, with or without
-`--dangerously-skip-permissions`, and that refusal was left standing. The shapes below come from the two primary
-sources on this machine instead, and no prompt text was written anywhere.
+The first pass read the shapes off the binary and the SDK because this session's permission classifier refused a
+headless `claude -p` that spawns an agent. After review they were captured live, three times, with Claude Code
+2.1.280 in empty temporary folders outside the repo, `--model haiku --output-format stream-json --verbose`, and
+prompts that asked only for the single words *done* and *ok*. The captures were read and deleted; only the field
+names and values below were kept.
 
-- **The CLI's own emitter.** Claude Code 2.1.280 (`~/.local/bin/claude`) builds the frame as
-  `{ type: "system", subtype: "task_started", task_id, owned_by_subagent, tool_use_id, description, subagent_type,
-  is_backgrounded, spawn_depth, task_type: e.type, workflow_name, prompt, skip_transcript, ambient? }`. The
-  workflow task's `type` is `local_workflow`; `workflow` appears only as the friendly label of the SDK's task
-  summaries. `owned_by_subagent` is set only for a `local_bash` started by an agent.
-- **The Agent SDK's declarations.** `@anthropic-ai/claude-agent-sdk` 0.3.270 `sdk.d.ts`: `SDKTaskStartedMessage`
-  (`is_backgrounded` is false for a subagent the spawning tool call blocks on and is set for `local_agent` and
-  `local_bash`; `spawn_depth` is 1 for a top-level spawn; `workflow_name` only for `local_workflow`),
-  `SDKTaskUpdatedMessage` (`patch.status`, `patch.end_time`, `patch.is_backgrounded` when a foreground task is
-  moved to the background), and `SDKTaskNotificationMessage` (`status: completed | failed | stopped`).
+- **A background subagent** (Agent tool, `run_in_background: true`): the root assistant frame carries the Agent
+  `tool_use` with `parent_tool_use_id: null`, then `{ type: "system", subtype: "task_started", task_id,
+  tool_use_id, description, subagent_type: "general-purpose", is_backgrounded: true, spawn_depth: 1, task_type:
+  "local_agent" }` whose `tool_use_id` is that call. It ends with `task_updated` `patch: { status: "completed",
+  end_time }` and then `task_notification` `status: "completed"` with the same `tool_use_id`. No
+  `owned_by_subagent` field is sent.
+- **A foreground subagent** (Agent tool, `run_in_background: false`): the same `task_started`, but with
+  `is_backgrounded: false`, and the same two bookends. This is the frame the foreground rule keeps out of
+  background work.
+- **A workflow** (Workflow tool, inline script with one agent step): `task_started` with `task_type:
+  "local_workflow"`, `workflow_name`, `description` and the Workflow call's `tool_use_id`, and neither
+  `is_backgrounded` nor `spawn_depth`. `task_progress` frames follow with a `description` of the form
+  *phase: step*, which the adapter reads as the new label, then the same `task_updated` end patch and
+  `task_notification`. Headless, the Workflow tool is refused until it is allowed (`--allowedTools Workflow`).
 
-Whether the Workflow tool runs headlessly was not checked. The adapter accepts both `local_workflow` and
-`workflow`, and the unit tests cover both. The fake CLI now emits a `local_agent` start shaped like the emitter
-above, after its `result`.
+In all three the `task_started` arrived inside the turn, before its `result`, and a `background_tasks_changed`
+frame with the whole live set came just before the start and just before the end. The fake CLI's background
+subagent now follows the first shape, including that order. Not seen live: a `task_updated` patch with
+`is_backgrounded: true` (Ctrl+B or the SDK's own request), a teammate and a remote agent, which rest on the
+SDK's declarations (`@anthropic-ai/claude-agent-sdk` 0.3.270 `sdk.d.ts`) and the emitter in the binary. The
+adapter still accepts `workflow` as well as `local_workflow`, since the SDK's task summaries use that label.
 
 ## Behaviour
 
