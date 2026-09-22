@@ -16,36 +16,54 @@ export type WidgetProcessingStage =
   | 'transcribing'
   | 'delivering-output'
 
-export type WidgetErrorCode =
-  | 'MIC_PERMISSION_DENIED'
-  | 'MIC_DEVICE_NOT_FOUND'
-  | 'MIC_START_FAILED'
-  | 'MIC_NOT_SET_UP'
-  | 'RECORDING_FAILED'
-  | 'NO_SPEECH'
-  | 'TRANSCRIPTION_UNCONFIGURED'
-  | 'TRANSCRIPTION_UNAUTHORIZED'
-  | 'TRANSCRIPTION_OFFLINE'
-  | 'TRANSCRIPTION_FAILED'
-  | 'OUTPUT_UNAVAILABLE'
-  | 'OUTPUT_FAILED'
-  | 'HISTORY_FAILED'
-  | 'SETTINGS_UNAVAILABLE'
+/**
+ * Every error the widget can show. The widget snapshot schema is built from
+ * this list, so a code the controller can raise is always one main accepts.
+ */
+export const WIDGET_ERROR_CODES = [
+  'MIC_PERMISSION_DENIED',
+  'MIC_DEVICE_NOT_FOUND',
+  'MIC_START_FAILED',
+  'MIC_NOT_SET_UP',
+  'RECORDING_FAILED',
+  'NO_SPEECH',
+  'TRANSCRIPTION_UNCONFIGURED',
+  'TRANSCRIPTION_UNAUTHORIZED',
+  'TRANSCRIPTION_OFFLINE',
+  'TRANSCRIPTION_BILLING',
+  'TRANSCRIPTION_RATE_LIMITED',
+  'TRANSCRIPTION_SERVICE_ERROR',
+  'TRANSCRIPTION_FAILED',
+  'OUTPUT_UNAVAILABLE',
+  'OUTPUT_FAILED',
+  'HISTORY_FAILED',
+  'SETTINGS_UNAVAILABLE',
+] as const
+
+export type WidgetErrorCode = (typeof WIDGET_ERROR_CODES)[number]
 
 export type TranscriptionErrorCode = Extract<WidgetErrorCode, `TRANSCRIPTION_${string}`>
+
+export function isTranscriptionErrorCode(code: string): code is TranscriptionErrorCode {
+  return Object.hasOwn(TRANSCRIPTION_ERROR_DETAIL, code)
+}
 
 /**
  * What went wrong reaching OpenRouter, in the one wording every surface uses.
  * The dictate room, the widget and the controller's error state all say the
  * same sentence, so a failure reads the same wherever the user happens to see
- * it, and the recovery it names is only ever changed in one place.
+ * it, and the recovery it names is only ever changed in one place. Each one
+ * says the recording is gone, because dictation audio is never kept.
  */
 export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_UNCONFIGURED: 'Add your OpenRouter API key in Settings to transcribe.',
-    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. Check it in Settings.',
-    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Check your connection and try again.',
-    TRANSCRIPTION_FAILED: 'Transcription failed. Try again.',
+    TRANSCRIPTION_UNCONFIGURED: 'Add your OpenRouter API key in Settings to transcribe. The recording was not kept.',
+    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.',
+    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.',
+    TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.',
+    TRANSCRIPTION_RATE_LIMITED: 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.',
+    TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.',
+    TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. The recording was not kept. Dictate again.',
   })
 
 /**

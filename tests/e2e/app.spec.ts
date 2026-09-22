@@ -512,7 +512,7 @@ test('transcription failure is finite and leaves clipboard and history untouched
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('alert')).toContainText(/transcription failed/i)
+    await expect(launched.page.getByRole('alert')).toContainText('Sotto did not get usable text back. The recording was not kept.')
     expect(await snapshot(launched.page)).toMatchObject({
       clipboardText: PRESERVED_CLIPBOARD_TEXT,
       pasteAttempts: 0,

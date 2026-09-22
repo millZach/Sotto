@@ -775,30 +775,38 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     buildPasteInvocation: pasteCommands.oneShot,
   })
 
+  // Local, text-free diagnostics: one JSON line per event, rotated past 256 KB,
+  // never sent anywhere. They carry counts and reasons, never words, audio or keys.
+  const diagnosticsAppender = (fileName: string) => {
+    const path = join(app.getPath('userData'), fileName)
+    return (diagnostic: object): void => {
+      void (async () => {
+        const info = await stat(path).catch(() => null)
+        if (info !== null && info.size > 256 * 1024) {
+          await rename(path, `${path}.1`).catch(() => undefined)
+        }
+        await appendFile(path, `${JSON.stringify(diagnostic)}\n`)
+      })().catch(() => undefined)
+    }
+  }
+
   // Formatting-pass HTTP calls stay deterministic and offline in E2E runs.
   // Word-count-only diagnostics (no transcript content) distinguish "raw text
   // was already short" from "polish truncated it" when users report loss.
-  const polishDiagnosticsPath = join(app.getPath('userData'), 'polish-diagnostics.jsonl')
-  const appendPolishDiagnostic = (line: string): void => {
-    void (async () => {
-      const info = await stat(polishDiagnosticsPath).catch(() => null)
-      if (info !== null && info.size > 256 * 1024) {
-        await rename(polishDiagnosticsPath, `${polishDiagnosticsPath}.1`).catch(() => undefined)
-      }
-      await appendFile(polishDiagnosticsPath, line)
-    })().catch(() => undefined)
-  }
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
-    onDiagnostic: (diagnostic) => appendPolishDiagnostic(`${JSON.stringify(diagnostic)}\n`),
+    onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
 
   // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
+  // Each failed request records its reason and HTTP status, so a lost dictation can be
+  // told apart afterwards: out of credit, rate limited, or a service error.
   const transcription = new OpenRouterTranscriptionService({
     getSettings: () => settings.forFormatting(),
+    onFailure: diagnosticsAppender('transcription-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),

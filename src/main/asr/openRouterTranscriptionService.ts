@@ -7,16 +7,41 @@ import {
   type TranscriptionRequest,
   type TranscriptionResult,
 } from '../../shared/contracts'
+import { TRANSCRIPTION_SAMPLE_RATE } from '../../shared/audio'
 import { parseDictionary } from '../../shared/dictionary'
 import type { AppSettings } from '../../shared/settings'
 
 const TRANSCRIPTION_URL = 'https://openrouter.ai/api/v1/audio/transcriptions'
 const KEY_URL = 'https://openrouter.ai/api/v1/key'
 
+/**
+ * One failed transcription request, as the transcription diagnostics record it:
+ * why it failed and how long it was, never what was said, the audio or the key.
+ */
+export interface TranscriptionFailureDiagnostic {
+  readonly at: number
+  readonly reason: Exclude<TranscriptionFailureReason, 'cancelled'>
+  /** The last HTTP status OpenRouter answered with, when it answered at all. */
+  readonly status?: number
+  readonly attempts: number
+  readonly audioMs: number
+  readonly elapsedMs: number
+}
+
 export interface OpenRouterTranscriptionServiceDependencies {
   readonly getSettings: () => Promise<AppSettings>
   readonly fetchFn?: typeof fetch
+  /** Told about every failed request except one the user cancelled. */
+  readonly onFailure?: (diagnostic: TranscriptionFailureDiagnostic) => void
+  readonly now?: () => number
 }
+
+interface RequestTrace {
+  attempts: number
+  status?: number
+}
+
+const WAV_HEADER_BYTES = 44
 
 function statusReason(status: number): TranscriptionFailureReason {
   if (status === 401 || status === 403) return 'unauthorized'
@@ -43,6 +68,29 @@ export class OpenRouterTranscriptionService {
   }
 
   async transcribe(request: TranscriptionRequest): Promise<TranscriptionResult> {
+    const now = this.dependencies.now ?? Date.now
+    const startedAt = now()
+    const trace: RequestTrace = { attempts: 0 }
+    const result = await this.request(request, trace)
+    if (!result.ok && result.reason !== 'cancelled') {
+      const audioBytes = Math.max(0, request.wav.byteLength - WAV_HEADER_BYTES)
+      try {
+        this.dependencies.onFailure?.({
+          at: startedAt,
+          reason: result.reason,
+          ...(trace.status === undefined ? {} : { status: trace.status }),
+          attempts: trace.attempts,
+          audioMs: Math.round((audioBytes / 2 / TRANSCRIPTION_SAMPLE_RATE) * 1_000),
+          elapsedMs: Math.max(0, now() - startedAt),
+        })
+      } catch {
+        // A diagnostic that cannot be written never changes what the user is told.
+      }
+    }
+    return result
+  }
+
+  private async request(request: TranscriptionRequest, trace: RequestTrace): Promise<TranscriptionResult> {
     // Register before reading settings so even overlapping credential reads obey newest-wins.
     this.cancel(request.requestId)
     const controller = new AbortController()
@@ -71,6 +119,7 @@ export class OpenRouterTranscriptionService {
         if (signal.aborted) return { ok: false, reason: 'timeout' }
         let reason: TranscriptionFailureReason
         let retryable = false
+        trace.attempts += 1
         try {
           const response = await this.fetchFn(TRANSCRIPTION_URL, {
             method: 'POST',
@@ -80,6 +129,7 @@ export class OpenRouterTranscriptionService {
           })
           if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
           if (signal.aborted) return { ok: false, reason: 'timeout' }
+          trace.status = response.status
           if (!response.ok) {
             reason = statusReason(response.status)
             retryable = response.status === 429 || response.status >= 500

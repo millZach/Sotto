@@ -1057,9 +1057,9 @@ describe('hosted transcription failures', () => {
     ['unauthorized', 'TRANSCRIPTION_UNAUTHORIZED'],
     ['network', 'TRANSCRIPTION_OFFLINE'],
     ['timeout', 'TRANSCRIPTION_OFFLINE'],
-    ['billing', 'TRANSCRIPTION_FAILED'],
-    ['rate-limited', 'TRANSCRIPTION_FAILED'],
-    ['http', 'TRANSCRIPTION_FAILED'],
+    ['billing', 'TRANSCRIPTION_BILLING'],
+    ['rate-limited', 'TRANSCRIPTION_RATE_LIMITED'],
+    ['http', 'TRANSCRIPTION_SERVICE_ERROR'],
     ['malformed', 'TRANSCRIPTION_FAILED'],
   ] as const)('surfaces %s as %s', async (reason, code) => {
     const harness = createHarness({ transcribe: async () => { throw new TranscriptionError(reason) } })

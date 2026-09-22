@@ -205,6 +205,84 @@ describe('OpenRouter transcription', () => {
   })
 })
 
+describe('transcription diagnostics', () => {
+  // One second of 16 kHz PCM16 audio behind a 44-byte header.
+  const oneSecond = { ...request, wav: new ArrayBuffer(44 + 32_000) }
+
+  function recorded(fetchFn: typeof fetch) {
+    const credential = randomUUID()
+    const onFailure = vi.fn()
+    let clock = 5_000
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: credential, llmDictionary: 'Sotto' }),
+      fetchFn,
+      onFailure,
+      now: () => (clock += 250),
+    })
+    return { service, onFailure, credential }
+  }
+
+  it.each([[402, 'billing'], [429, 'rate-limited'], [400, 'http']] as const)(
+    'records HTTP %i as %s with its status and nothing that was said', async (status, reason) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"error":"private body"}', { status }))
+      const { service, onFailure, credential } = recorded(fetchFn)
+      await service.transcribe({ ...oneSecond, timeoutMs: 1_499 })
+      expect(onFailure).toHaveBeenCalledOnce()
+      expect(onFailure).toHaveBeenCalledWith({ at: 5_250, reason, status, attempts: 1, audioMs: 1_000, elapsedMs: 250 })
+      const written = JSON.stringify(onFailure.mock.calls)
+      expect(written).not.toContain('private body')
+      expect(written).not.toContain('Sotto')
+      expect(written.includes(credential)).toBe(false)
+    },
+  )
+
+  it('records the retry as a second attempt', async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 }))
+    const { service, onFailure } = recorded(fetchFn)
+    expect(await service.transcribe(oneSecond)).toEqual({ ok: false, reason: 'http' })
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'http', status: 503, attempts: 2 }))
+  })
+
+  it('records a network failure without a status and a missing key without an attempt', async () => {
+    const offline = recorded(vi.fn<typeof fetch>().mockRejectedValue(new TypeError('unreachable')))
+    await offline.service.transcribe({ ...oneSecond, timeoutMs: 1_499 })
+    expect(offline.onFailure.mock.calls[0]?.[0]).toEqual({ at: 5_250, reason: 'network', attempts: 1, audioMs: 1_000, elapsedMs: 250 })
+
+    const fetchFn = vi.fn<typeof fetch>()
+    const onFailure = vi.fn()
+    const unkeyed = new OpenRouterTranscriptionService({ getSettings: async () => DEFAULT_SETTINGS, fetchFn, onFailure })
+    await unkeyed.transcribe(oneSecond)
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'unconfigured', attempts: 0 }))
+    expect(onFailure.mock.calls[0]?.[0]).not.toHaveProperty('status')
+  })
+
+  it('records nothing for a success or a request the user cancelled', async () => {
+    const ok = recorded(vi.fn<typeof fetch>().mockResolvedValue(Response.json({ text: 'fine' })))
+    await ok.service.transcribe(oneSecond)
+    expect(ok.onFailure).not.toHaveBeenCalled()
+
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_url, options) => new Promise<Response>((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+    }))
+    const cancelled = recorded(fetchFn)
+    const result = cancelled.service.transcribe(oneSecond)
+    await nextTurn()
+    cancelled.service.cancel(oneSecond.requestId)
+    expect(await result).toEqual({ ok: false, reason: 'cancelled' })
+    expect(cancelled.onFailure).not.toHaveBeenCalled()
+  })
+
+  it('still answers when the diagnostic cannot be recorded', async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 402 }))
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
+      fetchFn,
+      onFailure: () => { throw new Error('disk full') },
+    })
+    expect(await service.transcribe(oneSecond)).toEqual({ ok: false, reason: 'billing' })
+  })
+})
+
 describe('OpenRouter key verification', () => {
   it.each([[200, null], [401, 'unauthorized'], [403, 'unauthorized'], [402, 'http'], [429, 'http'], [500, 'http']] as const)(
     'maps status %i without returning credentials', async (status, reason) => {
