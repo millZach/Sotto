@@ -44,6 +44,11 @@ watch says the provider is looking at something; background work next, because i
 that agents are running; the held action last, because it is a clock. All three are hidden on the same
 `ornamentAllowed` condition in `ThreadPane`.
 
+**The count is of tasks.** *Working · N agents* and the small agents on the track count the provider's tasks, one
+each, which is the copy the issue's spec gave. A workflow that runs dozens of agents is one task, because Claude
+Code reports it as one and Sotto does not look inside it; the readout names the task, and the hover title lists
+every task by name.
+
 **Bounded and anonymous.** At most 64 tasks are kept, counted apart from watches so a wide workflow cannot crowd
 out a watch. Native task IDs stay in the adapter; the thread carries opaque IDs, sanitised labels and Sotto's own
 type names (`workflow`, `subagent`, `teammate`, `remote-agent`). The field is `backgroundWork`, beside
