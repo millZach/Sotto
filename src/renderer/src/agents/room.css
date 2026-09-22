@@ -16,6 +16,7 @@
 .agent-session__badge { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--tt-provider-codex); color: var(--tt-provider-ink); font-size: 12px; font-weight: 600; }
 .agent-session__badge[data-provider='claude'] { background: var(--tt-provider-claude); }
 .agent-session__badge[data-provider='grok'] { background: var(--tt-provider-grok); }
+.agent-session__badge[data-provider='devin'] { background: var(--tt-provider-devin); }
 .agent-session i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tt-text-muted); }
 .agent-session i[data-state='running'] { background: var(--tt-activity); box-shadow: 0 0 9px var(--tt-activity); }
 .agent-session i[data-state='attention'] { background: var(--tt-attention); }
