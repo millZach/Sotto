@@ -18,6 +18,10 @@ if (args.includes('auth')) { console.log(JSON.stringify({ loggedIn: true, authMe
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
 if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
+// Both permission flags or none of the surface: the real CLI treats --permission-prompts host as
+// permission to ask and --permission-prompt-tool stdio as the thing that makes this process the asker.
+// Dropping the second is silent there, so it is loud here.
+if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error('Coding threads must name this process as the permission prompt surface')
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
 record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
@@ -68,6 +72,10 @@ lines.on('line', line => {
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
           : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], session_state: 'idle' } } })
+        // A started session announces its tools, and AskUserQuestion is in that list only where someone
+        // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
+        if (!script.fail && !metadata) output({ type: 'system', subtype: 'init', session_id: session,
+          tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])] })
       }
       if (script.gate) {
         writeFileSync(join(root, 'initialize-waiting'), session)

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { codexFixture } from '../fixtures/codexFixture'
 import type { AdapterFixture } from './adapterContract'
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} does not replay an already dispatched native request after reconnect`, async () => {
@@ -56,5 +57,30 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} pins structu
     const expected = provider === 'claude' ? 2 : 1
     await expect.poll(decisions).toBe(expected)
     expect(await decisions()).toBe(expected)
+  } finally { await f.cleanup() }
+})
+
+it('codex says a request for the user went unread instead of letting the refusal pass as an answer', async () => {
+  const f = await codexFixture()
+  const threadId = randomUUID()
+  try {
+    await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId, projectId: 'p', modelId: f.modelId, title: 'T' })
+    // A renamed approval: Codex still wants a person, and Sotto's refusal would otherwise read as a denial.
+    await f.action(threadId, { type: 'permission', text: 'Delete the branch?', method: 'item/commandExecution/v2/requestApproval' })
+    await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('only you can answer')
+    expect((await f.host.snapshot()).threads[0]!.requests).toEqual([])
+  } finally { await f.cleanup() }
+})
+
+it('codex stays quiet about requests Sotto is never meant to answer', async () => {
+  const f = await codexFixture()
+  const threadId = randomUUID()
+  try {
+    await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.action(threadId, { type: 'permission', text: 'What time is it?', method: 'currentTime/read' })
+    await expect.poll(async () => (await f.driver.requests()).some(record => (record as { error?: { code?: number } }).error?.code === -32601)).toBe(true)
+    expect((await f.host.snapshot()).error ?? '').not.toContain('only you can answer')
   } finally { await f.cleanup() }
 })
