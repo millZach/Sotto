@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SSH_SUPERVISOR_SOURCE } from '../../src/main/hosts/sshSupervisor'
-const directories: string[] = [], children: ChildProcessWithoutNullStreams[] = []
+const directories: string[] = [], children: ChildProcess[] = []
 afterEach(async () => { for (const child of children.splice(0)) if (child.exitCode === null) child.kill(); for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true }) })
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-ssh-supervisor-')); directories.push(directory)
@@ -97,6 +97,29 @@ it('discovers an existing host and leaves it alive after the SSH supervisor clos
   await vi.waitFor(() => expect(remote.child.exitCode).toBe(0))
   expect(existing.exitCode).toBeNull()
   expect(() => process.kill(existing.pid!, 0)).not.toThrow()
+})
+it('waits for a host another client is starting and reports host-busy if it never answers', async () => {
+  const configuration = { ...await fixture(), readyTimeoutMs: 600 }
+  await mkdir(configuration.dataDirectory, { recursive: true })
+  const holder = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore', windowsHide: true })
+  children.push(holder)
+  await new Promise(resolve => holder.once('spawn', resolve))
+  await writeFile(join(configuration.dataDirectory, 'host-listener.lock'), JSON.stringify({ pid: holder.pid, nonce: 'other-client' }))
+  const remote = supervise(configuration)
+  await vi.waitFor(() => expect(remote.messages).toContainEqual({ type: 'error', reason: 'host-busy' }), { timeout: 5000 })
+  expect(remote.messages).toContainEqual({ type: 'starting' })
+  await vi.waitFor(() => expect(remote.child.exitCode).toBe(0))
+  await expect(readFile(join(configuration.dataDirectory, 'host-launcher.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('starts a host over a lock whose holder is gone', async () => {
+  const configuration = await fixture()
+  await mkdir(configuration.dataDirectory, { recursive: true })
+  const gone = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => gone.once('exit', resolve))
+  await writeFile(join(configuration.dataDirectory, 'host-listener.lock'), JSON.stringify({ pid: gone.pid, nonce: 'stale' }))
+  const remote = supervise(configuration)
+  await vi.waitFor(() => expect(remote.messages.find(message => message.type === 'ready')).toMatchObject({ owned: true }))
+  try { process.kill(remote.messages.find(message => message.type === 'ready')!.pid as number, 'SIGTERM') } catch { /* already exited */ }
 })
 it('reports an absent installed archive without leaking path or starting a host', async () => {
   const configuration = await fixture()

@@ -13,6 +13,7 @@ const data = resolvePath(cfg.dataDirectory);
 const entry = path.join(resolvePath(cfg.installPath), 'host', 'index.js');
 const descriptorPath = path.join(data, 'host-listener.json');
 const launcherPath = path.join(data, 'host-launcher.json');
+const lockPath = path.join(data, 'host-listener.lock');
 let child, pairing, stopping = false, ready = null, input = '';
 const emit = event => process.stdout.write(cfg.marker + JSON.stringify(event) + '\n');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -53,6 +54,10 @@ const stopChild = async process => {
   if (process.exitCode === null && process.signalCode === null) process.kill('SIGKILL');
 };
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const lockHolder = async () => {
+  try { const value = JSON.parse(await fs.readFile(lockPath, 'utf8')); return Number.isInteger(value.pid) && alive(value.pid) ? value.pid : null; }
+  catch { return null; }
+};
 const stop = async () => {
   if (stopping) return; stopping = true;
   await stopChild(pairing);
@@ -121,6 +126,19 @@ process.stdin.on('data', chunk => {
     const existing = await discover();
     if (stopping) return;
     if (existing) { ready = existing; emit({ type: 'ready', ...existing }); return; }
+    // A live process holds the folder but is not listening yet: another client may have started it a moment ago. Wait for it rather than racing it.
+    const holder = await lockHolder();
+    if (holder !== null) {
+      emit({ type: 'starting' });
+      const deadline = Date.now() + cfg.readyTimeoutMs;
+      while (!stopping && Date.now() < deadline && alive(holder)) {
+        const current = await discover();
+        if (current) { ready = current; emit({ type: 'ready', ...current }); return; }
+        await pause(100);
+      }
+      if (stopping) return;
+      if (alive(holder)) throw new Error('host-busy');
+    }
     await removeLauncher();
     try { await fs.access(entry); } catch { throw new Error('archive-missing'); }
     emit({ type: 'starting' });
@@ -141,7 +159,7 @@ process.stdin.on('data', chunk => {
     if (!stopping) throw new Error('host-timeout');
   } catch (error) {
     if (!ready) { await stopChild(child); await removeLauncher(); }
-    const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-start-failed', 'host-timeout'];
+    const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout'];
     emit({ type: 'error', reason: allowed.includes(error.message) ? error.message : 'host-start-failed' });
     await stop();
   }

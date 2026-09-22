@@ -47,6 +47,7 @@ const ERRORS: Readonly<Record<string, string>> = {
   'archive-missing': 'The host installation was not found. Check its folder on the SSH host and reconnect.',
   'descriptor-invalid': 'The host connection record could not be read. Check the host data folder before reconnecting.',
   'port-taken': 'The host port is being used by another service. Stop that service or choose another host port.',
+  'host-busy': 'A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect.',
   'host-start-failed': 'The host could not start. Check its installation, data folder, and key file on the SSH host.',
   'host-timeout': 'The host was not ready in time. Check that it starts on the SSH host, then reconnect.',
   'ssh-refused': 'SSH refused the connection. Check the host name, SSH access, and identity file, then reconnect.',

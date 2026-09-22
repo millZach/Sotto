@@ -24,6 +24,44 @@ export interface HeadlessHostOptions {
   log?: (event: string) => void
 }
 
+/** Refused startup because another host holds, or may hold, the data folder. The message is safe to print. */
+export class HostLockError extends Error {}
+
+/** Whether the process a lock names is still running. A process another account owns counts as running. */
+function lockHolderAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+/**
+ * Takes the data folder's lock. A lock left behind by a host that no longer runs (a crash, a reboot) is
+ * reclaimed, so a reconnect after either needs no hand cleanup; a lock whose holder still runs, or one
+ * that cannot be read, is refused without touching it.
+ */
+async function acquireLock(path: string, lease: string, log?: (event: string) => void): Promise<void> {
+  for (let reclaimed = false; ; reclaimed = true) {
+    try {
+      const lock = await open(path, 'wx', 0o600)
+      try { await lock.writeFile(lease, 'utf8'); await lock.sync() } finally { await lock.close() }
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || reclaimed) throw new HostLockError('This host data folder could not be locked. Check that its host-listener.lock can be written, then start again.', { cause: error })
+    }
+    let holder: number
+    try {
+      const value = JSON.parse(await readFile(path, 'utf8')) as { pid?: unknown }
+      if (!Number.isInteger(value.pid) || (value.pid as number) <= 0) throw new Error('invalid')
+      holder = value.pid as number
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw new HostLockError('The host-listener.lock in this data folder could not be read. If no host uses the folder, remove that file and start again.', { cause: error })
+    }
+    if (lockHolderAlive(holder)) throw new HostLockError(`Another host (process ${holder}) is still running with this data folder. Stop it first, or use a different data folder.`)
+    try { await unlink(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new HostLockError('A stale host-listener.lock in this data folder could not be removed. Remove it and start again.', { cause: error }) }
+    log?.('host-lock-reclaimed')
+  }
+}
+
 /** Starts the same coordinator and durable workspace as Electron, with no desktop capabilities. */
 export async function startHeadlessHost(options: HeadlessHostOptions) {
   // A second listener must never open the same stores or replace the live descriptor.
@@ -31,12 +69,7 @@ export async function startHeadlessHost(options: HeadlessHostOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const path = join(directory, 'host-listener.lock')
   const lease = JSON.stringify({ pid: process.pid, nonce: randomUUID() })
-  if (options.port !== undefined) {
-    let lock: Awaited<ReturnType<typeof open>>
-    try { lock = await open(path, 'wx', 0o600) }
-    catch (error) { throw new Error('This host data folder is already locked. If its host has stopped, remove host-listener.lock before starting it again.', { cause: error }) }
-    try { await lock.writeFile(lease, 'utf8'); await lock.sync() } finally { await lock.close() }
-  }
+  if (options.port !== undefined) await acquireLock(path, lease, options.log)
   const release = async (): Promise<void> => {
     if (options.port === undefined) return
     try { if (await readFile(path, 'utf8') === lease) await unlink(path) }
@@ -175,8 +208,8 @@ export async function runHeadlessCommandLine(): Promise<void> {
     process.removeListener('SIGTERM', stop)
     process.removeListener('SIGINT', stop)
     console.error('[Sotto] host-start-failed')
-    if (error instanceof Error && error.message.startsWith('This host data folder is already locked.')) console.error('A host already owns this data folder. If it has stopped, remove host-listener.lock from that folder and try again.')
-    console.error('Check the data folder and its original key file, then retry: node out/host/index.js --data <folder> [--key-file <file>].')
+    if (error instanceof HostLockError) console.error(error.message)
+    else console.error('Check the data folder and its original key file, then retry: node out/host/index.js --data <folder> [--key-file <file>].')
     process.exitCode = 1
   }
 }
