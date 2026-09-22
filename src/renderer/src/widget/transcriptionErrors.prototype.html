@@ -1,0 +1,96 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Question: how should the widget and Dictate room say WHY a transcription failed?
+     Three variants, switchable with ?variant=A|B|C or the arrow keys. The capsule copies widget.css:
+     212x40, 10/12 padding, 22px mark, 14px state icon, 7px gaps, 11.5px nowrap + ellipsis. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE: transcription error copy</title>
+<style>
+  :root { color-scheme: dark; --text:#e8e6e3; --muted:#9a968f; --error:#ff8a80; --edge:#3a3835; --top:#2a2927; --bottom:#211f1e; --room:#181716; }
+  body.light { color-scheme: light; --text:#23211f; --muted:#6b6660; --error:#b3261e; --edge:#d9d4cc; --top:#fbfaf8; --bottom:#f1eee9; --room:#f7f5f2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Figtree, "Segoe UI", system-ui, sans-serif; background: var(--room); color: var(--text); padding: 28px 32px 90px; }
+  h1 { font-size: 15px; margin: 0 0 4px; } p.lead { color: var(--muted); font-size: 13px; margin: 0 0 22px; max-width: 760px; }
+  .grid { display: grid; grid-template-columns: 170px 250px 1fr; gap: 18px 24px; align-items: center; }
+  .grid > .h { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .cause { font-size: 13px; } .cause small { display:block; color: var(--muted); font-size: 11.5px; }
+  .capsule { position: relative; display:flex; width:212px; height:40px; align-items:center; gap:7px; padding:0 12px 0 10px; overflow:hidden;
+    border:1px solid var(--edge); border-radius:20px; background: linear-gradient(180deg,var(--top),var(--bottom)); box-shadow: 0 6px 18px rgba(0,0,0,.28); }
+  .capsule.tall { height: 52px; border-radius: 18px; }
+  .mark { width:22px; height:22px; flex:none; border-radius:6px; background: conic-gradient(from 200deg, #7f7aff, #53c2c9, #7f7aff); }
+  .icon { width:14px; height:14px; flex:none; color: var(--error); }
+  .copy { min-width:0; flex:1; overflow:hidden; color: var(--error); font-size:11.5px; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
+  .copy .sub { display:block; color: var(--muted); font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tip { font-size: 12px; color: var(--muted); } .tip b { color: var(--text); font-weight: 600; }
+  .room { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--edge); }
+  .room h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 500; }
+  .room .sentence { font-size: 22px; color: var(--error); margin: 0 0 6px; } .room .detail { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; max-width: 560px; }
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display:flex; gap:10px; align-items:center; background:#000; color:#fff;
+    padding: 8px 12px; border-radius: 999px; font: 600 12.5px system-ui; box-shadow: 0 6px 24px rgba(0,0,0,.5); z-index: 9; }
+  .switcher button { background:#333; color:#fff; border:0; border-radius:999px; width:28px; height:28px; cursor:pointer; font-size:14px; }
+  .switcher label { font-weight: 400; margin-left: 8px; }
+</style>
+</head>
+<body>
+<h1 id="title"></h1>
+<p class="lead" id="lead"></p>
+<div class="grid" id="grid"></div>
+<div class="room" id="room"></div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button>
+  <label><input type="checkbox" id="light"> light</label></div>
+<script>
+const icon = '<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.6M8 10.8v.1"/></svg>'
+const lost = 'The recording was not kept'
+const causes = [
+  { key: 'today', cause: 'Any of the below, today', why: 'what every case says now',
+    A: ['Couldn’t transcribe', 'Transcription failed. Try again.'] },
+  { key: 'billing', cause: 'Out of credit', why: 'OpenRouter answered 402',
+    A: ['Out of credit', `OpenRouter has no credit left for this. ${lost}. Add credit at openrouter.ai, then dictate again.`],
+    B: ['Out of credit', 'Add credit at openrouter.ai'] },
+  { key: 'rate', cause: 'Rate limited', why: 'OpenRouter answered 429 twice',
+    A: ['Too many requests', `OpenRouter is limiting requests on this key. ${lost}. Wait a minute, then dictate again.`],
+    B: ['Too many requests', 'Wait a minute, then try again'] },
+  { key: 'service', cause: 'Service error', why: 'OpenRouter answered 5xx twice, or another error',
+    A: ['OpenRouter error', `OpenRouter’s transcription service returned an error. ${lost}. Dictate again in a moment.`],
+    B: ['OpenRouter error', 'Dictate again in a moment'] },
+  { key: 'other', cause: 'Anything else', why: 'unreadable answer, request dropped',
+    A: ['Couldn’t transcribe', `Sotto did not get usable text back. ${lost}. Dictate again.`],
+    B: ['Couldn’t transcribe', 'Dictate again'] },
+]
+const variants = {
+  A: { name: 'Cause in the title', lead: 'The capsule keeps its shape. The title names what went wrong; the full sentence is the hover tooltip and what a screen reader announces, and the Dictate room shows it as the detail line. Smallest change: copy only, no layout or design-baseline change.' },
+  B: { name: 'Title plus a visible next step', lead: 'On a transcription error only, the capsule grows to 52px and shows a second line with what to do next, so nobody has to hover. Changes the widget layout and its design baselines; the full sentence still goes to the tooltip, the announcement and the Dictate room.' },
+  C: { name: 'Same title, cause in the detail', lead: 'The capsule still says “Couldn’t transcribe” for every case; only the hover tooltip, the announcement and the Dictate room line name the cause. Keeps the widget identical; the cause is invisible unless you hover or open Sotto.' },
+}
+const keys = Object.keys(variants)
+let current = new URLSearchParams(location.search).get('variant') ?? 'A'
+function capsule(title, sub, tall) {
+  return `<div class="capsule${tall ? ' tall' : ''}"><span class="mark"></span>${icon}<span class="copy">${title}${sub ? `<span class="sub">${sub}</span>` : ''}</span></div>`
+}
+function render() {
+  const v = variants[current]
+  document.getElementById('title').textContent = `Variant ${current}: ${v.name}`
+  document.getElementById('lead').textContent = v.lead
+  document.getElementById('label').textContent = `${current}: ${v.name}`
+  let grid = '<div class="h">Cause</div><div class="h">Widget capsule</div><div class="h">Hover tooltip, screen reader, Dictate room detail</div>'
+  for (const c of causes) {
+    const [title, detail] = c.key === 'today' ? c.A : current === 'C' ? ['Couldn’t transcribe', c.A[1]] : c.A
+    const sub = current === 'B' && c.B ? c.B[1] : ''
+    grid += `<div class="cause">${c.cause}<small>${c.why}</small></div>${capsule(title, sub, Boolean(sub))}<div class="tip"><b>${title}.</b> ${detail}</div>`
+  }
+  document.getElementById('grid').innerHTML = grid
+  let room = '<h2>Dictate room (main window), after an error</h2>'
+  for (const c of causes.slice(1)) room += `<p class="sentence">Dictation needs attention.</p><p class="detail">${c.A[1]}</p>`
+  document.getElementById('room').innerHTML = room
+  history.replaceState(null, '', `?variant=${current}`)
+}
+function step(d) { current = keys[(keys.indexOf(current) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('light').onchange = (e) => document.body.classList.toggle('light', e.target.checked)
+addEventListener('keydown', (e) => { if (e.target.closest?.('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+render()
+</script>
+</body>
+</html>
