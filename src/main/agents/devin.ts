@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities } from '../../shared/agentActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent } from './host'
@@ -17,7 +17,7 @@ import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
 import { devinActivities } from './devinActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
-import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinGrant } from './devinPolicy'
+import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 
@@ -39,7 +39,7 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
-const optionSchema = z.object({ value: z.string().min(1), name: z.string().min(1) })
+const optionSchema = z.object({ value: z.string().min(1), name: z.string().min(1), description: z.string().max(2_000).optional() })
 const configSchema = z.object({
   id: z.string(), currentValue: z.string(),
   options: z.array(z.union([optionSchema, z.object({ group: z.string(), name: z.string(), options: z.array(optionSchema) })])).optional(),
@@ -47,8 +47,10 @@ const configSchema = z.object({
 const sessionSchema = z.object({ configOptions: z.array(configSchema) })
 function sessionModeConfig(value: unknown) {
   const mode = sessionSchema.parse(value).configOptions.find(option => option.id === 'mode')
-  if (!mode) throw new Error('Devin did not confirm its permission setting. Reconnect before sending.')
-  return { current: mode.currentValue }
+  if (!mode) throw new Error('Devin did not report its permission modes. Your threads are kept. Use a Devin CLI version Sotto has checked, then reconnect.')
+  const reported = new Map((mode.options ?? []).flatMap(option => 'value' in option ? [option] : option.options)
+    .map(option => [option.value, { name: option.name, description: option.description }] as const))
+  return { current: mode.currentValue, reported }
 }
 function modelConfig(value: unknown) {
   const model = sessionSchema.parse(value).configOptions.find(option => option.id === 'model')
@@ -65,36 +67,47 @@ interface Transcript {
 }
 /**
  * Devin names its own conversation modes, and Sotto's four do not fit them. These are the settings the
- * permission chip offers for a Devin thread: Devin's own modes, each with the grant Sotto writes into the
- * owned profile so the mode means what it says, plus `ask-first`, which is Devin coding with Sotto asking
- * about everything. That one is the default and the one a thread made before this keeps, because an
- * upgrade may not hand Devin a permission the user never granted (ADR-0004, ADR-0022).
+ * permission chip offers for a Devin thread: Devin's own modes, each with the allowance Sotto writes into
+ * the owned profile so the mode means what it says, plus `ask-first`, which is Devin coding with Sotto
+ * asking about everything. That one comes first because it is what a thread starts on, and what a thread
+ * made before this keeps: an upgrade may not let Devin act unasked where the user never chose it (ADR-0022).
+ * Only the modes Devin reports are offered; this table says what each one allows, which Devin does not.
  */
 const DEVIN_MODES = [
-  { id: 'ask-first', devinMode: 'accept-edits', grant: 'nothing', name: 'Ask first',
+  { id: 'ask-first', devinMode: 'accept-edits', allows: 'nothing', name: 'Ask first',
     description: 'Devin writes code and Sotto asks you first.', asks: 'Sotto asks before every edit, command and fetch.' },
-  { id: 'accept-edits', devinMode: 'accept-edits', grant: 'edits', name: 'Code',
+  { id: 'accept-edits', devinMode: 'accept-edits', allows: 'edits', name: 'Code',
     description: 'Write and edit code.', asks: 'Sotto asks before every command and fetch.' },
-  { id: 'smart', devinMode: 'smart', grant: 'edits', name: 'Smart',
+  { id: 'smart', devinMode: 'smart', allows: 'edits', name: 'Smart',
     description: 'Auto-approve actions the model judges safe.', asks: 'Sotto asks before every command and fetch.' },
-  { id: 'plan', devinMode: 'plan', grant: 'nothing', name: 'Plan',
+  { id: 'plan', devinMode: 'plan', allows: 'nothing', name: 'Plan',
     description: 'Plan changes before implementing.', asks: 'Sotto asks before every edit, command and fetch.' },
-  { id: 'ask', devinMode: 'ask', grant: 'nothing', name: 'Ask',
+  { id: 'ask', devinMode: 'ask', allows: 'nothing', name: 'Ask',
     description: 'Answer questions without code changes.', asks: 'Sotto asks before every edit, command and fetch.' },
-  { id: 'bypass', devinMode: 'bypass', grant: 'everything', name: 'Bypass permissions',
+  { id: 'bypass', devinMode: 'bypass', allows: 'everything', name: 'Bypass permissions',
     description: 'Auto-approve all tool calls.', asks: 'Sotto asks about nothing. Devin acts without asking you.' },
-] as const satisfies readonly { id: string; devinMode: string; grant: DevinGrant; name: string; description: string; asks: string }[]
-export const DEVIN_DEFAULT_MODE = 'ask-first'
+] as const satisfies readonly { id: string; devinMode: string; allows: DevinAllowance; name: string; description: string; asks: string }[]
 type DevinMode = (typeof DEVIN_MODES)[number]
+/**
+ * The settings offered for Devin: only the modes Devin reports, in Devin's own words where the setting is
+ * Devin's mode, and each with what Sotto still asks. Ask first is Sotto's, so it keeps Sotto's words, and it
+ * is offered only while the mode it runs Devin in is one Devin reports.
+ */
+function offeredModes(reported: ReadonlyMap<string, { readonly name: string; readonly description?: string | undefined }>): AgentProviderMode[] {
+  return DEVIN_MODES.filter(mode => reported.has(mode.devinMode)).map(mode => {
+    const own = mode.id === mode.devinMode ? reported.get(mode.devinMode) : undefined
+    return { id: mode.id, name: own?.name ?? mode.name, description: own?.description ?? mode.description, asks: mode.asks }
+  })
+}
+/** An unknown or missing mode is the asking one, never a more permissive guess. */
 const modeOf = (id: string | undefined): DevinMode => DEVIN_MODES.find(mode => mode.id === id) ?? DEVIN_MODES[0]
-/** What a grant means in Sotto's own four, so every surface that reads `runtimeMode` still reads the truth. */
-const RUNTIME_OF_GRANT: Record<DevinGrant, AgentRuntimeMode> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
+/** What an allowance means in Sotto's own four, so every surface that reads `runtimeMode` still reads the truth. */
+const RUNTIME_OF_ALLOWANCE: Record<DevinAllowance, AgentRuntimeMode> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
 
 interface Connection {
   rpc: DevinRpc
   nonce: string
-  profile: string
-  grant: DevinGrant
+  profile: DevinProfile
   fresh: boolean
   tools: Map<string, Record<string, unknown>>
   toolBytes: number
@@ -176,7 +189,7 @@ export class DevinAcpHost implements AgentHost {
     let thread = this.threads.get(id)
     if (!thread) {
       thread = { id, projectId: alias.projectId, title: alias.title, workingDirectory: alias.cwd,
-        modelId: alias.modelId, providerMode: modeOf(alias.providerMode).id, runtimeMode: RUNTIME_OF_GRANT[modeOf(alias.providerMode).grant],
+        modelId: alias.modelId, providerMode: modeOf(alias.providerMode).id, runtimeMode: RUNTIME_OF_ALLOWANCE[modeOf(alias.providerMode).allows],
         status: alias.devinSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] }
       this.threads.set(id, thread)
     }
@@ -192,16 +205,16 @@ export class DevinAcpHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
 
-  private async start(cwd: string, id?: string, observer = false, grant: DevinGrant = 'nothing'): Promise<Connection> {
+  private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
-    const profile = await prepareDevinPolicy(this.userDataDirectory, cwd, this.options.nativeConfigDirectory, grant)
-    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile], devinEnvironment(this.options.environment), cwd)
+    const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
+    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const connection: Connection = {
-      rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, grant, fresh: false, tools: new Map(), toolBytes: 0,
+      rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
       transcript: { messages: [], bytes: 0 }, replaying: observer, intentionalClose: false,
     }
-    const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile, 'acp'], cwd,
+    const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile.path, 'acp'], cwd,
       devinEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
       frame => id ? this.frame(id, connection, frame, observer) : this.unsupported(rpc, frame),
       () => {
@@ -226,7 +239,7 @@ export class DevinAcpHost implements AgentHost {
         }).parse(value)
         if (!result.authMethods.some(method => method.id === 'devin-browser')) throw new Error('Native Devin sign-in is required.')
       })
-      await rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile, grant))
+      await rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
       return connection
     } catch (error) { connection.intentionalClose = true; rpc.close(); await rpc.closed; throw error }
@@ -237,10 +250,10 @@ export class DevinAcpHost implements AgentHost {
     }
     try {
       current()
-      const profile = await prepareDevinPolicy(this.userDataDirectory, cwd, this.options.nativeConfigDirectory, connection.grant)
-      await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile], devinEnvironment(this.options.environment), cwd)
+      const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, cwd, this.options.nativeConfigDirectory)
+      await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
       current()
-      await connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile, connection.grant) })
+      await connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile) })
       current()
     } catch (error) {
       connection.rpc.close(); await connection.rpc.closed
@@ -293,7 +306,7 @@ export class DevinAcpHost implements AgentHost {
     if (compareClientVersions(version, DEVIN_CLI_VERSION) < 0) throw new Error('This Devin version is older than the one Sotto checked. Your threads are kept. Use Devin CLI ' + DEVIN_CLI_VERSION + ' or newer before connecting.')
     const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-    const catalog = await this.start(this.catalogDirectory)
+    const catalog = await this.start(this.catalogDirectory, 'nothing')
     try {
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
       let disposableSession: string | undefined
@@ -301,9 +314,9 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         disposableSession = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
         const model = modelConfig(value)
+        const providerModes = offeredModes(sessionModeConfig(value).reported)
         this.state.models = model.models.map(option => ({
-          id: option.value, name: option.name, provider: 'Devin', ready: true,
-          providerModes: DEVIN_MODES.map(mode => ({ id: mode.id, name: mode.name, description: mode.description, asks: mode.asks })),
+          id: option.value, name: option.name, provider: 'Devin', ready: true, providerModes,
           supportsImages: false, reasoningEfforts: [],
         }))
       })
@@ -355,7 +368,8 @@ export class DevinAcpHost implements AgentHost {
     const generation = this.generation
     const alias = this.aliases[id]!
     if (!alias?.devinSessionId) throw new Error('Devin did not confirm this thread’s creation. Your thread is kept; do not repeat the creation automatically.')
-    const connection = await this.start(await existingWorkingDirectory(alias.cwd), id, false, modeOf(alias.providerMode).grant)
+    const mode = modeOf(alias.providerMode)
+    const connection = await this.start(await existingWorkingDirectory(alias.cwd), mode.allows, id, false)
     if (generation !== this.generation) { connection.intentionalClose = true; connection.rpc.close(); throw new DevinUncertain('Devin connection changed.') }
     connection.replaying = true
     this.connections.set(id, connection)
@@ -383,9 +397,12 @@ export class DevinAcpHost implements AgentHost {
       }
       // A session opens on Devin's own default mode, whether it was loaded or made again, so the mode this
       // thread records is set back on it before anything runs under it.
-      await this.applyMode(connection, alias, modeOf(alias.providerMode), () => {
+      await this.applyMode(connection, alias, mode, () => {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       })
+      // The profile was chosen when this open began. A mode changed since would leave Devin running under
+      // an allowance the thread no longer records, so the open is abandoned and the next action starts again.
+      if (modeOf(alias.providerMode).id !== mode.id) throw new DevinUncertain('Devin connection changed.')
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       await this.revalidate(connection, alias.cwd, generation)
       if (this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
@@ -446,7 +463,7 @@ export class DevinAcpHost implements AgentHost {
     // Native empty sessions have no transcript until the first prompt; only their live owner knows them.
     if (this.connections.get(id)?.fresh && alias.origins.length === 0) return
     const generation = this.generation
-    const observer = await this.start(alias.cwd, id, true, modeOf(alias.providerMode).grant)
+    const observer = await this.start(alias.cwd, modeOf(alias.providerMode).allows, id, true)
     try {
       try {
         await observer.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] }, value => {
@@ -607,14 +624,14 @@ export class DevinAcpHost implements AgentHost {
         validateThreadOptions(this.state, command)
         const project = this.state.projects.find(project => project.id === command.projectId)
         if (!project) throw new Error('Choose a Devin project first.')
-        const mode = modeOf(command.providerMode ?? DEVIN_DEFAULT_MODE)
+        const mode = modeOf(command.providerMode)
         const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path),
           title: command.title, modelId: command.modelId, providerMode: mode.id, createdAt: new Date().toISOString(),
           settingsConfirmed: false, ephemeral: true, emptyReleased: false, origins: [], answeredRequestIds: [] }
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         this.aliases[command.threadId] = alias; await this.persist()
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-        const connection = await this.start(alias.cwd, command.threadId, false, mode.grant)
+        const connection = await this.start(alias.cwd, mode.allows, command.threadId, false)
         if (generation !== this.generation) { connection.intentionalClose = true; connection.rpc.close(); throw new DevinUncertain('Devin connection changed.') }
         creation = connection; this.connections.set(command.threadId, connection)
         await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers: [] }, async value => {
@@ -648,19 +665,22 @@ export class DevinAcpHost implements AgentHost {
         const mode = DEVIN_MODES.find(candidate => candidate.id === command.providerMode)
         if (!mode) throw new Error('Devin does not offer that permission setting.')
         if (modeOf(alias.providerMode).id === mode.id) return { accepted: true }
-        if (this.active.has(command.threadId) || this.thread(command.threadId).requests.length) {
-          throw new Error('Devin is working on this thread. Wait for it to finish before changing its permissions.')
+        // A session being opened or sent to has already chosen its profile; changing the mode under it would
+        // leave the two out of step, so the change waits until the thread is quiet.
+        if (this.active.has(command.threadId) || this.loading.has(command.threadId) || this.dispatching.has(command.threadId)
+          || this.thread(command.threadId).requests.length) {
+          throw new Error('Devin is working on this thread. Your permission setting is unchanged. Change it once the thread is idle.')
         }
-        // What a mode grants lives in the owned profile, and a profile is chosen when the process starts,
-        // so the grant is written and confirmed before the thread keeps it. Stopping the session leaves the
+        // What a mode allows lives in the owned profile, and a profile is chosen when the process starts,
+        // so the allowance is written and confirmed before the thread keeps it. Stopping the session leaves the
         // native session itself untouched; the next action resumes it under the new profile (ADR-0022).
-        await prepareDevinPolicy(this.userDataDirectory, alias.cwd, this.options.nativeConfigDirectory, mode.grant)
+        await prepareDevinPolicy(this.userDataDirectory, mode.allows, alias.cwd, this.options.nativeConfigDirectory)
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
         const previous = alias.providerMode
         alias.providerMode = mode.id
         try { await this.persist() } catch (error) { alias.providerMode = previous; throw error }
         const projected = this.thread(command.threadId)
-        projected.providerMode = mode.id; projected.runtimeMode = RUNTIME_OF_GRANT[mode.grant]
+        projected.providerMode = mode.id; projected.runtimeMode = RUNTIME_OF_ALLOWANCE[mode.allows]
         await this.stopSession(command.threadId)
         this.emit()
       } else if (command.type === 'steer' || command.type === 'compact-thread') {
@@ -728,8 +748,8 @@ export class DevinAcpHost implements AgentHost {
       await this.readHistory(id)
       return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
-    const profile = await prepareDevinPolicy(this.userDataDirectory, alias.cwd, this.options.nativeConfigDirectory)
-    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile], devinEnvironment(this.options.environment), alias.cwd)
+    const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, alias.cwd, this.options.nativeConfigDirectory)
+    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), alias.cwd)
     await connection.rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
     await this.readHistory(id)
     await this.revalidate(connection, alias.cwd, generation)

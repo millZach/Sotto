@@ -179,6 +179,21 @@ describe('durable project/thread organization', () => {
     expect(retained.threads.every(thread => thread.nativeSessionStarted)).toBe(true)
   })
 
+  it("keeps a provider's own permission mode on a thread that has not sent, and creates the thread under it", async () => {
+    const f = await fixture()
+    f.adapters.codex.state.models[0]!.providerModes = [{ id: 'ask-first', name: 'Ask first' }, { id: 'bypass', name: 'Bypass Permissions' }]
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'create-own', threadId: 'own', projectId: project.id, title: 'Own modes', modelId: model.id, providerMode: 'bypass' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'own')).toMatchObject({ nativeSessionStarted: false, providerMode: 'bypass' })
+    await f.host.execute({ type: 'configure-thread', commandId: 'mode-own', threadId: 'own', providerMode: 'ask-first' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'own')).toMatchObject({ providerMode: 'ask-first' })
+    // The mode chosen before the first message is the one the provider creates the thread under.
+    await f.host.execute(send('own'))
+    expect(f.adapters.codex.commands.find(command => command.type === 'create-thread')).toMatchObject({ providerMode: 'ask-first' })
+  })
+
   it('locks existing empty native threads and honors same-provider capabilities and model options', async () => {
     const f = await fixture(); const snapshot = await f.host.connect()
     const thread = snapshot.threads.find(thread => thread.providerId === 'codex')!

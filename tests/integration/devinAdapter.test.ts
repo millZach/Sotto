@@ -241,11 +241,24 @@ describe('Devin dispatch and decision boundaries', () => {
     const profile = JSON.parse(await readFile(join(f.root, 'devin', 'approval-policy-v1-everything.json'), 'utf8'))
     expect(profile.permissions).toMatchObject({ ask: [] })
     expect(profile.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec']))
-    // The session is left stopped; the next action resumes it and sets it back to the recorded mode.
-    await send()
-    const mode = (await f.driver.requests()).filter(record => record.method === 'session/set_config_option' && record.params?.configId === 'mode').at(-1)
+    // The session is left stopped; the next action resumes it under the new profile and sets it back to the
+    // recorded mode. The send itself has to go through: a profile checked as the wrong allowance fails closed.
+    const prompts = (await f.driver.requests()).filter(record => record.method === 'session/prompt').length
+    expect(await send()).toMatchObject({ accepted: true })
+    const requests = await f.driver.requests()
+    expect(requests.filter(record => record.method === 'session/prompt')).toHaveLength(prompts + 1)
+    const mode = requests.filter(record => record.method === 'session/set_config_option' && record.params?.configId === 'mode').at(-1)
     expect(mode?.params).toMatchObject({ value: 'bypass' })
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'not-a-mode' })).rejects.toThrow('does not offer')
     expect(await thread()).toMatchObject({ providerMode: 'bypass' })
+  })
+
+  it('refuses a permission change while a turn is running, and leaves the recorded mode alone', async () => {
+    await send()
+    // The running turn already chose its profile; changing the mode under it would leave the two out of step.
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'bypass' })).rejects.toThrow(/permission setting is unchanged/u)
+    expect(await thread()).toMatchObject({ providerMode: 'ask-first' })
+    await f.driver.completeTurn(threadId, 'Done')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
   })
 })

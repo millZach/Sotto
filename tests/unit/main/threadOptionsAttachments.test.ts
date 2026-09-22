@@ -31,8 +31,12 @@ class FixtureHost extends E2EAgentHost {
   unknown = false
   hideMessages = false
   cosmetic = false
+  /** Stands in for a provider, like Devin, whose permission modes are its own rather than Sotto's four. */
+  ownModes = false
   override async snapshot(): Promise<AgentHostSnapshot> {
-    const snapshot = await super.snapshot()
+    const base = await super.snapshot()
+    const snapshot = this.ownModes ? { ...base, models: base.models.map(model => ({ ...model, runtimeModes: [],
+      providerModes: [{ id: 'ask-first', name: 'Ask first', asks: 'Sotto asks before every edit, command and fetch.' }, { id: 'bypass', name: 'Bypass Permissions', asks: 'Sotto asks about nothing.' }] })) } : base
     return this.hideMessages ? { ...snapshot, threads: snapshot.threads.map(thread => ({ ...thread, messages: [] })) } : snapshot
   }
   gate: Promise<void> | undefined
@@ -168,6 +172,18 @@ describe('coordinator images, authority and durable settings', () => {
     await f.control.command({ type: 'refresh' })
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
     expect(f.host.attempts).toHaveLength(3)
+  })
+  it("passes a provider's own permission mode through on its own, and refuses one the provider does not offer", async () => {
+    const f = await controlFixture()
+    f.host.ownModes = true
+    await f.control.command({ type: 'refresh' })
+    // Only the mode is sent: the coordinator must not read a lone providerMode as "nothing to change".
+    const saved = await f.control.command({ type: 'configure-thread', threadId: 'workshop', providerMode: 'bypass' })
+    expect(saved.error).toBeNull()
+    expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'configure-thread', threadId: 'workshop', providerMode: 'bypass' })])
+    expect(saved.host.threads.find(thread => thread.id === 'workshop')).toMatchObject({ providerMode: 'bypass' })
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', providerMode: 'not-offered' })).error).toMatch(/permission mode/iu)
+    expect(f.host.attempts).toHaveLength(1)
   })
   it('recovers a restart in the middle of a thread-scoped command from its durable intent alone', async () => {
     const f = await controlFixture()

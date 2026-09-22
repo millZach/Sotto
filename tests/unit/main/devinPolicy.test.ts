@@ -17,19 +17,20 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 
 it('writes only its owned profile and confirms the native normalized readback', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const paths = await Promise.all([prepareDevinPolicy(userData, cwd, nativeConfig), prepareDevinPolicy(userData, cwd, nativeConfig)])
-  expect(paths[0]).toBe(paths[1])
-  const config = JSON.parse(await readFile(paths[0]!, 'utf8'))
-  expect(() => verifyDevinPolicy({ config: { ...config, version: 1, proxy: { mode: 'system', url: null, no_proxy: null } }, configPath: paths[0] }, paths[0]!)).not.toThrow()
+  const profiles = await Promise.all([prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig), prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)])
+  expect(profiles[0]).toEqual(profiles[1])
+  const profile = profiles[0]!
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  expect(() => verifyDevinPolicy({ config: { ...config, version: 1, proxy: { mode: 'system', url: null, no_proxy: null } }, configPath: profile.path }, profile)).not.toThrow()
   expect(config.permissions.allow).toEqual([])
   expect(config.permissions.ask).toContain('exec')
   expect(Object.values(config.read_config_from).every(value => value === false)).toBe(true)
 })
 
-it('writes one profile per grant and asks about everything the grant does not allow', async () => {
+it('writes one profile per allowance and asks about everything the allowance does not cover', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const read = async (grant: 'nothing' | 'edits' | 'everything') =>
-    JSON.parse(await readFile(await prepareDevinPolicy(userData, cwd, nativeConfig, grant), 'utf8'))
+  const read = async (allows: 'nothing' | 'edits' | 'everything') =>
+    JSON.parse(await readFile((await prepareDevinPolicy(userData, allows, cwd, nativeConfig)).path, 'utf8'))
   const nothing = await read('nothing')
   const edits = await read('edits')
   const everything = await read('everything')
@@ -39,19 +40,20 @@ it('writes one profile per grant and asks about everything the grant does not al
   expect(edits.permissions.ask).toEqual(['exec', 'Fetch(*)', 'mcp__*'])
   expect(everything.permissions.ask).toEqual([])
   expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
-  // A grant gets a file of its own, and the asking grant keeps the name a profile written before grants used.
-  expect(devinPolicyPath(userData, 'nothing')).toBe(await prepareDevinPolicy(userData, cwd, nativeConfig))
+  // Each allowance gets a file of its own, and the asking one keeps the name a profile had before allowances.
+  expect((await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).path).toBe(devinPolicyPath(userData, 'nothing'))
+  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v1\.json$/u)
   expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
 })
 
-it('confirms a readback only against the grant its own profile was written for', async () => {
+it('confirms a readback only against the allowance its own profile was written for', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const path = await prepareDevinPolicy(userData, cwd, nativeConfig, 'edits')
-  const config = JSON.parse(await readFile(path, 'utf8'))
-  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'edits')).not.toThrow()
-  // The same file read back as any other grant is a profile that does not say what the thread was told.
-  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'nothing')).toThrow(/approval profile/iu)
-  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'everything')).toThrow(/approval profile/iu)
+  const profile = await prepareDevinPolicy(userData, 'edits', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  expect(() => verifyDevinPolicy({ config, configPath: profile.path }, profile)).not.toThrow()
+  // The same file read back as any other allowance is a profile that does not say what the thread was told.
+  expect(() => verifyDevinPolicy({ config, configPath: profile.path }, { ...profile, allows: 'nothing' })).toThrow(/approval profile/iu)
+  expect(() => verifyDevinPolicy({ config, configPath: profile.path }, { ...profile, allows: 'everything' })).toThrow(/approval profile/iu)
 })
 
 it.each(['config.json', 'config.local.json', 'hooks.v1.json', 'mcp_config.json', 'mcp_config.local.json'])('refuses inherited native %s without parsing its contents', async name => {
@@ -72,9 +74,9 @@ it('leaves native global MCP configuration unread for the native status check', 
 
 it('keeps a modified profile intact and refuses to use it', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const path = await prepareDevinPolicy(userData, cwd, nativeConfig)
+  const { path } = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
   await writeFile(path, '{}')
-  await expect(prepareDevinPolicy(userData, cwd, nativeConfig)).rejects.toThrow(/profile.*changed/u)
+  await expect(prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).rejects.toThrow(/profile.*changed/u)
   expect(await readFile(path, 'utf8')).toBe('{}')
 })
 
@@ -89,13 +91,14 @@ it('refuses a symlink in place of native configuration', async () => {
 
 it('refuses wrong paths, rules, imports and missing protocol fields without exposing their values', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const path = await prepareDevinPolicy(userData, cwd, nativeConfig)
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const { path } = profile
   const config = JSON.parse(await readFile(path, 'utf8'))
   for (const result of [null, {}, { config, configPath: 'relative.json' }, { config, configPath: join(cwd, 'other.json') },
     { config: { ...config, permissions: { ...config.permissions, allow: ['private-value'] } }, configPath: path },
     { config: { ...config, read_config_from: { ...config.read_config_from, claude: true } }, configPath: path },
     { config: { ...config, hooks: { SessionStart: ['private-value'] } }, configPath: path }]) {
-    expect(() => verifyDevinPolicy(result, path)).toThrow(/did not confirm/u)
+    expect(() => verifyDevinPolicy(result, profile)).toThrow(/did not confirm/u)
   }
 })
 
@@ -155,24 +158,26 @@ it('bounds native integration checks and keeps subprocess output out of failures
 
 it('accepts native version-one normalization and formatting without accepting new policy fields', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const path = await prepareDevinPolicy(userData, cwd, nativeConfig)
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const { path } = profile
   const config = JSON.parse(await readFile(path, 'utf8'))
   expect(config.version).toBe(1)
   await writeFile(path, JSON.stringify(Object.fromEntries(Object.entries(config).reverse())))
-  await expect(prepareDevinPolicy(userData, cwd, nativeConfig)).resolves.toBe(path)
+  await expect(prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).resolves.toEqual(profile)
   for (const change of [{ version: 2 }, { proxy: { mode: 'manual', url: 'https://example.invalid' } }, { api_url: 'https://example.invalid' }]) {
     await writeFile(path, JSON.stringify({ ...config, ...change }))
-    await expect(prepareDevinPolicy(userData, cwd, nativeConfig)).rejects.toThrow(/profile.*changed/u)
+    await expect(prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).rejects.toThrow(/profile.*changed/u)
   }
 })
 
 it('refuses unknown normalized fields and native routing or execution overrides', async () => {
   const { userData, cwd, nativeConfig } = await setup()
-  const path = await prepareDevinPolicy(userData, cwd, nativeConfig)
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const { path } = profile
   const config = JSON.parse(await readFile(path, 'utf8'))
   for (const extra of [{ api_url: 'https://example.invalid' }, { proxy: { mode: 'manual', url: 'https://example.invalid', no_proxy: null } },
     { devin: { org_id: 'different-org' } }, { shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: 'other-shell' } },
     { disabled_tools: ['edit'] }, { agent: { endpoint: 'https://example.invalid' } }]) {
-    expect(() => verifyDevinPolicy({ config: { ...config, ...extra }, configPath: path }, path)).toThrow(/did not confirm/u)
+    expect(() => verifyDevinPolicy({ config: { ...config, ...extra }, configPath: path }, profile)).toThrow(/did not confirm/u)
   }
 })

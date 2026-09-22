@@ -7,24 +7,28 @@ import { isDeepStrictEqual } from 'node:util'
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
 // `accept-edits` and even `bypass` still sending session/request_permission, and an allow removing the ask
-// (docs/verification/devin-permission-modes.md). So a permission the user grants is granted here, in a
-// record Sotto owns, and never by trusting what a provider mode says it means (ADR-0004, ADR-0022).
+// (docs/verification/devin-permission-modes.md). So what Devin may do unasked is written here, in a file
+// Sotto owns and reads back, and never inferred from what a provider mode says it means (ADR-0022).
 const EDITS = ['edit', 'write', 'Write(**)', 'Write(/**)']
 const ACTIONS = ['exec', 'Fetch(*)', 'mcp__*']
 
-/** What the user has granted Devin for a thread; everything not granted is asked, every time. */
-export const devinGrants = ['nothing', 'edits', 'everything'] as const
-export type DevinGrant = (typeof devinGrants)[number]
+/** What a thread's profile lets Devin do unasked; everything else is asked, every time. */
+export type DevinAllowance = 'nothing' | 'edits' | 'everything'
+/**
+ * A written, confirmed profile and what it allows. They travel as one value because a profile checked
+ * against the wrong allowance is exactly the mistake the readback exists to catch.
+ */
+export interface DevinProfile { readonly path: string; readonly allows: DevinAllowance }
 
-const permissionsFor = (grant: DevinGrant): { allow: string[]; deny: string[]; ask: string[] } => ({
-  allow: grant === 'everything' ? [...EDITS, ...ACTIONS] : grant === 'edits' ? [...EDITS] : [],
+const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
+  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS] : [],
   deny: [],
-  ask: grant === 'everything' ? [] : grant === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
+  ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
 })
 
-const policyFor = (grant: DevinGrant): Record<string, unknown> => ({
+const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
-  permissions: permissionsFor(grant),
+  permissions: permissionsFor(allows),
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
 })
@@ -98,21 +102,22 @@ export async function assertDevinWorkingDirectory(cwd?: string, configDirectory 
   }
 }
 
-/** The profile a grant is written to. One file per grant, so a thread's file says what it was allowed. */
-export function devinPolicyPath(userDataDirectory: string, grant: DevinGrant): string {
-  return resolve(userDataDirectory, 'devin', grant === 'nothing' ? 'approval-policy-v1.json' : `approval-policy-v1-${grant}.json`)
+/** The file an allowance is written to. One file each, so a thread's file says what it was allowed. */
+export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowance): string {
+  return resolve(userDataDirectory, 'devin', allows === 'nothing' ? 'approval-policy-v1.json' : `approval-policy-v1-${allows}.json`)
 }
 
 /**
- * A versioned, Sotto-owned profile; existing native user/project files are never changed. The grant a
- * thread runs under picks the file, and `nothing` keeps the original name so a profile written before
- * grants existed is still the one an asking thread uses.
+ * A versioned, Sotto-owned profile; existing native user/project files are never changed. What the
+ * thread allows picks the file, and `nothing` keeps the original name so a profile written before
+ * allowances existed is still the one an asking thread uses. The allowance has no default: a caller
+ * that forgot it would otherwise check every profile as the asking one.
  */
-export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string, configDirectory?: string, grant: DevinGrant = 'nothing'): Promise<string> {
+export async function prepareDevinPolicy(userDataDirectory: string, allows: DevinAllowance, cwd?: string, configDirectory?: string): Promise<DevinProfile> {
   await assertDevinWorkingDirectory(cwd, configDirectory)
-  const policy = policyFor(grant)
+  const policy = policyFor(allows)
   const policyText = `${JSON.stringify(policy, null, 2)}\n`
-  const path = devinPolicyPath(userDataDirectory, grant)
+  const path = devinPolicyPath(userDataDirectory, allows)
   let pending = preparing.get(path)
   if (!pending) {
     pending = (async () => {
@@ -139,7 +144,7 @@ export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string
     preparing.set(path, pending)
   }
   try { await pending } finally { if (preparing.get(path) === pending) preparing.delete(path) }
-  return path
+  return { path, allows }
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -149,12 +154,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
 /** Receives the result of _cognition.ai/config/read, never a logged protocol body.
  * This confirms the user profile only; it does not report merged native policy.
  */
-export function verifyDevinPolicy(result: unknown, path: string, grant: DevinGrant = 'nothing'): void {
+export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void {
   const response = object(result)
   const config = object(response?.config)
   const matches = typeof response?.configPath === 'string' && isAbsolute(response.configPath)
-    && resolve(response.configPath) === resolve(path)
-    && config && normalizedProfileMatches(config, policyFor(grant))
+    && resolve(response.configPath) === resolve(profile.path)
+    && config && normalizedProfileMatches(config, policyFor(profile.allows))
   if (!matches) throw new Error('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 
