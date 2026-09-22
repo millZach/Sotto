@@ -19,7 +19,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { grokActivities } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
-import { needsPerson } from './nativeRequests'
+import { needsPerson, unreadableRequest } from './nativeRequests'
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
@@ -641,8 +641,8 @@ export class GrokAcpHost implements AgentHost {
         this.rpc?.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
         // Grok reads that refusal as an answer and keeps going, so a renamed or reshaped approval would
         // otherwise pass as the user declining. Foreign sessions stay none of Sotto's business.
-        if (threadId && needsPerson(method)) {
-          this.state.error = 'Grok asked for something only you can answer in a form Sotto could not read, so it was declined without reaching you. Update Grok CLI, then reconnect.'
+        if (threadId && needsPerson(method) && this.state.error !== unreadableRequest('Grok')) {
+          this.state.error = unreadableRequest('Grok')
           this.emit()
         }
       }

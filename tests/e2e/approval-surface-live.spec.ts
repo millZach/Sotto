@@ -59,13 +59,14 @@ test('claude: a real approval and a real question both reach the user', async ()
     const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
     const requests = async () => page!.evaluate(async () => {
       const state = await window.sotto!.agents!.get()
-      return state.host.threads.find(thread => thread.id === state.activeThreadId)?.requests.map(request => ({ kind: request.kind, text: request.text.slice(0, 120) })) ?? []
+      // Kinds only: what a provider asked belongs in the window and the capture, not in a console line.
+      return state.host.threads.find(thread => thread.id === state.activeThreadId)?.requests.map(request => request.kind) ?? []
     })
 
     // A write needs a person under approval-required, and the CLI must ask Sotto rather than deny it.
     await prompt.fill('Create a file named surface.txt containing the word banana in this directory, using the Write tool. Do not ask first, just do it.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect.poll(async () => (await requests()).map(request => request.kind), { timeout: 120_000 }).toContain('permission')
+    await expect.poll(async () => await requests(), { timeout: 120_000 }).toContain('permission')
     const permission = page.locator('.agent-request').first()
     await expect(permission.getByRole('button', { name: 'Allow once' })).toBeVisible()
     await page.screenshot({ path: join(artifacts, 'claude-permission-reaches-the-user.png') })
@@ -76,7 +77,7 @@ test('claude: a real approval and a real question both reach the user', async ()
     await expect(prompt).toHaveValue('', { timeout: 60_000 })
     await prompt.fill('Use the AskUserQuestion tool right now to ask me which cache to use, offering Redis, Memcached and In-memory. Ask only; change nothing.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
-    await expect.poll(async () => (await requests()).map(request => request.kind), { timeout: 120_000 }).toContain('question')
+    await expect.poll(async () => await requests(), { timeout: 120_000 }).toContain('question')
     const question = page.locator('.agent-request').first()
     await expect(question.getByRole('button', { name: /^Send answers?$/u })).toBeVisible()
     await page.screenshot({ path: join(artifacts, 'claude-question-reaches-the-user.png') })

@@ -22,7 +22,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { findExecutable, nativeEnvironment } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
-import { needsPerson } from './nativeRequests'
+import { needsPerson, unreadableRequest } from './nativeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { SessionReaper } from './sessionReaper'
@@ -985,8 +985,8 @@ export class CodexAppServerHost implements AgentHost {
         this.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
         // Codex treats the refusal as the answer, so a renamed or reshaped approval would otherwise read
         // as the user declining. Requests Sotto never answers, and foreign threads, stay quiet.
-        if (id && needsPerson(frame.method)) {
-          this.state.error = 'Codex asked for something only you can answer in a form Sotto could not read, so it was declined without reaching you. Update the Codex CLI, then reconnect.'
+        if (id && needsPerson(frame.method) && this.state.error !== unreadableRequest('Codex')) {
+          this.state.error = unreadableRequest('Codex')
           this.emit()
         }
         return

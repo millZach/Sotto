@@ -177,8 +177,19 @@ describe('Claude recovery and safety', () => {
     await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ approvalSurface: false }))
     f.host.observeThreads?.([id])
     await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('is not letting Sotto answer its permission prompts')
-    expect((await f.host.snapshot()).error).toContain('Update Claude Code')
+    expect((await f.host.snapshot()).error).toContain('No work was lost')
   })
+  it('says a request for the user went unread instead of denying it in silence', async () => {
+    // A question whose payload this adapter cannot read is still the CLI asking for the user, and the
+    // denial Sotto must send reads to Claude as the user's own answer.
+    await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'unreadable',
+      request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', tool_use_id: 'tool', input: { questions: [] } } } })
+    await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('only you can answer')
+    await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('"behavior":"deny"')
+    expect((await thread()).requests).toEqual([])
+  })
+  // Paired with the test above: the fixture differs only in whether its session lists the question tool,
+  // so that one proves the list is read and this one proves a complete list is not complained about.
   it('stays quiet while a session offers the question tool', async () => {
     f.host.observeThreads?.([id])
     await expect.poll(async () => (await launches()).length).toBeGreaterThan(0)
