@@ -65,8 +65,8 @@ composer reserves. Assistant prose remains rejected as evidence for either pose.
 
 ## Amendment, September 22 2026: background work
 
-Issue #221 adds a third pose, **Working**, for agent work the provider confirms is still running after the turn
-that started it has ended: a workflow, a subagent, a teammate or a remote agent. The rule at the top of this note
+Issue #221 adds a third pose, **Working**, for agent work the provider confirms is still running, whether or not
+a turn is: a workflow, a subagent, a teammate or a remote agent. The rule at the top of this note
 holds for it too. Its evidence is Claude Code's own `task_started` frames and their bookends, never elapsed time,
 transcript text or a surviving process, and it is never restored from history. A confirmed monitoring task still
 keeps the track first; background work comes before a held action. The decision is ADR-0023 and the evidence is
