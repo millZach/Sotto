@@ -65,6 +65,15 @@ describe('authenticated host socket', () => {
     await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Bypass', modelId: 'fixture-model', runtimeMode: 'full-access' })).rejects.toMatchObject({ code: 'forbidden' })
     await expect(client.command({ type: 'configure', patch: { membershipEndpoint: 'https://untrusted.example' } })).rejects.toMatchObject({ code: 'forbidden' })
     await expect(client.command({ type: 'credential', slot: 'reasoning', value: 'not-a-real-key' })).rejects.toMatchObject({ code: 'forbidden' })
+    // Devin's Bypass permissions stops Sotto asking at all, and discarding uncommitted work answers a confirmation.
+    await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Bypass', modelId: 'fixture-model', providerMode: 'bypass' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'configure-thread', threadId: 'missing', providerMode: 'bypass' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'reclaim-thread-worktree', threadId: 'missing', withUncommittedChanges: true })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'restore-thread-branch', threadId: 'missing', withUncommittedChanges: true })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'update-client', provider: 'codex' })).rejects.toMatchObject({ code: 'forbidden' })
+    await expect(client.command({ type: 'open-thread-folder', threadId: 'missing' })).rejects.toMatchObject({ code: 'forbidden' })
+    // Without the discard, leaving a clean folder is ordinary work and reaches the host.
+    await expect(client.command({ type: 'reclaim-thread-worktree', threadId: 'missing', withUncommittedChanges: false })).resolves.toBeDefined()
   })
   it('accepts an explicitly authorized answer and refuses the same device after policy revocation', async () => {
     const { client, result } = await pair()

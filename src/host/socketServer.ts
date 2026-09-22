@@ -5,6 +5,8 @@ import { z } from 'zod'
 import type { HostService, ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { HOST_EVENT_PAGE_SIZE, HOST_SESSION_REJECTED, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
+import type { AgentCommand } from '../shared/agents'
+import { remoteCommandRefusal } from './remoteCommands'
 import { SocketFrames } from './socketFrames'
 
 const errors: Record<HostErrorCode, string> = {
@@ -59,6 +61,13 @@ export async function startSocketServer(options: SocketServerOptions) {
   const unsubscribeDetails = service.subscribeThreadDetail?.(update => {
     for (const peer of peers) if (peer.observed.has(update.threadId)) detail(peer, update.threadId)
   })
+  /** The permission setting a new or changed thread would start on: its model's first, which asks about everything. */
+  const startingProviderMode = (input: AgentCommand): string | undefined => {
+    if (input.type !== 'create-thread' && input.type !== 'configure-thread') return undefined
+    const host = service.shell().host
+    const modelId = input.modelId ?? (input.type === 'configure-thread' ? host.threads.find(thread => thread.id === input.threadId)?.modelId : undefined)
+    return host.models.find(model => model.id === modelId)?.providerModes?.[0]?.id
+  }
   const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>): Promise<unknown> => {
     const key = peer.client.clientId + ':' + request.id
     const digest = createHash('sha256').update(JSON.stringify(request.command)).digest('hex')
@@ -71,15 +80,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     if (receipts.size >= 10000) throw new Refusal('busy')
     const input = request.command
-    const localOnly = new Set(['credential', 'membership', 'voice', 'voice-state', 'preview-voice', 'check-reasoning', 'utterance', 'open-thread-folder'])
-    if (localOnly.has(input.type)) throw new Refusal('forbidden')
-    if (input.type === 'configure') {
-      const allowed = new Set(['provider', 'enabledProviders', 'enabled', 'defaultModelId', 'reasoning', 'reasoningModel', 'reasoningEffort', 'followupLimit', 'orbColor', 'speak'])
-      if (Object.keys(input.patch).some(key => !allowed.has(key))) throw new Refusal('forbidden')
-    }
-    if ((input.type === 'configure-thread' || input.type === 'create-thread') && input.runtimeMode !== undefined && !options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+    const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, startingProviderMode: startingProviderMode(input) })
+    if (refusal) throw new Refusal(refusal)
     if (input.type === 'answer') {
-      if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
       const thread = service.shell().host.threads.find(thread => thread.id === input.threadId)
       if (!thread?.requests.some(item => item.id === input.requestId && !item.delivery)) throw new Refusal('stale_request')
     }
