@@ -1,12 +1,16 @@
 import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
+import { browserRequestText } from './browserRequests'
+import { BROWSER_MCP_SERVER } from './browserAgentServer'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
 const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), options: z.array(option).nullish() })
 const paramsSchema = z.object({ threadId: z.string(), itemId: z.string().optional(), command: z.string().nullish(), reason: z.string().nullish(), cwd: z.string().nullish(), permissions: z.record(z.string(), z.unknown()).optional(), networkApprovalContext: z.unknown().optional(),
   grantRoot: z.string().nullish(), availableDecisions: z.array(z.unknown()).nullish(), questions: z.array(question).optional(),
-  message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional() })
+  message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional(),
+  /** Named beside an elicitation, which is where an app tool confirmation arrives (issue #199). */
+  serverName: z.string().optional(), request: z.unknown().optional() })
 export type CodexPendingRequest = { id: string | number; method: string; sessionId: string; params: z.infer<typeof paramsSchema>; request: AgentRequest }
 export const requestKey = (id: string | number): string => `rpc:${JSON.stringify(id)}`
 const requestMethods: Record<string, { kind: 'permission' | 'question'; decline: () => unknown }> = {
@@ -29,15 +33,33 @@ const amendmentSchema = z.union([
   z.object({ applyNetworkPolicyAmendment: z.object({ network_policy_amendment: z.object({ action: z.enum(['allow', 'deny']), host: z.string() }).strict() }).strict() }).strict(),
 ])
 
+const elicitedToolSchema = z.object({ name: z.string(), arguments: z.unknown().optional() })
+/**
+ * Codex confirms an app tool through an elicitation and names the server beside it, so one about
+ * Sotto's own browser can be said plainly. The body's own shape is not established against a real
+ * client (issue #199): the tool is named when it can be read and the server alone when it cannot,
+ * and a server that is not Sotto's keeps the card Codex already gave.
+ */
+function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefined {
+  if (params.serverName !== BROWSER_MCP_SERVER) return undefined
+  const tool = elicitedToolSchema.safeParse(params.request)
+  const named = tool.success ? browserRequestText(tool.data.name, tool.data.arguments, params.serverName) : undefined
+  if (named) return named
+  const said = params.message ?? params.description ?? ''
+  return 'Codex is asking before it uses Sotto’s browser.' + (said ? '\n' + said : '')
+    + '\nOpening a page, going to another, clicking and typing still ask you in Tools.'
+}
+
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {
   const mapping = requestMethods[method]
   if (!mapping) return
   const params = paramsSchema.parse(value)
   const permission = mapping.kind === 'permission'
   const questions = params.questions ?? []
-  const text = permission ? params.command ?? fileSummary ?? params.reason ?? (params.grantRoot ? `Allow file changes under ${params.grantRoot}?` : 'Codex requests additional permissions. Answer in Codex for detailed scope.')
+  const browser = method === 'mcpServer/elicitation/request' ? codexBrowserText(params) : undefined
+  const text = browser ?? (permission ? params.command ?? fileSummary ?? params.reason ?? (params.grantRoot ? `Allow file changes under ${params.grantRoot}?` : 'Codex requests additional permissions. Answer in Codex for detailed scope.')
     : questions.length ? questions.map((q, i) => `${questions.length > 1 ? `${i + 1}. ` : ''}${q.question}${questions.length > 1 && q.options?.length ? ` (${q.options.map(o => o.label).join('; ')})` : ''}`).join('\n')
-      : params.message ?? params.description ?? 'Codex needs your input.'
+      : params.message ?? params.description ?? 'Codex needs your input.')
   let options: AgentRequest['options'] = permission ? [{ id: 'accept', label: 'Allow' }, { id: 'decline', label: 'Deny' }]
     : questions.length === 1 ? (questions[0]!.options ?? []).map(o => ({ id: o.label, label: o.label })) : []
   let formQuestions: AgentRequest['questions']
