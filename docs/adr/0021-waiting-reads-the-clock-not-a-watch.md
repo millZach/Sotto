@@ -10,7 +10,7 @@ by refusing exactly this evidence.
 ADR-free until now, the monitoring creature's rule lives in `docs/verification/process-creature.md`:
 "No elapsed-time buffer, assistant-text classification, ordinary command or surviving-shell heuristic
 is used." That rule exists because **Monitoring** is a claim about the provider — that it is watching
-background work and will report the result — and only `monitor`/`monitor_mcp` lifecycle events are
+a background process or task and will report the result — and only `monitor`/`monitor_mcp` lifecycle events are
 evidence for it. A ten-second buffer was removed during that work for asserting more than it knew.
 
 ## Decision

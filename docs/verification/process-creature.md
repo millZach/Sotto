@@ -53,7 +53,7 @@ Final adapter validation: the actual Claude reconnect path now receives retained
 
 The rule at the top of this note — no elapsed-time buffer, no assistant-text classification, no ordinary
 command or surviving-shell heuristic — still holds for **monitoring**, and for the same reason: monitoring
-claims the provider is watching background work, and only `monitor`/`monitor_mcp` lifecycle events are
+claims the provider is watching a background process or task, and only `monitor`/`monitor_mcp` lifecycle events are
 evidence for that claim.
 
 ADR-0021 adds a second pose that makes a weaker claim. **Waiting** says only that one action of the live
