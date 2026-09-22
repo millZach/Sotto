@@ -127,3 +127,16 @@ it('holds a session with background work open while an ordinary idle session is 
   await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
   await expect.poll(() => f.sessions!.stopped('thread')).toBe(true)
 })
+
+it('refuses to change settings or rewind while background work runs, because either would end it', async () => {
+  const f = await fixture()
+  await raw(f, agent)
+  await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  await expect(f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).rejects.toThrow('background agents are still working')
+  await expect(f.adapter.rollbackThread('thread', 1, ['first'])).rejects.toThrow('background agents are still working')
+  expect((await thread(f)).backgroundWork).toHaveLength(1)
+  expect((await thread(f)).runtimeMode).not.toBe('auto-accept-edits')
+  await raw(f, { type: 'system', subtype: 'task_notification', task_id: agent.task_id, status: 'completed' })
+  await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
+  expect(await f.host.execute({ type: 'configure-thread', commandId: 'configure-after', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
+})

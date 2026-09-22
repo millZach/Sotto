@@ -35,7 +35,9 @@ taken at its word as running in the background.
 clear background work. The matching `task_notification`, a terminal status or a `task_updated` end time does, and
 so does anything after which Sotto can no longer hear the bookend or trust the process to send it: an interrupt,
 an error result, a disconnect, a process exit and a restart. While it is live the session reaper (ADR-0016) leaves the session running, because stopping
-the CLI would stop the work it reports.
+the CLI would stop the work it reports. For the same reason changing the thread's settings and rewinding it,
+which both restart the CLI, are refused while it is live, with an error that says nothing was changed and to wait
+for the agents. If a bookend is ever lost, a reconnect clears the state and lets both through again.
 
 **Three poses, one track.** The composer keeps room for one creature. A monitoring task keeps it first, because a
 watch says the provider is looking at something; background work next, because it is confirmed but claims only
