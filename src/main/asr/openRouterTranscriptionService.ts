@@ -9,6 +9,7 @@ import {
 } from '../../shared/contracts'
 import { TRANSCRIPTION_SAMPLE_RATE } from '../../shared/audio'
 import { parseDictionary } from '../../shared/dictionary'
+import { pcm16WavDurationMs } from '../../shared/wav'
 import type { AppSettings } from '../../shared/settings'
 
 const TRANSCRIPTION_URL = 'https://openrouter.ai/api/v1/audio/transcriptions'
@@ -19,9 +20,10 @@ const KEY_URL = 'https://openrouter.ai/api/v1/key'
  * why it failed and how long it was, never what was said, the audio or the key.
  */
 export interface TranscriptionFailureDiagnostic {
+  /** When the request started, in epoch milliseconds. */
   readonly at: number
   readonly reason: Exclude<TranscriptionFailureReason, 'cancelled'>
-  /** The last HTTP status OpenRouter answered with, when it answered at all. */
+  /** The HTTP status of the last attempt, when that attempt got an answer at all. */
   readonly status?: number
   readonly attempts: number
   readonly audioMs: number
@@ -40,8 +42,6 @@ interface RequestTrace {
   attempts: number
   status?: number
 }
-
-const WAV_HEADER_BYTES = 44
 
 function statusReason(status: number): TranscriptionFailureReason {
   if (status === 401 || status === 403) return 'unauthorized'
@@ -73,14 +73,13 @@ export class OpenRouterTranscriptionService {
     const trace: RequestTrace = { attempts: 0 }
     const result = await this.request(request, trace)
     if (!result.ok && result.reason !== 'cancelled') {
-      const audioBytes = Math.max(0, request.wav.byteLength - WAV_HEADER_BYTES)
       try {
         this.dependencies.onFailure?.({
           at: startedAt,
           reason: result.reason,
           ...(trace.status === undefined ? {} : { status: trace.status }),
           attempts: trace.attempts,
-          audioMs: Math.round((audioBytes / 2 / TRANSCRIPTION_SAMPLE_RATE) * 1_000),
+          audioMs: pcm16WavDurationMs(request.wav.byteLength, TRANSCRIPTION_SAMPLE_RATE),
           elapsedMs: Math.max(0, now() - startedAt),
         })
       } catch {
@@ -120,6 +119,7 @@ export class OpenRouterTranscriptionService {
         let reason: TranscriptionFailureReason
         let retryable = false
         trace.attempts += 1
+        delete trace.status
         try {
           const response = await this.fetchFn(TRANSCRIPTION_URL, {
             method: 'POST',

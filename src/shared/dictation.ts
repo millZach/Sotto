@@ -45,7 +45,7 @@ export type WidgetErrorCode = (typeof WIDGET_ERROR_CODES)[number]
 export type TranscriptionErrorCode = Extract<WidgetErrorCode, `TRANSCRIPTION_${string}`>
 
 export function isTranscriptionErrorCode(code: string): code is TranscriptionErrorCode {
-  return Object.hasOwn(TRANSCRIPTION_ERROR_DETAIL, code)
+  return code.startsWith('TRANSCRIPTION_') && (WIDGET_ERROR_CODES as readonly string[]).includes(code)
 }
 
 /**
@@ -57,7 +57,7 @@ export function isTranscriptionErrorCode(code: string): code is TranscriptionErr
  */
 export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_UNCONFIGURED: 'Add your OpenRouter API key in Settings to transcribe. The recording was not kept.',
+    TRANSCRIPTION_UNCONFIGURED: 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.',
     TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.',
     TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.',
     TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.',

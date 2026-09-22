@@ -180,7 +180,7 @@ describe('WidgetApp', () => {
     ['MIC_NOT_SET_UP', 'No microphone set up', MICROPHONE_NOT_SET_UP_DETAIL],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Add your OpenRouter API key in Settings to transcribe. The recording was not kept.'],
+    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.'],
     ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.'],
     ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.'],
     ['TRANSCRIPTION_BILLING', 'Out of credit', 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.'],

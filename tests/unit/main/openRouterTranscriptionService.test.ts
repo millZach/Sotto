@@ -243,6 +243,16 @@ describe('transcription diagnostics', () => {
     expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'http', status: 503, attempts: 2 }))
   })
 
+  it('keeps only the last attempt status, so a 503 then a network failure records none', async () => {
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockRejectedValueOnce(new TypeError('unreachable'))
+    const { service, onFailure } = recorded(fetchFn)
+    expect(await service.transcribe(oneSecond)).toEqual({ ok: false, reason: 'network' })
+    expect(onFailure.mock.calls[0]?.[0]).toMatchObject({ reason: 'network', attempts: 2 })
+    expect(onFailure.mock.calls[0]?.[0]).not.toHaveProperty('status')
+  })
+
   it('records a network failure without a status and a missing key without an attempt', async () => {
     const offline = recorded(vi.fn<typeof fetch>().mockRejectedValue(new TypeError('unreachable')))
     await offline.service.transcribe({ ...oneSecond, timeoutMs: 1_499 })
