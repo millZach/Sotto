@@ -2,6 +2,8 @@
 
 Accepted September 19, 2026, so that a thread's history stops being something a provider is asked to rebuild, and so the same split serves a machine the user is not sitting at. Transport beyond loopback — which remote path ships first, and what the pairing flow looks like to the user — is left open for the owner to decide and is marked as open below.
 
+Amended September 22, 2026 by ADR-0023: the owner decided both. SSH ships first, with the desktop pairing itself over the SSH session and a phone entering a code read on the host; the host listens on its own loopback address, reached through the SSH forward or Tailscale Serve, and the README's "Privacy and cost" section names that path. Everything else here stands.
+
 ## Context
 
 Every message of every thread lives in one file. `WorkspaceHost` reads `workspace.json` at startup, holds the whole snapshot in memory, clones it on each publish and rewrites it on each save, so the cost of opening the app, of drawing the sidebar and of one streamed chunk all grow with everything the user has ever said. The 0.1.3 startup crash was that cost meeting a large file. Grok's uncapped history polling is the same shape from the other end.

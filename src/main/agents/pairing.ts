@@ -12,7 +12,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
  * count as grants (ADR-0004, `Authority.mayGrant`).
  *
  * The loopback listener admits clients through this store; the separate permission policy still
- * decides whether an admitted client may answer. See ADR-0022 for the shipped connection path.
+ * decides whether an admitted client may answer. See ADR-0023 for the shipped connection path.
  */
 
 /** How long a pairing code is good for. Long enough to read out, short enough to be worth nothing later. */
