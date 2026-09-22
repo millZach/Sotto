@@ -54,16 +54,18 @@ describe('a row that needs you says what it needs', () => {
     expect(rowFor(unqueued(asQuestion(threadsStateFixture())), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
       request: { threadId: 'visual-gate', kind: 'question', requestId: 'visual-gate-question' } })
     // The collapsed rail says the same thing in its title and its ring.
+    // Collapsing is remembered, so the width record is cleared either side of the test, even when it fails.
     localStorage.removeItem('sotto.threadWorkspace.sidebar')
-    mount(unqueued(asQuestion(threadsStateFixture())), NOW)
-    expect(status('Visual gate flake')).toHaveTextContent('Needs your answer')
-    expect(status('Visual gate flake')).toHaveAttribute('data-waiting', 'question')
-    act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
-    const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Visual gate flake"]')!
-    expect(rail).toHaveAttribute('title', 'Visual gate flake · Needs your answer')
-    expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
-    expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-waiting', 'question')
-    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+    try {
+      mount(unqueued(asQuestion(threadsStateFixture())), NOW)
+      expect(status('Visual gate flake')).toHaveTextContent('Needs your answer')
+      expect(status('Visual gate flake')).toHaveAttribute('data-waiting', 'question')
+      act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+      const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Visual gate flake"]')!
+      expect(rail).toHaveAttribute('title', 'Visual gate flake · Needs your answer')
+      expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
+      expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-waiting', 'question')
+    } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
   })
 
   it('keeps the older wording where nothing is pending but you are still needed', () => {
