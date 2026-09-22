@@ -88,3 +88,20 @@ ever drawn upright — and that assertion was confirmed to fail against the rota
 child process on this machine that is exact. For a cloud provider it carries that provider's clock skew, so
 the figure can be out by whatever the two clocks disagree by. This is accepted rather than corrected: the
 readout is a rough sense of how long something has taken, it grants nothing, and no decision is made from it.
+
+## Amendment, September 21 2026: the rule was neutral, the data was not
+
+Hand-testing found the claim above — "Codex, Grok and Devin threads get the hourglass" — false in practice
+for three of the four. The rule reads only `activities`, which is provider neutral as written, but it needs
+a `startedAt` on the live running record and most adapters were not recording one.
+
+Claude's live stream frames carry no timestamp of their own. `claudeActivity` set a row's `startedAt` only
+from `frame.timestamp`, so a running `Bash` row had no start at all and the ornament could never fire on the
+provider the feature was asked for. It now starts a live row at the moment Sotto received the frame, with
+`timingSource: 'observed'`, which is the shape `codexActivity` has used all along. A replayed frame without a
+timestamp still records nothing, because a transcript must not be given a clock it never had — the rule
+`docs/verification/process-creature.md` protects. `tests/unit/main/claudeLiveTiming.test.ts` holds all four
+cases, and the elapsed figures on ordinary Claude activity rows are now available for the same reason.
+
+Grok Build and Devin still record no start for a running action and so still show nothing; that is issue #197,
+not a property of this decision. Until it is done, the honest statement is Claude Code and Codex.

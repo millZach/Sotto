@@ -59,3 +59,34 @@ The hook's timer path was proved in the unit test before the end-to-end one pass
 run failed there, and the cause was the test rather than the feature: `mergeAgentActivities` keeps the
 first `startedAt` it saw for a record ID, so reusing one ID measured every wait from the first injection.
 Each injection is now its own record, which is also what a real new command is.
+
+## Hand test, and what it found
+
+Walked in the running app on an isolated profile, dark then light, at 1620x1084. Evidence in
+`artifacts/held-action/handtest-*.png`.
+
+1. **A long command raises it at twenty seconds and counts up.** At five seconds elapsed the composer is
+   bare (`handtest-1a-under-threshold.png`). Crossing the threshold raises the hourglass reading
+   `npm test -- --maxWork… / Waiting · 20s` (`1b-just-crossed.png`), and four seconds later the same
+   ornament reads `Waiting · 24s` without the creature being replaced (`1c-counting-up.png`).
+2. **A short command never raises it.** `git status --short` at two seconds shows nothing
+   (`2-short-command.png`).
+3. **A confirmed watch takes the track and gives it back.** The walking creature and `Monitoring` replace
+   the hourglass (`3a-watch-takes-track.png`); ending the watch returns it (`3b-watch-ends.png`).
+4. **Light theme and both reduced-motion settings.** The glass reads against the light surface
+   (`4a-light.png`); system and app reduced motion each hold a half-run pose
+   (`4b-system-reduced-motion.png`, `4c-app-reduced-motion.png`).
+
+**The hand test found the feature did not work on Claude at all.** Claude's live stream frames carry no
+timestamp, and `claudeActivity` set a row's `startedAt` only from `frame.timestamp`, so a running `Bash`
+row had no start and `heldAction` always returned undefined. Every test above this section passes because
+they all inject synthetic activity records that carry a start — the rule was right and the data was absent,
+which no amount of testing the rule could reveal. A probe of the real projector confirmed it, the adapter
+now starts a live row at the moment Sotto received the frame with `timingSource: 'observed'` (the shape
+`codexActivity` has used all along), and `tests/unit/main/claudeLiveTiming.test.ts` holds the four cases:
+observed when live, the provider's own time preferred when a frame carries one, nothing on replay, and the
+first start kept across redelivered frames.
+
+Grok Build and Devin still record no start for a running action, so the ornament cannot appear for them.
+That is issue #197. The provider sentence in `README.md`, `CONTEXT.md` and ADR-0021 now says Claude Code
+and Codex rather than all four.
