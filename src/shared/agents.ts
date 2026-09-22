@@ -114,7 +114,10 @@ export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
-  /** Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four. */
+  /**
+   * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
+   * The first is the one a thread starts on when none is chosen, so it is what every control shows unchosen.
+   */
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),

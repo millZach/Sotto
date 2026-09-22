@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import type { AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
-import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
+import { ThreadOptionFields, ThreadOptions, threadOptionsSummary } from '../../../src/renderer/src/agents/ThreadOptions'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function fixture(thread: Partial<AgentThread> = {}): AgentState {
@@ -413,6 +413,16 @@ describe('composer option chips', () => {
     expect(screen.queryByRole('option', { name: 'Ask for approval' })).toBeNull()
     fireEvent.click(screen.getByRole('option', { name: /Bypass permissions/ }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', providerMode: 'bypass' }))
+  })
+
+  it('shows an unchosen provider mode as the one the thread starts on, never as a provider default', () => {
+    const model = { id: 'devin:model', name: 'Devin model', provider: 'Devin', providerId: 'devin' as const, ready: true, runtimeModes: [],
+      providerModes: [{ id: 'ask-first', name: 'Ask first', asks: 'Sotto asks before every edit, command and fetch.' }, { id: 'bypass', name: 'Bypass Permissions' }] }
+    expect(threadOptionsSummary(model, undefined, undefined, undefined)).toBe('Devin model · Ask first')
+    render(<ThreadOptionFields models={[model]} modelId="devin:model" onModel={vi.fn()} onReasoning={vi.fn()} onRuntime={vi.fn()} onProviderMode={vi.fn()} />)
+    const permissions = screen.getByRole('combobox', { name: 'Thread permissions' })
+    expect(permissions).toHaveValue('ask-first')
+    expect(within(permissions).queryByRole('option', { name: 'Provider default' })).toBeNull()
   })
 
   it('offers every provider on the rail with the reminder while the thread has not sent, and its own alone after', () => {
