@@ -1,15 +1,30 @@
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
+import { browserRequestText } from './browserRequests'
 
 const questionSchema = z.object({ sessionId: z.string(), toolCallId: z.string(), questions: z.array(z.object({ question: z.string(), id: z.string().optional(), header: z.string().optional(), multiSelect: z.boolean().optional(), options: z.array(z.object({ label: z.string(), description: z.string().optional(), preview: z.string().optional() })).default([]) })).min(1).max(30) })
 const permissionSchema = z.object({ sessionId: z.string(), toolCall: z.object({ toolCallId: z.string(), title: z.string().optional(), rawInput: z.unknown().optional() }), options: z.array(z.object({ optionId: z.string(), name: z.string(), kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']) })) })
 export type GrokPending = { wireId: string | number; threadId: string; toolCallId: string; request: AgentRequest; permission?: z.infer<typeof permissionSchema>; question?: z.infer<typeof questionSchema>; answering?: boolean }
+/**
+ * Grok reaches an MCP tool through its own `use_tool`, so the permission is nominally about that and
+ * the real tool is in its arguments: `rawInput.tool_name` in `server__tool` form, with the tool's own
+ * arguments under `rawInput.tool_input`. The title says only "use_tool" until a later update, which is
+ * too late to ask with. Read from recorded session traffic rather than from a permission frame, so a
+ * shape that does not match simply keeps the card Grok already gave (issue #199).
+ */
+const useToolSchema = z.object({ tool_name: z.string(), tool_input: z.unknown().optional() })
+function grokBrowserText(rawInput: unknown): string | undefined {
+  const used = useToolSchema.safeParse(rawInput)
+  return used.success ? browserRequestText(used.data.tool_name, used.data.tool_input) : undefined
+}
+
 export function grokPending(wireId: string | number, method: string, value: unknown, threadId: string): GrokPending | undefined {
   const id = `grok-request-${JSON.stringify(wireId)}`
   if (method === 'session/request_permission') {
     const permission = permissionSchema.parse(value)
-    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission', text: `${permission.toolCall.title ?? 'Grok requests permission to use a tool.'}${permission.toolCall.rawInput === undefined ? '' : `\n${JSON.stringify(permission.toolCall.rawInput).slice(0, 20000)}`}`, options: [],
+    const browser = grokBrowserText(permission.toolCall.rawInput)
+    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission', text: browser ?? `${permission.toolCall.title ?? 'Grok requests permission to use a tool.'}${permission.toolCall.rawInput === undefined ? '' : `\n${JSON.stringify(permission.toolCall.rawInput).slice(0, 20000)}`}`, options: [],
       permissionChoices: permission.options.map(option => ({ id: option.optionId, label: option.name, kind: option.kind === 'allow_once' ? 'allow-once' : option.kind === 'allow_always' ? 'allow-always' : 'deny',
         ...(['allow_always', 'reject_always'].includes(option.kind) ? { description: 'Remember this decision using the native provider’s offered scope.' } : {}) })),
       context: { toolCallId: permission.toolCall.toolCallId, details: permission.toolCall.rawInput === undefined ? undefined : JSON.stringify(permission.toolCall.rawInput).slice(0, 100000) } } }
