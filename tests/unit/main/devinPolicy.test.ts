@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { assertDevinNoIntegrations, assertDevinWorkingDirectory, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
+import { assertDevinNoIntegrations, assertDevinWorkingDirectory, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
 
 const roots: string[] = []
 async function setup() {
@@ -24,6 +24,34 @@ it('writes only its owned profile and confirms the native normalized readback', 
   expect(config.permissions.allow).toEqual([])
   expect(config.permissions.ask).toContain('exec')
   expect(Object.values(config.read_config_from).every(value => value === false)).toBe(true)
+})
+
+it('writes one profile per grant and asks about everything the grant does not allow', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const read = async (grant: 'nothing' | 'edits' | 'everything') =>
+    JSON.parse(await readFile(await prepareDevinPolicy(userData, cwd, nativeConfig, grant), 'utf8'))
+  const nothing = await read('nothing')
+  const edits = await read('edits')
+  const everything = await read('everything')
+  expect(nothing.permissions.allow).toEqual([])
+  expect(nothing.permissions.ask).toEqual(expect.arrayContaining(['edit', 'write', 'exec', 'Fetch(*)']))
+  expect(edits.permissions.allow).toEqual(expect.arrayContaining(['edit', 'write']))
+  expect(edits.permissions.ask).toEqual(['exec', 'Fetch(*)', 'mcp__*'])
+  expect(everything.permissions.ask).toEqual([])
+  expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
+  // A grant gets a file of its own, and the asking grant keeps the name a profile written before grants used.
+  expect(devinPolicyPath(userData, 'nothing')).toBe(await prepareDevinPolicy(userData, cwd, nativeConfig))
+  expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
+})
+
+it('confirms a readback only against the grant its own profile was written for', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const path = await prepareDevinPolicy(userData, cwd, nativeConfig, 'edits')
+  const config = JSON.parse(await readFile(path, 'utf8'))
+  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'edits')).not.toThrow()
+  // The same file read back as any other grant is a profile that does not say what the thread was told.
+  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'nothing')).toThrow(/approval profile/iu)
+  expect(() => verifyDevinPolicy({ config, configPath: path }, path, 'everything')).toThrow(/approval profile/iu)
 })
 
 it.each(['config.json', 'config.local.json', 'hooks.v1.json', 'mcp_config.json', 'mcp_config.local.json'])('refuses inherited native %s without parsing its contents', async name => {

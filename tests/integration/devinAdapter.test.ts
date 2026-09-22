@@ -219,8 +219,33 @@ describe('Devin dispatch and decision boundaries', () => {
   })
 
   it('rejects model changes and unsupported prompt controls before native dispatch', async () => {
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, modelId: f.modelId })).rejects.toThrow('not supported')
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, modelId: f.modelId })).rejects.toThrow('only change this thread')
     await expect(send(threadId, '/compact')).rejects.toThrow('not supported')
     expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(0)
+  })
+
+  it('offers Devin its own permission modes and starts every thread on the asking one', async () => {
+    const model = (await f.host.snapshot()).models.find(candidate => candidate.id === f.modelId)!
+    expect(model.runtimeModes ?? []).toEqual([])
+    expect(model.providerModes?.map(mode => mode.id)).toEqual(['ask-first', 'accept-edits', 'smart', 'plan', 'ask', 'bypass'])
+    // Every mode says what Sotto will still put to the user under it, including the one named for not asking.
+    expect(model.providerModes?.every(mode => (mode.asks ?? '').length > 0)).toBe(true)
+    expect(model.providerModes?.find(mode => mode.id === 'bypass')?.asks).toMatch(/nothing/iu)
+    expect(await thread()).toMatchObject({ providerMode: 'ask-first', runtimeMode: 'approval-required' })
+  })
+
+  it('changes a thread\u2019s permission mode by moving it onto that mode\u2019s own profile', async () => {
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'bypass' })
+    expect(await thread()).toMatchObject({ providerMode: 'bypass', runtimeMode: 'full-access' })
+    // The grant lives in a profile of its own, written and confirmed before the thread runs under it.
+    const profile = JSON.parse(await readFile(join(f.root, 'devin', 'approval-policy-v1-everything.json'), 'utf8'))
+    expect(profile.permissions).toMatchObject({ ask: [] })
+    expect(profile.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec']))
+    // The session is left stopped; the next action resumes it and sets it back to the recorded mode.
+    await send()
+    const mode = (await f.driver.requests()).filter(record => record.method === 'session/set_config_option' && record.params?.configId === 'mode').at(-1)
+    expect(mode?.params).toMatchObject({ value: 'bypass' })
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'not-a-mode' })).rejects.toThrow('does not offer')
+    expect(await thread()).toMatchObject({ providerMode: 'bypass' })
   })
 })

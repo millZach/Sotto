@@ -397,6 +397,24 @@ describe('composer option chips', () => {
     expect(screen.getByRole('option', { name: 'Ask for approval' })).toHaveFocus()
   })
 
+  it("offers a provider's own permission modes, each saying what Sotto still asks about", async () => {
+    const state = fixture({ providerId: 'devin', modelId: 'devin:model', providerMode: 'ask-first' })
+    const devin = state.host.models.find(model => model.id === 'devin:model')!
+    Object.assign(devin, { runtimeModes: [], providerModes: [
+      { id: 'ask-first', name: 'Ask first', description: 'Devin writes code and Sotto asks you first.', asks: 'Sotto asks before every edit, command and fetch.' },
+      { id: 'bypass', name: 'Bypass permissions', description: 'Auto-approve all tool calls.', asks: 'Sotto asks about nothing. Devin acts without asking you.' },
+    ] })
+    const { command } = mount(state)
+    const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
+    expect(chip).toHaveTextContent('Ask first')
+    fireEvent.click(chip)
+    // The one sentence that keeps "Bypass permissions" from reading as Sotto having stopped asking.
+    expect(screen.getByRole('option', { name: /Bypass permissions/ })).toHaveTextContent('Sotto asks about nothing')
+    expect(screen.queryByRole('option', { name: 'Ask for approval' })).toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: /Bypass permissions/ }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', providerMode: 'bypass' }))
+  })
+
   it('offers every provider on the rail with the reminder while the thread has not sent, and its own alone after', () => {
     mount()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))

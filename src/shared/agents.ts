@@ -100,11 +100,22 @@ export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), m
   preview: agentAttachmentPreviewSchema.optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
-export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional() })
+/**
+ * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
+ * and `description` are the provider's words; `asks` is Sotto's, and says what it will still put to the
+ * user while the mode is set -- the one sentence that keeps a mode called "Bypass Permissions" from
+ * implying Sotto stops asking when it does not (ADR-0022).
+ */
+export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id, description: text.optional(), asks: text.optional() }).strict()
+export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
+export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
+  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
+  /** Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four. */
+  providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
 })
@@ -173,6 +184,8 @@ export const agentThreadSchema = z.object({
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
+  /** The provider's own permission mode this thread is set to, where the provider names its own. */
+  providerMode: providerEntityId.optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
@@ -542,7 +555,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
-    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), managed: z.boolean().optional() }).strict(),
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(), managed: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */

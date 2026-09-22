@@ -6,6 +6,7 @@ export function validateThreadOptions(snapshot: AgentHostSnapshot, options: Agen
   if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
   if (options.reasoningEffort !== undefined && !model.reasoningEfforts?.includes(options.reasoningEffort)) throw new Error('That reasoning level is not supported by this model.')
   if (options.runtimeMode !== undefined && !model.runtimeModes?.includes(options.runtimeMode)) throw new Error('That permission mode is not supported by this provider.')
+  if (options.providerMode !== undefined && !model.providerModes?.some(mode => mode.id === options.providerMode)) throw new Error('That permission mode is not supported by this provider.')
 }
 
 export function validatePromptAttachments(snapshot: AgentHostSnapshot, modelId: string, attachments: AgentAttachment[] = []): AgentAttachment[] {

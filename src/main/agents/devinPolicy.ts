@@ -4,15 +4,30 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
-// This is Sotto's approval policy, not Devin's similarly named Normal mode.
-// The pinned native compatibility experiment proves asks override the tested
-// project grants even though ACP advertises accept-edits as its conversation mode.
-const policy = {
+// This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
+// the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
+// `accept-edits` and even `bypass` still sending session/request_permission, and an allow removing the ask
+// (docs/verification/devin-permission-modes.md). So a permission the user grants is granted here, in a
+// record Sotto owns, and never by trusting what a provider mode says it means (ADR-0004, ADR-0022).
+const EDITS = ['edit', 'write', 'Write(**)', 'Write(/**)']
+const ACTIONS = ['exec', 'Fetch(*)', 'mcp__*']
+
+/** What the user has granted Devin for a thread; everything not granted is asked, every time. */
+export const devinGrants = ['nothing', 'edits', 'everything'] as const
+export type DevinGrant = (typeof devinGrants)[number]
+
+const permissionsFor = (grant: DevinGrant): { allow: string[]; deny: string[]; ask: string[] } => ({
+  allow: grant === 'everything' ? [...EDITS, ...ACTIONS] : grant === 'edits' ? [...EDITS] : [],
+  deny: [],
+  ask: grant === 'everything' ? [] : grant === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
+})
+
+const policyFor = (grant: DevinGrant): Record<string, unknown> => ({
   version: 1,
-  permissions: { allow: [], deny: [], ask: ['edit', 'write', 'Write(**)', 'Write(/**)', 'exec', 'Fetch(*)', 'mcp__*'] },
+  permissions: permissionsFor(grant),
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
-}
+})
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
@@ -27,7 +42,7 @@ const presentationFields = new Set(['theme_mode', 'theme_auto_detect', 'pty_for_
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
-function normalizedProfileMatches(config: Record<string, unknown>): boolean {
+function normalizedProfileMatches(config: Record<string, unknown>, policy: Record<string, unknown>): boolean {
   if (!Object.entries(policy).every(([key, value]) => isDeepStrictEqual(config[key], value))) return false
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
@@ -44,7 +59,6 @@ function normalizedProfileMatches(config: Record<string, unknown>): boolean {
   return true
 }
 
-const policyText = `${JSON.stringify(policy, null, 2)}\n`
 const preparing = new Map<string, Promise<void>>()
 const nativeFiles = ['config.json', 'config.local.json', 'hooks.v1.json', 'mcp_config.json', 'mcp_config.local.json']
 
@@ -84,10 +98,21 @@ export async function assertDevinWorkingDirectory(cwd?: string, configDirectory 
   }
 }
 
-/** A versioned, Sotto-owned profile; existing native user/project files are never changed. */
-export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string, configDirectory?: string): Promise<string> {
+/** The profile a grant is written to. One file per grant, so a thread's file says what it was allowed. */
+export function devinPolicyPath(userDataDirectory: string, grant: DevinGrant): string {
+  return resolve(userDataDirectory, 'devin', grant === 'nothing' ? 'approval-policy-v1.json' : `approval-policy-v1-${grant}.json`)
+}
+
+/**
+ * A versioned, Sotto-owned profile; existing native user/project files are never changed. The grant a
+ * thread runs under picks the file, and `nothing` keeps the original name so a profile written before
+ * grants existed is still the one an asking thread uses.
+ */
+export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string, configDirectory?: string, grant: DevinGrant = 'nothing'): Promise<string> {
   await assertDevinWorkingDirectory(cwd, configDirectory)
-  const path = resolve(userDataDirectory, 'devin', 'approval-policy-v1.json')
+  const policy = policyFor(grant)
+  const policyText = `${JSON.stringify(policy, null, 2)}\n`
+  const path = devinPolicyPath(userDataDirectory, grant)
   let pending = preparing.get(path)
   if (!pending) {
     pending = (async () => {
@@ -124,12 +149,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
 /** Receives the result of _cognition.ai/config/read, never a logged protocol body.
  * This confirms the user profile only; it does not report merged native policy.
  */
-export function verifyDevinPolicy(result: unknown, path: string): void {
+export function verifyDevinPolicy(result: unknown, path: string, grant: DevinGrant = 'nothing'): void {
   const response = object(result)
   const config = object(response?.config)
   const matches = typeof response?.configPath === 'string' && isAbsolute(response.configPath)
     && resolve(response.configPath) === resolve(path)
-    && config && normalizedProfileMatches(config)
+    && config && normalizedProfileMatches(config, policyFor(grant))
   if (!matches) throw new Error('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 
