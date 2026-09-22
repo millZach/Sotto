@@ -103,5 +103,10 @@ timestamp still records nothing, because a transcript must not be given a clock 
 `docs/verification/process-creature.md` protects. `tests/unit/main/claudeLiveTiming.test.ts` holds all four
 cases, and the elapsed figures on ordinary Claude activity rows are now available for the same reason.
 
-Grok Build and Devin still record no start for a running action and so still show nothing; that is issue #197,
-not a property of this decision. Until it is done, the honest statement is Claude Code and Codex.
+Grok Build and Devin followed in issue #197, by the same shape and for the same reason: a live `tool_call` or
+`tool_call_update` that leaves a row running with no start records the moment Sotto received it, and a replayed
+one records nothing. `devinActivities` gained the `live` flag `grokActivities` already had, so the guard is
+written out in both. `tests/unit/main/grokDevinLiveTiming.test.ts` holds those cases. A start Sotto timed itself
+is therefore not restored when a row is rebuilt from provider history, which is the same thing the ornament
+already does: neither is carried back from a transcript. The claim at the top of this decision — that Codex,
+Grok and Devin threads get the hourglass — is now true of all four providers.

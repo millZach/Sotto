@@ -503,7 +503,7 @@ export class DevinAcpHost implements AgentHost {
         const thread = this.thread(id)
         thread.activities = mergeAgentActivities(thread.activities ?? [], devinActivities(update, {
           turnId: active.origin.messageId, afterMessageId: active.origin.messageId, cwd: alias.cwd,
-        }, thread.activities))
+        }, thread.activities, true))
       }
       this.emit(true); return
     }
