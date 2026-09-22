@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentBridge, type AgentConfiguration, type AgentVoiceModelStatus } from '../../../src/shared/agents'
 import { createConfiguredSpeech, NaturalSpeechSynthesizer } from '../../../src/renderer/src/agents/naturalSpeech'
+import { decodeBase64Audio } from '../../../src/renderer/src/agents/voiceSpeech'
 
 type Request = { id: number; text: string; voice: string }
 const workers: WorkerFixture[] = []
@@ -10,7 +11,7 @@ const disposables: { dispose(): void }[] = []
 const ready = { ready: true, completedBytes: 10, totalBytes: 10 }
 
 // Only external effects are replaced. The real configured output, cancellation,
-// worker protocol, base64 encoding, playback lifetime and provider selection run.
+// worker protocol, base64 decoding, playback lifetime and provider selection run.
 class WorkerFixture {
   onmessage: ((event: MessageEvent) => void) | null = null
   onerror: (() => void) | null = null
@@ -18,8 +19,8 @@ class WorkerFixture {
   readonly terminate = vi.fn()
   constructor(readonly url: URL, readonly options: WorkerOptions) { workers.push(this) }
   postMessage(request: Request): void { this.requests.push(request) }
-  reply(index = 0): void {
-    this.onmessage?.({ data: { id: this.requests[index]!.id, audio: new Uint8Array([82, 73, 70, 70]).buffer } } as MessageEvent)
+  reply(index = 0, audio: ArrayBuffer = new Uint8Array([82, 73, 70, 70]).buffer): void {
+    this.onmessage?.({ data: { id: this.requests[index]!.id, audio } } as MessageEvent)
   }
 }
 class AudioFixture {
@@ -59,6 +60,7 @@ afterEach(() => {
   for (const disposable of disposables.splice(0)) disposable.dispose()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('natural speech output', () => {
@@ -77,7 +79,9 @@ describe('natural speech output', () => {
     await flush()
     expect(workers[0]?.requests).toMatchObject([{ text: 'New reply', voice: 'M2' }])
     workers[0]!.reply()
-    expect(await next).toEqual({ audioBase64: 'UklGRg==', mimeType: 'audio/wav' })
+    const result = await next
+    expect(result).toEqual({ audio: expect.any(ArrayBuffer), mimeType: 'audio/wav' })
+    expect('audio' in result && [...new Uint8Array(result.audio)]).toEqual([82, 73, 70, 70])
     expect(model.mock.calls.every(call => call[0] === 'status')).toBe(true)
   })
 
@@ -177,6 +181,46 @@ describe('natural speech output', () => {
     expect(players).toHaveLength(0)
     expect(workers).toHaveLength(0)
     expect(bridge.voiceModel).not.toHaveBeenCalled()
+  })
+
+  it("plays the local voice worker's own buffer, with no base64 round trip", async () => {
+    const blobs: BlobPart[][] = []
+    const BrowserBlob = Blob
+    vi.stubGlobal('Blob', class extends BrowserBlob { constructor(parts: BlobPart[], options?: BlobPropertyBag) { super(parts, options); blobs.push(parts) } })
+    const encode = vi.spyOn(globalThis, 'btoa')
+    const decode = vi.spyOn(globalThis, 'atob')
+    const f = setup()
+    const spoken = f.output.speak('Natural reply')
+    await flush()
+    const audio = new Uint8Array(1024 * 1024).map((_, index) => index % 256).buffer
+    workers[0]!.reply(0, audio); await flush()
+    expect(blobs).toEqual([[audio]])
+    expect(blobs[0]![0]).toBe(audio)
+    expect(encode).not.toHaveBeenCalled()
+    expect(decode).not.toHaveBeenCalled()
+    players[0]!.onended?.()
+    await spoken
+  })
+
+  it("decodes a native reply's base64 to exactly the bytes main encoded, once", async () => {
+    const every = Uint8Array.from({ length: 256 * 4 }, (_, index) => index % 256)
+    const base64 = Buffer.from(every).toString('base64')
+    expect([...decodeBase64Audio(base64)]).toEqual([...every])
+    expect(decodeBase64Audio('')).toHaveLength(0)
+    expect(() => decodeBase64Audio('not base64!')).toThrow()
+
+    const blobs: BlobPart[][] = []
+    const BrowserBlob = Blob
+    vi.stubGlobal('Blob', class extends BrowserBlob { constructor(parts: BlobPart[], options?: BlobPropertyBag) { super(parts, options); blobs.push(parts) } })
+    const decode = vi.spyOn(globalThis, 'atob')
+    const f = setup({ ...defaultAgentConfiguration(), speechProvider: 'system' })
+    f.system.mockResolvedValueOnce({ audioBase64: base64, mimeType: 'audio/wav' })
+    const spoken = f.output.speak('System reply')
+    await flush()
+    expect(decode).toHaveBeenCalledOnce()
+    expect([...(blobs[0]![0] as Uint8Array)]).toEqual([...every])
+    players[0]!.onended?.()
+    await spoken
   })
 
   it('bounds stalled worker generation and permits a fresh worker after timeout', async () => {

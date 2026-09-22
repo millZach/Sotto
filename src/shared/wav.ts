@@ -75,3 +75,9 @@ export function encodeWavPcm16(samples: Float32Array, sampleRate: number): Uint8
 
   return bytes
 }
+
+/** How long the audio in an `encodeWavPcm16` file lasts at `sampleRate`, from its size alone. */
+export function pcm16WavDurationMs(byteLength: number, sampleRate: number): number {
+  const samples = Math.max(0, byteLength - WAV_HEADER_BYTES) / BYTES_PER_SAMPLE
+  return Math.round((samples / sampleRate) * 1_000)
+}

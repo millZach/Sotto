@@ -164,6 +164,18 @@ export async function loadVerifiedRuntimeSource(root: string): Promise<FileSourc
   }
 }
 
+/**
+ * Starts verifying the runtime now and hands back the answer for later. Startup calls this before its
+ * other awaits, so reading and hashing the 36 MB of runtime overlaps them instead of following them;
+ * whoever awaits the answer still sees a tampered runtime fail. If startup fails first and never awaits
+ * it, that rejection is not reported a second time as an unhandled one.
+ */
+export function beginRuntimeVerification(root: string, load: (root: string) => Promise<FileSource> = loadVerifiedRuntimeSource): Promise<FileSource> {
+  const verification = load(root)
+  verification.catch(() => undefined)
+  return verification
+}
+
 export async function resolveModelRequest(raw: string, sources: Readonly<Record<string, FileSource>>): Promise<string> {
   const relative = parseSafeRelative(raw, MODEL_SCHEME, 'model')
   const repository = Object.keys(sources).find((candidate) => relative.startsWith(`${candidate}/`))

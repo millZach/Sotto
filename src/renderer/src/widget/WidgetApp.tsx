@@ -99,6 +99,18 @@ function errorCopyFor(
       title: 'Connection unavailable',
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_OFFLINE,
     },
+    TRANSCRIPTION_BILLING: {
+      title: 'Out of credit',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_BILLING,
+    },
+    TRANSCRIPTION_RATE_LIMITED: {
+      title: 'Too many requests',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED,
+    },
+    TRANSCRIPTION_SERVICE_ERROR: {
+      title: 'OpenRouter error',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_SERVICE_ERROR,
+    },
     TRANSCRIPTION_FAILED: {
       title: 'Couldn’t transcribe',
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED,
@@ -626,8 +638,11 @@ export interface WidgetEntryProps {
 }
 
 export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): ReactNode {
-  const agents = useAgentConnection(preview === null ? bridge?.agents : undefined)
   const [liveSnapshot, setLiveSnapshot] = useState<WidgetSnapshot | null>(null)
+  // The widget draws nothing from the agent state while the voice coordinator is gated off, so it holds
+  // no connection either: no shell per streaming frame, no reconciliation, no cache write. Turning the
+  // setting on hands the hook a bridge again, which opens a fresh session and fetches the state whole.
+  const agents = useAgentConnection(preview === null && liveSnapshot?.voiceCoordinator === true ? bridge?.agents : undefined)
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
   const [dragCancellationVersion, setDragCancellationVersion] = useState(0)

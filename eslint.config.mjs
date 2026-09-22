@@ -22,6 +22,7 @@ export default tseslint.config(
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',
       'artifacts/held-action/**',
+      'artifacts/working-creature/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',

@@ -67,6 +67,7 @@ it.each([{ evicted: false, privacy: false }, { evicted: true, privacy: false }, 
     expect(restored.find(row => row.id === active.id)?.status).toBe('unknown')
     expect(workspace.threadMessages('thread').some(message => message.text.includes('Tampered'))).toBe(false)
     expect(workspace.workspaceSnapshot().threads[0]!.monitoring ?? []).toEqual([])
+    expect(workspace.workspaceSnapshot().threads[0]!.backgroundWork ?? []).toEqual([])
     const live = async (frame: Record<string, unknown>, expected: () => Promise<boolean>) => {
       await fixture.action('thread', { type: 'raw', frame })
       await expect.poll(expected).toBe(true)

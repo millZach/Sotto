@@ -13,7 +13,7 @@ import {
   transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import { MICROPHONE_NOT_SET_UP_DETAIL, type DictationState } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -205,5 +205,11 @@ describe('DictateRoom', () => {
     expect(dictateSentence({ status: 'idle' }, copy).sentence).toBe('Ready when you are.')
     expect(dictateSentence({ status: 'requesting-permission', sessionId: 'a' }, copy)).toMatchObject({ sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail })
     expect(dictateSentence({ status: 'error', sessionId: 'a', code: 'MIC_PERMISSION_DENIED', message: '' }, copy)).toMatchObject({ tone: 'error', detail: copy.homeMicrophonePermissionDenied })
+  })
+
+  it.each(Object.entries(TRANSCRIPTION_ERROR_DETAIL))('says why %s happened in the detail line', (code, detail) => {
+    expect(dictateSentence({ status: 'error', sessionId: 'a', code, message: '' }, platformCopy('win32'))).toEqual({
+      sentence: 'Dictation needs attention.', detail, tone: 'error',
+    })
   })
 })

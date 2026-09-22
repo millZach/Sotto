@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import React, { StrictMode } from 'react'
+import React, { Profiler, StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { AgentBridge, AgentState } from '../../../src/shared/agents'
 import type {
   SottoWidgetBridge,
   WidgetPresentation,
@@ -11,6 +12,7 @@ import type {
 import { MICROPHONE_NOT_SET_UP_DETAIL, type WidgetErrorCode, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
+import { threadsStateFixture } from './liveAgentState'
 import {
   WidgetApp,
   WidgetEntry,
@@ -180,10 +182,13 @@ describe('WidgetApp', () => {
     ['MIC_NOT_SET_UP', 'No microphone set up', MICROPHONE_NOT_SET_UP_DETAIL],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Add your OpenRouter API key in Settings to transcribe.'],
-    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. Check it in Settings.'],
-    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. Check your connection and try again.'],
-    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Transcription failed. Try again.'],
+    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.'],
+    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.'],
+    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.'],
+    ['TRANSCRIPTION_BILLING', 'Out of credit', 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.'],
+    ['TRANSCRIPTION_RATE_LIMITED', 'Too many requests', 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.'],
+    ['TRANSCRIPTION_SERVICE_ERROR', 'OpenRouter error', 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.'],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Sotto did not get usable text back. The recording was not kept. Dictate again.'],
     ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
     ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
@@ -1180,7 +1185,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
     expect(polite).toBeEmptyDOMElement()
-    expect(assertive).toHaveTextContent('Couldn’t transcribe. Transcription failed. Try again.')
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. Sotto did not get usable text back. The recording was not kept. Dictate again.')
     expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
 
     emit(snapshot({ status: 'idle' }))
@@ -1240,6 +1245,48 @@ describe('WidgetEntry', () => {
     await act(async () => Promise.resolve())
     expect(container).not.toHaveTextContent('private stop failure')
     expect(container).not.toHaveTextContent('private cancel failure')
+  })
+
+  it('holds no agent connection while the voice coordinator is off, and a whole one when it turns on', async () => {
+    const shells = new Set<(state: AgentState) => void>()
+    let agentState = threadsStateFixture()
+    const agents: AgentBridge = {
+      get: vi.fn(async () => agentState),
+      command: vi.fn(async () => agentState),
+      onState: vi.fn((listener: (state: AgentState) => void) => { shells.add(listener); return () => { shells.delete(listener) } }),
+    }
+    const { bridge, emit } = liveBridge()
+    let commits = 0
+    render(<Profiler id="widget" onRender={() => { commits += 1 }}><WidgetEntry bridge={{ ...bridge, agents }} platform="win32" preview={null} /></Profiler>)
+    /** One streamed chunk per shell, each a new state, the way main publishes while an agent works. */
+    const stream = (count: number): void => {
+      for (let index = 0; index < count; index += 1) {
+        agentState = { ...agentState, notice: `chunk ${index}` }
+        act(() => { for (const listener of shells) listener(agentState) })
+      }
+    }
+
+    emit(snapshot({ status: 'idle' }))
+    emit(snapshot({ status: 'idle', voiceCoordinator: false }))
+    await act(async () => Promise.resolve())
+    const before = commits
+    stream(100)
+    expect(agents.onState).not.toHaveBeenCalled()
+    expect(agents.get).not.toHaveBeenCalled()
+    expect(commits - before).toBe(0)
+
+    // Turning the coordinator on connects afresh: one subscription, one whole fetch, every shell drawn.
+    emit(snapshot({ status: 'idle', voiceCoordinator: true }))
+    await waitFor(() => expect(agents.get).toHaveBeenCalledTimes(1))
+    expect(agents.onState).toHaveBeenCalledTimes(1)
+    await act(async () => Promise.resolve())
+    const connected = commits
+    stream(100)
+    expect(commits - connected).toBe(100)
+
+    // And off again lets go of it.
+    emit(snapshot({ status: 'idle', voiceCoordinator: false }))
+    expect(shells.size).toBe(0)
   })
 })
 

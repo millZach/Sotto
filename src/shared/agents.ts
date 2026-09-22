@@ -5,7 +5,7 @@ import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
-import { agentMonitoringSchema } from './agentMonitoring'
+import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -112,6 +112,11 @@ export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.opt
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
+  /**
+   * The provider's own ids in Sotto's order, least to most thorough, so the last is the highest level.
+   * The adapter puts them in that order (`orderReasoningEfforts`); a provider that lists them highest
+   * first, as Grok does, is turned round there and nowhere else.
+   */
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
@@ -211,6 +216,8 @@ export const agentThreadSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** Ephemeral provider-confirmed watches; never reconstructed from saved activity. */
   monitoring: agentMonitoringSchema.optional(),
+  /** Ephemeral provider-confirmed agent work still running for this thread; never reconstructed from saved activity. */
+  backgroundWork: agentBackgroundWorkSchema.optional(),
   /** Tiny current counts; the retained roster is read through its own paged bridge. */
   subagentSummary: subagentSummarySchema.optional(),
   usage: threadUsageSchema.optional(),
@@ -273,7 +280,9 @@ export type SubscriptionProvider = z.infer<typeof subscriptionProviderSchema>
 export const subscriptionAccountSchema = z.object({
   provider: subscriptionProviderSchema, label: z.string(), installed: z.boolean(), ready: z.boolean(),
   detail: z.string(), models: z.array(z.object({
-    id: z.string(), name: z.string(), reasoningEfforts: z.array(z.string()).optional(),
+    id: z.string(), name: z.string(),
+    /** Least to most thorough, the last being the highest level, as on `agentModelSchema.reasoningEfforts`. */
+    reasoningEfforts: z.array(z.string()).optional(),
     defaultReasoningEffort: z.string().optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),

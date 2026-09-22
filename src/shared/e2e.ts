@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { AgentAssignment, AgentModel, AgentProject, AgentThread } from './agents'
 import { agentMessageSchema, agentRequestSchema } from './agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
-import { agentMonitoringSchema } from './agentMonitoring'
+import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 
 export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 /**
@@ -52,12 +52,13 @@ export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export const e2eAgentEventSchema = z.object({
   scope: z.enum(['thread', 'personal']).optional(),
-  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring']),
+  type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work']),
   threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
   request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   // Bounded synthetic histories and same-message deltas for the renderer performance lane.
   messages: z.array(agentMessageSchema).max(4_000).optional(), messageId: z.string().optional(),
   monitoring: agentMonitoringSchema.optional(),
+  backgroundWork: agentBackgroundWorkSchema.optional(),
 }).strict()
 
 export interface SottoE2EBridge {

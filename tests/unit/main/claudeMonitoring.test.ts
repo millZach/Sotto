@@ -44,6 +44,14 @@ describe('Claude confirmed monitoring', () => {
     expect(watch.current).toEqual([])
   })
 
+  // The subagent and spawn-depth marks narrow agent work only; a watch keeps the ownership rules it had.
+  it.each([{ owned_by_subagent: true }, { spawn_depth: 2 }])('keeps a root watch whatever %j says', patch => {
+    const watch = new ClaudeMonitoring()
+    watch.apply(start(patch))
+    expect(watch.current).toHaveLength(1)
+    expect(watch.working).toEqual([])
+  })
+
   it('recognizes nested ownership from streaming and complete launching tools', () => {
     const watch = new ClaudeMonitoring()
     watch.apply({ type: 'stream_event', parent_tool_use_id: 'child', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 'nested-1' } } })
