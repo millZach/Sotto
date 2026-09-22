@@ -340,7 +340,12 @@ async function pageBoundProblems(page: Page): Promise<string[]> {
 async function assertFocusPresentation(locator: Locator): Promise<void> {
   await locator.focus()
   if (!await locator.evaluate((element: unknown) => (element as { matches: (selector: string) => boolean }).matches(':focus-visible'))) {
-    await locator.page().keyboard.press('Tab')
+    // A focus ring only shows once the last input was the keyboard. Shift says
+    // that on its own: it moves focus nowhere and presses nothing, so the
+    // control beside this one is not focused and then blurred. Tab was used
+    // here before, and the blur it caused on the way back saved a setting the
+    // capture never asked to change.
+    await locator.page().keyboard.press('Shift')
     await locator.focus()
   }
   expect(await locator.evaluate((element: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === element)).toBe(true)
@@ -352,6 +357,18 @@ async function assertFocusPresentation(locator: Locator): Promise<void> {
   expect(outline.width).toBe('3px')
   expect(outline.style).not.toBe('none')
   expect(outline.color).not.toBe('rgba(0, 0, 0, 0)')
+}
+
+/**
+ * Settings starts every section visit at its heading, so that is what a section
+ * is photographed showing. Playwright scrolls a control into view before it
+ * presses it, and the saved-setting notice sits above the scrollport rather
+ * than inside it, so a shot taken after a press would otherwise be framed by
+ * whichever control was pressed and whether a notice was already up.
+ */
+async function startSettingsAtHeading(page: Page): Promise<void> {
+  await page.evaluate("document.querySelector('.settings-scroll')?.scrollTo(0, 0)")
+  await expect.poll(() => page.evaluate("document.querySelector('.settings-scroll')?.scrollTop ?? -1")).toBe(0)
 }
 
 /** The Dictate room says its state in the one sentence and marks the section for styling. */
@@ -847,6 +864,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('switch', { name: 'Sound cues' }).click()
       // The microphone test card carries a status of its own on this section, so the notice is named by its class.
       await expect(page.locator('.settings-notice')).toHaveText('Setting saved.')
+      await startSettingsAtHeading(page)
       await capturePage(page, 'settings-feedback.png', { category: 'settings', state: 'saved-feedback' })
 
       const settingsSections = [
@@ -1046,6 +1064,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('switch', { name: 'Sound cues' }).click()
       // The microphone test card carries a status of its own on this section, so the notice is named by its class.
       await expect(page.locator('.settings-notice')).toHaveText('Setting saved.')
+      await startSettingsAtHeading(page)
       await capturePage(page, 'settings-feedback-light.png', { theme: 'light' })
       for (const [heading, state] of [
         ['Providers', 'providers'],
