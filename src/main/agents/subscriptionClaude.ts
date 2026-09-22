@@ -5,6 +5,7 @@ import { access, mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
+import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 
 interface ClaudeSubscriptionOptions {
@@ -146,7 +147,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       if (!parsed.success || parsed.data.response.request_id !== requestId) continue
       return parsed.data.response.response.models.map(model => ({
         id: model.value, name: versionedName(model),
-        reasoningEfforts: model.supportsEffort === false ? [] : [...(model.supportedEffortLevels ?? [])],
+        reasoningEfforts: model.supportsEffort === false ? [] : orderReasoningEfforts(model.supportedEffortLevels ?? []),
       }))
     }
     throw new Error('Claude Code did not report an available model catalog.')

@@ -3,6 +3,7 @@ import { access, constants, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 
 interface GrokSubscriptionOptions {
@@ -94,7 +95,7 @@ export class GrokSubscriptionClient implements SubscriptionClient {
 
   private account(session: z.infer<typeof SESSION>): SubscriptionAccount {
     const models = session.models.availableModels.map(model => {
-      const reasoningEfforts = model._meta?.supportsReasoningEffort ? [...new Set(model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? [])] : []
+      const reasoningEfforts = model._meta?.supportsReasoningEffort ? orderReasoningEfforts(model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? []) : []
       const defaultOption = model._meta?.reasoningEfforts?.find(effort => effort.default)
       const reportedDefault = model._meta?.reasoningEffort ?? defaultOption?.value ?? defaultOption?.id
       return { id: model.modelId, name: model.name, reasoningEfforts, ...(reportedDefault && reasoningEfforts.includes(reportedDefault) ? { defaultReasoningEffort: reportedDefault } : {}) }

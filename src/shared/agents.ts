@@ -112,6 +112,11 @@ export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.opt
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
+  /**
+   * The provider's own ids in Sotto's order, least to most thorough, so the last is the highest level.
+   * The adapter puts them in that order (`orderReasoningEfforts`); a provider that lists them highest
+   * first, as Grok does, is turned round there and nowhere else.
+   */
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
@@ -273,7 +278,9 @@ export type SubscriptionProvider = z.infer<typeof subscriptionProviderSchema>
 export const subscriptionAccountSchema = z.object({
   provider: subscriptionProviderSchema, label: z.string(), installed: z.boolean(), ready: z.boolean(),
   detail: z.string(), models: z.array(z.object({
-    id: z.string(), name: z.string(), reasoningEfforts: z.array(z.string()).optional(),
+    id: z.string(), name: z.string(),
+    /** Least to most thorough, the last being the highest level, as on `agentModelSchema.reasoningEfforts`. */
+    reasoningEfforts: z.array(z.string()).optional(),
     defaultReasoningEffort: z.string().optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),

@@ -14,7 +14,9 @@ for (const session of Object.values(sessions)) delete session.promptId
 const save = () => writeFileSync(path('native-sessions.json'), JSON.stringify(sessions))
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
-const catalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
+const defaultCatalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
+// script.json may carry a whole catalog, so a case can reproduce Grok's own highest-first level list.
+const catalogOf = script => script.catalog ?? defaultCatalog
 const pending = new Map(); let serial = 5000
 // Mirrors Grok 1.0.5 as probed through SessionStart hooks: _meta applies when a session starts or is
 // loaded while not resident; loading a resident session can add always-approve but never removes it.
@@ -62,12 +64,12 @@ createInterface({input:process.stdin}).on('line', line => {
   pending.delete(frame.id); return
  }
  const p = frame.params ?? {}; const script = read('script.json', {})
- if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalog}}})
+ if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:[{id:'cached_token'}],_meta:{agentVersion:script.cliVersion ?? '1.0.5',modelState:catalogOf(script)}}})
  else if (frame.method === 'authenticate') { if (!script.ignoreAuthenticate) send({id:frame.id,result:{}}) }
  else if (frame.method === 'session/new') {
   checkPolicy(p._meta)
   const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta)}; resident.add(sessionId); save()
-  const reply = () => send({id:frame.id,result:{sessionId,models:catalog}})
+  const reply = () => send({id:frame.id,result:{sessionId,models:catalogOf(script)}})
   if (script.delayCreate) setTimeout(reply,script.delayCreate); else reply()
  }
  else if (frame.method === 'session/load') {
@@ -79,7 +81,7 @@ createInterface({input:process.stdin}).on('line', line => {
    if (!resident.has(p.sessionId)) session.permissionMode = nativeMode(p._meta)
    else if (p._meta?.yoloMode) session.permissionMode = 'bypassPermissions'
    resident.add(p.sessionId); save()
-   send({id:frame.id,result:{models:catalog,_meta:{sessionId:p.sessionId}}})
+   send({id:frame.id,result:{models:catalogOf(script),_meta:{sessionId:p.sessionId}}})
   }
  }
  else if (frame.method === '_x.ai/session/close') {

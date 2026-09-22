@@ -440,3 +440,42 @@ describe('composer option chips', () => {
     expect(within(started).getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Code model'])
   })
 })
+
+// The controls read a model's levels in the order main hands them over, least to most thorough, and do
+// not sort for themselves: the adapters own that order (orderReasoningEfforts). Grok lists its levels
+// highest first, and this is what its list looks like once its adapter has turned it round.
+describe('effort order contract', () => {
+  function grok(reasoningEffort: string): AgentState {
+    const state = fixture({ providerId: 'grok', modelId: 'grok:model', title: 'Grok work', reasoningEffort })
+    state.host.models = state.host.models.map(model => model.providerId === 'grok' ? { ...model, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'], defaultReasoningEffort: 'high' } : model)
+    return state
+  }
+
+  it('treats the last level as the highest and the first as the lowest', async () => {
+    const { command } = mount(grok('high'))
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    expect(chip).toHaveAttribute('data-effort-top', 'false')
+    fireEvent.click(chip)
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(slider).toHaveAttribute('max', '3')
+    expect(slider).toHaveValue('2')
+    fireEvent.keyDown(slider, { key: 'End' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'xhigh' }))
+    fireEvent.keyDown(slider, { key: 'Home' })
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'low' }))
+    cleanup()
+    mount(grok('xhigh'))
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveAttribute('data-effort-top', 'true')
+    cleanup()
+    mount(grok('low'))
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveAttribute('data-effort-top', 'false')
+  })
+
+  it('lists the New thread levels lowest first', () => {
+    const models = grok('high').host.models.filter(model => model.providerId === 'grok')
+    render(<ThreadOptionFields models={models} modelId="grok:model" onModel={vi.fn()} onReasoning={vi.fn()} onRuntime={vi.fn()} />)
+    const reasoning = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    expect(within(reasoning).getAllByRole('option').map(option => option.getAttribute('value'))).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(reasoning).toHaveValue('high')
+  })
+})
