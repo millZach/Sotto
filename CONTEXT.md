@@ -140,7 +140,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Threads page.** The management-window view that lists threads across Sotto's providers, including retained threads whose provider is disconnected. A thread's messages and pending decisions stay with its original provider. Avoid: "inbox", "dashboard".
 
-**Grant.** What a thread's owned policy profile allows its provider to do without asking: nothing, edits, or everything. A grant is a record Sotto writes and reads back, so it is the thing that decides whether a permission request reaches the user. A provider's own conversation mode is set alongside its grant and never stands in for one: a mode named for not asking says what the provider will not ask itself about, not what Sotto will stop asking (ADR-0022). Avoid: "permission level", and "mode" for the grant.
+**Allowance.** What a Devin thread's owned profile lets Devin do without asking: nothing, edits, or everything. Sotto writes it and reads it back, so it is what decides whether a permission request reaches the user. It carries out the permission mode the user chose; it is not an ADR-0004 policy record and is never a grant of authority. A provider's own conversation mode is set alongside the allowance and never stands in for one: a mode named for not asking says what the provider will not ask itself about, not what Sotto will stop asking (ADR-0022). Avoid: "grant", which is ADR-0004's word; "permission level"; "mode" for the allowance.
 
 **Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 

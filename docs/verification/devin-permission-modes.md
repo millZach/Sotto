@@ -27,27 +27,32 @@ Devin will not ask *itself* about, and says nothing about what reaches Sotto.
 
 ## The profile does
 
-Same prompt, same `accept-edits` mode, a profile granting `exec`: **0** permission requests. Changing only
+Same prompt, same `accept-edits` mode, a profile allowing `exec`: **0** permission requests. Changing only
 the profile changed the outcome.
 
 ## The settings as shipped
 
-One run per setting, each under the profile that setting now writes, with the mode echoed back confirming
+One run per setting, each under the profile that setting's allowance now writes, with the mode echoed back confirming
 it was set. Two prompts: one that runs a shell command, one that creates a file.
 
-| Setting | Devin mode | Grant | Command asked | Edit asked |
+| Setting | Devin mode | Allowance | Command asked | Edit asked |
 | --- | --- | --- | --- | --- |
 | Ask first | `accept-edits` | `nothing` | yes | yes |
 | Code | `accept-edits` | `edits` | yes | no |
-| Bypass permissions | `bypass` | `everything` | no | not run |
+| Bypass Permissions | `bypass` | `everything` | no | not run |
 
-Every row matches what the chip says about that setting. Smart shares the `edits` grant with Code and was
-not run separately; Ask and Plan share the `nothing` grant with Ask first and were not run separately,
-because the grant is what the table is testing and Devin's own behaviour within a grant is its own.
+Every row matches what the chip says about that setting. Smart shares the `edits` allowance with Code and was
+not run separately; Ask and Plan share the `nothing` allowance with Ask first and were not run separately,
+because the allowance is what the table is testing and Devin's own behaviour within one is its own.
 
-## Not checked
+## What these runs did not cover
 
-The `everything` grant was exercised for a command, not for an edit or a fetch. Mode changes on a thread
+These runs spoke to the CLI directly, so they prove what a profile does, not that the app reaches it. The
+first review of the branch found the app did not: the coordinator refused a change that carried only the
+mode, New thread dropped the mode, and a send checked the profile as the asking one. Those are fixed and
+covered by tests at the coordinator, workspace and adapter, each shown failing on the code before the fix.
+
+The `everything` allowance was exercised for a command, not for an edit or a fetch. Mode changes on a thread
 with existing history were exercised through the adapter's own tests rather than against the live CLI, so
 the live resume-under-a-new-profile path is covered by unit and integration tests only. macOS is
 unverified, as ADR-0017 already records.
