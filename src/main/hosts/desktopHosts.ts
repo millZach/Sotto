@@ -9,7 +9,13 @@ import type { DesktopHostRouter } from './desktopHostRouter'
 
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
-interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number }
+/**
+ * `closing` is set while Stop host or Forget runs. Both drop the socket on purpose before the SSH reply
+ * arrives (the host closes its listener to stop, and a revoke closes the revoked peer), and a drop then
+ * must not be read as a lost connection: reconnecting would restart the host being stopped, or pair again
+ * with the host just told to forget this computer.
+ */
+interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
 interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active: LiveHost | undefined }
 /** Drops that only the user can resolve stop the reconnect backoff instead of retrying. */
 const FINAL_FAILURES = ['identity changed', 'host key changed', 'installation was not found', 'connection record could not be read', 'identity file could not be read', 'could not pair again']
@@ -68,7 +74,10 @@ export class DesktopHosts {
     if (command.type === 'disconnect') { this.clearRetry(host.id); await this.disconnect(host.id); return this.get() }
     if (command.type === 'stop-host') {
       this.clearRetry(host.id)
-      const stopped = await this.stopOwnedHost(host, this.live.get(host.id))
+      const active = this.live.get(host.id)
+      this.requireOwnedConnection(host, active)
+      active!.closing = true
+      const stopped = await this.stopOwnedHost(active!)
       await this.disconnect(host.id)
       if (!stopped) throw new Error(this.notStopped(host))
       return this.get()
@@ -78,8 +87,12 @@ export class DesktopHosts {
       const active = this.live.get(host.id)
       // A host that cannot be reached is still forgotten here; the dialog says its access stays until revoked there.
       if (active?.tunnel && this.status.get(host.id)?.phase === 'connected') {
-        if (host.clientId) await active.tunnel.revokeClient(host.clientId)
-        if (active.tunnel.owned && !(await this.stopOwnedHost(host, active))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
+        // Revoke first: the admin endpoint that revokes lives on the running host, so it cannot follow a stop.
+        // The revoke drops this computer's socket, which `closing` keeps from reconnecting and pairing again.
+        active.closing = true
+        try { if (host.clientId) await active.tunnel.revokeClient(host.clientId) }
+        catch (error) { await this.disconnect(host.id); throw error }
+        if (active.tunnel.owned && !(await this.stopOwnedHost(active))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
       }
       await this.disconnect(host.id)
       await this.options.credentials.set(`remote-host:${host.id}`, '')
@@ -94,7 +107,7 @@ export class DesktopHosts {
       active.tunnel = await active.launcher.connect({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
         ...(host.identityFile ? { identityFile: host.identityFile } : {}) }, {
         onPrompt: prompt => { if (this.live.get(host.id) !== active) return; const state = this.status.get(host.id); if (state) { if (prompt) state.prompt = prompt; else delete state.prompt; this.emit() } },
-        onDisconnected: () => { if (this.live.get(host.id) === active) this.dropped(host, active) },
+        onDisconnected: () => { if (this.live.get(host.id) === active && !active.closing) this.dropped(host, active) },
       })
       if (this.live.get(host.id) !== active) { await active.tunnel.close(); return this.get() }
       if (host.hostId && host.hostId !== active.tunnel.hostId) throw new Error('The host identity changed. Check its data folder before connecting again.')
@@ -143,14 +156,14 @@ export class DesktopHosts {
     const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined as never }
     entry.timer = setTimeout(() => {
       if (this.retries.get(host.id) !== entry) return
-      if (entry.active && this.live.get(host.id) !== entry.active) return
+      if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return
       void this.command({ type: 'connect', id: host.id })
     }, (this.options.retryDelayMs ?? (attempt => Math.min(30_000, 1_000 * 2 ** attempt)))(entry.attempt))
     entry.attempt += 1
     this.retries.set(host.id, entry)
   }
   private dropped(host: SavedHost, active: LiveHost): void {
-    if (this.status.get(host.id)?.phase !== 'connected') return
+    if (active.closing || this.status.get(host.id)?.phase !== 'connected') return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
@@ -173,11 +186,14 @@ export class DesktopHosts {
     this.clearRetry(host.id)
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.tunnel!.owned })
   }
-  /** Asks the supervisor to stop a host this Sotto started; a discovered host is never stopped. False means it may still run. */
-  private async stopOwnedHost(host: SavedHost, active: LiveHost | undefined): Promise<boolean> {
+  /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
+  private requireOwnedConnection(host: SavedHost, active: LiveHost | undefined): void {
     if (!active?.tunnel || this.status.get(host.id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before stopping its host.`)
     if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
-    try { return await active.tunnel.stopHost() } catch { return false }
+  }
+  /** Asks the supervisor to stop the host. False means it may still run. */
+  private async stopOwnedHost(active: LiveHost): Promise<boolean> {
+    try { return await active.tunnel!.stopHost() } catch { return false }
   }
   private notStopped(host: SavedHost): string { return `The host on ${host.name} could not be stopped and may still be running. Check it on that machine, then connect and try again.` }
   private async disconnect(id: string, keepRetry = false): Promise<void> {

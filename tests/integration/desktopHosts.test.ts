@@ -21,6 +21,15 @@ let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
 let retryDelay: (attempt: number) => number = () => 0
 let owned = true, stopResult: boolean | Error = true
+/** Runs before a stop answers; the real host closes its listener, dropping every peer, before it replies. */
+let beforeStopReply: () => Promise<void> = async () => undefined
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+/** Revokes the way the SSH supervisor does, through the host's admin endpoint, which closes the revoked peer before replying. */
+async function adminRevoke(clientId: string): Promise<boolean> {
+  const descriptor = JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }
+  const response = await fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/admin/revoke-client', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId }) })
+  return ((await response.json()) as { revoked: boolean }).revoked
+}
 const stops: string[] = []
 class FixtureSsh extends SshHostLauncher {
   callbacks?: SshCallbacks
@@ -31,8 +40,8 @@ class FixtureSsh extends SshHostLauncher {
     return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned,
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
-      revokeClient: id => host.pairing.revoke(id),
-      stopHost: async () => { stops.push(reportedHostId); if (stopResult instanceof Error) throw stopResult; return stopResult },
+      revokeClient: adminRevoke,
+      stopHost: async () => { stops.push(reportedHostId); await beforeStopReply(); if (stopResult instanceof Error) throw stopResult; return stopResult },
     }
   }
   override async disconnect(): Promise<void> {}
@@ -43,7 +52,7 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; retryDelay = () => 0; owned = true; stopResult = true
+  launchers.length = 0; failures.length = 0; stops.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined
   manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => retryDelay(attempt), launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
   await manager.start()
 })
@@ -94,6 +103,28 @@ describe('desktop remote host management over a real socket', () => {
     expect(stops).toEqual([reportedHostId])
     expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected' })
     expect(router.shell().connections).toEqual([])
+  })
+  it('does not reconnect while a stop slower than the retry delay closes the host under it', async () => {
+    const remote = await add()
+    beforeStopReply = async () => { await host.close(); await pause(150) }
+    await manager.command({ type: 'stop-host', id: remote.id })
+    await pause(100)
+    expect(stops).toEqual([reportedHostId])
+    expect(launchers).toHaveLength(1)
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected' })
+    expect(manager.get().hosts[0]!.reconnecting).toBeUndefined()
+  })
+  it('forgets over a revoke that closes the socket, stops the host and never pairs again', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    beforeStopReply = () => pause(150)
+    await manager.command({ type: 'forget', id: remote.id })
+    await pause(100)
+    expect(host.pairing.verifyToken(token)).toBeUndefined()
+    expect(stops).toEqual([reportedHostId])
+    expect(manager.get().hosts).toEqual([]); expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+    expect(launchers).toHaveLength(1)
+    expect(host.pairing.list()).toEqual([])
   })
   it('never stops a host it discovered and says so', async () => {
     owned = false
