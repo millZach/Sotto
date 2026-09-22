@@ -89,6 +89,25 @@ describe('native usage observations', () => {
     expect(store.get('thread')?.estimatedUsd).toBeCloseTo(0.00315, 8)
     await store.flushed()
   })
+  it('reads the Claude context window when the result frame keys the model by its context suffix', async () => {
+    const { store } = await usage('claude')
+    const message = { id: 'assistant', model: 'claude-opus-5', usage: { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
+    store.claude('thread', { type: 'assistant', message }, 'opus[1m]')
+    // The session chose opus[1m]; the assistant frames name claude-opus-5 and the result frame claude-opus-5[1m].
+    store.claudeResult('thread', { duration_ms: 12, modelUsage: { 'claude-opus-5[1m]': { contextWindow: 1_000_000 } } })
+    expect(store.get('thread')).toMatchObject({ contextWindow: 1_000_000, modelId: 'opus[1m]' })
+    await store.flushed()
+  })
+
+  it('leaves the Claude context window unread when two suffixed models could have reported it', async () => {
+    const { store } = await usage('claude')
+    const message = { id: 'assistant', model: 'claude-opus-5', usage: { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }
+    store.claude('thread', { type: 'assistant', message }, 'opus[1m]')
+    store.claudeResult('thread', { duration_ms: 12, modelUsage: { 'claude-opus-5[1m]': { contextWindow: 1_000_000 }, 'claude-opus-5[200k]': { contextWindow: 200_000 } } })
+    expect(store.get('thread')?.contextWindow).toBeUndefined()
+    await store.flushed()
+  })
+
   it('prices Claude native cache TTLs once across streaming, completed message and durable log replay', async () => {
     const { store, root } = await usage('claude')
     const message = { id: 'assistant', model: 'claude-sonnet-4-6', usage: { input_tokens: 1000, output_tokens: 100,
