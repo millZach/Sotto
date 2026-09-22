@@ -11,6 +11,11 @@ export function followupDigest(input: Pick<AgentFollowup, 'text' | 'attachments'
 }
 const schema = z.object({ items: z.array(agentFollowupSchema), receipts: z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS) })
 type State = z.infer<typeof schema>
+/** The durable queue as it stands, for reading only. */
+export interface FollowupView {
+  readonly items: readonly Readonly<State['items'][number]>[]
+  readonly receipts: readonly Readonly<State['receipts'][number]>[]
+}
 
 /** Only durable snapshots become visible. No provider work runs under this store's mutation lane. */
 export class FollowupStore {
@@ -29,6 +34,12 @@ export class FollowupStore {
     })
   }
   get(): State { return structuredClone(this.state) }
+  /**
+   * The queue without a copy, for callers that only look: the coordinator reads thread ids and statuses
+   * several times per streaming frame, and a copy carries every queued image with it. Safe to hold across
+   * an await, because a change never edits this object; it builds the next one and swaps it in whole.
+   */
+  peek(): FollowupView { return this.state }
   private change(update: (state: State) => void): Promise<void> {
     const task = this.tail.catch(() => undefined).then(async () => {
       const next = this.get(); update(next)

@@ -5,7 +5,7 @@ import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
-import { agentMonitoringSchema } from './agentMonitoring'
+import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -218,6 +218,8 @@ export const agentThreadSchema = z.object({
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
   /** Ephemeral provider-confirmed watches; never reconstructed from saved activity. */
   monitoring: agentMonitoringSchema.optional(),
+  /** Ephemeral provider-confirmed agent work still running for this thread; never reconstructed from saved activity. */
+  backgroundWork: agentBackgroundWorkSchema.optional(),
   /** Tiny current counts; the retained roster is read through its own paged bridge. */
   subagentSummary: subagentSummarySchema.optional(),
   usage: threadUsageSchema.optional(),

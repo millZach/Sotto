@@ -53,7 +53,7 @@ Final adapter validation: the actual Claude reconnect path now receives retained
 
 The rule at the top of this note — no elapsed-time buffer, no assistant-text classification, no ordinary
 command or surviving-shell heuristic — still holds for **monitoring**, and for the same reason: monitoring
-claims the provider is watching background work, and only `monitor`/`monitor_mcp` lifecycle events are
+claims the provider is watching a background process or task, and only `monitor`/`monitor_mcp` lifecycle events are
 evidence for that claim.
 
 ADR-0021 adds a second pose that makes a weaker claim. **Waiting** says only that one action of the live
@@ -62,3 +62,12 @@ record it is read off, so elapsed time is sufficient evidence for it where it wa
 monitoring. The hourglass is not the walk, does not say anything is being watched, is not restored from
 history, and grants nothing. A confirmed monitoring task still outranks it for the single track the
 composer reserves. Assistant prose remains rejected as evidence for either pose.
+
+## Amendment, September 22 2026: background work
+
+Issue #221 adds a third pose, **Working**, for agent work the provider confirms is still running, whether or not
+a turn is: a workflow, a subagent, a teammate or a remote agent. The rule at the top of this note
+holds for it too. Its evidence is Claude Code's own `task_started` frames and their bookends, never elapsed time,
+transcript text or a surviving process, and it is never restored from history. A confirmed monitoring task still
+keeps the track first; background work comes before a held action. The decision is ADR-0023 and the evidence is
+[working-creature.md](working-creature.md).

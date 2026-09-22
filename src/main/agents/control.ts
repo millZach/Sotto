@@ -9,7 +9,7 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -30,6 +30,8 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
+import { resolveFilesBinding } from '../files/binding'
+import type { FilesBinding } from '../files/service'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -343,10 +345,18 @@ export class AgentControl {
   }
   hasPendingThreadWork(threadId: string): boolean {
     return this.outbox.some(item => item.threadId === threadId)
-      || this.followupStore.get().items.some(item => item.threadId === threadId)
+      || this.followupStore.peek().items.some(item => item.threadId === threadId)
       || this.state.assignments.some(item => item.threadId === threadId && item.mode === 'managed' && !item.paused)
       || (this.state.deliveries ?? []).some(item => item.threadId === threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))
   }
+  /**
+   * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
+   * ask this several times per listing and every couple of seconds per watched workspace; answering from
+   * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
+   */
+  filesBinding(threadId: string): FilesBinding | null { return resolveFilesBinding(this.state.host, threadId) }
+  /** The projects alone, as a copy, for callers that need nothing else from the state. */
+  projects(): AgentProject[] { return structuredClone(this.state.host.projects) }
   get(): AgentState {
     const state = structuredClone(this.state)
     state.hostId = state.host.hostId
@@ -421,7 +431,7 @@ export class AgentControl {
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds,
       ...(this.state.deliveries ?? []).filter(item => item.status !== 'accepted').map(item => item.threadId),
-      ...this.followupStore.get().items.map(item => item.threadId),
+      ...this.followupStore.peek().items.map(item => item.threadId),
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []),
     ])].filter(id => this.state.host.threads.some(thread => thread.id === id))
   }
@@ -735,7 +745,7 @@ export class AgentControl {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
-      ...this.followupStore.get().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
+      ...this.followupStore.peek().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
   }
   private thread(id: string | null): AgentThread {
     const thread = this.state.host.threads.find(t => t.id === id)
@@ -1171,7 +1181,7 @@ export class AgentControl {
   }
   private followupReady(threadId: string, ownCommandId?: string): boolean {
     const thread = this.state.host.threads.find(t => t.id === threadId)
-    const reviewed = thread && this.followupStore.get().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
+    const reviewed = thread && this.followupStore.peek().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
       && thread.lastTurn?.status !== 'running'
       && (thread.nativeSessionStarted === false || thread.lastTurn?.status === 'completed' || reviewed) && !thread.requests.length
@@ -1182,7 +1192,9 @@ export class AgentControl {
   }
   private pumpFollowups(): void {
     if (this.disposed) return
-    const items = this.followupStore.get().items
+    // Read, not copied: this runs for every host snapshot. `first` below may be held across the dispatch
+    // awaits, which is safe because the store replaces its state rather than editing it.
+    const items = this.followupStore.peek().items
     for (const threadId of new Set(items.map(item => item.threadId))) {
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
@@ -1239,7 +1251,7 @@ export class AgentControl {
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
-        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (this.followupStore.get().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
+        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
     }
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {

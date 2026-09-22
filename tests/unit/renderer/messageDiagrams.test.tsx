@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { Profiler } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -115,5 +115,37 @@ describe('diagrams in answers', () => {
     const viewer = screen.getByRole('dialog')
     act(() => { viewer.dispatchEvent(new Event('cancel', { cancelable: true })) })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('mounts a diagram it has already drawn as its drawing, in one commit', async () => {
+    const source = 'stateDiagram-v2\n  accTitle: Login\n  Idle --> Signed'
+    const first = render(<MessageContent text={fence(source)} />)
+    await screen.findByRole('img', { name: 'State diagram: Login' })
+    first.unmount()
+
+    let commits = 0
+    render(<Profiler id="answer" onRender={() => { commits += 1 }}><MessageContent text={fence(source)} /></Profiler>)
+    // Synchronously, before any renderer promise settles: the image, not the source and "Drawing…".
+    expect(screen.getByRole('figure', { name: 'State diagram: Login' })).toHaveAttribute('data-state', 'drawn')
+    expect(screen.queryByText('Drawing…')).toBeNull()
+    await waitFor(() => expect(renderer.renderDiagram).toHaveBeenCalledTimes(2))
+    await act(async () => Promise.resolve())
+    // The renderer still confirms the drawing, and the confirmation changes nothing on screen.
+    expect(commits).toBe(1)
+    expect(screen.getByRole('img', { name: 'State diagram: Login' })).toHaveAttribute('src', DRAWING.ok && DRAWING.dataUrl)
+  })
+
+  it('never mounts a failed diagram as drawn, so the next view asks again', async () => {
+    const source = 'flowchart TD\n  accTitle: Retry\n  A --> B'
+    renderer.renderDiagram.mockResolvedValue({ ok: false, reason: 'Took too long to draw.' })
+    const first = render(<MessageContent text={fence(source)} />)
+    expect(await screen.findByText("Couldn't draw this diagram. Took too long to draw.")).toBeInTheDocument()
+    first.unmount()
+
+    renderer.renderDiagram.mockResolvedValue(DRAWING)
+    render(<MessageContent text={fence(source)} />)
+    expect(screen.getByText('Drawing…')).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: 'Flowchart: Login' })).toBeInTheDocument()
+    expect(renderer.renderDiagram).toHaveBeenCalledTimes(2)
   })
 })

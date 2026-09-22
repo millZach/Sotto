@@ -12,11 +12,28 @@ interface LocalAudioElement {
   pause(): void
 }
 
+/** A spoken reply's WAV: base64 from main over IPC, or the local voice worker's own buffer, which needs no encoding. */
+export type SynthesizedSpeech =
+  | { readonly audioBase64: string; readonly mimeType: 'audio/wav' }
+  | { readonly audio: ArrayBuffer; readonly mimeType: 'audio/wav' }
+
+/**
+ * Base64 to bytes with a plain indexed loop. `Uint8Array.from(text, callback)` walks the string iterator
+ * and calls back once per byte, about 50 ms per MB of audio on the renderer's main thread before the reply
+ * can start; this is a few milliseconds. `atob` returns only characters 0-255, so the bytes are the same.
+ */
+export function decodeBase64Audio(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
+}
+
 /** Plays WAV data from the narrow native synthesis bridge; no provider key enters this window. */
 export class NativeSystemSpeech implements VoiceSpeechOutput {
   private finish: (() => void) | null = null
 
-  constructor(private readonly synthesize: (text: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>, private readonly cancelSynthesis?: () => void) {}
+  constructor(private readonly synthesize: (text: string) => Promise<SynthesizedSpeech>, private readonly cancelSynthesis?: () => void) {}
 
   speak(text: string): Promise<void> {
     this.stop()
@@ -46,7 +63,7 @@ export class NativeSystemSpeech implements VoiceSpeechOutput {
       timer = globalThis.setTimeout(() => { this.cancelSynthesis?.(); finish(new Error('Speech generation timed out. Read the reply in the widget.')) }, 65_000)
       void this.synthesize(text).then(async (result) => {
         if (settled) return
-        const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))
+        const bytes = 'audio' in result ? result.audio : decodeBase64Audio(result.audioBase64)
         objectUrl = URL.createObjectURL(new Blob([bytes], { type: result.mimeType }))
         const browser = globalThis as unknown as { Audio: new (url: string) => LocalAudioElement }
         player = new browser.Audio(objectUrl)

@@ -34,7 +34,7 @@ export function cacheableShell(state: AgentState): AgentState {
   const shell = agentShell(state)
   return {
     ...shell,
-    host: { ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], monitoring: undefined })) },
+    host: { ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], monitoring: undefined, backgroundWork: undefined })) },
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
     // Attention is live: what needed the user last time is not what needs them now, and a restored
@@ -55,7 +55,7 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
       // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
       ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, error: null, connection: 'disconnected',
       host: { ...state.host, connected: false,
-        threads: state.host.threads.map(thread => ({ ...thread, monitoring: undefined })),
+        threads: state.host.threads.map(thread => ({ ...thread, monitoring: undefined, backgroundWork: undefined })),
         providers: state.host.providers?.map(provider => ({ ...provider, connection: 'disconnected' as const })) },
     }
   } catch { return null }

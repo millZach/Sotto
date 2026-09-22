@@ -133,6 +133,9 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'monitoring') {
       if (!event.monitoring) throw new Error('E2E_MONITORING_REQUIRED')
       thread.monitoring = structuredClone(event.monitoring)
+    } else if (event.type === 'background-work') {
+      if (!event.backgroundWork) throw new Error('E2E_BACKGROUND_WORK_REQUIRED')
+      thread.backgroundWork = structuredClone(event.backgroundWork)
     } else if (event.type === 'history') {
       if (!event.messages) throw new Error('E2E_HISTORY_REQUIRED')
       thread.messages = structuredClone(event.messages)

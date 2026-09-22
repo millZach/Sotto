@@ -21,7 +21,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
-import { ThreadMonitor, ThreadHeld, useHeldAction } from './ThreadMonitor'
+import { ThreadMonitor, ThreadHeld, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -112,11 +112,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const monitoringBlocked = state.queue.some(item => item.threadId === thread.id && item.kind !== 'ready')
   const ornamentAllowed = rowConnected && !closed && !monitoringBlocked && thread.status !== 'error' && thread.requests.length === 0
   const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
-  const monitor = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} /> : undefined
-  // Waiting is the weaker claim of the two, so a confirmed watch keeps the track: it names the task, and this
-  // only names the clock. One ornament either way, because the composer reserves room for exactly one.
-  const held = useHeldAction(thread, ornamentAllowed && monitor === undefined, now)
-  const ornament = monitor ?? (held === undefined ? undefined
+  const liveWork = ornamentAllowed ? thread.backgroundWork ?? [] : []
+  // One ornament, because the composer reserves room for exactly one, taken by the strongest claim. A watch
+  // says the provider is looking at something; background work says only that agents it started still run;
+  // waiting says only that time is passing, so the two confirmed states keep the track ahead of the clock.
+  const confirmed = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
+    : liveWork.length ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} /> : undefined
+  const held = useHeldAction(thread, ornamentAllowed && confirmed === undefined, now)
+  const ornament = confirmed ?? (held === undefined ? undefined
     : <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />)
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = hasDraftContent(paneDraft.draft)

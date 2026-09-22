@@ -447,3 +447,28 @@ it('reconciles a late steer confirmation behind an untouched queue head', async 
   await expect.poll(() => f.control.get().followups?.map(item => item.text)).toEqual(['keep first'])
   expect(f.host.attempts).toHaveLength(1)
 })
+
+it('reads a waiting image follow-up without copying the queue on every streaming snapshot', async () => {
+  const f = await fixture(); f.host.update('workshop', { status: 'running' })
+  // A 3 MB screenshot waiting behind a running turn: the case that made every copy cost milliseconds.
+  const dataUrl = `data:image/png;base64,${Buffer.alloc(3 * 1024 * 1024, 7).toString('base64')}`
+  await f.control.command({ ...queued('look at this'), attachments: [{ id: 'shot', name: 'shot.png', mimeType: 'image/png', dataUrl }] })
+  const copies = vi.spyOn(FollowupStore.prototype, 'get')
+  const reads = vi.spyOn(FollowupStore.prototype, 'peek')
+  for (let chunk = 0; chunk < 50; chunk += 1) f.host.update('workshop', { title: `streaming ${chunk}` })
+  f.control.get()
+  expect(reads.mock.calls.length).toBeGreaterThanOrEqual(50)
+  expect(copies).not.toHaveBeenCalled()
+  expect(f.host.attempts).toHaveLength(0)
+  expect(f.control.get().followups?.[0]?.attachments[0]?.dataUrl).toBe(dataUrl)
+})
+
+it('keeps a view it handed out unchanged when the queue changes after it', async () => {
+  const f = await fixture(); const store = new FollowupStore(f.root); await store.load()
+  await store.enqueue({ ...queued('first'), attachments: [] })
+  const before = store.peek()
+  await store.enqueue({ ...queued('second'), attachments: [] })
+  await store.edit(before.items[0]!.threadId, before.items[0]!.id, { text: 'edited', attachments: [] })
+  expect(before.items.map(item => item.text)).toEqual(['first'])
+  expect(store.peek().items.map(item => item.text)).toEqual(['edited', 'second'])
+})

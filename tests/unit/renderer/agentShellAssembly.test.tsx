@@ -269,3 +269,16 @@ it('keeps monitoring on the live shell but never caches or restores it', () => {
   expect(readShellCache()!.host.threads[0]!.monitoring).toBeUndefined()
   expect(watched.monitoring).toHaveLength(1)
 })
+
+it('keeps background work on the live shell but never caches or restores it', () => {
+  const working = thread('workshop', [])
+  working.backgroundWork = [{ id: '0d5c4b7e-3f5a-4f0e-8a51-2b8f1c9d7e60', label: 'Agent only while connected', type: 'workflow' }]
+  const live = fullState([working])
+  expect(agentShell(live).host.threads[0]!.backgroundWork).toEqual(working.backgroundWork)
+  writeShellCache(live)
+  expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('Agent only while connected')
+  expect(readShellCache()!.host.threads[0]!.backgroundWork).toBeUndefined()
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
+  expect(readShellCache()!.host.threads[0]!.backgroundWork).toBeUndefined()
+  expect(working.backgroundWork).toHaveLength(1)
+})
