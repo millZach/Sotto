@@ -46,7 +46,11 @@ export function grokActivities(update: Record<string, unknown>, context: { turnI
   const locations = Array.isArray(update.locations) ? update.locations.map(object).flatMap(value => typeof value?.path === 'string' ? [{ path: bounded(value.path), kind: typeof update.kind === 'string' ? update.kind : 'location' }] : []) : []
   const kind = update.kind === 'execute' ? 'command' : ['edit', 'delete', 'move'].includes(String(update.kind)) ? 'file-change' : old?.kind ?? 'tool'
   const status = update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed' : ['pending', 'in_progress'].includes(String(update.status)) ? 'running' : old?.status ?? 'unknown'
+  // A Grok tool update carries no time of its own, so the moment Sotto received a live one is the only start a
+  // running row can have. A replayed update records nothing, because a transcript must not be given a clock it never had.
+  const startedAt = live && status === 'running' && !old?.startedAt ? new Date().toISOString() : undefined
   return [{ ...context, ...old, id, sequence: old?.sequence ?? 0, kind, status, title: typeof update.title === 'string' ? bounded(update.title) : old?.title ?? 'Tool',
+    ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}),
     ...(typeof input?.command === 'string' ? { command: bounded(input.command) } : {}),
     ...(update.rawInput !== undefined ? { text: bounded(JSON.stringify(update.rawInput)) } : {}),
     ...(texts?.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) } : {}),

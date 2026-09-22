@@ -8,9 +8,12 @@ import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 
 // Sotto records the turns Claude and Grok do not report. Those records are live observation: a replay
-// restores the work rows, not Sotto's watching, so the lifecycle and the order number it occupies are left out.
+// restores the work rows, not Sotto's watching, so the lifecycle, the order number it occupies and a start
+// Sotto timed itself are left out. A start the provider reported survives, because the transcript carries it.
 const tools = (thread: { activities?: readonly AgentActivity[] | undefined } | undefined) =>
-  (thread?.activities ?? []).filter(record => record.kind !== 'turn').map(record => ({ ...record, sequence: 0 }))
+  (thread?.activities ?? []).filter(record => record.kind !== 'turn')
+    .map(({ startedAt, timingSource, ...record }) => ({ ...record, sequence: 0,
+      ...(timingSource === 'observed' ? {} : { startedAt, timingSource }) }))
 
 it('Claude live tool-only message anchors survive log reload with no duplicate execution', async () => {
   let f = await claudeFixture(); const id = randomUUID()
