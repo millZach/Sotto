@@ -1,0 +1,206 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - three directions for the Tools panel beside the thread panes. Synthetic data only.
+     ?variant=A/B/C. A "Rail": the surfaces are a narrow strip on the panel's outer edge, everything else is
+     content. B "Stack": no tabs; five live summary rows, one expanded. C "Bench": one header line, and one
+     list-plus-detail layout for every surface with its controls in a slim bottom bar. Open the file directly. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto — Tools panel directions</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;font-display:swap;src:url(../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2")}
+:root{color-scheme:dark;--bg:oklch(.235 .018 280);--sidebar:oklch(.205 .016 282);--field:oklch(.26 .019 280);--raised:oklch(.305 .021 280);--text:oklch(.985 .005 280);--text2:oklch(.86 .01 270);--muted:oklch(.72 .014 265);--faint:oklch(.58 .014 265);--hair:oklch(.33 .02 275);--border:oklch(.42 .03 270);--accent:oklch(.79 .13 220);--ink:oklch(.2 .02 280);--selected:oklch(.33 .04 262);--code:oklch(.2 .016 280);--shadow:oklch(.1 0 0/.35);--ok:oklch(.78 .14 160);--warn:oklch(.82 .15 80);--mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+:root[data-theme=light]{color-scheme:light;--bg:oklch(.978 .004 85);--sidebar:oklch(.955 .008 85);--field:oklch(.99 .003 85);--raised:oklch(.935 .006 85);--text:oklch(.235 .014 75);--text2:oklch(.36 .014 75);--muted:oklch(.48 .014 75);--faint:oklch(.6 .012 75);--hair:oklch(.88 .01 80);--border:oklch(.78 .016 80);--accent:oklch(.49 .13 235);--ink:oklch(.99 .003 85);--selected:oklch(.90 .03 230);--code:oklch(.95 .006 85);--shadow:oklch(.1 0 0/.12);--ok:oklch(.5 .14 160);--warn:oklch(.55 .15 80)}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:14px/1.5 Figtree,system-ui,sans-serif;color:var(--text);background:var(--bg);overflow:hidden}
+button,input,select{font:inherit;color:inherit}button,select{cursor:pointer}button{border:0;background:none;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{display:block}
+.window{height:calc(100% - 96px);display:grid;grid-template-columns:232px minmax(360px,1fr) var(--panel,420px)}
+.window[data-panel=wide]{--panel:560px}.window[data-panel=narrow]{--panel:340px}
+/* Sidebar and pane, quiet, as they ship. */
+.sidebar{padding:14px 8px;background:var(--sidebar);border-right:1px solid var(--hair)}
+.brand{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;margin-bottom:18px;font-weight:600}.brand i{width:14px;height:14px;border-radius:4px;background:var(--accent)}
+.group{color:var(--muted);font-size:12px;padding:12px 10px 5px}.row{padding:7px 10px;display:flex;gap:9px;align-items:center;border-radius:8px}.row.active{background:var(--selected)}.row small{margin-left:auto;color:var(--muted);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;border:1px solid var(--muted);flex:none}.active .dot{background:var(--accent);border-color:var(--accent)}
+.pane{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--hair)}
+.head{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--hair)}.head strong{font-weight:500}.head span{color:var(--muted);font-size:12px}
+.transcript{flex:1;overflow:auto;padding:26px 24px}.turn{font-size:15px;line-height:1.6;max-width:62ch}.who{color:var(--muted);font-size:12px;margin-bottom:8px}.turn a{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.compose{padding:0 24px 14px}.composer{border:1px solid var(--border);background:var(--field);border-radius:14px;padding:12px 14px;color:var(--muted);height:76px}
+/* The panel: everything below is per variant. Shared atoms only. */
+.panel{position:relative;min-width:0;background:var(--sidebar);display:flex;flex-direction:column;color:var(--text2);overflow:hidden}
+/* The window controls the real app keeps at the top right, once. Every direction leaves them their room. */
+.winctl{position:absolute;top:0;right:0;z-index:3;display:flex;height:40px;color:var(--muted);background:var(--sidebar)}.winctl span{width:46px;display:grid;place-items:center;font-size:12px}
+.B .title,.C .bar{padding-right:144px}
+.icon{display:grid;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--muted)}.icon:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+.mono{font-family:var(--mono);font-size:13px}
+.code{font-family:var(--mono);font-size:13px;line-height:1.6;white-space:pre;margin:0;color:var(--text)}
+.tree{list-style:none;margin:0;padding:0}.tree li{display:flex;align-items:center;gap:7px;min-height:28px;padding:0 10px;border-radius:6px;color:var(--text2)}.tree li[data-sel]{background:var(--selected);color:var(--text)}.tree li i{width:14px;height:14px;border-radius:3px;background:currentColor;opacity:.35;flex:none}.tree li.dir i{border-radius:3px 3px 3px 3px;opacity:.55}.tree li.in{padding-left:28px}
+.web{background:oklch(.975 .01 90);color:oklch(.3 .03 150);padding:22px 20px;flex:1;overflow:hidden}.web h1{font-size:26px;margin:14px 0 6px;letter-spacing:-.01em;color:oklch(.28 .04 150)}.web small{letter-spacing:.06em;font-size:10px;color:oklch(.5 .04 150)}.web p{margin:0 0 14px;max-width:34ch;color:oklch(.4 .03 150)}.web b{display:inline-block;background:oklch(.42 .07 150);color:#fff;font-weight:500;padding:9px 14px;border-radius:5px}.web .art{float:right;width:38%;aspect-ratio:1;background:linear-gradient(135deg,oklch(.85 .05 130) 0 30%,oklch(.72 .08 140) 30% 60%,oklch(.5 .09 150) 60% 100%);border-radius:3px;margin:0 0 10px 14px}
+.term{font-family:var(--mono);font-size:13px;line-height:1.55;padding:12px 14px;flex:1;overflow:hidden;color:var(--text);background:var(--code)}.term .ps{color:var(--muted)}.term .cur{display:inline-block;width:7px;height:15px;background:var(--accent);vertical-align:-2px}
+.diff{font-family:var(--mono);font-size:13px;line-height:1.6;margin:0;flex:1;overflow:auto}.diff div{display:grid;grid-template-columns:34px 34px 1fr;padding:0 10px}.diff .h{color:var(--muted);background:color-mix(in srgb,var(--text) 5%,transparent)}.diff .m{background:color-mix(in srgb,oklch(.6 .2 25) 16%,transparent)}.diff .a{background:color-mix(in srgb,var(--ok) 16%,transparent)}.diff span{color:var(--faint);text-align:right;padding-right:10px}
+.agents{list-style:none;margin:0;padding:6px 8px}.agents li{display:grid;grid-template-columns:8px 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:7px}.agents li i{width:8px;height:8px;border-radius:50%;background:var(--faint)}.agents li[data-on] i{background:var(--accent)}.agents li b{font-weight:500;color:var(--text);display:block}.agents li em{font-style:normal;color:var(--muted);font-size:12px}.agents li span{color:var(--muted);font-size:12px;white-space:nowrap}
+.empty{flex:1;display:grid;place-items:center;color:var(--muted)}
+/* ---------- A · Rail ---------- */
+.A .panel{flex-direction:row}
+.A .rail{order:2;width:58px;flex:none;border-left:1px solid var(--hair);display:flex;flex-direction:column;align-items:center;padding:46px 0 8px;gap:2px}
+.A .rail .sys{display:flex;flex-direction:column;gap:2px;margin-top:auto;padding-top:10px;border-top:1px solid var(--hair)}
+.A .rail button.s{width:50px;height:50px;border-radius:9px;display:grid;place-items:center;gap:2px;color:var(--muted);font-size:10.5px;grid-template-rows:auto auto;padding-top:5px;position:relative}
+.A .rail button.s:hover{color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
+.A .rail button.s[aria-selected=true]{color:var(--text);background:var(--raised)}
+.A .rail button.s[aria-selected=true]::before{content:"";position:absolute;right:-4px;top:12px;bottom:12px;width:2px;border-radius:2px;background:var(--accent)}
+.A .rail button.s u{position:absolute;top:6px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--accent);text-decoration:none}
+.A .rail .spacer{flex:1}
+.A .content{order:1;flex:1;min-width:0;display:flex;flex-direction:column}
+.A .strip{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 6px 0 14px;border-bottom:1px solid var(--hair)}
+.A .strip .t{font-weight:500;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.A .strip .r{margin-left:auto;display:flex;gap:2px}
+.A .addr{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;border-bottom:1px solid var(--hair)}.A .addr input{flex:1;height:26px;border:1px solid var(--hair);border-radius:6px;background:var(--field);padding:0 9px;font-family:var(--mono);font-size:12.5px;color:var(--text2)}
+.A .foot{height:30px;flex:none;display:flex;align-items:center;gap:7px;padding:0 14px;border-top:1px solid var(--hair);color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden}.A .foot b{font-weight:500;color:var(--text2)}.A .foot .mono{font-size:12px}
+.A .split{flex:1;min-height:0;display:grid;grid-template-columns:200px 1fr}.A .split>*:first-child{border-right:1px solid var(--hair);overflow:auto;padding:6px}.A .split>*:last-child{display:flex;flex-direction:column;min-width:0;min-height:0}
+/* Below a wide panel the list sits above the detail, as the shipping panel does, so code never wraps. */
+.A .window:not([data-panel=wide]) .split{grid-template-columns:1fr;grid-template-rows:auto 1fr}.A .window:not([data-panel=wide]) .split>*:first-child{max-height:34%;border-right:0;border-bottom:1px solid var(--hair)}
+.diff div{white-space:pre}.code{overflow:auto}
+.A .filehead{display:flex;align-items:center;gap:8px;height:36px;padding:0 6px 0 14px;border-bottom:1px solid var(--hair);color:var(--text)}.A .filehead small{color:var(--muted)}
+/* ---------- B · Stack ---------- */
+.B .title{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 6px 0 16px;border-bottom:1px solid var(--hair)}.B .title .t{font-weight:500;color:var(--text)}.B .title .c{color:var(--muted);font-size:12.5px}.B .title .r{margin-left:auto;display:flex;gap:2px}
+.B .sheet{flex:none;display:flex;flex-direction:column;border-bottom:1px solid var(--hair);min-height:0}
+.B .sheet>button{display:grid;grid-template-columns:18px 1fr auto;gap:12px;align-items:center;min-height:46px;padding:0 16px;text-align:left;width:100%;color:var(--text2)}
+.B .sheet>button:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}
+.B .sheet>button b{font-weight:500;color:var(--text)}.B .sheet>button .sum{color:var(--muted);font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.B .sheet>button .live{width:7px;height:7px;border-radius:50%;background:var(--accent);justify-self:center}.B .sheet>button .k{color:var(--faint);font-size:12px}
+.B .sheet[data-open]{flex:1}.B .sheet[data-open]>button{background:var(--raised);border-radius:0}
+.B .sheet[data-open]>button .sum{color:var(--text2)}
+.B .sheet .body{display:none;flex:1;min-height:0;flex-direction:column}.B .sheet[data-open] .body{display:flex}
+.B .sub{display:flex;align-items:center;gap:6px;height:36px;padding:0 8px 0 16px;border-bottom:1px solid var(--hair);color:var(--muted);font-size:12.5px}.B .sub .r{margin-left:auto;display:flex;gap:2px}.B .sub input{flex:1;height:24px;border:1px solid var(--hair);border-radius:6px;background:var(--field);padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--text2)}
+.B .two{flex:1;min-height:0;display:grid;grid-template-rows:auto 1fr}.B .two>*:first-child{max-height:34%;overflow:auto;border-bottom:1px solid var(--hair);padding:4px 6px}
+/* ---------- C · Bench ---------- */
+.C .bar{height:42px;flex:none;display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border-bottom:1px solid var(--hair)}
+.C .bar .sys{display:flex;gap:2px;margin-left:auto}
+.C .copy{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;padding:8px 10px 2px}.C .copy b{font-weight:500;color:var(--text)}.C .copy .mono{color:var(--muted);font-size:12px}
+.C .words{display:flex;gap:0;min-width:0;overflow:hidden}.C .words button{padding:5px 7px;border-radius:6px;color:var(--muted);font-size:13.5px;display:flex;align-items:center;gap:5px;white-space:nowrap}.C .words button:hover{color:var(--text)}.C .words button[aria-selected=true]{color:var(--text);font-weight:500}.C .words button[aria-selected=true]::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.C .words button u{width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.6}
+.C .bench{flex:1;min-height:0;display:grid;grid-template-columns:196px 1fr}.C .bench>.list{border-right:1px solid var(--hair);overflow:auto;padding:6px;display:flex;flex-direction:column;gap:2px}.C .bench>.detail{display:flex;flex-direction:column;min-width:0}
+.C .list .lh{display:flex;align-items:center;justify-content:space-between;padding:6px 8px 4px;color:var(--muted);font-size:12px}.C .list .lh button{color:var(--faint)}
+.C .toolbar{height:36px;flex:none;display:flex;align-items:center;gap:6px;padding:0 8px 0 12px;border-top:1px solid var(--hair);color:var(--muted);font-size:12.5px}.C .toolbar .r{margin-left:auto;display:flex;gap:2px;align-items:center}.C .toolbar input{flex:1;height:24px;border:1px solid var(--hair);border-radius:6px;background:var(--field);padding:0 8px;font-family:var(--mono);font-size:12px;color:var(--text2)}.C .toolbar .chip{border:1px solid var(--hair);border-radius:999px;padding:1px 8px;font-size:12px}
+.C .dtitle{display:flex;align-items:center;gap:8px;height:34px;padding:0 6px 0 14px;color:var(--text);font-weight:500;border-bottom:1px solid var(--hair);white-space:nowrap}.C .dtitle small{color:var(--muted);font-weight:400;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.C .toolbar input{min-width:0}
+.C .window[data-panel=narrow] .bench{grid-template-columns:150px 1fr}
+/* Below the wide panel the three panel buttons fold into one menu, so the surface words keep their room. */
+.C .sys .more{display:none;font-size:18px;line-height:1}
+.C .window:not([data-panel=wide]) .sys .icon:not(.more){display:none}.C .window:not([data-panel=wide]) .sys .more{display:grid}
+.C .window:not([data-panel=wide]) .words button{font-size:12.5px;padding:5px 5px;gap:4px}
+.C .toolbar>span:first-child,.C .toolbar>:not(input):not(.r):not(button){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.C .dtitle .r{margin-left:auto;display:flex;gap:2px}
+.C .pages .tree li{gap:9px}.C .pages img{width:36px;height:24px;border-radius:3px;background:oklch(.975 .01 90);border:1px solid var(--hair);flex:none}
+.change{display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 10px;border-radius:6px;color:var(--text2)}.change[data-sel]{background:var(--selected);color:var(--text)}.change small{display:block;color:var(--muted);font-size:11.5px}.change em{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--warn)}.change em.u{color:var(--ok)}
+/* Bottom bar and window chrome */
+.bar-proto{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--text);color:var(--bg);border-radius:18px;box-shadow:0 8px 30px var(--shadow);white-space:nowrap;z-index:9}
+.bar-proto button{border-radius:8px;padding:7px 9px;min-height:36px}.bar-proto button:hover{background:color-mix(in srgb,var(--bg) 12%,transparent)}.bar-proto button[aria-pressed=true]{background:var(--bg);color:var(--text)}
+.vlabel{min-width:150px;text-align:center;font-weight:600}.divider{height:22px;width:1px;background:color-mix(in srgb,var(--bg) 25%,transparent);margin:0 4px}
+.bar-proto select{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--bg) 30%,transparent);border-radius:8px;padding:7px;font-size:14px}.bar-proto option{background:var(--bg);color:var(--text)}
+.fb{position:fixed;bottom:64px;left:16px;right:16px;text-align:center;color:var(--muted);font-size:12px;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="window" id="window" data-panel="normal">
+  <aside class="sidebar"><div class="brand"><i></i>Sotto</div><div class="group">Sotto test</div>
+    <div class="row active"><span class="dot"></span>Workshop<small>Claude</small></div><div class="row"><span class="dot"></span>Docs<small>Codex</small></div>
+    <div class="group">Settled</div><div class="row"><span class="dot"></span>Landing copy</div></aside>
+  <main class="pane"><div class="head"><strong>Workshop</strong><span>Claude Code · Opus · main</span></div>
+    <div class="transcript"><div class="turn"><div class="who">Claude · 2:07 pm</div>The landing page has a warmer palette and more room to breathe. Review the changes and <a href="#">open the preview</a>.</div></div>
+    <div class="compose"><div class="composer">What would you like to do next?</div></div></main>
+  <aside class="panel" id="panel" aria-label="Tools"></aside>
+</div>
+<p class="fb" id="fb"></p>
+<nav class="bar-proto" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button><span class="vlabel" id="vlabel"></span><button id="next" aria-label="Next variant">→</button>
+  <span class="divider"></span>
+  <select id="surface" aria-label="Open surface"><option value="browser">Browser</option><option value="terminal">Terminal</option><option value="files">Files</option><option value="changes">Changes</option><option value="agents">Agents</option></select>
+  <select id="width" aria-label="Panel width"><option value="narrow">Narrow · 340</option><option value="normal" selected>Panel · 420</option><option value="wide">Wide · 560</option></select>
+  <button id="theme" aria-pressed="false">Light</button>
+</nav>
+<script>
+const I={browser:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+terminal:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>',
+files:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+changes:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V15a3 3 0 0 0 3 3h6.5M18 15.5V9a3 3 0 0 0-3-3H8.5"/></svg>',
+agents:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4.5-6.2"/></svg>',
+pin:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3zM12 15v6"/></svg>',
+grow:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>',
+x:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+plus:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>',
+copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+ext:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6M20 4 10 14M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+back:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg>',fwd:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m10 6 6 6-6 6"/></svg>',
+reload:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>'}
+const S=[['browser','Browser'],['terminal','Terminal'],['files','Files'],['changes','Changes'],['agents','Agents']]
+const LIVE={browser:true,terminal:false,files:false,changes:true,agents:true}
+const SUM={browser:'Fieldnotes · 127.0.0.1:53751',terminal:'powershell · idle',files:'src/app.ts',changes:'3 files on master',agents:'2 working · Opus 5.5'}
+const web=`<div class="web"><div class="art"></div><small>LESS SCROLLING. MORE WANDERING.</small><h1>Find your next trail.</h1><p>Good trails. Quiet places. A reason to take the long way home.</p><b>Find a trail</b></div>`
+const term=`<div class="term"><span class="ps">PS C:\\Users\\zache\\sotto-test&gt;</span> npm run build\n<span class="ps">&gt;</span> electron-vite build\n\nvite v7.1.2 building for production...\n✓ 214 modules transformed.\n<span class="ps">PS C:\\Users\\zache\\sotto-test&gt;</span> <span class="cur"></span></div>`
+const tree=`<ul class="tree"><li class="dir"><i></i>src</li><li class="in" data-sel><i></i>app.ts</li><li class="in"><i></i>styles.css</li><li><i></i>CHANGELOG.md</li><li><i></i>README.md</li><li><i></i>sidecar-proof.txt</li></ul>`
+const code=`<pre class="code">export function greet(name: string): string {\n  return \`Hello, \${name}!\`\n}\n\nexport const version = 2</pre>`
+const diff=`<div class="diff"><div class="h"><span></span><span></span>@@ -1,3 +1,5 @@</div><div><span>1</span><span>1</span>export function greet(name: string): string {</div><div class="m"><span>2</span><span></span>-  return 'Hello ' + name</div><div class="a"><span></span><span>2</span>+  return \`Hello, \${name}!\`</div><div><span>3</span><span>3</span>}</div><div class="a"><span></span><span>4</span>+</div><div class="a"><span></span><span>5</span>+export const version = 2</div></div>`
+const changed=`<div class="change" data-sel><div>app.ts<small>src · unstaged</small></div><em>M</em></div><div class="change"><div>styles.css<small>src · unstaged</small></div><em>M</em></div><div class="change"><div>CHANGELOG.md<small>unstaged</small></div><em class="u">U</em></div>`
+const agents=`<ul class="agents"><li data-on><i></i><div><b>Review the diff for standards</b><em>Opus 5.5 · high</em></div><span>Working · 4m</span></li><li data-on><i></i><div><b>Refute: widget holds a live connection</b><em>Opus 5.5 · high</em></div><span>Working · 1m</span></li><li><i></i><div><b>Find the Cognition mark</b><em>Opus 5.5 · high</em></div><span>Finished</span></li><li><i></i><div><b>Diagnose the effort slider</b><em>Model not reported</em></div><span>Finished</span></li></ul>`
+const variants=[
+ ['A','The rail','Surfaces live on a strip at the panel’s outer edge. One line of chrome above the work, the working copy as a footer. Content gets the height.'],
+ ['B','The stack','No tabs. Five summary rows say what each tool is doing right now; one is open. The panel reads at a glance and never hides the others.'],
+ ['C','The bench','One header line: working copy left, the surfaces as words right. Every tool is a list beside a detail, with its controls in a slim bottom bar.'],
+]
+const params=new URLSearchParams(location.search)
+let variant=variants.some(v=>v[0]===params.get('variant'))?params.get('variant'):'A', surface='browser'
+const $=s=>document.querySelector(s)
+const sys=`<button class="icon" title="Pin to this thread">${I.pin}</button><button class="icon" title="Fill the window">${I.grow}</button><button class="icon" title="Close Tools">${I.x}</button>`
+function A(){
+  const rail=`<nav class="rail" aria-label="Tools"><div class="sys">${sys}</div>${S.map(([id,l])=>`<button class="s" role="tab" aria-selected="${surface===id}" data-s="${id}">${I[id]}<span>${l}</span>${LIVE[id]&&surface!==id?'<u aria-label="live"></u>':''}</button>`).join('')}<div class="spacer"></div></nav>`
+  const body={
+    browser:`<div class="strip"><span class="t">Fieldnotes</span><div class="r"><button class="icon" title="New page">${I.plus}</button></div></div><div class="addr"><button class="icon">${I.back}</button><button class="icon">${I.fwd}</button><button class="icon">${I.reload}</button><input value="http://127.0.0.1:53751/"><button class="icon" title="Open outside">${I.ext}</button></div>${web}`,
+    terminal:`<div class="strip"><span class="t">powershell.exe</span><div class="r"><button class="icon">${I.plus}</button></div></div>${term}`,
+    files:`<div class="strip"><span class="t">Files</span><div class="r"><button class="icon" title="Copy path">${I.copy}</button><button class="icon" title="Open folder">${I.ext}</button></div></div><div class="split"><div>${tree}</div><div><div class="filehead">app.ts <small>101 B · read only</small></div>${code}</div></div>`,
+    changes:`<div class="strip"><span class="t">3 changed files</span><span class="mono" style="color:var(--muted)">master</span><div class="r"><button class="icon" title="Refresh">${I.reload}</button></div></div><div class="split"><div>${changed}</div><div><div class="filehead">app.ts <small>working copy against HEAD</small></div>${diff}</div></div>`,
+    agents:`<div class="strip"><span class="t">Agents</span><span style="color:var(--muted)">2 working</span></div>${agents}`,
+  }[surface]
+  return `<div class="content">${body}<div class="foot">${I.files}<b>Sotto test</b><span class="mono">master</span><span>· project folder</span></div></div>${rail}`
+}
+function B(){
+  const inner={
+    browser:`<div class="sub"><button class="icon">${I.back}</button><button class="icon">${I.fwd}</button><input value="http://127.0.0.1:53751/"><div class="r"><button class="icon">${I.ext}</button><button class="icon">${I.plus}</button></div></div>${web}`,
+    terminal:`<div class="sub">powershell.exe<div class="r"><button class="icon">${I.plus}</button></div></div>${term}`,
+    files:`<div class="two"><div>${tree}</div><div style="display:flex;flex-direction:column;min-height:0"><div class="sub">app.ts · 101 B<div class="r"><button class="icon">${I.copy}</button><button class="icon">${I.ext}</button></div></div>${code}</div></div>`,
+    changes:`<div class="two"><div>${changed}</div><div style="display:flex;flex-direction:column;min-height:0"><div class="sub">app.ts · working copy against HEAD<div class="r"><button class="icon">${I.reload}</button></div></div>${diff}</div></div>`,
+    agents:agents,
+  }
+  return `<div class="title"><span class="t">Sotto test</span><span class="c mono">master</span><div class="r">${sys}</div></div>`+S.map(([id,l])=>`<section class="sheet" ${surface===id?'data-open':''}><button data-s="${id}" aria-expanded="${surface===id}">${LIVE[id]?'<span class="live"></span>':'<span></span>'}<span><b>${l}</b> <span class="sum">${SUM[id]}</span></span><span class="k">${surface===id?'':'›'}</span></button><div class="body">${inner[id]}</div></section>`).join('')
+}
+function C(){
+  const words=`<div class="words" role="tablist">${S.map(([id,l])=>`<button role="tab" aria-selected="${surface===id}" data-s="${id}">${l}${LIVE[id]&&surface!==id?'<u aria-label="live"></u>':''}</button>`).join('')}</div>`
+  const bench={
+    browser:`<div class="list pages"><div class="lh">Pages<button title="New page">${I.plus}</button></div><ul class="tree"><li data-sel><img alt="">Fieldnotes</li><li><img alt="">Trail 14 · map</li></ul></div><div class="detail"><div class="dtitle">Fieldnotes <small>shared with this thread</small><div class="r"><button class="icon">${I.ext}</button></div></div>${web}<div class="toolbar"><button class="icon">${I.back}</button><button class="icon">${I.fwd}</button><button class="icon">${I.reload}</button><input value="http://127.0.0.1:53751/"><div class="r"><span class="chip">Working</span></div></div></div>`,
+    terminal:`<div class="list"><div class="lh">Shells<button title="New shell">${I.plus}</button></div><ul class="tree"><li data-sel><i></i>powershell</li><li><i></i>npm run dev</li></ul></div><div class="detail">${term}<div class="toolbar">Ctrl+C copies or stops · Ctrl+Tab leaves<div class="r"><button class="icon">${I.copy}</button><button class="icon">${I.x}</button></div></div></div>`,
+    files:`<div class="list"><div class="lh">Sotto test<button title="Open folder">${I.ext}</button></div>${tree}</div><div class="detail"><div class="dtitle">app.ts <small>101 B</small><div class="r"><button class="icon">${I.copy}</button></div></div>${code}<div class="toolbar">Read only<div class="r"><span class="chip">Wrap lines</span></div></div></div>`,
+    changes:`<div class="list"><div class="lh">3 changed<button title="Refresh">${I.reload}</button></div>${changed}</div><div class="detail"><div class="dtitle">app.ts <small>M · src</small><div class="r"><button class="icon">${I.copy}</button></div></div>${diff}<div class="toolbar">Working copy against HEAD<div class="r"><span class="chip">Stage file</span><span class="chip">Pull request</span></div></div></div>`,
+    agents:`<div class="list"><div class="lh">This turn</div><ul class="tree"><li data-sel><i></i>4 agents</li><li><i></i>Earlier · 12</li></ul></div><div class="detail">${agents}<div class="toolbar">2 working · claude-opus-5-5<div class="r"><span class="chip">Older</span></div></div></div>`,
+  }[surface]
+  // The working copy heads the list column: the list is this thread's things, so its folder belongs above them.
+  const copy='<div class="copy"><b>Sotto test</b><span class="mono">master</span></div>'
+  return `<div class="bar">${words}<div class="sys">${sys}<button class="icon more" title="Pin, fill the window, close" aria-haspopup="menu">⋯</button></div></div><div class="bench">${bench.replace(/<div class="list[^"]*">/,m=>m+copy)}</div>`
+}
+function render(){
+  const v=variants.find(v=>v[0]===variant)
+  document.body.className=variant
+  $('#panel').innerHTML={A,B,C}[variant]()+'<div class="winctl" aria-hidden="true"><span>—</span><span>☐</span><span>✕</span></div>'
+  $('#vlabel').textContent=`${v[0]} · ${v[1]}`; $('#fb').textContent=v[2]
+  $('#surface').value=surface
+  $('#theme').setAttribute('aria-pressed',document.documentElement.dataset.theme==='light')
+  document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{surface=b.dataset.s;render()})
+  window.prototypeState={variant,surface,width:$('#window').dataset.panel}
+}
+function cycle(d){variant=variants[(variants.findIndex(v=>v[0]===variant)+d+3)%3][0];const u=new URL(location);u.searchParams.set('variant',variant);history.replaceState(null,'',u);render()}
+$('#prev').onclick=()=>cycle(-1);$('#next').onclick=()=>cycle(1)
+$('#surface').onchange=e=>{surface=e.target.value;render()}
+$('#width').onchange=e=>{$('#window').dataset.panel=e.target.value;render()}
+$('#theme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'':'light';render()}
+document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select,[contenteditable]'))return;if(e.key==='ArrowLeft')cycle(-1);if(e.key==='ArrowRight')cycle(1)})
+render()
+</script>
+</body>
+</html>
