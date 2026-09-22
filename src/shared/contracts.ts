@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { MAX_TRANSCRIPTION_SAMPLES } from './audio'
-import type { WidgetSnapshot } from './dictation'
+import { WIDGET_ERROR_CODES, type WidgetSnapshot } from './dictation'
 import type { HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
@@ -12,21 +12,7 @@ import { widgetPaletteSchema } from './themeBranding'
 export type Unsubscribe = () => void
 
 const boundedSessionId = z.string().min(1).max(128)
-const widgetErrorCodeSchema = z.enum([
-  'MIC_PERMISSION_DENIED',
-  'MIC_DEVICE_NOT_FOUND',
-  'MIC_START_FAILED',
-  'RECORDING_FAILED',
-  'NO_SPEECH',
-  'TRANSCRIPTION_FAILED',
-  'TRANSCRIPTION_UNCONFIGURED',
-  'TRANSCRIPTION_UNAUTHORIZED',
-  'TRANSCRIPTION_OFFLINE',
-  'OUTPUT_UNAVAILABLE',
-  'OUTPUT_FAILED',
-  'HISTORY_FAILED',
-  'SETTINGS_UNAVAILABLE',
-])
+const widgetErrorCodeSchema = z.enum(WIDGET_ERROR_CODES)
 
 export const dictationCommandSchema = z
   .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel']) })

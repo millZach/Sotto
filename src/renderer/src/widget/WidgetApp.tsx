@@ -99,6 +99,18 @@ function errorCopyFor(
       title: 'Connection unavailable',
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_OFFLINE,
     },
+    TRANSCRIPTION_BILLING: {
+      title: 'Out of credit',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_BILLING,
+    },
+    TRANSCRIPTION_RATE_LIMITED: {
+      title: 'Too many requests',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED,
+    },
+    TRANSCRIPTION_SERVICE_ERROR: {
+      title: 'OpenRouter error',
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_SERVICE_ERROR,
+    },
     TRANSCRIPTION_FAILED: {
       title: 'Couldn’t transcribe',
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED,

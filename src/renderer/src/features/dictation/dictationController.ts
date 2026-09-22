@@ -168,6 +168,9 @@ function transcriptionFailureCode(error: unknown): WidgetErrorCode {
       case 'unauthorized': return 'TRANSCRIPTION_UNAUTHORIZED'
       case 'network':
       case 'timeout': return 'TRANSCRIPTION_OFFLINE'
+      case 'billing': return 'TRANSCRIPTION_BILLING'
+      case 'rate-limited': return 'TRANSCRIPTION_RATE_LIMITED'
+      case 'http': return 'TRANSCRIPTION_SERVICE_ERROR'
     }
   }
   return 'TRANSCRIPTION_FAILED'

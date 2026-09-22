@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
+  isTranscriptionErrorCode,
   type DictationState,
 } from '../../../../shared/dictation'
 import type { HistoryEntry } from '../../../../shared/history'
@@ -63,10 +64,9 @@ function errorDetail(code: string, copy: PlatformCopy): string {
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your text could not be delivered. Try again, then paste from the clipboard manually.'
-    case 'TRANSCRIPTION_UNCONFIGURED':
-    case 'TRANSCRIPTION_UNAUTHORIZED':
-    case 'TRANSCRIPTION_OFFLINE': return TRANSCRIPTION_ERROR_DETAIL[code]
-    default: return TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED
+    default: return isTranscriptionErrorCode(code)
+      ? TRANSCRIPTION_ERROR_DETAIL[code]
+      : TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED
   }
 }
 
