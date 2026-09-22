@@ -6,6 +6,7 @@ import { delimiter, isAbsolute, join } from 'node:path'
 
 import { z } from 'zod'
 
+import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 
 const UNAVAILABLE = 'Codex subscription request failed. Check Codex sign-in, model access and usage limits, then retry.'
@@ -231,7 +232,7 @@ export class CodexSubscriptionClient implements SubscriptionClient {
           for (const model of page.data) {
             if (model.hidden) continue
             catalog.set(model.model, { id: model.model, name: model.displayName,
-              ...(model.supportedReasoningEfforts ? { reasoningEfforts: model.supportedReasoningEfforts.map((item) => item.reasoningEffort) } : {}),
+              ...(model.supportedReasoningEfforts ? { reasoningEfforts: orderReasoningEfforts(model.supportedReasoningEfforts.map((item) => item.reasoningEffort)) } : {}),
               ...(model.defaultReasoningEffort ? { defaultReasoningEffort: model.defaultReasoningEffort } : {}),
             })
             if (model.isDefault) defaultModelId = model.model
