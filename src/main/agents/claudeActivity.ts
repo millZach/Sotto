@@ -9,6 +9,8 @@ const agentAliasId = (id: string): string => `claude-agent-alias-${createHash('s
 const json = (value: unknown): string | undefined => value === undefined ? undefined : JSON.stringify(value).slice(0, MAX_ACTIVITY_TEXT)
 /** Agents whose own transcript may still name their model; the oldest gives way past this. */
 const MAX_TRANSCRIPT_TARGETS = 64
+/** The tool call and task an agent is known by, either of which may be missing. */
+type AgentKeys = { tool?: string | undefined; task?: string | undefined }
 
 /** Same projector for native transcript snapshots and the streaming CLI. No execution. */
 export class ClaudeActivity {
@@ -23,7 +25,7 @@ export class ClaudeActivity {
   /** Workflow run folders reported by a Workflow launch, by its tool call, until its task is known. */
   private readonly runsByTool = new Map<string, string>()
   /** Agents with no model yet whose own transcript can name one, by observed agent id. */
-  private readonly transcripts = new Map<string, { transcript: ClaudeSubagentTranscript; tool?: string | undefined; task?: string | undefined }>()
+  private readonly transcripts = new Map<string, { transcript: ClaudeSubagentTranscript } & AgentKeys>()
   constructor(private readonly readActivity?: (activityId: string) => AgentActivity | undefined) {}
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false): AgentActivity[] {
     const rows: AgentActivity[] = []
@@ -229,7 +231,7 @@ export class ClaudeActivity {
     this.patchModel(previous, rows, id, model.slice(0, 512), entry)
     return rows.length ? mergeAgentActivities(previous, rows) : previous
   }
-  private current(id: string, entry: { tool?: string | undefined; task?: string | undefined }): ObservedAgent | undefined {
+  private current(id: string, entry: AgentKeys): ObservedAgent | undefined {
     const byTask = entry.task ? this.agentsByTask.get(entry.task) : undefined
     const byTool = entry.tool ? this.agentsByTool.get(entry.tool) : undefined
     return byTask?.id === id ? byTask : byTool?.id === id ? byTool : undefined
@@ -247,7 +249,7 @@ export class ClaudeActivity {
    * Give a known agent its model on every row that already shows it, so the roster updates in place
    * rather than gaining a row. Each row keeps its own view of the agent; only the model changes.
    */
-  private patchModel(previous: readonly AgentActivity[], rows: AgentActivity[], id: string, model: string, keys: { tool?: string | undefined; task?: string | undefined } = {}): void {
+  private patchModel(previous: readonly AgentActivity[], rows: AgentActivity[], id: string, model: string, keys: AgentKeys = {}): void {
     for (const [map, key] of [[this.agentsByTool, keys.tool], [this.agentsByTask, keys.task]] as const) {
       const known = key ? map.get(key) : undefined
       if (key && known?.id === id) map.set(key, compactAgentIdentity({ ...known, model }))
