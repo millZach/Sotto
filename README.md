@@ -77,8 +77,11 @@ Optional AI cleanup is off by default. When you enable it, the finished transcri
 The host can run under Node 24 on Windows or Linux without Electron or a display. It owns its providers, worktrees and saved history. Build from a checkout with `npm ci` and `npm run build:host`, then run:
 
 ```sh
+# From a checkout, after npm run build:host
 node out/host/index.js --data /path/to/sotto-data --key-file /path/to/private/sotto-key
 ```
+
+From an extracted host archive the entry is `host/index.js` instead of `out/host/index.js`; the commands below use that form.
 
 `SOTTO_HOST_DATA` and `SOTTO_HOST_KEY_FILE` provide the same options. The data folder must be explicit. Use a dedicated host folder; desktop credentials use the operating system store and cannot be opened with a host key file.
 
@@ -88,7 +91,9 @@ Settings are read from the data folder at startup. The headless entry exposes `s
 
 Run `npm run test:host` for the plain-Node lifecycle and `npm run test:socket` for authenticated child-process client journeys. `npm run package:host` creates an archive and checksum with the platform in its filename, then extracts and smoke-tests it. See [host packaging](docs/release/releasing.md). Deployment to a real Linux machine still needs a live check.
 
-A normal stop removes the host's listener descriptor and lock. After a crash or a reboot, the next start finds the old `host-listener.lock`, checks that the process it names is gone, and takes the folder over; nothing needs cleaning by hand. If that process is still running, startup refuses and names it, and a lock file it cannot read is left for you to look at. Only one host may use a data folder at a time. The SSH account needs `node` on the path of a non-interactive shell, because the desktop starts the host with a plain `node` command.
+A normal stop removes the host's listener descriptor and lock. After a crash or a reboot, the next start finds the old `host-listener.lock`, checks that the process it names is gone, and takes the folder over; nothing needs cleaning by hand. If that process is still running, startup refuses and names it, and a lock file it cannot read is left for you to look at. Only one host may use a data folder at a time. The SSH account needs `node` on the path of a non-interactive shell, because the desktop starts the host with a plain `node` command. When Sotto starts the host over SSH it passes no key file, so a data folder that already holds saved credentials needs `SOTTO_HOST_KEY_FILE` set for that account.
+
+A remote host keeps its own OpenRouter key, in its encrypted credential file, and never receives the desktop's: a paired client cannot send a credential. Without a key there, thread titles, branch names and OpenRouter-hosted reasoning on that host fall back to their stand-ins or stay off.
 
 ## Desktop and iPhone clients (development)
 
@@ -96,7 +101,7 @@ In **Settings > Hosts**, add any machine you reach over SSH and have installed t
 
 A host Sotto started keeps running until you stop it. Disconnect, quitting Sotto and a dropped connection all leave it working, so a phone can keep using it and running turns finish; a dropped connection reconnects on its own. **Stop host** stops a host Sotto started and disconnects; **Forget** revokes this computer's access, stops a host Sotto started, and removes the saved connection. A host you started yourself is never stopped by Sotto. You can Forget a host you can no longer reach; this computer's access on it then stays until you revoke it there with `--revoke-client`.
 
-The iPhone enters a code shown on the host. On the host, request a fresh code:
+The iPhone enters a code shown on the host. On the host, from the extracted host folder, request a fresh code:
 
 ```sh
 node host/index.js --data /path/to/sotto-data --pairing-code

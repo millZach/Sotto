@@ -41,7 +41,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     return `${access}${stop} Threads stay on the host.`
   }
   return <div className="hosts-settings">
-    <div className="hosts-local"><div><h3>This computer</h3><p>Run local threads alongside your remote hosts. Changing this restarts Sotto and keeps saved data.</p></div>
+    <div className="hosts-local"><div><h3>This computer</h3><p>Run local threads alongside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.</p></div>
       {state?.localHostId && <Button variant="secondary" disabled={state.activeHostId === state.localHostId} onClick={() => void run({ type: 'select', hostId: state.localHostId! })}>{state.activeHostId === state.localHostId ? 'Selected host' : 'Use this computer'}</Button>}
       <Toggle label="Run the local host" checked={localHostEnabled} onCheckedChange={enabled => { void onLocalHostChange(enabled) }} />
     </div>

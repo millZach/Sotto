@@ -46,12 +46,12 @@ const PAIRING_ERROR = 'The pairing code could not be read from the host. Check t
 const ERRORS: Readonly<Record<string, string>> = {
   'archive-missing': 'The host installation was not found. Check its folder on the SSH host and reconnect.',
   'descriptor-invalid': 'The host connection record could not be read. Check the host data folder before reconnecting.',
-  'port-taken': 'The host port is being used by another service. Stop that service or choose another host port.',
+  'port-taken': 'Another program is using the port the host last listened on. Stop it on the SSH host, then reconnect.',
   'host-busy': 'A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect.',
-  'host-start-failed': 'The host could not start. Check its installation, data folder, and key file on the SSH host.',
+  'host-start-failed': 'The host could not start. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account.',
   'host-timeout': 'The host was not ready in time. Check that it starts on the SSH host, then reconnect.',
   'ssh-refused': 'SSH refused the connection. Check the host name, SSH access, and identity file, then reconnect.',
-  'forward-failed': 'The local SSH forward could not open. Check that the local port is available and reconnect.',
+  'forward-failed': 'The SSH port forward could not open. Reconnect, and if it fails again, check that the SSH server allows port forwarding.',
   'ssh-missing': 'SSH could not start. Install OpenSSH and check that its executable is available.',
 }
 /** Reserve a loopback-only candidate; ssh owns the actual socket and refuses any subsequent collision. */
