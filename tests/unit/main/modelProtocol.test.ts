@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   MODEL_SCHEME,
@@ -135,14 +136,20 @@ describe('model protocols', () => {
     await writeFile(join(root, 'ort-wasm-simd-threaded.mjs'), 'tampered')
     await expect(beginRuntimeVerification(root)).rejects.toThrow('Invalid runtime assets')
 
-    // Startup begins the hash before its other awaits and awaits the answer where it always did.
-    const startup = await readFile(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const begun = startup.indexOf("beginRuntimeVerification(join(resourceRoot, 'runtime'))")
+    // A source-order guard, not a behaviour test: no unit test boots createRuntime, so this reads its
+    // body and checks the hash begins before the first await and is awaited before any window.
+    const source = await readFile(fileURLToPath(new URL('../../../src/main/index.ts', import.meta.url)), 'utf8')
+    const start = source.indexOf('async function createRuntime(')
+    expect(start).toBeGreaterThan(-1)
+    // The body ends at the first closing brace in column zero; a checkout may use CRLF.
+    const body = source.slice(start).split(/\r?\n\}\r?\n/)[0]!
+    const begun = body.indexOf('beginRuntimeVerification(')
     expect(begun).toBeGreaterThan(-1)
-    expect(begun).toBeLessThan(startup.indexOf('await credentials.load()'))
-    expect(begun).toBeLessThan(startup.indexOf('await agentControl.start()'))
-    expect(startup.indexOf('await runtimeVerification')).toBeLessThan(startup.indexOf('installProtocols:'))
-    expect(startup).not.toContain('loadVerifiedRuntimeSource(')
+    expect(begun).toBeLessThan(body.search(/\bawait\s/))
+    const awaited = body.search(/\bawait runtimeVerification\b/)
+    expect(awaited).toBeGreaterThan(begun)
+    expect(awaited).toBeLessThan(body.indexOf('installProtocols:'))
+    expect(source).not.toContain('loadVerifiedRuntimeSource(')
   })
 
   it('does not report a runtime verification nobody awaited as an unhandled rejection', async () => {
