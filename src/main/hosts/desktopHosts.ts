@@ -192,7 +192,7 @@ export class DesktopHosts {
     if (!active?.tunnel || this.status.get(host.id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before stopping its host.`)
     if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
   }
-  /** Asks the supervisor to stop the host. False means it may still run. */
+  /** Asks the launch script to stop the host. False means it may still run. */
   private async stopOwnedHost(active: LiveHost): Promise<boolean> {
     try { return await active.tunnel!.stopHost() } catch { return false }
   }

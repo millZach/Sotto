@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
 import { quoteRemoteArgument, validateSshHost } from '../../../src/main/hosts/sshConfiguration'
-import { sshSupervisorCommand } from '../../../src/main/hosts/sshSupervisor'
+import { launchScriptCommand } from '../../../src/main/hosts/launchScript'
 const config = { target: 'user@forge', installPath: '/opt/sotto' }
 it.each(['forge', 'user@forge', 'user-name@forge.tailnet.ts.net', '127.0.0.1', 'user@[::1]'])('accepts an SSH host spec: %s', target => {
   expect(validateSshHost({ ...config, target })).toMatchObject({ target, dataDirectory: '~/.sotto', remotePort: 0 })
@@ -12,7 +12,7 @@ it.each(['-oProxyCommand=evil', 'forge;touch /tmp/x', 'user@forge bad', 'user@fo
 it('quotes remote paths as data including single quotes and shell metacharacters', () => {
   expect(quoteRemoteArgument("it's $(literal); here")).toBe("'it'\\''s $(literal); here'")
   const validated = validateSshHost({ ...config, installPath: "/opt/it's $(literal)" })
-  const command = sshSupervisorCommand(validated, { request: 'SOTTO_REQ_test:', reply: 'SOTTO_REP_test:' }, 30000)
+  const command = launchScriptCommand(validated, { request: 'SOTTO_REQ_test:', reply: 'SOTTO_REP_test:' }, 30000)
   expect(command).toContain("it'\\''s $(literal)")
   expect(command).toContain("'node' '--input-type=commonjs' '-e'")
 })

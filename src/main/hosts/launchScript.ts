@@ -1,7 +1,11 @@
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 
-/** Fixed source sent to the SSH account's Node runtime. User paths are a separately quoted JSON argument. */
-export const SSH_SUPERVISOR_SOURCE = String.raw`
+/**
+ * The launch script: fixed source the desktop runs with the SSH account's Node runtime to find or start the
+ * host, ask it for a pairing code, revoke a client and stop a host it started. It lives as long as the SSH
+ * session. User paths are a separately quoted JSON argument.
+ */
+export const LAUNCH_SCRIPT_SOURCE = String.raw`
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
@@ -168,9 +172,9 @@ process.stdin.on('data', chunk => {
 `
 
 /** Requests go out after `request` and replies come back after `reply`; the two never match each other. */
-export interface SshSupervisorMarkers { readonly request: string; readonly reply: string }
-export function sshSupervisorCommand(configuration: ValidatedSshHostConfiguration, markers: SshSupervisorMarkers, readyTimeoutMs: number): string {
-  return ['node', '--input-type=commonjs', '-e', SSH_SUPERVISOR_SOURCE,
+export interface LaunchScriptMarkers { readonly request: string; readonly reply: string }
+export function launchScriptCommand(configuration: ValidatedSshHostConfiguration, markers: LaunchScriptMarkers, readyTimeoutMs: number): string {
+  return ['node', '--input-type=commonjs', '-e', LAUNCH_SCRIPT_SOURCE,
     JSON.stringify({ installPath: configuration.installPath, dataDirectory: configuration.dataDirectory, remotePort: configuration.remotePort, requestMarker: markers.request, replyMarker: markers.reply, readyTimeoutMs })]
     .map(quoteRemoteArgument).join(' ')
 }

@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { validateSshHost, type SshHostConfiguration, type ValidatedSshHostConfiguration } from './sshConfiguration'
 export type { SshHostConfiguration }
 import { spawnSsh, type SpawnSsh, type SshProcess } from './sshProcess'
-import { sshSupervisorCommand, type SshSupervisorMarkers } from './sshSupervisor'
+import { launchScriptCommand, type LaunchScriptMarkers } from './launchScript'
 
 export interface SshPrompt { readonly id: string; readonly kind: 'host-key' | 'password' | 'passphrase'; readonly text: string }
 export type SshConnectionStatus = 'connecting' | 'starting' | 'forwarding' | 'ready' | 'disconnected'
@@ -100,13 +100,14 @@ interface Attempt {
   readonly callbacks: SshCallbacks
   /**
    * OpenSSH runs under a pseudo-terminal in cooked mode, which echoes every request line straight back
-   * into the output. Only a line carrying the reply marker is ever read as the supervisor speaking.
+   * into the output. Only a line carrying the reply marker is ever read as the launch script speaking.
    */
-  readonly markers: SshSupervisorMarkers
+  readonly markers: LaunchScriptMarkers
   readonly processes: ProcessRecord[]
   readonly cancelled: Promise<never>
   readonly cancel: (error: Error) => void
-  supervisor?: ProcessRecord
+  /** The ssh session running the launch script; the other is the port forward. */
+  script?: ProcessRecord
   prompt?: { id: string; kind: SshPrompt['kind']; process: ProcessRecord }
   ready?: z.infer<typeof readySchema>
   closing?: Promise<void>
@@ -145,8 +146,8 @@ export class SshHostLauncher {
     try {
       const ready = new Promise<z.infer<typeof readySchema>>((resolve, reject) => { attempt.resolveReady = resolve; attempt.rejectReady = reject })
       void ready.catch(() => undefined)
-      attempt.supervisor = await this.startProcess(attempt, [...this.baseArguments(validated), '-T', '-o', 'ClearAllForwardings=yes', validated.target,
-        sshSupervisorCommand(validated, attempt.markers, this.dependencies.readyTimeoutMs ?? 30_000)], true)
+      attempt.script = await this.startProcess(attempt, [...this.baseArguments(validated), '-T', '-o', 'ClearAllForwardings=yes', validated.target,
+        launchScriptCommand(validated, attempt.markers, this.dependencies.readyTimeoutMs ?? 30_000)], true)
       const remote = await Promise.race([ready, cancelled])
       clearTimeout(timeout)
       this.status(attempt, 'forwarding')
@@ -198,7 +199,7 @@ export class SshHostLauncher {
       ...(configuration.identityFile ? ['-i', configuration.identityFile, '-o', 'IdentitiesOnly=yes'] : []),
       ...(configuration.sshPort ? ['-p', String(configuration.sshPort)] : [])]
   }
-  private async startProcess(attempt: Attempt, args: string[], supervisor: boolean): Promise<ProcessRecord> {
+  private async startProcess(attempt: Attempt, args: string[], script: boolean): Promise<ProcessRecord> {
     let process: SshProcess
     try {
       process = await (this.dependencies.spawn ?? spawnSsh)(this.dependencies.executable ?? ((this.dependencies.platform ?? globalThis.process.platform) === 'win32' ? 'ssh.exe' : 'ssh'), args,
@@ -207,14 +208,14 @@ export class SshHostLauncher {
     let exited!: () => void
     const record: ProcessRecord = { process, subscriptions: [], exited: new Promise(resolve => { exited = resolve }), exit: false, buffer: '', promptBuffer: '', lastPrompt: '' }
     attempt.processes.push(record)
-    record.subscriptions.push(process.onData(data => this.receive(attempt, record, data, supervisor)), process.onExit(() => {
+    record.subscriptions.push(process.onData(data => this.receive(attempt, record, data, script)), process.onExit(() => {
       record.exit = true; exited()
-      if (!attempt.closed) this.fail(attempt, new Error(ERRORS[supervisor ? 'ssh-refused' : 'forward-failed']))
+      if (!attempt.closed) this.fail(attempt, new Error(ERRORS[script ? 'ssh-refused' : 'forward-failed']))
     }))
     if (attempt.closed) { process.kill(); for (const subscription of record.subscriptions) subscription.dispose(); throw attempt.failure ?? new Error('The SSH connection was cancelled.') }
     return record
   }
-  private receive(attempt: Attempt, record: ProcessRecord, chunk: string, supervisor: boolean): void {
+  private receive(attempt: Attempt, record: ProcessRecord, chunk: string, script: boolean): void {
     if (attempt.closed) return
     // Strip terminal control sequences before matching fixed OpenSSH prompts. Nothing is logged.
     const plain = stripVTControlCharacters(chunk).replace(/\r/gu, '')
@@ -224,7 +225,7 @@ export class SshHostLauncher {
     while ((newline = record.buffer.indexOf('\n')) !== -1) {
       const line = record.buffer.slice(0, newline); record.buffer = record.buffer.slice(newline + 1)
       const position = line.indexOf(attempt.markers.reply)
-      if (!supervisor || position === -1) continue
+      if (!script || position === -1) continue
       // A reply line a terminal mangled, or one this version does not know, is not a failure; the request it
       // answered times out on its own. Only a malformed ready line fails, because nothing else would end the wait.
       let value: unknown
@@ -286,34 +287,34 @@ export class SshHostLauncher {
     }
   }
   private pairingCode(attempt: Attempt): Promise<SshPairingCode> {
-    if (attempt.closed || !attempt.connected || !attempt.supervisor) return Promise.reject(new Error('Connect to the SSH host before requesting a pairing code.'))
+    if (attempt.closed || !attempt.connected || !attempt.script) return Promise.reject(new Error('Connect to the SSH host before requesting a pairing code.'))
     if (attempt.pairing || attempt.revocation) return Promise.reject(new Error('A pairing code is already being requested.'))
     const id = randomUUID()
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { delete attempt.pairing; reject(new Error(PAIRING_ERROR)) }, 12_000)
       attempt.pairing = { id, resolve, reject, timer }
-      attempt.supervisor!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'pairing-code', id })}\r`)
+      attempt.script!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'pairing-code', id })}\r`)
     })
   }
   private revokeClient(attempt: Attempt, clientId: string): Promise<boolean> {
-    if (attempt.closed || !attempt.connected || !attempt.supervisor) return Promise.reject(new Error('Connect to the SSH host before forgetting a client.'))
+    if (attempt.closed || !attempt.connected || !attempt.script) return Promise.reject(new Error('Connect to the SSH host before forgetting a client.'))
     if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) return Promise.reject(new Error('Choose a valid paired client.'))
     if (attempt.pairing || attempt.revocation) return Promise.reject(new Error('Wait for the current host request to finish.'))
     const id = randomUUID()
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { delete attempt.revocation; reject(new Error(REVOCATION_ERROR)) }, 12_000)
       attempt.revocation = { id, resolve, reject, timer }
-      attempt.supervisor!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'revoke-client', id, clientId })}\r`)
+      attempt.script!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'revoke-client', id, clientId })}\r`)
     })
   }
   private stopHost(attempt: Attempt): Promise<boolean> {
-    if (attempt.closed || !attempt.connected || !attempt.supervisor) return Promise.reject(new Error('Connect to the SSH host before stopping it.'))
+    if (attempt.closed || !attempt.connected || !attempt.script) return Promise.reject(new Error('Connect to the SSH host before stopping it.'))
     if (attempt.pairing || attempt.revocation || attempt.stopping) return Promise.reject(new Error('Wait for the current host request to finish.'))
     const id = randomUUID()
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { delete attempt.stopping; reject(new Error(STOP_HOST_ERROR)) }, 12_000)
       attempt.stopping = { id, resolve, reject, timer }
-      attempt.supervisor!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'stop-host', id })}\r`)
+      attempt.script!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'stop-host', id })}\r`)
     })
   }
   private status(attempt: Attempt, status: SshConnectionStatus): void { attempt.callbacks.onStatus?.(status) }
@@ -333,12 +334,12 @@ export class SshHostLauncher {
     if (attempt.revocation) { clearTimeout(attempt.revocation.timer); attempt.revocation.reject(new Error(REVOCATION_ERROR)); delete attempt.revocation }
     if (attempt.stopping) { clearTimeout(attempt.stopping.timer); attempt.stopping.reject(new Error(STOP_HOST_ERROR)); delete attempt.stopping }
     attempt.closing = (async () => {
-      const supervisor = attempt.supervisor
-      for (const record of attempt.processes) if (record !== supervisor && !record.exit) record.process.kill()
-      if (supervisor && !supervisor.exit) {
-        supervisor.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'close' })}\r`)
-        await boundedWait(supervisor.exited, this.dependencies.closeTimeoutMs ?? 16000)
-        if (!supervisor.exit) supervisor.process.kill()
+      const script = attempt.script
+      for (const record of attempt.processes) if (record !== script && !record.exit) record.process.kill()
+      if (script && !script.exit) {
+        script.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'close' })}\r`)
+        await boundedWait(script.exited, this.dependencies.closeTimeoutMs ?? 16000)
+        if (!script.exit) script.process.kill()
       }
       await Promise.all(attempt.processes.map(async record => {
         if (!record.exit) await boundedWait(record.exited, 1000)

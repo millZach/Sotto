@@ -4,11 +4,11 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { SSH_SUPERVISOR_SOURCE } from '../../src/main/hosts/sshSupervisor'
+import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 const directories: string[] = [], children: ChildProcess[] = []
 afterEach(async () => { for (const child of children.splice(0)) if (child.exitCode === null) child.kill(); for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true }) })
 async function fixture() {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-ssh-supervisor-')); directories.push(directory)
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-launch-script-')); directories.push(directory)
   const installPath = join(directory, "installed host's $(literal)")
   await mkdir(join(installPath, 'host'), { recursive: true })
   await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
@@ -16,7 +16,7 @@ async function fixture() {
   return { installPath, dataDirectory: join(directory, 'data'), remotePort: 0, requestMarker: 'SOTTO_REQ_test:', replyMarker: 'SOTTO_REP_test:', readyTimeoutMs: 5000 }
 }
 function supervise(configuration: Awaited<ReturnType<typeof fixture>>) {
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-e', SSH_SUPERVISOR_SOURCE, JSON.stringify(configuration)], { shell: false, windowsHide: true })
+  const child = spawn(process.execPath, ['--input-type=commonjs', '-e', LAUNCH_SCRIPT_SOURCE, JSON.stringify(configuration)], { shell: false, windowsHide: true })
   children.push(child)
   const messages: Record<string, unknown>[] = []; let buffer = '', errors = ''
   child.stdout.on('data', chunk => {
@@ -27,7 +27,7 @@ function supervise(configuration: Awaited<ReturnType<typeof fixture>>) {
   child.stderr.on('data', chunk => { errors += String(chunk) })
   return { child, messages, errors: () => errors, send: (value: unknown) => child.stdin.write(configuration.requestMarker + JSON.stringify(value) + '\n') }
 }
-it('runs the fixed remote supervisor, starts an owned host, issues explicit code and revocation, then stops its own child', async () => {
+it('runs the fixed launch script, starts an owned host, issues explicit code and revocation, then stops its own child', async () => {
   const configuration = await fixture(), remote = supervise(configuration)
   await vi.waitFor(() => expect(remote.messages.some(message => message.type === 'ready')).toBe(true))
   const ready = remote.messages.find(message => message.type === 'ready')!
@@ -43,7 +43,7 @@ it('runs the fixed remote supervisor, starts an owned host, issues explicit code
   expect(() => process.kill(ready.pid as number, 0)).not.toThrow()
   try { process.kill(ready.pid as number, 'SIGTERM') } catch { /* already exited */ }
 })
-it('keeps an owned host alive after the supervisor connection ends', async () => {
+it('keeps an owned host alive after the launch script connection ends', async () => {
   const configuration = await fixture(), remote = supervise(configuration)
   await vi.waitFor(() => expect(remote.messages.some(message => message.type === 'ready')).toBe(true))
   const ready = remote.messages.find(message => message.type === 'ready')!
@@ -86,7 +86,7 @@ it('refuses to stop a host it did not start', async () => {
   expect(existing.exitCode).toBeNull()
   expect(() => process.kill(existing.pid!, 0)).not.toThrow()
 })
-it('discovers an existing host and leaves it alive after the SSH supervisor closes', async () => {
+it('discovers an existing host and leaves it alive after the launch script closes', async () => {
   const configuration = await fixture()
   const existing = spawn(process.execPath, [join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true })
   children.push(existing)

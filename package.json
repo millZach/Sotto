@@ -31,7 +31,7 @@
     "build:host": "node scripts/build-host.mjs",
     "package:host": "node scripts/package-host.mjs",
     "host:verify": "node scripts/verify-host-archive.mjs",
-    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/integration/headlessProcess.test.ts --maxWorkers=2"
+    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts --maxWorkers=2"
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",

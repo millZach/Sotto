@@ -24,7 +24,7 @@ let owned = true, stopResult: boolean | Error = true
 /** Runs before a stop answers; the real host closes its listener, dropping every peer, before it replies. */
 let beforeStopReply: () => Promise<void> = async () => undefined
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-/** Revokes the way the SSH supervisor does, through the host's admin endpoint, which closes the revoked peer before replying. */
+/** Revokes the way the launch script does, through the host's admin endpoint, which closes the revoked peer before replying. */
 async function adminRevoke(clientId: string): Promise<boolean> {
   const descriptor = JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }
   const response = await fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/admin/revoke-client', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId }) })
@@ -141,7 +141,7 @@ describe('desktop remote host management over a real socket', () => {
     const remote = await add()
     await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow('may still be running')
     expect(manager.get().hosts[0]!.phase).toBe('disconnected')
-    stopResult = new Error('supervisor gone')
+    stopResult = new Error('launch script gone')
     await manager.command({ type: 'connect', id: remote.id })
     await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow('may still be running')
     expect(manager.get().hosts).toHaveLength(1)

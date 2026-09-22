@@ -28,7 +28,7 @@ const start = () => {
     server = createServer((_request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify(health())) })
     server.listen(localPort, '127.0.0.1', () => record({ type: 'forward-ready', localPort }))
   } else {
-    // A newer supervisor's event and a line a terminal cut short must both be read past.
+    // A newer launch script's event and a line a terminal cut short must both be read past.
     if (mode === 'noisy') { process.stdout.write(replyMarker + '{"type":"pairing-co\n'); emit({ type: 'progress', percent: 50 }) }
     emit({ type: 'starting' }); emit({ type: 'ready', ...health(), owned: mode !== 'discovered' })
   }
