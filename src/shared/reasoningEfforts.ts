@@ -18,9 +18,9 @@ const EFFORT_RANK: Readonly<Record<string, number>> = { none: 0, minimal: 1, low
  * A provider's reported levels in Sotto's order. Ids come back verbatim, because each one goes back to
  * the provider unchanged when a thread starts, and a repeated id is dropped. The list is reversed as a
  * whole when its known levels run highest first, and otherwise left as it came, rather than sorted: a
- * level Sotto does not know stays beside its neighbours, so Codex's Ultra after Max remains the highest
- * level, and one at the front of a descending list ends up last. Fewer than two known levels give no
- * direction, so the list is left alone.
+ * level Sotto does not know stays beside its neighbours, so GPT-6 Astra's Ultra after Max remains the
+ * highest level, and one at the front of a descending list ends up last. Fewer than two known levels
+ * give no direction, so the list is left alone.
  */
 export function orderReasoningEfforts(ids: readonly string[]): string[] {
   const unique = [...new Set(ids)]
