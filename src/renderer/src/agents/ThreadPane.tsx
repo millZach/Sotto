@@ -16,7 +16,7 @@ import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
 import { hasDraftContent, submissionStatus, useSubmissions, useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
-import { ThreadBranchNotice } from './ThreadWorkingCopy'
+import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
@@ -165,6 +165,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [worktreeReady, thread.id, command])
+  const { settle: settleThread, dialog: settleDialog } = useSettleThread(command)
   const writeHere = (): void => { handoff.current = { managed: true, focused: true, until: performance.now() + 5000 } }
   /** Focus the composer once management is `managed`; a refused command leaves focus where it was. */
   const handOff = (managedNext: boolean, request: () => Promise<AgentState | null>): void => {
@@ -190,7 +191,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   // While a handoff waits for its save, nothing else may act on this thread; other panes stay usable.
   const shelf: PaneMenuItem[] = row.settledBy === null
-    ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy || handingOff, run: () => void command({ type: 'settle-thread', threadId: thread.id }) }]
+    ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy || handingOff, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
       ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy || handingOff, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
   /* The saved draft is what Sotto's composer shows, so the latest manual typing is saved before a handoff. */
@@ -232,6 +233,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
+    {settleDialog}
     {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}

@@ -34,6 +34,8 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Temporary thread branch.** The short starting branch of a new worktree, created on its first send and eligible for a descriptive name from that first prompt. It stops being replaceable once the user or agent changes its branch, or another thread shares the folder.
 
+**Reclaim (a worktree).** Removing a thread's own worktree folder while keeping its branch and the thread; the next send puts the folder back on that branch. It happens on the user's word (**Remove worktree** in the Working copy panel, or the question Settle asks) or under a cleanup rule the user turned on, never for a folder with uncommitted work without their answer (ADR-0019). Avoid: "delete the worktree", "clean up the thread".
+
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
 
 **Thread activity.** Provider-reported work alongside a thread's messages, including commands, file changes, visible summaries, tool results and subagent states. Activity is observational history, not a user message, an assignment or permission to act.
