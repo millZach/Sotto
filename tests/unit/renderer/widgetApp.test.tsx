@@ -180,10 +180,13 @@ describe('WidgetApp', () => {
     ['MIC_NOT_SET_UP', 'No microphone set up', MICROPHONE_NOT_SET_UP_DETAIL],
     ['RECORDING_FAILED', 'Recording stopped', 'Check your microphone and try again.'],
     ['NO_SPEECH', 'No speech detected', 'Speak closer to the microphone and try again.'],
-    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Add your OpenRouter API key in Settings to transcribe.'],
-    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. Check it in Settings.'],
-    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. Check your connection and try again.'],
-    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Transcription failed. Try again.'],
+    ['TRANSCRIPTION_UNCONFIGURED', 'API key needed', 'Sotto has no OpenRouter API key yet. The recording was not kept. Add your key in Settings, then dictate again.'],
+    ['TRANSCRIPTION_UNAUTHORIZED', 'API key rejected', 'OpenRouter rejected the API key. The recording was not kept. Check the key in Settings.'],
+    ['TRANSCRIPTION_OFFLINE', 'Connection unavailable', 'Sotto could not reach OpenRouter. The recording was not kept. Check your connection and try again.'],
+    ['TRANSCRIPTION_BILLING', 'Out of credit', 'OpenRouter has no credit left for this key. The recording was not kept. Add credit at openrouter.ai, then dictate again.'],
+    ['TRANSCRIPTION_RATE_LIMITED', 'Too many requests', 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.'],
+    ['TRANSCRIPTION_SERVICE_ERROR', 'OpenRouter error', 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.'],
+    ['TRANSCRIPTION_FAILED', 'Couldn’t transcribe', 'Sotto did not get usable text back. The recording was not kept. Dictate again.'],
     ['OUTPUT_UNAVAILABLE', 'Output unavailable', 'Open Sotto and try again.'],
     ['OUTPUT_FAILED', 'Couldn’t copy text', 'Try again from the Sotto app.'],
     ['HISTORY_FAILED', 'Saved to clipboard', 'Local history was not updated.'],
@@ -1180,7 +1183,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({ status: 'error', sessionId: 'announce', code: 'TRANSCRIPTION_FAILED' }))
     expect(polite).toBeEmptyDOMElement()
-    expect(assertive).toHaveTextContent('Couldn’t transcribe. Transcription failed. Try again.')
+    expect(assertive).toHaveTextContent('Couldn’t transcribe. Sotto did not get usable text back. The recording was not kept. Dictate again.')
     expect(assertive.querySelector('[role="meter"], time, [role="progressbar"]')).toBeNull()
 
     emit(snapshot({ status: 'idle' }))
