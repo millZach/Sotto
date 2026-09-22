@@ -23,7 +23,17 @@ export interface SocketServerOptions {
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
   setAnswers?: (clientId: string, allowed: boolean) => void
+  /** Tests shorten the replay window and the cap; the host keeps the defaults. */
+  receipts?: { lifetimeMs?: number; limit?: number; now?: () => number }
 }
+/**
+ * A settled receipt answers a retried command for this long, which covers a reconnect after a lost
+ * acknowledgement; after it the entry is dropped, so a host that runs for weeks never fills up.
+ */
+const RECEIPT_LIFETIME_MS = 5 * 60_000
+const RECEIPT_LIMIT = 10_000
+/** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
+const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
 /** Only this listener owns sockets; clients never get a provider handle or a claimed identity. */
 export async function startSocketServer(options: SocketServerOptions) {
   const { service, pairing } = options
@@ -31,7 +41,17 @@ export async function startSocketServer(options: SocketServerOptions) {
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const adminToken = randomBytes(32).toString('base64url')
   const peers = new Set<Peer>(), operations = new Set<Promise<unknown>>()
-  const receipts = new Map<string, { digest: string; receipt: HostReceipt; task: Promise<unknown> }>()
+  const receipts = new Map<string, { digest: string; receipt: HostReceipt; task: Promise<unknown>; settledAt?: number }>()
+  const receiptLifetime = options.receipts?.lifetimeMs ?? RECEIPT_LIFETIME_MS, receiptLimit = options.receipts?.limit ?? RECEIPT_LIMIT
+  const clock = options.receipts?.now ?? Date.now
+  /** Drops receipts settled longer ago than the replay window, then the oldest settled one if still full. Only pending work is busy. */
+  const makeRoomForReceipt = (): void => {
+    const now = clock()
+    for (const [key, entry] of receipts) if (entry.settledAt !== undefined && now - entry.settledAt > receiptLifetime) receipts.delete(key)
+    if (receipts.size < receiptLimit) return
+    for (const [key, entry] of receipts) if (entry.settledAt !== undefined) { receipts.delete(key); return }
+    throw new Refusal('busy')
+  }
   let closing = false
   let httpWindow = Date.now(), httpCount = 0
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
@@ -78,10 +98,11 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
       return shell(peer)
     }
-    if (receipts.size >= 10000) throw new Refusal('busy')
     const input = request.command
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, startingProviderMode: startingProviderMode(input) })
     if (refusal) throw new Refusal(refusal)
+    const recorded = !UNRECEIPTED.has(input.type)
+    if (recorded) makeRoomForReceipt()
     if (input.type === 'answer') {
       const thread = service.shell().host.threads.find(thread => thread.id === input.threadId)
       if (!thread?.requests.some(item => item.id === input.requestId && !item.delivery)) throw new Refusal('stale_request')
@@ -102,7 +123,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         receipt.status = 'completed'
       } catch { receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }; throw new Refusal('unavailable') }
     })()
-    receipts.set(key, { digest, receipt, task })
+    if (recorded) {
+      const entry: { digest: string; receipt: HostReceipt; task: Promise<unknown>; settledAt?: number } = { digest, receipt, task }
+      receipts.set(key, entry)
+      const settle = (): void => { entry.settledAt = clock() }
+      void task.then(settle, settle)
+    }
     await task
     return shell(peer)
   }

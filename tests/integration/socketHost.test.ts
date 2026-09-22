@@ -190,3 +190,37 @@ it('drains a pushed catch-up page even when the host never publishes another she
     await expect.poll(() => client.events(0).length).toBe(300)
   } finally { await client.close(); await server.close() }
 })
+
+it('keeps no receipts for selections and drops settled ones, so a long-running host is never falsely busy', async () => {
+  let now = 1_000_000
+  const release: (() => void)[] = []
+  const service: HostService = {
+    shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+    // An interrupt here stays pending until the test lets it go, standing in for work that is still running.
+    command: async (command, identity) => { if (command.type === 'interrupt') await new Promise<void>(resolve => release.push(resolve)); return host.service.command(command, identity) },
+    events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit), subscribe: listener => host.service.subscribe(listener),
+  }
+  const server = await startSocketServer({ service, pairing: host.pairing, receipts: { lifetimeMs: 1000, limit: 2, now: () => now } })
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Receipts')
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(client)
+  try {
+    await client.connect()
+    // More selections than the cap holds, and none of them counts against it.
+    for (let index = 0; index < 3; index++) { await client.command({ type: 'select-project', projectId: 'project' }); await client.command({ type: 'observe-threads', threadIds: [] }) }
+    const first = randomUUID(), second = randomUUID(), third = randomUUID()
+    await client.command({ type: 'configure', patch: { enabled: false } }, undefined, first)
+    await client.command({ type: 'configure', patch: { enabled: true } }, undefined, second)
+    // Full of settled receipts: the oldest makes room rather than refusing.
+    await client.command({ type: 'configure', patch: { enabled: false } }, undefined, third)
+    expect(await client.receipt(first)).toEqual({ status: 'unknown' })
+    expect(await client.receipt(third)).toEqual({ status: 'completed' })
+    now += 2000
+    const pending = [client.command({ type: 'interrupt', threadId: 'missing' }), client.command({ type: 'interrupt', threadId: 'missing' })]
+    await expect.poll(() => release.length).toBe(2)
+    expect(await client.receipt(second)).toEqual({ status: 'unknown' })
+    // Only work that is really still pending fills the host.
+    await expect(client.command({ type: 'configure', patch: { enabled: true } })).rejects.toMatchObject({ code: 'busy' })
+    for (const resolve of release) resolve()
+    await Promise.allSettled(pending)
+  } finally { await client.close(); await server.close() }
+})
