@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,6 +10,7 @@ import {
   RUNTIME_SCHEME,
   registerModelSchemesAsPrivileged,
   registerLocalAssetProtocols,
+  beginRuntimeVerification,
   loadVerifiedRuntimeSource,
   resolveModelRequest,
   resolveRuntimeRequest,
@@ -127,6 +128,35 @@ describe('model protocols', () => {
       await expect(loadVerifiedRuntimeSource(root)).rejects.toThrow('Invalid runtime assets')
     },
   )
+
+  it('verifies the runtime from the start of startup and still fails it on a tampered runtime', async () => {
+    const root = await runtimeFixture()
+    await expect(beginRuntimeVerification(root)).resolves.toMatchObject({ root, boundaryRoot: root })
+    await writeFile(join(root, 'ort-wasm-simd-threaded.mjs'), 'tampered')
+    await expect(beginRuntimeVerification(root)).rejects.toThrow('Invalid runtime assets')
+
+    // Startup begins the hash before its other awaits and awaits the answer where it always did.
+    const startup = await readFile(join(process.cwd(), 'src/main/index.ts'), 'utf8')
+    const begun = startup.indexOf("beginRuntimeVerification(join(resourceRoot, 'runtime'))")
+    expect(begun).toBeGreaterThan(-1)
+    expect(begun).toBeLessThan(startup.indexOf('await credentials.load()'))
+    expect(begun).toBeLessThan(startup.indexOf('await agentControl.start()'))
+    expect(startup.indexOf('await runtimeVerification')).toBeLessThan(startup.indexOf('installProtocols:'))
+    expect(startup).not.toContain('loadVerifiedRuntimeSource(')
+  })
+
+  it('does not report a runtime verification nobody awaited as an unhandled rejection', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      // An earlier startup await failed, so nothing ever awaits this one.
+      const verification = beginRuntimeVerification('unused', () => Promise.reject(new Error('Invalid runtime assets')))
+      await new Promise(resolve => setImmediate(resolve))
+      expect(unhandled).not.toHaveBeenCalled()
+      // Awaited, it still fails as before.
+      await expect(verification).rejects.toThrow('Invalid runtime assets')
+    } finally { process.off('unhandledRejection', unhandled) }
+  })
 
   it('rejects a runtime root reached through a directory junction', async () => {
     const actualRoot = await runtimeFixture()

@@ -121,7 +121,7 @@ import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
 import {
-  loadVerifiedRuntimeSource,
+  beginRuntimeVerification,
   registerLocalAssetProtocols,
   registerModelSchemesAsPrivileged,
 } from './models/modelProtocol'
@@ -476,6 +476,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  // The runtime's hash starts here so it overlaps the stores loading below rather than following them.
+  // It is awaited where it always was, before any window, and a tampered runtime still fails startup.
+  const runtimeVerification = e2eConfiguration === null
+    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
+    : null
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
@@ -724,9 +729,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     // reload/devtools accelerators the app ships with today.
     Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
-  const runtimeSource = e2eConfiguration === null
-    ? await loadVerifiedRuntimeSource(join(resourceRoot, 'runtime'))
-    : null
+  const runtimeSource = runtimeVerification === null ? null : await runtimeVerification
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const pasteCommands = createPasteCommands(platform)
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
