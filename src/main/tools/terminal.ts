@@ -40,6 +40,10 @@ export class TerminalService extends ToolOperations {
     await this.persistence
   }
   private publish(record: LiveTerminal): void { this.dependencies.emit({ type: 'session', session: { ...record.session } }) }
+  /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. */
+  hasRunningTerminal(threadId: string): boolean {
+    return [...this.sessions.values()].some(record => record.session.workspace.threadId === threadId && record.pty !== undefined)
+  }
   private snapshot(record: LiveTerminal): TerminalSnapshot { return { session: { ...record.session }, output: record.output, sequence: record.sequence } }
   private async owned(request: z.infer<typeof terminalRequestSchema>, validateDirectory = true): Promise<LiveTerminal> {
     await this.ready

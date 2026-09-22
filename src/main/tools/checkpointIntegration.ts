@@ -50,9 +50,10 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   })
   const ready = checkpoints.initialize()
   void ready.catch(() => options.report('Checkpoint recovery storage could not be read. Thread mutations are blocked until it is repaired.'))
+  /** No folder to read yet: a first send before setup allocates one, or a reclaimed worktree the next send puts back (ADR-0019). */
   const unallocated = (threadId: string): boolean => {
     const thread = host.workspaceSnapshot().threads.find(item => item.id === threadId)
-    return thread?.nativeSessionStarted === false && thread.worktree?.mode === 'independent' && !thread.worktree.path
+    return thread?.worktree?.mode === 'independent' && (thread.nativeSessionStarted === false && !thread.worktree.path || Boolean(thread.worktree.reclaimedAt))
   }
   const blocked = async (threadId: string): Promise<boolean> => {
     await ready

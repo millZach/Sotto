@@ -171,6 +171,7 @@ import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
 import { TerminalWorkspaceService } from './terminals/service'
 import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
+import { WorktreeCleanup, githubPullRequestMerged } from './agents/worktreeCleanup'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
@@ -223,6 +224,8 @@ type NativeDiagnostic =
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
   | 'checkpoint-unavailable'
+  | 'worktree-cleanup-reclaimed'
+  | 'worktree-cleanup-skipped'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -596,6 +599,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   agentHost.useBrowserTools(browserAgentServer)
   agentHost.setWorkingCopyDefaults(projectId => workingCopySettings.projectThreadWorkingCopyDefaults[projectId] ?? workingCopySettings.threadWorkingCopyDefault)
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, () => settings.forFormatting()))
+  // Reclaims worktrees only under the rules the user turned on (ADR-0019); every rule starts off.
+  const worktreeCleanup = new WorktreeCleanup({
+    host: agentHost, rules: () => workingCopySettings.worktreeCleanup,
+    ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}),
+    log: code => { logOperational(code) },
+  })
   const turns = new TurnRecorder({
     directory: userDataPath,
     historyEnabled: () => agentHistoryEnabled,
@@ -871,6 +880,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     async onSettingsChanged(settings): Promise<void> {
       workingCopySettings = settings
+      worktreeCleanup.settingsChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()
@@ -1004,8 +1014,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
       })
+      const terminalService = new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
+      // A folder with a shell still running in it is not reclaimed under that shell.
+      agentHost.setWorktreeInUse(threadId => terminalService.hasRunningTerminal(threadId))
+      worktreeCleanup.start()
       const cleanupTools = registerToolsIpc(ipcMain, {
-        terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
+        terminal: terminalService,
         browser: browserService,
         gitChanges,
       }, () => windows.getTrustedRenderers())
@@ -1100,6 +1114,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupFiles()
         cleanupSubagents()
         cleanupTerminals()
+        worktreeCleanup.dispose()
         cleanupTools()
         browserService = undefined
         void browserAgentServer.close()

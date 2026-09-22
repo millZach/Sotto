@@ -1,5 +1,7 @@
 # A thread follows its worktree's branch
 
+Note, September 22, 2026: the sentences below that say Sotto "never removes" a checkout and that "settling a thread removes nothing" describe the state before [ADR-0019](0019-a-worktree-has-an-end.md). A thread's own worktree can now be reclaimed on the user's word or under a rule they turned on; the branch stays and the restore path described here puts the folder back on the next send. Everything else in this record stands.
+
 ## Current decision: shared checkout by default (September 19, 2026, #146)
 
 This amendment supersedes the independent-by-default creation policy and the worktree composer notice described below. Zach chose T3 Code's working-copy behavior because a new conversation about the same project should see the project's current files, not create another isolated checkout automatically. Historical sections below explain the earlier safeguards and remain as decision history.

@@ -43,6 +43,27 @@ export const WRITING_MODELS = [
 export type WritingModelId = (typeof WRITING_MODELS)[number]['id']
 export const WRITING_MODEL_IDS = WRITING_MODELS.map(model => model.id) as unknown as [WritingModelId, ...WritingModelId[]]
 
+/**
+ * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0019), the same four
+ * T3 Code offers. `afterDays` counts idle days since the thread's last activity; `null` is never.
+ * `unchanged` means the folder's commits are all in the repository's default branch already;
+ * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
+ * thread is settled. Each applies only to a clean folder with nothing in it but installed dependencies.
+ */
+export interface WorktreeCleanupRules {
+  afterDays: WorktreeCleanupDays
+  merged: boolean
+  onSettle: boolean
+  unchanged: boolean
+}
+export type WorktreeCleanupDays = null | 7 | 14 | 30 | 90
+export const WORKTREE_CLEANUP_DAYS = [7, 14, 30, 90] as const satisfies readonly Exclude<WorktreeCleanupDays, null>[]
+export const worktreeCleanupRulesSchema = z.object({
+  afterDays: z.union([z.null(), z.literal(7), z.literal(14), z.literal(30), z.literal(90)]),
+  merged: z.boolean(), onSettle: z.boolean(), unchanged: z.boolean(),
+}) satisfies z.ZodType<WorktreeCleanupRules>
+export const DEFAULT_WORKTREE_CLEANUP: WorktreeCleanupRules = { afterDays: null, merged: false, onSettle: false, unchanged: false }
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -78,6 +99,11 @@ export interface AppSettings {
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
   projectThreadWorkingCopyDefaults: Record<string, 'shared' | 'independent'>
+  /**
+   * When Sotto may reclaim a thread's worktree on its own (ADR-0019). Every rule
+   * is off by default, and none of them ever removes uncommitted work.
+   */
+  worktreeCleanup: WorktreeCleanupRules
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -188,6 +214,7 @@ const fieldSchemas = {
   threadTitles: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
+  worktreeCleanup: worktreeCleanupRulesSchema,
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
@@ -244,6 +271,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   threadTitles: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
+  // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
+  worktreeCleanup: DEFAULT_WORKTREE_CLEANUP,
   pullRequestText: true,
   // On by default for the same reason: with no OpenRouter key nothing is ever
   // requested, and the commit form simply opens empty.
@@ -332,6 +361,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
+    worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),

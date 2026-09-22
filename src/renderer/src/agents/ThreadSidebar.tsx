@@ -3,7 +3,7 @@ import { Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gi
 import { isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
-import { describeWorkingCopy } from './ThreadWorkingCopy'
+import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import type { AgentConnection } from './AgentContext'
 import { showThreads, useFinishedUnseen } from './finishedThreads'
 import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
@@ -74,6 +74,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
   const status = finished ? 'Just finished' : label
   const besideAvailable = panes.currentThreadId !== null && !current
   const [renaming, setRenaming] = useState(false)
+  const { settle, dialog: settleDialog } = useSettleThread(command)
   // The button's name is the title alone; the state sentence is its description, or the label would swallow it.
   const statusId = useId()
   const timeId = useId()
@@ -119,11 +120,12 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
         ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Regenerate title for ${title}`} title="Regenerate title" disabled={busy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: row.thread.id })}><Sparkles size={16} aria-hidden="true" /></button>
         : null}
       {row.settledBy === null
-        ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle ${title}`} title="Settle thread" disabled={busy} onClick={() => void command({ type: 'settle-thread', threadId: row.thread.id })}><Archive size={16} aria-hidden="true" /></button>
+        ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle ${title}`} title="Settle thread" disabled={busy} onClick={() => void settle(row.thread, row.project)}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'
           ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Restore ${title}`} title="Restore thread" disabled={busy} onClick={() => void command({ type: 'restore-thread', threadId: row.thread.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
           : null}
     </span>
+    {settleDialog}
   </li>
 })
 

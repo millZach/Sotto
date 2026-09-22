@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reclaim worktrees: what changed</title>
+<style>
+  body { margin: 0; padding: 32px; background: #14161a; color: #e6e8eb; font: 15px/1.5 Figtree, system-ui, sans-serif; }
+  h1 { font-weight: 600; font-size: 22px; margin: 0 0 6px; }
+  h2 { font-weight: 600; font-size: 17px; margin: 40px 0 8px; }
+  p { max-width: 72ch; color: #b9bec6; margin: 0 0 14px; }
+  figure { margin: 0 0 22px; }
+  figcaption { color: #8d939c; font-size: 13px; margin: 6px 0 0; }
+  img { display: block; max-width: 100%; border: 1px solid #2a2e35; border-radius: 8px; background: #000; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  code { background: #22262c; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Reclaim worktrees</h1>
+<p>Captured from the built app by <code>tests/e2e/thread-worktrees.spec.ts</code> on branch <code>feat/reclaim-worktrees</code>. Every screenshot is the real window, a real Git repository and a real worktree Sotto made and then removed.</p>
+
+<h2>1. Settings → Application: the four rules, all off</h2>
+<p>Under "New threads work in". One select for the idle rule and three toggles. Nothing is on by default.</p>
+<div class="row">
+  <figure><img src="settings-worktree-cleanup-1280x800-dark.png" alt=""><figcaption>1280×800, dark</figcaption></figure>
+  <figure><img src="settings-worktree-cleanup-1280x800-light.png" alt=""><figcaption>1280×800, light</figcaption></figure>
+  <figure><img src="settings-worktree-cleanup-1600x1000-dark.png" alt=""><figcaption>1600×1000, dark</figcaption></figure>
+  <figure><img src="settings-worktree-cleanup-820x560-dark.png" alt=""><figcaption>820×560 minimum, dark (nothing clips)</figcaption></figure>
+</div>
+
+<h2>2. The Working copy panel gains Remove worktree</h2>
+<p>Only for a worktree Sotto made for this thread alone. A shared or reused folder never shows it.</p>
+<figure><img src="working-copy-panel.png" alt=""><figcaption>Panel open on a thread with its own worktree</figcaption></figure>
+
+<h2>3. The question, clean and dirty</h2>
+<p>Clean: names the folder and the branch that stays. Dirty: says the uncommitted changes are lost and the confirm turns red. Escape or Keep folder leaves everything as it was.</p>
+<div class="row">
+  <figure><img src="remove-worktree-clean.png" alt=""><figcaption>No uncommitted changes</figcaption></figure>
+  <figure><img src="remove-worktree-dirty.png" alt=""><figcaption>With uncommitted changes</figcaption></figure>
+</div>
+
+<h2>4. After removal</h2>
+<p>The record stays. The panel says the folder is gone and that sending puts it back; Open folder is withheld until it is.</p>
+<figure><img src="working-copy-reclaimed.png" alt=""><figcaption>Folder removed; branch kept</figcaption></figure>
+
+<h2>5. Settle asks</h2>
+<p>Settle settles first, as before. Then, for a thread with its own worktree, one question. Keep folder or Escape leaves the folder.</p>
+<figure><img src="settle-asks.png" alt=""><figcaption>After pressing Settle</figcaption></figure>
+</body>
+</html>
