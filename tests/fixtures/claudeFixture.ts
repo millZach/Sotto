@@ -40,6 +40,10 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
         await adapter.pollSessionLogs()
       },
       completeTurn: (id, text) => action(id, { type: 'complete', text }),
+      backgroundWork: {
+        completeLeaving: (id, text, description) => action(id, { type: 'complete', text, background: { taskId: 'native-background-agent', description } }),
+        end: id => action(id, { type: 'raw', frame: { type: 'system', subtype: 'task_notification', task_id: 'native-background-agent', status: 'completed', output_file: '', summary: 'done' } }),
+      },
       raiseQuestion: (id, text) => action(id, { type: 'question', text }),
       raisePermission: (id, text) => action(id, { type: 'permission', text }),
       delayNextAck: async () => { await writeFile(join(root, 'script.json'), JSON.stringify({ delay: requestTimeoutMs + 1000 })) },

@@ -52,8 +52,8 @@ function retainedActivities(activities: AgentActivity[]): AgentActivity[] {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, subagentSummary, activities, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void subagentSummary
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -300,7 +300,7 @@ export class WorkspaceHost implements AgentHost {
       snapshot.models.forEach(model => { model.ready = false })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads) delete thread.monitoring
+      for (const thread of snapshot.threads) { delete thread.monitoring; delete thread.backgroundWork }
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads) {
@@ -737,7 +737,7 @@ export class WorkspaceHost implements AgentHost {
       }
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
-    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined } as AgentThread]))
+    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined, backgroundWork: undefined } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
       this.trackSubagents(thread, isThreadProviderConnected(snapshot, thread))
@@ -775,7 +775,7 @@ export class WorkspaceHost implements AgentHost {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = { ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }
-    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) delete thread.monitoring
+    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) { delete thread.monitoring; delete thread.backgroundWork }
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
       const old = previous.threads.find(item => item.id === thread.id)
@@ -1320,7 +1320,7 @@ export class WorkspaceHost implements AgentHost {
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) {
-      delete thread.monitoring
+      delete thread.monitoring; delete thread.backgroundWork
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }

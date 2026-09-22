@@ -53,6 +53,11 @@ const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edi
  */
 const APPROVAL_SURFACE_TOOL = 'AskUserQuestion'
 const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permission prompts, so it denies them itself and nothing reaches you. No work was lost. Answer in Claude Code until this is fixed, and check for a Sotto or Claude Code update.'
+/**
+ * Changing settings or rewinding restarts the CLI, and a restart ends the agents a thread still has running
+ * (ADR-0023), so both wait for them rather than end work the user started without saying so.
+ */
+const backgroundWorkRunning = (action: string): string => `This thread's background agents are still working. Nothing was changed. Wait for them to finish before ${action}.`
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -137,10 +142,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
       stop: id => this.stopSession(id),
     })
   }
-  /** A turn, live watch, unanswered request, compaction or command mid-dispatch holds a session open. */
+  /**
+   * A turn, live watch, background work, unanswered request, compaction or command mid-dispatch holds a
+   * session open: stopping the CLI would end the workflow or subagent the thread is still running.
+   */
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
-    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length)
+    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length || !!thread.backgroundWork?.length)
       || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.rollbackPending
   }
   /**
@@ -269,6 +277,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; it will not be replayed.')
     if (!Number.isSafeInteger(removeTurns) || removeTurns < 1 || removeTurns > expectedUserMessageIds.length) throw new Error('Choose an exact Claude turn boundary.')
     if (thread.status === 'running' || thread.requests.length || this.dispatching.has(id)) throw new Error('Wait for Claude and answer its requests before rewinding.')
+    // Rewinding restarts the CLI, which would end the agents it is still running for this thread.
+    if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning('rewinding it'))
     const generation = this.generation
     const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd)
     await this.refreshThread(id)
@@ -284,7 +294,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const boundary = retained.at(-1)?.uuid
     if (retainedCount > 0 && (!boundary || firstRemoved < 1)) throw new Error('Claude retained history is unavailable.')
     await this.refreshThread(id)
-    if (generation !== this.generation || !this.state.connected || !matches() || this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude changed before rewind. Refresh the preview.')
+    if (generation !== this.generation || !this.state.connected || !matches() || this.threads.get(id)?.status === 'running' || thread.requests.length || thread.backgroundWork?.length) throw new Error('Claude changed before rewind. Refresh the preview.')
     this.dispatching.add(id)
     const sourceSessionId = alias.sessionId
     let forkDispatched = false
@@ -405,6 +415,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (command.type === 'configure-thread') {
       validateThreadOptions(this.state, command, alias.modelId)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
+      // New settings restart the CLI, which would end the agents it is still running for this thread.
+      if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning('changing its settings'))
       const runtime = this.runtimes.get(id)
       if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
       alias.modelId = command.modelId ?? alias.modelId; alias.reasoningEffort = command.reasoningEffort ?? alias.reasoningEffort; if (command.runtimeMode) alias.runtimeMode = command.runtimeMode
@@ -558,6 +570,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
     monitoring.apply(frame); thread.monitoring = monitoring.current
+    const working = monitoring.working
+    if (working.length) thread.backgroundWork = working; else delete thread.backgroundWork
     if (frame.type === 'system' && frame.subtype === 'init') {
       if (typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
       this.checkApprovalSurface(frame)
@@ -642,7 +656,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private clearMonitoring(id: string): void {
     this.monitoring.delete(id)
     const thread = this.threads.get(id)
-    if (thread) delete thread.monitoring
+    if (thread) { delete thread.monitoring; delete thread.backgroundWork }
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return

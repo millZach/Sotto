@@ -50,9 +50,16 @@ const timer = setInterval(() => {
   }
   if (action.type === 'complete') {
     const id = randomUUID()
+    // A turn that leaves a subagent running launches it from a root tool call, as Claude 2.1.280 does with
+    // `run_in_background`. The task_started follows the tool call inside the turn, as in a live capture, and
+    // nothing ends it before the result, so the work must outlive the result to be seen afterwards.
+    const agent = action.background ? { tool: randomUUID(), task: action.background.taskId ?? randomUUID() } : undefined
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
+    if (agent) output({ type: 'stream_event', session_id: session, parent_tool_use_id: null, event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: agent.tool, name: 'Agent', input: {} } } })
     output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
     const frame = { type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } }
+    if (agent) output({ type: 'system', subtype: 'task_started', session_id: session, uuid: randomUUID(), task_id: agent.task, tool_use_id: agent.tool,
+      description: action.background.description, subagent_type: 'general-purpose', is_backgrounded: true, spawn_depth: 1, task_type: 'local_agent' })
     persist(frame); output(frame); output({ type: 'result', subtype: 'success', session_id: session, is_error: false, result: action.text }); return
   }
   if (action.type === 'permission' || action.type === 'question') {
