@@ -233,6 +233,9 @@ import SottoCore
             if frame["event"].string == "shell" { try applyShell(frame["state"]) }
             else if frame["event"].string == "detail", let id = frame["threadId"].string {
                 try applyDetail(frame["detail"], threadID: id, epoch: generation)
+            } else if frame["event"].string == "error" {
+                // The host sends this in place of an update too large for one frame; the connection stays open.
+                feedback = try frame["error"].decode(WireFailure.self).message
             } else { throw ClientError.invalidProtocol }
         } catch { online = false; connection.disconnect(); feedback = "The host update could not be read. Reconnect to refresh this thread." }
     }
