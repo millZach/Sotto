@@ -12,7 +12,17 @@ import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
 import { ThemeLivePreview } from './themes/ThemeLivePreview'
 import { removeThemesPatch, ThemeLibraryWriter, type LibraryPatch, type ThemeMode } from './themes/themeLibrary'
+import { openThemeEditor } from './themes/themeEditorSession'
 import './themes/themes.css'
+// PROTOTYPE, throwaway: theme-picker variants (development builds only).
+import { usePickerLibrary, type PickerProps } from './themes/prototype-theme-picker/picker'
+import { PROTOTYPE_ENABLED, usePrototypeState } from './themes/prototype-theme-picker/prototypeState'
+import { PrototypeSwitcher } from './themes/prototype-theme-picker/PrototypeSwitcher'
+import { VariantHalves } from './themes/prototype-theme-picker/VariantHalves'
+import { VariantIndex } from './themes/prototype-theme-picker/VariantIndex'
+import { VariantRooms } from './themes/prototype-theme-picker/VariantRooms'
+import { VariantSpheres } from './themes/prototype-theme-picker/VariantSpheres'
+import './themes/prototype-theme-picker/prototype.css'
 
 export interface AppearanceSettingsProps {
   readonly settings: AppSettings
@@ -74,6 +84,49 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
     else if (result.value.saved) setStatus({ text: `${theme.label} exported.`, error: false })
   }
 
+  const prototype = usePrototypeState()
+  const pickerLibrary = usePickerLibrary(shown, prototype.palettes, settings, select)
+  const chooseMode = (mode: ThemeMode): void => void choose({ appearance: mode }, 'Color scheme saved.')
+  const statusNode = <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
+  const effortNode = <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, 'Effort color saved.')} />
+  const slidersNode = (
+    <div className="settings-rows">
+      <AppearanceSlider
+        label="Contrast"
+        description="Color and border intensity."
+        bounds={APPEARANCE_CONTRAST}
+        value={shown.appearanceContrast}
+        onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
+        onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, 'Contrast saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+      />
+      <AppearanceSlider
+        label="Glass opacity"
+        description="Higher values make menus, dialogs and the composer more solid."
+        bounds={GLASS_OPACITY}
+        value={shown.glassOpacity}
+        onPreview={value => appearancePreview.choose({ glassOpacity: value })}
+        onCommit={(value, sequence) => void onSave({ glassOpacity: value }, 'Glass opacity saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+      />
+    </div>
+  )
+  const livePreviewNode = <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />
+  const pickerProps: PickerProps = {
+    shown,
+    resolved,
+    systemDark,
+    system,
+    still: settings.reducedMotion === 'on',
+    ...pickerLibrary,
+    onChooseMode: chooseMode,
+    onCreate: () => openThemeEditor({ editingThemeId: null, seedThemeId: resolved === 'light' ? shown.lightTheme : shown.darkTheme, seedName: null, initialAppearance: resolved }),
+    onAdd: () => setImporting(true),
+    effort: effortNode,
+    sliders: slidersNode,
+    livePreview: livePreviewNode,
+    status: statusNode,
+  }
+  const variant = PROTOTYPE_ENABLED ? prototype.variant : 'current'
+
   return (
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
@@ -81,6 +134,12 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
         <p>Themes &amp; interface</p>
       </div>
 
+      {variant === 'spheres' ? <VariantSpheres {...pickerProps} /> : null}
+      {variant === 'rooms' ? <VariantRooms {...pickerProps} /> : null}
+      {variant === 'halves' ? <VariantHalves {...pickerProps} /> : null}
+      {variant === 'index' ? <VariantIndex {...pickerProps} /> : null}
+      {variant === 'current'
+        ? (
       <div className="theme-settings__layout">
         <div className="theme-settings__controls">
           <ThemeGallery
@@ -117,6 +176,9 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
         </div>
         <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />
       </div>
+          )
+        : null}
+      {PROTOTYPE_ENABLED ? <PrototypeSwitcher /> : null}
 
       {importing
         ? <ThemeImportDialog writer={writer} onClose={() => setImporting(false)} onNotice={text => setStatus({ text, error: false })} />

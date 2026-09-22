@@ -1,0 +1,165 @@
+/* PROTOTYPE, throwaway: styles for the theme-picker variants and their switcher. */
+
+/* ---- Switcher --------------------------------------------------------- */
+.proto-switcher {
+  position: fixed; z-index: 1000; left: 50%; bottom: 18px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-radius: 999px; background: #111; color: #fff; font: 13px/1.2 var(--tt-font-ui);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 14%);
+}
+.proto-switcher button { display: inline-grid; place-items: center; min-height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.proto-switcher button:hover { background: rgb(255 255 255 / 12%); }
+.proto-switcher button[aria-pressed='true'] { background: #fff; color: #111; }
+.proto-switcher__label { min-width: 190px; text-align: center; font-weight: 600; }
+.proto-switcher__rule { width: 1px; height: 18px; background: rgb(255 255 255 / 22%); }
+.proto-switcher__palettes { display: inline-flex; gap: 2px; }
+
+/* ---- Shared: the voice sphere ------------------------------------------ */
+.proto-sphere {
+  display: block; flex: none; border-radius: 50%;
+  background: radial-gradient(circle at 30% 24%, color-mix(in srgb, var(--sphere-light), white 25%), var(--sphere-light) 12%, var(--sphere-dark) 55%, color-mix(in srgb, var(--sphere-dark), black 60%) 90%);
+  box-shadow: inset -4px -6px 12px rgb(0 0 0 / 16%), 0 8px 22px color-mix(in srgb, var(--sphere-dark) 30%, transparent);
+}
+
+/* ---- A: Voice spheres --------------------------------------------------- */
+.proto-a__stage {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 20px 22px; border: 1px solid var(--r-border); border-radius: 18px;
+  background: radial-gradient(120% 90% at 50% 38%, color-mix(in oklab, var(--r-accent) 14%, var(--r-canvas)), var(--r-canvas) 70%);
+  color: var(--r-text); transition: background 240ms ease, color 240ms ease;
+}
+.proto-a__stage-top { align-self: stretch; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.proto-a__stage-kicker { color: var(--r-muted); font-size: 12px; letter-spacing: 0.02em; }
+.proto-a__scheme { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--r-border); border-radius: 999px; }
+.proto-a__scheme button { display: grid; place-items: center; width: 30px; height: 26px; border: 0; border-radius: 999px; background: none; color: var(--r-muted); cursor: pointer; }
+.proto-a__scheme button[aria-pressed='true'] { background: var(--r-accent); color: var(--r-on-accent); }
+.proto-a__stage-sphere { margin: 4px 0 10px; }
+.proto-a__stage-name { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.proto-a__stage-note { margin: 0 0 12px; color: var(--r-muted); font-size: 13px; }
+.proto-a__stage-widget { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid var(--r-border); border-radius: 999px; background: var(--r-raised); font-size: 13px; font-weight: 600; }
+.proto-a__stage-widget svg { color: var(--r-accent); }
+.proto-a__row-head { display: flex; justify-content: space-between; align-items: baseline; margin: 22px 0 10px; }
+.proto-a__row-head .theme-settings__subheading { margin: 0; }
+.proto-a__split { border: 0; background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.proto-a__split:hover { color: var(--tt-text); }
+.proto-a__row { display: flex; flex-wrap: wrap; gap: 14px 18px; }
+.proto-a__item { display: flex; flex-direction: column; align-items: center; gap: 7px; width: 72px; }
+.proto-a__disc { display: grid; place-items: center; width: 66px; height: 66px; padding: 0; border: 1px solid var(--r-border, var(--tt-border)); border-radius: 50%; background: var(--r-canvas, transparent); cursor: pointer; transition: transform 160ms ease; }
+.proto-a__disc:hover { transform: translateY(-2px); }
+.proto-a__disc[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--tt-canvas), 0 0 0 4px var(--tt-text); }
+.proto-a__disc--new { border-style: dashed; color: var(--tt-text-muted); }
+.proto-a__label { font-size: 13px; color: var(--tt-text-2); text-align: center; }
+.proto-a__halves { display: flex; width: 72px; height: 66px; }
+.proto-a__half { position: relative; display: grid; place-items: center; width: 36px; height: 66px; padding: 0; overflow: hidden; border: 1px solid var(--r-border, var(--tt-border)); background: var(--r-canvas, transparent); color: var(--r-muted); cursor: pointer; }
+.proto-a__half[data-half='light'] { border-radius: 33px 0 0 33px; border-right: 0; }
+.proto-a__half[data-half='light'] .proto-sphere { transform: translateX(18px); }
+.proto-a__half[data-half='dark'] { border-radius: 0 33px 33px 0; }
+.proto-a__half[data-half='dark'] .proto-sphere { transform: translateX(-18px); }
+.proto-a__half svg { position: absolute; bottom: 5px; }
+.proto-a__half[data-half='light'] svg { left: 8px; }
+.proto-a__half[data-half='dark'] svg { right: 8px; }
+.proto-a__half[aria-pressed='true'] { outline: 2px solid var(--tt-text); outline-offset: 2px; z-index: 1; }
+.proto-a__half--none { border: 1px dashed var(--tt-border); background: none; }
+.proto-a__lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-top: 12px; }
+
+/* ---- B: Day into night rooms --------------------------------------------- */
+.proto-b__head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 14px; }
+.proto-b__head .theme-settings__subheading { margin: 0 0 4px; }
+.proto-b__head .theme-settings__assignment-hint { margin: 0; }
+.proto-b__scheme { display: inline-flex; flex: none; border: 1px solid var(--tt-border); border-radius: 10px; overflow: hidden; }
+.proto-b__scheme button { min-height: 32px; padding: 0 12px; border: 0; background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.proto-b__scheme button + button { border-left: 1px solid var(--tt-border); }
+.proto-b__scheme button[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); font-weight: 600; }
+.proto-b__list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.proto-b__row { display: grid; grid-template-columns: 240px minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 10px; border: 1px solid var(--tt-border-faint); border-radius: 16px; }
+.proto-b__row[data-active] { border-color: var(--tt-border); background: var(--tt-surface); }
+.proto-b__rooms { position: relative; display: block; height: 118px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--tt-border-faint); }
+.proto-room { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--r-canvas); }
+.proto-room[data-half='dark']:not(:only-of-type) { clip-path: polygon(58% 0, 100% 0, 100% 100%, 42% 100%); }
+.proto-room__strip { display: flex; gap: 4px; align-items: center; height: 14px; padding: 0 7px; background: var(--r-toolbar); border-bottom: 1px solid var(--r-toolbar-border); }
+.proto-room__strip i { width: 5px; height: 5px; border-radius: 50%; background: var(--r-muted); opacity: 0.5; }
+.proto-room__body { flex: 1; display: flex; min-height: 0; }
+.proto-room__sidebar { display: flex; flex-direction: column; gap: 5px; width: 30%; padding: 8px 6px; background: var(--r-sidebar); border-right: 1px solid var(--r-sidebar-border); }
+.proto-room__sidebar i { height: 7px; border-radius: 3px; background: var(--r-sidebar-text); opacity: 0.22; }
+.proto-room__sidebar i[data-active] { background: var(--r-sidebar-row); opacity: 1; box-shadow: inset 2px 0 0 var(--r-accent); }
+.proto-room__main { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 9px 10px; }
+.proto-room__bubble { align-self: flex-end; width: 48%; height: 14px; border-radius: 7px; background: var(--r-message); }
+.proto-room__line { width: 80%; height: 5px; border-radius: 3px; background: var(--r-text); opacity: 0.35; }
+.proto-room__line--short { width: 55%; }
+.proto-room__composer { position: relative; margin-top: auto; height: 22px; border: 1px solid var(--r-border); border-radius: 8px; background: var(--r-raised); }
+.proto-room__send { position: absolute; right: 4px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--r-action); }
+.proto-b__half { position: absolute; top: 0; bottom: 0; display: flex; align-items: flex-start; padding: 6px; border: 0; background: none; color: var(--tt-text); cursor: pointer; opacity: 0; transition: opacity 140ms ease, box-shadow 140ms ease; }
+.proto-b__half[data-half='light'] { left: 0; width: 50%; justify-content: flex-start; }
+.proto-b__half[data-half='dark'] { right: 0; width: 50%; justify-content: flex-end; }
+.proto-b__half[data-half='whole'] { inset: 0; width: 100%; justify-content: flex-end; }
+.proto-b__half svg { padding: 3px; border-radius: 999px; background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-sm); box-sizing: content-box; }
+.proto-b__rooms:hover .proto-b__half, .proto-b__half:focus-visible, .proto-b__half[aria-pressed='true'] { opacity: 1; }
+.proto-b__half:hover { box-shadow: inset 0 0 0 2px var(--tt-accent); }
+.proto-b__name { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px; border: 0; background: none; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.proto-b__name strong { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.proto-b__name span { color: var(--tt-text-muted); font-size: 13px; }
+.proto-b__name:hover strong { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.proto-b__state { display: inline-flex; align-items: center; gap: 6px; padding-right: 8px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.proto-b__actions, .proto-c__actions, .proto-d__actions { display: flex; gap: 6px; margin-top: 12px; }
+.proto-b__add, .proto-c__actions button, .proto-d__actions button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px; border: 1px dashed var(--tt-border); border-radius: 10px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.proto-b__add:hover, .proto-c__actions button:hover, .proto-d__actions button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.proto-b__interface { margin: 26px 0 0; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }
+.proto-b__lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+
+/* ---- C: Day and night columns --------------------------------------------- */
+.proto-c__track { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 18px; }
+.proto-c__rail { position: absolute; left: 16.6%; right: 16.6%; top: 13px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--tt-border), var(--tt-text-faint), var(--tt-border)); }
+.proto-c__track button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px; border: 0; background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.proto-c__stop { width: 18px; height: 18px; margin-top: 1px; border: 2px solid var(--tt-border); border-radius: 50%; background: var(--tt-canvas); }
+.proto-c__track button[aria-pressed='true'] { color: var(--tt-text); font-weight: 600; }
+.proto-c__track button[aria-pressed='true'] .proto-c__stop { border-color: var(--tt-accent); background: var(--tt-accent); box-shadow: 0 0 0 4px var(--tt-accent-wash); }
+.proto-c__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.proto-c__column { padding: 12px; border: 1px solid var(--tt-border); border-radius: 14px; transition: opacity 200ms ease; }
+.proto-c__column[data-live='false'] { opacity: 0.62; }
+.proto-c__column[data-live='false']:hover, .proto-c__column[data-live='false']:focus-within { opacity: 1; }
+.proto-c__column header { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; margin-bottom: 10px; }
+.proto-c__column header strong { font-size: 15px; }
+.proto-c__column header span { grid-column: 1 / -1; color: var(--tt-text-muted); font-size: 12px; }
+.proto-c__options { display: grid; gap: 4px; }
+.proto-c__option { display: grid; grid-template-columns: 74px 1fr auto; align-items: center; gap: 10px; min-height: 36px; padding: 4px 8px 4px 4px; border: 1px solid transparent; border-radius: 10px; background: none; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.proto-c__option:hover { background: var(--tt-hover); }
+.proto-c__option[aria-checked='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); font-weight: 600; }
+.proto-c__chord { display: flex; height: 26px; overflow: hidden; border-radius: 7px; box-shadow: 0 0 0 1px var(--tt-border-faint); }
+.proto-c__chord i { flex: 1; }
+.proto-c__chord i[data-part='canvas'] { flex: 2; background: var(--r-canvas); }
+.proto-c__chord i[data-part='sidebar'] { background: var(--r-sidebar); }
+.proto-c__chord i[data-part='raised'] { background: var(--r-raised); }
+.proto-c__chord i[data-part='message'] { background: var(--r-message); }
+.proto-c__chord i[data-part='accent'] { flex: 1.4; background: var(--r-accent); }
+
+/* ---- D: Index, try it on -------------------------------------------------- */
+.proto-d { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(260px, 1fr); gap: 36px; align-items: start; }
+.proto-d__hint { margin: 0 0 10px; color: var(--tt-text-muted); font-size: 13px; }
+.proto-d__names { margin: 0; padding: 0; list-style: none; counter-reset: theme; }
+.proto-d__names li { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--tt-hairline); counter-increment: theme; }
+.proto-d__name { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; padding: 9px 4px; border: 0; background: none; color: var(--tt-text-muted); font: inherit; font-size: 30px; font-weight: 500; letter-spacing: -0.02em; text-align: left; cursor: pointer; transition: color 140ms ease, padding 140ms ease; }
+.proto-d__name::before { content: counter(theme, decimal-leading-zero); align-self: center; width: 20px; color: var(--tt-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.proto-d__name:hover, .proto-d__name:focus-visible { color: var(--tt-text); padding-left: 10px; }
+.proto-d__names li[data-active] .proto-d__name { color: var(--tt-text); font-weight: 600; }
+.proto-d__name[aria-pressed='true'] .proto-d__label::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 10px; border-radius: 50%; background: var(--tt-accent); vertical-align: middle; }
+.proto-d__dots { display: inline-flex; }
+.proto-d__dots i { width: 14px; height: 14px; border: 3px solid; border-radius: 50%; }
+.proto-d__dots i + i { margin-left: -4px; }
+.proto-d__only { display: inline-flex; gap: 2px; opacity: 0; transition: opacity 140ms ease; }
+.proto-d__names li:hover .proto-d__only, .proto-d__names li:focus-within .proto-d__only, .proto-d__names li[data-active] .proto-d__only { opacity: 1; }
+.proto-d__only button, .proto-d__only span { padding: 3px 8px; border: 0; border-radius: 999px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.proto-d__only button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.proto-d__only button[aria-pressed='true'] { color: var(--tt-accent-text); background: var(--tt-accent-wash); }
+.proto-d__now { padding: 16px 18px; border: 1px solid var(--tt-border); border-radius: 14px; font-size: 15px; line-height: 1.7; }
+.proto-d__now p { margin: 0; }
+.proto-d__now p + p { margin-top: 8px; color: var(--tt-text-2); }
+.proto-d__choice { padding: 0 2px; border: 0; background: none; color: var(--tt-text-muted); font: inherit; text-decoration: underline dotted; text-underline-offset: 4px; cursor: pointer; }
+.proto-d__choice[aria-pressed='true'] { color: var(--tt-text); font-weight: 600; text-decoration: underline solid var(--tt-accent) 2px; }
+.proto-d__side .effort-colors { margin-top: 20px; }
+
+@media (max-width: 1100px) {
+  .proto-a__lower, .proto-b__lower, .proto-d { grid-template-columns: minmax(0, 1fr); }
+  .proto-b__row { grid-template-columns: 180px minmax(0, 1fr); }
+  .proto-b__state { grid-column: 2; }
+  .proto-c__columns { grid-template-columns: 1fr; }
+}

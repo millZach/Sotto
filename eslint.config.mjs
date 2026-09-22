@@ -25,6 +25,7 @@ export default tseslint.config(
       'artifacts/thread-sidebar/**',
       'artifacts/effort-furnace/**',
       'artifacts/effort-slider/**',
+      'artifacts/prototype-theme-picker/**',
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
       'artifacts/voice-perf/**',
