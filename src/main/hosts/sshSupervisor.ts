@@ -15,7 +15,8 @@ const descriptorPath = path.join(data, 'host-listener.json');
 const launcherPath = path.join(data, 'host-launcher.json');
 const lockPath = path.join(data, 'host-listener.lock');
 let child, pairing, stopping = false, ready = null, input = '';
-const emit = event => process.stdout.write(cfg.marker + JSON.stringify(event) + '\n');
+// Replies carry a marker distinct from the one on requests, so a terminal echoing a request is never read as a reply.
+const emit = event => process.stdout.write(cfg.replyMarker + JSON.stringify(event) + '\n');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const readLauncher = async () => {
   try { const value = JSON.parse(await fs.readFile(launcherPath, 'utf8')); return value && value.v === 1 && Number.isInteger(value.pid) ? value : null; }
@@ -72,8 +73,8 @@ process.stdin.on('data', chunk => {
   let newline;
   while ((newline = input.indexOf('\n')) !== -1) {
     const line = input.slice(0, newline).trim(); input = input.slice(newline + 1);
-    if (!line.startsWith(cfg.marker)) continue;
-    let command; try { command = JSON.parse(line.slice(cfg.marker.length)); } catch { continue; }
+    if (!line.startsWith(cfg.requestMarker)) continue;
+    let command; try { command = JSON.parse(line.slice(cfg.requestMarker.length)); } catch { continue; }
     if (command.type === 'close') { void stop(); return; }
     if (command.type === 'stop-host' && typeof command.id === 'string') {
       const requestId = command.id;
@@ -166,8 +167,10 @@ process.stdin.on('data', chunk => {
 })();
 `
 
-export function sshSupervisorCommand(configuration: ValidatedSshHostConfiguration, marker: string, readyTimeoutMs: number): string {
+/** Requests go out after `request` and replies come back after `reply`; the two never match each other. */
+export interface SshSupervisorMarkers { readonly request: string; readonly reply: string }
+export function sshSupervisorCommand(configuration: ValidatedSshHostConfiguration, markers: SshSupervisorMarkers, readyTimeoutMs: number): string {
   return ['node', '--input-type=commonjs', '-e', SSH_SUPERVISOR_SOURCE,
-    JSON.stringify({ installPath: configuration.installPath, dataDirectory: configuration.dataDirectory, remotePort: configuration.remotePort, marker, readyTimeoutMs })]
+    JSON.stringify({ installPath: configuration.installPath, dataDirectory: configuration.dataDirectory, remotePort: configuration.remotePort, requestMarker: markers.request, replyMarker: markers.reply, readyTimeoutMs })]
     .map(quoteRemoteArgument).join(' ')
 }

@@ -13,7 +13,7 @@ async function fixture() {
   await mkdir(join(installPath, 'host'), { recursive: true })
   await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
   await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host/index.js'))
-  return { installPath, dataDirectory: join(directory, 'data'), remotePort: 0, marker: 'SOTTO_SSH_test:', readyTimeoutMs: 5000 }
+  return { installPath, dataDirectory: join(directory, 'data'), remotePort: 0, requestMarker: 'SOTTO_REQ_test:', replyMarker: 'SOTTO_REP_test:', readyTimeoutMs: 5000 }
 }
 function supervise(configuration: Awaited<ReturnType<typeof fixture>>) {
   const child = spawn(process.execPath, ['--input-type=commonjs', '-e', SSH_SUPERVISOR_SOURCE, JSON.stringify(configuration)], { shell: false, windowsHide: true })
@@ -22,10 +22,10 @@ function supervise(configuration: Awaited<ReturnType<typeof fixture>>) {
   child.stdout.on('data', chunk => {
     buffer += String(chunk)
     let at: number
-    while ((at = buffer.indexOf('\n')) !== -1) { const line = buffer.slice(0, at); buffer = buffer.slice(at + 1); if (line.startsWith(configuration.marker)) messages.push(JSON.parse(line.slice(configuration.marker.length)) as Record<string, unknown>) }
+    while ((at = buffer.indexOf('\n')) !== -1) { const line = buffer.slice(0, at); buffer = buffer.slice(at + 1); if (line.startsWith(configuration.replyMarker)) messages.push(JSON.parse(line.slice(configuration.replyMarker.length)) as Record<string, unknown>) }
   })
   child.stderr.on('data', chunk => { errors += String(chunk) })
-  return { child, messages, errors: () => errors, send: (value: unknown) => child.stdin.write(configuration.marker + JSON.stringify(value) + '\n') }
+  return { child, messages, errors: () => errors, send: (value: unknown) => child.stdin.write(configuration.requestMarker + JSON.stringify(value) + '\n') }
 }
 it('runs the fixed remote supervisor, starts an owned host, issues explicit code and revocation, then stops its own child', async () => {
   const configuration = await fixture(), remote = supervise(configuration)

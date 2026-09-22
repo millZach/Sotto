@@ -12,7 +12,7 @@ it.each(['-oProxyCommand=evil', 'forge;touch /tmp/x', 'user@forge bad', 'user@fo
 it('quotes remote paths as data including single quotes and shell metacharacters', () => {
   expect(quoteRemoteArgument("it's $(literal); here")).toBe("'it'\\''s $(literal); here'")
   const validated = validateSshHost({ ...config, installPath: "/opt/it's $(literal)" })
-  const command = sshSupervisorCommand(validated, 'marker', 30000)
+  const command = sshSupervisorCommand(validated, { request: 'SOTTO_REQ_test:', reply: 'SOTTO_REP_test:' }, 30000)
   expect(command).toContain("it'\\''s $(literal)")
   expect(command).toContain("'node' '--input-type=commonjs' '-e'")
 })

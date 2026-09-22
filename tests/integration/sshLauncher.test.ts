@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SshHostLauncher, type SshPrompt } from '../../src/main/hosts/sshLauncher'
-import type { SpawnSsh } from '../../src/main/hosts/sshProcess'
+import { spawnSsh, type SpawnSsh } from '../../src/main/hosts/sshProcess'
 
 const directories: string[] = [], launchers: SshHostLauncher[] = []
 afterEach(async () => { for (const launcher of launchers.splice(0)) await launcher.disconnect(); for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }) })
@@ -79,8 +79,41 @@ it('times out without a ready marker and starts a fresh forward before reconnect
   expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
   await second.close()
 })
+it('reads past reply lines it cannot parse or does not know instead of failing the connection', async () => {
+  const { launcher } = await fixture('noisy')
+  const connection = await launcher.connect(configuration)
+  expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123' })
+  await connection.close()
+})
 it('declining a host key never completes a connection', async () => {
   const { launcher } = await fixture('host-key')
   const result = launcher.connect(configuration, { onPrompt: prompt => { if (prompt) launcher.answerPrompt(prompt.id, 'no') } })
   await expect(result).rejects.toThrow('SSH refused')
+})
+
+// Real OpenSSH runs under a pseudo-terminal in cooked mode, so every request line the launcher writes
+// comes back as echo before any reply. A pipe never echoes, which is how the pairing failure hid.
+async function ptyFixture(mode = 'started') {
+  const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-pty-')); directories.push(path)
+  const record = join(path, 'ssh.jsonl')
+  let output = ''
+  const spawner: SpawnSsh = async (_file, args, options) => {
+    const child = await spawnSsh(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args], { ...options, env: { ...options.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record } })
+    const onData = child.onData.bind(child)
+    return { write: value => child.write(value), kill: () => child.kill(), onExit: listener => child.onExit(listener),
+      onData: listener => onData(data => { output += data; listener(data) }) }
+  }
+  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: 15_000, closeTimeoutMs: 500 })
+  launchers.push(launcher)
+  return { launcher, output: () => output, events: async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string }) }
+}
+it('pairs, revokes and stops through a real pseudo-terminal that echoes every request', async () => {
+  const { launcher, output, events } = await ptyFixture()
+  const connection = await launcher.connect(configuration)
+  expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123', hostId: connection.hostId })
+  // The terminal echoed the request itself, marker and all; the launcher read past it.
+  expect(output()).toMatch(/"type":"pairing-code","id":"[0-9a-f-]{36}"\}/u)
+  expect(await connection.revokeClient('22222222-2222-4222-8222-222222222222')).toBe(true)
+  expect(await connection.stopHost()).toBe(true)
+  expect((await events()).map(item => item.type)).toEqual(expect.arrayContaining(['pairing-requested', 'revoke-requested', 'host-stopped']))
 })

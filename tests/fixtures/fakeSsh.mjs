@@ -8,12 +8,13 @@ const hostId = '11111111-1111-4111-8111-111111111111'
 const hostPid = 4242
 const remotePort = 4317
 const command = args.at(-1) ?? ''
-const marker = /SOTTO_SSH_[0-9a-f-]+:/u.exec(command)?.[0]
+const requestMarker = /SOTTO_REQ_[0-9a-f-]+:/u.exec(command)?.[0]
+const replyMarker = /SOTTO_REP_[0-9a-f-]+:/u.exec(command)?.[0]
 const tunnel = args.includes('-N')
 const record = event => { if (process.env.FAKE_SSH_RECORD) appendFileSync(process.env.FAKE_SSH_RECORD, JSON.stringify(event) + '\n') }
 record({ type: 'spawn', args, tunnel })
 let server, input = '', prompted = false, ready = false
-const emit = value => process.stdout.write(marker + JSON.stringify(value) + '\n')
+const emit = value => process.stdout.write(replyMarker + JSON.stringify(value) + '\n')
 const health = () => ({ v: 1, status: 'ready', hostId: mode === 'wrong-host' && tunnel ? randomUUID() : hostId, pid: hostPid, port: remotePort })
 const start = () => {
   if (ready) return; ready = true
@@ -27,6 +28,8 @@ const start = () => {
     server = createServer((_request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify(health())) })
     server.listen(localPort, '127.0.0.1', () => record({ type: 'forward-ready', localPort }))
   } else {
+    // A newer supervisor's event and a line a terminal cut short must both be read past.
+    if (mode === 'noisy') { process.stdout.write(replyMarker + '{"type":"pairing-co\n'); emit({ type: 'progress', percent: 50 }) }
     emit({ type: 'starting' }); emit({ type: 'ready', ...health(), owned: mode !== 'discovered' })
   }
 }
@@ -44,10 +47,11 @@ process.stdin.on('data', chunk => {
       if (mode === 'host-key' && line !== 'yes') { process.stderr.write('Host key verification failed.\n'); return }
       start(); continue
     }
-    if (!marker || !line.startsWith(marker)) continue
-    const request = JSON.parse(line.slice(marker.length))
+    if (!requestMarker || !line.startsWith(requestMarker)) continue
+    const request = JSON.parse(line.slice(requestMarker.length))
     if (request.type === 'close') { stop() }
     if (request.type === 'stop-host') { record({ type: 'host-stopped', owned: mode !== 'discovered' }); emit({ type: 'host-stopped', id: request.id, stopped: mode !== 'discovered', hostId }); stop() }
+    if (request.type === 'revoke-client') { record({ type: 'revoke-requested' }); emit({ type: 'revoked', id: request.id, hostId, revoked: true }) }
     if (request.type === 'pairing-code') { record({ type: 'pairing-requested' }); emit({ type: 'pairing-code', id: request.id, hostId, code: 'ABC123', expiresAt: new Date(Date.now() + 60_000).toISOString() }) }
   }
 })
