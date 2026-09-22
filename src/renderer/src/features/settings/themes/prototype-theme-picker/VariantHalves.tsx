@@ -10,6 +10,7 @@ import { Check, Moon, Paintbrush, Plus, Sun } from 'lucide-react'
 
 import { getThemeModes, type ThemeAppearance, type ThemeDefinition } from '../../../../../../shared/themes/library'
 import type { PickerProps } from './picker'
+import { PALETTE_MOOD } from './prototypeState'
 import { roomVars, paint } from './sphere'
 
 const CHORD = ['canvas', 'sidebar', 'raised', 'message', 'accent'] as const
@@ -43,7 +44,7 @@ function Column({ p, half, themes }: { readonly p: PickerProps; readonly half: T
               onClick={() => p.use(theme, half)}
             >
               <span className="proto-c__chord" aria-hidden="true">{CHORD.map(part => <i key={part} data-part={part} />)}</span>
-              <span className="proto-c__name">{theme.label}</span>
+              <span className="proto-c__name">{theme.label}{PALETTE_MOOD[theme.id] ? <small className="proto-c__mood">{PALETTE_MOOD[theme.id]}</small> : null}</span>
               {picked ? <Check size={15} aria-hidden="true" /> : null}
             </button>
           )
