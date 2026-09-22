@@ -397,17 +397,17 @@ describe('composer option chips', () => {
     expect(screen.getByRole('option', { name: 'Ask for approval' })).toHaveFocus()
   })
 
-  it('offers every provider in tabs with the reminder while the thread has not sent, and its own alone after', () => {
+  it('offers every provider on the rail with the reminder while the thread has not sent, and its own alone after', () => {
     mount()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const menu = screen.getByRole('dialog', { name: 'Choose model' })
-    expect(within(menu).getByRole('navigation', { name: 'Model providers' })).toBeVisible()
+    expect(within(menu).getByRole('tablist', { name: 'Model providers' })).toBeVisible()
     expect(within(menu).getByText('Any provider until your first message.')).toBeVisible()
     cleanup()
     mount(fixture({ nativeSessionStarted: true }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const started = screen.getByRole('dialog', { name: 'Choose model' })
-    expect(within(started).queryByRole('navigation')).toBeNull()
+    expect(within(started).queryByRole('tablist')).toBeNull()
     expect(within(started).getByText('This thread stays with Claude Code.')).toBeVisible()
     expect(within(started).getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Code model'])
   })

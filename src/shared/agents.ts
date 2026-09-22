@@ -105,6 +105,8 @@ export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
+  /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
+  recommended: z.boolean().optional(),
 })
 export const agentProjectSchema = z.object({ id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 export const agentRequestSchema = z.object({
