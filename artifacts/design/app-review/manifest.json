@@ -437,7 +437,7 @@
       "relativePath": "artifacts/design/app-review/baseline/help.png",
       "width": 750,
       "height": 1464,
-      "sha256": "92e2c3fb2ea9579004f3edd50856539a7d6e5998b3e7e952090d132ec6a889ec"
+      "sha256": "be43ef4d7d51ead91723766ce6eae65b13b1366f6f76791d522b6a7e4f3c37df"
     },
     {
       "theme": "light",
@@ -1122,8 +1122,8 @@
       "state": "appearance",
       "relativePath": "artifacts/design/app-review/baseline/settings-appearance.png",
       "width": 791,
-      "height": 751,
-      "sha256": "c2249814bf7ee76ae00457adae85a60ea18540da43effc4762c39208fef3dca3"
+      "height": 970,
+      "sha256": "2858feddbbd4ae014fd855d352de62bb82a503b8fad835f04cfed91304f7ad96"
     },
     {
       "theme": "light",
@@ -1136,8 +1136,8 @@
       "state": "appearance",
       "relativePath": "artifacts/design/app-review/baseline/settings-appearance-light.png",
       "width": 791,
-      "height": 751,
-      "sha256": "1a5fb4187a6aee01cae1c38f4c093580cb7cef9a6b07abc0fba649868afe570a"
+      "height": 970,
+      "sha256": "2bae0a3138195da1e6241712d3726d08299c40f02ccdac947f28c7623a8d8146"
     },
     {
       "theme": "dark",
@@ -1150,8 +1150,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy.png",
       "width": 791,
-      "height": 1410,
-      "sha256": "939514579d3e8611832d9198bc8ba958efc9fa7b5de844854fb2ed5e293b921c"
+      "height": 1479,
+      "sha256": "25da7bfb15621c272b94b8584a818c1b6ee6e68a81472843e087bbd65694c970"
     },
     {
       "theme": "light",
@@ -1164,8 +1164,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy-light.png",
       "width": 791,
-      "height": 1410,
-      "sha256": "2e6d42feaab568d0546ef6f585394aeaa32e98bc2e189ae70f86e187d51bd8cc"
+      "height": 1479,
+      "sha256": "9585bb3254607ebfd11fe9a61bfb85128cf83364772cf9f1de925fb424c5fc2a"
     },
     {
       "theme": "dark",
@@ -1276,8 +1276,8 @@
       "state": "providers",
       "relativePath": "artifacts/design/app-review/baseline/settings-providers.png",
       "width": 791,
-      "height": 580,
-      "sha256": "6b25ca1a76e45b2b7df764a58cc2ada380c6277fb687e654c5ce8d5eda9214f4"
+      "height": 722,
+      "sha256": "3d16005f303cd61990e3143203219c1bc16782bb883ae29c4f8a83abcfbfb4c2"
     },
     {
       "theme": "light",
@@ -1290,8 +1290,8 @@
       "state": "providers",
       "relativePath": "artifacts/design/app-review/baseline/settings-providers-light.png",
       "width": 791,
-      "height": 580,
-      "sha256": "0e7b654979a4b4d60af0d1c0e9070ff4df9e61d971bdf641de91e8e4e7843baf"
+      "height": 722,
+      "sha256": "27e56e27cd6c388dfe3c1f355e69bc45721d97c2e95b48b5787fa597409c4ad8"
     },
     {
       "theme": "dark",
@@ -1515,7 +1515,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-files-unavailable-dark.png",
       "width": 820,
       "height": 800,
-      "sha256": "2a120d8898ca620b6d3198a2af79ba23609a8572a98fe18519fa500fea1fc26f"
+      "sha256": "b656c9fc25ff34a237b9fa92d7120efe834ce096f1e48bcd96eb7a884b830f97"
     },
     {
       "theme": "light",
@@ -1529,7 +1529,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-files-unavailable-light.png",
       "width": 820,
       "height": 800,
-      "sha256": "59ba7fadba1404f5cf06e38ca636eb9e0ff2b2f710bf0429a82fdded0d864701"
+      "sha256": "8e2c32efa4d0fd93ae1676748e5c4ebfd62f76ac17440e5a9ac7d3ce3b43b278"
     },
     {
       "theme": "dark",
@@ -1711,7 +1711,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-working-copy-choice-dark.png",
       "width": 820,
       "height": 800,
-      "sha256": "29d1c2d6398e33f5873f19e740f71cc61d2894c68ecce3a51509e91ed710fb58"
+      "sha256": "4a95d4af9404a055b8e657201d5269b1d3ee7985c70cc706c11b726550a92a50"
     },
     {
       "theme": "light",
@@ -1725,7 +1725,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-working-copy-choice-light.png",
       "width": 820,
       "height": 800,
-      "sha256": "c74798f7c97acda3508076beed797b7a6ff393ae2c8291d0208291c2ed6e6ca1"
+      "sha256": "fcb53c49d3e1428c25dcd53326894196888563b5733bd0e9ebefac5ae1f09f7d"
     },
     {
       "theme": "dark",
