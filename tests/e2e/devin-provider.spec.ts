@@ -94,7 +94,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await expect(dialog.getByRole('combobox', { name: 'Thread model' })).toBeFocused()
     await dialog.getByRole('combobox', { name: 'Thread model' }).click()
     const picker = page.getByRole('dialog', { name: 'Choose model' })
-    await picker.getByRole('button', { name: 'Devin', exact: true }).click()
+    await picker.getByRole('tab', { name: 'Devin', exact: true }).click()
     await picker.getByRole('option', { name: 'Fixture Devin', exact: true }).click()
     await expect(dialog.getByRole('combobox', { name: 'Thread model' })).toContainText('Fixture Devin')
     await dialog.getByRole('button', { name: 'Create thread' }).click()
