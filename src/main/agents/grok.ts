@@ -8,6 +8,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
+import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -60,7 +61,7 @@ export function grokArguments(): string[] {
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
-const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional() })).optional() }).optional() })).min(1) })
+const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional(), default: z.boolean().optional() })).optional() }).optional() })).min(1) })
 const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
 const historySchema = z.object({ updates: z.array(z.object({ timestamp: z.union([z.number(), z.string()]), method: z.string(), params: z.unknown() })), totalCount: z.number().int().nonnegative(), hasMore: z.boolean() })
 // Grok 1.0.5 restarts its event counter on CLI resume. eventId alone is not a message identity.
@@ -274,8 +275,16 @@ export class GrokAcpHost implements AgentHost {
         this.state.version = `${response._meta.agentVersion} / ACP ${GROK_ACP_VERSION}`
         if (compareClientVersions(response._meta.agentVersion, GROK_CLI_VERSION) > 0) this.state.verifiedVersion = GROK_CLI_VERSION
         else delete this.state.verifiedVersion
-        this.state.models = response._meta.modelState.availableModels.map(model => ({ id: model.modelId, name: model.name, provider: 'Grok', ready: true, runtimeModes: [...grokRuntimeModes], supportsImages: false,
-          reasoningEfforts: model._meta?.supportsReasoningEffort ? model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? [] : [], ...(model._meta?.reasoningEffort ? { defaultReasoningEffort: model._meta.reasoningEffort } : {}) }))
+        this.state.models = response._meta.modelState.availableModels.map(model => {
+          // Grok lists its levels highest first; Sotto's order runs the other way (orderReasoningEfforts).
+          const reasoningEfforts = model._meta?.supportsReasoningEffort ? orderReasoningEfforts(model._meta.reasoningEfforts?.map(effort => effort.value ?? effort.id) ?? []) : []
+          // `_meta.reasoningEffort` is the level the session is on now, which a user's own Grok settings
+          // can move; the level Grok marks as its default is what the card's Default button means.
+          const flagged = model._meta?.reasoningEfforts?.find(effort => effort.default)
+          const reportedDefault = flagged?.value ?? flagged?.id ?? model._meta?.reasoningEffort
+          return { id: model.modelId, name: model.name, provider: 'Grok', ready: true, runtimeModes: [...grokRuntimeModes], supportsImages: false,
+            reasoningEfforts, ...(reportedDefault && reasoningEfforts.includes(reportedDefault) ? { defaultReasoningEffort: reportedDefault } : {}) }
+        })
       })
       await rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } }, value => { z.object({}).parse(value) })
       // Lazy sessions: a known thread is in the snapshot from its alias, idle, and loads when it is
