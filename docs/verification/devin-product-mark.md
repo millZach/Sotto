@@ -6,7 +6,7 @@ Issue #224, Windows, September 22, 2026. Applies to every surface that draws a p
 
 Devin's mark is now the product mark from devin.ai, the path the site's header logo and `favicon.svg` draw, in place of the session icon from the installed Devin app. It is one path filled with `currentColor`, like the other three marks, so every colour rule that already names `devin` applies unchanged.
 
-The site draws the path in a 425-unit box and leaves about a fifth of the box empty around it. At the 14 to 18 pixel sizes Sotto uses, that drew Devin visibly smaller than Codex, Claude Code and Grok Build, whose paths fill their boxes. `ProviderMark.tsx` crops the box to the path (`48 48 330 330`, centred on it) rather than scaling the mark in CSS, so no stylesheet needs a Devin-only size rule. The path is the site's, unchanged.
+The site draws the path in a 425-unit box and leaves about a third of its width and a fifth of its height empty around it. At the 14 to 18 pixel sizes Sotto uses, that drew Devin visibly smaller than Codex, Claude Code and Grok Build, whose paths fill their boxes. `ProviderMark.tsx` crops the box to the path (`48 48 330 330`, centred on it) rather than scaling the mark in CSS, so no stylesheet needs a Devin-only size rule. The path is the site's, unchanged.
 
 ## Size and colour rules
 
