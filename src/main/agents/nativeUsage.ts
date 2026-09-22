@@ -25,6 +25,20 @@ function claudeTokens(value: unknown): UsageTokens {
     cacheWrite5m: count(creation.ephemeral_5m_input_tokens), cacheWrite1h: count(creation.ephemeral_1h_input_tokens) }
 }
 
+/**
+ * Claude's result frame keys its per-model figures by the model as the session selected it, which carries a
+ * context suffix the assistant messages leave off: `claude-opus-5[1m]` against `claude-opus-5`. Matching only
+ * the exact string loses the context window, and the thread then has nothing but a raw token count to show.
+ * The suffix is the only difference allowed, so a row is never read off a different model.
+ */
+function claudeModelUsage(modelUsage: unknown, model: string): unknown {
+  const rows = object(modelUsage)
+  if (Object.hasOwn(rows, model)) return rows[model]
+  const base = (name: string): string => name.replace(/\[[^\]]*\]$/u, '')
+  const matches = Object.keys(rows).filter(key => base(key) === base(model))
+  return matches.length === 1 ? rows[matches[0]!] : undefined
+}
+
 /** Accounting observation only: never changes delivery, native sessions, or billing settings. */
 export class NativeUsage {
   private readonly store: AtomicJsonStore<Record<string, Ledger>>
@@ -186,7 +200,7 @@ export class NativeUsage {
   claudeResult(id: string, value: unknown): void {
     const frame = object(value); const ledger = this.data[id]
     const model = ledger?.latestId ? ledger.entries[ledger.latestId]?.model : undefined
-    this.elapsed(id, frame.duration_ms, model ? object(object(frame.modelUsage)[model]).contextWindow : undefined)
+    this.elapsed(id, frame.duration_ms, model ? object(claudeModelUsage(frame.modelUsage, model)).contextWindow : undefined)
   }
   grok(id: string, selectedModel: string, value: unknown): void {
     const params = object(value); const update = object(params.update); const usage = object(update.usage)

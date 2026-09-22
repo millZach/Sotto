@@ -22,6 +22,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, object, type ClaudeFrame } from './claudeProtocol'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
+import { unreadableRequest } from './nativeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
 import { ClaudeMonitoring } from './claudeMonitoring'
@@ -44,11 +45,24 @@ const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.str
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 // Native CLI permission modes. Aliases without a stored mode keep the original
-// approval-required behaviour. Prompts still route to Sotto (--permission-prompts host).
+// approval-required behaviour.
 const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' } as const satisfies Record<AgentRuntimeMode, string>
+/**
+ * The tool the CLI offers only where someone can answer it. Its absence from a session's tool list is
+ * how Sotto reads "this CLI has no approval surface", because the CLI reports no other sign of it.
+ */
+const APPROVAL_SURFACE_TOOL = 'AskUserQuestion'
+const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permission prompts, so it denies them itself and nothing reaches you. No work was lost. Answer in Claude Code until this is fixed, and check for a Sotto or Claude Code update.'
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
-  // The CLI only accepts bypassPermissions when bypassing is explicitly allowed at launch.
-  return ['--permission-mode', nativePermissionModes[mode], '--permission-prompts', 'host', ...(mode === 'full-access' ? ['--allow-dangerously-skip-permissions'] : [])]
+  // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
+  // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
+  // the native SDK spells it. Without the second the CLI has no approval surface, so it answers every
+  // prompt with a local deny and never offers AskUserQuestion: approvals and questions silently stop
+  // reaching the user, in every mode. Every mode passes it, full-access included: bypassPermissions
+  // prompts for very little, but what it does prompt for is the user's to answer rather than the client's.
+  return ['--permission-mode', nativePermissionModes[mode], '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio',
+    // The CLI only accepts bypassPermissions when bypassing is explicitly allowed at launch.
+    ...(mode === 'full-access' ? ['--allow-dangerously-skip-permissions'] : [])]
 }
 // Sotto's own browser tools carry no native prompt. Admission is not authority: opening a page,
 // navigating, clicking and typing still need the user's one-time answer in Tools (ADR-0020), and
@@ -158,7 +172,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await this.usage.load()
     const [account, executable, aliases, projects] = await Promise.all([this.client.status(), this.client.findExecutable(), this.aliasStore.read(), this.projectStore.read()])
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true }))
+    this.state.error = undefined; this.state.models = account.models.map(model => ({ ...model, provider: 'claude', ready: account.ready, runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: true,
+      ...(account.defaultModelId && model.id === account.defaultModelId ? { recommended: true } : {}) }))
     if (!account.ready || !executable) { this.state.error = account.detail; this.emit(); return this.view() }
     // Without this the version is only known once a session runs, so an idle provider could not be
     // compared against what its channel publishes (ADR-0021).
@@ -545,19 +560,29 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
     monitoring.apply(frame); thread.monitoring = monitoring.current
-    if (frame.type === 'system' && frame.subtype === 'init' && typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
+    if (frame.type === 'system' && frame.subtype === 'init') {
+      if (typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
+      this.checkApprovalSurface(frame)
+    }
     if (frame.type === 'control_request') {
       if (typeof frame.request_id === 'string' && runtime.answered.has(frame.request_id)) return
-      const pending = runtime.requests.size < 256 ? claudePending(frame) : undefined
+      // A thread holding this many unanswered requests is a flood, and denying it is the defence. That is
+      // a different thing from a request this adapter could not read, so it is not reported as one.
+      const flooded = runtime.requests.size >= 256
+      const pending = flooded ? undefined : claudePending(frame)
       if (pending) {
         if (alias.answeredRequestIds.includes(pending.id)) { pending.request.delivery = 'uncertain'; runtime.answered.add(pending.id) }
         runtime.requests.set(pending.id, pending); thread.requests = [...runtime.requests.values()].map(value => value.request); this.emit()
       }
       else if (typeof frame.request_id === 'string') {
         const requestId = frame.request_id
-        const response = object(frame.request)?.subtype === 'can_use_tool'
-          ? this.reply(runtime, requestId, claudeDenial())
-          : runtime.protocol.write({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'Unsupported Claude control request.' } })
+        let response: Promise<void>
+        if (object(frame.request)?.subtype === 'can_use_tool') {
+          // can_use_tool is the CLI asking for the user. Denying one Sotto could not read is the only safe
+          // answer, and Claude reads that denial as the user's own, so the thread is told what happened.
+          if (!flooded) this.report(unreadableRequest('Claude Code'))
+          response = this.reply(runtime, requestId, claudeDenial())
+        } else response = runtime.protocol.write({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'Unsupported Claude control request.' } })
         void response.catch(() => undefined)
       }
       return
@@ -771,6 +796,28 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private view(): AgentHostSnapshot {
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) })
+  }
+  /**
+   * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report
+   * a refused surface any other way: it keeps working, answers every prompt that needed a person with a
+   * local deny, and drops AskUserQuestion from the list. That looks like a model choosing not to ask, so
+   * this says plainly that nothing can reach the user until the client is fixed.
+   */
+  private checkApprovalSurface(frame: ClaudeFrame): void {
+    // No tool list is not the same as a tool list without the surface: it says nothing either way, and
+    // telling the user their client is refusing Sotto on that would be a guess dressed as a fact.
+    if (!Array.isArray(frame.tools) || frame.tools.includes(APPROVAL_SURFACE_TOOL)) return
+    this.report(APPROVAL_SURFACE_LOST)
+  }
+  /**
+   * Put a message about lost requests on the provider. It is said again whenever an ordinary error has
+   * replaced it since, because silence about requests that never reached the user is the fault being
+   * fixed here, and a failed turn in between must not be what buries it.
+   */
+  private report(message: string): void {
+    if (this.state.error === message) return
+    this.state.error = message
+    this.emit()
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
 }

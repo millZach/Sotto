@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import type { AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
-import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
+import { ThreadOptionFields, ThreadOptions, threadOptionsSummary } from '../../../src/renderer/src/agents/ThreadOptions'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function fixture(thread: Partial<AgentThread> = {}): AgentState {
@@ -397,17 +397,45 @@ describe('composer option chips', () => {
     expect(screen.getByRole('option', { name: 'Ask for approval' })).toHaveFocus()
   })
 
-  it('offers every provider in tabs with the reminder while the thread has not sent, and its own alone after', () => {
+  it("offers a provider's own permission modes, each saying what Sotto still asks about", async () => {
+    const state = fixture({ providerId: 'devin', modelId: 'devin:model', providerMode: 'ask-first' })
+    const devin = state.host.models.find(model => model.id === 'devin:model')!
+    Object.assign(devin, { runtimeModes: [], providerModes: [
+      { id: 'ask-first', name: 'Ask first', description: 'Devin writes code and Sotto asks you first.', asks: 'Sotto asks before every edit, command and fetch.' },
+      { id: 'bypass', name: 'Bypass permissions', description: 'Auto-approve all tool calls.', asks: 'Sotto asks about nothing. Devin acts without asking you.' },
+    ] })
+    const { command } = mount(state)
+    const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
+    expect(chip).toHaveTextContent('Ask first')
+    fireEvent.click(chip)
+    // The one sentence that keeps "Bypass permissions" from reading as Sotto having stopped asking.
+    expect(screen.getByRole('option', { name: /Bypass permissions/ })).toHaveTextContent('Sotto asks about nothing')
+    expect(screen.queryByRole('option', { name: 'Ask for approval' })).toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: /Bypass permissions/ }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'thread', providerMode: 'bypass' }))
+  })
+
+  it('shows an unchosen provider mode as the one the thread starts on, never as a provider default', () => {
+    const model = { id: 'devin:model', name: 'Devin model', provider: 'Devin', providerId: 'devin' as const, ready: true, runtimeModes: [],
+      providerModes: [{ id: 'ask-first', name: 'Ask first', asks: 'Sotto asks before every edit, command and fetch.' }, { id: 'bypass', name: 'Bypass Permissions' }] }
+    expect(threadOptionsSummary(model, undefined, undefined, undefined)).toBe('Devin model · Ask first')
+    render(<ThreadOptionFields models={[model]} modelId="devin:model" onModel={vi.fn()} onReasoning={vi.fn()} onRuntime={vi.fn()} onProviderMode={vi.fn()} />)
+    const permissions = screen.getByRole('combobox', { name: 'Thread permissions' })
+    expect(permissions).toHaveValue('ask-first')
+    expect(within(permissions).queryByRole('option', { name: 'Provider default' })).toBeNull()
+  })
+
+  it('offers every provider on the rail with the reminder while the thread has not sent, and its own alone after', () => {
     mount()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const menu = screen.getByRole('dialog', { name: 'Choose model' })
-    expect(within(menu).getByRole('navigation', { name: 'Model providers' })).toBeVisible()
+    expect(within(menu).getByRole('tablist', { name: 'Model providers' })).toBeVisible()
     expect(within(menu).getByText('Any provider until your first message.')).toBeVisible()
     cleanup()
     mount(fixture({ nativeSessionStarted: true }))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const started = screen.getByRole('dialog', { name: 'Choose model' })
-    expect(within(started).queryByRole('navigation')).toBeNull()
+    expect(within(started).queryByRole('tablist')).toBeNull()
     expect(within(started).getByText('This thread stays with Claude Code.')).toBeVisible()
     expect(within(started).getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Code model'])
   })

@@ -19,6 +19,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { grokActivities } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
+import { needsPerson, unreadableRequest } from './nativeRequests'
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
@@ -636,7 +637,15 @@ export class GrokAcpHost implements AgentHost {
         if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
         this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
       }
-      else this.rpc?.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
+      else {
+        this.rpc?.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
+        // Grok reads that refusal as an answer and keeps going, so a renamed or reshaped approval would
+        // otherwise pass as the user declining. Foreign sessions stay none of Sotto's business.
+        if (threadId && needsPerson(method) && this.state.error !== unreadableRequest('Grok')) {
+          this.state.error = unreadableRequest('Grok')
+          this.emit()
+        }
+      }
       return
     }
     if (['session/update', 'x.ai/session/update', 'x.ai/session_notification'].includes(method ?? '')) {

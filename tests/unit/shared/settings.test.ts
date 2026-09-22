@@ -57,6 +57,7 @@ const customSettings = {
   threadTitles: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
+  worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
   pullRequestText: false,
   commitMessages: false,
   streamingAsr: false,
@@ -73,6 +74,11 @@ describe('settings', () => {
       .toMatchObject({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } })
     expect(parseSettings({ threadWorkingCopyDefault: 'unknown', projectThreadWorkingCopyDefaults: { project: 'unknown' } }))
       .toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
+  })
+  it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
+    expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
+    expect(parseSettings({ worktreeCleanup: { afterDays: 14, merged: false, onSettle: true, unchanged: false } }).worktreeCleanup).toEqual({ afterDays: 14, merged: false, onSettle: true, unchanged: false })
+    expect(parseSettings({ worktreeCleanup: { afterDays: 3, merged: false, onSettle: true, unchanged: false } }).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
   })
   it('drops retired transcription settings while preserving valid settings', () => {
     const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
@@ -201,6 +207,7 @@ describe('settings', () => {
       threadTitles: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
+      worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
       pullRequestText: true,
       commitMessages: true,
       streamingAsr: true,

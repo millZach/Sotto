@@ -163,6 +163,38 @@ describe('Claude recovery and safety', () => {
   })
   const launches = async () => (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => (record.params?.frame as { args: string[] }).args).filter(args => !args.includes('--no-session-persistence'))
   const permission = (args: string[]) => ({ mode: args[args.indexOf('--permission-mode') + 1], prompts: args[args.indexOf('--permission-prompts') + 1], allowBypass: args.includes('--allow-dangerously-skip-permissions') })
+  const surface = (args: string[]) => args[args.indexOf('--permission-prompt-tool') + 1]
+  it.each(['approval-required', 'auto-accept-edits', 'auto', 'full-access'] as const)('names Sotto the permission prompt surface for %s threads', async runtimeMode => {
+    // Without this the CLI answers every prompt that needed a person with its own denial and withholds
+    // AskUserQuestion, so approvals and questions stop reaching the user while the thread keeps working.
+    const created = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Surface', modelId: f.modelId, runtimeMode })
+    expect(surface((await launches()).at(-1)!)).toBe('stdio')
+  })
+  it('says the approval surface was refused when a session offers no question tool', async () => {
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ approvalSurface: false }))
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('is not letting Sotto answer its permission prompts')
+    expect((await f.host.snapshot()).error).toContain('No work was lost')
+  })
+  it('says a request for the user went unread instead of denying it in silence', async () => {
+    // A question whose payload this adapter cannot read is still the CLI asking for the user, and the
+    // denial Sotto must send reads to Claude as the user's own answer.
+    await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'unreadable',
+      request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', tool_use_id: 'tool', input: { questions: [] } } } })
+    await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('only you can answer')
+    await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('"behavior":"deny"')
+    expect((await thread()).requests).toEqual([])
+  })
+  // Paired with the test above: the fixture differs only in whether its session lists the question tool,
+  // so that one proves the list is read and this one proves a complete list is not complained about.
+  it('stays quiet while a session offers the question tool', async () => {
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => (await launches()).length).toBeGreaterThan(0)
+    expect((await f.host.snapshot()).error ?? '').not.toContain('permission prompts')
+  })
   it('advertises every runtime mode on Claude models', async () => {
     expect((await f.host.snapshot()).models.every(model => model.runtimeModes?.join() === 'approval-required,auto-accept-edits,auto,full-access')).toBe(true)
   })

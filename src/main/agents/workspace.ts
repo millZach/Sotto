@@ -140,6 +140,34 @@ export class WorkspaceHost implements AgentHost {
   private readonly branchWrites = new Set<Promise<void>>()
   setWorkingCopyDefaults(resolver: (projectId: string) => 'independent' | 'shared'): void { this.workingCopyDefault = resolver }
   setBranchNameWriter(writer: (prompt: string) => Promise<string | null>): void { this.branchNameWriter = writer }
+  /** Whether something outside this host, a Tools terminal, still runs in the thread's folder. */
+  private worktreeInUse: (threadId: string) => boolean = () => false
+  setWorktreeInUse(inUse: (threadId: string) => boolean): void { this.worktreeInUse = inUse }
+  /**
+   * Removes this thread's own worktree folder because the user asked, or a rule the user turned on did
+   * (ADR-0019). The thread keeps its record and its branch keeps its commits; the next send puts the
+   * folder back. Refused while the thread is running, waiting on an answer, sharing the folder with
+   * another thread, or has a terminal open in it. `withUncommittedChanges` is the user's answer to the
+   * confirmation; a rule never gives it.
+   */
+  async reclaimThreadWorktree(threadId: string, options: { withUncommittedChanges?: boolean; automatic?: boolean } = {}): Promise<AgentHostSnapshot> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const thread = this.thread(threadId)
+      const worktree = thread.worktree
+      if (worktree?.mode !== 'independent' || !worktree.path || worktree.reused) throw new Error('This thread has no worktree of its own to remove.')
+      if (worktree.reclaimedAt) return this.workspaceSnapshot()
+      if (thread.status === 'running' || thread.requests.length || this.preparations.has(threadId)) throw new Error('This thread is still working. Wait for it to finish and answer its requests before removing its folder.')
+      if (!await this.ownsCheckoutAlone(threadId)) throw new Error('Another thread works in this folder too, so it stays.')
+      if (this.worktreeInUse(threadId)) throw new Error('A terminal is open in this folder. Close it before removing the folder.')
+      const reclaimed = await this.worktrees.reclaim(worktree, options)
+      this.thread(threadId).worktree = reclaimed
+      this.dirty = true
+      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+      this.publish()
+      return this.workspaceSnapshot()
+    })
+  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -174,9 +202,14 @@ export class WorkspaceHost implements AgentHost {
   }
   /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
   private async exclusivelyOwnsCheckout(threadId: string): Promise<boolean> {
-    const thread = this.thread(threadId)
-    const metadata = thread.worktree
-    if (!metadata?.temporaryBranch || metadata.reused || !metadata.path) return false
+    const metadata = this.thread(threadId).worktree
+    if (!metadata?.temporaryBranch) return false
+    return this.ownsCheckoutAlone(threadId)
+  }
+  /** No other thread, by its own folder or its project's, works in this thread's checkout. */
+  private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
+    const metadata = this.thread(threadId).worktree
+    if (!metadata || metadata.reused || !metadata.path) return false
     try {
       const identity = await this.worktrees.checkoutIdentity(metadata.path)
       const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
@@ -1006,8 +1039,12 @@ export class WorkspaceHost implements AgentHost {
         let metadata = thread.worktree
         // A folder that was deleted is put back before it is read, so a refresh never turns a missing
         // folder into an error that the next send would then refuse to repair (ADR-0014).
-        try { metadata = await this.worktrees.inspect(await this.worktrees.restore(metadata)) }
-        catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
+        // A folder Sotto reclaimed is not put back by a refresh, only by the next send; a refresh reads it if it came back.
+        if (metadata.reclaimedAt) { try { metadata = await this.worktrees.inspect(metadata) } catch { /* Still reclaimed; the record already says so. */ } }
+        else {
+          try { metadata = await this.worktrees.inspect(await this.worktrees.restore(metadata)) }
+          catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
+        }
         this.thread(threadId).worktree = metadata
         this.dirty = true; await this.flush(); this.publish()
       }
@@ -1068,7 +1105,7 @@ export class WorkspaceHost implements AgentHost {
         // Setup can fail after Git creates the checkout but before its verified folder is recorded.
         const workingDirectory = this.thread(threadId).workingDirectory ?? await this.worktrees.workingDirectory(inspected)
         const current = this.thread(threadId)
-        if (current.worktree === worktree && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || current.workingDirectory === undefined)) {
+        if (current.worktree === worktree && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || worktree.reclaimedAt || current.workingDirectory === undefined)) {
           current.worktree = inspected; current.workingDirectory ??= workingDirectory; this.dirty = true
           // The folder was just verified; a cache write that fails must not refuse the send.
           try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
@@ -1127,6 +1164,7 @@ export class WorkspaceHost implements AgentHost {
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
+        ...(command.providerMode ? { providerMode: command.providerMode } : {}),
         worktree: await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
@@ -1174,9 +1212,11 @@ export class WorkspaceHost implements AgentHost {
         delete thread.reasoningEffort
         if (model.defaultReasoningEffort) thread.reasoningEffort = model.defaultReasoningEffort
         if (thread.runtimeMode && !model.runtimeModes?.includes(thread.runtimeMode)) delete thread.runtimeMode
+        if (thread.providerMode && !model.providerModes?.some(mode => mode.id === thread.providerMode)) delete thread.providerMode
       }
       if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
       if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
+      if (command.providerMode !== undefined) thread.providerMode = command.providerMode
       this.dirty = true
       try { await this.flush() }
       catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(thread, previous); throw error }
@@ -1230,7 +1270,8 @@ export class WorkspaceHost implements AgentHost {
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
             workingDirectory,
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
-            ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
+            ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
+            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) })
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
         this.accept(await this.inner.snapshot(thread.providerId)); await this.flush()

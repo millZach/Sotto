@@ -278,7 +278,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
  * action is left out when it is the row directly above, so the line never repeats it.
  */
 export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince }: {
-  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'>; readonly connected: boolean
+  readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction'>>; readonly connected: boolean
   /** The last activity row rendered immediately before this line, if any. */
   readonly adjacentRecordId?: string | undefined
   /**
@@ -287,6 +287,14 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
+  // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
+  // is working would be the wrong thing to read while the only thing happening is the context being folded up.
+  if (thread.compaction?.status === 'running') {
+    return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+      <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
+      <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
+    </div>
+  }
   const turnId = liveTurnId(thread)
   if (turnId === null && sendingSince === undefined) return null
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))

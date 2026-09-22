@@ -3,6 +3,7 @@ import { expect, it } from 'vitest'
 import { claudePending, claudeAnswer } from '../../../src/main/agents/claudeRequests'
 import { pendingRequest, answerRequest } from '../../../src/main/agents/codexRequests'
 import { grokPending, grokAnswer } from '../../../src/main/agents/grokRequests'
+import { needsPerson } from '../../../src/main/agents/nativeRequests'
 
 it('Claude exposes every question and round-trips selections plus free text to original keys', () => {
   const pending = claudePending({ type: 'control_request', request_id: 'request', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', tool_use_id: 'tool', input: { questions: [
@@ -46,4 +47,12 @@ it('Codex string elicitation exposes every field and preserves native enum value
   const pending = pendingRequest(1, 'mcpServer/elicitation/request', { threadId: 't', mode: 'form', requestedSchema: { type: 'object', properties: { color: { type: 'string', enum: ['b'], enumNames: ['Blue'] }, reason: { type: 'string' } }, required: ['color', 'reason'] } }, 't')!
   expect(pending.request.questions?.map(q => q.id)).toEqual(['color', 'reason'])
   expect(answerRequest(pending, '', undefined, { color: { optionIds: ['b'] }, reason: { optionIds: [], text: 'Why' } })).toEqual({ action: 'accept', content: { color: 'b', reason: 'Why' } })
+})
+
+it('recognises a request only a person can answer across native naming styles, and nothing else', () => {
+  for (const method of ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/commandExecution/v2/requestApproval',
+    'item/tool/requestUserInput', 'item/permissions/requestApproval', 'mcpServer/elicitation/request',
+    'session/request_permission', 'session/v2/request_permission', 'x.ai/ask_user_question']) expect(needsPerson(method)).toBe(true)
+  for (const method of ['session/update', 'item/tool/call', 'currentTime/read', 'attestation/generate', 'account/chatgptAuthTokens/refresh',
+    'session/write_text_file', 'thread/started', 'turn/completed']) expect(needsPerson(method)).toBe(false)
 })

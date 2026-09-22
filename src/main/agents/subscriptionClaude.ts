@@ -17,10 +17,23 @@ interface ClaudeSubscriptionOptions {
 const REQUIRED_FLAGS = ['--safe-mode', '--tools', '--permission-prompts', '--no-session-persistence', '--input-format', '--output-format', '--system-prompt', '--model', '--effort', '--verbose']
 const MODEL_ID = z.string().max(160).regex(/^[a-z0-9][a-z0-9._:/-]*(?:\[[a-z0-9]+\])?$/iu)
 const NATIVE_MODEL = z.object({
-  value: MODEL_ID, displayName: z.string().min(1).max(300),
+  value: MODEL_ID, displayName: z.string().min(1).max(300), description: z.string().max(600).optional(),
   supportsEffort: z.boolean().optional(),
   supportedEffortLevels: z.array(z.string().max(32).regex(/^[a-z][a-z0-9_-]*$/u)).max(30).optional(),
 })
+
+/**
+ * Claude Code names a model without its version — "Fable", "Sonnet" — and puts the version in the first
+ * clause of the description: "Fable 5.1 - Most capable...". Two threads on Sonnet 4.5 and Sonnet 5 would
+ * otherwise read the same. The fuller name is used only when it is the same model said at greater length,
+ * which is what sharing a first word means here; "Default (recommended)" keeps its own name rather than
+ * becoming the model it currently resolves to.
+ */
+function versionedName(model: z.infer<typeof NATIVE_MODEL>): string {
+  const described = model.description?.split('·')[0]?.trim() ?? ''
+  const first = (name: string): string => name.split(/\s+/u)[0]?.toLocaleLowerCase() ?? ''
+  return described && first(described) === first(model.displayName) ? described : model.displayName
+}
 const INITIALIZED = z.object({ type: z.literal('control_response'), response: z.object({
   subtype: z.literal('success'), request_id: z.string(), response: z.object({ models: z.array(NATIVE_MODEL).min(1).max(300) }),
 }) })
@@ -133,7 +146,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       const parsed = INITIALIZED.safeParse(message)
       if (!parsed.success || parsed.data.response.request_id !== requestId) continue
       return parsed.data.response.response.models.map(model => ({
-        id: model.value, name: model.displayName,
+        id: model.value, name: versionedName(model),
         reasoningEfforts: model.supportsEffort === false ? [] : [...(model.supportedEffortLevels ?? [])],
       }))
     }

@@ -6,9 +6,15 @@ import { ProviderMark } from './ProviderMark'
 import './threadChips.css'
 import './modelPicker.css'
 
+/**
+ * Newest first, with the model the provider itself recommends kept at the top whatever it is called. The
+ * recommendation is the provider's own answer to the question the list is asking, so it does not compete on
+ * version number: "Default (recommended)" carries no version and would otherwise sort below everything.
+ */
 export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
   const version = (model: AgentModel): number[] => (model.name.match(/\d+(?:\.\d+)*/)?.[0] ?? model.id.match(/\d+(?:\.\d+)*/)?.[0] ?? '').split('.').map(Number)
   return [...models].sort((left, right) => {
+    if (Boolean(left.recommended) !== Boolean(right.recommended)) return left.recommended ? -1 : 1
     const leftVersion = version(left)
     const rightVersion = version(right)
     for (let index = 0; index < Math.max(leftVersion.length, rightVersion.length); index += 1) {
@@ -21,10 +27,12 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
 
 /**
  * The model control: a chip carrying the provider's mark and the model's name, which opens a compact menu
- * anchored over it. Providers are tabs across the top of the menu (only when there is more than one), a
- * search line filters the tab's models, and `note` is the one line under the list, such as the reminder
- * that a new thread may still change provider. Escape or a click outside closes the menu and returns
- * focus to the chip; after a choice the owner restores focus once the change is confirmed.
+ * anchored over it. The menu is two columns. On the left a rail of provider marks, one tile each and no
+ * names, so the menu costs the same whatever a provider is called; the name is the tile's accessible name
+ * and its tooltip. On the right the chosen provider's models under a search line, with `note` beneath them
+ * -- the reminder that a new thread may still change provider, or that this one may not. A single provider
+ * has no rail. Escape or a click outside closes the menu and returns focus to the chip; after a choice the
+ * owner restores focus once the change is confirmed.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -38,6 +46,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
+  const rail = useRef<HTMLDivElement>(null)
   const dialogId = useId()
   const groups = useMemo(() => {
     const result = new Map<string, AgentModel[]>()
@@ -56,7 +65,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
     const place = (): void => {
       const anchor = trigger.current?.getBoundingClientRect()
       if (!anchor) return
-      const width = element.offsetWidth || 300
+      const width = element.offsetWidth || 336
       const height = element.offsetHeight || 360
       const below = innerHeight - anchor.bottom - 16
       const top = below >= height ? anchor.bottom + 6 : anchor.top - height - 6
@@ -74,24 +83,34 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
       title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model"
+    {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
       onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
-      {groups.length > 1 && <nav className="model-picker__tabs" aria-label="Model providers">{groups.map(group => <button type="button" key={group.name} aria-label={group.name} aria-pressed={selectedProvider?.name === group.name} onClick={() => { setProvider(group.name); search.current?.focus() }}>
-        <ProviderMark provider={group.providerId} name={group.name} size={13} /><span>{group.name}</span></button>)}</nav>}
-      <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label="Search models" placeholder={selectedProvider ? `Search ${selectedProvider.name} models` : 'Search models'} value={query} onChange={event => setQuery(event.target.value)}
-        onKeyDown={event => {
-          if (event.key === 'Enter') event.preventDefault()
-          if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
-        }} />
-        <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
-      </header>
-      <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
-        {filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === modelId} disabled={disabled || !model.ready}
-          onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === modelId && <Check size={14} aria-hidden="true" />}</button>)}
-        {!filtered.length && <p className="model-picker__empty">No matching models.</p>}
+      {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
+      {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical"
+        onKeyDown={event => moveListboxFocus(event, rail.current)}>
+        {groups.map(group => {
+          const chosen = selectedProvider?.name === group.name
+          return <button type="button" role="tab" key={group.name} aria-label={group.name} title={group.name} aria-selected={chosen} tabIndex={chosen ? 0 : -1}
+            onFocus={() => setProvider(group.name)} onClick={() => { setProvider(group.name); search.current?.focus() }}>
+            <ProviderMark provider={group.providerId} name={group.name} size={18} /></button>
+        })}
+      </div>}
+      <div className="model-picker__panel">
+        <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label="Search models" placeholder={selectedProvider ? `Search ${selectedProvider.name} models` : 'Search models'} value={query} onChange={event => setQuery(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter') event.preventDefault()
+            if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
+          }} />
+          <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
+        </header>
+        <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+          {filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === modelId} disabled={disabled || !model.ready}
+            onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === modelId && <Check size={14} aria-hidden="true" />}</button>)}
+          {!filtered.length && <p className="model-picker__empty">No matching models.</p>}
+        </div>
+        {note ? <p className="model-picker__note">{note}</p> : null}
       </div>
-      {note ? <p className="model-picker__note">{note}</p> : null}
     </dialog>}
   </div>
 }

@@ -4,15 +4,34 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
-// This is Sotto's approval policy, not Devin's similarly named Normal mode.
-// The pinned native compatibility experiment proves asks override the tested
-// project grants even though ACP advertises accept-edits as its conversation mode.
-const policy = {
+// This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
+// the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
+// `accept-edits` and even `bypass` still sending session/request_permission, and an allow removing the ask
+// (docs/verification/devin-permission-modes.md). So what Devin may do unasked is written here, in a file
+// Sotto owns and reads back, and never inferred from what a provider mode says it means (ADR-0022).
+const EDITS = ['edit', 'write', 'Write(**)', 'Write(/**)']
+const ACTIONS = ['exec', 'Fetch(*)', 'mcp__*']
+
+/** What a thread's profile lets Devin do unasked; everything else is asked, every time. */
+export type DevinAllowance = 'nothing' | 'edits' | 'everything'
+/**
+ * A written, confirmed profile and what it allows. They travel as one value because a profile checked
+ * against the wrong allowance is exactly the mistake the readback exists to catch.
+ */
+export interface DevinProfile { readonly path: string; readonly allows: DevinAllowance }
+
+const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
+  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS] : [],
+  deny: [],
+  ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
+})
+
+const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
-  permissions: { allow: [], deny: [], ask: ['edit', 'write', 'Write(**)', 'Write(/**)', 'exec', 'Fetch(*)', 'mcp__*'] },
+  permissions: permissionsFor(allows),
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
-}
+})
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
@@ -27,7 +46,7 @@ const presentationFields = new Set(['theme_mode', 'theme_auto_detect', 'pty_for_
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
-function normalizedProfileMatches(config: Record<string, unknown>): boolean {
+function normalizedProfileMatches(config: Record<string, unknown>, policy: Record<string, unknown>): boolean {
   if (!Object.entries(policy).every(([key, value]) => isDeepStrictEqual(config[key], value))) return false
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
@@ -44,7 +63,6 @@ function normalizedProfileMatches(config: Record<string, unknown>): boolean {
   return true
 }
 
-const policyText = `${JSON.stringify(policy, null, 2)}\n`
 const preparing = new Map<string, Promise<void>>()
 const nativeFiles = ['config.json', 'config.local.json', 'hooks.v1.json', 'mcp_config.json', 'mcp_config.local.json']
 
@@ -84,10 +102,22 @@ export async function assertDevinWorkingDirectory(cwd?: string, configDirectory 
   }
 }
 
-/** A versioned, Sotto-owned profile; existing native user/project files are never changed. */
-export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string, configDirectory?: string): Promise<string> {
+/** The file an allowance is written to. One file each, so a thread's file says what it was allowed. */
+export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowance): string {
+  return resolve(userDataDirectory, 'devin', allows === 'nothing' ? 'approval-policy-v1.json' : `approval-policy-v1-${allows}.json`)
+}
+
+/**
+ * A versioned, Sotto-owned profile; existing native user/project files are never changed. What the
+ * thread allows picks the file, and `nothing` keeps the original name so a profile written before
+ * allowances existed is still the one an asking thread uses. The allowance has no default: a caller
+ * that forgot it would otherwise check every profile as the asking one.
+ */
+export async function prepareDevinPolicy(userDataDirectory: string, allows: DevinAllowance, cwd?: string, configDirectory?: string): Promise<DevinProfile> {
   await assertDevinWorkingDirectory(cwd, configDirectory)
-  const path = resolve(userDataDirectory, 'devin', 'approval-policy-v1.json')
+  const policy = policyFor(allows)
+  const policyText = `${JSON.stringify(policy, null, 2)}\n`
+  const path = devinPolicyPath(userDataDirectory, allows)
   let pending = preparing.get(path)
   if (!pending) {
     pending = (async () => {
@@ -114,7 +144,7 @@ export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string
     preparing.set(path, pending)
   }
   try { await pending } finally { if (preparing.get(path) === pending) preparing.delete(path) }
-  return path
+  return { path, allows }
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -124,12 +154,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
 /** Receives the result of _cognition.ai/config/read, never a logged protocol body.
  * This confirms the user profile only; it does not report merged native policy.
  */
-export function verifyDevinPolicy(result: unknown, path: string): void {
+export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void {
   const response = object(result)
   const config = object(response?.config)
   const matches = typeof response?.configPath === 'string' && isAbsolute(response.configPath)
-    && resolve(response.configPath) === resolve(path)
-    && config && normalizedProfileMatches(config)
+    && resolve(response.configPath) === resolve(profile.path)
+    && config && normalizedProfileMatches(config, policyFor(profile.allows))
   if (!matches) throw new Error('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 

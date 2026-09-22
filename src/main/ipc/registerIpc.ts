@@ -107,6 +107,7 @@ const settingKeys = [
   'threadTitles',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
+  'worktreeCleanup',
   'commitMessages',
   'pullRequestText',
   'streamingAsr',

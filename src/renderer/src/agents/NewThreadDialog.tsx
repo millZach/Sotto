@@ -7,7 +7,7 @@ import { Button } from '../components/Button'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import './newThread.css'
 import { folderName, projectForFolder, useProjectChooser } from './ProjectChooser'
-import { ThreadOptionFields, threadOptionsSummary } from './ThreadOptions'
+import { startingProviderMode, ThreadOptionFields, threadOptionsSummary } from './ThreadOptions'
 import type { WorkingCopyChoice } from './WorkingCopyFieldset'
 import { ThreadWorkingCopyFields, type ThreadWorkingCopySelection } from './ThreadWorkingCopyFields'
 
@@ -24,6 +24,7 @@ export interface NewThreadChoices {
   readonly existingWorktreePath?: string | undefined
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
 }
 
 /** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
@@ -67,6 +68,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const modelChosen = useRef(initialChoices !== undefined)
   const [reasoningEffort, setReasoningEffort] = useState<string | undefined>(initialChoices?.reasoningEffort)
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>(initialChoices?.runtimeMode)
+  const [providerMode, setProviderMode] = useState<string | undefined>(initialChoices?.providerMode)
   // Chosen on purpose for every new thread; existing threads keep the folder they already use.
   const [workingSelection, setWorkingSelection] = useState<ThreadWorkingCopySelection>({ workingCopy: initialChoices?.workingCopy ?? 'shared', baseBranch: initialChoices?.baseBranch, startFromOrigin: initialChoices?.startFromOrigin ?? true, existingWorktreePath: initialChoices?.existingWorktreePath })
   const workingCopyChosen = useRef(initialChoices !== undefined)
@@ -111,6 +113,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       id: modelId, providerId: inheritedProvider, provider: PROVIDER_LABELS[inheritedProvider], ready: false,
       name: inheritedModel?.name || state.configuration.reasoningModel || (PROVIDER_LABELS[inheritedProvider] + ' default'),
     } : undefined)
+  // The permission setting shown is the one sent, so an unchosen one is the first the provider offers.
+  const startMode = startingProviderMode(selectedModel, providerMode)
   const modelChoices = selectedModel && !projectHost.models.some(model => model.id === selectedModel.id) ? [...projectHost.models, selectedModel] : projectHost.models
   const selectedProvider = projectHost.providers?.find(provider => provider.id === selectedModel?.providerId)
   const canCreateThread = selectedProvider?.capabilities.threads ?? projectHost.capabilities.threads
@@ -153,17 +157,17 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       const workingCopy = workingCopyChosen.current ? workingSelection.workingCopy : defaults.projects[defaultKey(selectedProject.id)] ?? defaults.global
       const worktreeChoices = workingCopy === 'independent' ? { ...(workingSelection.baseBranch ? { baseBranch: workingSelection.baseBranch } : {}), startFromOrigin: workingSelection.startFromOrigin ?? true, ...(workingSelection.existingWorktreePath ? { existingWorktreePath: workingSelection.existingWorktreePath } : {}) } : {}
       const choices: NewThreadChoices = { projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, workingCopy, ...worktreeChoices,
-        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) }
+        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}), ...(startMode ? { providerMode: startMode } : {}) }
       // A name the user typed is theirs from the start; Sotto's stand-in name is not.
       const request = { type: 'create-thread', projectId: choices.projectId, title: choices.title, modelId, managed, workingCopy, ...worktreeChoices,
         titleSource: title.trim() ? 'user' : 'default',
-        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}) } as const
+        ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}), ...(startMode ? { providerMode: startMode } : {}) } as const
       if (onCreating) {
         // The window shows the thread under this ID at once; main adopts the same ID when it catches up.
         const threadId = hostEntityKey(selectedProject.hostId ?? parseHostEntityKey(selectedProject.id)?.hostId ?? state.hostId, crypto.randomUUID())
         const thread = draftThread({ id: threadId, projectId: choices.projectId, title: choices.title, modelId, workingCopy, ...worktreeChoices,
           ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
-          reasoningEffort: reasoningEffort ?? selectedModel?.defaultReasoningEffort, runtimeMode })
+          reasoningEffort: reasoningEffort ?? selectedModel?.defaultReasoningEffort, runtimeMode, providerMode: startMode })
         const created = command({ ...request, threadId })
           .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
         completed.current = true
@@ -192,11 +196,12 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       <ThreadWorkingCopyFields projectId={project?.id} value={workingSelection} disabled={submitting || loadingDefaults} onChange={value => { workingCopyChosen.current = true; setWorkingSelection(value) }} />
       <details className="new-thread-dialog__options" open={optionsOpen}
         onKeyDown={event => { if (event.key === 'Escape' && optionsOpen && (event.target as HTMLElement).closest('dialog') === dialog.current) { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsSummary.current?.focus() } }}>
-        <summary ref={optionsSummary} onClick={event => { event.preventDefault(); setOptionsOpen(open => !open) }}>Thread options <span>· {threadOptionsSummary(selectedModel, reasoningEffort, runtimeMode)}</span></summary>
+        <summary ref={optionsSummary} onClick={event => { event.preventDefault(); setOptionsOpen(open => !open) }}>Thread options <span>· {threadOptionsSummary(selectedModel, reasoningEffort, runtimeMode, providerMode)}</span></summary>
         <div className="new-thread-dialog__option-fields">
           <label>Thread name<input className="tt-input" placeholder="New thread" value={title} disabled={submitting} onChange={event => setTitle(event.target.value)} /></label>
-          <ThreadOptionFields models={modelChoices} modelId={modelId} reasoningEffort={reasoningEffort} runtimeMode={runtimeMode}
-            disabled={submitting} onModel={id => { modelChosen.current = true; setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined) }} onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} />
+          <ThreadOptionFields models={modelChoices} modelId={modelId} reasoningEffort={reasoningEffort} runtimeMode={runtimeMode} providerMode={providerMode}
+            disabled={submitting} onModel={id => { modelChosen.current = true; setModelId(id); setReasoningEffort(undefined); setRuntimeMode(undefined); setProviderMode(undefined) }}
+            onReasoning={setReasoningEffort} onRuntime={setRuntimeMode} onProviderMode={setProviderMode} />
         </div>
       </details>
       {defaultsError ? <div><p className="agent-error" role="alert">{defaultsError}</p><Button variant="secondary" disabled={loadingDefaults} onClick={() => { setLoadingDefaults(true); setDefaultsRead(value => value + 1) }}>Retry defaults</Button></div> : null}

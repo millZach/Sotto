@@ -1,7 +1,7 @@
 import type { UsageTokens } from '../../shared/threadUsage'
 
 /** Immutable standard text-token price inputs, USD/million. New pricing needs a new version. */
-export const USAGE_RATE_VERSION = '2026-09-21-standard-v3'
+export const USAGE_RATE_VERSION = '2026-09-22-standard-v4'
 
 interface Tier { readonly input: number; readonly cached?: number; readonly output: number; readonly write?: number }
 interface Rate extends Tier {
@@ -17,8 +17,11 @@ interface Rate extends Tier {
 }
 const openAiLong = 272_001
 // 2026-09-15: developers.openai.com/api/docs/pricing, platform.claude.com/docs/en/about-claude/pricing. 2026-09-21: docs.x.ai/docs/models.
+// 2026-09-22: GPT-6-Sol, GPT-6-Luna and Claude Opus 5.5 from the same two pages, on the day they launched.
 const rates: Record<string, Rate> = {
   'codex:gpt-6-astra': { input: 10, cached: 1, output: 50, write: 12.5, long: { from: openAiLong, input: 20, cached: 2, output: 75, write: 25 } },
+  'codex:gpt-6-sol': { input: 2, cached: 0.2, output: 10, write: 2.5, long: { from: openAiLong, input: 4, cached: 0.4, output: 15, write: 5 } },
+  'codex:gpt-6-luna': { input: 0.1, cached: 0.01, output: 0.5, write: 0.125, long: { from: openAiLong, input: 0.2, cached: 0.02, output: 0.75, write: 0.25 } },
   'codex:gpt-5.6-sol': { input: 4, cached: 0.4, output: 20, write: 5, long: { from: openAiLong, input: 8, cached: 0.8, output: 30, write: 10 } },
   'codex:gpt-5.6-terra': { input: 2, cached: 0.2, output: 12, write: 2.5, long: { from: openAiLong, input: 4, cached: 0.4, output: 18, write: 5 } },
   'codex:gpt-5.6-luna': { input: 0.2, cached: 0.02, output: 1.2, write: 0.25, long: { from: openAiLong, input: 0.4, cached: 0.04, output: 1.8, write: 0.5 } },
@@ -28,6 +31,8 @@ const rates: Record<string, Rate> = {
   'grok:grok-4.7': { input: 2, cached: 0.5, output: 6, long: { from: 200_000, input: 4, cached: 1, output: 12 } },
   'grok:grok-4.6': { input: 2, cached: 0.5, output: 6, long: { from: 200_000, input: 4, cached: 1, output: 12 } },
   'grok:grok-4.5': { input: 2, cached: 0.3, output: 6, long: { from: 200_000, input: 4, cached: 0.6, output: 12 } },
+  // Opus 5.5 reads its cache at 0.05x input rather than the usual 0.1x.
+  'claude:claude-opus-5-5': { input: 4, cached: 0.2, output: 20, write5m: 5, write1h: 8 },
   'claude:claude-opus-5': { input: 5, cached: 0.5, output: 25, write5m: 6.25, write1h: 10 },
   'claude:claude-fable-5-1': { input: 10, cached: 0.25, output: 50, write5m: 12.5, write1h: 20 },
   'claude:claude-sonnet-5': { input: 2, cached: 0.2, output: 10, write5m: 2.5, write1h: 4 },

@@ -63,7 +63,8 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     {offer ? <><p>This context is large and hasn’t been updated for over an hour.</p>
       <Button variant="secondary" onClick={() => void compact()}>Compact</Button>
       <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>Keep full history</Button></> : null}
-    {thread.compaction ? <p role="status">{thread.compaction.status === 'completed' ? 'Context compacted' : thread.compaction.status === 'running' ? 'Compacting context…'
+    {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
+    {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{thread.compaction.status === 'completed' ? 'Context compacted'
       : thread.compaction.error ?? (thread.compaction.status === 'failed' ? 'Native compaction failed.' : 'Native compaction is unconfirmed. Reconnect to observe its result.')}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>

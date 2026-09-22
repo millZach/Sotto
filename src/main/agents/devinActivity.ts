@@ -2,7 +2,7 @@ import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/a
 import { object } from './claudeProtocol'
 
 /** ACP activity updates are upserts. Partial updates retain the original action and transcript anchor. */
-export function devinActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string; cwd: string }, previous: readonly AgentActivity[] = []): AgentActivity[] {
+export function devinActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string; cwd: string }, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
   let truncated = false
   const bounded = (text: string): string => {
     if (text.length > MAX_ACTIVITY_TEXT) truncated = true
@@ -26,8 +26,12 @@ export function devinActivities(update: Record<string, unknown>, context: { turn
     : ['edit', 'delete', 'move'].includes(String(update.kind)) || changes.length ? 'file-change' : old?.kind ?? 'tool'
   const status = update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed'
     : ['pending', 'in_progress'].includes(String(update.status)) ? 'running' : old?.status ?? 'unknown'
+  // A Devin tool update carries no time of its own, so the moment Sotto received a live one is the only start a
+  // running row can have. A replayed update records nothing, because a transcript must not be given a clock it never had.
+  const startedAt = live && status === 'running' && !old?.startedAt ? new Date().toISOString() : undefined
   return [{ ...context, ...old, id, sequence: old?.sequence ?? 0, kind, status,
     title: typeof update.title === 'string' ? bounded(update.title) : old?.title ?? 'Tool',
+    ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}),
     ...(typeof input?.command === 'string' ? { command: bounded(input.command) } : {}),
     ...(update.rawInput !== undefined ? { text: bounded(JSON.stringify(update.rawInput)) } : {}),
     ...(texts.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) } : {}),

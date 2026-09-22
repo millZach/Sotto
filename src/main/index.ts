@@ -168,6 +168,7 @@ import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
 import { TerminalWorkspaceService } from './terminals/service'
 import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
+import { WorktreeCleanup, githubPullRequestMerged } from './agents/worktreeCleanup'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
@@ -220,6 +221,8 @@ type NativeDiagnostic =
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
   | 'checkpoint-unavailable'
+  | 'worktree-cleanup-reclaimed'
+  | 'worktree-cleanup-skipped'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -601,6 +604,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let browserService: BrowserService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService)
   agentHost.useBrowserTools(browserAgentServer)
+  // Reclaims worktrees only under the rules the user turned on (ADR-0019); every rule starts off.
+  // Only the local host has worktrees on this computer; with it off there is nothing to reclaim here.
+  const worktreeCleanup = startupSettings.localHostEnabled ? new WorktreeCleanup({
+    host: agentHost, rules: () => workingCopySettings.worktreeCleanup,
+    ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}),
+    log: code => { logOperational(code) },
+  }) : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
@@ -673,6 +683,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   registerQuitDrain(app, async () => {
     unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
+    // A sweep in progress finishes its current worktree before the host it asks is closed.
+    await worktreeCleanup?.close()
     const results = await Promise.allSettled([desktopHosts.close(), localRuntime.close(), personalChats.close()])
     hostRouter.dispose()
     const failure = results.find(result => result.status === 'rejected')
@@ -863,6 +875,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     async onSettingsChanged(settings): Promise<void> {
       workingCopySettings = settings
+      worktreeCleanup?.settingsChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()
@@ -996,8 +1009,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
       })
+      const terminalService = new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
+      // A folder with a shell still running in it is not reclaimed under that shell.
+      if (worktreeCleanup) {
+        agentHost.setWorktreeInUse(threadId => terminalService.hasRunningTerminal(threadId))
+        worktreeCleanup.start()
+      }
       const cleanupTools = registerToolsIpc(ipcMain, {
-        terminal: new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } }),
+        terminal: terminalService,
         browser: browserService,
         gitChanges,
       }, () => windows.getTrustedRenderers())
@@ -1094,6 +1113,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupFiles()
         cleanupSubagents()
         cleanupTerminals()
+        worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined
         void browserAgentServer.close()

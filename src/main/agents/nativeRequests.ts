@@ -1,5 +1,27 @@
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 
+/**
+ * Does this provider request read as something only a person can answer? Adapters map the shapes they
+ * know and refuse the rest, which is right until a provider renames or reshapes one: the refusal is a
+ * protocol-level error nobody sees, the provider treats it as a refusal, and the thread carries on as
+ * though the user had said no. This is how an adapter recognises that case well enough to say it out
+ * loud. It is deliberately about the method's name rather than its payload, because the payload is the
+ * part that has changed.
+ */
+export function needsPerson(method: string): boolean {
+  return /requestApproval$|requestUserInput$|request_permission$|ask_user_question$|elicitation\/request$|^item\/permissions\//u.test(method)
+}
+
+/**
+ * What a thread is told when one of those requests arrives in a shape its adapter cannot read. It never
+ * says which side is behind: a renamed method means the client is ahead of Sotto, a dropped field means
+ * Sotto is ahead of the client, and the frame does not say which. Naming one of them would send the user
+ * to update the wrong thing.
+ */
+export function unreadableRequest(provider: string): string {
+  return `${provider} asked for something only you can answer in a form Sotto could not read, so it was declined without reaching you. Nothing else was lost. Answer it in ${provider}, and check for a Sotto or ${provider} update.`
+}
+
 /** Validate against the original native request, never against renderer-provided choices. */
 export function questionValues(request: AgentRequest, supplied: AgentQuestionAnswers): Record<string, string[]> {
   const questions = request.questions ?? []

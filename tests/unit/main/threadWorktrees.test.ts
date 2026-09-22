@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -233,6 +233,60 @@ describe('independent working-copy allocation', () => {
     await expect(f.service.inspect(a)).rejects.toThrow('locked')
     await git(f.project, ['worktree', 'unlock', a.path!])
     expect((await f.service.ensure(a)).status).toBe('ready')
+  })
+  it('reclaims a clean worktree, keeps its branch, and restore puts the folder back on it', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await git(a.path!, ['checkout', '-b', 'feat/finished'])
+    await writeFile(join(a.path!, 'tracked.txt'), 'finished work')
+    await git(a.path!, ['add', '.'])
+    await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Finish'])
+    await mkdir(join(a.path!, 'node_modules', 'dep'), { recursive: true }); await writeFile(join(a.path!, 'node_modules', 'dep', 'index.js'), '')
+    await writeFile(join(a.path!, '.gitignore'), 'node_modules/\n'); await git(a.path!, ['add', '.gitignore'])
+    await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Ignore deps'])
+    const tip = (await git(f.project, ['rev-parse', 'feat/finished'])).trim()
+    const recorded = await f.service.inspect(a)
+    expect(await f.service.reclaimFacts(recorded)).toMatchObject({ branch: 'feat/finished', dirty: false, ignored: [], outsideLink: undefined })
+    const reclaimed = await f.service.reclaim(recorded, { automatic: true })
+    expect(reclaimed).toMatchObject({ status: 'ready', branch: 'feat/finished', path: a.path })
+    expect(reclaimed.reclaimedAt).toBeTruthy()
+    await expect(lstat(a.path!)).rejects.toThrow()
+    expect((await git(f.project, ['rev-parse', 'feat/finished'])).trim()).toBe(tip)
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(1)
+    // Nothing else in the repository moved.
+    expect(await readFile(join(f.project, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    const restored = await f.service.inspect(await f.service.restore(reclaimed))
+    expect(restored).toMatchObject({ status: 'ready', branch: 'feat/finished', reclaimedAt: undefined })
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('finished work')
+  })
+  it('discards uncommitted work only after the user answers, and never for a rule', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await writeFile(join(a.path!, 'tracked.txt'), 'unsaved')
+    await expect(f.service.reclaim(a)).rejects.toThrow('confirm it first')
+    await expect(f.service.reclaim(a, { automatic: true, withUncommittedChanges: true })).rejects.toThrow()
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('unsaved')
+    expect((await f.service.reclaim(a, { withUncommittedChanges: true })).reclaimedAt).toBeTruthy()
+    await expect(lstat(a.path!)).rejects.toThrow()
+  })
+  it('leaves a folder alone when a rule finds ignored files besides dependencies, a link out of it, or no branch', async () => {
+    const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    await writeFile(join(a.path!, '.gitignore'), 'node_modules/\nout/\n'); await git(a.path!, ['add', '.gitignore'])
+    await git(a.path!, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Ignore'])
+    await mkdir(join(a.path!, 'out')); await writeFile(join(a.path!, 'out', 'bundle.js'), '')
+    expect((await f.service.reclaimFacts(a)).ignored).toEqual(['out/'])
+    await expect(f.service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies')
+    // A link that leads out of the folder could be followed by the removal; the real folder behind it must stay whole.
+    const shared = join(f.root, 'shared-deps'); await mkdir(shared); await writeFile(join(shared, 'keep.txt'), 'real install')
+    await symlink(shared, join(a.path!, 'node_modules'), 'junction')
+    expect((await f.service.reclaimFacts(a)).outsideLink).toBe('node_modules')
+    await expect(f.service.reclaim(a, { withUncommittedChanges: true })).rejects.toThrow('link to another folder')
+    expect(await readFile(join(shared, 'keep.txt'), 'utf8')).toBe('real install')
+    await rm(join(a.path!, 'node_modules'), { recursive: false }).catch(() => unlink(join(a.path!, 'node_modules')))
+    await rm(join(a.path!, 'out'), { recursive: true })
+    await git(a.path!, ['checkout', '--detach'])
+    await expect(f.service.reclaim(a)).rejects.toThrow('no branch checked out')
+    expect(await readFile(join(a.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
+    await expect(f.service.reclaim({ mode: 'shared', status: 'ready', path: f.project })).rejects.toThrow('shared or reused folder stays')
+    expect((await git(f.project, ['worktree', 'list', '--porcelain'])).match(/worktree /gu)).toHaveLength(2)
   })
   it('resolves authoritative cwd before project fallback and blocks unresolved setup', () => {
     expect(resolveThreadWorkingDirectory({ workingDirectory: '/actual' }, { path: '/project' })).toBe('/actual')

@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, realpath, stat } from 'node:fs/promises'
+import { lstat, mkdir, opendir, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentWorktree } from '../../shared/agents'
+import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { nativeEnvironment } from './subscriptionCodex'
 
 export type RunGit = (cwd: string, args: string[]) => Promise<string>
@@ -39,7 +39,29 @@ export interface WorktreeHome {
 const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/' }
 export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
 
-/** Never removes files or branches. Allocation is persisted by WorkspaceHost before ensure. */
+/** What reclaiming a worktree would touch, so the caller can name it before asking. */
+export interface WorktreeReclaimFacts {
+  readonly path: string
+  readonly branch: string | undefined
+  readonly dirty: boolean
+  /** Ignored paths other than installed dependencies: build output, captures, anything a rule may not discard unasked. */
+  readonly ignored: readonly string[]
+  /** A link inside the folder that leads out of it. Removing the folder could follow it, so nothing is removed while one is there. */
+  readonly outsideLink: string | undefined
+}
+export interface WorktreeReclaimOptions {
+  /** The user's answer to the uncommitted-changes confirmation. */
+  readonly withUncommittedChanges?: boolean
+  /** A rule acting on its own: a folder with anything but dependencies in its ignored files is left alone. */
+  readonly automatic?: boolean
+}
+const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
+
+/**
+ * Creates and inspects checkouts, and reclaims a folder only when asked (ADR-0019): the branch and
+ * the thread are never removed, and `restore` puts the folder back. Allocation is persisted by
+ * WorkspaceHost before ensure.
+ */
 export class ThreadWorktrees {
   constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
 
@@ -211,7 +233,64 @@ export class ThreadWorktrees {
     // No -b and no -B: the recorded branch is checked out as it stands, with its commits.
     try { await this.git(repositoryRoot, ['worktree', 'add', '--', path, branch]) }
     catch (error) { throw new Error(`This thread’s working folder was missing and Sotto could not put it back on ${branch}. Nothing was lost; the branch still has its commits. ${error instanceof Error ? error.message : ''}`.trim(), { cause: error }) }
-    return { ...metadata, status: 'ready', error: undefined }
+    return { ...metadata, status: 'ready', error: undefined, reclaimedAt: undefined }
+  }
+
+  /**
+   * What reclaiming this thread's worktree would discard, read from the folder: uncommitted changes,
+   * ignored files other than installed dependencies, and any link that leads out of the folder.
+   */
+  async reclaimFacts(metadata: AgentWorktree): Promise<WorktreeReclaimFacts> {
+    const inspected = await this.inspect(metadata)
+    const path = inspected.path!
+    const listing = await this.git(path, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
+    const ignored = listing.split('\0').filter(entry => entry && !DEPENDENCY_FOLDER.test(entry))
+    return { path, branch: inspected.branch, dirty: inspected.dirty === true, ignored, outsideLink: await this.outsideLink(path) }
+  }
+
+  /**
+   * Removes this thread's own worktree folder and nothing else (ADR-0019). The branch keeps its
+   * commits, the thread keeps its record, and `restore` puts the folder back on the next send. It
+   * refuses a folder that is not the registered checkout, one with no branch to come back on, one
+   * holding a link out of itself, and, for a rule acting alone, one with anything but dependencies
+   * among its ignored files. Uncommitted work goes only after the user's answer.
+   */
+  async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}): Promise<AgentWorktree> {
+    if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
+    const allocationRoot = join(await realpath(this.directory), this.home.folder)
+    if (!metadata.path || pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('This folder is outside Sotto’s reserved worktree folder. Nothing was changed.')
+    const facts = await this.reclaimFacts(metadata)
+    if (!facts.branch) throw new Error('This folder has no branch checked out, so Sotto could not put it back. Switch it to a branch first. Nothing was changed.')
+    if (facts.outsideLink) throw new Error(`This folder contains a link to another folder (${facts.outsideLink}). Remove the link first so nothing outside the folder is touched. Nothing was changed.`)
+    if (options.automatic && facts.ignored.length) throw new Error('This folder holds ignored files besides installed dependencies, so a rule leaves it alone.')
+    // A rule never answers the confirmation on the user's behalf.
+    if (facts.dirty && (options.automatic || !options.withUncommittedChanges)) throw new Error(RECLAIM_WORKTREE_NEEDS_CONFIRMATION)
+    // A linked worktree's .git is a file; a directory there is a repository of its own and is never removed.
+    if (!(await lstat(join(facts.path, '.git'))).isFile()) throw new Error('This folder is a repository of its own, not a worktree. Nothing was changed.')
+    await this.git(metadata.repositoryRoot!, ['worktree', 'remove', ...(facts.dirty ? ['--force'] : []), '--', facts.path])
+    return { ...metadata, branch: facts.branch, status: 'ready', error: undefined, dirty: undefined, reclaimedAt: new Date().toISOString() }
+  }
+
+  /** The first link under `root` whose target is outside it, if any. Walks without following links. */
+  private async outsideLink(root: string): Promise<string | undefined> {
+    const canonicalRoot = await realpath(root)
+    const pending = [root]
+    while (pending.length) {
+      const directory = pending.pop()!
+      const handle = await opendir(directory)
+      try {
+        for await (const entry of handle) {
+          const full = join(directory, entry.name)
+          if (entry.isSymbolicLink()) {
+            const target = resolve(directory, await readlink(full).catch(() => full))
+            const canonical = await realpath(target).catch(() => target)
+            const local = relative(canonicalRoot, canonical)
+            if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`)) return relative(root, full)
+          } else if (entry.isDirectory()) pending.push(full)
+        }
+      } finally { await handle.close().catch(() => undefined) }
+    }
+    return undefined
   }
 
   /**
@@ -260,6 +339,7 @@ export class ThreadWorktrees {
     ])
     if (pathKey(root.trim()) !== pathKey(path) || pathKey(common.trim()) !== pathKey(expectedCommon.trim())) throw new Error('The working folder no longer belongs to the original repository.')
     await this.workingDirectory(metadata)
-    return { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}), status: 'ready', error: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
+    // A folder that is there was not reclaimed, whatever the record last said.
+    return { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}), status: 'ready', error: undefined, reclaimedAt: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0 }
   }
 }

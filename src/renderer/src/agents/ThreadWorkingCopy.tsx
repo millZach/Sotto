@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Folder, FolderGit2, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
-import { RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread } from '../../../shared/agents'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Folder, FolderGit2, FolderMinus, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
+import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread } from '../../../shared/agents'
+import { useOptionalApp } from '../state/AppContext'
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
@@ -28,6 +29,8 @@ export interface WorkingCopyFacts {
   readonly repositoryRoot?: string | undefined
   readonly dirty?: boolean | undefined
   readonly error?: string | undefined
+  /** The folder was reclaimed; the branch stays and the next send puts the folder back. */
+  readonly reclaimed?: boolean | undefined
 }
 
 /** The project already names itself beside this label, so its own folder is called what it is. */
@@ -45,7 +48,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
     const directory = resolve()
     return { status: 'legacy', mode: undefined, directory, label: directory ? folderLabel(directory, project) : 'Working folder' }
   }
-  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty }
+  const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? 'Project folder' : 'New worktree' }
   if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
   const directory = resolve()
@@ -53,7 +56,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   return { ...common, status: 'ready', directory, label }
 }
 
-type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder' | 'restore-thread-branch'
+type Action = 'retry-thread-worktree' | 'refresh-thread-worktree' | 'open-thread-folder' | 'restore-thread-branch' | 'reclaim-thread-worktree'
 function useWorkingCopyAction(threadId: string, command: AgentConnection['command']) {
   // Busy buttons use aria-disabled, not disabled: a disabled button would drop keyboard focus to the page.
   const [running, setRunning] = useState<Action | null>(null)
@@ -66,7 +69,7 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
     setRunning(type); setError(null); lastError.current = null
     const fail = (message: string): false => { lastError.current = message; setError(message); return false }
     try {
-      const result = await command(type === 'restore-thread-branch' ? { type, threadId, withUncommittedChanges } : { type, threadId })
+      const result = await command(type === 'restore-thread-branch' || type === 'reclaim-thread-worktree' ? { type, threadId, withUncommittedChanges } : { type, threadId })
       if (!result || result.error) return fail(result?.error ?? 'Could not confirm this action. Try again.')
       return true
     } catch { return fail('Could not confirm this action. Try again.') }
@@ -84,14 +87,25 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
-  const { running, error, run } = useWorkingCopyAction(thread.id, command)
+  const { running, error, lastError, run } = useWorkingCopyAction(thread.id, command)
+  /** The open confirmation, and whether it names uncommitted work: the record's word, or main's when it knows better. */
+  const [reclaiming, setReclaiming] = useState<false | 'clean' | 'dirty'>(false)
   useEffect(() => {
-    if (!open) return
+    if (!open || reclaiming) return
     const outside = (event: PointerEvent): void => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
     document.addEventListener('pointerdown', outside)
     return () => document.removeEventListener('pointerdown', outside)
-  }, [open])
-  useEffect(() => { setOpen(false) }, [thread.id])
+  }, [open, reclaiming])
+  useEffect(() => { setOpen(false); setReclaiming(false) }, [thread.id])
+  // The worktree Sotto made for this thread alone can be given back; a shared or reused folder is never offered.
+  const reclaimable = isReclaimable(thread)
+  const confirmReclaim = async (): Promise<boolean> => {
+    const done = await run('reclaim-thread-worktree', reclaiming === 'dirty')
+    if (done) { setOpen(false); return true }
+    // The record can lag the folder: when main finds work it did not know about, the question is asked again, naming it.
+    if (reclaiming === 'clean' && lastError.current === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setReclaiming('dirty')
+    return false
+  }
   // Panes clip their children. Keep the whole editor inside its pane, including when the chip is near either edge.
   useLayoutEffect(() => {
     if (!open || !root.current || !panel.current) return
@@ -118,7 +132,7 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
   const configurable = thread.projectId && thread.nativeSessionStarted === false && (!thread.worktree?.path || thread.worktree.mode === 'shared')
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
   return <span className="working-copy" ref={root} data-status={facts.status}
-    onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
+    onKeyDown={event => { if (event.key === 'Escape' && open && !reclaiming) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
     <button ref={trigger} type="button" className="working-copy__trigger tt-focusable" aria-expanded={open} aria-controls={open ? panelId : undefined}
       aria-label={`Working copy: ${facts.label}`} title={facts.directory ?? facts.label} onClick={() => setOpen(value => !value)}>
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
@@ -129,18 +143,72 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt>Branch</dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt>Repository</dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
-        {facts.status === 'ready' && facts.dirty !== undefined ? <div><dt>Changes</dt><dd>{facts.dirty ? 'Uncommitted changes' : 'No uncommitted changes'}</dd></div> : null}
+        {facts.status === 'ready' && facts.reclaimed ? <div><dt>Status</dt><dd>Folder removed. Sending to this thread puts it back on {facts.branch ?? 'its branch'}.</dd></div> : null}
+        {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt>Changes</dt><dd>{facts.dirty ? 'Uncommitted changes' : 'No uncommitted changes'}</dd></div> : null}
         {facts.status === 'pending' && !configurable ? <div><dt>Status</dt><dd>Preparing the working copy.</dd></div> : null}
         {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
       </dl>
       {thread.remoteHost ? <p>This folder is on the host machine. Open it there.</p> : null}
       <div className="working-copy__actions">
-        {facts.directory ? <Button variant="secondary" aria-disabled={running !== null || thread.remoteHost === true} onClick={() => { if (!thread.remoteHost) void run('open-thread-folder') }}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
+        {facts.directory && !facts.reclaimed ? <Button variant="secondary" aria-disabled={running !== null || thread.remoteHost === true} onClick={() => { if (!thread.remoteHost) void run('open-thread-folder') }}><FolderOpen size={15} aria-hidden="true" />Open folder</Button> : null}
         {thread.worktree ? <Button variant="ghost" aria-disabled={running !== null} onClick={() => void run('refresh-thread-worktree')}><RefreshCw size={15} aria-hidden="true" />{running === 'refresh-thread-worktree' ? 'Checking...' : 'Refresh'}</Button> : null}
+        {reclaimable ? <Button variant="ghost" aria-disabled={running !== null} aria-label="Remove worktree folder, keeping its branch" onClick={() => setReclaiming(facts.dirty ? 'dirty' : 'clean')}><FolderMinus size={15} aria-hidden="true" />{running === 'reclaim-thread-worktree' ? 'Removing…' : 'Remove worktree'}</Button> : null}
       </div>
-      {error ? <p className="agent-error" role="alert">{error}</p> : null}
+      {error && !reclaiming ? <p className="agent-error" role="alert">{error}</p> : null}
     </div> : null}
+    {reclaiming ? <ReclaimWorktreeDialog facts={facts} dirty={reclaiming === 'dirty'} fallbackFocusRef={trigger} onCancel={() => setReclaiming(false)} onConfirm={confirmReclaim} /> : null}
   </span>
+}
+
+/** The worktree Sotto made for this thread alone can be given back; a shared, reused or already reclaimed folder is never offered. */
+export function isReclaimable(thread: Pick<AgentThread, 'worktree'>): boolean {
+  const worktree = thread.worktree
+  return worktree?.mode === 'independent' && worktree.status === 'ready' && Boolean(worktree.path) && !worktree.reused && !worktree.reclaimedAt
+}
+
+/** The one question before a worktree folder goes: what is in it, and that the branch stays (ADR-0019). */
+export function ReclaimWorktreeDialog({ facts, dirty, title, onConfirm, onCancel, fallbackFocusRef }: {
+  readonly facts: Pick<WorkingCopyFacts, 'branch'>
+  readonly dirty: boolean
+  readonly title?: string | undefined
+  readonly onConfirm: () => Promise<boolean>
+  readonly onCancel: () => void
+  readonly fallbackFocusRef?: React.RefObject<HTMLElement | null> | undefined
+}): ReactNode {
+  return <ConfirmationDialog title={title ?? 'Remove this worktree?'} danger={dirty}
+    description={<>
+      <p>This thread’s worktree folder and everything installed in it is removed. {facts.branch ? <>The branch {facts.branch} keeps its commits</> : <>Its commits are kept</>}, and sending to this thread puts the folder back.</p>
+      {dirty ? <p><strong>This folder has uncommitted changes.</strong> They are lost with it.</p> : null}
+    </>}
+    confirmLabel={dirty ? 'Remove and lose changes' : 'Remove worktree'} cancelLabel="Keep folder" {...(fallbackFocusRef ? { fallbackFocusRef } : {})}
+    failureMessage="The folder could not be removed. Nothing was changed." onConfirm={onConfirm} onCancel={onCancel} />
+}
+
+/**
+ * Settle a thread, then ask whether its own worktree should go with it (ADR-0019). The Settle press
+ * settles at once, as it always has; the question is a separate one, answered by Keep folder or Escape.
+ * With the on-settle rule turned on, a clean folder goes without the question and a dirty one still asks.
+ */
+export function useSettleThread(command: AgentConnection['command']) {
+  const app = useOptionalApp()
+  const onSettleRule = app?.settings?.worktreeCleanup.onSettle === true
+  const [asking, setAsking] = useState<{ thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean } | null>(null)
+  const settle = useCallback(async (thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): Promise<void> => {
+    const result = await command({ type: 'settle-thread', threadId: thread.id })
+    if (!result || result.error || !isReclaimable(thread)) return
+    const dirty = thread.worktree?.dirty === true
+    if (onSettleRule && !dirty) { await command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return }
+    setAsking({ thread, project, dirty })
+  }, [command, onSettleRule])
+  const dialog = asking ? <ReclaimWorktreeDialog facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title="Remove its worktree too?"
+    onCancel={() => setAsking(null)}
+    onConfirm={async () => {
+      const result = await command({ type: 'reclaim-thread-worktree', threadId: asking.thread.id, withUncommittedChanges: asking.dirty })
+      if (result && !result.error) return true
+      if (!asking.dirty && result?.error === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setAsking({ ...asking, dirty: true })
+      return false
+    }} /> : null
+  return { settle, dialog }
 }
 
 /** Choices remain editable until a first send allocates a checkout or binds a provider session. */

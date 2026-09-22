@@ -58,7 +58,7 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
 const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
-  'load-earlier-messages',
+  'reclaim-thread-worktree', 'load-earlier-messages',
 ])
 
 const savedSchema = z.object({
@@ -1568,6 +1568,12 @@ export class AgentControl {
         this.state.notice = 'Branch restored.'
         return
       }
+      case 'reclaim-thread-worktree': {
+        if (!this.dependencies.host.reclaimThreadWorktree) throw new Error('Removing this thread’s worktree is unavailable.')
+        this.acceptSnapshot(await this.dependencies.host.reclaimThreadWorktree(command.threadId, { withUncommittedChanges: command.withUncommittedChanges === true }))
+        this.state.notice = 'Worktree removed. The branch is kept.'
+        return
+      }
       case 'open-thread-folder': {
         if (!this.dependencies.host.threadWorkingDirectory || !this.dependencies.openThreadFolder) throw new Error('Opening the working folder is unavailable.')
         await this.dependencies.openThreadFolder(await this.dependencies.host.threadWorkingDirectory(command.threadId))
@@ -1598,7 +1604,8 @@ export class AgentControl {
             ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
             ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
-            ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}) }, turn)
+            ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}),
+            ...(command.providerMode !== undefined ? { providerMode: command.providerMode } : {}) }, turn)
         } catch (error) { if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = previousSelectionPinned; throw error }
         if (selectionRevision === this.selectionRevision) {
           this.presentedQueueId = null
@@ -1624,7 +1631,7 @@ export class AgentControl {
       }
       case 'configure-thread': {
         this.canAct()
-        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined) throw new Error('Choose a thread setting to change.')
+        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         this.observe(command.threadId)
         this.acceptSnapshot(await this.readThread(command.threadId))
@@ -1643,6 +1650,8 @@ export class AgentControl {
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate)
         }
         if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate)
+        // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
+        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate)
         this.say('Thread settings saved.')
         this.observe()
         return

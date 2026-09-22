@@ -175,3 +175,20 @@ it('says the connection was lost, and never blames the version, when the client 
  expect(error?.message).toBe('Could not connect Grok. Grok did not acknowledge the operation in time. Connect again to retry.')
  expect(error?.message).not.toContain('Grok CLI')
 })
+it('reads a question whose parameters arrive without the older envelope',async()=>{
+ const id=await setup();await send(id)
+ await f!.action(id,{type:'question',text:'Which cache?',unwrapped:true})
+ await expect.poll(async()=>(await f!.host.snapshot()).threads.find(thread=>thread.id===id)!.requests.map(request=>request.text)).toContain('Which cache?')
+})
+it('says a request for the user went unread instead of letting the refusal pass as an answer',async()=>{
+ const id=await setup();await send(id)
+ await f!.action(id,{type:'unreadable',method:'session/v2/request_permission',text:'Delete the branch?'})
+ await expect.poll(async()=>(await f!.host.snapshot()).error??'').toContain('only you can answer')
+ expect((await f!.host.snapshot()).threads.find(thread=>thread.id===id)!.requests).toEqual([])
+})
+it('stays quiet about requests Sotto is never meant to answer',async()=>{
+ const id=await setup();await send(id)
+ await f!.action(id,{type:'unreadable',method:'session/write_text_file',text:'Not a question'})
+ await expect.poll(async()=>(await f!.driver.requests()).some(record=>(record as {error?:{code?:number}}).error?.code===-32601)).toBe(true)
+ expect((await f!.host.snapshot()).error??'').not.toContain('only you can answer')
+})

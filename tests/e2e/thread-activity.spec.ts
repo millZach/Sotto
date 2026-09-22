@@ -56,7 +56,7 @@ test('settled turn folds its work above the final reply, keeps the failure in vi
     await expect(log.locator('.thread-activity')).toHaveCount(0)
     await expect(log.locator('.thread-message').last()).toContainText('Fixed. The length marker is patched after every chunk')
     await expect(work).toHaveCSS('font-size', '14px')
-    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '16px')
+    await expect(log.locator('.thread-message .rich-message').first()).toHaveCSS('font-size', '15px')
     expect(await overflow(page)).toBeLessThanOrEqual(0)
 
     for (const mode of ['dark', 'light'] as const) {
@@ -134,7 +134,9 @@ test('a running turn shows its rows and one ticking live line; disconnection sto
     const log = transcript(page)
     const live = log.getByTestId('thread-activity-live')
     // The current action is the running row directly above, so the live line names only the time.
-    await expect(live).toHaveText(/^Working for 1m 0\ds$/)
+    // The changing word ahead of it is decoration over the same fact, which is said once for assistive tech.
+    await expect(live).toHaveText(/Working for 1m 0\ds$/)
+    await expect(live).not.toContainText('npm test')
     const first = await live.locator('[data-elapsed]').textContent()
     await expect.poll(() => live.locator('[data-elapsed]').textContent(), { timeout: 3_000 }).not.toBe(first)
     await expect(log.getByRole('button', { name: 'npm test -- --run tests/unit/audio, Running' })).toContainText(/Running \d+s/)

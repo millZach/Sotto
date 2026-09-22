@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { claudePending } from '../../../src/main/agents/claudeRequests'
+import { grokPending } from '../../../src/main/agents/grokRequests'
+import { pendingRequest } from '../../../src/main/agents/codexRequests'
 import { BROWSER_MCP_SERVER } from '../../../src/main/agents/browserAgentServer'
 import { browserToolDefinitions } from '../../../src/main/tools/browserAgentTools'
 
@@ -47,5 +49,54 @@ describe('the browser permission card says what a press does', () => {
   it('still carries the raw arguments for the detail view', () => {
     const pending = ask(`mcp__${BROWSER_MCP_SERVER}__browser_open`, { url: 'http://localhost:5173/' })!
     expect(pending.request.context?.details).toContain('http://localhost:5173/')
+  })
+})
+
+const grokAsk = (rawInput: unknown, title = 'use_tool'): string => grokPending('w1', 'session/request_permission', {
+  sessionId: 's1', toolCall: { toolCallId: 't1', title, rawInput },
+  options: [{ optionId: 'ok', name: 'Allow', kind: 'allow_once' }],
+}, 'thread')!.request.text
+
+/**
+ * Grok reaches an MCP tool through its own use_tool, so the tool Sotto owns is in the arguments. The
+ * shape is read from recorded session traffic rather than from a permission frame (issue #199), so a
+ * shape that does not match has to keep the card Grok already gave.
+ */
+describe('a Grok permission for Sotto’s browser says the same thing', () => {
+  it('reads the tool out of use_tool and its arguments out of tool_input', () => {
+    const text = grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_open`, tool_input: { url: 'http://localhost:5173/' } })
+    expect(text).toContain('open http://localhost:5173/')
+    expect(text).toContain('still ask you in Tools')
+    expect(text).not.toContain('use_tool')
+  })
+
+  it('names the action, not the meta-tool', () => {
+    expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_action`, tool_input: { action: { type: 'click', x: 1, y: 2 } } })).toContain('click in the page')
+  })
+
+  it('keeps Grok’s own card for another server and for a shape it does not recognise', () => {
+    expect(grokAsk({ tool_name: 'linear__get_issue', tool_input: {} }, 'linear__get_issue')).toContain('linear__get_issue')
+    expect(grokAsk({ unexpected: true }, 'something else')).toContain('something else')
+  })
+})
+
+const codexAsk = (params: Record<string, unknown>): string =>
+  pendingRequest('c1', 'mcpServer/elicitation/request', { threadId: 'n1', ...params }, 'thread')!.request.text
+
+describe('a Codex elicitation about Sotto’s browser says which browser', () => {
+  it('names the tool when the body carries one', () => {
+    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, request: { name: 'browser_open', arguments: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/')
+  })
+
+  // The body's shape is not established against a real client, so the server alone still has to read.
+  it('names the browser when the body cannot be read', () => {
+    const text = codexAsk({ serverName: BROWSER_MCP_SERVER, message: 'Approve app tool call?' })
+    expect(text).toContain('Sotto’s browser')
+    expect(text).toContain('Approve app tool call?')
+    expect(text).toContain('still ask you in Tools')
+  })
+
+  it('leaves another server’s elicitation alone', () => {
+    expect(codexAsk({ serverName: 'linear', message: 'Pick an issue' })).toBe('Pick an issue')
   })
 })

@@ -317,3 +317,114 @@ test('failed first-send setup preserves the draft and retries without dispatchin
     await rm(root, { recursive: true, force: true })
   }
 })
+
+const RECLAIM_SHOTS = 'artifacts/reclaim-worktrees'
+test('a worktree can be reclaimed from the pane or on settle, keeps its branch, and comes back on the next send', async () => {
+  test.setTimeout(180_000)
+  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-reclaim-')), repo = join(root, 'repo-app')
+  await mkdir(repo)
+  git(repo, 'init', '-q')
+  await commitFile(repo, 'README.md', 'Committed checkout\n')
+  await commitFile(repo, '.gitignore', 'node_modules/\n')
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launch([['repo-app', repo]])
+    const { page } = launched
+    await mkdir(RECLAIM_SHOTS, { recursive: true })
+    const details = page.getByRole('group', { name: 'Working copy details' })
+
+    // Settings: the four rules, every one off, under Application at each size and in both appearances.
+    await openPage(page, 'Settings')
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    const idleRule = page.getByRole('combobox', { name: 'Remove idle worktrees after' })
+    await expect(idleRule).toHaveValue('never')
+    for (const rule of ['Remove a worktree when its thread is settled', 'Remove a worktree once its commits are in the default branch', 'Remove a worktree when its pull request is merged']) {
+      await expect(page.getByRole('switch', { name: rule })).toHaveAttribute('aria-checked', 'false')
+    }
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resize(launched, width, height)
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+        await idleRule.scrollIntoViewIfNeeded()
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await page.screenshot({ path: `${RECLAIM_SHOTS}/settings-worktree-cleanup-${width}x${height}-${appearance}.png`, animations: 'disabled' })
+      }
+    }
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await resize(launched, 1280, 800)
+    // The rule saves and comes back; it is off again afterwards so the settle below asks.
+    await idleRule.selectOption('30')
+    await expect(page.locator('.settings-notice')).toHaveText('Setting saved.')
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).worktreeCleanup.afterDays)).toBe(30)
+    await idleRule.selectOption('never')
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).worktreeCleanup.afterDays)).toBe(null)
+
+    // A thread with its own worktree, with dependencies "installed" in it.
+    await openThreads(page)
+    await createByKeyboard(page, 'repo-app', 'Reclaim me', true)
+    await send(page, 'Work in a worktree of your own.')
+    const thread = await activeThread(page)
+    const worktreePath = thread.worktree!.path!, branch = thread.worktree!.branch!
+    await mkdir(join(worktreePath, 'node_modules', 'dep'), { recursive: true })
+    await writeFile(join(worktreePath, 'node_modules', 'dep', 'index.js'), '')
+    expect(countWorktrees(repo)).toBe(2)
+
+    // Remove worktree from the pane: the question names the branch, Escape keeps the folder.
+    await page.getByRole('button', { name: `Working copy: ${branch}`, exact: true }).click()
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/working-copy-panel.png`, animations: 'disabled' })
+    await details.getByRole('button', { name: 'Remove worktree folder, keeping its branch', exact: true }).click()
+    const question = page.getByRole('dialog', { name: 'Remove this worktree?', exact: true })
+    await expect(question).toContainText(`The branch ${branch} keeps its commits`)
+    await expect(question).not.toContainText('uncommitted changes')
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/remove-worktree-clean.png`, animations: 'disabled' })
+    await page.keyboard.press('Escape')
+    await expect(question).toHaveCount(0)
+    expect(existsSync(worktreePath)).toBe(true)
+    // With uncommitted work the question says so, and the folder goes only on that answer.
+    await writeFile(join(worktreePath, 'README.md'), 'Unsaved work\n')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(async () => (await activeThread(page)).worktree?.dirty).toBe(true)
+    await details.getByRole('button', { name: 'Remove worktree folder, keeping its branch', exact: true }).click()
+    await expect(question).toContainText('This folder has uncommitted changes.')
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/remove-worktree-dirty.png`, animations: 'disabled' })
+    await question.getByRole('button', { name: 'Remove and lose changes', exact: true }).click()
+    await expect(question).toHaveCount(0)
+    await expect.poll(() => existsSync(worktreePath)).toBe(false)
+    expect(countWorktrees(repo)).toBe(1)
+    expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+    await expect.poll(async () => (await activeThread(page)).worktree?.reclaimedAt).toBeTruthy()
+    await page.getByRole('button', { name: `Working copy: ${branch}`, exact: true }).click()
+    await expect(details).toContainText(`Folder removed. Sending to this thread puts it back on ${branch}.`)
+    await expect(details.getByRole('button', { name: 'Open folder', exact: true })).toHaveCount(0)
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/working-copy-reclaimed.png`, animations: 'disabled' })
+    await details.press('Escape')
+
+    // The next send puts the folder back on its branch, and the unsaved work is what was lost.
+    await send(page, 'Carry on where the branch left off.')
+    await expect.poll(() => existsSync(worktreePath)).toBe(true)
+    expect(countWorktrees(repo)).toBe(2)
+    expect(git(worktreePath, 'branch', '--show-current')).toBe(branch)
+    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toMatch(/^Committed checkout\r?\n$/u)
+    await expect.poll(async () => (await activeThread(page)).worktree?.reclaimedAt).toBeUndefined()
+
+    // Settle asks the same question; Keep folder settles without removing, a yes removes.
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Settle', exact: true }).click()
+    const settleQuestion = page.getByRole('dialog', { name: 'Remove its worktree too?', exact: true })
+    await expect(settleQuestion).toBeVisible()
+    await page.screenshot({ path: `${RECLAIM_SHOTS}/settle-asks.png`, animations: 'disabled' })
+    await settleQuestion.getByRole('button', { name: 'Keep folder', exact: true }).click()
+    await expect(settleQuestion).toHaveCount(0)
+    await expect.poll(async () => Boolean((await activeThread(page)).workspaceSettledAt)).toBe(true)
+    expect(existsSync(worktreePath)).toBe(true)
+    await page.getByRole('button', { name: `Working copy: ${branch}`, exact: true }).click()
+    await details.getByRole('button', { name: 'Remove worktree folder, keeping its branch', exact: true }).click()
+    await question.getByRole('button', { name: 'Remove worktree', exact: true }).click()
+    await expect.poll(() => existsSync(worktreePath)).toBe(false)
+    expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+  } finally {
+    if (launched) await closeSotto(launched)
+    await rm(root, { recursive: true, force: true })
+  }
+})

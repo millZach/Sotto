@@ -21,6 +21,26 @@ describe('provider model picker', () => {
     expect(models[0].id).toBe('old')
   })
 
+  it('keeps the provider’s own recommendation at the top of its list, whatever it is called', () => {
+    const catalog: AgentModel[] = [
+      { id: 'fable', name: 'Fable 5.1', provider: 'Claude', ready: true },
+      { id: 'default', name: 'Default (recommended)', provider: 'Claude', ready: true, recommended: true },
+      { id: 'haiku', name: 'Haiku 4.5', provider: 'Claude', ready: true },
+    ]
+    expect(newestModelsFirst(catalog).map(model => model.id)).toEqual(['default', 'fable', 'haiku'])
+  })
+
+  it('names each provider on a rail of marks rather than in a row of tabs', async () => {
+    const user = userEvent.setup()
+    render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const rail = screen.getByRole('tablist', { name: 'Model providers' })
+    // Marks only: the provider's name is the tile's accessible name, not text the menu has to find room for.
+    expect(within(rail).getAllByRole('tab').map(tab => tab.getAttribute('aria-label'))).toEqual(['Codex', 'Claude'])
+    expect(rail.textContent).not.toMatch(/Codex|Claude/u)
+    expect(within(rail).getByRole('tab', { name: 'Codex' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('opens the selected provider and only changes the model when a model is chosen', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
@@ -29,7 +49,7 @@ describe('provider model picker', () => {
     await user.click(trigger)
     expect(screen.getByRole('textbox', { name: 'Search models' })).toHaveFocus()
     expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['GPT-6-Astra', 'GPT-6-Terra', 'GPT-5.10', 'GPT-5.6'])
-    await user.click(screen.getByRole('button', { name: 'Claude', exact: true }))
+    await user.click(screen.getByRole('tab', { name: 'Claude', exact: true }))
     expect(onChange).not.toHaveBeenCalled()
     expect(screen.getByRole('option', { name: /Claude Opus/ })).toBeDisabled()
     expect(screen.queryByRole('option', { name: 'GPT-6-Astra' })).not.toBeInTheDocument()

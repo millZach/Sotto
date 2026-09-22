@@ -87,6 +87,16 @@ now starts a live row at the moment Sotto received the frame with `timingSource:
 observed when live, the provider's own time preferred when a frame carries one, nothing on replay, and the
 first start kept across redelivered frames.
 
-Grok Build and Devin still record no start for a running action, so the ornament cannot appear for them.
-That is issue #197. The provider sentence in `README.md`, `CONTEXT.md` and ADR-0021 now says Claude Code
-and Codex rather than all four.
+**Grok Build and Devin were the same absence, fixed under issue #197.** Neither adapter recorded a start for
+a running action, so the ornament could not appear for them either. Both now take the observed time when the
+update is live, the row is running and it has no start yet, which is the shape above; `devinActivities` gained
+the `live` flag `grokActivities` already had, so the replay guard is written out in both rather than left to
+the single call site that happens to be live today. `tests/unit/main/grokDevinLiveTiming.test.ts` holds the
+cases: observed when live, nothing on replay, the first start kept across redelivered updates, and no start
+on a row that arrives already finished. Neither adapter's updates carry a provider time, so there is no
+provider-preferred case to hold. A start Sotto timed itself does not survive a reconnect, because a Grok row is
+rebuilt from the provider's history and the history has no such time in it;
+`tests/integration/nativeProviderActivity.test.ts` now says so, alongside the turn rows and order numbers it
+already left out of that comparison. Nothing is lost by it — the ornament is never restored from history either.
+This one was proved by unit test rather than by hand — no live Grok Build or Devin session was run for it —
+and the provider sentence in `README.md`, `CONTEXT.md` and ADR-0021 now says all four.
