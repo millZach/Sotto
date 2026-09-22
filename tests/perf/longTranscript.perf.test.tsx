@@ -3,6 +3,9 @@
  * real thread's messages with fresh ids and timestamps. Reports the mount, one streaming update at the default
  * page of messages, and the same once the reader has shown every earlier message. Skips without a real folder.
  *
+ * Rows on screen are not the measure of how much history a page holds: a finished turn folds its work away, and
+ * how many rows that costs depends on where the page starts. The page is asked what it holds by opening the folds.
+ *
  *   npx vitest run tests/perf/longTranscript.perf.test.tsx --disable-console-intercept
  *   SOTTO_PERF_DATA=<folder with workspace.json> to point elsewhere.
  */
@@ -29,6 +32,8 @@ const WARMUP = 10
 const MOUNTS = 5
 const MOUNT_WARMUP = 2
 const NOW = Date.parse('2026-09-16T12:00:00Z')
+/** Opening every turn fold takes one pass; the rest are headroom against a fold that holds another. */
+const FOLD_PASSES = 5
 const dataDirectory = process.env.SOTTO_PERF_DATA ?? (process.env.APPDATA ? join(process.env.APPDATA, 'sotto') : '')
 
 async function available(): Promise<boolean> {
@@ -42,6 +47,11 @@ function median(samples: number[]): number {
 }
 
 function round(value: number): number { return Math.round(value * 100) / 100 }
+
+/** The messages that draw a row at all, which is `drawn` in `ThreadTranscript`: an empty assistant message is activity alone. */
+function drawable(messages: readonly AgentMessage[]): number {
+  return messages.filter(message => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)).length
+}
 
 /**
  * A thread of `total` messages made from the real ones. The first copy keeps its own ids so the thread's
@@ -164,28 +174,62 @@ describe('long transcript cost', async () => {
       return { ms: round(median(samples)), react: round(committed / ITERATIONS), commits }
     }
 
+    /** The turn folds currently open, or currently shut. */
+    const folds = (expanded: boolean): HTMLButtonElement[] =>
+      [...rendered.container.querySelectorAll<HTMLButtonElement>('.thread-work__summary')]
+        .filter(summary => (summary.getAttribute('aria-expanded') === 'true') === expanded)
+    /** Presses every fold in the given state, so `press(false)` opens the shut ones and `press(true)` shuts the open ones. */
+    const press = (expanded: boolean): void => {
+      for (let pass = 0; pass < FOLD_PASSES; pass += 1) {
+        const wrong = folds(expanded)
+        if (!wrong.length) return
+        act(() => { wrong.forEach(summary => summary.click()) })
+      }
+      expect(folds(expanded), 'a turn fold would not settle').toHaveLength(0)
+    }
+    /**
+     * What the page is holding, rather than what it happens to be showing. A finished turn folds everything
+     * between the user's message and its last written reply, so the rows on screen are fewer than the messages
+     * on the page, and how many fewer depends on where the page starts. Every fold is opened, the rows counted,
+     * and the folds shut again, so the cost measured on either side of the expansion is the cost a reader pays.
+     */
+    const accounted = (): number => {
+      press(false)
+      const total = drawn()
+      press(true)
+      return total
+    }
+
     const paged = drawn()
+    const pagedHeld = accounted()
     const pagedUpdate = measureUpdates()
 
     // The reader asks for the whole history, which is the worst case the transcript can be put in.
     let expansions = 0
     for (;;) {
       const earlier = screen.queryAllByRole('button', { name: /Show earlier messages/ }).at(-1)
-      if (!earlier || expansions > 20) break
+      if (!earlier) break
+      // Every press widens the window by a whole page, so this thread is shown in a handful of them. Stopping
+      // on a count instead would leave the assertions below reading a page that was never finished.
+      expect(expansions, 'Show earlier messages kept offering history the presses did not reach').toBeLessThan(20)
       act(() => { earlier.click() })
       expansions += 1
     }
     const expanded = drawn()
     const expandedUpdate = measureUpdates()
+    const expandedHeld = accounted()
 
     const report = {
       messages: open.messages.length, realMessages: short.messages.length, drawnAtOpen: paged, drawnWhenExpanded: expanded,
+      heldAtOpen: pagedHeld, heldWhenExpanded: expandedHeld, expansions,
       realMountMs: shortMount.ms, realMountReactMs: shortMount.react,
       mountMs: longMount.ms, mountReactMs: longMount.react,
       msPerUpdate: pagedUpdate.ms, reactMsPerUpdate: pagedUpdate.react,
       msPerUpdateExpanded: expandedUpdate.ms, reactMsPerUpdateExpanded: expandedUpdate.react,
     }
     console.info(`long transcript: ${JSON.stringify(report)}`)
-    expect(expanded).toBeGreaterThanOrEqual(paged)
+    // Showing every earlier message leaves the page holding the whole thread, and never less than it held before.
+    expect(expandedHeld).toBeGreaterThanOrEqual(pagedHeld)
+    expect(expandedHeld).toBe(drawable(open.messages))
   }, 300_000)
 })

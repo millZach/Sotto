@@ -100,6 +100,8 @@ Answering a question or permission request and creating a project are also part 
 
 **History window.** How much of a thread's history a pane holds: the newest ten turns when it opens, then twenty more each time the user presses **Show earlier messages**. A turn here is a user message and the assistant messages that follow it. The detail says whether anything older exists (`earlierAvailable`), so opening a long thread costs the same as opening a short one.
 
+**Turn fold.** The one line a finished turn puts its work under, between the user's message and the turn's last written reply. It says how the turn ended and how long it took ("Worked for 40s", "Failed after 12s"), with the files it changed beside it. Pressing it opens the messages and activity in between. A turn still running, and a turn whose start is above the history window, keep every row on screen because neither has a finished span to fold. So the rows a pane draws count what it is showing, never how much history it holds.
+
 **Monitoring task.** A live, provider-confirmed watch on background work. A running command or unattended process is not enough evidence. The little creature above the thread composer appears while that watch is active and leaves when it ends or needs your answer. Monitoring is observation, never permission to act, and is not restored from history.
 
 **Watched set.** The threads the host keeps in memory and keeps a provider session for: the threads on screen, plus assigned or queued ones. It is what `observeThreads` names. A thread outside it carries its summary alone, so startup and publish cost follow the open panes rather than the whole archive. Avoid: "active threads", "open threads".
