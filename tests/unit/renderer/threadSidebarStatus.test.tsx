@@ -46,6 +46,26 @@ describe('a row that needs you says what it needs', () => {
     expect(rowFor(asQuestion(threadsStateFixture()), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer' })
   })
 
+  it('says so for a thread Sotto does not manage, whose request never enters the attention queue', () => {
+    // The coordinator queues only what it watches; the provider's request on the thread is what you answer.
+    const unqueued = (state: AgentState): AgentState => { state.queue = []; return state }
+    expect(rowFor(unqueued(threadsStateFixture()), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval',
+      request: { threadId: 'visual-gate', kind: 'permission', requestId: 'visual-gate-permission' } })
+    expect(rowFor(unqueued(asQuestion(threadsStateFixture())), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
+      request: { threadId: 'visual-gate', kind: 'question', requestId: 'visual-gate-question' } })
+    // The collapsed rail says the same thing in its title and its ring.
+    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+    mount(unqueued(asQuestion(threadsStateFixture())), NOW)
+    expect(status('Visual gate flake')).toHaveTextContent('Needs your answer')
+    expect(status('Visual gate flake')).toHaveAttribute('data-waiting', 'question')
+    act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+    const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Visual gate flake"]')!
+    expect(rail).toHaveAttribute('title', 'Visual gate flake · Needs your answer')
+    expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
+    expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-waiting', 'question')
+    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+  })
+
   it('keeps the older wording where nothing is pending but you are still needed', () => {
     const blocked = threadsStateFixture()
     blocked.host.threads.find(thread => thread.id === 'visual-gate')!.requests = []

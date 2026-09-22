@@ -99,11 +99,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const thread = row.thread
   const closed = isThreadClosed(thread)
   const connected = state.connection === 'connected'
-  const pending = thread.requests[0]
-  const workspaceRow = !closed && pending && !row.request ? { ...row, request: {
-    id: `${thread.id}:${pending.id}`, threadId: thread.id, requestId: pending.id,
-    kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
-  } } : row
   const assigned = coordinated ? row.assignment : undefined
   const managed = assigned?.mode === 'managed' && !closed
   const rowConnected = row.connected
@@ -251,8 +246,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {notice}
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
-      {managed ? <ThreadFollowups row={workspaceRow} state={state} command={command} store={store}
-        onRetryAdmission={draftId => { void sendThreadRevision(store, workspaceRow, command, performance.now(), 'queue', draftId) }} /> : null}
+      {managed ? <ThreadFollowups row={row} state={state} command={command} store={store}
+        onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} /> : null}
       <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
       {managed && (!focused || holdingWriteHere) ? <div className="thread-draft-notice"><p>Sotto is managing this thread.</p><Button variant="secondary"
@@ -263,7 +258,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} ornament={ornament} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
+            : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
       {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
           so panes side by side keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
