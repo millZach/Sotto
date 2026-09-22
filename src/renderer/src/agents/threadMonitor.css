@@ -4,6 +4,10 @@
 .thread-monitor__track { position: relative; height: 64px; min-width: 0; }
 .thread-monitor__actor { position: absolute; bottom: 0; left: 0; width: 80px; height: 64px; }
 .thread-monitor__creature { display: block; width: 80px; height: 64px; overflow: visible; }
+/* Working: the small agents leave the track at its left end, so the track clips them there rather than the composer's edge. */
+.thread-monitor[data-ornament="working"] .thread-monitor__track { overflow: hidden; }
+.thread-monitor__mini { position: absolute; bottom: 0; left: 0; width: 24px; height: 20px; }
+.thread-monitor__mini svg { display: block; width: 24px; height: 20px; }
 .thread-monitor__color { fill: var(--tt-activity); }
 .thread-monitor__ink { fill: var(--tt-canvas); }
 .thread-monitor__shine { fill: var(--tt-text); }

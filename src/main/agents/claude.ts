@@ -137,10 +137,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
       stop: id => this.stopSession(id),
     })
   }
-  /** A turn, live watch, unanswered request, compaction or command mid-dispatch holds a session open. */
+  /**
+   * A turn, live watch, background work, unanswered request, compaction or command mid-dispatch holds a
+   * session open: stopping the CLI would end the workflow or subagent the thread is still running.
+   */
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
-    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length)
+    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length || !!thread.backgroundWork?.length)
       || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.rollbackPending
   }
   /**
@@ -558,6 +561,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
     monitoring.apply(frame); thread.monitoring = monitoring.current
+    const working = monitoring.working
+    if (working.length) thread.backgroundWork = working; else delete thread.backgroundWork
     if (frame.type === 'system' && frame.subtype === 'init') {
       if (typeof frame.claude_code_version === 'string') this.state.version = frame.claude_code_version
       this.checkApprovalSurface(frame)
@@ -642,7 +647,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private clearMonitoring(id: string): void {
     this.monitoring.delete(id)
     const thread = this.threads.get(id)
-    if (thread) delete thread.monitoring
+    if (thread) { delete thread.monitoring; delete thread.backgroundWork }
   }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return

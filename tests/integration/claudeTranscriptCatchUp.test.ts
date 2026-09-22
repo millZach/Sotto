@@ -132,6 +132,9 @@ describe('Claude transcript catch-up', () => {
         expect(retained?.title).toBe('Retained task')
       }
       expect(resumed.monitoring ?? []).toEqual([])
+      // Subagents read back from the transcript are history; only the live stream says one is still running.
+      expect(resumed.backgroundWork ?? []).toEqual([])
+      expect(before.backgroundWork ?? []).toEqual([])
       expect(workspace?.threadMessages(sottoId).some(message => message.text.includes('Tampered')) ?? resumed.messages.some(message => message.text.includes('Tampered'))).toBe(false)
       await append([
         { type: 'system', subtype: 'task_progress', task_id: 'retained-task', summary: 'Fresh progress after reconnect' },

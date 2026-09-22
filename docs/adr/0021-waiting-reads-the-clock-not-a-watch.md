@@ -110,3 +110,10 @@ written out in both. `tests/unit/main/grokDevinLiveTiming.test.ts` holds those c
 is therefore not restored when a row is rebuilt from provider history, which is the same thing the ornament
 already does: neither is carried back from a transcript. The claim at the top of this decision — that Codex,
 Grok and Devin threads get the hourglass — is now true of all four providers.
+
+## Amendment, September 22 2026: a third pose between the two
+
+ADR-0023 adds **background work**, shown as **Working**: agent work the provider confirms is still running for the
+thread. It sits between the two poses here. A confirmed monitoring task still keeps the track first; background work
+comes next, because it too is the provider's own evidence rather than a clock; the held action is shown only when
+neither applies. The same `ornamentAllowed` flag hides all three. The ornament carries `data-ornament="working"` for it.

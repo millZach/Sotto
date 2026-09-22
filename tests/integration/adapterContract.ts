@@ -22,6 +22,14 @@ export interface AdapterFixture {
     delayNextAck(method: string): Promise<void>
     requests(): Promise<RecordedRpc[]>
     restart(): Promise<AdapterFixture>
+    /**
+     * Where the provider reports agent work a turn left running: finish the turn so that a subagent it
+     * launched is still running afterwards, then report that subagent finished. Absent where it reports none.
+     */
+    backgroundWork?: {
+      completeLeaving(sessionId: string, text: string, description: string): Promise<void>
+      end(sessionId: string): Promise<void>
+    }
   }
   cleanup(): Promise<void>
   /** Decode recorded native traffic; fixtures must also reject invalid native replies. */
@@ -105,6 +113,24 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await send()
       expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: sessionId })).toEqual({ accepted: true })
       await expect.poll(async () => (await thread()).status).toBe('idle')
+    })
+    it('keeps confirmed background work past the end of its turn until the provider ends it, and never restores it', async context => {
+      const work = f.driver.backgroundWork
+      if (!work) { context.skip(); return }
+      await send()
+      await work.completeLeaving(sessionId, 'Started a background agent', 'Review the diff')
+      await expect.poll(async () => (await thread()).backgroundWork?.map(task => [task.label, task.type])).toEqual([['Review the diff', 'subagent']])
+      expect((await thread()).status).toBe('idle')
+      expect((await thread()).monitoring ?? []).toEqual([])
+      await work.end(sessionId)
+      await expect.poll(async () => (await thread()).backgroundWork ?? []).toEqual([])
+      if (f.skips?.restart) return
+      await send()
+      await work.completeLeaving(sessionId, 'Started another', 'Review the tests')
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      // A restart starts a new process: whatever it was running is the provider's to report again, not Sotto's to remember.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      expect((await thread()).backgroundWork ?? []).toEqual([])
     })
     it('routes a question and delivers its answer', async () => {
       await send(); await f.driver.raiseQuestion(sessionId, 'Which color?')

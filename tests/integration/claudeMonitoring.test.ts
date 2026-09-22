@@ -86,3 +86,44 @@ it('drops live watches when changing settings replaces the native session', asyn
   expect(await f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
   expect((await thread(f)).monitoring ?? []).toEqual([])
 })
+
+const agent = { type: 'system', subtype: 'task_started', task_id: 'private-agent-task', task_type: 'local_agent', description: 'Review the diff', is_backgrounded: true, spawn_depth: 1 }
+
+it('keeps background work through the turn result and clears it on interrupt, an error result and disconnect', async () => {
+  const f = await fixture()
+  await raw(f, agent)
+  await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  expect((await thread(f)).backgroundWork![0]!.id).not.toContain(agent.task_id)
+  await f.driver.completeTurn('thread', 'Left an agent running.')
+  await expect.poll(async () => (await thread(f)).messages.at(-1)?.text).toBe('Left an agent running.')
+  expect((await thread(f)).backgroundWork).toHaveLength(1)
+  expect(await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId: 'thread' })).toEqual({ accepted: true })
+  expect((await thread(f)).backgroundWork ?? []).toEqual([])
+
+  await raw(f, { ...agent, task_id: 'second' })
+  await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  await raw(f, { type: 'result', subtype: 'error_during_execution', is_error: true, result: '' })
+  await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
+
+  await raw(f, { ...agent, task_id: 'third' }, true)
+  await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  f.host.disconnect()
+  expect((await thread(f)).backgroundWork ?? []).toEqual([])
+  await f.adapter.closed()
+  await f.host.connect()
+  await f.adapter.refreshThread('thread')
+  expect((await thread(f)).backgroundWork ?? []).toEqual([])
+})
+
+it('holds a session with background work open while an ordinary idle session is reaped', async () => {
+  const f = await fixture(true)
+  await raw(f, agent)
+  await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  await f.host.execute({ type: 'create-thread', commandId: 'idle-create', threadId: 'idle', projectId: f.projectId, title: 'Idle', modelId: f.modelId })
+  await f.adapter.refreshThread('idle')
+  await expect.poll(() => f.sessions!.stopped('idle')).toBe(true)
+  expect(await f.sessions!.stopped('thread')).toBe(false)
+  await raw(f, { type: 'system', subtype: 'task_notification', task_id: agent.task_id, status: 'completed' })
+  await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
+  await expect.poll(() => f.sessions!.stopped('thread')).toBe(true)
+})
