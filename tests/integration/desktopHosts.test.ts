@@ -20,17 +20,19 @@ let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentia
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
 let retryDelay: (attempt: number) => number = () => 0
+let owned = true, stopResult: boolean | Error = true
+const stops: string[] = []
 class FixtureSsh extends SshHostLauncher {
   callbacks?: SshCallbacks
   override async connect(_configuration: SshHostConfiguration, callbacks: SshCallbacks = {}): Promise<SshHostConnection> {
     this.callbacks = callbacks
     const failure = failures.shift()
     if (failure) throw failure
-    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned: true,
+    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned,
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       revokeClient: id => host.pairing.revoke(id),
-      stopHost: async () => true,
+      stopHost: async () => { stops.push(reportedHostId); if (stopResult instanceof Error) throw stopResult; return stopResult },
     }
   }
   override async disconnect(): Promise<void> {}
@@ -41,7 +43,7 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; retryDelay = () => 0
+  launchers.length = 0; failures.length = 0; stops.length = 0; retryDelay = () => 0; owned = true; stopResult = true
   manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => retryDelay(attempt), launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
   await manager.start()
 })
@@ -75,8 +77,53 @@ describe('desktop remote host management over a real socket', () => {
     expect(host.pairing.verifyToken(token)).toBeDefined()
     await manager.command({ type: 'forget', id: remote.id })
     expect(host.pairing.verifyToken(token)).toBeUndefined(); expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+    expect(stops).toEqual([reportedHostId])
     expect(manager.get().hosts).toEqual([]); expect(router.shell().host.threads).toEqual([])
     await expect(readFile(join(root, 'desktop', 'workspace.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('leaves a host Sotto started running on Disconnect and stops it only on Stop host', async () => {
+    const remote = await add()
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected', owned: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    expect(stops).toEqual([])
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected' })
+    expect(manager.get().hosts[0]!.owned).toBeUndefined()
+    await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow('Connect to Forge fixture before stopping its host.')
+    await manager.command({ type: 'connect', id: remote.id })
+    await manager.command({ type: 'stop-host', id: remote.id })
+    expect(stops).toEqual([reportedHostId])
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected' })
+    expect(router.shell().connections).toEqual([])
+  })
+  it('never stops a host it discovered and says so', async () => {
+    owned = false
+    const remote = await add()
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected', owned: false })
+    await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow('Sotto did not start the host on Forge fixture')
+    expect(stops).toEqual([])
+    expect(manager.get().hosts[0]!.phase).toBe('connected')
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(stops).toEqual([]); expect(manager.get().hosts).toEqual([])
+  })
+  it('keeps the saved host when an owned host could not be stopped and says it may still run', async () => {
+    stopResult = false
+    const remote = await add()
+    await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow('may still be running')
+    expect(manager.get().hosts[0]!.phase).toBe('disconnected')
+    stopResult = new Error('supervisor gone')
+    await manager.command({ type: 'connect', id: remote.id })
+    await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow('may still be running')
+    expect(manager.get().hosts).toHaveLength(1)
+    expect(manager.get().hosts[0]!.phase).toBe('disconnected')
+  })
+  it('forgets a host it cannot reach without revoking anything on it', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().hosts).toEqual([]); expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+    expect(host.pairing.verifyToken(token)).toBeDefined()
+    expect(stops).toEqual([])
   })
   it('refuses changed host identity before sending the saved pairing credential', async () => {
     const remote = await add()

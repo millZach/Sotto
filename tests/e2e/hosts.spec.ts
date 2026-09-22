@@ -28,7 +28,9 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
     await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
     await expect(page.getByRole('switch', { name: 'Run the local host' })).toHaveAttribute('aria-checked', 'false')
     await page.getByRole('button', { name: 'Add host' }).click()
+    await expect(page.getByRole('button', { name: 'Save host', exact: true })).toBeDisabled()
     await page.getByRole('textbox', { name: 'Host name', exact: true }).fill('Forge')
+    await page.getByRole('textbox', { name: 'SSH target' }).fill('builder@forge')
     await page.getByRole('button', { name: 'Save host', exact: true }).click()
     await expect(page.getByRole('region', { name: 'Forge', exact: true })).toBeVisible()
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
@@ -44,7 +46,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
       }
     }
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'SSH target' })).toHaveValue('zach@forge')
+    await expect(page.getByRole('textbox', { name: 'SSH target' })).toHaveValue('builder@forge')
     await page.getByRole('button', { name: 'Save host', exact: true }).scrollIntoViewIfNeeded()
     await expect(page.getByRole('button', { name: 'Save host', exact: true })).toBeInViewport()
     expect(await page.getByRole('dialog').evaluate(element => { const box = element.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight })).toBe(true)

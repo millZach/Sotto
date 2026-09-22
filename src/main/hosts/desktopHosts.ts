@@ -63,20 +63,30 @@ export class DesktopHosts {
       this.live.get(host.id)?.launcher.answerPrompt(command.promptId, command.answer)
       return this.get()
     }
-    if (command.type === 'disconnect') { this.clearRetry(host.id); await this.disconnect(host.id, true); return this.get() }
+    // Disconnect only closes this computer's connection. A host Sotto started keeps running, the same as
+    // when Sotto quits, until Stop host or Forget stops it, because a phone may still be using it.
+    if (command.type === 'disconnect') { this.clearRetry(host.id); await this.disconnect(host.id); return this.get() }
+    if (command.type === 'stop-host') {
+      this.clearRetry(host.id)
+      const stopped = await this.stopOwnedHost(host, this.live.get(host.id))
+      await this.disconnect(host.id)
+      if (!stopped) throw new Error(this.notStopped(host))
+      return this.get()
+    }
     if (command.type === 'forget') {
       this.clearRetry(host.id)
       const active = this.live.get(host.id)
-      if (host.clientId) {
-        if (!active?.tunnel) throw new Error('Connect to this host before forgetting it so its client access can be revoked.')
-        await active.tunnel.revokeClient(host.clientId)
+      // A host that cannot be reached is still forgotten here; the dialog says its access stays until revoked there.
+      if (active?.tunnel && this.status.get(host.id)?.phase === 'connected') {
+        if (host.clientId) await active.tunnel.revokeClient(host.clientId)
+        if (active.tunnel.owned && !(await this.stopOwnedHost(host, active))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
       }
-      await this.disconnect(host.id, true)
+      await this.disconnect(host.id)
       await this.options.credentials.set(`remote-host:${host.id}`, '')
       this.saved = this.saved.filter(item => item.id !== host.id)
       await this.save(); this.status.delete(host.id); this.emit(); return this.get()
     }
-    if (this.live.has(host.id)) await this.disconnect(host.id, false, true)
+    if (this.live.has(host.id)) await this.disconnect(host.id, true)
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...remoteHostSchema.strip().parse(host), phase: 'connecting' }); this.emit()
@@ -161,18 +171,24 @@ export class DesktopHosts {
     })
     active.registeredHostId = hello.hostId
     this.clearRetry(host.id)
-    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId })
+    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.tunnel!.owned })
   }
-  private async disconnect(id: string, stopHost = false, keepRetry = false): Promise<void> {
+  /** Asks the supervisor to stop a host this Sotto started; a discovered host is never stopped. False means it may still run. */
+  private async stopOwnedHost(host: SavedHost, active: LiveHost | undefined): Promise<boolean> {
+    if (!active?.tunnel || this.status.get(host.id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before stopping its host.`)
+    if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
+    try { return await active.tunnel.stopHost() } catch { return false }
+  }
+  private notStopped(host: SavedHost): string { return `The host on ${host.name} could not be stopped and may still be running. Check it on that machine, then connect and try again.` }
+  private async disconnect(id: string, keepRetry = false): Promise<void> {
     if (!keepRetry) this.clearRetry(id)
     const active = this.live.get(id)
     this.live.delete(id)
     if (active?.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     await active?.socket?.close()
-    if (stopHost && active?.tunnel?.owned) await active.tunnel.stopHost().catch(() => undefined)
     await active?.launcher.disconnect()
     const status = this.status.get(id)
-    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; status.phase = 'disconnected'; this.emit() }
+    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; delete status.owned; status.phase = 'disconnected'; this.emit() }
   }
   async close(): Promise<void> { await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing }
 }

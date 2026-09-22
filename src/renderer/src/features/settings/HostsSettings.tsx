@@ -1,6 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { Server } from 'lucide-react'
-import { type HostsBridge, type HostsCommand, type HostsState, type RemoteHost } from '../../../../shared/hosts'
+import { type HostsBridge, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
 import { Toggle } from '../../components/Toggle'
@@ -14,6 +14,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<RemoteHost | null>(null)
   const [forgetId, setForgetId] = useState<string | null>(null)
+  const [stopId, setStopId] = useState<string | null>(null)
   const [answer, setAnswer] = useState('')
   useEffect(() => {
     if (!bridge) return
@@ -31,6 +32,14 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     catch (failure) { setError(failure instanceof Error ? failure.message : 'The host could not be updated. Try again.'); return false }
   }
   const forget = state?.hosts.find(host => host.id === forgetId)
+  const stopping = state?.hosts.find(host => host.id === stopId)
+  const forgetDescription = (host: HostStatus): string => {
+    const stop = host.phase === 'connected' && host.owned ? ' It also stops the host Sotto started there.' : ''
+    const access = host.phase === 'connected'
+      ? "This revokes this computer's access on the host and removes the saved connection."
+      : `This removes the saved connection. This computer's access on ${host.name} stays until you connect again or revoke it there.`
+    return `${access}${stop} Threads stay on the host.`
+  }
   return <div className="hosts-settings">
     <div className="hosts-local"><div><h3>This computer</h3><p>Run local threads alongside your remote hosts. Changing this restarts Sotto and keeps saved data.</p></div>
       {state?.localHostId && <Button variant="secondary" disabled={state.activeHostId === state.localHostId} onClick={() => void run({ type: 'select', hostId: state.localHostId! })}>{state.activeHostId === state.localHostId ? 'Selected host' : 'Use this computer'}</Button>}
@@ -38,8 +47,8 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     </div>
     {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p>Restart Sotto to apply the local host setting.</p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>Restart Sotto</Button></div>}
     <p>Dictation and automatic paste use this computer. They do not paste into a remote host.</p>
-    <div className="hosts-heading"><h3>Remote hosts</h3><Button variant="secondary" disabled={!bridge} onClick={() => setDraft({ id: crypto.randomUUID(), name: 'Forge', target: 'zach@forge', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', identityFile: '' })}>Add host</Button></div>
-    {state?.hosts.length === 0 && <p>Connect to a host over SSH. Sotto pairs this laptop for you; the host's threads then appear beside this computer's.</p>}
+    <div className="hosts-heading"><h3>Remote hosts</h3><Button variant="secondary" disabled={!bridge} onClick={() => setDraft({ id: crypto.randomUUID(), name: '', target: '', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', identityFile: '' })}>Add host</Button></div>
+    <p>Add any machine you reach over SSH with the Sotto host installed. Connect pairs this computer for you, and the host's threads appear beside this computer's. A host Sotto starts keeps running after you disconnect or quit until you press Stop host.</p>
     {state?.hosts.map(host => <section className="hosts-row" key={host.id} aria-label={host.name}>
       <Server size={24} aria-hidden="true" /><div className="hosts-row__info"><h4>{host.name}</h4><p>{host.target} · {host.phase === 'connecting' ? (host.reconnecting ? 'Reconnecting…' : 'Connecting…') : host.phase === 'connected' ? 'Connected' : host.phase === 'error' ? 'Needs attention' : 'Disconnected'}</p>
         {host.clientId && <p>Client ID: <code>{host.clientId}</code></p>}
@@ -49,6 +58,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
         {host.phase === 'connected' || host.phase === 'connecting'
           ? <Button variant="secondary" onClick={() => void run({ type: 'disconnect', id: host.id })}>Disconnect</Button>
           : <Button onClick={() => void run({ type: 'connect', id: host.id })}>Connect</Button>}
+        {host.phase === 'connected' && host.owned && <Button variant="ghost" onClick={() => setStopId(host.id)}>Stop host</Button>}
         {host.phase === 'disconnected' || host.phase === 'error' ? <Button variant="ghost" onClick={() => setDraft({ id: host.id, name: host.name, target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory, identityFile: host.identityFile })}>Edit</Button> : null}
         <Button variant="ghost" onClick={() => setForgetId(host.id)}>Forget</Button>
       </div>
@@ -64,7 +74,10 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
         <Field label="SSH identity file" description="Optional. Leave blank to use your SSH configuration."><input value={draft.identityFile} autoCapitalize="none" spellCheck={false} onChange={event => setDraft({ ...draft, identityFile: event.target.value })} /></Field>
       </div>} />}
     {forget && <ConfirmationDialog title={`Forget ${forget.name}?`} confirmLabel="Forget host" cancelLabel="Keep host" onCancel={() => setForgetId(null)} onConfirm={() => run({ type: 'forget', id: forget.id })}
-      failureMessage={error} description="This revokes this laptop's access, stops a host Sotto started here, and removes the saved connection. Threads stay on the host." />}
+      failureMessage={error} description={forgetDescription(forget)} />}
+    {stopping && <ConfirmationDialog title={`Stop the host on ${stopping.name}?`} confirmLabel="Stop host" cancelLabel="Keep it running" onCancel={() => setStopId(null)}
+      onConfirm={async () => { await run({ type: 'stop-host', id: stopping.id }) }}
+      description={`This stops the host Sotto started on ${stopping.name} and disconnects. Turns running there are interrupted; threads and history stay in its data folder, and Connect starts it again.`} />}
     {promptHost?.prompt && <ConfirmationDialog title={promptHost.prompt.kind === 'host-key' ? 'Trust this SSH host?' : 'Unlock the SSH connection'} danger={false}
       confirmLabel={promptHost.prompt.kind === 'host-key' ? 'Trust host' : 'Continue'} cancelLabel="Cancel connection" onCancel={() => { setAnswer(''); void run({ type: 'disconnect', id: promptHost.id }) }}
       onConfirm={async () => { await run({ type: 'ssh-answer', id: promptHost.id, promptId: promptHost.prompt!.id, answer: promptHost.prompt!.kind === 'host-key' ? 'yes' : answer }); setAnswer(''); return false }}
