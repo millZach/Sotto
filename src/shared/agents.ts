@@ -573,7 +573,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
-    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined, 'Choose a thread setting to change.'),
+    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */

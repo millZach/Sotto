@@ -177,8 +177,11 @@ describe('coordinator images, authority and durable settings', () => {
     const f = await controlFixture()
     f.host.ownModes = true
     await f.control.command({ type: 'refresh' })
-    // Only the mode is sent: the coordinator must not read a lone providerMode as "nothing to change".
-    const saved = await f.control.command({ type: 'configure-thread', threadId: 'workshop', providerMode: 'bypass' })
+    // Only the mode is sent, and it crosses the preload and IPC parsers before the coordinator sees it:
+    // neither may read a lone providerMode as "nothing to change".
+    const command = agentCommandSchema.parse({ type: 'configure-thread', threadId: 'workshop', providerMode: 'bypass' })
+    expect(agentCommandSchema.safeParse({ type: 'configure-thread', threadId: 'workshop' }).success).toBe(false)
+    const saved = await f.control.command(command)
     expect(saved.error).toBeNull()
     expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'configure-thread', threadId: 'workshop', providerMode: 'bypass' })])
     expect(saved.host.threads.find(thread => thread.id === 'workshop')).toMatchObject({ providerMode: 'bypass' })

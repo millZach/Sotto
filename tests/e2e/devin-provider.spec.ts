@@ -143,11 +143,21 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await expect(prompt).toHaveValue('')
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(async () => (await state()).status).toBe('idle')
+    // The permission chip changes the mode through the whole path the app uses: preload, IPC, coordinator and
+    // adapter. Each of those once dropped or refused a change that carried only the mode.
+    const permissions = page.getByRole('combobox', { name: 'Thread permissions', exact: true })
+    await expect(permissions).toContainText('Ask first')
+    await permissions.click()
+    await page.getByRole('option', { name: /^Bypass Permissions/ }).click()
+    await expect.poll(async () => (await state()).providerMode).toBe('bypass')
+    await expect(permissions).toContainText('Bypass Permissions')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'disconnect', provider: 'devin' }))
     await expect(page.getByLabel('Thread transcript')).toContainText('Synthetic Devin reply complete')
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).host.providers?.find(provider => provider.id === 'codex')?.connection)).toBe('connected')
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect', provider: 'devin' }))
     await expect.poll(async () => (await state()).status).toBe('idle')
+    // A reconnected thread keeps the mode it was set to, rather than falling back to the asking one.
+    expect((await state()).providerMode).toBe('bypass')
     const restored = JSON.parse(await readFile(join(profile, 'devin-threads.json'), 'utf8')) as Record<string, { devinSessionId: string }>
     expect(Object.values(restored).some(alias => alias.devinSessionId === nativeId)).toBe(true)
     expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
