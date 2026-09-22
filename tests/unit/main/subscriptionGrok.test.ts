@@ -69,7 +69,9 @@ describe('Grok native subscription client', () => {
     expect(calls.every(call => call.policy === '[permission]\nrules = [{ action = "deny", tool = "any" }]\n')).toBe(true)
   })
   it("puts Grok's highest-first effort list into Sotto's order and keeps its default", async () => {
-    // Grok 1.0.5's live catalog, as recorded in docs/verification/subscription-reasoning-routes-2026-09-09.md.
+    // Modelled on the levels and default Grok 1.0.5 reported in docs/verification/subscription-reasoning-routes-2026-09-09.md.
+    // The repeated high, the per-level default flags and grok-4.5's missing session level are added here
+    // so the case exercises dropping a repeat and finding the default from the flag.
     const f = await fixture({ models: { currentModelId: 'grok-4.6', availableModels: [
       { modelId: 'grok-4.6', name: 'Grok 4.6', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'xhigh', value: 'xhigh' }, { id: 'high', value: 'high', default: true }, { id: 'medium', value: 'medium' }, { id: 'low', value: 'low' }, { id: 'high', value: 'high' }] } },
       { modelId: 'grok-4.5', name: 'Grok 4.5', _meta: { supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high', value: 'high', default: true }, { id: 'medium', value: 'medium' }, { id: 'low', value: 'low' }] } },
