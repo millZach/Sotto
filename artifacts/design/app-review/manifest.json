@@ -1150,8 +1150,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy.png",
       "width": 791,
-      "height": 1479,
-      "sha256": "25da7bfb15621c272b94b8584a818c1b6ee6e68a81472843e087bbd65694c970"
+      "height": 1923,
+      "sha256": "ed5f6e6a7afafca21f5894fe791cb52e364ec4f1d81dab28e506795dee7dc0f5"
     },
     {
       "theme": "light",
@@ -1164,8 +1164,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy-light.png",
       "width": 791,
-      "height": 1479,
-      "sha256": "9585bb3254607ebfd11fe9a61bfb85128cf83364772cf9f1de925fb424c5fc2a"
+      "height": 1923,
+      "sha256": "a1b0351fe068e435f670c343e986a94a4e660953ee11e1c120c10f1574a827ab"
     },
     {
       "theme": "dark",
