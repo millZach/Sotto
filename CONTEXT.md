@@ -297,6 +297,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Subagent roster.** The thread's retained list of reported subagents, shown in Tools under Agents. It includes finished agents and follows Tools' selected or pinned thread.
 
+**Subagent transcript.** The file Claude Code writes for a subagent it runs as its own session, beside the parent thread's transcript. Sotto reads only the model named on its first reply, for a roster row the stream left without one; the task and replies in it are never kept. Not the thread's own transcript, which Sotto reads for messages and activity.
+
 **Subagent assignment.** One task given to a subagent, with the result it reported. A reused subagent keeps its identity and earlier tasks; unlike a coordinator assignment, a subagent assignment grants Sotto no authority.
 
 **Last seen working.** A subagent whose last known work has not been confirmed after a disconnect or restart. It is evidence of earlier activity, not a claim that the agent is running now.

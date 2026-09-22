@@ -80,6 +80,55 @@ describe('observational subagent roster metadata', () => {
     rows.forEach(row => agentActivitySchema.parse(row))
   })
 
+  it('patches a workflow\'s model from its run\'s transcripts onto the rows that already show it', () => {
+    const projection = new ClaudeActivity()
+    let rows = projection.apply([], { type: 'assistant', timestamp, message: { content: [{ type: 'tool_use', id: 'flow', name: 'Workflow', input: { script: 'run()' } }] } }, 'turn', 'message', '/p')
+    rows = projection.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'wtask', tool_use_id: 'flow', task_type: 'local_workflow', workflow_name: 'spec', description: 'Write the spec', timestamp }, 'turn', 'message', '/p')
+    expect(projection.modelTargets()).toEqual([])
+    rows = projection.apply(rows, { type: 'user', timestamp, tool_use_result: { status: 'async_launched', taskId: 'wtask', taskType: 'local_workflow', runId: 'wf_79f40664-5f1' }, message: { content: [{ type: 'tool_result', tool_use_id: 'flow', content: 'Launched' }] } }, 'turn', 'message', '/p')
+    const agent = rows.find(row => row.id === 'claude-task-wtask')!.agents![0]!
+    expect(agent.model).toBeUndefined()
+    expect(projection.modelTargets()).toEqual([{ id: agent.id, transcript: { runId: 'wf_79f40664-5f1' }, settled: false }])
+    const ids = rows.map(row => row.id)
+    rows = projection.applyModel(rows, agent.id, 'claude-opus-5-5')
+    expect(rows.map(row => row.id)).toEqual(ids)
+    expect(rows.filter(row => row.agents?.some(child => child.id === agent.id)).map(row => row.agents![0]!.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+    expect(rows.find(row => row.id === 'claude-task-wtask')!.agents![0]).toMatchObject({ status: 'running', title: 'Write the spec' })
+    expect(projection.modelTargets()).toEqual([])
+    // A second read of the same run changes nothing; later progress adds the models its other agents ran on.
+    expect(projection.applyModel(rows, agent.id, 'claude-other')).toBe(rows)
+    rows = projection.apply(rows, { type: 'system', subtype: 'task_progress', task_id: 'wtask', tool_use_id: 'flow', workflow_progress: [{ type: 'workflow_agent', agentId: 'a1', model: 'claude-opus-5-5' }, { type: 'workflow_agent', agentId: 'a2', model: 'claude-haiku-4-5' }], timestamp }, 'turn', 'message', '/p')
+    expect(rows.find(row => row.id === 'claude-task-wtask')!.agents![0]!.model).toBe('claude-opus-5-5, claude-haiku-4-5')
+    rows.forEach(row => agentActivitySchema.parse(row))
+  })
+
+  it('names a background agent\'s model from its launch result or its own transcript, whichever comes first', () => {
+    const background = new ClaudeActivity()
+    let rows = background.apply([], claudeTool('launch', { description: 'Review tests', prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
+    rows = background.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'a3a0e66ba6fe555ae', tool_use_id: 'launch', task_type: 'local_agent', timestamp }, 'turn', 'message', '/p')
+    const agent = rows[0]!.agents![0]!
+    expect(background.modelTargets()).toEqual([{ id: agent.id, transcript: { agentId: 'a3a0e66ba6fe555ae' }, settled: false }])
+    const launched = background.apply(rows, { type: 'user', timestamp, tool_use_result: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae', resolvedModel: 'claude-opus-5-5' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
+    expect(launched.filter(row => row.agents?.length).map(row => row.agents![0]!.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+    expect(background.modelTargets()).toEqual([])
+    // A future CLI that names the model on the task start is taken as it comes.
+    const started = new ClaudeActivity().apply([], { type: 'system', subtype: 'task_started', task_id: 'task', task_type: 'local_agent', model: 'claude-future', timestamp }, 'turn', 'message', '/p')
+    expect(started[0]!.agents![0]!.model).toBe('claude-future')
+    // Replayed history files the launch result as `toolUseResult`; its model is read from there too.
+    const replay = new ClaudeActivity()
+    let replayed = replay.apply([], claudeTool('launch', { prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
+    replayed = replay.apply(replayed, { type: 'user', timestamp, toolUseResult: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae', resolvedModel: 'claude-opus-5-5' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
+    expect(replayed[0]!.agents![0]!.model).toBe('claude-opus-5-5')
+    // Without one, the agent's own transcript is watched, and a stopped agent is marked settled.
+    const quiet = new ClaudeActivity()
+    let silent = quiet.apply([], claudeTool('launch', { prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
+    silent = quiet.apply(silent, { type: 'user', timestamp, toolUseResult: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
+    expect(quiet.modelTargets()).toEqual([{ id: silent[0]!.agents![0]!.id, transcript: { agentId: 'a3a0e66ba6fe555ae' }, settled: false }])
+    silent = quiet.applyModel(silent, silent[0]!.agents![0]!.id, 'claude-opus-5-5')
+    expect(silent).toHaveLength(1)
+    expect(silent[0]!.agents![0]).toMatchObject({ status: 'running', model: 'claude-opus-5-5' })
+  })
+
   it('waits for streamed Agent input before identifying a resumed child and resolves durable hashed aliases', () => {
     const first = new ClaudeActivity()
     let rows = first.apply([], claudeTool('original', { prompt: 'First' }), 'turn', 'message', '/p')
