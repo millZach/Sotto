@@ -171,12 +171,6 @@ The job retains `Sotto-host-*-linux-x64.tar.gz` and its checksum sidecar as a wo
 
 Run `npm run package:host` locally for the same extraction and startup check. The filename records the actual platform. `npm run host:verify -- <extracted-directory>` verifies an existing extracted archive against its manifest and provenance; `node scripts/smoke-host-archive.mjs <extracted-directory>` additionally starts and stops it. On Windows only, smoke shutdown exercises the signal handler through IPC, since Windows cannot deliver a graceful POSIX SIGTERM. The Linux CI run and a real Forge SSH connection remain separate evidence from a local Windows pass.
 
-## Native iOS gate
-
-**Native iOS client (macOS)** runs `sh apps/ios/Scripts/verify.sh` on `macos-15`, selecting `/Applications/Xcode_16.4.app/Contents/Developer` explicitly. [The runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md) lists that toolchain and its iOS 18.5 simulator SDK, which satisfy the package's Swift 5.9 tools and app's iOS 17 minimum. The job prints its actual Xcode/Swift versions, runs the native SottoCore package tests, and builds the unsigned iOS simulator app with the shared Xcode scheme. It needs no signing secrets, never uploads to TestFlight, and does not run npm or Electron.
-
-The workflow has no path filters, so changes under `apps/ios` and the host protocol both run this gate. Passing establishes native tests and compilation, not simulator interaction, VoiceOver/design inspection, real-device networking, signing or Forge availability. On a Windows-only development machine this job's result remains unverified until GitHub actually runs it; adding the job is not a green CI result.
-
 ## Browser provider and desktop verification
 
 `tests/integration/browserProviders.test.ts` verifies thread-bound MCP injection and reconnection with scripted native clients. `browserAgentServer.test.ts` checks local transport admission and rejection; browser host and dispatcher tests check page grants, exact actions and observation redaction. These run in the normal two-worker suite.

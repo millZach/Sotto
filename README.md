@@ -114,7 +114,7 @@ Choose **Use this host** for host-wide actions. Threads from connected hosts sha
 
 After an interrupted command, reconnect and check its result before choosing to send again; Sotto never automatically repeats it.
 
-The native iOS client is in [apps/ios](apps/ios/README.md). It uses the same code-entry pairing through a private, certificate-validated Tailscale HTTPS address. The first version reads existing threads, replies, interrupts and answers requests explicitly. Configure Tailscale Serve on the host machine to reach its fixed loopback port and install Tailscale on the iPhone. Native build, signing, real-device verification and TestFlight upload are separate steps; source and HTML design previews are not an installed iPhone app.
+The native iOS client is its own pull request ([#225](https://github.com/millZach/Sotto/pull/225)) and lands once host protocol version 1 is frozen. It uses the same code-entry pairing through a private, certificate-validated Tailscale HTTPS address. The first version reads existing threads, replies, interrupts and answers requests explicitly. Configure Tailscale Serve on the host machine to reach its fixed loopback port and install Tailscale on the iPhone. Native build, signing, real-device verification and TestFlight upload are separate steps; source and HTML design previews are not an installed iPhone app.
 
 ## Agent control center (development beta)
 

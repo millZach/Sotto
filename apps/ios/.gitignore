@@ -1,8 +1,0 @@
-.build/
-.build-native/
-DerivedData/
-*.xcarchive
-*.ipa
-*.xcuserstate
-xcuserdata/
-ExportOptions.local.plist

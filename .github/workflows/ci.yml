@@ -93,21 +93,3 @@ jobs:
             release/Sotto-host-*-linux-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
-
-  ios:
-    name: Native iOS client (macOS)
-    runs-on: macos-15
-    timeout-minutes: 20
-    env:
-      # The runner image provides Xcode 16.4 (Swift 6 compiler, Swift 5 mode).
-      # This exceeds Package.swift's Swift 5.9 tools and iOS 17 minimum.
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-      - name: Record native toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-      - name: Test native protocol and build the unsigned simulator app
-        run: sh apps/ios/Scripts/verify.sh
