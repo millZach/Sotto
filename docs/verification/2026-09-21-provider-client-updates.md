@@ -1,6 +1,6 @@
 # Client updates, and the pins that blocked them
 
-Evidence for `docs/adr/0020-provider-client-updates.md` and `docs/plans/2026-09-21-provider-client-updates.md`. Windows 11, 2026-09-21. The built app was run on a throwaway user-data folder, since deleted, so nothing here touched the real profile; the clients and their sign-ins are the machine's own, which is why connecting worked at all.
+Evidence for `docs/adr/0021-provider-client-updates.md` and `docs/plans/2026-09-21-provider-client-updates.md`. Windows 11, 2026-09-21. The built app was run on a throwaway user-data folder, since deleted, so nothing here touched the real profile; the clients and their sign-ins are the machine's own, which is why connecting worked at all.
 
 ## What the machine and the registry said, before
 

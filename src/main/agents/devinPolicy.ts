@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -71,34 +71,16 @@ export async function assertDevinWorkingDirectory(cwd?: string, configDirectory 
   for (const name of ['hooks.v1.json']) await rejectExisting(join(configDirectory, name))
   if (!cwd) return
   if (!isAbsolute(cwd)) throw new Error('Devin needs an absolute working folder. Your thread is kept.')
-  const workingDirectory = await realpath(cwd)
-  let directory = workingDirectory
+  // Devin resolves `.devin` from the working folder upwards, never below it, so
+  // those are the only places a native file can reach the session Sotto starts.
+  // The pinned descendant experiment records the evidence; a folder's size and
+  // its linked directories no longer decide whether a thread may run.
+  let directory = await realpath(cwd)
   while (true) {
     for (const name of nativeFiles) await rejectExisting(join(directory, '.devin', name))
     const parent = dirname(directory)
     if (parent === directory) break
     directory = parent
-  }
-  // Native settings can be discovered lazily below the working folder. Inspect
-  // directories only, never contents. A linked directory could hide another
-  // configuration tree, so the initial compatibility boundary excludes it.
-  const directories = [workingDirectory]
-  let directoryCount = 0
-  let entryCount = 0
-  while (directories.length) {
-    if (++directoryCount > 25_000) throw new Error('This working folder is too large to check for native Devin configuration. Your thread is kept. Choose a smaller working folder.')
-    const current = directories.pop()!
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      if (++entryCount > 250_000) throw new Error('This working folder is too large to check for native Devin configuration. Your thread is kept. Choose a smaller working folder.')
-      if (entry.name === '.git') continue
-      const path = join(current, entry.name)
-      if (entry.name === '.devin') {
-        for (const name of nativeFiles) await rejectExisting(join(path, name))
-      }
-      if (entry.isSymbolicLink()) {
-        if ((await stat(path)).isDirectory()) throw new Error('This working folder has linked directories that Sotto cannot check for native Devin configuration. Your thread is kept. Use a working folder without linked directories.')
-      } else if (entry.isDirectory()) directories.push(path)
-    }
   }
 }
 
@@ -109,11 +91,20 @@ export async function prepareDevinPolicy(userDataDirectory: string, cwd?: string
   let pending = preparing.get(path)
   if (!pending) {
     pending = (async () => {
-      await mkdir(dirname(path), { recursive: true })
-      try { await writeFile(path, policyText, { encoding: 'utf8', flag: 'wx', mode: 0o600 }) } catch (error) {
-        if (!hasCode(error, 'EEXIST')) throw error
+      // Each cause carries the errno; the message the user reads never does.
+      try {
+        await mkdir(dirname(path), { recursive: true })
+        try { await writeFile(path, policyText, { encoding: 'utf8', flag: 'wx', mode: 0o600 }) } catch (error) {
+          if (!hasCode(error, 'EEXIST')) throw error
+        }
+      } catch (error) {
+        throw new Error('Sotto could not write its approval profile for Devin. Your thread is kept. Check access to Sotto’s data folder and reconnect Devin.', { cause: error })
       }
-      if ((await lstat(path)).isSymbolicLink()) throw new Error('The Sotto approval profile for Devin has changed. Your thread is kept. Restore the profile before reconnecting Devin.')
+      let link: boolean
+      try { link = (await lstat(path)).isSymbolicLink() } catch (error) {
+        throw new Error('Sotto could not read its approval profile for Devin. Your thread is kept. Check access to Sotto’s data folder and reconnect Devin.', { cause: error })
+      }
+      if (link) throw new Error('The Sotto approval profile for Devin has changed. Your thread is kept. Restore the profile before reconnecting Devin.')
       let existing: unknown
       try { existing = JSON.parse(await readFile(path, 'utf8')) } catch { /* Invalid profile is rejected below without logging its contents. */ }
       if (!isDeepStrictEqual(existing, policy)) {

@@ -21,7 +21,7 @@ import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadUsage } from './ThreadUsage'
-import { ThreadMonitor } from './ThreadMonitor'
+import { ThreadMonitor, ThreadHeld, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -75,13 +75,15 @@ export interface ThreadPaneProps {
   readonly notice?: ReactNode
   /** Opens this thread in a second pane. The More menu leaves the item out where the page cannot split. */
   readonly onOpenBeside?: (() => void) | undefined
+  /** A fixed clock where the page holds one still (a capture run); the held ornament reads from it. */
+  readonly now?: number | undefined
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, crumb, actions, notice }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, crumb, actions, notice, now }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -108,8 +110,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // Monitoring is observation, independent of the voice coordinator's authority. A ready notice reports
   // a finished foreground turn; only requests or a coordinator block interrupt a surviving watch.
   const monitoringBlocked = state.queue.some(item => item.threadId === thread.id && item.kind !== 'ready')
-  const liveMonitors = rowConnected && !closed && !monitoringBlocked && thread.status !== 'error' && thread.requests.length === 0 ? thread.monitoring ?? [] : []
+  const ornamentAllowed = rowConnected && !closed && !monitoringBlocked && thread.status !== 'error' && thread.requests.length === 0
+  const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
   const monitor = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} /> : undefined
+  // Waiting is the weaker claim of the two, so a confirmed watch keeps the track: it names the task, and this
+  // only names the clock. One ornament either way, because the composer reserves room for exactly one.
+  const held = useHeldAction(thread, ornamentAllowed && monitor === undefined, now)
+  const ornament = monitor ?? (held === undefined ? undefined
+    : <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />)
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = hasDraftContent(paneDraft.draft)
     || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))
@@ -249,8 +257,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         onPointerDownCapture={writeHere} onFocusCapture={() => setHoldingWriteHere(true)} onBlur={() => setHoldingWriteHere(false)}
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
-          : managed ? <AgentComposer state={state} command={command} ornament={monitor} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} ornament={monitor} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
+          : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
+            : <ThreadComposer key={thread.id} ornament={ornament} row={workspaceRow} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
       {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
           so panes side by side keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">

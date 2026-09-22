@@ -175,6 +175,11 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text })
     const starts = (id: string) => f.sessions!.starts(id)
     const stopped = (id: string) => f.sessions!.stopped(id)
+    // The sweep is 20 ms and the idle window 150 ms, so a stop is quick on an idle machine. On a
+    // loaded runner the history read that precedes it can still be in flight, and the session is not
+    // idle until it lands: the assertion is the stop itself, so the deadline is generous and costs
+    // nothing when it is never reached (AGENTS.md, "Waiting is not the assertion").
+    const untilStopped = (id: string) => expect.poll(async () => stopped(id), { timeout: 12_000 })
     /** Build the fixture and one saved thread. False when this fixture has no provider session to watch. */
     const open = async (session?: AdapterSessionOptions): Promise<boolean> => {
       f = await factory(session); await f.host.connect()
@@ -213,7 +218,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await thread(sessionId)).status).toBe('idle')
       const before = await starts(sessionId)
       f.host.observeThreads?.([])
-      await expect.poll(async () => stopped(sessionId)).toBe(true)
+      await untilStopped(sessionId).toBe(true)
       // The thread keeps its place and its idle status. Its messages went back to the event store, so
       // what the adapter still carries for it is its summary (issue #120).
       expect(await thread(sessionId)).toMatchObject({ status: 'idle' })
@@ -232,7 +237,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await thread(sessionId)).status).toBe('running')
       const quiet = await create('Quiet thread')
       f.host.observeThreads?.([])
-      await expect.poll(async () => stopped(quiet)).toBe(true)
+      await untilStopped(quiet).toBe(true)
       expect(await stopped(sessionId)).toBe(false)
     })
 
@@ -247,7 +252,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         await f.driver.completeTurn(sessionId, 'Completed reply')
         await expect.poll(() => workspace.threadMessages(sessionId).map(m => m.id)).toContain('stored-message')
         workspace.observeThreads([])
-        await expect.poll(async () => stopped(sessionId)).toBe(true)
+        await untilStopped(sessionId).toBe(true)
         // The adapter is holding nothing for it, and the store answers for it in full.
         await expect.poll(async () => (await thread(sessionId)).messages).toEqual([])
         expect(workspace.threadMessages(sessionId).map(m => m.id)).toContain('stored-message')
@@ -259,7 +264,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       if (!await open(impatient)) { context.skip(); return }
       f.host.observeThreads?.([sessionId])
       const quiet = await create('Quiet thread')
-      await expect.poll(async () => stopped(quiet)).toBe(true)
+      await untilStopped(quiet).toBe(true)
       expect(await stopped(sessionId)).toBe(false)
     })
   })

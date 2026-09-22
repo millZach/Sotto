@@ -16,12 +16,18 @@ async function setup() {
  return id
 }
 const send = (id:string,messageId='own',text='Synthetic prompt')=>f!.host.execute({type:'send',commandId:messageId,threadId:id,messageId,text})
-it.each([{cliVersion:'1.0.4'},{protocolVersion:2}])('rejects a client older than the verified version, or another protocol, before authentication (%j)',async script=>{
+it.each([
+ {script:{cliVersion:'1.0.4'},says:'Grok CLI 1.0.5 or newer is required, and this client is 1.0.4.'},
+ {script:{protocolVersion:2},says:'Sotto speaks ACP 1, and this client answered ACP 2.'},
+])('refuses a client older than the verified version, or another protocol, before authentication, and names which (%j)',async({script,says})=>{
  f=await grokFixture();await f.script(script)
- await expect(f.host.connect()).rejects.toThrow('requires Grok CLI 1.0.5 or newer, ACP 1')
+ const error=await f.host.connect().then(()=>undefined,(reason:Error)=>reason)
+ expect(error?.message).toBe(`Could not connect Grok. ${says}`)
+ // The refusal is the one case retrying cannot change, so it does not invite another press.
+ expect(error?.message).not.toContain('Connect again to retry.')
  expect((await f.driver.requests()).some(request=>request.method==='authenticate')).toBe(false)
 })
-it('connects to a client newer than the verified version and says which version is running (ADR-0020)',async()=>{
+it('connects to a client newer than the verified version and says which version is running (ADR-0021)',async()=>{
  f=await grokFixture();await f.script({cliVersion:'1.0.40'})
  const snapshot=await f.host.connect()
  expect(snapshot.connected).toBe(true)
@@ -148,4 +154,24 @@ it('closes the proxy barrier when a surviving leader inherits output handles',as
  const id=await setup();await f!.action(id,{type:'inherited-exit'})
  await expect.poll(async()=>(await f!.host.snapshot()).connected).toBe(false)
  await f!.adapter.closed()
+})
+it('reads a page of history larger than a megabyte instead of losing the connection',async()=>{
+ // `_x.ai/session/updates` answers with a whole page of durable history on one line, carrying whatever
+ // that session's tools printed: a real project thread measured 1.5 MB, 2.6 MB and 1.6 MB across three
+ // of its four pages. A transport that failed above a megabyte refused every connection that read one.
+ const id=await setup();await send(id);await f!.driver.completeTurn(id,'Answer')
+ await expect.poll(async()=>(await f!.host.snapshot()).threads[0]!.status).toBe('idle')
+ await f!.script({historyPadBytes:1_200_000})
+ await f!.host.refreshThread(id)
+ const snapshot=await f!.host.snapshot()
+ expect(snapshot.connected).toBe(true)
+ expect(snapshot.threads[0]!.messages.at(-1)!.text).toBe('Answer')
+})
+it('says the connection was lost, and never blames the version, when the client stops answering',async()=>{
+ // The version and the sign-in are what the old wording blamed for every failure, including this one,
+ // where the client had already answered `initialize` with a version Sotto accepts.
+ f=await grokFixture();await f.script({ignoreAuthenticate:true})
+ const error=await f.host.connect().then(()=>undefined,(reason:Error)=>reason)
+ expect(error?.message).toBe('Could not connect Grok. Grok did not acknowledge the operation in time. Connect again to retry.')
+ expect(error?.message).not.toContain('Grok CLI')
 })

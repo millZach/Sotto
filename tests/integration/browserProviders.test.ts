@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowserAgentServer, type BrowserAgentTools } from '../../src/main/agents/browserAgentServer'
+import { browserToolDefinitions } from '../../src/main/tools/browserAgentTools'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { codexFixture } from '../fixtures/codexFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
@@ -16,9 +17,9 @@ const factories: [ProviderId, () => Promise<AdapterFixture>][] = [['codex', code
 describe.each(factories)('%s shared browser transport', (provider, factory) => {
   it('injects browser tools into the native thread and binds admission to the Sotto ID', async () => {
     const fixture = await factory(); cleanup.push(fixture.cleanup)
-    const server = new BrowserAgentServer([], async () => ({ content: [] })); cleanup.push(() => server.close())
+    const server = new BrowserAgentServer(browserToolDefinitions, async () => ({ content: [] })); cleanup.push(() => server.close())
     const mcpServer = vi.fn(server.mcpServer.bind(server))
-    const tools: BrowserAgentTools = { definitions: [], call: server.call.bind(server), mcpServer }
+    const tools: BrowserAgentTools = { definitions: browserToolDefinitions, call: server.call.bind(server), mcpServer }
     const registry = new ThreadRegistry(fixture.root)
     const host = new SottoThreadHost(provider, fixture.host, registry)
     host.useBrowserTools(tools)
@@ -40,12 +41,15 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     const endpoint = await server.mcpServer(threadId)
     const records = await fixture.driver.requests()
     if (provider === 'codex') {
-      expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
+      // The browser's own tools carry no native prompt; Tools still asks for every page action.
+      expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, default_tools_approval_mode: 'auto', http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch?.params?.frame as { args: string[] }).args
       expect(JSON.parse(args[args.indexOf('--mcp-config') + 1]!)).toMatchObject({ mcpServers: { sotto_browser: { url: endpoint.url } } })
-      expect(args).not.toContain('--allowedTools')
+      // The browser's own tools carry no native prompt; Tools still asks for every page action.
+      const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
+      expect(allowed).toEqual(browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`))
     } else {
       const servers = records.filter(record => record.method === 'session/new').map(record => record.params?.mcpServers).find(value => Array.isArray(value) && value.length) as unknown[]
       expect(servers).toHaveLength(1)

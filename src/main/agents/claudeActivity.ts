@@ -36,8 +36,12 @@ export class ClaudeActivity {
         rows.push({ ...(old ?? { id: `claude-agent-model-${parentTool}`, turnId, sequence: 0, kind: 'subagent', title: agent.title ?? 'Subagent', status: 'unknown' }), agents: [agent] })
       }
     }
+    // A live stream frame carries no timestamp of its own, so the moment Sotto received it is the only
+    // start there is; `observedAt` already prefers the provider's own time where a replayed frame has one.
+    // Replay without a timestamp still records nothing, because a transcript must not be given a clock
+    // it never had. Codex has timed its running rows this way since `codexActivity` was written.
     const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
-      ...(typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) ? { startedAt: new Date(frame.timestamp).toISOString(), timingSource: 'provider' as const } : {}),
+      ...(observedAt ? { startedAt: observedAt, timingSource: typeof frame.timestamp === 'string' ? ('provider' as const) : ('observed' as const) } : {}),
       ...(typeof frame.parent_tool_use_id === 'string' ? { parentId: `claude-tool-${frame.parent_tool_use_id}` } : {}) }
     const tool = (block: ClaudeFrame): void => {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return

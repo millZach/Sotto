@@ -2,11 +2,46 @@ import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 import { object, type ClaudeFrame } from './claudeProtocol'
+import { BROWSER_MCP_SERVER } from './browserAgentServer'
 
 const questionSchema = z.object({ question: z.string().min(1), header: z.string().optional(), multiSelect: z.boolean().optional(),
   options: z.array(z.object({ label: z.string(), description: z.string().optional() })).optional() })
 const questionsSchema = z.object({ questions: z.array(questionSchema).min(1).max(20) })
 export interface ClaudePending { id: string; tool: string; input: ClaudeFrame; request: AgentRequest; questions?: z.infer<typeof questionSchema>[]; resumeDialog?: boolean }
+/**
+ * Sotto's own browser tools, said in the words the user would use. A native tool carries no
+ * description in the frame it asks with, so without this the card is the tool's name and its
+ * arguments and nothing else. Sotto owns these six names and can say honestly what each would do;
+ * a tool from anyone else's server keeps the name it came with, because Sotto cannot describe it.
+ */
+function browserAction(action: ClaudeFrame): string {
+  const url = typeof action.url === 'string' ? action.url : ''
+  if (action.type === 'inspect') return 'look at the page'
+  if (action.type === 'screenshot') return 'take a picture of the page'
+  if (action.type === 'navigate') return url ? 'go to ' + url : 'go to another page'
+  if (action.type === 'click') return 'click in the page'
+  if (action.type === 'type') return 'type into the page'
+  if (action.type === 'scroll') return 'scroll the page'
+  if (action.type === 'viewport') return 'change the page size'
+  return 'work in the page'
+}
+export function browserRequestText(tool: string, input: ClaudeFrame): string | undefined {
+  const prefix = 'mcp__' + BROWSER_MCP_SERVER + '__'
+  const name = tool.startsWith(prefix) ? tool.slice(prefix.length) : ''
+  const url = typeof input.url === 'string' ? input.url : ''
+  const said = name === 'browser_pages' ? 'list the pages this thread has open'
+    : name === 'browser_status' ? 'check how its browser task is going'
+      : name === 'browser_start' ? 'start a browser task on a page you shared'
+        : name === 'browser_open' ? url ? 'open ' + url : 'open a page'
+          : name === 'browser_action' ? browserAction(object(input.action) ?? {})
+            : name === 'browser_finish' ? 'finish its browser task as ' + (input.status === 'failed' ? 'failed' : 'done')
+              : ''
+  if (!said) return undefined
+  const why = typeof input.description === 'string' && input.description.trim() ? '\n“' + input.description.trim() + '”' : ''
+  // Answering here only lets it reach the browser. Every page action asks again in Tools (ADR-0020).
+  return 'Use Sotto’s browser to ' + said + '.' + why + '\nOpening a page, going to another, clicking and typing still ask you in Tools.'
+}
+
 export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
   const data = object(frame.request)
   if (typeof frame.request_id === 'string' && data?.subtype === 'request_user_dialog' && data.dialog_kind === 'resume_return') {
@@ -33,7 +68,7 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
   }
   const description = typeof data.description === 'string' ? data.description : typeof input.description === 'string' ? input.description : ''
   return { id: frame.request_id, tool: data.tool_name, input,
-    request: { id: frame.request_id, kind: 'permission', text: `${data.tool_name}${description ? `: ${description}` : ''}\n${JSON.stringify(input)}`, options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }],
+    request: { id: frame.request_id, kind: 'permission', text: browserRequestText(data.tool_name, input) ?? `${data.tool_name}${description ? `: ${description}` : ''}\n${JSON.stringify(input)}`, options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }],
       permissionChoices: [{ id: 'allow', label: 'Allow once', kind: 'allow-once' }, { id: 'deny', label: 'Deny', kind: 'deny' }],
       context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}), ...(typeof input.command === 'string' ? { command: input.command } : {}), details: JSON.stringify(input).slice(0, 100000) } } }
 }
