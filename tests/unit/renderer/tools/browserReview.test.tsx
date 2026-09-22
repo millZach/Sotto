@@ -22,7 +22,7 @@ function fake(initial: BrowserTask[] = [task()]) {
     create: vi.fn(async () => ok(page)), navigate: vi.fn(async () => ok(page)), back: vi.fn(async () => ok(page)), forward: vi.fn(async () => ok(page)), reload: vi.fn(async () => ok(page)), close: vi.fn(async () => ok(undefined)), mount: vi.fn(async () => ok(undefined)),
     share: vi.fn(async () => ok(page)), viewport: vi.fn(async () => ok(page)), capture: vi.fn(async () => ok(capture)),
     controlTask: vi.fn(async request => ok(task({ status: request.control === 'pause' ? 'paused' : 'working', updatedAt: Date.now() }))),
-    answerAction: vi.fn(async () => ok(task())), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
+    answerAction: vi.fn(async () => ok(task())), revokePageOpening: vi.fn(async () => ok(undefined)), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
     onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
   }
   return { bridge, emit: (event: BrowserEvent) => listeners.forEach(listener => listener(event)) }
@@ -32,13 +32,33 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 describe('the shared browser preview', () => {
   it('opens the retained task page in Tools even when another thread was pinned', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); store.pin('another-thread')
-    render(<><button id="tools-tab-browser">Browser</button><BrowserTaskPreview state={threadsStateFixture()} focusedThreadId="another-thread" bridge={browser.bridge} store={store} /></>)
+    render(<><button id="tools-tab-browser">Browser</button><BrowserTaskPreview state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} /></>)
     fireEvent.click(await screen.findByRole('button', { name: /Open browser task in Tools/ }))
     await waitFor(() => expect(store.getSnapshot()).toMatchObject({ open: true, surface: 'browser', pinnedThreadId: 'visual-gate' }))
     expect(store.browser.thread('visual-gate')?.activePageId).toBe(page.id)
     expect(browser.bridge.create).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Browser', exact: true })).toHaveFocus())
     expect(screen.queryByRole('button', { name: /Open browser task in Tools/ })).not.toBeInTheDocument()
+  })
+  it('shows only the focused thread’s task, or the pinned Tools thread’s, never another thread’s', async () => {
+    const browser = fake(); const store = new ToolsPanelStore()
+    const { rerender } = render(<BrowserTaskPreview state={threadsStateFixture()} focusedThreadId="another-thread" bridge={browser.bridge} store={store} />)
+    await waitFor(() => expect(store.browser.taskSnapshot()).toHaveLength(1))
+    expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
+    act(() => store.pin('visual-gate'))
+    expect(screen.getByRole('complementary', { name: /Browser preview/ })).toBeInTheDocument()
+    act(() => store.unpin())
+    expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
+    rerender(<BrowserTaskPreview state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} />)
+    expect(screen.getByRole('complementary', { name: /Browser preview/ })).toBeInTheDocument()
+  })
+  it('shows nothing when previews are turned off, and still collects tasks for Tools', async () => {
+    const browser = fake(); const store = new ToolsPanelStore()
+    render(<BrowserTaskPreview state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} enabled={false} />)
+    await waitFor(() => expect(store.browser.taskSnapshot()).toHaveLength(1))
+    expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
+    act(() => browser.emit({ type: 'task', task: task({ id: '33333333-3333-4333-8333-333333333333', updatedAt: 3, pendingAction: { id: '44444444-4444-4444-8444-444444444444', action: { type: 'click', x: 1, y: 1 }, description: 'Click', expiresAt: Date.now() + 1000 } }) }))
+    expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
   })
   it('dismisses one task without pausing and keeps it dismissed across progress updates', async () => {
     const browser = fake(); const store = new ToolsPanelStore()
@@ -72,8 +92,20 @@ describe('the shared browser preview', () => {
     render(<BrowserTaskDetails task={pending} bridge={browser.bridge} store={store.browser} />)
     expect(screen.getByText('Not checked: Saving')).toBeInTheDocument()
     expect(browser.bridge.answerAction).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Allow this thread to open pages' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     await waitFor(() => expect(browser.bridge.answerAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: pending.pendingAction!.id, allow: true })))
+    expect(vi.mocked(browser.bridge.answerAction).mock.calls[0]![0]).not.toHaveProperty('forThread')
+  })
+  it('offers the thread-wide answer for opening a page, and gives it only when that button is pressed', async () => {
+    const browser = fake(); const store = new ToolsPanelStore()
+    const opening = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'navigate', url: 'http://localhost:5173/' }, description: 'Open and share this page with the thread: http://localhost:5173/', expiresAt: Date.now() + 10000 } })
+    render(<BrowserTaskDetails task={opening} bridge={browser.bridge} store={store.browser} />)
+    const group = screen.getByRole('group', { name: 'Browser action permission' })
+    expect([...group.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Allow once', 'Allow this thread to open pages', 'Deny'])
+    expect(browser.bridge.answerAction).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow this thread to open pages' }))
+    await waitFor(() => expect(browser.bridge.answerAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: opening.pendingAction!.id, allow: true, forThread: true })))
   })
 })
 

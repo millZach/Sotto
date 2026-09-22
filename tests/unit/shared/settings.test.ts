@@ -29,6 +29,7 @@ const customSettings = {
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
+  showBrowserPreviews: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -73,6 +74,11 @@ describe('settings', () => {
       .toMatchObject({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } })
     expect(parseSettings({ threadWorkingCopyDefault: 'unknown', projectThreadWorkingCopyDefaults: { project: 'unknown' } }))
       .toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
+  })
+  it('shows browser previews for older profiles, keeps them off once turned off, and recovers an unusable value', () => {
+    expect(parseSettings({}).showBrowserPreviews).toBe(true)
+    expect(parseSettings({ showBrowserPreviews: false }).showBrowserPreviews).toBe(false)
+    expect(parseSettings({ showBrowserPreviews: 'no' }).showBrowserPreviews).toBe(true)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -169,6 +175,7 @@ describe('settings', () => {
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',
+      showBrowserPreviews: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',

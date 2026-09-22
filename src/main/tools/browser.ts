@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
 import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
-import { toolListRequestSchema } from '../../shared/tools'
+import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
+import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserAutomation } from './browserAutomation'
+import { PageOpeningGrants } from './browserGrants'
 import { ToolOperations, fail, parse, workspace } from './common'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
@@ -26,6 +28,8 @@ export class BrowserService extends ToolOperations {
   private readonly executing = new Set<string>()
   private readonly taskListeners = new Set<() => void>()
   private readonly captureLeases = new Map<PageRecord, CaptureLease>()
+  /** The user's per-thread answers that let opens and navigations run without asking again (ADR-0020, amended). */
+  private readonly pageOpening = new PageOpeningGrants()
   private mounted: { record: PageRecord; window: BrowserWindow; cleanup(): void } | null = null
   private mountVersion = 0
   private desiredPageId: string | null = null
@@ -69,14 +73,34 @@ export class BrowserService extends ToolOperations {
     this.sessions.set(workspaceId, isolated)
     return isolated
   }
+  /** The thread's working copy. A thread Sotto no longer lists takes its page-opening grant with it. */
+  private async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
+    try { return await workspace(this.dependencies.files, threadId, expected) }
+    catch (error) {
+      if ((error as { code?: string }).code === 'thread-unavailable') this.endPageOpening(threadId)
+      throw error
+    }
+  }
+  private pageOpeningView(threadId: string): { grantedAt: number } | null {
+    const grant = this.pageOpening.active(threadId)
+    return grant ? { grantedAt: grant.grantedAt } : null
+  }
+  private endPageOpening(threadId: string): void {
+    if (this.pageOpening.revoke(threadId) && !this.disposed) this.dependencies.emit({ type: 'page-opening', threadId, pageOpening: null })
+  }
   list(payload: unknown) { return this.run(async () => {
     const request = parse(toolListRequestSchema, payload)
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => ({ ...record.page })) }
+    const owner = await this.owner(request.threadId, request.workspaceId)
+    return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => ({ ...record.page })), pageOpening: this.pageOpeningView(owner.threadId) }
+  }) }
+  /** The user's Stop: the thread's opens and navigations ask again. Revoking is always allowed, even for a thread that has gone. */
+  revokePageOpening(payload: unknown) { return this.run(async () => {
+    const request = parse(toolTargetSchema, payload)
+    this.endPageOpening(request.threadId)
   }) }
   create(payload: unknown) { return this.run(async () => this.createPage(parse(browserCreateSchema, payload))) }
   private async createPage(request: ReturnType<typeof browserCreateSchema.parse>, initial = false): Promise<BrowserPage> {
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    const owner = await this.owner(request.threadId, request.workspaceId)
     if (this.disposed) return fail('unavailable', 'Browser is shutting down.')
     if (this.pages.size >= 32) return fail('busy', 'Close a browser page before opening another (32 maximum).')
     const view = new WebContentsView({ webPreferences: {
@@ -159,7 +183,7 @@ export class BrowserService extends ToolOperations {
   private async owned(request: ReturnType<typeof browserRequestSchema.parse>, validateDirectory = true): Promise<PageRecord> {
     const record = this.pages.get(request.pageId)
     if (!record || record.page.workspace.threadId !== request.threadId || record.page.workspace.workspaceId !== request.workspaceId) return fail('page-unavailable', 'This page belongs to another workspace or was closed.')
-    if (validateDirectory) await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    if (validateDirectory) await this.owner(request.threadId, request.workspaceId)
     if (this.disposed || !this.pages.has(request.pageId) || record.view.webContents.isDestroyed()) return fail('page-unavailable', 'This browser page has closed.')
     return record
   }
@@ -364,7 +388,7 @@ export class BrowserService extends ToolOperations {
   }
   tasks(payload: unknown) { return this.run(async () => {
     const request = parse(toolListRequestSchema, payload)
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    const owner = await this.owner(request.threadId, request.workspaceId)
     const tasks = [...this.taskRecords.values()].filter(task => task.threadId === owner.threadId && task.workspaceId === owner.workspaceId)
     for (const task of tasks) if (task.pendingAction && task.pendingAction.expiresAt < Date.now()) {
       task.pendingAction = null; this.pending.delete(task.id); task.output = 'This browser action expired. Request it again.'; this.publishTask(task)
@@ -456,6 +480,8 @@ export class BrowserService extends ToolOperations {
     this.working(task)
     if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
     if (!record.initial) this.shared(record)
+    // A page-opening grant answers opens and navigations only, exactly as the user's own answer would have.
+    if (action.type === 'navigate' && this.pageOpening.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, undefined, true)
     const description = action.type === 'navigate' ? `${record.initial ? 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}` : action.type === 'click' ? `Click at ${action.x}, ${action.y} on ${record.page.url}` : action.type === 'type' ? `Type ${JSON.stringify(action.text)} into the focused field on ${record.page.url}` : action.type
     task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000 }
     this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}) })
@@ -487,13 +513,19 @@ export class BrowserService extends ToolOperations {
     const task = this.task(request), pending = task.pendingAction, scope = this.pending.get(task.id)
     this.working(task)
     if (!pending || pending.id !== request.actionId || !scope || pending.expiresAt < Date.now() || scope.generation !== record.generation || scope.url !== record.page.url) return fail('blocked', 'This browser request changed or expired. Ask the agent to try again.')
+    if (request.forThread && (!request.allow || pending.action.type !== 'navigate')) return fail('blocked', 'Only a request to open a page can be allowed for the whole thread. Answer this one once.')
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     task.pendingAction = null; this.pending.delete(task.id)
     if (!request.allow) { task.output = 'The user declined this action.'; return this.publishTask(task) }
+    if (request.forThread) {
+      const threadId = record.page.workspace.threadId
+      const grant = this.pageOpening.grant(threadId)
+      this.dependencies.emit({ type: 'page-opening', threadId, pageOpening: { grantedAt: grant.grantedAt } })
+    }
     const result = await this.perform(record, task, pending.action, scope.initial, scope.target)
     return result.task
   }) }
-  private async perform(record: PageRecord, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string): Promise<BrowserAgentResult> {
+  private async perform(record: PageRecord, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string, granted = false): Promise<BrowserAgentResult> {
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     this.executing.add(record.page.id)
     const generation = record.generation
@@ -511,7 +543,7 @@ export class BrowserService extends ToolOperations {
       let output = '', image: string | undefined
       if (action.type === 'navigate') {
         record.initial = false
-        // Only an explicit Open and share answer creates an observation grant.
+        // Only an explicit Open and share answer, or the page-opening grant that answer can leave, shares the page.
         if (initial) record.page.sharedOrigin = new URL(action.url).origin
         this.load(record, action.url)
         if (record.page.sharedOrigin) record.automation.observe()
@@ -535,7 +567,7 @@ export class BrowserService extends ToolOperations {
       if (action.type !== 'navigate') guard(action.type === 'inspect' || action.type === 'screenshot')
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       task.output = output
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? 'Entered text in the focused field.' : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? 'Entered text in the focused field.' : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output} Not asked: you let this thread open pages.` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {
@@ -584,6 +616,7 @@ export class BrowserService extends ToolOperations {
     }
     this.sessions.clear()
     this.taskRecords.clear(); this.pending.clear()
+    this.pageOpening.clear()
     for (const listener of this.taskListeners) listener()
     this.taskListeners.clear()
   }

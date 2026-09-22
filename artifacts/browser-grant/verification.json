@@ -1,0 +1,9 @@
+{
+  "grantedOpenWithoutAsking": true,
+  "navigateWithoutAsking": true,
+  "clickStillAsked": true,
+  "stopAskedAgain": true,
+  "otherThreadPreviewHidden": true,
+  "previewsOffHidden": true,
+  "errors": []
+}

@@ -27,7 +27,7 @@ function fakeBrowser(initial: BrowserPage[] = []) {
     share: vi.fn(async ({ pageId, enabled }) => ok(page(pageId, { sharedOrigin: enabled ? 'http://localhost:5173' : null }))),
     viewport: vi.fn(async request => ok(page(request.pageId, { viewport: 'reset' in request ? null : { width: request.width, height: request.height } }))),
     capture: vi.fn(async () => ok({ image: 'data:image/png;base64,YWJj', url: 'http://localhost:5173/', width: 1280, height: 800, element: null })),
-    controlTask: vi.fn(), answerAction: vi.fn(),
+    controlTask: vi.fn(), answerAction: vi.fn(), revokePageOpening: vi.fn(async () => ok(undefined)),
     list: vi.fn(async () => ok({ workspace, pages })),
     create: vi.fn(async ({ url }) => { const created = page(pages.length ? PAGE_2 : PAGE_1, { url, title: '', status: 'loading' }); pages = [...pages, created]; return ok(created) }),
     navigate: vi.fn(async ({ pageId, url }) => ok(page(pageId, { url, canGoBack: true }))),
@@ -146,6 +146,32 @@ describe('Browser surface', () => {
     await userEvent.click(within(panel()).getByRole('button', { name: 'Close page: Vite App' }))
     expect(browser.bridge.close).toHaveBeenCalledWith({ ...target, pageId: PAGE_1 })
     expect(await within(panel()).findByText('Open a page')).toBeInTheDocument()
+  })
+})
+
+describe('page-opening grant', () => {
+  it('says the thread may open pages without asking, and Stop ends it and returns focus to the address', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], pageOpening: { grantedAt: 1 } }))
+    setup(browser)
+    const stop = await within(panel()).findByRole('button', { name: 'Stop letting this thread open pages without asking' })
+    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+    fireEvent.click(stop)
+    await waitFor(() => expect(browser.bridge.revokePageOpening).toHaveBeenCalledWith(target))
+    await waitFor(() => expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument())
+    await waitFor(() => expect(within(panel()).getByRole('textbox', { name: 'Address' })).toHaveFocus())
+  })
+  it('follows main when the answer is given or ends elsewhere', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    setup(browser)
+    await within(panel()).findByRole('tab', { name: 'Vite App' })
+    expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument()
+    act(() => browser.emit({ type: 'page-opening', threadId: 'visual-gate', pageOpening: { grantedAt: 2 } }))
+    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+    act(() => browser.emit({ type: 'page-opening', threadId: 'another-thread', pageOpening: null }))
+    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+    act(() => browser.emit({ type: 'page-opening', threadId: 'visual-gate', pageOpening: null }))
+    expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument()
   })
 })
 

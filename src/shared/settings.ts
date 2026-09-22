@@ -95,6 +95,8 @@ export interface AppSettings {
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
+  /** Whether a browser task introduces itself in the corner of the Threads page. Off hides only the preview; the work and Tools > Browser carry on. */
+  showBrowserPreviews: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -181,6 +183,7 @@ const fieldSchemas = {
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
+  showBrowserPreviews: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -241,6 +244,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
+  showBrowserPreviews: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -333,6 +337,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
+    showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

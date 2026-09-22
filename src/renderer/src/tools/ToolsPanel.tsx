@@ -176,6 +176,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const browserBridge = browser ?? bridgeBrowser()
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   const platform = bridgePlatform()
+  const showBrowserPreviews = useOptionalAgents()?.showBrowserPreviews !== false
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
   const threadFiles = useThreadFiles(store.files, thread ? target : null)
@@ -234,7 +235,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     wasOpen.current = open
   }, [open, chrome.surface])
 
-  const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} />
+  const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} enabled={showBrowserPreviews} />
   if (!open) return preview
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
