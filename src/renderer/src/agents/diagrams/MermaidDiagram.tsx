@@ -20,27 +20,49 @@ interface Settled { readonly code: string; readonly result: DiagramRenderResult 
 // Mermaid is a large module; it loads the first time an answer holds a drawable diagram.
 const loadDiagramRenderer = (): Promise<{ renderDiagram: (code: string, palette: DiagramPalette) => Promise<DiagramRenderResult> }> => import('./diagramRenderer')
 
+/**
+ * The drawings already made, readable during render. The renderer's own cache holds promises inside a
+ * lazily loaded module, so without this a diagram drawn a moment ago would mount as its source and
+ * "Drawing…" for a commit before the image, on every thread switch and remount, and the transcript
+ * would lay out twice. Only drawings are kept: a failure or a slow render still asks the renderer again.
+ */
+const drawn = new Map<string, Drawing>()
+const MAX_DRAWN = 24
+const drawnKey = (palette: DiagramPalette, code: string): string => `${JSON.stringify(palette)}\n${code}`
+function rememberDrawing(key: string, result: DiagramRenderResult): void {
+  if (!result.ok) return
+  drawn.delete(key)
+  drawn.set(key, result)
+  if (drawn.size > MAX_DRAWN) drawn.delete(drawn.keys().next().value!)
+}
+
 /** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
 export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
   const inspection = useMemo(() => inspectDiagramSource(source), [source])
   const palette = useDiagramPalette()
-  const [settled, setSettled] = useState<Settled | null>(null)
+  const drawable = complete && !inspection.problem
+  const [settled, setSettled] = useState<Settled | null>(() => {
+    const hit = drawable ? drawn.get(drawnKey(palette, inspection.code)) : undefined
+    return hit === undefined ? null : { code: inspection.code, result: hit }
+  })
   const [showSource, setShowSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [feedback, showFeedback] = useTransientFlag()
   const expandButton = useRef<HTMLButtonElement>(null)
   const noticeId = useId()
   const descriptionId = useId()
-  const drawable = complete && !inspection.problem
 
   useEffect(() => {
     if (!drawable) return
     let live = true
     const code = inspection.code
+    const key = drawnKey(palette, code)
     void loadDiagramRenderer()
       .then(renderer => renderer.renderDiagram(code, palette))
+      .then(result => { rememberDrawing(key, result); return result })
       .catch((): DiagramRenderResult => ({ ok: false, reason: 'The diagram renderer could not load.' }))
-      .then(result => { if (live) setSettled({ code, result }) })
+      // A diagram that mounted drawn gets the same cached result back, and that confirmation is not a commit.
+      .then(result => { if (live) setSettled(current => current?.code === code && current.result === result ? current : { code, result }) })
     return () => { live = false }
   }, [drawable, inspection.code, palette])
 

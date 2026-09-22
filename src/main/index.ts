@@ -121,7 +121,7 @@ import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { enableWasmThreadSupport } from './security'
 import {
-  loadVerifiedRuntimeSource,
+  beginRuntimeVerification,
   registerLocalAssetProtocols,
   registerModelSchemesAsPrivileged,
 } from './models/modelProtocol'
@@ -157,7 +157,6 @@ import { registerAgentIpc } from './agents/ipc'
 import { LocalHostService, type HostService } from './agents/hostService'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
-import { resolveFilesBinding } from './files/binding'
 import { registerToolsIpc } from './tools/ipc'
 import { registerThemesIpc } from './themes/ipc'
 import { OpenVsxClient } from './themes/openVsx'
@@ -477,6 +476,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  // The runtime's hash starts here so it overlaps the stores loading below rather than following them.
+  // It is awaited where it always was, before any window, and a tampered runtime still fails startup.
+  const runtimeVerification = e2eConfiguration === null
+    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
+    : null
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
@@ -725,9 +729,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     // reload/devtools accelerators the app ships with today.
     Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
-  const runtimeSource = e2eConfiguration === null
-    ? await loadVerifiedRuntimeSource(join(resourceRoot, 'runtime'))
-    : null
+  const runtimeSource = runtimeVerification === null ? null : await runtimeVerification
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const pasteCommands = createPasteCommands(platform)
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
@@ -999,7 +1001,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupChatPrompts = registerChatPromptIpc(ipcMain, chatPrompts, () => windows.getTrustedRenderers(), text => clipboard.writeText(text))
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
-        resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
+        resolveBinding: threadId => agentControl.filesBinding(threadId),
         copyPath: path => clipboard.writeText(path),
         reveal: path => shell.showItemInFolder(path),
       })
@@ -1012,7 +1014,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         writeCommitMessage: commitMessageWriter(shortTextWriter, () => settings.forFormatting()),
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
-        projects: () => agentControl.get().host.projects, git: runWorktreeGit,
+        projects: () => agentControl.projects(), git: runWorktreeGit,
         worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
         emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
       }), () => windows.getTrustedRenderers())

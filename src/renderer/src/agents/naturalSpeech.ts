@@ -1,16 +1,16 @@
 /// <reference lib="dom" />
 import type { AgentBridge, AgentConfiguration } from '../../../shared/agents'
-import { NativeSystemSpeech } from './voiceSpeech'
+import { NativeSystemSpeech, type SynthesizedSpeech } from './voiceSpeech'
 
 /** One reusable local worker; neither reply text nor audio is sent to a provider. */
 export class NaturalSpeechSynthesizer {
   private worker: Worker | null = null
   private nextId = 0
   private generation = 0
-  private readonly pending = new Map<number, { resolve(value: { audioBase64: string; mimeType: 'audio/wav' }): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>()
+  private readonly pending = new Map<number, { resolve(value: SynthesizedSpeech): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>()
   constructor(private readonly model: NonNullable<AgentBridge['voiceModel']>) {}
 
-  async synthesize(text: string, voice: AgentConfiguration['speechVoice']): Promise<{ audioBase64: string; mimeType: 'audio/wav' }> {
+  async synthesize(text: string, voice: AgentConfiguration['speechVoice']): Promise<SynthesizedSpeech> {
     const generation = this.generation
     if (!(await this.model('status')).ready) throw new Error('Download the natural voice in Agent connection settings, then preview it.')
     if (generation !== this.generation) throw new Error('Speech was stopped.')
@@ -23,12 +23,9 @@ export class NaturalSpeechSynthesizer {
         clearTimeout(request.timer)
         this.pending.delete(message.id)
         if (message.audio === undefined) request.reject(new Error(message.error ?? 'Natural speech could not be generated. Preview the voice and try again.'))
-        else {
-          const bytes = new Uint8Array(message.audio)
-          let binary = ''
-          for (let offset = 0; offset < bytes.length; offset += 16_384) binary += String.fromCharCode(...bytes.subarray(offset, offset + 16_384))
-          request.resolve({ audioBase64: btoa(binary), mimeType: 'audio/wav' })
-        }
+        // The worker transferred this buffer, so the window owns it outright and it plays as it is: encoding
+        // it to base64 only for playback to decode it straight back cost about 80 ms per MB.
+        else request.resolve({ audio: message.audio, mimeType: 'audio/wav' })
       }
       this.worker.onerror = () => this.dispose('Natural speech stopped. Preview the voice to load it again.')
     }
