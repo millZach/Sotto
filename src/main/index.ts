@@ -157,7 +157,6 @@ import { registerAgentIpc } from './agents/ipc'
 import { LocalHostService, type HostService } from './agents/hostService'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
-import { resolveFilesBinding } from './files/binding'
 import { registerToolsIpc } from './tools/ipc'
 import { registerThemesIpc } from './themes/ipc'
 import { OpenVsxClient } from './themes/openVsx'
@@ -999,7 +998,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupChatPrompts = registerChatPromptIpc(ipcMain, chatPrompts, () => windows.getTrustedRenderers(), text => clipboard.writeText(text))
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
-        resolveBinding: threadId => resolveFilesBinding(agentControl.get().host, threadId),
+        resolveBinding: threadId => agentControl.filesBinding(threadId),
         copyPath: path => clipboard.writeText(path),
         reveal: path => shell.showItemInFolder(path),
       })
@@ -1012,7 +1011,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         writeCommitMessage: commitMessageWriter(shortTextWriter, () => settings.forFormatting()),
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
-        projects: () => agentControl.get().host.projects, git: runWorktreeGit,
+        projects: () => agentControl.projects(), git: runWorktreeGit,
         worktrees: new ThreadWorktrees(userDataPath, runWorktreeGit, TERMINAL_WORKTREE_HOME),
         emit: event => { windows.sendToMain(TERMINALS_EVENT, event) },
       }), () => windows.getTrustedRenderers())

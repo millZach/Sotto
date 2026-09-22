@@ -9,7 +9,7 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -30,6 +30,8 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
+import { resolveFilesBinding } from '../files/binding'
+import type { FilesBinding } from '../files/service'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -344,6 +346,14 @@ export class AgentControl {
       || this.state.assignments.some(item => item.threadId === threadId && item.mode === 'managed' && !item.paused)
       || (this.state.deliveries ?? []).some(item => item.threadId === threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))
   }
+  /**
+   * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
+   * ask this several times per listing and every couple of seconds per watched workspace; answering from
+   * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
+   */
+  filesBinding(threadId: string): FilesBinding | null { return resolveFilesBinding(this.state.host, threadId) }
+  /** The projects alone, as a copy, for callers that need nothing else from the state. */
+  projects(): AgentProject[] { return structuredClone(this.state.host.projects) }
   get(): AgentState {
     const state = structuredClone(this.state)
     state.threadDraftPersistence = this.draftPersistence()
