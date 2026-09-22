@@ -203,8 +203,8 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
 
 /**
  * Whether a browser origin may speak to a local socket. Loopback over http, plus whatever the user
- * configured, and nothing else — an origin check belongs on the local socket too (ADR-0016). Nothing
- * calls this yet; it is here so the first socket has it rather than adds it.
+ * configured, and nothing else — an origin check belongs on the local socket too (ADR-0016). The host
+ * listener in `src/host/socketServer.ts` asks it on every HTTP request and upgrade that carries an origin.
  */
 export function originAllowed(origin: string | undefined, configured: readonly string[] = []): boolean {
   if (!origin) return false
