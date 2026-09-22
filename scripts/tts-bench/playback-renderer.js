@@ -48,7 +48,16 @@ window.runPlaybackTrial = async options => {
   owner.settledMs = performance.now()
   clearTimeout(stopTimer)
   if (player) owner.pausedAfter = player.paused
+  // The natural voice resolves with the worker's ArrayBuffer, which page.evaluate cannot
+  // return. Encode it here, after playback, so the cost stays out of the measured latency.
+  if (owner.audio && 'audio' in owner.audio) owner.audio = { audioBase64: toBase64(owner.audio.audio), mimeType: owner.audio.mimeType }
   return owner
+}
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return window.btoa(binary)
 }
 window.stopPlayback = () => { const stopMs = performance.now(); output.stop(); return stopMs }
 window.benchmarkReady = true
