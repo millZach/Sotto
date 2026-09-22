@@ -17,7 +17,8 @@ export class SocketFrames {
   }
   feed(data: Buffer): void { if (data.length) this.receive(data) }
   onClose(listener: () => void): () => void { this.closedListeners.add(listener); return () => this.closedListeners.delete(listener) }
-  send(value: unknown): boolean { return this.write(1, Buffer.from(JSON.stringify(value))) }
+  send(value: unknown): boolean { return this.sendText(JSON.stringify(value)) }
+  sendText(text: string): boolean { return this.write(1, Buffer.from(text)) }
   close(): void { if (!this.ended) { this.stream.destroy(); this.closed() } }
   private closed(): void {
     if (this.ended) return

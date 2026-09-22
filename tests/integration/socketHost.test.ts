@@ -132,16 +132,18 @@ describe('socket client isolation and reconnect', () => {
     const firstDetails: string[] = [], secondDetails: string[] = []
     first.client.subscribeThreadDetail(detail => firstDetails.push(detail.threadId))
     second.client.subscribeThreadDetail(detail => secondDetails.push(detail.threadId))
-    await first.client.command({ type: 'rename-thread', threadId: firstId, title: 'Changed first' })
-    await expect.poll(() => secondDetails.length).toBeGreaterThan(0)
-    expect(firstDetails).toContain(firstId); expect(firstDetails).not.toContain(secondId)
-    expect(secondDetails).toContain(secondId); expect(secondDetails).not.toContain(firstId)
+    // A thread's history reaches only the clients observing it, when it changes.
+    await first.client.command({ type: 'manual-send', threadId: firstId, draftId: randomUUID(), text: 'Synthetic first prompt' })
+    await expect.poll(() => firstDetails).toContain(firstId)
+    await second.client.command({ type: 'manual-send', threadId: secondId, draftId: randomUUID(), text: 'Synthetic second prompt' })
+    await expect.poll(() => secondDetails).toContain(secondId)
+    expect(firstDetails).not.toContain(secondId); expect(secondDetails).not.toContain(firstId)
     expect((await first.client.readShell()).activeThreadId).toBe(firstId)
     expect((await second.client.readShell()).activeThreadId).toBe(secondId)
     await first.client.close()
     secondDetails.length = 0
-    await second.client.command({ type: 'rename-thread', threadId: secondId, title: 'Still observed' })
-    expect(secondDetails).toContain(secondId)
+    await second.client.command({ type: 'manual-send', threadId: secondId, draftId: randomUUID(), text: 'Synthetic prompt, still observed' })
+    await expect.poll(() => secondDetails).toContain(secondId)
   })
   it('rechecks session expiry on every operation, even on an already opened socket', async () => {
     let now = Date.now()
@@ -222,5 +224,36 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
     await expect(client.command({ type: 'configure', patch: { enabled: true } })).rejects.toMatchObject({ code: 'busy' })
     for (const resolve of release) resolve()
     await Promise.allSettled(pending)
+  } finally { await client.close(); await server.close() }
+})
+
+it('coalesces a burst of shell changes and answers a thread too large for a frame with an explicit error', async () => {
+  let publish = (): void => undefined
+  const huge = { threadId: 'huge', revision: 1, messages: [{ id: 'm', role: 'assistant' as const, text: 'x'.repeat(17 * 1024 * 1024), createdAt: new Date().toISOString() }] }
+  const service: HostService = {
+    shell: () => host.service.shell(), state: () => host.service.state(),
+    threadDetail: id => id === 'huge' ? huge : host.service.threadDetail(id),
+    command: (command, identity) => host.service.command(command, identity),
+    events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
+    subscribe: listener => { publish = () => listener(host.service.shell()); return () => undefined },
+  }
+  const server = await startSocketServer({ service, pairing: host.pairing })
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Bursts')
+  const pushErrors: string[] = []
+  let connected = true
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onPushError: message => pushErrors.push(message), onConnectionChange: value => { connected = value } }); clients.push(client)
+  try {
+    await client.connect()
+    let shells = 0
+    client.subscribe(() => { shells++ })
+    for (let index = 0; index < 50; index++) publish()
+    await expect.poll(() => shells).toBeGreaterThan(0)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    // One leading push and one trailing push carry the whole burst.
+    expect(shells).toBeLessThanOrEqual(2)
+    await client.observe(['huge'])
+    await expect.poll(() => pushErrors).toEqual([expect.stringContaining('too large to send to this device')])
+    await expect(client.readThreadDetail('huge')).rejects.toMatchObject({ code: 'too_large' })
+    expect(connected).toBe(true)
   } finally { await client.close(); await server.close() }
 })

@@ -4,7 +4,8 @@ import type { Duplex } from 'node:stream'
 import { z } from 'zod'
 import type { HostService, ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
-import { HOST_EVENT_PAGE_SIZE, HOST_SESSION_REJECTED, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
+import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
+import { HOST_EVENT_PAGE_SIZE, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostPush, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
 import type { AgentCommand } from '../shared/agents'
 import { remoteCommandRefusal } from './remoteCommands'
 import { SocketFrames } from './socketFrames'
@@ -16,6 +17,7 @@ const errors: Record<HostErrorCode, string> = {
   forbidden: 'This action is not allowed from this device. Check its permission policy or complete the action on the host.',
   unavailable: 'The host could not complete this request. Refresh the thread before trying again.',
   busy: 'The host has too many pending requests. Wait for them to finish and try again.',
+  too_large: 'A thread on this host is too large to send to this device. Open it on the host machine.',
 }
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
 interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
@@ -60,7 +62,17 @@ export async function startSocketServer(options: SocketServerOptions) {
     return { ...state, activeThreadId: peer.selectedThreadId, activeProjectId: peer.selectedProjectId }
   }
   const authenticated = (peer: Peer): boolean => pairing.verifySession(peer.session) === peer.client.clientId
-  const push = (peer: Peer, value: unknown): void => { if (!authenticated(peer)) peer.frames.close(); else peer.frames.send(value) }
+  /**
+   * Sends one message, or an explicit too_large error in its place when it would not fit in a frame.
+   * Closing the socket instead would only have the client reconnect and be sent the same message again.
+   */
+  const deliver = (peer: Peer, value: HostPush | HostResponse): void => {
+    const text = JSON.stringify(value)
+    if (Buffer.byteLength(text) <= HOST_MAX_FRAME_BYTES) { peer.frames.sendText(text); return }
+    const error = { code: 'too_large' as const, message: errors.too_large }
+    peer.frames.send('event' in value ? { v: 1, event: 'error', ...(value.event === 'detail' ? { threadId: value.threadId } : {}), error } : { v: 1, id: value.id, ok: false, error })
+  }
+  const push = (peer: Peer, value: HostPush): void => { if (!authenticated(peer)) peer.frames.close(); else deliver(peer, value) }
   const events = (afterSeq: number, threadId?: string) => {
     const all = service.events(afterSeq, threadId, HOST_EVENT_PAGE_SIZE + 1), page = all.slice(0, HOST_EVENT_PAGE_SIZE)
     return { events: page, latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
@@ -71,16 +83,22 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const track = <T>(task: Promise<T>): Promise<T> => { operations.add(task); void task.finally(() => operations.delete(task)).catch(() => undefined); return task }
   const detail = (peer: Peer, threadId: string): void => push(peer, { v: 1, event: 'detail', threadId, detail: service.threadDetail(threadId) })
-  const unsubscribe = service.subscribe(() => {
+  // A streaming thread changes the shell many times a second. Pushes go out at most once a window, the
+  // same way the desktop's own IPC coalesces them, and each carries the state as it is when it is sent.
+  // Details come through their own subscription when the service has one, so a shell change resends no history.
+  const detailsFollowShell = service.subscribeThreadDetail === undefined
+  const shellPublisher = coalesceAgentStatePublishes(() => {
     for (const peer of peers) {
       const eventPage = events(peer.afterSeq); peer.afterSeq = eventPage.latestSeq
       push(peer, { v: 1, event: 'shell', state: shell(peer), eventPage })
-      for (const threadId of peer.observed) detail(peer, threadId)
+      if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
     }
   })
-  const unsubscribeDetails = service.subscribeThreadDetail?.(update => {
+  const detailPublisher = coalesceAgentThreadDetailPublishes(update => {
     for (const peer of peers) if (peer.observed.has(update.threadId)) detail(peer, update.threadId)
   })
+  const unsubscribe = service.subscribe(state => shellPublisher.publish(state))
+  const unsubscribeDetails = service.subscribeThreadDetail?.(update => detailPublisher.publish(update))
   /** The permission setting a new or changed thread would start on: its model's first, which asks about everything. */
   const startingProviderMode = (input: AgentCommand): string | undefined => {
     if (input.type !== 'create-thread' && input.type !== 'configure-thread') return undefined
@@ -162,7 +180,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: errors[code] } } }
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else peer.frames.send(response)
+      else deliver(peer, response)
     })().finally(() => { peer.inFlight-- }))
   }
   const bearer = (request: IncomingMessage): string => /^Bearer ([A-Za-z0-9_.-]{1,2048})$/.exec(request.headers.authorization ?? '')?.[1] ?? ''
@@ -242,7 +260,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   return {
     descriptor, adminToken,
     close: async (): Promise<void> => {
-      closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.()
+      closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); shellPublisher.dispose(); detailPublisher.dispose()
       for (const peer of peers) peer.frames.close()
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))

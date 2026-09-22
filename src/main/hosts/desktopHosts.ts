@@ -171,7 +171,8 @@ export class DesktopHosts {
   }
   private async openSocket(host: SavedHost, active: LiveHost): Promise<void> {
     let connected = false
-    const socket = new SocketHostService({ onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId })
+    const socket = new SocketHostService({ onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) },
+      onPushError: message => { if (this.live.get(host.id) === active) this.update(host.id, { error: message }) }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId })
     active.socket = socket
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }

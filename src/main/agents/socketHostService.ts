@@ -14,6 +14,8 @@ export class HostConnectionError extends Error {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   onConnectionChange?: (connected: boolean) => void
+  /** A push the host could not send, such as a thread too large for one frame. The message is plain copy. */
+  onPushError?: (message: string) => void
 }
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
@@ -113,6 +115,7 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(agentStateSchema.parse(message.state)) }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
+        else this.options.onPushError?.(message.error.message)
       } else {
         const pending = this.pending.get(message.id)
         if (!pending) return
