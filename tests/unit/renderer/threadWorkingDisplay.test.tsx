@@ -61,6 +61,17 @@ describe('a turn that has reported nothing yet', () => {
     expect(liveRow).toHaveTextContent('for 34s')
   })
 
+  it('says the thread is compacting, not working, while its compaction runs', () => {
+    const { transcript } = mount(stateWith({ status: 'running', compaction: { commandId: 'compact-1', status: 'running' }, activities: waiting() }))
+    const liveRow = within(transcript).getByTestId('thread-activity-live')
+    expect(liveRow).toHaveTextContent('Compacting context')
+    expect(liveRow).not.toHaveTextContent('Working')
+    cleanup()
+    // Unconfirmed is not still going: the line goes back to the turn, and the composer reports the doubt.
+    const { transcript: unsure } = mount(stateWith({ status: 'running', compaction: { commandId: 'compact-1', status: 'uncertain' }, activities: waiting() }))
+    expect(within(unsure).getByTestId('thread-activity-live')).not.toHaveTextContent('Compacting context')
+  })
+
   it('names the current action instead of a word once the provider reports one', () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { transcript } = mount(stateWith({ status: 'running', activities: [

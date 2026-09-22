@@ -101,10 +101,12 @@
 .thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex, #d7dbe1); }
 .thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
 .thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
-:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
+.thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin, #a5d8f5); }
+:root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok'], [data-provider='devin']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
+:root[data-theme='light'] .thread-nav__mark[data-provider='devin'] { --threads-provider-fill: var(--tt-provider-devin); }
 .thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
 .thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
 .thread-nav__rename { font-size: 13px; font-weight: 500; }

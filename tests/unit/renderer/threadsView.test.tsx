@@ -295,7 +295,7 @@ describe('ThreadsView workspace', () => {
     state.host.models = [{ id: thread.modelId, provider: 'Grok', name: 'Current', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }, { id: 'alternate', name: 'Alternate', provider: 'Codex', ready: true }]
     const { command } = renderThreads(state)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Codex', exact: true }))
     fireEvent.click(screen.getByRole('option', { name: 'Alternate' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled())
     expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: thread.id, modelId: 'alternate' })

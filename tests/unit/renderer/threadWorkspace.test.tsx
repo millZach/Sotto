@@ -417,7 +417,7 @@ describe('Thread provider choice', () => {
     const { live } = mount(providerState(false))
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     expect(screen.queryByRole('button', { name: 'Grok', exact: true })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Codex', exact: true }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Codex', exact: true }))
     fireEvent.click(screen.getByRole('option', { name: 'GPT-5.4' }))
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'grok-previews', modelId: 'codex:gpt' }))
   })

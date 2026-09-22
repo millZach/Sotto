@@ -111,7 +111,7 @@ describe('native folder project resolution', () => {
     const view = setup(command, state)
     await browse()
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Grok', exact: true }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Grok', exact: true }))
     fireEvent.click(screen.getByRole('option', { name: 'Grok 4.6', exact: true }))
     view.update({ ...state, configuration: { ...state.configuration, reasoning: 'codex', reasoningModel: 'model' } })
     expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Grok 4.6')

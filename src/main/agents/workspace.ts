@@ -1141,6 +1141,7 @@ export class WorkspaceHost implements AgentHost {
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
         ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
+        ...(command.providerMode ? { providerMode: command.providerMode } : {}),
         worktree: await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
@@ -1188,9 +1189,11 @@ export class WorkspaceHost implements AgentHost {
         delete thread.reasoningEffort
         if (model.defaultReasoningEffort) thread.reasoningEffort = model.defaultReasoningEffort
         if (thread.runtimeMode && !model.runtimeModes?.includes(thread.runtimeMode)) delete thread.runtimeMode
+        if (thread.providerMode && !model.providerModes?.some(mode => mode.id === thread.providerMode)) delete thread.providerMode
       }
       if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
       if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
+      if (command.providerMode !== undefined) thread.providerMode = command.providerMode
       this.dirty = true
       try { await this.flush() }
       catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(thread, previous); throw error }
@@ -1244,7 +1247,8 @@ export class WorkspaceHost implements AgentHost {
             projectId: thread.projectId, project, title: thread.title, modelId: thread.modelId,
             workingDirectory,
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
-            ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
+            ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
+            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) })
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
         this.accept(await this.inner.snapshot(thread.providerId)); await this.flush()

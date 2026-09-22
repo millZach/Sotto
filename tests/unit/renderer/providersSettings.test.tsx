@@ -69,7 +69,10 @@ describe('independent provider settings', () => {
     provide()
     const { container } = render(<ProvidersSettings />)
     for (const provider of providerIdSchema.options) {
-      expect(screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).querySelector(`.provider-mark[data-provider="${provider}"]`)).not.toBeNull()
+      // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
+      const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)
+      expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()
+      expect(drawn!.querySelector('path')?.getAttribute('d')).toBeTruthy()
     }
     fireEvent.click(screen.getByRole('button', { name: 'Grok Build', exact: true }))
     expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()

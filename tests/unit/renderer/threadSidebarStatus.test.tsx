@@ -58,6 +58,17 @@ describe('a row that needs you says what it needs', () => {
     expect(rowFor(failed, 'weekly-note')).toMatchObject({ state: 'needs', waitingFor: null, stateLabel: 'Needs attention' })
   })
 
+  it('says a running compaction is compacting rather than letting it read as the agent working', () => {
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(entry => entry.id === 'footer-links')!
+    thread.status = 'running'
+    thread.compaction = { commandId: 'compact-1', status: 'running' }
+    expect(rowFor(state, 'footer-links')).toMatchObject({ state: 'working', stateLabel: 'Compacting context' })
+    // Unconfirmed is not the same as still going: the composer says so, the row does not claim it.
+    thread.compaction = { commandId: 'compact-1', status: 'uncertain' }
+    expect(rowFor(state, 'footer-links')).toMatchObject({ state: 'working', stateLabel: 'Working' })
+  })
+
   it('marks the dot in the sidebar and keeps the disconnected suffix', () => {
     const state = threadsStateFixture(); state.host.connected = false
     mount(state, NOW)

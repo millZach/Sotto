@@ -142,7 +142,7 @@ describe('main-window theme tokens', () => {
     const css = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
     const derived = parseTokenBlocks().find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       if (constants.has(name) || !/^(#|rgb\(|oklch\()/u.test(value)) continue
       throw new Error(`${name} paints a literal colour (${value}) instead of a theme role`)

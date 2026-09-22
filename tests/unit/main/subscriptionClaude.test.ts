@@ -13,6 +13,12 @@ const nativeModels = [
   { value: 'claude-future[1m]', displayName: 'New extended model', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
   { value: 'sonnet', displayName: 'Native Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
 ]
+/** What the model is called once the description's own first clause is allowed to name it. */
+const catalogName = (model: { displayName: string; description?: string }): string => {
+  const described = model.description?.split('\u00b7')[0]?.trim() ?? ''
+  const first = (name: string): string => name.split(/\s+/u)[0]?.toLocaleLowerCase() ?? ''
+  return described && first(described) === first(model.displayName) ? described : model.displayName
+}
 interface Scenario {
   auth?: { loggedIn: boolean; authMethod?: string; subscriptionType?: string; email?: string }
   help?: string
@@ -111,7 +117,7 @@ describe('Claude native subscription client', () => {
     const f = await fixture()
     const account = await f.client.status()
     expect(account).toMatchObject({ installed: true, ready: true, defaultModelId: 'default', allowCustomModel: true })
-    expect(account.models).toEqual(nativeModels.map(model => ({ id: model.value, name: model.displayName, reasoningEfforts: model.supportedEffortLevels ?? [] })))
+    expect(account.models).toEqual(nativeModels.map(model => ({ id: model.value, name: catalogName(model), reasoningEfforts: model.supportedEffortLevels ?? [] })))
     expect(account.models.some(model => model.defaultReasoningEffort !== undefined)).toBe(false)
     expect(JSON.stringify(account)).not.toContain('private-fixture')
     const discovery = (await f.calls()).at(-1)!
@@ -137,6 +143,19 @@ describe('Claude native subscription client', () => {
     expect(completion.args[completion.args.indexOf('--model') + 1]).toBe('claude-future[1m]')
     expect(completion.args[completion.args.indexOf('--effort') + 1]).toBe('xhigh')
     expect(completion.overrides).toEqual([])
+  })
+
+  it('names a model with the version its description carries and leaves the account default its own name', async () => {
+    const f = await fixture({ models: [
+      { value: 'claude-fable-5-1[1m]', displayName: 'Fable', description: 'Fable 5.1 · Most capable for your hardest tasks' },
+      { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 5 · Efficient for routine tasks' },
+      { value: 'opus[1m]', displayName: 'Opus (1M context)', description: 'Opus 5 with 1M context · Best for everyday tasks' },
+      // The default resolves to another model; naming it after that model would hide which entry it is.
+      { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5 with 1M context · Best for everyday tasks' },
+      { value: 'haiku', displayName: 'Haiku' },
+    ] })
+    const account = await f.client.status()
+    expect(account.models.map(model => model.name)).toEqual(['Fable 5.1', 'Sonnet 5', 'Opus 5 with 1M context', 'Default (recommended)', 'Haiku'])
   })
 
   it.each([['haiku', 'high'], ['sonnet', 'max'], ['', 'medium'], ['claude-custom-id', 'high']] as const)('refuses unsupported effort %s/%s before inference instead of silently downshifting', async (model, effort) => {

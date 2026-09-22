@@ -16,12 +16,14 @@ const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
 
 /** The choices used when creating a thread, visible while its optional controls are collapsed. */
-export function threadOptionsSummary(model: AgentModel | undefined, effort: string | undefined, mode: AgentRuntimeMode | undefined): string {
+export function threadOptionsSummary(model: AgentModel | undefined, effort: string | undefined, mode: AgentRuntimeMode | undefined, providerMode?: string): string {
   const reasoning = effort ?? model?.defaultReasoningEffort
-  return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, mode ? RUNTIME_LABELS[mode] : 'Provider default'].filter(Boolean).join(' · ')
+  const own = model?.providerModes?.find(candidate => candidate.id === startingProviderMode(model, providerMode))
+  const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : 'Provider default'
+  return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
 }
 
-interface ChoiceOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
+interface ChoiceOption { readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean }
 
 /** The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. */
 function effortChoices(model: AgentModel | undefined, reasoning: string): ChoiceOption[] {
@@ -31,24 +33,44 @@ function effortChoices(model: AgentModel | undefined, reasoning: string): Choice
   return [...lead, ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]
 }
 
-/** The permission modes a model offers, led by "Provider default" or an unoffered current mode as unchoosable. */
-function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined): ChoiceOption[] {
+/**
+ * The permission modes a model offers, led by "Provider default" or an unoffered current mode as
+ * unchoosable. A provider whose modes are its own (Devin) answers with those instead of Sotto's four, and
+ * each carries what Sotto will still ask about under it, so a mode named for what the provider stops
+ * asking cannot be read as Sotto stopping too.
+ */
+function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
+  const own = model?.providerModes ?? []
+  if (own.length > 0) {
+    // Unchosen reads as the first mode, which is what the thread starts on, so only an unoffered one leads.
+    const lead = providerMode === undefined || own.some(mode => mode.id === providerMode) ? [] : [{ id: providerMode, label: providerMode, disabled: true }]
+    return [...lead, ...own.map(mode => ({ id: mode.id, label: mode.name,
+      ...(mode.description || mode.asks ? { description: [mode.description, mode.asks].filter(Boolean).join(' ') } : {}) }))]
+  }
   const modes = model?.runtimeModes ?? []
   if (modes.length === 0) return []
   const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
 }
+/** Whether this model's permission list is the provider's own vocabulary rather than Sotto's four. */
+const usesProviderModes = (model: AgentModel | undefined): boolean => (model?.providerModes?.length ?? 0) > 0
+/** The provider mode a thread is on, or the one it starts on when none has been chosen: the first offered. */
+export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>
+  providerMode ?? model?.providerModes?.[0]?.id
 
 /** The three controls laid out in full, as New thread and New terminal show them. */
-export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, onModel, onReasoning, onRuntime, disabled = false, modelDisabled = false }: {
+export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, providerMode, onModel, onReasoning, onRuntime, onProviderMode, disabled = false, modelDisabled = false }: {
   readonly models: AgentModel[]
   readonly modelId: string
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
   readonly onModel: (id: string) => void
   readonly onReasoning: (effort: string) => void
   readonly onRuntime: (mode: AgentRuntimeMode) => void
+  /** Only for a provider that names its own modes; the owner saves it in place of `runtimeMode`. */
+  readonly onProviderMode?: ((mode: string) => void) | undefined
   readonly disabled?: boolean
   /** Model and reasoning stay visible but fixed; permissions remain editable. */
   readonly modelDisabled?: boolean
@@ -56,14 +78,16 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   const model = models.find(item => item.id === modelId)
   const reasoning = reasoningEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
-  const modes = modeChoices(model, runtimeMode)
+  const own = usesProviderModes(model)
+  const modes = modeChoices(model, runtimeMode, providerMode)
   return <div className="thread-options">
     <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={disabled || modelDisabled} onChange={onModel} /></div>
     {efforts.length > 0 && <label><span>Reasoning</span><select aria-label="Thread reasoning" title="Reasoning" value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
       {efforts.map(option => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}</option>)}
     </select></label>}
-    {modes.length > 0 && <label><span>Permissions</span><select aria-label="Thread permissions" title="Permissions" value={runtimeMode ?? ''} disabled={disabled} onChange={event => onRuntime(event.target.value as AgentRuntimeMode)}>
-      {modes.map(option => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}</option>)}
+    {modes.length > 0 && <label><span>Permissions</span><select aria-label="Thread permissions" title="Permissions" value={(own ? startingProviderMode(model, providerMode) : runtimeMode) ?? ''} disabled={disabled}
+      onChange={event => own ? onProviderMode?.(event.target.value) : onRuntime(event.target.value as AgentRuntimeMode)}>
+      {modes.map(option => <option key={option.id} value={option.id} disabled={option.disabled} title={option.description}>{option.label}</option>)}
     </select></label>}
   </div>
 }
@@ -125,7 +149,7 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
     </button>
     {open ? <div ref={list} id={listId} role="listbox" aria-label={label} className="thread-chip-menu__list" onKeyDown={event => moveListboxFocus(event, list.current)}>
       {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
-        <span>{option.label}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
+        <span>{option.label}{option.description ? <small>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
     </div> : null}
   </div>
 }
@@ -162,7 +186,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
    */
   const effortDisabled = saving === 'other' || Boolean(thread.archivedAt) || thread.status === 'running'
     || thread.requests.length > 0 || (locked && !isThreadProviderConnected(state.host, thread))
-  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }, lane: 'effort' | 'other' = 'other'): Promise<boolean> => {
+  const save = async (patch: { modelId?: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode; providerMode?: string }, lane: 'effort' | 'other' = 'other'): Promise<boolean> => {
     // The choice was made inside a chip's list; a chip fixed while saving has focus put back afterwards.
     refocus.current = lane === 'effort' ? null
       : (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
@@ -188,7 +212,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
   const model = models.find(item => item.id === thread.modelId)
   const reasoning = thread.reasoningEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
-  const modes = modeChoices(model, thread.runtimeMode)
+  const ownModes = usesProviderModes(model)
+  const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
   const claude = (thread.providerId ?? model?.providerId) === 'claude' || /^claude(?: code)?$/iu.test(model?.provider ?? '')
@@ -204,7 +229,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
         disabled={effortDisabled || modelDisabled} onChange={reasoningEffort => save({ reasoningEffort }, 'effort')}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
-      {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={thread.runtimeMode ?? ''} options={modes} disabled={disabled} onChange={mode => void save({ runtimeMode: mode as AgentRuntimeMode })} />}
+      {modes.length > 0 && <ChoiceChip label="Thread permissions" placeholder="Permissions" value={(ownModes ? startingProviderMode(model, thread.providerMode) : thread.runtimeMode) ?? ''} options={modes} disabled={disabled}
+        onChange={mode => void save(ownModes ? { providerMode: mode } : { runtimeMode: mode as AgentRuntimeMode })} />}
     </div>
     {saving ? <small role="status">Saving...</small> : locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small> : null}
     {error && <p className="agent-error" role="alert">{error}</p>}

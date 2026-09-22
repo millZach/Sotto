@@ -218,6 +218,11 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     stateLabel = 'Stopped'
     const detail = assignment.stopReason === 'error' ? blocked?.text ?? lastAssistant?.text : lastAssistant?.text
     sentence = `Stopped ${stopReasonLabel(assignment.stopReason)}. ${detail ?? ''}`.trim()
+  } else if (thread.compaction?.status === 'running') {
+    // Compaction keeps the thread running without the agent working, so the row says which of the two it is.
+    state_ = 'working'
+    stateLabel = 'Compacting context'
+    sentence = 'Compacting the context. Nothing can be sent until it finishes.'
   } else if (thread.status === 'running') {
     state_ = 'working'
     stateLabel = 'Working'

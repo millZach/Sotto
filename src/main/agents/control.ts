@@ -1586,7 +1586,8 @@ export class AgentControl {
             ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
             ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
-            ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}) }, turn)
+            ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}),
+            ...(command.providerMode !== undefined ? { providerMode: command.providerMode } : {}) }, turn)
         } catch (error) { if (selectionRevision === this.selectionRevision) this.queueSelectionPinned = previousSelectionPinned; throw error }
         if (selectionRevision === this.selectionRevision) {
           this.presentedQueueId = null
@@ -1612,7 +1613,7 @@ export class AgentControl {
       }
       case 'configure-thread': {
         this.canAct()
-        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined) throw new Error('Choose a thread setting to change.')
+        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         this.observe(command.threadId)
         this.acceptSnapshot(await this.readThread(command.threadId))
@@ -1631,6 +1632,8 @@ export class AgentControl {
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate)
         }
         if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate)
+        // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
+        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate)
         this.say('Thread settings saved.')
         this.observe()
         return

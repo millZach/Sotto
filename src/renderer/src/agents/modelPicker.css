@@ -1,9 +1,10 @@
 /* The model control: a chip (threadChips.css) carrying the provider's mark, and the menu it opens. */
 .model-picker { min-width: 0; }
 .model-picker__trigger { color: var(--tt-text-2); }
-.model-picker__trigger .provider-mark[data-provider='codex'], .model-picker__tabs .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
-.model-picker__trigger .provider-mark[data-provider='claude'], .model-picker__tabs .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
-.model-picker__trigger .provider-mark[data-provider='grok'], .model-picker__tabs .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.model-picker__trigger .provider-mark[data-provider='codex'], .model-picker__rail .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.model-picker__trigger .provider-mark[data-provider='claude'], .model-picker__rail .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.model-picker__trigger .provider-mark[data-provider='grok'], .model-picker__rail .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.model-picker__trigger .provider-mark[data-provider='devin'], .model-picker__rail .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
 
 /* Where the model control is a named field rather than a chip: the New thread and New terminal dialogs. */
 .thread-options__model { display: grid; gap: 5px; min-width: 0; }
@@ -12,14 +13,22 @@
 .new-thread-dialog .model-picker__trigger { justify-content: space-between; width: 100%; max-width: none; height: auto; min-height: 39px; padding: 8px 11px; border-radius: 7px; background: var(--tt-field); font-size: 13px; }
 .new-thread-dialog .model-picker__trigger > span:not(.provider-mark) { flex: 1; text-align: left; }
 
-/* The model menu: provider tabs, a search line, the list, one note. Anchored over the chip; content-sized. */
-.model-picker__dialog { position: fixed; display: flex; flex-direction: column; width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+/* The model menu: a provider rail, then a search line over the list with one note under it. Anchored over
+   the chip. Two columns whenever more than one provider can be chosen; one when the thread is settled. */
+.model-picker__dialog { position: fixed; display: grid; grid-template-columns: minmax(0, 1fr); width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.model-picker__dialog[data-rail] { grid-template-columns: 52px minmax(0, 1fr); width: min(336px, calc(100vw - 32px)); }
 .model-picker__dialog::backdrop { background: transparent; }
-.model-picker__tabs { display: flex; flex: none; gap: 2px; padding: 6px 6px 0; }
-.model-picker__tabs > button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
-.model-picker__tabs > button:hover { background: var(--tt-hover); color: var(--tt-text); }
-.model-picker__tabs > button[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
-.model-picker__search { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; margin-top: 4px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.model-picker__panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* Marks only: a provider costs the same here whatever it is called, which is what the tabs could not do.
+   The chosen tile is filled and keeps an accent edge, so the choice does not rest on hue alone. */
+.model-picker__rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-y: auto; scrollbar-width: none; }
+.model-picker__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.model-picker__rail > button .provider-mark { opacity: .75; }
+.model-picker__rail > button:hover { background: var(--tt-hover); }
+.model-picker__rail > button:hover .provider-mark, .model-picker__rail > button[aria-selected='true'] .provider-mark { opacity: 1; }
+.model-picker__rail > button[aria-selected='true'] { background: var(--tt-selected); }
+.model-picker__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-activity); }
+.model-picker__search { display: flex; flex: none; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
 .model-picker__dialog .model-picker__search input { flex: 1; min-width: 0; width: auto; min-height: 0; padding: 4px 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
 .model-picker__search input::placeholder { color: var(--tt-text-faint); }
 .model-picker__search > button { display: grid; place-items: center; padding: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }

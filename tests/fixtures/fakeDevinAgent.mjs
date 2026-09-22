@@ -39,8 +39,10 @@ function acquire(id) {
  if (!sessions.has(id)) record({ method: 'fixture/ownership-started', params: { sessionId: id, pid: process.pid } })
  write(ownerPath(id), process.pid); sessions.add(id); return true
 }
+const MODES = [{ value: 'accept-edits', name: 'Code' }, { value: 'smart', name: 'Smart' }, { value: 'ask', name: 'Ask' },
+ { value: 'plan', name: 'Plan' }, { value: 'bypass', name: 'Bypass Permissions' }]
 function configOptions(session) {
- return [{ id: 'mode', name: 'Mode', type: 'select', currentValue: 'accept-edits', options: [{ value: 'accept-edits', name: 'Code' }, { value: 'ask', name: 'Ask' }] },
+ return [{ id: 'mode', name: 'Mode', type: 'select', currentValue: session.mode ?? 'accept-edits', options: MODES },
   { id: 'model', name: 'Model', type: 'select', currentValue: session.model, options: read('script.json', {}).signedOut ? [] : [{ value: 'fixture-model', name: 'Fixture Devin' }] }]
 }
 function applyScriptedPolicyChange(script, operation) {
@@ -53,7 +55,7 @@ function applyScriptedPolicyChange(script, operation) {
  }
 }
 function sessionInfo(session) {
- return { modes: { currentModeId: 'accept-edits', availableModes: [{ id: 'accept-edits', name: 'Code' }, { id: 'ask', name: 'Ask' }] }, configOptions: configOptions(session) }
+ return { modes: { currentModeId: session.mode ?? 'accept-edits', availableModes: MODES.map(mode => ({ id: mode.value, name: mode.name })) }, configOptions: configOptions(session) }
 }
 function update(sessionId, value) { send({ method: 'session/update', params: { sessionId, update: value } }) }
 function saveMessage(sessionId, message) {
@@ -139,8 +141,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   else result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session))
  } else if (frame.method === 'session/set_config_option') {
   const session = read(nativePath(p.sessionId), null)
-  if (!session || owner(p.sessionId) !== process.pid || p.configId !== 'model' || p.value !== 'fixture-model') { reject(frame.id); return }
-  session.model = p.value; write(nativePath(p.sessionId), session)
+  const known = p.configId === 'model' ? p.value === 'fixture-model' : p.configId === 'mode' && MODES.some(mode => mode.value === p.value)
+  if (!session || owner(p.sessionId) !== process.pid || !known) { reject(frame.id); return }
+  if (p.configId === 'mode') session.mode = p.value; else session.model = p.value
+  write(nativePath(p.sessionId), session)
   result(frame.id, { configOptions: configOptions(session) })
  } else if (frame.method === 'session/prompt') {
   if (owner(p.sessionId) !== process.pid || active.has(p.sessionId)) { reject(frame.id, -32015); return }

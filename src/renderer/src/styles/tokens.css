@@ -272,6 +272,7 @@
   --tt-provider-codex: #d7dbe1;
   --tt-provider-claude: #e3b58e;
   --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5;
   --tt-provider-ink: #080b0a;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
   --tt-backdrop: rgb(0 0 0 / 38%);
@@ -320,6 +321,7 @@
   --tt-provider-codex: #c9ced6;
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;
+  --tt-provider-devin: #8fcaef;
   --tt-provider-ink: #0b0d0c;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
   --tt-backdrop: rgb(20 24 22 / 22%);

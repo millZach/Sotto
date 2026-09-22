@@ -20,6 +20,7 @@ export function draftThread(values: {
   readonly providerId?: AgentThread['providerId']
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
   readonly workingCopy: 'independent' | 'shared'
   readonly baseBranch?: string | undefined
   readonly startFromOrigin?: boolean | undefined
@@ -30,6 +31,7 @@ export function draftThread(values: {
     ...(values.providerId ? { providerId: values.providerId } : {}),
     ...(values.reasoningEffort ? { reasoningEffort: values.reasoningEffort } : {}),
     ...(values.runtimeMode ? { runtimeMode: values.runtimeMode } : {}),
+    ...(values.providerMode ? { providerMode: values.providerMode } : {}),
     worktree: { mode: values.workingCopy, status: 'pending', ...(values.baseBranch ? { baseBranch: values.baseBranch } : {}), ...(values.startFromOrigin !== undefined ? { startFromOrigin: values.startFromOrigin } : {}), ...(values.existingWorktreePath ? { existingWorktreePath: values.existingWorktreePath } : {}) },
     status: 'idle', messages: [], requests: [], workspaceSettledAt: null,
     // Creation has not been dispatched to the provider yet, and there is no history to wait for.
