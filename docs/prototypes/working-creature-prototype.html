@@ -1,0 +1,255 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - a working pose for Sotto's process creature (issue #221). Synthetic data only.
+     Three variants of the pose shown above the composer while a workflow or subagent runs in the background
+     after the turn has ended, switchable with ?variant=A/B/C, next to the monitoring and held poses that ship.
+     Not wired to any thread, no adapter evidence, outside every entrypoint. Open the file directly. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto — working creature</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;font-display:swap;src:url(../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2")}
+:root{color-scheme:dark;--tt-bg:oklch(.235 .018 280);--tt-sidebar:oklch(.205 .016 282);--tt-field:oklch(.26 .019 280);--tt-raised:oklch(.305 .021 280);--tt-text:oklch(.985 .005 280);--tt-muted:oklch(.76 .014 265);--tt-border:oklch(.42 .03 270);--tt-accent:oklch(.79 .13 220);--tt-ink:oklch(.2 .02 280);--tt-selected:oklch(.35 .04 262);--tt-shadow:oklch(.1 0 0/.3);--tt-activity:oklch(.72 .12 250)}
+:root[data-theme=light]{color-scheme:light;--tt-bg:oklch(.978 .004 85);--tt-sidebar:oklch(.955 .008 85);--tt-field:oklch(.99 .003 85);--tt-raised:oklch(.935 .006 85);--tt-text:oklch(.235 .014 75);--tt-muted:oklch(.46 .014 75);--tt-border:oklch(.78 .016 80);--tt-accent:oklch(.49 .13 235);--tt-ink:oklch(.99 .003 85);--tt-selected:oklch(.90 .03 230);--tt-shadow:oklch(.1 0 0/.12);--tt-activity:oklch(.52 .12 250)}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:14px/1.5 Figtree,system-ui,sans-serif;color:var(--tt-text);background:var(--tt-bg);overflow:hidden}
+button,textarea,select{font:inherit;color:inherit}button,select{cursor:pointer}button{border:0;background:none}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--tt-accent);outline-offset:4px}
+.window{height:calc(100% - 108px);display:grid;grid-template-columns:244px minmax(0,1fr)}
+.sidebar{padding:14px 8px;background:var(--tt-sidebar);border-right:1px solid color-mix(in srgb,var(--tt-border) 45%,transparent)}
+.brand{display:flex;align-items:center;gap:9px;height:28px;padding:0 10px;margin-bottom:20px;font-weight:600}
+.brand i{width:14px;height:14px;border-radius:4px;background:var(--tt-accent)}
+.group{color:var(--tt-muted);font-size:12px;padding:12px 10px 5px}
+.row{padding:8px 10px;display:flex;gap:9px;align-items:center;border-radius:8px}
+.row.active{background:var(--tt-selected)}.row small{margin-left:auto;color:var(--tt-muted);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;border:1px solid var(--tt-muted);flex:none}
+.active .dot{background:var(--tt-accent);border-color:var(--tt-accent)}
+.pane{min-width:0;min-height:0;display:flex;flex-direction:column}
+.head{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid color-mix(in srgb,var(--tt-border) 25%,transparent)}
+.head strong{font-size:14px;font-weight:500}.head span{color:var(--tt-muted);font-size:12px}
+.transcript{flex:1;min-height:0;overflow:auto;padding:30px max(24px,calc((100% - 760px)/2)) 12px}
+.turn{font-size:16px;line-height:1.6;margin-bottom:28px}
+.user{margin-left:auto;max-width:85%;width:fit-content;background:var(--tt-raised);padding:11px 16px;border-radius:14px 14px 4px 14px}
+.who{color:var(--tt-muted);font-size:12px;margin-bottom:9px}.turn p{margin:0 0 14px}
+.compose{flex:none;padding:76px max(24px,calc((100% - 760px)/2)) 12px}
+.composer{position:relative;border:1px solid var(--tt-border);background:var(--tt-field);border-radius:16px;padding:14px 16px 10px}
+textarea{display:block;width:100%;height:70px;resize:none;background:none;border:0;outline:none!important;font-size:15px;line-height:1.5;padding:0}
+textarea::placeholder{color:var(--tt-muted)}
+.foot{display:flex;align-items:center;gap:8px;margin-top:6px}
+.chip{border:1px solid var(--tt-border);border-radius:20px;padding:3px 9px;font-size:12px;color:var(--tt-muted)}
+.send{margin-left:auto;display:grid;place-items:center;background:var(--tt-accent);color:var(--tt-ink);border-radius:50%;width:30px;height:30px}
+.usage{display:flex;justify-content:space-between;margin-top:7px;color:var(--tt-muted);font-size:12px}
+/* The ornament, as threadMonitor.css lays it out: a track and a readout, above the composer. */
+.walkway{position:absolute;left:14px;right:14px;top:-64px;height:64px;pointer-events:none;display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,min(172px,45%));align-items:end}
+.track{position:relative;height:64px;min-width:0}
+.actor{position:absolute;bottom:0;left:0;width:80px;height:64px}
+.actor svg{display:block;width:80px;height:64px;overflow:visible}
+.color{fill:var(--tt-activity)}.ink{fill:var(--tt-canvas,var(--tt-bg))}.shine{fill:var(--tt-text)}.handle{fill:var(--tt-border)}
+.mini{position:absolute;bottom:0;width:24px;height:20px}
+.mini svg{display:block;width:24px;height:20px;overflow:visible}
+.readout{pointer-events:auto;min-width:0;padding:8px 12px;border:1px solid var(--tt-border);border-bottom:0;border-radius:8px 8px 0 0;background:var(--tt-raised)}
+.readout b{display:block;font-weight:400;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.readout small{display:block;color:var(--tt-muted);font-size:12px}
+.walkway[hidden]{display:none}
+.bar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--tt-text);color:var(--tt-bg);border-radius:18px;box-shadow:0 8px 30px var(--tt-shadow);white-space:nowrap}
+.bar button{border-radius:8px;padding:7px 9px;min-height:36px}
+.bar button:hover{background:color-mix(in srgb,var(--tt-bg) 12%,transparent)}
+.bar button[aria-pressed=true]{background:var(--tt-bg);color:var(--tt-text)}
+.vlabel{min-width:170px;text-align:center;font-weight:600}
+.bar select{background:transparent;color:inherit;border:1px solid color-mix(in srgb,var(--tt-bg) 30%,transparent);border-radius:8px;padding:7px;font-size:14px;max-width:190px}
+.bar option{background:var(--tt-bg);color:var(--tt-text)}
+.divider{height:22px;width:1px;background:color-mix(in srgb,var(--tt-bg) 25%,transparent);margin:0 4px}
+.fb{position:fixed;bottom:62px;left:16px;right:16px;text-align:center;color:var(--tt-muted);font-size:12px}
+@media(max-width:1000px){.window{grid-template-columns:196px minmax(0,1fr)}.vlabel{min-width:140px}.bar select{max-width:140px}}
+</style>
+</head>
+<body>
+<div class="window">
+  <aside class="sidebar">
+    <div class="brand"><i></i>Sotto</div>
+    <div class="group">Sotto</div>
+    <div class="row active"><span class="dot"></span>Four-track investigation<small>Claude</small></div>
+    <div class="row"><span class="dot"></span>Reclaim worktrees<small>Codex</small></div>
+    <div class="row"><span class="dot"></span>Grok connector bug<small>Grok</small></div>
+    <div class="group">Personal</div>
+    <div class="row"><span class="dot"></span>Notes on the release</div>
+  </aside>
+  <main class="pane">
+    <div class="head"><strong>Four-track investigation</strong><span>Claude Code · Opus · main</span></div>
+    <div class="transcript">
+      <div class="turn user">Review PR 181, audit performance, find the Cognition mark and fix the Grok effort meter. Use workflows.</div>
+      <div class="turn"><div class="who">Claude</div>
+        <p>The investigation workflow is running its four tracks on Opus at high effort. I'll read the results when it finishes, then launch the second workflow to implement the fixes.</p>
+      </div>
+    </div>
+    <div class="compose"><div class="composer">
+      <div class="walkway" id="walkway" aria-hidden="true">
+        <div class="track" id="track"></div>
+        <div class="readout" id="readout"><b id="label"></b><small id="status"></small></div>
+      </div>
+      <textarea placeholder="Message the thread"></textarea>
+      <div class="foot"><span class="chip">Opus</span><span class="chip">High</span><span class="chip">Approval required</span><span class="send">↑</span></div>
+    </div>
+    <div class="usage"><span>Draft saved</span><span>142k of 1M</span></div></div>
+  </main>
+</div>
+<p class="fb" id="fb"></p>
+<nav class="bar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button><span class="vlabel" id="vlabel"></span><button id="next" aria-label="Next variant">→</button>
+  <span class="divider"></span>
+  <select id="scenario" aria-label="Simulated background state">
+    <option value="workflow">Workflow · 12 agents</option>
+    <option value="one">One subagent</option>
+    <option value="teammate">Teammate · long label</option>
+    <option value="monitor">Monitor outranks it</option>
+    <option value="held">Held action (live turn)</option>
+    <option value="attention">Needs you · hidden</option>
+    <option value="done">Finished · hidden</option>
+  </select>
+  <select id="wording" aria-label="Status wording">
+    <option value="working">Working</option>
+    <option value="background">Working in the background</option>
+    <option value="busy">Busy</option>
+    <option value="agents">N agents working</option>
+  </select>
+  <button id="still" aria-pressed="false">Still</button><button id="theme" aria-pressed="false">Light</button>
+</nav>
+<script>
+// The approved sprite, copied from ThreadMonitor.tsx. Ears, tail and belly never animate.
+const BODY='M9 8h4v8H9z M21 7h4v9h-4z M11 6h2v5h-2z M23 5h2v5h-2z M9 13h17v15H9z M7 16h21v9H7z M11 11h12v18H11z M5 23h4v4H5z'
+const OPEN='M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z', SHUT='M15 17h2v1h-2z M22 17h2v1h-2z M20 22h2v1h-2z'
+const SIDE='M15 18h2v2h-2z M22 18h2v2h-2z M20 22h2v1h-2z'
+const svg=(inner,w=80,h=64,vb='0 0 40 32')=>`<svg viewBox="${vb}" width="${w}" height="${h}" focusable="false" shape-rendering="crispEdges">${inner}</svg>`
+const body=(extra='')=>`<g class="body"><path class="color" d="${BODY}"/><path class="shine" opacity=".24" d="M10 14h3v9h-3z"/><path class="ink" opacity=".24" d="M13 25h10v3H13z"/><path class="ink eyes" d="${OPEN}"/>${extra}<path class="color" d="M25 25h5v2h-5z"/></g>`
+const feet='<path class="color feet" d="M11 29h5v3h-5z M21 29h5v3h-5z"/>'
+// A small agent: the same silhouette at a third of the size, 12 x 10.
+const MINI='M3 2h2v2H3z M7 1h2v3H7z M2 4h8v5H2z M1 6h10v2H1z M3 9h2v1H3z M7 9h2v1H7z'
+const MINI_EYES='M4 5h1v1H4z M7 5h1v1H7z'
+const variants=[
+  ['A','The dispatcher','Stands at the readout, faces the room, and sends little agents out along the track. A count is the story.'],
+  ['B','The tally','Holds a checklist out like the hourglass and ticks a row as each agent finishes. Progress is the story.'],
+  ['C','The lean','Leans on the readout with arms folded, foot tapping, three dots thinking. Time passing is the story; no count.'],
+]
+const params=new URLSearchParams(location.search)
+let variant=variants.some(v=>v[0]===params.get('variant'))?params.get('variant'):'A'
+let scenario='workflow', wording='working', paused=false, start=performance.now(), frame=0
+const motion=matchMedia('(prefers-reduced-motion: reduce)')
+const $=s=>document.querySelector(s)
+const scenes={
+  workflow:{kind:'working',label:'Read-only investigation: review PR 181, audit performance, source the Devin mark, diagnose the Grok effort meter',agents:12,done:4,type:'workflow'},
+  one:{kind:'working',label:'Review the diff for standards',agents:1,done:0,type:'local_agent'},
+  teammate:{kind:'working',label:'Teammate reviewer-2: adversarially verify every performance finding against its callers and tests, refuting anything already mitigated',agents:3,done:1,type:'in_process_teammate'},
+  monitor:{kind:'monitoring',label:'npm run test:e2e -- thread-monitoring',agents:0},
+  held:{kind:'held',label:'npm run build',agents:0},
+  attention:{kind:'hidden'},done:{kind:'hidden'},
+}
+function statusText(scene,elapsed){
+  const n=scene.agents, left=n-scene.done
+  const time=' · '+fmt(elapsed)
+  if(wording==='agents') return (left===1?'1 agent working':`${left} agents working`)+time
+  const word={working:'Working',background:'Working in the background',busy:'Busy'}[wording]
+  if(variant==='B'&&n>1) return `${word} · ${scene.done} of ${n} done`
+  if(variant==='A'&&n>1) return `${word} · ${left} agents`
+  return word+time
+}
+const fmt=ms=>{const s=Math.floor(ms/1000);return s<60?`${s}s`:s<3600?`${Math.floor(s/60)}m ${s%60}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`}
+function mount(){
+  const scene=scenes[scenario], track=$('#track'), walkway=$('#walkway')
+  walkway.hidden=scene.kind==='hidden'
+  track.innerHTML=''
+  if(scene.kind==='hidden') return
+  const actor=document.createElement('div'); actor.className='actor'; track.append(actor)
+  if(scene.kind==='monitoring'){
+    actor.innerHTML=svg(`<g class="facing">${feet}${body('<g class="glass" transform="translate(25 14)"><path class="handle" d="M3 8h2v7H3z"/><path class="color" d="M2 12h4v2H2z"/><path class="color" opacity=".28" d="M1 1h7v7H1z"/><path class="shine" d="M2 0h5v1H2z M2 8h5v1H2z M0 2h1v5H0z M8 2h1v5H8z M1 1h1v1H1z M7 1h1v1H7z M1 7h1v1H7z M2 2h2v1H2z"/></g>')}</g>`)
+    $('#label').textContent=scene.label; $('#status').textContent='Monitoring'; return
+  }
+  if(scene.kind==='held'){
+    actor.innerHTML=svg(`${feet}${body('<path class="color" d="M28 14h2v2h-2z"/><g class="glass"><path class="color" opacity=".28" d="M31 10h5v2h-5z M32 12h3v1h-3z M33 13h1v3h-1z M32 16h3v1h-3z M31 17h5v2h-5z"/><path class="color" d="M31 10h5v1h-5z M31 11h5v1h-5z M32 12h3v1h-3z"/><path class="shine" d="M30 9h7v1h-7z M30 19h7v1h-7z M30 10h1v2h-1z M36 10h1v2h-1z M31 12h1v1h-1z M35 12h1v1h-1z M32 13h1v3h-1z M34 13h1v3h-1z M31 16h1v1h-1z M35 16h1v1h-1z M30 17h1v2h-1z M36 17h1v2h-1z"/></g>')}`)
+    $('#label').textContent=scene.label; $('#status').textContent='Waiting'; return
+  }
+  if(variant==='A'){
+    // Faces left from the readout end; minis leave it and walk the track, one per agent still running.
+    actor.innerHTML=svg(`<g class="facing" transform="translate(40 0) scale(-1 1)">${feet}${body('<path class="color arm" d="M28 16h4v2h-4z"/>')}</g>`)
+    actor.style.left='auto'; actor.style.right='0'
+    for(let i=0;i<Math.min(6,scene.agents-scene.done);i++){const m=document.createElement('div');m.className='mini';m.dataset.i=i;m.innerHTML=svg(`<path class="color" d="${MINI}"/><path class="ink" d="${MINI_EYES}"/>`,24,20,'0 0 12 10');track.append(m)}
+  }
+  if(variant==='B'){
+    // The hourglass arm, holding a clipboard: a board, a clip, and one row per agent, ticked as they finish.
+    const rows=Math.min(5,scene.agents)
+    const lines=Array.from({length:rows},(_,i)=>`<path class="shine row" data-i="${i}" opacity=".5" d="M32 ${12+i*2}h3v1h-3z"/>`).join('')
+    actor.innerHTML=svg(`${feet}${body(`<path class="color" d="M28 14h2v2h-2z"/><g class="board"><path class="color" opacity=".28" d="M30 9h7v${rows*2+4}h-7z"/><path class="shine" d="M30 9h7v1h-7z M30 ${rows*2+12}h7v1h-7z M30 10h1v${rows*2+2}h-1z M36 10h1v${rows*2+2}h-1z M32 8h3v2h-3z"/>${lines}</g><path class="color pen" d="M31 12h1v1h-1z"/>`)}`)
+  }
+  if(variant==='C'){
+    // Leans on the readout box, arms folded, one foot tapping; three dots above like a thought.
+    actor.innerHTML=svg(`<g class="lean">${feet}${body('<path class="color" d="M13 20h12v2H13z"/><path class="ink" opacity=".3" d="M13 22h12v1H13z"/><path class="shine dots" d="M30 4h1v1h-1z M33 4h1v1h-1z M36 4h1v1h-1z"/>')}</g>`)
+    actor.style.left='auto'; actor.style.right='-2px'
+  }
+  $('#label').textContent=scene.label
+}
+function paint(now){
+  frame=0
+  const scene=scenes[scenario]; if(scene.kind==='hidden') return
+  const still=paused||motion.matches, t=(now-start)/1000, elapsed=now-start+61000
+  const track=$('#track'), width=track.clientWidth, actor=track.querySelector('.actor')
+  const eyes=actor?.querySelector('.eyes'), bodyG=actor?.querySelector('.body'), feetP=actor?.querySelector('.feet')
+  if(scene.kind==='monitoring'){
+    const reach=Math.max(0,width-80), p=t%14; let x=reach,dir=1,walk=false
+    if(!still){ if(p<4){x=reach*p/4;walk=true} else if(p<9){x=reach} else if(p<13){x=reach*(1-(p-9)/4);dir=-1;walk=true} else {x=0;dir=-1} }
+    const step=Math.floor(t*7)%4
+    actor.style.transform=`translateX(${Math.round(x/2)*2}px)`
+    actor.querySelector('.facing').setAttribute('transform',dir<0?'translate(40 0) scale(-1 1)':'')
+    bodyG.setAttribute('transform',walk&&step%2===1?'translate(0 -1)':'')
+    const l=walk?[9,11,13,11][step]:11, r=walk?[23,21,19,21][step]:21
+    feetP.setAttribute('d',`M${l} 29h5v3h-5z M${r} 29h5v3h-5z`)
+  } else if(scene.kind==='held'){
+    bodyG.setAttribute('transform',!still&&Math.floor(t*1.2)%2===1?'translate(0 -1)':'')
+    eyes.setAttribute('d',!still&&t%5>4.86?SHUT:OPEN)
+    $('#status').textContent='Waiting · '+fmt(elapsed)
+  } else {
+    $('#status').textContent=statusText(scene,elapsed)
+    if(variant==='A'){
+      // Minis file out from the creature and off the left edge on a loop; the arm waves them on.
+      const reach=Math.max(0,width-96)
+      track.querySelectorAll('.mini').forEach(m=>{const i=+m.dataset.i, p=still?0.25+i*0.12:((t*0.09)+i*0.17)%1; const x=reach*(1-p); m.style.left=`${Math.round(x/2)*2}px`; const s=Math.floor(t*6+i)%2; m.style.transform=still?'':`translateY(${s?-1:0}px)`})
+      actor.querySelector('.arm').setAttribute('transform',!still&&Math.floor(t*2)%2?'translate(0 -1)':'')
+      eyes.setAttribute('d',!still&&t%5>4.86?SHUT:OPEN)
+    }
+    if(variant==='B'){
+      const rows=actor.querySelectorAll('.row'), done=still?scene.done:Math.min(scene.agents,scene.done+Math.floor(t/4))%(rows.length+1)
+      rows.forEach((r,i)=>{r.setAttribute('opacity',i<done?'1':'.5'); r.setAttribute('d',i<done?`M32 ${12+i*2}h1v1h-1z M33 ${11+i*2}h2v1h-2z`:`M32 ${12+i*2}h3v1h-3z`)})
+      const pen=actor.querySelector('.pen'); const row=Math.min(rows.length-1,done); pen.setAttribute('d',`M${31+(still?0:Math.floor(t*3)%3)} ${12+row*2}h1v1h-1z`)
+      bodyG.setAttribute('transform',!still&&Math.floor(t*1.2)%2===1?'translate(0 -1)':'')
+      eyes.setAttribute('d',!still&&t%4>3.86?SHUT:OPEN)
+      $('#status').textContent=statusText({...scene,done:Math.min(scene.agents,done)},elapsed)
+    }
+    if(variant==='C'){
+      // Tapping foot, eyes to the side toward the readout, dots pulsing one at a time.
+      const tap=!still&&Math.floor(t*4)%4===0
+      feetP.setAttribute('d',`M11 29h5v3h-5z M21 ${tap?28:29}h5v${tap?4:3}h-5z`)
+      eyes.setAttribute('d',still?OPEN:t%6>5.86?SHUT:t%6>3?SIDE:OPEN)
+      const k=Math.floor(t*2)%3; actor.querySelector('.dots').setAttribute('d',[0,1,2].map(i=>`M${30+i*3} ${still||i===k?3:4}h1v1h-1z`).join(' '))
+    }
+  }
+  if(!still) frame=requestAnimationFrame(paint)
+}
+function render(){
+  const v=variants.find(v=>v[0]===variant)
+  $('#vlabel').textContent=`${v[0]} · ${v[1]}`; $('#fb').textContent=v[2]
+  $('#scenario').value=scenario; $('#wording').value=wording
+  $('#still').setAttribute('aria-pressed',paused||motion.matches)
+  $('#theme').setAttribute('aria-pressed',document.documentElement.dataset.theme==='light')
+  cancelAnimationFrame(frame); start=performance.now(); mount(); paint(start)
+  window.prototypeState={variant,scenario,wording,still:paused||motion.matches,creatureVisible:!$('#walkway').hidden,status:$('#status').textContent}
+}
+function cycle(d){variant=variants[(variants.findIndex(v=>v[0]===variant)+d+3)%3][0];const u=new URL(location);u.searchParams.set('variant',variant);history.replaceState(null,'',u);render()}
+$('#prev').onclick=()=>cycle(-1); $('#next').onclick=()=>cycle(1)
+$('#scenario').onchange=e=>{scenario=e.target.value;render()}
+$('#wording').onchange=e=>{wording=e.target.value;render()}
+$('#still').onclick=()=>{paused=!paused;render()}
+$('#theme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'':'light';render()}
+motion.addEventListener('change',render)
+document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select,[contenteditable]'))return;if(e.key==='ArrowLeft')cycle(-1);if(e.key==='ArrowRight')cycle(1)})
+render()
+</script>
+</body>
+</html>
