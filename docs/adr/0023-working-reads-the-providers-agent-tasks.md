@@ -21,7 +21,8 @@ monitoring: they are guesses about the provider, and this pose speaks for it.
 **Only work this thread started.** The ownership rules are the monitor's: not a frame with a
 `parent_tool_use_id` or `isSidechain`, not launched by a tool call seen inside a subagent, not `ambient`, not
 `skip_transcript`. Two fields the CLI adds exclude too: `owned_by_subagent`, and a `spawn_depth` above one,
-which is an agent started by an agent.
+which is an agent started by an agent. These two narrow agent work only; a monitor's watch keeps the rules it
+had.
 
 **A subagent the turn is blocking on is not background work.** The CLI marks a `local_agent` started in the
 foreground with `is_backgrounded: false`. That is the turn's own action, and the held action already names it

@@ -71,14 +71,15 @@ export class ClaudeMonitoring {
       this.tasks.delete(taskId); return
     }
     if (frame.subtype === 'task_started') {
-      // A subagent's own tasks are its business: the CLI marks some of them outright, and a spawn deeper
-      // than the first is an agent started by an agent rather than by this thread.
-      const nestedOrUnknown = nestedFrame || frame.owned_by_subagent === true
-        || typeof frame.spawn_depth === 'number' && frame.spawn_depth > 1
-        || frame.tool_use_id !== undefined && frame.tool_use_id !== null
-          && (typeof frame.tool_use_id !== 'string' || this.toolOwners.get(frame.tool_use_id) !== 'root')
       const type = String(frame.task_type)
       const work = workTypes.get(type)
+      // A subagent's own agents are its business: the CLI marks some of them outright, and a spawn deeper
+      // than the first is an agent started by an agent rather than by this thread. Watches keep the rules
+      // they had before background work existed; these two marks only narrow agent work.
+      const nestedOrUnknown = nestedFrame
+        || !!work && (frame.owned_by_subagent === true || typeof frame.spawn_depth === 'number' && frame.spawn_depth > 1)
+        || frame.tool_use_id !== undefined && frame.tool_use_id !== null
+          && (typeof frame.tool_use_id !== 'string' || this.toolOwners.get(frame.tool_use_id) !== 'root')
       if (!monitorTypes.has(type) && !work || nestedOrUnknown || frame.ambient === true || frame.skip_transcript === true) {
         this.tasks.delete(taskId); return
       }
