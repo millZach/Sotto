@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentMessage } from '../../../src/shared/agents'
+import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import {
-  activityLabel, currentAction, fenced, formatDuration, groupSummary, liveTurnId, openActivityLabel, placeActivities, statusText, timingNote, turnHeadline,
+  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, openActivityLabel, placeActivities,
+  statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
 const at = '2026-09-12T10:00:00.000Z'
@@ -145,5 +146,57 @@ describe('activity wording', () => {
 
   it('fences provider output so it cannot close its own block', () => {
     expect(fenced('a\n````\nb\n', 'output')).toBe('`````output\na\n````\nb\n`````')
+  })
+})
+
+describe('the action a thread is waiting on', () => {
+  const started = '2026-09-12T10:00:00.000Z'
+  const startedMs = Date.parse(started)
+  const live = (patch: Partial<AgentActivity> = {}): Pick<AgentThread, 'status' | 'activities' | 'messages'> => ({
+    status: 'running', messages: [message('u1', 'user')],
+    activities: [turn({ status: 'running' }), record({ id: 'action', status: 'running', startedAt: started, ...patch })],
+  })
+
+  it('offers the running action whatever its age, and leaves the clock to the caller', () => {
+    const action = heldAction(live())
+    expect(action?.id).toBe('action')
+    expect(heldLongEnough(action!, startedMs + HELD_AFTER_MS - 1)).toBe(false)
+    expect(heldLongEnough(action!, startedMs + HELD_AFTER_MS)).toBe(true)
+  })
+
+  it('offers nothing for kinds that are the model working rather than waiting', () => {
+    for (const kind of ['reasoning', 'plan', 'status', 'file-change', 'compaction'] as const) {
+      expect(heldAction(live({ kind }))).toBeUndefined()
+    }
+    for (const kind of ['command', 'tool', 'subagent'] as const) {
+      expect(heldAction(live({ kind }))?.id).toBe('action')
+    }
+  })
+
+  it('offers nothing without a start, a live turn, or a finished action', () => {
+    expect(heldAction(live({ startedAt: undefined }))).toBeUndefined()
+    expect(heldAction(live({ status: 'completed' }))).toBeUndefined()
+    expect(heldAction({ ...live(), status: 'idle' })).toBeUndefined()
+    expect(heldLongEnough({ startedAt: undefined }, startedMs + HELD_AFTER_MS)).toBe(false)
+    expect(heldLongEnough({ startedAt: 'not a time' }, startedMs + HELD_AFTER_MS)).toBe(false)
+  })
+
+  it('follows the latest running record, so a new action restarts the wait', () => {
+    const later = '2026-09-12T10:00:19.000Z'
+    const thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> = {
+      status: 'running', messages: [message('u1', 'user')],
+      activities: [turn({ status: 'running' }), record({ id: 'first', status: 'running', startedAt: started, sequence: 1 }),
+        record({ id: 'second', status: 'running', startedAt: later, sequence: 2 })],
+    }
+    const action = heldAction(thread)
+    expect(action?.id).toBe('second')
+    expect(heldLongEnough(action!, Date.parse(later) + HELD_AFTER_MS - 1)).toBe(false)
+  })
+
+  it('reads the command as it was run, and falls back to the title the provider gave', () => {
+    expect(heldLabel({ command: 'npm test -- --maxWorkers=2', title: 'Bash' })).toBe('npm test -- --maxWorkers=2')
+    expect(heldLabel({ command: '  npm test\n  --watch  ', title: 'Bash' })).toBe('npm test --watch')
+    expect(heldLabel({ command: undefined, title: 'WebFetch' })).toBe('WebFetch')
+    expect(heldLabel({ command: '   ', title: '  ' })).toBe('Running')
   })
 })

@@ -61,6 +61,7 @@ artifacts/terminal-loading/
 
 artifacts/activity-performance/
 artifacts/process-creature/
+artifacts/held-action/
 artifacts/queued-steering/
 
 # Question panel verification captures
