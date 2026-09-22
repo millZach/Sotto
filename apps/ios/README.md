@@ -1,6 +1,6 @@
 # Sotto for iPhone
 
-Native iOS 17+ client for a Sotto host on a private Tailscale connection. The app pairs with a code read on Forge, opens existing threads, sends text, interrupts supported work and answers current requests explicitly. Pairing does not grant permission authority. New threads, terminal, file management, speech, push and Android are outside this first client.
+Native iOS 17+ client for a Sotto host on a private Tailscale connection. The app pairs with a code read on the host, opens existing threads, sends text, interrupts supported work and answers current requests explicitly. Pairing does not grant permission authority. New threads, terminal, file management, speech, push and Android are outside this first client.
 
 This directory is independent of the Electron/npm package. SwiftUI, Foundation and Security are system frameworks; SottoCore has no external dependencies. The wire models mirror `src/shared/hostProtocol.ts` version 1. One host is saved per installation; cached state is scoped to its persisted host ID. No signing team is embedded and no build has been uploaded.
 
@@ -60,7 +60,7 @@ Forget first revokes this pairing on the host, then clears Keychain and memory. 
 ## Verification required before delivery
 
 - Native package tests and simulator compile; inspect both themes at small/large text sizes, VoiceOver, reduced motion, portrait and landscape, and the software keyboard.
-- On the real iPhone and desktop, read the same Forge thread, reply and receive streaming updates, interrupt, answer structured questions and each supported permission form explicitly.
+- On the real iPhone and desktop, read the same thread on the host, reply and receive streaming updates, interrupt, answer structured questions and each supported permission form explicitly.
 - Revoke authority while a request is visible; another client answers first; disconnect after send but before acknowledgement; restart host; switch networks; lock/unlock; terminate/relaunch. No automatic resend or stale request answer.
 - Expired/invalid pairing, Keychain locked/unavailable, wrong host identity, offline host, revoked token, and revocation followed by local deletion failure.
 - Verify host work continues while the app is suspended. Record device/iOS/app versions and native captures. HTML, static source checks and simulator builds cannot establish this result.

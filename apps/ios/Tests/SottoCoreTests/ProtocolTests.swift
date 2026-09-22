@@ -110,6 +110,19 @@ final class ProtocolTests: XCTestCase {
         XCTAssertFalse(SnapshotGuard.accepts(requestGeneration: UUID(), currentGeneration: epoch, requestedThread: "a", selectedThread: "a", incomingRevision: 10, currentRevision: 1, changedSinceRead: false))
         XCTAssertFalse(SnapshotGuard.accepts(requestGeneration: epoch, currentGeneration: epoch, requestedThread: "a", selectedThread: "a", incomingRevision: nil, currentRevision: 4, changedSinceRead: true))
     }
+    func testOnlyHostAllowedCommandsAndFieldsAreBuilt() throws {
+        XCTAssertNoThrow(try Commands.interrupt(threadID: "t"))
+        XCTAssertNoThrow(try Commands.loadEarlier(threadID: "t"))
+        XCTAssertNoThrow(try Commands.prompt(threadID: "t", text: "Reply", draftID: UUID().uuidString))
+        // Host-local commands and permission changes are never built, and no command carries an unlisted field.
+        for command: JSONValue in [
+            .object(["type": .string("credential"), "slot": .string("reasoning"), "value": .string("key")]),
+            .object(["type": .string("configure-thread"), "threadId": .string("t"), "providerMode": .string("bypass")]),
+            .object(["type": .string("reclaim-thread-worktree"), "threadId": .string("t"), "withUncommittedChanges": .bool(true)]),
+            .object(["type": .string("interrupt"), "threadId": .string("t"), "runtimeMode": .string("full-access")]),
+        ] { XCTAssertThrowsError(try RemoteCommands.checked(command)) }
+        XCTAssertEqual(RemoteCommands.needAnswerPolicy, ["answer"])
+    }
     func testEmptyAndOversizedPromptsCannotSend() throws {
         for text in ["  ", String(repeating: "x", count: 100_001)] { XCTAssertThrowsError(try Commands.prompt(threadID: "t", text: text, draftID: UUID().uuidString)) }
     }

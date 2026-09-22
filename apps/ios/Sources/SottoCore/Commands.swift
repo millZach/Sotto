@@ -4,11 +4,37 @@ public struct QuestionAnswer: Codable, Equatable, Sendable {
     public var optionIds: [String]; public var text: String?
     public init(optionIds: [String] = [], text: String? = nil) { self.optionIds = optionIds; self.text = text }
 }
+/// The commands this client builds, each with the only fields the host accepts from a paired device.
+/// A copy of the rows it uses from the host's closed allow-list in src/host/remoteCommands.ts, which is
+/// the authority: anything not listed there is refused. The app builds nothing that list gates behind
+/// the remote-answer policy except `answer` (runtime and provider modes, discarding uncommitted work).
+public enum RemoteCommands {
+    public static let allowed: [String: Set<String>] = [
+        "manual-send": ["threadId", "text", "attachments", "skills", "files", "draftId"],
+        "interrupt": ["threadId"],
+        "load-earlier-messages": ["threadId"],
+        "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
+    ]
+    /// Commands the host accepts only from a client holding its remote-answer policy (`mayAnswer`).
+    public static let needAnswerPolicy: Set<String> = ["answer"]
+    /// Refuses a command the host would refuse, before it is sent.
+    public static func checked(_ command: JSONValue) throws -> JSONValue {
+        guard case .object(let fields) = command, case .string(let type)? = fields["type"],
+              let permitted = Self.allowed[type], Set(fields.keys).subtracting(["type"]).isSubset(of: permitted) else { throw ClientError.invalidRequest }
+        return command
+    }
+}
 public enum Commands {
     public static func prompt(threadID: String, text: String, draftID: String) throws -> JSONValue {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf16.count <= 100_000,
               UUID(uuidString: draftID) != nil else { throw ClientError.invalidRequest }
-        return .object(["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)])
+        return try RemoteCommands.checked(.object(["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]))
+    }
+    public static func interrupt(threadID: String) throws -> JSONValue {
+        try RemoteCommands.checked(.object(["type": .string("interrupt"), "threadId": .string(threadID)]))
+    }
+    public static func loadEarlier(threadID: String) throws -> JSONValue {
+        try RemoteCommands.checked(.object(["type": .string("load-earlier-messages"), "threadId": .string(threadID)]))
     }
     public static func answer(threadID: String, request: AgentRequest, currentRequests: [AgentRequest],
                               choice: String? = nil, text: String = "", answers: [String: QuestionAnswer] = [:]) throws -> JSONValue {
@@ -19,7 +45,7 @@ public enum Commands {
             if current.permissionChoices == nil {
                 guard choice == "allow" || choice == "deny" else { throw ClientError.invalidRequest }
                 result["approved"] = .bool(choice == "allow"); result["answer"] = .string(choice == "allow" ? "Allow" : "Deny")
-                return .object(result)
+                return try RemoteCommands.checked(.object(result))
             }
             guard let choice, let option = current.permissionChoices?.first(where: { $0.id == choice }),
                   request.permissionChoices?.contains(where: { $0.id == choice && $0.kind == option.kind && $0.label == option.label }) == true else { throw ClientError.invalidRequest }
@@ -52,7 +78,7 @@ public enum Commands {
         } else {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf16.count <= 100_000 else { throw ClientError.invalidRequest }
         }
-        return .object(result)
+        return try RemoteCommands.checked(.object(result))
     }
 }
 

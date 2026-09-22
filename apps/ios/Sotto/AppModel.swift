@@ -136,16 +136,18 @@ import SottoCore
     func interrupt() async {
         guard canInterrupt, let thread = selected, let saved else { return }
         do {
+            let command = try Commands.interrupt(threadID: thread.id)
             let operation = PendingOperation(hostID: saved.pairing.hostId, clientID: saved.pairing.clientId, threadID: thread.id, kind: "interrupt")
             try remember(operation)
-            await dispatch(.object(["type": .string("interrupt"), "threadId": .string(thread.id)]), operation: operation)
+            await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
     }
     func earlier() async {
         guard online, let id = selectedID else { return }
         let current = generation
         do {
-            _ = try await connection.call(["op": .string("command"), "command": .object(["type": .string("load-earlier-messages"), "threadId": .string(id)])])
+            let command = try Commands.loadEarlier(threadID: id)
+            _ = try await connection.call(["op": .string("command"), "command": command])
             guard current == generation, id == selectedID else { return }
             try await observeAndRead()
         } catch { if current == generation { feedback = error.localizedDescription } }

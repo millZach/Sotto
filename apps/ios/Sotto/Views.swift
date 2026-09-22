@@ -16,7 +16,7 @@ struct RootView: View {
             .toolbarBackground(Color("Canvas"), for: .navigationBar)
             .toolbar {
                 if model.saved != nil {
-                    ToolbarItem(placement: .topBarTrailing) { Button("Host") { hostSheet = true }.frame(minHeight: 44) }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Host details") { hostSheet = true }.frame(minHeight: 44) }
                 }
             }
             .navigationDestination(isPresented: Binding(get: { model.selectedID != nil }, set: { if !$0 { Task { await model.select(nil) } } })) { ThreadView() }
@@ -34,8 +34,8 @@ struct PairView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Pair with Forge").font(.custom("Figtree-Regular", size: 28, relativeTo: .title)).fontWeight(.semibold)
-                Text("Read the pairing code on Forge and enter it here.").foregroundStyle(Color("Muted"))
+                Text("Pair with your host").font(.custom("Figtree-Regular", size: 28, relativeTo: .title)).fontWeight(.semibold)
+                Text("Read the pairing code on the host and enter it here.").foregroundStyle(Color("Muted"))
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Host address").font(.subheadline)
                     TextField("https://forge.your-tailnet.ts.net", text: $address).textContentType(.URL).keyboardType(.URL)
@@ -44,7 +44,7 @@ struct PairView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Pairing code").font(.subheadline)
-                    TextField("Code from Forge", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                    TextField("Code from the host", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled()
                         .focused($focus, equals: .code).submitLabel(.go).onSubmit { pair() }.fieldSurface().accessibilityLabel("Pairing code")
                 }
                 Button(model.working ? "Pairing..." : "Pair this iPhone") { pair() }.buttonStyle(ActionStyle())

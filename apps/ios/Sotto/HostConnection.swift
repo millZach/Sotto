@@ -109,7 +109,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         // Retrying Forget after revocation succeeded but local deletion failed is safe.
         if route == "/v1/revoke" && response.statusCode == 401 { return .object(["v": .number(1), "revoked": .bool(true)]) }
         guard (200..<300).contains(response.statusCode) else {
-            throw ClientError.rejected(route == "/v1/pair" ? "Pairing failed. Check the address and use a new code from Forge." : "This iPhone is no longer authorized. Pair again on the host.")
+            throw ClientError.rejected(route == "/v1/pair" ? "Pairing failed. Check the address and use a new code from the host." : "This iPhone is no longer authorized. Pair again on the host.")
         }
         return try Wire.decode(data)
     }
