@@ -209,7 +209,7 @@ export async function runHeadlessCommandLine(): Promise<void> {
     process.removeListener('SIGINT', stop)
     console.error('[Sotto] host-start-failed')
     if (error instanceof HostLockError) console.error(error.message)
-    else console.error('Check the data folder and its original key file, then retry: node out/host/index.js --data <folder> [--key-file <file>].')
+    else console.error('Check the data folder and its original key file, then retry with the same --data and --key-file: host/index.js from an extracted archive, out/host/index.js from a checkout.')
     process.exitCode = 1
   }
 }
