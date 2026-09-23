@@ -226,6 +226,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'git-refs':
         if (!service.gitRefs) throw new Refusal('invalid_request')
         try { return await service.gitRefs(request.request) } catch { throw new Refusal('unavailable') }
+      case 'git-changed-files':
+        if (!service.gitChangedFiles) throw new Refusal('invalid_request')
+        try { return await service.gitChangedFiles(request.request) } catch { throw new Refusal('unavailable') }
       case 'preview':
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true

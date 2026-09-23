@@ -6,6 +6,7 @@ import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 export type AgentHostCommand =
@@ -115,6 +116,8 @@ export interface AgentHost {
   pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
   /** The branches the thread's folder offers, for the picker (ADR-0027). */
   listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  /** The changed files of the thread's folder with their line counts, for the commit dialog (ADR-0027). */
+  listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>

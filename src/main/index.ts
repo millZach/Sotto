@@ -566,6 +566,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     throw new Error('The Devin test fixture requires absolute paths.')
   }
   const testAgentHost = e2eConfiguration === null || devinFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  // A Playwright journey pushes to an owned remote and "creates" its pull request through a scripted gh; development only.
+  const ghStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_GH_SCRIPT'] : undefined
+  const ghStandInExecutable = process.env['SOTTO_E2E_GH_EXECUTABLE']
+  if (ghStandInScript && (!isAbsolute(ghStandInScript) || !ghStandInExecutable || !isAbsolute(ghStandInExecutable))) throw new Error('The gh test stand-in requires absolute paths.')
+  const ghStandIn = ghStandInScript && ghStandInExecutable ? { executable: ghStandInExecutable, args: [ghStandInScript] } : undefined
   // Static design fixtures include deliberately unavailable folders. Interactive E2E
   // journeys need real, profile-owned folders and exercise the production cwd checks.
   if (testAgentHost !== null && process.env['SOTTO_DESIGN_CAPTURE'] !== '1') {
@@ -583,7 +588,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
-    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront },
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}) },
     openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
@@ -616,7 +621,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
-    gitRefs: request => agentControl.gitRefs(request),
+    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,

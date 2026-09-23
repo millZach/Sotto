@@ -208,6 +208,34 @@ describe('branches the way T3 lists them', () => {
   }, 30000)
 })
 
+describe('the changed files the commit dialog lists', () => {
+  it('lists every changed path with its counts against HEAD, counting a new file from the file itself', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'gone.txt'), 'gone\n'); await writeFile(join(f.repo, 'moved.txt'), 'moved\n'); commit(f.repo, 'More files')
+    await writeFile(join(f.repo, 'work.txt'), 'first\nsecond\nthird\n')
+    await rm(join(f.repo, 'gone.txt'))
+    git(f.repo, 'mv', 'moved.txt', 'renamed.txt')
+    await writeFile(join(f.repo, 'fresh.txt'), 'one\ntwo')
+    await writeFile(join(f.repo, 'binary.bin'), Buffer.from([0, 1, 2, 3]))
+    await writeFile(join(f.repo, 'staged.txt'), 'staged\n'); git(f.repo, 'add', 'staged.txt')
+    const listed = await f.reader.listChangedFiles(f.repo)
+    expect(listed.isRepository).toBe(true); expect(listed.truncated).toBe(false)
+    expect(listed.files).toEqual([
+      { path: 'binary.bin', status: 'untracked', insertions: null, deletions: null },
+      { path: 'fresh.txt', status: 'untracked', insertions: 2, deletions: 0 },
+      { path: 'gone.txt', status: 'deleted', insertions: 0, deletions: 1 },
+      { path: 'renamed.txt', originalPath: 'moved.txt', status: 'renamed', insertions: 0, deletions: 0 },
+      { path: 'staged.txt', status: 'added', insertions: 1, deletions: 0 },
+      { path: 'work.txt', status: 'modified', insertions: 2, deletions: 0 },
+    ])
+    // A folder that is not a repository lists nothing, and a repository with nothing changed lists an empty set.
+    const plain = join(f.root, 'plain'); await mkdir(plain)
+    expect(await f.reader.listChangedFiles(plain)).toEqual({ isRepository: false, files: [], truncated: false })
+    git(f.repo, 'add', '-A'); git(f.repo, 'commit', '-qm', 'Everything')
+    expect((await f.reader.listChangedFiles(f.repo)).files).toEqual([])
+  }, 30000)
+})
+
 describe('porcelain v2 parsing', () => {
   it('reads the branch headers and counts records, a rename once', () => {
     const output = ['# branch.oid abc', '# branch.head main', '# branch.upstream origin/main', '# branch.ab +2 -1',

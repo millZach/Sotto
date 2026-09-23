@@ -2,6 +2,7 @@ import { agentCommandSchema, agentShell, isThreadProviderConnected, type AgentCo
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { ClientIdentity, HostService } from '../agents/hostService'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 
 export interface DesktopHostConnection {
   hostId: string
@@ -11,6 +12,7 @@ export interface DesktopHostConnection {
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
@@ -106,6 +108,12 @@ export class DesktopHostRouter {
     if (!connection.gitRefs) throw new Error('Branches are unavailable on this host.')
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its branches.')
     return connection.gitRefs({ ...request, threadId: id! })
+  }
+  async gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitChangedFiles) throw new Error('Changed files are unavailable on this host.')
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its changes.')
+    return connection.gitChangedFiles({ ...request, threadId: id! })
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     this.notice = undefined

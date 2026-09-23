@@ -94,8 +94,19 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(git(f.repo, 'log', '-1', '--pretty=%s')).toBe('Second change')
     expect(git(f.repo, 'log', '-1', '--pretty=%s', 'main')).toBe('First')
     expect(f.events.filter(event => event.kind === 'phase_started').map(event => (event as { phase: string }).phase)).toEqual(['branch', 'commit'])
-    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push', featureBranch: true })).rejects.toThrow('Feature-branch checkout is only supported for commit actions.')
     await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', featureBranch: true })).rejects.toThrow('no changes to commit')
+  }, 30000)
+  it('pushes from the default branch onto a feature branch named after the last commit when asked to check one out', async () => {
+    // "Check out feature branch & continue" on a push: nothing new to commit, so the branch is named after HEAD's subject.
+    const f = await fixture()
+    await writeFile(join(f.repo, 'work.txt'), 'second\n'); commit(f.repo, 'Second change on main')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push', featureBranch: true, onProgress: f.onProgress })
+    expect(result.branch).toEqual({ status: 'created', name: 'feature/second-change-on-main' })
+    expect(result.push).toMatchObject({ status: 'pushed', branch: 'feature/second-change-on-main', setUpstream: true })
+    expect(git(f.repo, 'branch', '--show-current')).toBe('feature/second-change-on-main')
+    expect(git(f.other, 'ls-remote', '--heads', 'origin', 'feature/second-change-on-main')).toContain('feature/second-change-on-main')
+    expect(git(f.other, 'ls-remote', '--heads', 'origin', 'main')).toContain(git(f.repo, 'rev-parse', 'main~1'))
+    expect(f.events.filter(event => event.kind === 'phase_started').map(event => (event as { phase: string }).phase)).toEqual(['branch', 'push'])
   }, 30000)
   it('streams what a commit hook prints and names the hook', async () => {
     const f = await fixture({ remote: false })

@@ -24,7 +24,7 @@ async function hostAnswering(health: unknown): Promise<string> {
 afterEach(async () => { await new Promise<void>(resolve => server ? server.close(() => resolve()) : resolve()); server = undefined })
 
 const hostId = randomUUID()
-const frozen = { v: 1, status: 'ready', hostId, pid: 4242, port: 4319, sottoVersion: '0.1.16', features: ['detail-delta', 'git-refs'] }
+const frozen = { v: 1, status: 'ready', hostId, pid: 4242, port: 4319, sottoVersion: '0.1.16', features: ['detail-delta', 'git-refs', 'git-changed-files'] }
 
 describe('SocketHostService version check', () => {
   it('names a host from before protocol v1 froze and says how to start the new version, before sending it anything', async () => {
@@ -69,6 +69,7 @@ describe('SocketHostService git-refs feature', () => {
     const client = new SocketHostService({ url, token: 'paired-token', owned: true })
     await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
     await expect(client.gitRefs({ threadId: randomUUID() })).rejects.toMatchObject({ code: 'version_mismatch', message: hostVersionMismatch(packageVersion, '0.1.16', true) })
+    await expect(client.gitChangedFiles({ threadId: randomUUID() })).rejects.toMatchObject({ code: 'version_mismatch' })
     expect(requested).toEqual(['/v1/health', '/v1/session'])
   })
 })

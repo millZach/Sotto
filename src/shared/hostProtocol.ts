@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentAttachmentPreviewRequestSchema, agentCommandSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
+import { gitChangedFilesRequestSchema } from './gitChangedFiles'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -13,9 +14,10 @@ export const HOST_PROTOCOL_VERSION = 1 as const
  * The host features this build offers: parts of v1 beyond its base, which a client uses only when a
  * host lists them. `detail-delta`: a client that accepts it is sent what changed in an observed thread
  * (a `detail-delta` push) in place of the whole thread on every change. `git-refs`: the host answers the
- * `git-refs` request with a page of a thread's branches for the branch picker.
+ * `git-refs` request with a page of a thread's branches for the branch picker. `git-changed-files`: the
+ * host answers the `git-changed-files` request with a thread's changed files for the commit dialog.
  */
-export const HOST_FEATURES = ['detail-delta', 'git-refs'] as const
+export const HOST_FEATURES = ['detail-delta', 'git-refs', 'git-changed-files'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * Whether a host's Sotto version is later than this client's, by release number. A version that cannot
@@ -64,6 +66,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('receipt'), commandId: id }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
+  /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */
+  z.object({ ...base, op: z.literal('git-changed-files'), request: gitChangedFilesRequestSchema }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never
