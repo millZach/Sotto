@@ -521,15 +521,15 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
-/** The same facts, from the summary the shell carries or from the history a full state holds. */
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list, so a Devin thread keeps its placeholder and is offered no Regenerate title that could do nothing.
+ * list, so a Devin thread keeps its placeholder and is offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin'
 }
+/** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
   return thread.summary ?? summarizeThread(thread)
 }
