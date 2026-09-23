@@ -120,6 +120,38 @@ export function SidebarFoot(): ReactNode {
   </div>
 }
 
+type SidebarSize = ReturnType<typeof useSidebarSize>
+
+/** The collapse and expand buttons trade places; focus follows the press to whichever one is now shown. */
+export function useCollapseToggleFocus(collapsed: boolean): React.RefObject<HTMLButtonElement | null> {
+  const toggle = useRef<HTMLButtonElement>(null)
+  const previous = useRef(collapsed)
+  useLayoutEffect(() => {
+    if (previous.current !== collapsed) toggle.current?.focus()
+    previous.current = collapsed
+  }, [collapsed])
+  return toggle
+}
+
+/** The handle on a sidebar's right edge: drag it, or focus it and use the arrow keys. Double-click resets the width. */
+export function SidebarResize({ size, onResizing }: { readonly size: SidebarSize; readonly onResizing: (resizing: boolean) => void }): ReactNode {
+  const helpId = useId()
+  return <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label="Resize sidebar" aria-describedby={helpId} aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
+    aria-valuetext={`${size.width} pixels`} title="Drag to resize. Use arrow keys when focused. Double-click to reset."
+    onPointerDown={event => {
+      if (event.button !== 0) return
+      event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); onResizing(true)
+    }}
+    onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) size.resize(event.clientX - event.currentTarget.parentElement!.getBoundingClientRect().left) }}
+    onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); onResizing(false) }}
+    onLostPointerCapture={() => onResizing(false)} onDoubleClick={size.reset}
+    onKeyDown={event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault(); event.stopPropagation()
+      size.resize(event.key === 'Home' ? 260 : event.key === 'End' ? size.maximum : size.width + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10))
+    }}><span id={helpId} className="tt-visually-hidden">Use Left and Right arrow keys to resize. Hold Shift for larger steps. Home chooses the narrowest width; End chooses the widest.</span></div>
+}
+
 export interface SidebarFrameProps {
   readonly state: AgentState
   readonly command: AgentConnection['command']
@@ -153,14 +185,8 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
   const addProject = useAddProject(state, command)
   const mac = (platform ?? app?.platform) === 'darwin'
   const size = useSidebarSize()
-  const resizeHelpId = useId()
   const [resizing, setResizing] = useState(false)
-  const toggle = useRef<HTMLButtonElement>(null)
-  const previousCollapsed = useRef(size.collapsed)
-  useLayoutEffect(() => {
-    if (previousCollapsed.current !== size.collapsed) toggle.current?.focus()
-    previousCollapsed.current = size.collapsed
-  }, [size.collapsed])
+  const toggle = useCollapseToggleFocus(size.collapsed)
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode={mode} data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
@@ -196,20 +222,7 @@ export function SidebarFrame({ state, command, mode, onMode, label, query, searc
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
       {foot ?? <SidebarFoot />}
-    </div> : <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label="Resize sidebar" aria-describedby={resizeHelpId} aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
-      aria-valuetext={`${size.width} pixels`} title="Drag to resize. Use arrow keys when focused. Double-click to reset."
-      onPointerDown={event => {
-        if (event.button !== 0) return
-        event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setResizing(true)
-      }}
-      onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) size.resize(event.clientX - event.currentTarget.parentElement!.getBoundingClientRect().left) }}
-      onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); setResizing(false) }}
-      onLostPointerCapture={() => setResizing(false)} onDoubleClick={size.reset}
-      onKeyDown={event => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-        event.preventDefault(); event.stopPropagation()
-        size.resize(event.key === 'Home' ? 260 : event.key === 'End' ? size.maximum : size.width + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10))
-      }}><span id={resizeHelpId} className="tt-visually-hidden">Use Left and Right arrow keys to resize. Hold Shift for larger steps. Home chooses the narrowest width; End chooses the widest.</span></div>}
+    </div> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>
 }
 

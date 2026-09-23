@@ -147,8 +147,9 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner}: an unsent a
     launched = await launchSotto('success', profile); page = launched.page
     await countAnswers(launched, owner)
     await size(launched, 1280, 860)
-    // The threaded fixture reconnects on launch; disconnect it so the unknown state is observed before reconnecting.
+    // Both fixtures reconnect on launch; disconnect so the unknown state is observed before reconnecting.
     if (owner === 'thread') await page.evaluate(() => window.sotto!.agents!.command({ type: 'disconnect' }))
+    else await page.evaluate(() => window.sotto!.personalChats!.disconnect())
     await open(page, owner)
     expect(await drafts(profile)).toEqual(before)
     // While the provider is disconnected, Sotto cannot know whether the question is open, and says so.
