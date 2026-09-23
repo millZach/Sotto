@@ -307,7 +307,11 @@ export class SocketHostService implements HostService {
     const result = this.previewTail.then(async () => this.read(agentAttachmentPreviewResultSchema, await this.call({ op: 'preview', request })))
     this.previewTail = result.catch(() => undefined); return result
   }
-  async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> { return this.read(gitRefsPageSchema, await this.call({ op: 'git-refs', request })) }
+  /** A host that does not list `git-refs` is from before the branch picker; the version sentence says which side to bring up to date, and nothing is sent. */
+  async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    if (!this.features.includes('git-refs')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    return this.read(gitRefsPageSchema, await this.call({ op: 'git-refs', request }))
+  }
   async revokePairing(): Promise<void> {
     const response = await fetch(this.endpoint('/v1/revoke'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.timeout(15000), redirect: 'error' })
     if (!response.ok) throw refusal(response.status, 'The host could not forget this device. Connect again and retry.', 'unavailable')

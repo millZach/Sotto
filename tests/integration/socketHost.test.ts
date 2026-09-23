@@ -419,7 +419,7 @@ describe('thread detail over the socket', () => {
       // A client from before the freeze says nothing about deltas in its hello, and keeps getting whole threads.
       const legacy = await rawPeer(server.descriptor.port, session())
       try {
-        expect(await legacy.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['detail-delta'] } })
+        expect(await legacy.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] } })
         await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
         stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
         stream.emit(delta(2, 3, '!'))
@@ -494,11 +494,11 @@ describe('thread detail over the socket', () => {
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['detail-delta'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] })
     const listener = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['detail-delta'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'], capabilities: { mayAnswer: false } })
   })
 
   it('keeps the version sentence for an unreadable push from a host of another version when a thread once too large arrives', async () => {

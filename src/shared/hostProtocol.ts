@@ -12,9 +12,10 @@ export const HOST_PROTOCOL_VERSION = 1 as const
 /**
  * The host features this build offers: parts of v1 beyond its base, which a client uses only when a
  * host lists them. `detail-delta`: a client that accepts it is sent what changed in an observed thread
- * (a `detail-delta` push) in place of the whole thread on every change.
+ * (a `detail-delta` push) in place of the whole thread on every change. `git-refs`: the host answers the
+ * `git-refs` request with a page of a thread's branches for the branch picker.
  */
-export const HOST_FEATURES = ['detail-delta'] as const
+export const HOST_FEATURES = ['detail-delta', 'git-refs'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * Whether a host's Sotto version is later than this client's, by release number. A version that cannot
