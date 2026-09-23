@@ -158,6 +158,7 @@ export class AgentControl {
   private readonly providerReconnect = new Map<ProviderId, ReturnType<typeof setTimeout>>()
   private retirementFailure: string | null = null
   private disposed = false
+  private readonly activeCommands = new Set<Promise<AgentState>>()
   private membershipTimer: ReturnType<typeof setInterval> | null = null
   private privacyCleanupPending = false
   private privacyRevision = 0
@@ -193,6 +194,7 @@ export class AgentControl {
   private contextActivityAt = Date.now()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
+  private readonly titleWrites = new Set<Promise<void>>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
   private readonly localClient: ClientIdentity = desktopWindowClient()
   /** Sotto's own supervision, so a recorded answer shows it came from Sotto and not from the user. */
@@ -203,6 +205,7 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Whether the voice coordinator ships. Off, no thread stays managed across a start (ADR-0012). */
     coordinatorEnabled?: () => boolean
+    observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
     preferences?: Pick<MemoryProfile, 'retrieve'>
@@ -356,6 +359,7 @@ export class AgentControl {
   projects(): AgentProject[] { return structuredClone(this.state.host.projects) }
   get(): AgentState {
     const state = structuredClone(this.state)
+    state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
@@ -393,6 +397,7 @@ export class AgentControl {
       summary: threadSummaryOf(thread),
     })) } }
     const state = structuredClone(bare)
+    state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
@@ -432,7 +437,7 @@ export class AgentControl {
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
     return [...new Set([
-      ...(this.state.activeThreadId ? [this.state.activeThreadId] : []),
+      ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds,
       ...(this.state.deliveries ?? []).filter(item => item.status !== 'accepted').map(item => item.threadId),
       ...this.followupStore.peek().items.map(item => item.threadId),
@@ -747,7 +752,7 @@ export class AgentControl {
   }
   private observe(...threadIds: string[]): void {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
-      ...(this.state.activeThreadId ? [this.state.activeThreadId] : []),
+      ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
       ...this.followupStore.peek().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
   }
@@ -786,6 +791,7 @@ export class AgentControl {
     return assignment
   }
   private canAct(threadId?: string): void {
+    if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     if (!['active', 'beta'].includes(this.state.membership.status)) throw new Error('Agent actions require an active Sotto membership. Free dictation remains available.')
     if (this.state.membership.expiresAt && Date.parse(this.state.membership.expiresAt) <= Date.now()) throw new Error('Refresh your Sotto membership before starting more agent actions. Existing provider work continues.')
     if (threadId && !isThreadProviderConnected(this.state.host, this.thread(threadId))) throw new Error('Reconnect this thread provider before sending. Your draft is saved.')
@@ -916,7 +922,9 @@ export class AgentControl {
       const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
       if (!exchange) continue
       this.titled.add(thread.id)
-      void this.writeThreadTitle(thread.id, exchange)
+      const pending = this.writeThreadTitle(thread.id, exchange)
+      this.titleWrites.add(pending)
+      void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     }
   }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
@@ -926,9 +934,10 @@ export class AgentControl {
   }
   /** Asks for the name and applies it, unless the thread was renamed by hand while the answer was in flight. */
   private async writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
+    if (this.disposed) return
     try {
       const title = await this.dependencies.writeThreadTitle!(exchange)
-      if (title === null) return
+      if (this.disposed || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
       this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, 'generated'))
@@ -956,6 +965,13 @@ export class AgentControl {
    * desktop window on this machine, which is the only client that exists today.
    */
   command(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
+    if (this.disposed) return Promise.resolve({ ...this.get(), error: 'Sotto is stopping. Restart it before sending another command.' })
+    const pending = this.commandWhileRunning(command, client)
+    this.activeCommands.add(pending)
+    void pending.then(() => this.activeCommands.delete(pending), () => this.activeCommands.delete(pending))
+    return pending
+  }
+  private commandWhileRunning(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
     if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
     const { threadId, draftId } = prompt
@@ -1369,6 +1385,7 @@ export class AgentControl {
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient): Promise<void> {
+    if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     // Explicit targets survive host observations and queue-driven selection changes.
     if (turn && 'threadId' in command) {
       turn.threadId = command.threadId
@@ -1417,6 +1434,7 @@ export class AgentControl {
         if (!this.state.host.connected) this.state.connection = 'connecting'
         this.publish(); this.observe()
         try {
+          if (this.disposed) throw new Error('Sotto is stopping. Reconnect after restarting it.')
           const snapshot = await (command.provider ? this.dependencies.host.connect(command.provider) : this.dependencies.host.connect())
           this.acceptSnapshot(snapshot)
           const refusal = connectionRefusal(snapshot, command.provider, `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
@@ -1901,7 +1919,7 @@ export class AgentControl {
         this.canAct(); this.guardAuthority(command, turn); validate?.()
       }
       const providerStartedAt = Date.now()
-      try { result = await this.dependencies.host.execute(command) }
+      try { this.canAct(); result = await this.dependencies.host.execute(command) }
       finally { providerLatencyMs = Math.max(0, Date.now() - providerStartedAt) }
     } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
@@ -2447,6 +2465,11 @@ export class AgentControl {
         }, 5000))
       }
     }
+  }
+  /** Called after disconnecting providers, before the headless process releases its stores. */
+  async closed(): Promise<void> {
+    await Promise.allSettled([...this.activeCommands, this.serial, ...this.threadActions.values(), ...this.titleWrites])
+    await this.persist()
   }
   dispose(): void {
     this.disposed = true

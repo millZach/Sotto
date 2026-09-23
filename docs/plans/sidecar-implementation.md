@@ -1,5 +1,7 @@
 # Sidecar implementation
 
+**Superseded, 2026-09-22.** The owner picked the rail in #235, and `docs/plans/2026-09-22-tools-rail.md` records it. The context row and tab row described below are gone: the surfaces sit on a rail at the panel's outer edge and the working copy is its footer. The dock's width, overlay, pinning, expand and focus return carry over.
+
 Selected by Zach: prototype A, Sidecar. A working tool dock beside the conversation; opening Browser proves it by giving the real page most of the available surface.
 
 Alternatives already reviewed: right dock (selected), bottom Workbench, main-canvas Studio. Target: Windows desktop, 1600x1000, 1280x800, 820x560; pointer/keyboard and reduced motion.

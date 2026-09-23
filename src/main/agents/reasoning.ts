@@ -25,6 +25,7 @@ export const agentDecisionSchema = z.object({
 })
 export type AgentDecision = z.infer<typeof agentDecisionSchema>
 export interface AgentReasoner {
+  close?(): Promise<void>
   account?(provider: SubscriptionProvider): Promise<SubscriptionAccount>
   intent(utterance: string, host: AgentHostSnapshot, projectId: string | null, modelId: string, threadId?: string | null, preferences?: AgentPreference[]): Promise<AgentIntent>
   decide(instruction: string, thread: AgentThread, preferences?: AgentPreference[]): Promise<AgentDecision>
@@ -33,17 +34,42 @@ export interface AgentReasoner {
 /** A text-only model has no host tools or credential access. Its output is validated before use. */
 export class ConfiguredAgentReasoner implements AgentReasoner {
   private subscriptionTail: Promise<unknown> = Promise.resolve()
+  private readonly shutdown = new AbortController()
+  private readonly operations = new Set<Promise<unknown>>()
+  private closing: Promise<void> | undefined
+
+  /** Stop admission immediately, cancel owned I/O, then wait for process cleanup. */
+  close(): Promise<void> {
+    this.shutdown.abort(new Error('Sotto reasoning stopped.'))
+    this.closing ??= Promise.allSettled([...this.operations]).then(() => undefined)
+    return this.closing
+  }
+  private run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.shutdown.signal.aborted) return Promise.reject(this.shutdown.signal.reason)
+    const pending = Promise.resolve().then(async () => {
+      this.shutdown.signal.throwIfAborted()
+      const value = await work()
+      this.shutdown.signal.throwIfAborted()
+      return value
+    })
+    this.operations.add(pending)
+    void pending.then(() => this.operations.delete(pending), () => this.operations.delete(pending))
+    return pending
+  }
   constructor(private readonly configuration: () => AgentConfiguration, private readonly credentials: AgentCredentials,
     private readonly subscriptions: Partial<Record<SubscriptionProvider, SubscriptionClient>> = {}) {}
   async account(provider: SubscriptionProvider): Promise<SubscriptionAccount> {
     const client = this.subscriptions[provider]
     if (!client) return { provider, label: provider, installed: false, ready: false, models: [], detail: 'This subscription client is unavailable in this build.' }
-    return client.status()
+    return this.run(() => client.status(this.shutdown.signal))
   }
   async transformText(system: string, input: unknown): Promise<unknown> {
     return this.json(system, input, 8000)
   }
-  private async json(system: string, input: unknown, maxTokens = 1500): Promise<unknown> {
+  private json(system: string, input: unknown, maxTokens = 1500): Promise<unknown> {
+    return this.run(() => this.performJson(system, input, maxTokens))
+  }
+  private async performJson(system: string, input: unknown, maxTokens: number): Promise<unknown> {
     system = `${system} ${preferenceGuidance}`
     const config = this.configuration()
     if (isSubscriptionReasoning(config.reasoning)) {
@@ -51,7 +77,10 @@ export class ConfiguredAgentReasoner implements AgentReasoner {
       if (!client) throw new Error('This subscription client is unavailable in this build. Choose an available reasoning connection.')
       // Several assigned threads may finish together. Native clients receive
       // one bounded decision at a time; a previous failure must not poison the lane.
-      const decision = this.subscriptionTail.then(() => client.complete(system, input, config.reasoningModel.trim(), config.reasoningEffort))
+      const decision = this.subscriptionTail.then(() => {
+        this.shutdown.signal.throwIfAborted()
+        return client.complete(system, input, config.reasoningModel.trim(), config.reasoningEffort, this.shutdown.signal)
+      })
       this.subscriptionTail = decision.catch(() => undefined)
       return decision
     }
@@ -62,7 +91,7 @@ export class ConfiguredAgentReasoner implements AgentReasoner {
       ? 'https://openrouter.ai/api/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions'
     const response = await fetch(endpoint, {
-      method: 'POST', signal: AbortSignal.timeout(45_000),
+      method: 'POST', signal: AbortSignal.any([this.shutdown.signal, AbortSignal.timeout(45_000)]),
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.reasoningModel, messages: [
         { role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) },

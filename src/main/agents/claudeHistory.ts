@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { pathToFileURL } from 'node:url'
-import { join } from 'node:path'
 import { z } from 'zod'
 
 const messagesSchema = z.array(z.object({ type: z.enum(['user', 'assistant', 'system']), uuid: z.string().uuid(), session_id: z.string().uuid(), message: z.unknown(), parent_tool_use_id: z.string().nullable() }))
@@ -13,12 +12,11 @@ process.stdout.write(JSON.stringify(result));`
 /** Official native history helpers run in their own config-home environment.
  * No query/model call, credential mutation or hand-edited native transcript. */
 export class ClaudeHistory {
-  constructor(private readonly environment: NodeJS.ProcessEnv, private readonly home: string, private readonly cwd: string) {}
+  constructor(private readonly environment: NodeJS.ProcessEnv, private readonly home: string, private readonly cwd: string, private readonly modulePath?: string) {}
   private async run(operation: 'read' | 'fork', sessionId: string, boundary?: string): Promise<unknown> {
     // The official SDK's self-contained history module is shipped separately;
     // importing it outside ASAR avoids Node ESM archive resolution differences.
-    const packaged = process.versions.electron && (await import('electron')).app.isPackaged
-    const sdk = pathToFileURL(packaged ? join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') : require.resolve('@anthropic-ai/claude-agent-sdk')).href
+    const sdk = pathToFileURL(this.modulePath ?? require.resolve('@anthropic-ai/claude-agent-sdk')).href
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', helper, sdk, operation, sessionId, this.cwd, ...(boundary ? [boundary] : [])], {
       cwd: this.cwd, env: { ...this.environment, CLAUDE_CONFIG_DIR: this.home, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, shell: false, timeout: 15000, maxBuffer: 32 * 1024 * 1024,
     })

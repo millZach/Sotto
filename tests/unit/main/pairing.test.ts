@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -111,5 +111,29 @@ describe('origin check', () => {
     }
     expect(originAllowed('https://laptop.tailnet.ts.net', ['https://laptop.tailnet.ts.net'])).toBe(true)
     expect(originAllowed('https://laptop.tailnet.ts.net', ['https://other.ts.net'])).toBe(false)
+  })
+})
+
+
+describe('pairing mutation boundaries', () => {
+  it('preserves concurrent redemptions and revocation in durable state', async () => {
+    const store = clients(); await store.load()
+    const original = await store.redeem(store.issuePairingCode().code, 'Original')
+    const first = store.issuePairingCode(), second = store.issuePairingCode()
+    const [one, two] = await Promise.all([store.redeem(first.code, 'One'), store.redeem(second.code, 'Two'), store.revoke(original.clientId)])
+    const reopened = clients(); await reopened.load()
+    expect(reopened.list().map(client => client.clientId)).toEqual([one.clientId, two.clientId])
+    expect(reopened.verifyToken(original.token)).toBeUndefined()
+  })
+  it('refuses corrupt authentication state without replacing the file', async () => {
+    await writeFile(join(root, 'paired-clients.json'), '{broken')
+    await expect(clients().load()).rejects.toThrow('Paired devices could not be read')
+    expect(await readFile(join(root, 'paired-clients.json'), 'utf8')).toBe('{broken')
+  })
+  it('does not expose mutable authentication records to callers', async () => {
+    const { store } = await paired()
+    const listed = store.list()
+    listed[0]!.name = 'Changed'
+    expect(store.list()[0]!.name).toBe('Studio laptop')
   })
 })

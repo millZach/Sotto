@@ -60,7 +60,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   return { folder, panel: page.getByRole('complementary', { name: 'Tools' }) }
 }
 
-test('keeps working-folder actions accessible in the compact header while an open diff has the panel', async () => {
+test('keeps working-folder actions accessible in the footer while an open diff has the panel', async () => {
   test.setTimeout(180_000)
   const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-short-path-'))
   const { page } = launched
@@ -86,14 +86,15 @@ test('keeps working-folder actions accessible in the compact header while an ope
     const copy = panel.getByRole('button', { name: 'Copy working folder path' })
     const reveal = panel.getByRole('button', { name: /: working folder$/u })
     const expectFolderActions = async (): Promise<void> => {
-      // The sidecar replaced the redundant path rail with full tooltips and an accessible path.
+      // The footer holds the working folder's actions, with full tooltips and an accessible path.
       await expect(path).toHaveText(folder)
       await expect(copy).toHaveAttribute('title', `Copy path: ${folder}`)
       await expect(reveal).toHaveAttribute('title', new RegExp(folder.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')))
       await expect(copy).toBeInViewport()
       await expect(reveal).toBeInViewport()
       await expect(panel.getByRole('button', { name: 'Pin to Workshop' })).toBeInViewport()
-      expect(await panel.locator('.tools-panel__head').evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(100)
+      // The surface's line of chrome stays one line above the diff.
+      expect(await panel.locator('.tools-chrome').first().evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(46)
     }
     await expectFolderActions()
 
@@ -101,13 +102,13 @@ test('keeps working-folder actions accessible in the compact header while an ope
     await expect(diff).toBeVisible()
     await expectFolderActions()
     const heights = await panel.evaluate(element => ({
-      header: element.querySelector('.tools-panel__head')!.getBoundingClientRect().height,
+      header: element.querySelector('.tools-chrome')!.getBoundingClientRect().height,
       diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height,
       line: Number.parseFloat(getComputedStyle(element.querySelector('.changes-diff__rows')!).lineHeight),
       list: element.querySelector('.changes-list')!.getBoundingClientRect().height,
     }))
-    expect(heights.header).toBeLessThanOrEqual(100)
-    // Git actions and the comparison selector now share this height. Keep six readable code rows
+    expect(heights.header).toBeLessThanOrEqual(46)
+    // The comparison selector and the file's head share this height. Keep six readable code rows
     // and substantially more reading space than the selected-file strip.
     expect(heights.diff).toBeGreaterThanOrEqual(heights.line * 6)
     expect(heights.diff).toBeGreaterThan(heights.list * 2)
@@ -173,7 +174,7 @@ test('repaints one running terminal with the DOM fallback through the theme gall
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTOPROBE')
     await page.keyboard.press('Enter')
-    await expect.poll(async () => ((await screen.innerText()).match(/SOTTOPROBE/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
+    await expect.poll(async () => ((await screen.innerText()).replace(/\n/gu, '').match(/SOTTOPROBE/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
     await panel.locator('.xterm').evaluate(element => { element.dataset.probe = 'same-terminal' })
     const tab = await panel.locator('.terminal-tabs__tab[aria-selected="true"]').getAttribute('id')
     const view = panel.locator('.terminal-view')
@@ -278,7 +279,7 @@ test('repaints one running terminal with the DOM fallback through the theme gall
     expect(await panel.locator('.terminal-tabs__tab[aria-selected="true"]').getAttribute('id')).toBe(tab)
     await page.keyboard.type('echo AFTERTHEME')
     await page.keyboard.press('Enter')
-    await expect.poll(async () => { const text = await screen.innerText(); return text.includes('SOTTOPROBE') && (text.match(/AFTERTHEME/gu) ?? []).length >= 2 }, { timeout: 20_000 }).toBe(true)
+    await expect.poll(async () => { const text = (await screen.innerText()).replace(/\n/gu, ''); return text.includes('SOTTOPROBE') && (text.match(/AFTERTHEME/gu) ?? []).length >= 2 }, { timeout: 20_000 }).toBe(true)
     await view.screenshot({ path: join(SHOTS, 'terminal-after-themes-dark.png'), animations: 'disabled' })
   } finally {
     await closeSotto(launched)

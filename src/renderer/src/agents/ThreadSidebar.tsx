@@ -85,7 +85,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
   const branch = copy.status === 'ready' ? copy.branch : undefined
   const copyLabel = copy.status === 'error' ? 'Worktree not ready' : copy.status === 'pending' ? (copy.mode === 'independent' ? 'New worktree pending' : 'Project folder pending') : copy.mode === 'independent' ? 'Worktree' : copy.mode === 'shared' ? 'Project folder' : copy.label
   const branchName = branch ?? (copy.status === 'ready' && copy.repositoryRoot ? 'Detached HEAD' : copyLabel)
-  const copyDetails = [...new Set([row.model?.name, branchName, copyLabel].filter(Boolean))].join(', ')
+  const copyDetails = [...new Set([row.thread.hostLabel, row.model?.name, branchName, copyLabel].filter(Boolean))].join(', ')
   if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={`Rename ${title}`} className="thread-nav__rename tt-focusable"
@@ -108,7 +108,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
         <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} title={status + (row.connected ? '' : ' · Disconnected')}><span className="tt-visually-hidden">{row.provider}, </span>{status}{row.connected ? '' : ' · Disconnected'}</span>
       </span>
       <span className="thread-nav__branch" data-working-copy-state={copy.status} title={branchName !== copyLabel ? `${branchName} · ${copyLabel}` : copyLabel}>
-        <WorkingCopyIcon size={12} aria-hidden="true" />
+        <WorkingCopyIcon size={12} aria-hidden="true" />{row.thread.hostLabel ? <span>{row.thread.hostLabel} · </span> : null}
         <span className="thread-nav__branch-name">{branchName}</span>{branchName !== copyLabel ? <span className="thread-nav__copy-kind"> · {copyLabel}</span> : null}
       </span>
     </button>
@@ -191,10 +191,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   // One object for the whole list, rebuilt only when a pane action actually changes: every row compares it.
   const panes = useMemo<PaneActions>(() => ({ currentThreadId, openThreadIds, onOpenBeside, onDragThread }),
     [currentThreadId, openThreadIds, onOpenBeside, onDragThread])
-  // What this list shows is what you have seen, and once the list is gone nothing is. A thread ID is opaque, so
-  // the key joins on a character one cannot contain.
-  const onScreenKey = (currentThreadId === null ? openThreadIds : [...openThreadIds, currentThreadId]).join('\n')
-  useEffect(() => { showThreads(onScreenKey === '' ? [] : onScreenKey.split('\n')); return () => showThreads([]) }, [onScreenKey])
+  // Opaque client keys can contain any separator; the list boundary is encoded explicitly.
+  const onScreenKey = JSON.stringify(currentThreadId === null ? openThreadIds : [...openThreadIds, currentThreadId])
+  useEffect(() => { showThreads(JSON.parse(onScreenKey) as string[]); return () => showThreads([]) }, [onScreenKey])
   const unseen = useFinishedUnseen()
   const searching = query.trim() !== ''
   const toggle = useCallback((key: string): void => setCollapsed(previous => {

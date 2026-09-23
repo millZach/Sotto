@@ -1,3 +1,4 @@
+import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
 import { PROVIDER_LABELS, defaultThreadModelId, isSubscriptionReasoning, type AgentModel, type AgentProject, type AgentState } from '../../../shared/agents'
@@ -94,6 +95,8 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const focusSearch = useRef(chooser.focusSearch)
   focusSearch.current = chooser.focusSearch
   const selectedFolder = project?.path ?? folder
+  const selectedHost = parseHostEntityKey(project?.id ?? '')?.hostId ?? state.hostId
+  const remote = state.connections?.find(host => host.hostId === selectedHost)?.kind === 'remote'
   useEffect(() => {
     const previous = document.activeElement
     const element = dialog.current
@@ -120,7 +123,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const name = title.trim()
 
   const create = async (): Promise<void> => {
-    if (creating.current || submitting || !selectedFolder || !name) return
+    if (remote || creating.current || submitting || !selectedFolder || !name) return
     creating.current = true
     setSubmitting(true)
     setError(null)
@@ -168,8 +171,9 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
       </div>
       <div className="new-terminal-runs" aria-live="polite"><small id={`${titleId}-runs`}>Runs</small><code aria-labelledby={`${titleId}-runs`}>{runs}</code></div>
       {error && <p className="agent-error" role="alert">{error}</p>}
+      {remote ? <p className="agent-muted">This terminal would run on the host machine. Open it there.</p> : null}
       {!bridge ? <p className="agent-muted">Terminal is not available in this window.</p> : null}
-      <div className="new-thread-dialog__submit"><Button type="submit" disabled={submitting || !bridge || !name}>{submitting ? 'Opening...' : 'Open terminal'}<ChevronRight size={16} /></Button></div>
+      <div className="new-thread-dialog__submit"><Button type="submit" disabled={remote || submitting || !bridge || !name}>{submitting ? 'Opening...' : 'Open terminal'}<ChevronRight size={16} /></Button></div>
     </form> : chooser.choices}
     <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Esc</kbd> Close</span></footer>
   </dialog>

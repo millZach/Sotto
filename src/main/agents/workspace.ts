@@ -1,3 +1,4 @@
+import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot } from './hostIdentity'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -93,7 +94,9 @@ export class WorkspaceHost implements AgentHost {
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   private readonly store: AtomicJsonStore<Workspace>
   private loading: Promise<void> | undefined
+  private hostId: string | undefined
   private ready = false
+  private stopping = false
   private dirty = false
   private saving: Promise<void> | undefined
   /** Someone asked for the state to be on disk before they continue, so a write in flight is followed by another. */
@@ -161,6 +164,7 @@ export class WorkspaceHost implements AgentHost {
   private workingCopyDefault: (projectId: string) => 'independent' | 'shared' = () => 'shared'
   private branchNameWriter: ((prompt: string) => Promise<string | null>) | undefined
   private readonly namingBranches = new Set<string>()
+  private readonly branchWrites = new Set<Promise<void>>()
   setWorkingCopyDefaults(resolver: (projectId: string) => 'independent' | 'shared'): void { this.workingCopyDefault = resolver }
   setBranchNameWriter(writer: (prompt: string) => Promise<string | null>): void { this.branchNameWriter = writer }
   /** Whether something outside this host, a Tools terminal, still runs in the thread's folder. */
@@ -247,7 +251,7 @@ export class WorkspaceHost implements AgentHost {
   }
   async renameTemporaryBranch(threadId: string, name: string): Promise<void> {
     return this.onLane(threadId, async () => {
-      if (!await this.exclusivelyOwnsCheckout(threadId)) return
+      if (this.stopping || !await this.exclusivelyOwnsCheckout(threadId) || this.stopping) return
       const metadata = this.thread(threadId).worktree!
       const renamed = await this.worktrees.renameTemporaryBranch(metadata, name)
       this.thread(threadId).worktree = renamed
@@ -257,11 +261,13 @@ export class WorkspaceHost implements AgentHost {
     })
   }
   private nameBranch(threadId: string, prompt: string): void {
-    if (!this.branchNameWriter || this.namingBranches.has(threadId)) return
+    if (this.stopping || !this.branchNameWriter || this.namingBranches.has(threadId)) return
     this.namingBranches.add(threadId)
     const writer = this.branchNameWriter
-    void this.exclusivelyOwnsCheckout(threadId).then(exclusive => exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(prompt) : null)
-      .then(name => name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
+    const pending = this.exclusivelyOwnsCheckout(threadId).then(exclusive => !this.stopping && exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(prompt) : null)
+      .then(name => !this.stopping && name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
+    this.branchWrites.add(pending)
+    void pending.finally(() => this.branchWrites.delete(pending))
   }
   private async discoverWorkingCopy(threadId: string): Promise<void> {
     const thread = this.thread(threadId)
@@ -308,6 +314,14 @@ export class WorkspaceHost implements AgentHost {
 
   initialize(): Promise<void> {
     this.loading ??= (async () => {
+      this.hostId = await loadHostIdentity(this.directory)
+      try { await migrateWorkspaceHost(this.directory, this.hostId) }
+      catch (error) {
+        // History-off recovery already discards an unreadable snapshot without keeping private
+        // copies. Identity validation must not prevent that explicit privacy cleanup. A refused
+        // write, unreadable file or valid workspace belonging to another host still stops startup.
+        if (this.historyEnabled() || !(error instanceof SyntaxError || error instanceof z.ZodError)) throw error
+      }
       // Native history is recoverable from the providers. Never create independent
       // private transcript backups, and remove this cache's abandoned write copies.
       const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
@@ -322,6 +336,7 @@ export class WorkspaceHost implements AgentHost {
       try { this.subagentStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.subagentUnavailable = true; this.saveError = 'Agent history could not be opened. Restore access to local storage and restart Sotto.' }
       this.state = await this.store.peek()
+      this.state.snapshot = stampHostSnapshot(this.state.snapshot, this.hostId)
       const snapshot = this.state.snapshot
       snapshot.connected = false
       snapshot.models.forEach(model => { model.ready = false })
@@ -693,17 +708,25 @@ export class WorkspaceHost implements AgentHost {
     catch { this.saveError = HISTORY_SAVE_ERROR }
   }
   /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */
-  eventsAfter(seq: number, threadId?: string): StoredThreadEvent[] {
+  eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
     if (this.storeUnavailable) return []
     this.writeEvents()
-    return this.threadStore.eventsAfter(seq, threadId)
+    return this.threadStore.eventsAfter(seq, threadId, limit)
   }
+  /** Stop provider delivery first, then drain organization writes before closing SQLite. */
+  async close(): Promise<void> {
+    this.stopping = true
+    await Promise.allSettled([...this.branchWrites, ...this.lanes.values()])
+    try { if (this.ready) await this.flush() } finally { this.dispose() }
+  }
+
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
+    this.stopping = true
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer)
     for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
-    try { this.writeEvents(); this.saveActivities() }
+    try { if (this.ready) { this.writeEvents(); this.saveActivities() } }
     catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
@@ -879,7 +902,7 @@ export class WorkspaceHost implements AgentHost {
     }
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
-    this.state.snapshot = { ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }
+    this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
     for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) { delete thread.monitoring; delete thread.backgroundWork }
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
@@ -1242,7 +1265,7 @@ export class WorkspaceHost implements AgentHost {
       validateThreadOptions(this.state.snapshot, command)
       const model = this.state.snapshot.models.find(model => model.id === command.modelId)!
       this.requireCreation(model.providerId)
-      const thread: AgentThread = { id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+      const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
@@ -1425,6 +1448,7 @@ export class WorkspaceHost implements AgentHost {
   }
   disconnect(provider?: ProviderId): void {
     this.inner.disconnect(provider)
+    if (!this.ready) return
     const snapshot = this.state.snapshot
     snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })

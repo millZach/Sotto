@@ -1,11 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, Plus, RotateCw, Share2, X } from 'lucide-react'
 import type { BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskPreview'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { ToolsChrome } from './ToolsChrome'
 
 export interface BrowserSurfaceProps {
   readonly threadId: string
@@ -96,12 +97,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
 
-  if (!browser || browser.status === 'loading' && browser.pages.length === 0) return <p className="files-preview__loading" role="status">Loading pages…</p>
+  if (!browser || browser.status === 'loading' && browser.pages.length === 0) return <><ToolsChrome title="Browser" /><p className="files-preview__loading" role="status">Loading pages…</p></>
   if (browser.status === 'error' && browser.pages.length === 0) {
-    return <div className="files-problem files-problem--root" role="status">
+    return <><ToolsChrome title="Browser" /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(browser.error ?? { code: 'unavailable', message: '' }, bridge !== undefined)}</strong>
       {bridge ? <button type="button" className="files-link tt-focusable" onClick={() => void store.activate(bridge, threadId)}>Try again</button> : null}
-    </div>
+    </div></>
   }
   const { pages } = browser
   const newPage = creating || pages.length === 0
@@ -159,13 +160,14 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   }
 
   return <div className="browser-surface" ref={surface}>
-    {pages.length > 0 ? <div className="terminal-bar browser-bar">
+    {pages.length > 0 ? <div className="terminal-bar browser-bar tools-chrome">
       <div className="terminal-tabs" role="tablist" aria-label="Pages">
         {pages.map((page, index) => {
           const selected = page.id === activeId && !creating
           // With previews off, the tab is where a page's waiting request shows before the page is chosen.
           const waiting = tasks.some(item => item.threadId === threadId && item.pageId === page.id && item.pendingAction !== null)
-          return <button key={page.id} id={`browser-tab-${page.id}`} type="button" role="tab" className="terminal-tabs__tab browser-tabs__tab tt-focusable"
+          // The open page carries its own close, the way a tab closes, so the line's end holds only New page.
+          return <span key={page.id} className="terminal-tabs__item" data-selected={selected || undefined}><button id={`browser-tab-${page.id}`} type="button" role="tab" className="terminal-tabs__tab browser-tabs__tab tt-focusable"
             aria-selected={selected} aria-controls="browser-page" tabIndex={page.id === activeId ? 0 : -1} data-status={page.status} title={`${pageLabel(page)}\n${page.url}`}
             onClick={() => { setCreating(false); store.select(threadId, page.id) }}
             onKeyDown={event => {
@@ -182,15 +184,24 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
             {waiting ? <><span className="browser-tabs__waiting" aria-hidden="true" /><span className="tt-visually-hidden">, waiting for your answer</span></> : null}
             {page.status === 'unavailable' ? <span className="tt-visually-hidden">, could not load</span> : page.status === 'loading' ? <span className="tt-visually-hidden">, loading</span> : null}
           </button>
+          {selected ? <button type="button" className="terminal-tabs__close tt-focusable" aria-label={`Close page: ${pageLabel(page)}`} title="Close page" disabled={browser.busy}
+            onClick={() => void store.close(bridge, threadId, page.id).then(() => { const next = store.thread(threadId)?.activePageId; if (next) focusTab(next) })}><X size={14} aria-hidden="true" /></button> : null}
+          </span>
         })}
       </div>
-      <div className="terminal-bar__actions">
-        {active && !creating ? <button type="button" className="files-icon tt-focusable" aria-label={`Close page: ${pageLabel(active)}`} title="Close page" disabled={browser.busy}
-          onClick={() => void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activePageId; if (next) focusTab(next) })}><X size={16} aria-hidden="true" /></button> : null}
+      <div className="terminal-bar__actions tools-chrome__actions">
+        {/* The page's review actions share the tab line; a narrow panel shows them as icons that keep their names. */}
+        {active && !newPage ? <>
+          <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
+            <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
+          {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
+            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>
+            <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
+        </> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
           disabled={full || !bridge} onClick={() => creating ? (setCreating(false), setDraft(null)) : startNew()}><Plus size={16} aria-hidden="true" /></button>
       </div>
-    </div> : null}
+    </div> : <ToolsChrome title="Browser" />}
 
     <form className="browser-toolbar" aria-label={newPage ? 'Open a page' : 'Page address'} onSubmit={submit} data-loading={(!newPage && active?.status === 'loading') || undefined}>
       {!newPage && active ? <>
@@ -209,20 +220,19 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           else if (draft !== null) { event.preventDefault(); event.stopPropagation(); setDraft(null); setProblem(null) }
         }} />
       {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>Open</button>
-        : active ? <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button> : null}
+        : active ? <>
+          <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button>
+          <select className="browser-viewport-size tt-focusable" aria-label="Browser viewport size" title="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
+            <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
+            {active.viewport && !['1600x1000', '1280x800', '820x560', '390x844'].includes(`${active.viewport.width}x${active.viewport.height}`) ? <option value={`${active.viewport.width}x${active.viewport.height}`}>{active.viewport.width} x {active.viewport.height}</option> : null}
+          </select>
+        </> : null}
     </form>
     {browser.pageOpening ? <div className="browser-page-opening">
       <span>This thread may open pages without asking</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread open pages without asking" title="Opening and going to pages will ask you again" disabled={stoppingPageOpening} onClick={stopPageOpening}>Stop</button>
     </div> : null}
-    {active && !newPage ? <div className="browser-review-bar">
-      <select className="tt-focusable" aria-label="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
-        <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
-        {active.viewport && !['1600x1000', '1280x800', '820x560', '390x844'].includes(`${active.viewport.width}x${active.viewport.height}`) ? <option value={`${active.viewport.width}x${active.viewport.height}`}>{active.viewport.width} x {active.viewport.height}</option> : null}
-      </select>
-      <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>Comment on page</button>
-      {!agentToolsUnavailable ? <button type="button" className="browser-review-link browser-review-bar__share tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)} title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</button> : <span className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</span>}
-    </div> : null}
+    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
     {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}

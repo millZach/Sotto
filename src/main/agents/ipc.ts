@@ -1,3 +1,4 @@
+import { mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
 import { isAbsolute, join } from 'node:path'
@@ -20,7 +21,7 @@ import type { KokoroSpeechService } from './kokoroSpeech'
  * window is in the same process; every command goes through the host service with the identity of
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
-export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell' | 'threadDetail' | 'attachmentPreview'>, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>, workingCopyOptions?: (projectId: string) => Promise<AgentWorkingCopyOptions>): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: Parameters<AgentControl['attachmentPreview']>[0]) => ReturnType<AgentControl['attachmentPreview']> | Promise<ReturnType<AgentControl['attachmentPreview']>> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>, workingCopyOptions?: (projectId: string) => Promise<AgentWorkingCopyOptions>): () => void {
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const [projectId] = z.tuple([agentWorkingCopyOptionsRequestSchema]).parse(args)
@@ -108,10 +109,10 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   })
   ipc.handle(AGENT_COMMAND, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
-    const command = agentCommandSchema.parse(payload)
+    const command = agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
     const speakOnly = command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1
     if (!speakOnly && ['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice', 'observe-threads'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    return host.command(command, windowClient).then(agentShell)
+    return host.command(payload as typeof command, windowClient).then(agentShell)
   })
   return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

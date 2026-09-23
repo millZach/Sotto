@@ -64,6 +64,24 @@ afterEach(async () => {
 })
 
 describe('naming a thread from its first exchange', () => {
+  it('drains an automatic title request without applying its result after disposal', async () => {
+    let finish!: (title: string) => void
+    const f = await coordinator({ writeThreadTitle: () => new Promise(resolve => { finish = resolve }) })
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    const rename = vi.spyOn(f.host, 'renameThread')
+    f.control.dispose()
+    const settled = vi.fn()
+    const closed = f.control.closed().then(settled)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+    finish('Late generated title')
+    await closed
+    expect(rename).not.toHaveBeenCalled()
+    expect(titled(f.control, threadId).title).toBe('Workshop')
+  })
+
   it('names a stand-in titled thread once the first reply lands, keeping the name across provider events and a restart', async () => {
     const f = await coordinator()
     const threadId = workshop(f.control).id
