@@ -16,6 +16,7 @@ import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHos
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
@@ -223,6 +224,32 @@ describe('desktop remote host management over a real socket', () => {
       await manager.command({ type: 'connect', id: remote.id })
       expect(launchers).toHaveLength(2)
     } finally { vi.useRealTimers() }
+  })
+  it('opens and reconnects without downloading the host’s event log, and still reads the current shell', async () => {
+    const client = desktopWindowClient('desktop-test')
+    await host.service.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, client)
+    await host.service.command({ type: 'connect', provider: 'codex' }, client)
+    const state = await host.service.command({ type: 'create-project', provider: 'codex', title: 'Logged', path: root, useExisting: true }, client)
+    const project = state.host.projects.find(project => project.path === root)!
+    const threadId = randomUUID()
+    await host.service.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Logged task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+    await host.service.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic logged prompt' }, client)
+    await expect.poll(() => host.service.events(0).length).toBeGreaterThan(0)
+    const connect = vi.spyOn(SocketHostService.prototype, 'connect'), readEvents = vi.spyOn(SocketHostService.prototype, 'readEvents')
+    try {
+      const remote = await add()
+      // The hello carried none of the log, and a routed command reads none after it.
+      expect((connect.mock.contexts[0] as SocketHostService).events(0)).toEqual([])
+      await router.command({ type: 'configure', patch: { enabled: false } }, client)
+      await manager.command({ type: 'disconnect', id: remote.id })
+      await host.service.command({ type: 'configure', patch: { enabled: true } }, client)
+      await manager.command({ type: 'connect', id: remote.id })
+      expect(manager.get().hosts[0]!.phase).toBe('connected')
+      expect(router.shell().configuration.enabled).toBe(true)
+      expect(router.shell().host.threads.map(thread => thread.id)).toContain(hostEntityKey(reportedHostId, threadId))
+      expect((connect.mock.contexts[1] as SocketHostService).events(0)).toEqual([])
+      expect(readEvents).not.toHaveBeenCalled()
+    } finally { connect.mockRestore(); readEvents.mockRestore() }
   })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()

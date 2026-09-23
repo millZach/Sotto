@@ -18,7 +18,16 @@ export interface SocketHostServiceOptions {
   onPushError?: (message: string) => void
   /** What the last push error was about has since arrived: the thread it named, or the shell when it named none. */
   onPushErrorCleared?: () => void
+  /**
+   * False for a client with nothing that reads the host's event log, such as the desktop router. It asks
+   * for no events when it opens, reads none after a command and follows no catch-up a push offers, so a
+   * connect never downloads a log nobody reads. The shell and the observed threads' details still arrive
+   * in full on every open, which is what a reconnect needs (ADR-0025). Defaults to true.
+   */
+  catchUpEvents?: boolean
 }
+/** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
+const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
   private frames: SocketFrames | undefined
@@ -39,6 +48,7 @@ export class SocketHostService implements HostService {
   private opening: AbortController | undefined
   private previewTail: Promise<unknown> = Promise.resolve()
   constructor(private readonly options: SocketHostServiceOptions) { this.endpoint('/v1/health') }
+  private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
   static async pair(url: string, code: string, name: string): Promise<HostPairing> {
     const endpoint = new SocketHostService({ url, token: '' }).endpoint('/v1/pair')
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code, name }), signal: AbortSignal.timeout(15000), redirect: 'error' })
@@ -89,11 +99,14 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const hello = hostHelloSchema.parse(await this.call({ op: 'hello', afterSeq: this.latestSeq }))
+      const hello = hostHelloSchema.parse(await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
-      this.publish(agentStateSchema.parse(hello.shell)); this.cacheEvents(hello)
-      let page: HostEventPage = hello
-      while (page.hasMore) page = await this.readEvents(this.latestSeq)
+      this.publish(agentStateSchema.parse(hello.shell))
+      if (this.catchesUp) {
+        this.cacheEvents(hello)
+        let page: HostEventPage = hello
+        while (page.hasMore) page = await this.readEvents(this.latestSeq)
+      }
       await this.observe(this.observed)
       for (const id of this.observed) await this.readThreadDetail(id)
       this.options.onConnectionChange?.(true)
@@ -117,7 +130,7 @@ export class SocketHostService implements HostService {
     if (message.v !== 1) { this.frames?.close(); return }
     try {
       if ('event' in message) {
-        if (message.event === 'shell') { if (message.eventPage) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(agentStateSchema.parse(message.state)) }
+        if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(agentStateSchema.parse(message.state)) }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
         else { this.pushErrorThread = message.threadId ?? null; this.options.onPushError?.(message.error.message) }
       } else {
@@ -189,7 +202,7 @@ export class SocketHostService implements HostService {
     const generation = this.generation
     const state = agentStateSchema.parse(await this.call({ op: 'command', command }, commandId)); this.sameGeneration(generation); this.publish(state)
     if ('threadId' in command && command.threadId) await this.readThreadDetail(command.threadId)
-    let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq)
+    if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
     return this.state()
   }
   async receipt(commandId: string): Promise<HostReceipt> { return hostReceiptSchema.parse(await this.call({ op: 'receipt', commandId })) }

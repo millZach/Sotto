@@ -329,3 +329,26 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
     expect(pushErrors.at(-1)).toBeNull()
   } finally { await client.close(); await server.close() }
 })
+
+describe('event paging', () => {
+  it('paces a client paging through a long log instead of closing it at the per-second cutoff', async () => {
+    // 157 pages: more than the 100 messages a second that closes a peer sending anything else.
+    const rows = Array.from({ length: 40_000 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
+    const service: HostService = {
+      shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit),
+      subscribe: () => () => undefined,
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Long log')
+    let drops = 0
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onConnectionChange: value => { if (!value) drops++ } }); clients.push(client)
+    try {
+      await client.connect()
+      expect(client.events(39_999).map(row => row.seq)).toEqual([40_000])
+      expect(drops).toBe(0)
+      await expect(client.readShell()).resolves.toBeDefined()
+    } finally { await client.close(); await server.close() }
+  })
+})

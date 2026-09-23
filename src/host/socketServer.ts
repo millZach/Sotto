@@ -31,7 +31,7 @@ const TOO_LARGE: Record<Oversize, string> = {
   list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
 }
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
-interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
+interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
 export interface SocketServerOptions {
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
@@ -45,6 +45,13 @@ export interface SocketServerOptions {
  */
 const RECEIPT_LIFETIME_MS = 5 * 60_000
 const RECEIPT_LIMIT = 10_000
+/**
+ * A peer sending more than this many messages in a second is closed, except for event pages, which are
+ * paced instead: a page past its own budget waits for the next second. A client reading a long log one
+ * page after another is doing what the protocol asks, and closing it would only have it start again.
+ */
+const MESSAGES_PER_SECOND = 100
+const EVENT_PAGES_PER_SECOND = 100
 /** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
 const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
 /** Only this listener owns sockets; clients never get a provider handle or a claimed identity. */
@@ -191,10 +198,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     let request: HostRequest
     try { request = hostRequestSchema.parse(JSON.parse(text)) } catch { peer.frames.close(); return }
     const now = Date.now()
-    if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
-    if (++peer.count > 100 || peer.inFlight >= 32) { peer.frames.close(); return }
+    let wait = 0
+    if (request.op === 'events') {
+      if (now >= peer.pageWindow + 1000) { peer.pageWindow = now; peer.pages = 0 }
+      if (peer.pages >= EVENT_PAGES_PER_SECOND) { peer.pageWindow += 1000; peer.pages = 0 }
+      peer.pages++; wait = peer.pageWindow - now
+    } else {
+      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
+      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return }
+    }
+    if (peer.inFlight >= 32) { peer.frames.close(); return }
     peer.inFlight++
     track((async () => {
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
       let response: HostResponse
       try { response = { v: 1, id: request.id, ok: true, result: await dispatch(peer, request) } }
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: errors[code] } } }
@@ -266,7 +282,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { frames, client: identity(clientId), session, observed: new Set(), inFlight: 0, window: Date.now(), count: 0, preview: false, afterSeq: 0, selectedThreadId: null, selectedProjectId: null }
+    const peer: Peer = { frames, client: identity(clientId), session, observed: new Set(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, afterSeq: 0, selectedThreadId: null, selectedProjectId: null }
     peers.add(peer)
     frames.onClose(() => { peers.delete(peer); if (!closing) track(observe().catch(() => undefined)) })
     frames.feed(head)
