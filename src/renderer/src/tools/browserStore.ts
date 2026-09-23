@@ -92,7 +92,7 @@ export class BrowserStore {
     const workspace = this.threads.get(threadId)?.workspace
     if (!bridge?.revokePageOpening || !workspace) return 'Browser is not available in this window.'
     const result = await settle(bridge.revokePageOpening({ threadId, workspaceId: workspace.workspaceId }))
-    if (!result.ok) return `Could not stop it. ${result.error.message}`.trim()
+    if (!result.ok) return `Could not stop this thread opening pages. It may still open pages without asking; try Stop again. ${result.error.message}`.trim()
     this.patch(threadId, { pageOpening: null })
     return null
   }

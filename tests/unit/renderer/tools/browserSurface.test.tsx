@@ -161,6 +161,15 @@ describe('page-opening grant', () => {
     await waitFor(() => expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument())
     await waitFor(() => expect(within(panel()).getByRole('textbox', { name: 'Address' })).toHaveFocus())
   })
+  it('says the grant may still be live when Stop fails, and keeps the line', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], pageOpening: { grantedAt: 1 } }))
+    vi.mocked(browser.bridge.revokePageOpening).mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'The browser is busy.' } })
+    setup(browser)
+    fireEvent.click(await within(panel()).findByRole('button', { name: 'Stop letting this thread open pages without asking' }))
+    expect(await within(panel()).findByText('Could not stop this thread opening pages. It may still open pages without asking; try Stop again. The browser is busy.')).toBeInTheDocument()
+    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+  })
   it('follows main when the answer is given or ends elsewhere', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
     setup(browser)
