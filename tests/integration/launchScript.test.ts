@@ -4,7 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
+import { HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 const directories: string[] = [], children: ChildProcess[] = []
 afterEach(async () => { for (const child of children.splice(0)) if (child.exitCode === null) child.kill(); for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true }) })
 async function fixture() {
@@ -13,7 +13,7 @@ async function fixture() {
   await mkdir(join(installPath, 'host'), { recursive: true })
   await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
   await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host/index.js'))
-  return { installPath, dataDirectory: join(directory, 'data'), remotePort: 0, requestMarker: 'SOTTO_REQ_test:', replyMarker: 'SOTTO_REP_test:', readyTimeoutMs: 5000 }
+  return { installPath, dataDirectory: join(directory, 'data'), remotePort: 0, requestMarker: 'SOTTO_REQ_test:', replyMarker: 'SOTTO_REP_test:', readyTimeoutMs: 5000, stopDrainMs: HOST_STOP_DRAIN_MS }
 }
 function supervise(configuration: Awaited<ReturnType<typeof fixture>>) {
   const child = spawn(process.execPath, ['--input-type=commonjs', '-e', LAUNCH_SCRIPT_SOURCE, JSON.stringify(configuration)], { shell: false, windowsHide: true })

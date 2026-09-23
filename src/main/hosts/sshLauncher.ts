@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { validateSshHost, type SshHostConfiguration, type ValidatedSshHostConfiguration } from './sshConfiguration'
 export type { SshHostConfiguration }
 import { spawnSsh, type SpawnSsh, type SshProcess } from './sshProcess'
-import { launchScriptCommand, type LaunchScriptMarkers } from './launchScript'
+import { HOST_STOP_REPLY_MS, launchScriptCommand, type LaunchScriptMarkers } from './launchScript'
 
 export interface SshPrompt { readonly id: string; readonly kind: 'host-key' | 'password' | 'passphrase'; readonly text: string }
 export type SshConnectionStatus = 'connecting' | 'starting' | 'forwarding' | 'ready' | 'disconnected'
@@ -312,7 +312,7 @@ export class SshHostLauncher {
     if (attempt.pairing || attempt.revocation || attempt.stopping) return Promise.reject(new Error('Wait for the current host request to finish.'))
     const id = randomUUID()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { delete attempt.stopping; reject(new Error(STOP_HOST_ERROR)) }, 12_000)
+      const timer = setTimeout(() => { delete attempt.stopping; reject(new Error(STOP_HOST_ERROR)) }, HOST_STOP_REPLY_MS)
       attempt.stopping = { id, resolve, reject, timer }
       attempt.script!.process.write(`${attempt.markers.request}${JSON.stringify({ type: 'stop-host', id })}\r`)
     })

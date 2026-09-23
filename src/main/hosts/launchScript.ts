@@ -88,7 +88,7 @@ process.stdin.on('data', chunk => {
           const record = await readLauncher();
           const pid = record && record.pid === ready.pid ? record.pid : ready.pid;
           try { process.kill(pid, 'SIGTERM'); } catch {}
-          const deadline = Date.now() + 15000;
+          const deadline = Date.now() + cfg.stopDrainMs;
           while (alive(pid) && Date.now() < deadline) await pause(100);
           if (alive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch {} await pause(200); }
           stopped = !alive(pid);
@@ -173,8 +173,17 @@ process.stdin.on('data', chunk => {
 
 /** Requests go out after `request` and replies come back after `reply`; the two never match each other. */
 export interface LaunchScriptMarkers { readonly request: string; readonly reply: string }
+/** How long Stop host lets a host finish its running turns after SIGTERM before the script kills it. */
+export const HOST_STOP_DRAIN_MS = 15_000
+/**
+ * How long the desktop waits for the script to say the host stopped: the drain, the kill and the reply's
+ * trip back over SSH. Shorter, and the desktop would report a failure while the stop was still going and
+ * then close the session that was carrying it out.
+ */
+export const HOST_STOP_REPLY_MS = HOST_STOP_DRAIN_MS + 5_000
 export function launchScriptCommand(configuration: ValidatedSshHostConfiguration, markers: LaunchScriptMarkers, readyTimeoutMs: number): string {
   return ['node', '--input-type=commonjs', '-e', LAUNCH_SCRIPT_SOURCE,
-    JSON.stringify({ installPath: configuration.installPath, dataDirectory: configuration.dataDirectory, remotePort: configuration.remotePort, requestMarker: markers.request, replyMarker: markers.reply, readyTimeoutMs })]
+    JSON.stringify({ installPath: configuration.installPath, dataDirectory: configuration.dataDirectory, remotePort: configuration.remotePort, requestMarker: markers.request, replyMarker: markers.reply, readyTimeoutMs,
+      stopDrainMs: HOST_STOP_DRAIN_MS })]
     .map(quoteRemoteArgument).join(' ')
 }
