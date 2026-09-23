@@ -110,7 +110,8 @@ describe('desktop remote host management over a real socket', () => {
     const remote = await add()
     beforeStopReply = async () => { await host.close(); await pause(150) }
     await manager.command({ type: 'stop-host', id: remote.id })
-    await pause(100)
+    // The drop arrived while the stop was pending. No retry was ever scheduled, so none can fire later.
+    expect(scheduled).toEqual([])
     expect(stops).toEqual([reportedHostId])
     expect(launchers).toHaveLength(1)
     expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected' })
@@ -121,7 +122,8 @@ describe('desktop remote host management over a real socket', () => {
     const token = credentials.get('remote-host:' + remote.id)
     beforeStopReply = () => pause(150)
     await manager.command({ type: 'forget', id: remote.id })
-    await pause(100)
+    // The revoke dropped the socket before the stop replied, and no retry was scheduled to pair again.
+    expect(scheduled).toEqual([])
     expect(host.pairing.verifyToken(token)).toBeUndefined()
     expect(stops).toEqual([reportedHostId])
     expect(manager.get().hosts).toEqual([]); expect(credentials.has('remote-host:' + remote.id)).toBe(false)

@@ -309,10 +309,11 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
     let shells = 0
     client.subscribe(() => { shells++ })
     for (let index = 0; index < 50; index++) publish()
-    await expect.poll(() => shells).toBeGreaterThan(0)
-    await new Promise(resolve => setTimeout(resolve, 200))
-    // One leading push and one trailing push carry the whole burst.
-    expect(shells).toBeLessThanOrEqual(2)
+    // One leading push and one trailing push carry the whole burst. Any push beyond them would have left
+    // before the trailing one, and a later round trip arrives after every push the host sent before it.
+    await expect.poll(() => shells).toBe(2)
+    await client.receipt('burst-settled')
+    expect(shells).toBe(2)
     await client.observe(['huge'])
     await expect.poll(() => pushErrors).toEqual([expect.stringContaining('too large to send to this device')])
     await expect(client.readThreadDetail('huge')).rejects.toMatchObject({ code: 'too_large', message: expect.stringContaining('A thread on this host') })
@@ -320,7 +321,8 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
     await expect(client.readEvents(0, 'huge')).rejects.toMatchObject({ code: 'too_large', message: expect.stringContaining('The thread list') })
     expect(connected).toBe(true)
     // Shell pushes carry on meanwhile and do not clear a thread's error; that thread arriving does.
-    publish(); await new Promise(resolve => setTimeout(resolve, 200))
+    publish()
+    await expect.poll(() => shells).toBe(3)
     expect(pushErrors.at(-1)).not.toBeNull()
     fits = true
     await client.readThreadDetail('huge')
