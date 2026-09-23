@@ -57,7 +57,13 @@ export class DesktopHosts {
     if (command.type === 'save') {
       const host = command.host
       this.clearRetry(host.id)
-      if (this.live.has(host.id)) throw new Error('Disconnect this host before changing its connection.')
+      if (this.live.has(host.id)) {
+        // A host of another version keeps its SSH session only so Stop host can reach it, and its row offers
+        // Edit, not Disconnect: saving closes that session. The next Connect finds the host still running
+        // and offers Stop host again.
+        if (this.status.get(host.id)?.phase === 'error') await this.disconnect(host.id)
+        else throw new Error('Disconnect this host before changing its connection.')
+      }
       const existing = this.saved.find(item => item.id === host.id)
       // Editing a route must not silently transfer a credential to a different host.
       const next = existing ? { ...existing, ...host } : host

@@ -268,6 +268,15 @@ describe('a host from before protocol v1 froze', () => {
     expect(stops).toEqual([reportedHostId])
     expect(manager.get().hosts[0]!.phase).toBe('disconnected')
   })
+  it('lets Edit change the installation folder while the session is kept for Stop host, and offers Stop host again on the next Connect', async () => {
+    const remote = await connectToOldHost()
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true })
+    await manager.command({ type: 'save', host: { ...remote, installPath: '/opt/sotto-new' } })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', installPath: '/opt/sotto-new' })
+    expect(manager.get().hosts[0]!.owned).toBeUndefined()
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true })
+  })
   it('sends the user to the host machine for a host Sotto did not start', async () => {
     owned = false
     await connectToOldHost()
