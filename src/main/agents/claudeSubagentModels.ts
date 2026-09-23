@@ -137,7 +137,8 @@ function keep(file: FileState, bytes: Buffer): void {
 }
 
 function assistantModel(line: Buffer): string | undefined {
-  // A quoted "assistant" cannot sit inside a JSON string, so a line without it is not parsed at all.
+  // A cheap prefilter: a line without a quoted "assistant" cannot be an assistant entry, so it is not
+  // parsed at all. A task or tool line that quotes the word is parsed, but only its type and model are read.
   if (!line.includes('"assistant"')) return undefined
   try {
     const entry = object(JSON.parse(line.toString('utf8')))
