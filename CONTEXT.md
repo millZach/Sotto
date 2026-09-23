@@ -136,7 +136,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## Personal conversations
 
-**Personal chat.** A saved, project-free conversation with Sotto's configured coordinator, distinct from a project-bound thread. A started personal chat stays with its original provider; changing coordinator defaults affects new chats only. Avoid: "project thread", "global project".
+**Personal chat.** A saved, project-free conversation with Sotto's configured coordinator, distinct from a project-bound thread. A started personal chat stays with its original provider; changing coordinator defaults affects new chats only. Every provider with a saved chat, plus the coordinator's own provider, connects at launch without the user pressing Connect; a drop the user did not ask for reconnects by itself after five seconds, then after longer waits, and after five failed tries the error waits for Connect. Pressing Disconnect holds every provider off until Connect or a restart. Avoid: "project thread", "global project".
 
 **Personal chat ID.** The durable Sotto-owned identity of one personal chat, independent of its provider session and of every project thread. Selecting or resuming it grants no management, delegation or project-creation authority.
 
@@ -256,9 +256,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Strip.** The top bar of the main window on the pages that still wear one, Agents and Memory (both behind their beta gates) and onboarding: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region. Every other page has the sidebar top row instead. The Threads page owns the whole window, with the sidebar's top row and the pane header as its drag regions and the window controls once at the top right. Dictate, History and Help seat the Threads sidebar beside the room, with a thin drag strip above the room carrying the window controls. Settings and Chats give their own left column the sidebar top row and the sidebar foot, and carry the window controls at the top right the way Threads does.
 
-**Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings and Chats keep their own columns.
+**Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings keeps its own column. The Chats list has a width and a collapse of its own, remembered apart from this one; collapsed, it is a rail with one provider mark per chat.
 
-**Sidebar top row.** The first row of the Threads sidebar, and of the Settings and Chats columns: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project, New thread and Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
+**Sidebar top row.** The first row of the Threads sidebar, and of the Settings and Chats columns: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar and the Chats column end it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
 
 **Sidebar foot.** The bottom of the Threads sidebar, and of the Settings and Chats columns: the switch, the page links as icons (Chats, History, Settings, Help, and Memory while memory is switched on) and the update control. Every page without a strip has one, so the way to any page is the same from any page.
 

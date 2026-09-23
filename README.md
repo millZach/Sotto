@@ -147,6 +147,8 @@ When one command, tool call or subagent has held a thread for twenty seconds or 
 
 The Threads sidebar keeps each thread’s provider, status and last activity beneath its project. Drag its right edge to resize it; a wider sidebar reveals the branch, model and working copy. Collapse sidebar makes more room for the conversation, and Expand sidebar restores the width you chose. With the divider focused, arrow keys resize it, Home and End choose the limits, and a double-click resets it. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
 
+The Chats list resizes and collapses the same way, and remembers its own width. Collapsed, each chat shows as its provider's mark. Chats connect to their providers when Sotto starts. If a provider stops, Sotto tries again after five seconds and then after longer waits; after five tries it shows what went wrong and waits for you to press **Connect**. After you press **Disconnect**, they stay off until you press **Connect** or restart Sotto.
+
 Hovering a message or a finished reply shows a copy control at its top corner. One press copies it as Markdown, so code blocks, lists and tables paste intact somewhere else. Right-click the control, or press Shift+F10 with it focused, to copy as plain text instead. A reply still being written has no copy control, and each code block keeps a copy button of its own.
 
 You can create a thread from the Threads page while another thread has a saved coordinator draft. The draft stays with its original thread, including while the voice coordinator is hidden for the beta.

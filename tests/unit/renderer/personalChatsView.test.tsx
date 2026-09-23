@@ -8,6 +8,7 @@ import { PersonalChatsView } from '../../../src/renderer/src/agents/personal/Per
 import { PersonalDraftStore } from '../../../src/renderer/src/agents/personal/personalDrafts'
 import { captureDictationDestination } from '../../../src/renderer/src/features/dictation/dictationDestination'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
+import { CHATS_SIDEBAR_KEY, THREADS_SIDEBAR_KEY } from '../../../src/renderer/src/agents/sidebarSize'
 
 const AT = '2026-09-13T17:00:00.000Z'
 const NOW = Date.parse(AT) + 5 * 60_000
@@ -81,6 +82,8 @@ function mount(initial: PersonalChatState, props: Partial<React.ComponentProps<t
 afterEach(() => {
   cleanup()
   requestAnswerStore.prune('trip', [])
+  localStorage.removeItem(CHATS_SIDEBAR_KEY)
+  localStorage.removeItem(THREADS_SIDEBAR_KEY)
 })
 
 describe('Chats', () => {
@@ -100,6 +103,51 @@ describe('Chats', () => {
     view.unmount()
     expect(calls).toContain('unsubscribe')
     expect(bridge.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('keeps the chat list at its own width however long a title grows, and folds it to a rail of provider marks', async () => {
+    const long = 'Will you create a prompt for me to use for other agents to create a traffic simulation in the browser'
+    const h = mount(snapshot({ chats: [chat(), chat({ id: 'sim', providerId: 'claude', title: long, status: 'running' })] }))
+    await screen.findByRole('button', { name: /Trip ideas/u })
+    const nav = screen.getByRole('navigation', { name: 'Chats' })
+    expect(nav).toHaveStyle({ width: '320px' })
+    h.update('sim', item => { item.title = `${long}, with traffic lights, lanes and a speed slider` })
+    await screen.findByText(/speed slider/u)
+    expect(nav).toHaveStyle({ width: '320px' })
+
+    const handle = within(nav).getByRole('separator', { name: 'Resize sidebar' })
+    fireEvent.keyDown(handle, { key: 'ArrowRight', shiftKey: true })
+    expect(nav).toHaveStyle({ width: '360px' })
+    expect(JSON.parse(localStorage.getItem(CHATS_SIDEBAR_KEY)!)).toEqual({ width: 360, collapsed: false })
+    expect(localStorage.getItem(THREADS_SIDEBAR_KEY)).toBeNull()
+
+    fireEvent.click(within(nav).getByRole('button', { name: 'Collapse sidebar' }))
+    expect(nav).toHaveStyle({ width: '52px' })
+    expect(within(nav).getByRole('button', { name: 'Expand sidebar' })).toHaveFocus()
+    expect(within(nav).queryByRole('separator')).toBeNull()
+    expect(within(nav).getByRole('button', { name: 'Trip ideas' })).toHaveAttribute('aria-current', 'page')
+    const tile = within(nav).getByRole('button', { name: /traffic simulation/u })
+    expect(tile).toHaveAttribute('title', expect.stringMatching(/ · Claude · Replying$/u))
+    expect(tile.querySelector('.thread-nav__mark')).toHaveAttribute('data-provider', 'claude')
+    fireEvent.click(tile)
+    await waitFor(() => expect(h.calls).toContain('select:sim'))
+
+    fireEvent.click(within(nav).getByRole('button', { name: 'Expand sidebar' }))
+    expect(nav).toHaveStyle({ width: '360px' })
+    expect(within(nav).getByRole('button', { name: 'Collapse sidebar' })).toHaveFocus()
+  })
+
+  it('keeps a collapsed chat list expandable while the chats are still opening', async () => {
+    localStorage.setItem(CHATS_SIDEBAR_KEY, JSON.stringify({ width: 300, collapsed: true }))
+    const fake = fakeBridge(snapshot())
+    fake.bridge.get.mockReturnValue(new Promise<PersonalChatState>(() => {}))
+    render(<PersonalChatsView bridge={fake.bridge} store={new PersonalDraftStore()} now={NOW} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Opening your chats…')
+    const nav = screen.getByRole('navigation', { name: 'Chats' })
+    expect(nav).toHaveStyle({ width: '52px' })
+    fireEvent.click(within(nav).getByRole('button', { name: 'Expand sidebar' }))
+    expect(nav).toHaveStyle({ width: '300px' })
+    expect(within(nav).getByRole('button', { name: 'Collapse sidebar' })).toHaveFocus()
   })
 
   it('saves the draft revision before sending that revision, then empties the composer with a newer revision', async () => {
