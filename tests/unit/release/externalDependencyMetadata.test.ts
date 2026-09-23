@@ -21,6 +21,7 @@ const mainImports = [
   'node:http',
   'node:https',
   'node:module',
+  'node:net',
   'node:os',
   'node:path',
   'node:sqlite',
@@ -43,7 +44,7 @@ const mainImports = [
 ]
 
 const exactInventories = {
-  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['electron', 'node-pty'] },
+  main: { version: 1, scope: 'main', imports: mainImports, dynamicImports: ['node-pty'] },
   preload: { version: 1, scope: 'preload', imports: ['electron'], dynamicImports: [] },
 } as const
 
