@@ -88,6 +88,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [holdingWriteHere, setHoldingWriteHere] = useState(false)
+  /** A Git refusal the branch toolbar shows under its row; the pane's own error line leaves it to the row. */
+  const [toolbarExplained, setToolbarExplained] = useState<string | null>(null)
   const compose = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLElement>(null)
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
@@ -233,7 +235,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {settleDialog}
-    {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && !deliveryExplains && !answerExplains && error !== toolbarExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
@@ -259,7 +261,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} focused={focused} onSend={() => setFollowSignal(signal => signal + 1)} />}
+            : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)} />}
       {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
           so panes side by side keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">

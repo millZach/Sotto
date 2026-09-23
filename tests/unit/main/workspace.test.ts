@@ -534,7 +534,17 @@ describe('durable project/thread organization', () => {
     f.host.observeThreads(['second'])
     await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git?.ahead).toBe(2))
     expect(reads.slice(before_)).toContainEqual({ cwd: project.path, remote: false }) // the timer's own rounds read the remote
+    // A workspace change reads the chosen folder at once, so the record never loses its status between choices.
+    await f.host.configureThreadWorkingCopy('second', { workingCopy: 'independent', startFromOrigin: true })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git).toBeUndefined() // nothing to read yet
+    current = { ...base, ahead: 4 }
+    await f.host.configureThreadWorkingCopy('second', { workingCopy: 'shared' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git?.ahead).toBe(4)
+    expect(reads.at(-1)).toEqual({ cwd: project.path, remote: false })
     f.host.observeThreads(['local'])
+    current = { ...base, ahead: 2 }
+    await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2)) // the timer's next round puts the watched thread back where the checks below expect it
+    await new Promise(resolve => setTimeout(resolve, 30)) // and a round already under way for both threads finishes
     // Nothing is read while the window is not in front.
     inFront = false
     const before = reads.length
@@ -591,6 +601,12 @@ describe('durable project/thread organization', () => {
     await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
     await expect(f.host.listThreadRefs({ threadId: 'local', query: 'ma', limit: 10 })).resolves.toEqual(page)
     expect(listRefs).toHaveBeenCalledWith(project.path, { query: 'ma', limit: 10 })
+    // A draft pointed at a worktree that exists reads that worktree's branches, and the record names its branch.
+    vi.spyOn(ThreadWorktrees.prototype, 'options').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main', 'feat/other'], worktrees: [{ path: 'C:\\wt\\other\\', branch: 'feat/other' }] })
+    await f.host.configureThreadWorkingCopy('local', { workingCopy: 'independent', existingWorktreePath: 'C:/wt/other' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ mode: 'independent', status: 'pending', existingWorktreePath: 'C:/wt/other', branch: 'feat/other' })
+    await f.host.listThreadRefs({ threadId: 'local' })
+    expect(listRefs).toHaveBeenLastCalledWith('C:/wt/other', {})
     await expect(f.host.listThreadRefs({ threadId: 'missing' })).rejects.toThrow()
     // A status source with no listing, or none at all, refuses in plain words rather than guessing.
     f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('not read here') }), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })

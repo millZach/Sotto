@@ -30,7 +30,7 @@ function mount(current: AgentThread, options: { refs?: (request: { query?: strin
   return { ...view, command, gitRefs, rerender: (next: AgentThread) => view.rerender(<BranchToolbar row={row(next)} state={state([next, ...(options.others ?? [])])} command={command} focused={options.focused ?? true} />) }
 }
 async function openPicker() {
-  fireEvent.click(screen.getByRole('combobox', { name: 'Branch' }))
+  fireEvent.click(screen.getByRole('combobox', { name: 'Choose branch' }))
   await screen.findByRole('listbox', { name: 'Refs' })
   await waitFor(() => expect(screen.getByRole('listbox', { name: 'Refs' }).querySelectorAll('[role="option"]').length).toBeGreaterThan(0))
 }
@@ -52,7 +52,8 @@ describe('branch toolbar logic', () => {
     expect(workspaceLabel(thread())).toBe('Current checkout')
     expect(workspaceLabel(thread({ worktree: { mode: 'independent', status: 'pending' } }))).toBe('New worktree')
     expect(workspaceLabel(thread({ worktree: { mode: 'independent', status: 'ready', path: 'C:/wt', branch: 'feat/x' } }))).toBe('Current worktree')
-    expect(workspaceLabel(thread({ worktree: { mode: 'independent', status: 'pending', existingWorktreePath: 'C:/other', baseBranch: 'feat/y' } }))).toBe('Previous worktree (feat/y)')
+    expect(workspaceLabel(thread({ worktree: { mode: 'independent', status: 'pending', existingWorktreePath: 'C:/other', branch: 'feat/y' } }))).toBe('Previous worktree (feat/y)')
+    expect(workspaceLabel(thread({ worktree: { mode: 'independent', status: 'pending', existingWorktreePath: 'C:/other' } }))).toBe('Previous worktree (detached)')
     const others: ToolbarThread[] = [
       thread({ id: 'a', worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/a', branch: 'feat/a' } }),
       thread({ id: 'b', worktree: { mode: 'independent', status: 'ready', path: 'C:\\wt\\a\\', branch: 'feat/a' } }), // the same folder, spelled differently
@@ -78,6 +79,14 @@ describe('branch toolbar logic', () => {
     const draft = thread({ worktree: { mode: 'independent', status: 'pending', startFromOrigin: false } })
     expect(pickOutcome(ref('release'), draft)).toEqual({ kind: 'record-base', baseBranch: 'release', startFromOrigin: false })
     expect(pickOutcome(ref('origin/release', { remote: 'origin' }), draft)).toEqual({ kind: 'record-base', baseBranch: 'release', startFromOrigin: true })
+    // Unset reads as on, the way the switch shows it.
+    expect(pickOutcome(ref('release'), thread({ worktree: { mode: 'independent', status: 'pending' } }))).toEqual({ kind: 'record-base', baseBranch: 'release', startFromOrigin: true })
+    // A draft pointed at another thread's worktree shows that branch and does not move it; another worktree's branch re-points it again.
+    const previous = thread({ worktree: { mode: 'independent', status: 'pending', existingWorktreePath: 'C:/wt/other', branch: 'feat/other' } })
+    expect(branchLabel(previous)).toBe('feat/other')
+    expect(workspaceLabel(previous)).toBe('Previous worktree (feat/other)')
+    expect(pickOutcome(ref('release'), previous)).toMatchObject({ kind: 'refuse', reason: expect.stringContaining('feat/other') })
+    expect(pickOutcome(ref('feat/third', { worktreePath: 'C:/wt/third' }), previous)).toEqual({ kind: 'repoint', path: 'C:/wt/third' })
   })
   it('offers Create new ref for a name nothing lists, dashes for whitespace, and never for a bad name', () => {
     expect(createRefName('  fix login  bug ')).toBe('fix-login-bug')
@@ -121,13 +130,13 @@ describe('BranchToolbar', () => {
     expect(toolbar).toHaveTextContent('Run on Build box')
     expect(toolbar).toHaveTextContent('Workspace Current worktree')
     expect(screen.queryByRole('combobox', { name: 'Workspace' })).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveTextContent('feat/x')
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveTextContent('feat/x')
   })
   it('lets a draft choose its workspace, another thread worktree included, without creating anything', async () => {
     const other = thread({ id: 'other', nativeSessionStarted: true, worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/other', branch: 'feat/other' } })
     const { command } = mount(thread(), { others: [other] })
-    expect(screen.getByRole('group', { name: 'Branch toolbar' })).toHaveTextContent('Run on This device')
-    const chip = screen.getByRole('combobox', { name: 'Workspace' })
+    expect(screen.getByRole('group', { name: 'Branch toolbar' })).toHaveTextContent('Run on This computer')
+    const chip = screen.getByRole('combobox', { name: 'Choose workspace' })
     expect(chip).toHaveTextContent('Current checkout')
     fireEvent.click(chip)
     const list = screen.getByRole('listbox', { name: 'Workspace' })
@@ -160,7 +169,7 @@ describe('BranchToolbar', () => {
     fireEvent.keyDown(screen.getByLabelText('Search refs'), { key: 'Enter' })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'git-switch-branch', threadId: 'thread-1', ref: 'feature' }))
     expect(screen.queryByRole('listbox', { name: 'Refs' })).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveFocus()
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveFocus()
   })
   it('shows Git refusal under the row in T3 words and keeps the picker usable', async () => {
     const { command } = mount(thread(), { command: async () => ({ ...state([thread()]), error: 'Failed to switch ref. error: Your local changes would be overwritten by checkout.' }) })
@@ -168,7 +177,7 @@ describe('BranchToolbar', () => {
     fireEvent.click(screen.getByRole('option', { name: /feature/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to switch ref. error: Your local changes would be overwritten by checkout.')
     expect(command).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('combobox', { name: 'Branch' })).not.toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).not.toBeDisabled()
   })
   it('re-points a draft at the worktree a branch is already checked out in, and refuses that for a started thread', async () => {
     const refs = () => page([ref('feat/busy', { worktreePath: 'C:/wt/busy' })])
@@ -196,7 +205,7 @@ describe('BranchToolbar', () => {
     const draft = thread({ worktree: { mode: 'independent', status: 'pending', startFromOrigin: true } })
     const refs = (request: { query?: string }) => request.query ? page([]) : page([ref('main', { current: true, isDefault: true }), ref('release'), ref('origin/hotfix', { remote: 'origin' })])
     const { command } = mount(draft, { refs })
-    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveTextContent('From origin/main')
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveTextContent('From origin/main')
     await openPicker()
     const toggle = screen.getByRole('switch', { name: /Start from origin/ })
     expect(toggle).toBeChecked()
@@ -252,7 +261,7 @@ describe('BranchToolbar', () => {
   })
   it('says when branches cannot be read and when a folder has none', async () => {
     const { rerender } = mount(thread(), { refs: () => page([], { isRepository: false, hasRemote: false }) })
-    await act(async () => { fireEvent.click(screen.getByRole('combobox', { name: 'Branch' })) })
+    await act(async () => { fireEvent.click(screen.getByRole('combobox', { name: 'Choose branch' })) })
     expect(await screen.findByText('This folder is not a Git repository.')).toBeInTheDocument()
     void rerender
   })

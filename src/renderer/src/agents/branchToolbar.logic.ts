@@ -28,10 +28,23 @@ export function workspaceLocked(thread: ToolbarThread): boolean {
   return thread.worktree?.mode === 'independent' && Boolean(thread.worktree.path)
 }
 
+/** A draft that will make a worktree of its own on first send: no folder yet, and no worktree it points at. */
+export function newWorktreeDraft(thread: ToolbarThread): boolean {
+  const worktree = thread.worktree
+  return worktree?.mode === 'independent' && !worktree.path && !worktree.existingWorktreePath
+}
+/** A draft pointed at a worktree that exists already; its branch is that worktree's until the thread starts. */
+export function previousWorktreeDraft(thread: ToolbarThread): boolean {
+  const worktree = thread.worktree
+  return worktree?.mode === 'independent' && !worktree.path && Boolean(worktree.existingWorktreePath)
+}
+
 export type WorkspaceChoice = { readonly kind: 'current' } | { readonly kind: 'new' } | { readonly kind: 'previous'; readonly path: string }
 export interface WorkspaceOption { readonly id: string; readonly label: string; readonly choice: WorkspaceChoice }
 
-export const workspaceOptionId = (choice: WorkspaceChoice): string => choice.kind === 'previous' ? `previous:${choice.path}` : choice.kind
+/** One spelling for a folder, so a path Git wrote with slashes matches the one the record keeps with backslashes. */
+export const folderKey = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
+export const workspaceOptionId = (choice: WorkspaceChoice): string => choice.kind === 'previous' ? `previous:${folderKey(choice.path)}` : choice.kind
 
 /** Where the thread is set to work: the shared checkout, a new worktree, or another thread's worktree. */
 export function workspaceChoice(thread: ToolbarThread): WorkspaceChoice {
@@ -47,12 +60,9 @@ export function workspaceChoice(thread: ToolbarThread): WorkspaceChoice {
 /** What the workspace control says now, in T3's words: the checkout, the worktree the thread already has, or the one it will make. */
 export function workspaceLabel(thread: ToolbarThread): string {
   const choice = workspaceChoice(thread)
-  if (choice.kind === 'previous') return `Previous worktree (${thread.worktree?.branch ?? previousBranchLabel(thread) ?? 'branch'})`
+  if (choice.kind === 'previous') return `Previous worktree (${thread.worktree?.branch ?? 'detached'})`
   if (choice.kind === 'new') return thread.worktree?.path ? 'Current worktree' : 'New worktree'
   return 'Current checkout'
-}
-function previousBranchLabel(thread: ToolbarThread): string | undefined {
-  return thread.worktree?.branch ?? thread.worktree?.baseBranch
 }
 
 /**
@@ -65,10 +75,10 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
   for (const other of threads) {
     const worktree = other.worktree
     if (other.id === thread.id || other.projectId !== thread.projectId || !worktree || worktree.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || worktree.reclaimedAt) continue
-    const key = worktree.path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
+    const key = folderKey(worktree.path)
     if (seen.has(key)) continue
     seen.add(key)
-    previous.push({ id: `previous:${worktree.path}`, label: `Previous worktree (${worktree.branch ?? 'detached'})`, choice: { kind: 'previous', path: worktree.path } })
+    previous.push({ id: `previous:${key}`, label: `Previous worktree (${worktree.branch ?? 'detached'})`, choice: { kind: 'previous', path: worktree.path } })
   }
   return [
     { id: 'current', label: 'Current checkout', choice: { kind: 'current' } },
@@ -81,7 +91,7 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
 export function branchLabel(thread: ToolbarThread): string {
   const worktree = thread.worktree
   if (!worktree) return 'Select ref'
-  if (worktree.mode === 'independent' && !worktree.path) {
+  if (newWorktreeDraft(thread)) {
     const base = worktree.baseBranch ?? worktree.git?.branch ?? worktree.git?.defaultBranch ?? 'main'
     return `From ${worktree.startFromOrigin === false ? '' : 'origin/'}${base}`
   }
@@ -125,16 +135,18 @@ export type PickOutcome =
   | { readonly kind: 'record-base'; readonly baseBranch: string; readonly startFromOrigin: boolean }
 export function pickOutcome(ref: GitRef, thread: ToolbarThread): PickOutcome {
   const worktree = thread.worktree
-  if (worktree?.mode === 'independent' && !worktree.path) {
+  if (newWorktreeDraft(thread)) {
     // A worktree not made yet: the pick only says where it starts from. A remote ref means fetching that branch first.
     const base = ref.remote ? ref.name.slice(ref.remote.length + 1) : ref.name
-    return { kind: 'record-base', baseBranch: base, startFromOrigin: ref.remote ? true : worktree.startFromOrigin === true }
+    return { kind: 'record-base', baseBranch: base, startFromOrigin: ref.remote ? true : worktree?.startFromOrigin !== false }
   }
   if (ref.current) return { kind: 'refuse', reason: `${ref.name} is already checked out here.` }
   if (ref.worktreePath) {
     if (!workspaceLocked(thread)) return { kind: 'repoint', path: ref.worktreePath }
     return { kind: 'refuse', reason: `${ref.name} is checked out in another worktree. Start a new thread there to work on it.` }
   }
+  // A draft pointed at another thread's worktree does not move that worktree's branch before it has started there.
+  if (previousWorktreeDraft(thread)) return { kind: 'refuse', reason: `This thread will work in a worktree that is on ${worktree?.branch ?? 'its own branch'}. Switch branches there after the first send.` }
   return { kind: 'switch', ref: ref.name }
 }
 
