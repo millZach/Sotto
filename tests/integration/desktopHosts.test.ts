@@ -39,7 +39,7 @@ class FixtureSsh extends SshHostLauncher {
     this.callbacks = callbacks
     const failure = failures.shift()
     if (failure) throw failure
-    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned,
+    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] },
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       revokeClient: adminRevoke,
