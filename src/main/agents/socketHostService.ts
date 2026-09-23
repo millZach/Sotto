@@ -16,6 +16,8 @@ export interface SocketHostServiceOptions {
   onConnectionChange?: (connected: boolean) => void
   /** A push the host could not send, such as a thread too large for one frame. The message is plain copy. */
   onPushError?: (message: string) => void
+  /** What the last push error was about has since arrived: the thread it named, or the shell when it named none. */
+  onPushErrorCleared?: () => void
 }
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
@@ -26,6 +28,8 @@ export class SocketHostService implements HostService {
   private readonly storedEvents = new Map<number, StoredThreadEvent>()
   private latestSeq = 0
   private catchup: Promise<void> | undefined
+  /** The thread the last push error named, null for the shell, undefined when none is outstanding. */
+  private pushErrorThread: string | null | undefined
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -115,7 +119,7 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(agentStateSchema.parse(message.state)) }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
-        else this.options.onPushError?.(message.error.message)
+        else { this.pushErrorThread = message.threadId ?? null; this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
         if (!pending) return
@@ -149,13 +153,17 @@ export class SocketHostService implements HostService {
     const hostId = this.session?.hostId
     if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError('The host returned another host identity. Reconnect before continuing.', 'unauthenticated')
     delete state.clientScoped; delete state.connections
-    this.cached = state; for (const listener of this.listeners) listener(this.state()) }
+    this.cached = state; for (const listener of this.listeners) listener(this.state())
+    if (this.pushErrorThread === null) this.clearPushError()
+  }
+  private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
     if (detail && detail.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
     const current = this.details.get(threadId)
     if (detail && current && detail.revision < current.revision) return
     this.details.set(threadId, detail)
     if (detail) for (const listener of this.detailListeners) listener(detail)
+    if (this.pushErrorThread === threadId) this.clearPushError()
   }
   private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError('This result belongs to an earlier connection. Refresh the host.', 'disconnected') }
   private cacheEvents(page: HostEventPage, advance = true): void {

@@ -284,18 +284,20 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
 it('coalesces a burst of shell changes and answers a thread too large for a frame with an explicit error', async () => {
   let publish = (): void => undefined
   const huge = { threadId: 'huge', revision: 1, messages: [{ id: 'm', role: 'assistant' as const, text: 'x'.repeat(17 * 1024 * 1024), createdAt: new Date().toISOString() }] }
+  let fits = false
   const service: HostService = {
     shell: () => host.service.shell(), state: () => host.service.state(),
-    threadDetail: id => id === 'huge' ? huge : host.service.threadDetail(id),
+    threadDetail: id => id === 'huge' ? (fits ? { ...huge, revision: 2, messages: [] } : huge) : host.service.threadDetail(id),
     command: (command, identity) => host.service.command(command, identity),
     events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
     subscribe: listener => { publish = () => listener(host.service.shell()); return () => undefined },
   }
   const server = await startSocketServer({ service, pairing: host.pairing })
   const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Bursts')
-  const pushErrors: string[] = []
+  const pushErrors: (string | null)[] = []
   let connected = true
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onPushError: message => pushErrors.push(message), onConnectionChange: value => { connected = value } }); clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onPushError: message => pushErrors.push(message),
+    onPushErrorCleared: () => pushErrors.push(null), onConnectionChange: value => { connected = value } }); clients.push(client)
   try {
     await client.connect()
     let shells = 0
@@ -309,5 +311,11 @@ it('coalesces a burst of shell changes and answers a thread too large for a fram
     await expect.poll(() => pushErrors).toEqual([expect.stringContaining('too large to send to this device')])
     await expect(client.readThreadDetail('huge')).rejects.toMatchObject({ code: 'too_large' })
     expect(connected).toBe(true)
+    // Shell pushes carry on meanwhile and do not clear a thread's error; that thread arriving does.
+    publish(); await new Promise(resolve => setTimeout(resolve, 200))
+    expect(pushErrors.at(-1)).not.toBeNull()
+    fits = true
+    await client.readThreadDetail('huge')
+    expect(pushErrors.at(-1)).toBeNull()
   } finally { await client.close(); await server.close() }
 })
