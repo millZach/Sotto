@@ -91,7 +91,7 @@ See [native-host removal and current verification](verification/issue-24-closeou
 
 ## Reported subagents in Tools
 
-Choose **Agents** in Tools to inspect the current or pinned thread's subagents. A row shows the provider's task title, a brief task preview, the reported model, status and elapsed time when available. Expand it for the task, result and earlier assignments. Nested children follow their reported parent; siblings keep their spawn order. Missing model metadata reads **Model not reported**. Providers without child observations show an empty view.
+Choose **Agents** in Tools to inspect the current or pinned thread's subagents. A row shows the provider's task title, a brief task preview, the model the agent ran on, status and elapsed time when available. Expand it for the task, result and earlier assignments. Nested children follow their reported parent; siblings keep their spawn order. Claude Code does not stream a model for a workflow or a background agent, so Sotto reads it from the first reply in that agent's own transcript and nothing else from it; a workflow row lists up to four models its agents ran on. A model nothing names reads **Model not reported**. Providers without child observations show an empty view.
 
 The dot above-left of the outside Tools icon appears only for confirmed working agents. It does not open Tools, switch its tab or grant permission. A pinned thread remains observed even after its conversation pane closes. Disconnecting or restarting changes unfinished agents to **Last seen working** and freezes the clock until activity is confirmed.
 

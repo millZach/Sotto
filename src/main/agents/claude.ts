@@ -25,6 +25,7 @@ import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from '.
 import { unreadableRequest } from './nativeRequests'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
+import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
@@ -114,6 +115,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly observed = new Set<string>()
   private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
+  /** Per thread: the subagent transcripts still being read for a model the stream never named. */
+  private readonly subagentModels = new Map<string, ClaudeSubagentModels>()
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
   private readonly restoredHistory = new Map<string, RestoredThreadHistory>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
@@ -191,7 +194,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.staleContexts.clear(); this.completedOrigins.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       let alias = stored
       if (alias.rollbackPending?.targetSessionId) {
@@ -309,7 +312,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const next = await this.finishRollback(id, alias)
       // A confirmed rewind is the one change that takes words back: the thread's record starts again.
       this.messageLog.reset(id, next.historyEpoch)
-      this.logs.delete(id); this.activity.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.staleContexts.delete(id)
+      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.staleContexts.delete(id)
       for (const key of this.assistantBlocks.keys()) if (key.startsWith(`${id}:`)) this.assistantBlocks.delete(key)
       this.ensureThread(id, next); await this.log(id).poll()
       if (generation !== this.generation || !this.state.connected) return { accepted: false, uncertain: true }
@@ -505,7 +508,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     throw new Error('Unsupported Claude command.')
   }
-  async pollSessionLogs(): Promise<void> { for (const log of this.logs.values()) await log.poll() }
+  async pollSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await log.poll(); await this.readSubagentModels(id, log) } }
+  /**
+   * A subagent's model from its own transcript, for the workflow and background agents the stream never
+   * named one for. Read on the transcript's cadence, bounded per thread, and only until each row has one.
+   */
+  private async readSubagentModels(id: string, log: ClaudeSessionLog): Promise<void> {
+    const projector = this.activity.get(id)
+    const targets = projector?.modelTargets()
+    if (!projector || !targets?.length) return
+    const folder = await log.sessionFolder(); if (!folder) return
+    let reader = this.subagentModels.get(id)
+    if (!reader) { reader = new ClaudeSubagentModels(); this.subagentModels.set(id, reader) }
+    const models = await reader.read(folder, targets)
+    const thread = this.threads.get(id)
+    // A reconnect or a changed session replaced the projector while the files were read; its rows are not these.
+    if (!models.size || !thread || this.activity.get(id) !== projector) return
+    const before = thread.activities ?? []
+    let rows = before
+    for (const [agent, model] of models) rows = projector.applyModel(rows, agent, model)
+    if (rows !== before) { thread.activities = rows; this.emit() }
+  }
   /** Messages the workspace still holds; a thread whose history is handed back may resume its cursor. */
   restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
     for (const thread of threads) if (thread.messages.length) this.restoredHistory.set(thread.threadId, thread)
