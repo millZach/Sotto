@@ -32,8 +32,10 @@ The transcript is read on the thread's one-second transcript poll, only for agen
 
 The model patches the rows that already show the agent, so the roster keeps one row and its status. The roster's store keeps a model once it has one.
 
-## Checks
+## Automated checks
+
+Everything below runs without the app. The model has not yet been checked in the running app with a real Claude Code workflow and background Agent call; `tests/e2e/subagents.spec.ts` passes but does not exercise the transcript read. The pull request keeps that hand test open.
 
 - `tests/unit/main/claudeSubagentModels.test.ts`: both file layouts, first assistant line only, a line split across polls, a missing file, giving up a stopped agent, `<synthetic>` and oversized lines, the per-poll file bound, identifiers that would escape the folder, workflow model lists.
-- `tests/unit/main/subagentObservations.test.ts`: a workflow row patched in place from its run, later `workflow_progress` models added to it, `resolvedModel` from a stream launch and from replayed `toolUseResult`, a future `task_started` model.
+- `tests/unit/main/subagentObservations.test.ts`: a workflow row patched in place from its run, later `workflow_progress` models added to it, `resolvedModel` from a stream launch and from replayed `toolUseResult`, a future `task_started` model, a `<synthetic>` sidechain notice ignored, and a stopped agent with no model handed to the reader as settled.
 - `tests/integration/claudeSubagentModel.test.ts`: the fake CLI (`tests/fixtures/fakeClaudeThread.mjs`, action `subagent`) emits a workflow-style and a background-style `task_started` with no model anywhere in the stream and writes the agent's transcript. The workspace's roster shows `claude-opus-5-5` on the one existing row, still working, and the saved workspace holds neither the task nor the reply. With the transcript read switched off, both cases fail with the model `undefined`.
