@@ -128,7 +128,10 @@ export class DesktopHosts {
           await this.openSocket(host, active)
           this.clearRetry(host.id)
           return this.get()
-        } catch { failure = new Error('This device is no longer paired and could not pair again. Check the host, then connect again.') }
+        } catch (repair) {
+          // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
+          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new Error('This device is no longer paired and could not pair again. Check the host, then connect again.')
+        }
       }
       await active.socket?.close().catch(() => undefined)
       await active.launcher.disconnect().catch(() => undefined)

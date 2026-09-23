@@ -272,6 +272,23 @@ describe('desktop remote host management over a real socket', () => {
     expect(credentials.get('remote-host:' + remote.id)).toBe(token)
     expect(host.pairing.list()).toHaveLength(1)
   })
+  it('keeps retrying when pairing again meets a busy host, instead of calling it a failed pairing', async () => {
+    const remote = await add()
+    await host.pairing.revoke(host.pairing.verifyToken(credentials.get('remote-host:' + remote.id))!)
+    // Spend the host's pairing budget for the minute, the way a loop guessing codes would.
+    const guess = () => fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: 'WRONG', name: 'Guess' }) })
+    let response = await guess()
+    for (let index = 0; response.status !== 429 && index < 20; index++) response = await guess()
+    expect(response.status).toBe(429)
+    retryDelay = attempt => attempt === 0 ? 0 : 60_000
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    // The session is refused, pairing again is refused as busy, and a second retry is scheduled after it.
+    await vi.waitFor(() => expect(scheduled).toEqual([0, 1]))
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', error: HOST_BUSY })
+  })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()
     retryDelay = () => 50
