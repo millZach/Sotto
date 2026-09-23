@@ -77,6 +77,18 @@
 .tools-chrome__detail { flex: 1 1 6ch; min-width: 6ch; max-width: max-content; overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .tools-chrome__actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
 .tools-panel .tools-chrome .files-icon { width: 30px; height: 30px; border-radius: 7px; }
+/* A worded action on the line: an icon and its name, quiet until pointed at. A narrow panel keeps the icon and
+   leaves the name to the accessible name and the tooltip. */
+.tools-chrome__button {
+  position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-width: 30px; height: 30px; padding: 0 8px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+}
+.tools-chrome__button > svg { flex: none; color: var(--tt-text-muted); }
+.tools-chrome__button:hover { background: var(--tools-hover); color: var(--tt-text); }
+.tools-chrome__button:is([aria-pressed='true'], [aria-expanded='true']) { background: var(--tt-selected); color: var(--tt-text); }
+.tools-chrome__button:is([aria-pressed='true'], [aria-expanded='true']) > svg { color: var(--tt-text); }
+.tools-chrome__button:disabled { opacity: .5; cursor: default; }
+.tools-chrome__button:disabled:hover { background: transparent; color: var(--tt-text-2); }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
 .tools-panel .changes-summary.tools-chrome .files-link { min-height: 28px; font-size: 13px; }
 .tools-panel .git-pr__toolbar.tools-chrome { flex-wrap: wrap; gap: 6px 8px; padding-block: 7px; }
@@ -128,6 +140,9 @@
 .tools-panel .browser-toolbar { gap: 1px; min-height: 40px; padding-inline: 8px 6px; }
 .tools-panel .browser-address { height: 28px; margin-inline: 4px; padding-inline: 9px; border-color: var(--tt-hairline); border-radius: 6px; font-size: 13px; }
 .tools-panel .browser-toolbar .files-icon { width: 28px; height: 28px; border-radius: 6px; }
+/* The viewport size ends the address row. */
+.tools-panel .browser-viewport-size { flex: none; max-width: 112px; height: 28px; margin-left: 2px; padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.tools-panel .browser-review-unavailable { flex: none; margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--tt-hairline); }
 .tools-panel .browser-page { min-width: 0; }
 .tools-panel .browser-empty { justify-content: center; align-items: flex-start; padding: 32px; }
 .tools-panel .browser-empty strong { font-size: 18px; }
@@ -189,7 +204,12 @@
   .tools-panel .changes-surface[data-diff] .changes-list__folder { grid-area: 3 / 1; }
   .tools-panel .changes-surface[data-diff] .changes-list__item > .changes-badge { grid-area: 1 / 2 / span 2; }
 }
+@container tools-body (max-width: 639px) {
+  .tools-panel .tools-chrome__button { width: 30px; padding: 0; }
+  .tools-panel .tools-chrome__button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 @container tools-body (max-width: 479px) {
+  .tools-panel .browser-viewport-size { max-width: 88px; }
   .tools-panel .files-preview__head { flex-wrap: wrap; gap: 4px; padding-block: 5px; }
   .tools-panel .files-preview__actions { margin-left: auto; }
   .tools-panel .terminal-view { padding: 12px 6px 6px 12px; }

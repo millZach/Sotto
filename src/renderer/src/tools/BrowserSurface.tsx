@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, Plus, RotateCw, Share2, X } from 'lucide-react'
 import type { BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -190,6 +190,14 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
         })}
       </div>
       <div className="terminal-bar__actions tools-chrome__actions">
+        {/* The page's review actions share the tab line; a narrow panel shows them as icons that keep their names. */}
+        {active && !newPage ? <>
+          <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
+            <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
+          {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
+            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>
+            <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
+        </> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
           disabled={full || !bridge} onClick={() => creating ? (setCreating(false), setDraft(null)) : startNew()}><Plus size={16} aria-hidden="true" /></button>
       </div>
@@ -212,20 +220,19 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           else if (draft !== null) { event.preventDefault(); event.stopPropagation(); setDraft(null); setProblem(null) }
         }} />
       {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>Open</button>
-        : active ? <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button> : null}
+        : active ? <>
+          <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button>
+          <select className="browser-viewport-size tt-focusable" aria-label="Browser viewport size" title="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
+            <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
+            {active.viewport && !['1600x1000', '1280x800', '820x560', '390x844'].includes(`${active.viewport.width}x${active.viewport.height}`) ? <option value={`${active.viewport.width}x${active.viewport.height}`}>{active.viewport.width} x {active.viewport.height}</option> : null}
+          </select>
+        </> : null}
     </form>
     {browser.pageOpening ? <div className="browser-page-opening">
       <span>This thread may open pages without asking</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread open pages without asking" title="Opening and going to pages will ask you again" disabled={stoppingPageOpening} onClick={stopPageOpening}>Stop</button>
     </div> : null}
-    {active && !newPage ? <div className="browser-review-bar">
-      <select className="tt-focusable" aria-label="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
-        <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
-        {active.viewport && !['1600x1000', '1280x800', '820x560', '390x844'].includes(`${active.viewport.width}x${active.viewport.height}`) ? <option value={`${active.viewport.width}x${active.viewport.height}`}>{active.viewport.width} x {active.viewport.height}</option> : null}
-      </select>
-      <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>Comment on page</button>
-      {!agentToolsUnavailable ? <button type="button" className="browser-review-link browser-review-bar__share tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)} title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</button> : <span className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</span>}
-    </div> : null}
+    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
     {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}
