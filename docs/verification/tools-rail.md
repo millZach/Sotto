@@ -60,7 +60,9 @@ The spec writes all 90 captures to `artifacts/tools-rail-run/`, which is ignored
 
 ## Other specs
 
-The specs that name the panel's parts were updated for the rail and pass: `files-panel`, `files-panel-split`, `pane-layouts`, `phase-three-ui-final-fixes`, `subagents`, `terminal-display`, `agent-browser`, and `phase-three-ui` apart from its project-free chat test. Two DOM-renderer terminal checks now count a typed word across a wrapped row, because the rail narrows the terminal and the long fixture prompt wraps the command mid-word.
+The specs that name the panel's parts were updated for the rail and pass: `files-panel`, `files-panel-split`, `pane-layouts`, `phase-three-ui-final-fixes`, `subagents`, `terminal-display`, `agent-browser`, `daily-workspace`, and `phase-three-ui` apart from its project-free chat test, which fails the same way on `main` (the composer's "Context unavailable" line is 11.5 pixels, under the 12-pixel floor) and does not open Tools. Two DOM-renderer terminal checks now count a typed word across a wrapped row, because the rail narrows the terminal and the long fixture prompt wraps the command mid-word.
+
+`npm run design:verify` passes: 144 capture tuples, with `threads-files-unavailable-dark` and `-light` (the only design captures with Tools open) recaptured for the rail.
 
 ## Practical limits
 
