@@ -331,6 +331,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
             expect(layout.footBottom, `${key} rail foot clipped`).toBeLessThanOrEqual(height)
             expect(layout.chromeHeight, `${key} one line of chrome`).toBeLessThanOrEqual(46)
             expect(layout.detailStubs, `${key} a fact in the line of chrome cut to a stub`).toEqual([])
+            expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .files-preview__head button')]
+              .filter(control => control.scrollWidth > control.clientWidth + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} line and head controls clipped`).toEqual([])
             if (tool === 'Files' || tool === 'Changes') expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
             const native = tool === 'Browser'
             const nativeBounds = native ? await browserBounds(launched, url) : null

@@ -212,7 +212,7 @@
   .tools-panel .changes-surface[data-diff] .changes-list__item > .changes-badge { grid-area: 1 / 2 / span 2; }
 }
 @container tools-body (max-width: 639px) {
-  .tools-panel .tools-chrome__button { width: 30px; padding: 0; }
+  .tools-panel .tools-chrome__button:has(.tools-chrome__button-label) { width: 30px; padding: 0; }
   .tools-panel .tools-chrome__button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container tools-body (max-width: 479px) {
