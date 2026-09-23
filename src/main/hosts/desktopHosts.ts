@@ -35,10 +35,15 @@ class FinalHostError extends Error {}
 const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
 export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
 const NOTHING_SAVED = 'Nothing was saved.'
-/** A failure sentence for Add host: what happened, then that nothing was saved, then what to do. */
+/**
+ * A failure sentence for Add host: what happened, then that nothing was saved, then what to do. A saved host's
+ * sentence ends in "reconnect", which its row's Connect again does; in the dialog, what to do is add it again.
+ */
 function unsavedMessage(message: string): string {
-  const end = message.search(/[.!?]\s/u)
-  return end < 0 ? `${message} ${NOTHING_SAVED}` : `${message.slice(0, end + 1)} ${NOTHING_SAVED} ${message.slice(end + 2)}`
+  const next = message.replace(/,? then reconnect\.$/u, ', then add the host again.').replace(/ and reconnect\.$/u, ' and add the host again.')
+    .replace(/ before reconnecting\.$/u, ' before adding the host again.').replace(/Connect again (to|when)/u, 'Add the host again $1')
+  const end = next.search(/[.!?]\s/u)
+  return end < 0 ? `${next} ${NOTHING_SAVED}` : `${next.slice(0, end + 1)} ${NOTHING_SAVED} ${next.slice(end + 2)}`
 }
 /** The host part of an SSH target, which names a new host until the user renames it. */
 const targetHost = (target: string): string => target.split('@').at(-1) ?? target

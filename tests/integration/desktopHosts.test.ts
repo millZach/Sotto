@@ -383,7 +383,7 @@ describe('Add host, the switch and reconnect on launch', () => {
     const remote = connection()
     await manager.command({ type: 'add', host: remote })
     expect(manager.get().hosts).toEqual([])
-    expect(manager.get().adding).toMatchObject({ id: remote.id, phase: 'error', error: 'SSH could not reach the host. Nothing was saved. Check the host name and your network, then reconnect.' })
+    expect(manager.get().adding).toMatchObject({ id: remote.id, phase: 'error', error: 'SSH could not reach the host. Nothing was saved. Check the host name and your network, then add the host again.' })
     expect(await savedFile()).toEqual([])
     expect(credentials.has('remote-host:' + remote.id)).toBe(false)
     // A failed add is not retried, since nothing asked for this host to stay connected.
