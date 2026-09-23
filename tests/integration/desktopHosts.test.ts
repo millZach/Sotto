@@ -446,7 +446,9 @@ describe('Add host, the switch and reconnect on launch', () => {
     expect(credentials.get('remote-host:' + remote.id)).toBe(token)
     expect(await savedFile()).toEqual([expect.objectContaining({ id: remote.id, enabled: false })])
     // Switched on again, it connects now with the pairing it kept.
-    await manager.command({ type: 'set-enabled', id: remote.id, enabled: true })
+    const switchedOn = await manager.command({ type: 'set-enabled', id: remote.id, enabled: true })
+    // A switch-on is a first connect, not a reconnect, until it has to retry.
+    expect(switchedOn.hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: false })
     await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected', enabled: true, reconnecting: false }))
     expect(host.pairing.list()).toHaveLength(1)
     expect(await savedFile()).toEqual([expect.not.objectContaining({ enabled: false })])

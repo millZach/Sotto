@@ -63,7 +63,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   // With threads from more than one host listed, New thread starts by choosing the host; its projects follow.
   const hosts = listedHosts(state)
   const [hostId, setHostId] = useState<string | undefined>(() => hosts.length ? hostIdOf(project ?? undefined) ?? state.hostId ?? hosts[0]?.hostId : undefined)
-  const chosenHost = hosts.find(item => item.hostId === (hostIdOf(project ?? undefined) ?? hostId))
+  const chosenHost = hosts.find(item => item.hostId === (hostIdOf(project ?? undefined) ?? hostId ?? state.hostId))
   const projectHost = hostForThread(state.host, { hostId: project?.hostId ?? parseHostEntityKey(project?.id ?? '')?.hostId ?? state.hostId })
   const localHostId = state.connections ? state.connections.find(host => host.kind === 'local')?.hostId : state.hostId
   const defaultKey = (id: string): string => { const key = parseHostEntityKey(id); return key && key.hostId === localHostId ? key.id : id }

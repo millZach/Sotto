@@ -20,7 +20,9 @@ type Connection = Omit<RemoteHost, 'enabled'>
  */
 interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
 /** A pending reconnect. `timer` is absent while the first attempt of a launch or a switch-on runs. */
-interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined }
+interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined
+  /** Set for the first attempt after a switch-on or an edit, which reads Connecting… rather than Reconnecting…. */
+  first?: boolean }
 /**
  * Failures only the user can resolve stop the reconnect backoff instead of retrying: SSH refused this
  * account, a host key changed or was not trusted, a prompt went unanswered, the host machine lacks what
@@ -86,7 +88,7 @@ export class DesktopHosts {
   async start(): Promise<void> {
     this.saved = await this.store.read()
     for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
-    for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host)
+    for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host, true)
   }
   get(): HostsState {
     const state = this.options.router.shell(); const local = state.connections?.find(item => item.kind === 'local')
@@ -247,13 +249,13 @@ export class DesktopHosts {
   }
   /**
    * Connects now and keeps the host connected: a failure a retry can fix is retried on the reconnect backoff,
-   * as a dropped connection is, with Reconnecting… on the row from the first attempt. Used at launch, when a
-   * host is switched on, and after its connection is edited.
+   * as a dropped connection is. At launch the row reads Reconnecting… from the first attempt; after a switch-on
+   * or an edit, the first attempt reads Connecting… and only a retry reads Reconnecting….
    */
-  private keepConnected(host: SavedHost): void {
+  private keepConnected(host: SavedHost, atLaunch = false): void {
     if (this.closed) return
     this.clearRetry(host.id)
-    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined })
+    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined, ...(atLaunch ? {} : { first: true }) })
     void this.open(host).catch(() => undefined)
   }
   private async open(host: SavedHost): Promise<void> {
@@ -262,7 +264,7 @@ export class DesktopHosts {
     if (this.closed) return
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
-    this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id), error: undefined }); this.emit()
+    this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined }); this.emit()
     try {
       active.tunnel = await active.launcher.connect({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
         ...(host.sshPort ? { sshPort: host.sshPort } : {}), ...(host.identityFile ? { identityFile: host.identityFile } : {}) }, {
@@ -370,7 +372,8 @@ export class DesktopHosts {
     const status = this.status.get(host.id)
     // The SSH session kept open for Stop host has ended, so Stop host can no longer reach the host.
     if (!active.closing && status?.phase === 'error' && status.owned) { this.update(host.id, { owned: undefined }); return }
-    if (active.closing || status?.phase !== 'connected') return
+    // A host still being added is not saved yet: its drop fails the add rather than scheduling a reconnect.
+    if (active.closing || status?.phase !== 'connected' || !this.saved.includes(host)) return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
