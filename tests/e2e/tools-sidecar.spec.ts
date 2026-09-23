@@ -407,6 +407,32 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
       if (tool === 'Terminal') await expect.poll(() => terminalOutput(page)).toContain('SOTTO_RAIL_NATIVE_OK')
     }
     await screenshot(launched, 'agents-reduced-motion-1280-dark', false)
+
+    // A browser task waiting on another surface puts the corner preview up while Tools shows Files; it stands
+    // inside the rail rather than over its lower tiles.
+    await select('Files')
+    const opening = page.evaluate(async request => window.sottoE2E!.browserAgent!(request), { threadId: 'workshop', name: 'browser_open', arguments: { url, description: 'Checking the trail list' } })
+    const corner = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
+    for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+      await resize(launched, width, height)
+      await expect(corner).toBeVisible()
+      await expect(corner.getByRole('button', { name: 'Allow once' })).toBeVisible()
+      expect(await page.evaluate(() => {
+        const preview = document.querySelector('.browser-corner')!.getBoundingClientRect()
+        return [...document.querySelectorAll('.tools-rail__tab, .tools-rail__foot button')].filter(control => {
+          const box = control.getBoundingClientRect()
+          return box.left < preview.right && box.right > preview.left && box.top < preview.bottom && box.bottom > preview.top
+        }).map(control => control.getAttribute('aria-label') ?? control.textContent)
+      }), `${width}x${height} rail under the corner preview`).toEqual([])
+      await screenshot(launched, `corner-preview-files-${width}x${height}-dark`, false)
+    }
+    await page.evaluate(async () => {
+      const listed = await window.sotto!.browser!.tasks({ threadId: 'workshop' })
+      const task = listed.ok ? listed.value.find(item => item.pendingAction) : undefined
+      if (!task) throw new Error('No waiting request')
+      await window.sotto!.browser!.answerAction({ threadId: 'workshop', workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, actionId: task.pendingAction!.id, allow: false })
+    })
+    await opening
     expect(errors).toEqual([])
     await writeFile(join(SHOTS, 'layout.json'), JSON.stringify({ errors, sizes: SIZES, captures: report }, null, 2))
   } catch (error) {
