@@ -47,7 +47,7 @@ function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefi
   if (named) return named
   const said = params.message ?? params.description ?? ''
   return 'Codex is asking before it uses Sotto’s browser.' + (said ? '\n' + said : '')
-    + '\nOpening a page, going to another, clicking and typing still ask you in Tools.'
+    + '\nClicking and typing still ask you in Tools, and so do opening a page and going to another unless you let this thread open pages.'
 }
 
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {

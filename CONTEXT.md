@@ -48,9 +48,11 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Browser task.** One thread's work with a page in Sotto's browser, including its current action, user decisions, checks and evidence. A browser task may be working, paused, completed or failed; its reported result states what was checked and what remains unchecked.
 
-**Browser preview.** The small corner view of a browser task's page. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work.
+**Browser preview.** The small corner view of a browser task's page, for the focused thread or the thread Tools is pinned to; another thread's task never shows there. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work. **Show browser previews** in Settings turns every preview off without stopping the work or hiding it from Tools > Browser.
 
 **Shared browser page.** A browser page the user has made observable to its owning thread. Sharing observation does not approve navigation, clicks or typing, and revoking it ends that access.
+
+**Page-opening grant.** The user's answer, given on a request to open a page, that lets one thread open pages and go to other pages in Sotto's browser without asking again for the rest of the app session. A page it opens is shared the way Open and share shares it, and nothing more: clicks and typing still ask every time, and a page the user opened stays private until shared. It is shaped like a policy record but held only in memory, and ends at Stop in Tools > Browser, when the thread is gone, and when Sotto closes. Only the user's own answer in Tools makes one; supervision, a memory, repetition or a provider's confirmation never does (ADR-0020). Avoid: "trust", "auto-approve", "allowance", which is a Devin profile's word.
 
 **Browser feedback.** A screenshot and optional selected-element or region context added to a thread's draft by the user. It is unsent draft content until the user sends it.
 

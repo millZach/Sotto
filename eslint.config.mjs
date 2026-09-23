@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/agent-browser/**',
+      'artifacts/browser-grant/**',
       'artifacts/new-thread-setup/**',
       '.cache/**',
       'artifacts/settled-folder-new-thread/**',

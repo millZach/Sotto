@@ -20,7 +20,9 @@ export const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(
 export const browserMountSchema = browserRequestSchema.extend({ bounds: browserBoundsSchema.nullable() })
 export const browserOpenLinkSchema = z.object({ url: browserUrlSchema, destination: z.enum(['external', 'embedded']).optional(), target: toolTargetSchema.optional() }).strict()
 export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional() }).strict()
-export const browserListingSchema = z.object({ workspace: fileWorkspaceSchema, pages: z.array(browserPageSchema).max(32) }).strict()
+/** What the renderer may know of a thread's page-opening grant: that it is live, and since when. */
+export const browserPageOpeningSchema = z.object({ grantedAt: z.number() }).strict()
+export const browserListingSchema = z.object({ workspace: fileWorkspaceSchema, pages: z.array(browserPageSchema).max(32), pageOpening: browserPageOpeningSchema.nullable().optional() }).strict()
 export const browserOpenResultSchema = z.object({ destination: z.enum(['external', 'embedded']), page: browserPageSchema.optional() }).strict()
 const coordinate = z.number().finite().min(0).max(8192)
 export const browserPointSchema = z.object({ x: coordinate, y: coordinate }).strict()
@@ -42,7 +44,8 @@ export const browserStartTaskSchema = browserRequestSchema.extend({ description:
 export const browserAgentOpenSchema = browserCreateSchema.extend({ description: z.string().min(1).max(300) })
 export const browserAgentActionSchema = browserTaskRequestSchema.extend({ action: browserActionSchema })
 export const browserControlTaskSchema = browserTaskRequestSchema.extend({ control: z.enum(['pause', 'resume']) })
-export const browserAnswerActionSchema = browserTaskRequestSchema.extend({ actionId: z.string().uuid(), allow: z.boolean() })
+/** `forThread` answers a page-opening request with a page-opening grant for the rest of the session, not just this once. */
+export const browserAnswerActionSchema = browserTaskRequestSchema.extend({ actionId: z.string().uuid(), allow: z.boolean(), forThread: z.literal(true).optional() })
 export const browserFinishTaskSchema = browserTaskRequestSchema.extend({ status: z.enum(['completed', 'failed']), summary: z.string().max(2000), unchecked: z.array(z.string().max(500)).max(20) })
 export const browserTaskSchema = z.object({
   id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(),
@@ -54,7 +57,7 @@ export const browserTaskSchema = z.object({
   evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
 }).strict()
 export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
-export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict()])
+export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('page-opening'), threadId: z.string(), pageOpening: browserPageOpeningSchema.nullable() }).strict()])
 export type BrowserTask = z.infer<typeof browserTaskSchema>
 export type BrowserAction = z.infer<typeof browserActionSchema>
 export type BrowserAgentResult = z.infer<typeof browserAgentResultSchema>
@@ -62,11 +65,14 @@ export type BrowserCapture = z.infer<typeof browserCaptureResultSchema>
 export type BrowserPage = z.infer<typeof browserPageSchema>
 export type BrowserEvent = z.infer<typeof browserEventSchema>
 export type BrowserBounds = z.infer<typeof browserBoundsSchema>
+export type BrowserPageOpening = z.infer<typeof browserPageOpeningSchema>
 export interface BrowserBridge {
   tasks(request: { threadId: string }): Promise<ToolsResult<BrowserTask[]>>
   share(request: z.infer<typeof browserShareSchema>): Promise<ToolsResult<BrowserPage>>
   controlTask(request: z.infer<typeof browserControlTaskSchema>): Promise<ToolsResult<BrowserTask>>
   answerAction(request: z.infer<typeof browserAnswerActionSchema>): Promise<ToolsResult<BrowserTask>>
+  /** Ends the thread's page-opening grant, so its opens and navigations ask again. */
+  revokePageOpening(request: z.infer<typeof toolTargetSchema>): Promise<ToolsResult<void>>
   viewport(request: z.infer<typeof browserViewportSchema>): Promise<ToolsResult<BrowserPage>>
   capture(request: z.infer<typeof browserCaptureSchema>): Promise<ToolsResult<BrowserCapture>>
   list(request: { threadId: string }): Promise<ToolsResult<z.infer<typeof browserListingSchema>>>
