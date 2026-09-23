@@ -25,6 +25,8 @@ interface GitDependencies {
   draftPullRequestText?: PullRequestDraftWriter
   /** Writes a commit message from the staged diff by asking the thread's own provider, or null when Sotto writes nothing. */
   writeCommitMessage?(threadId: string, excerpt: DiffExcerpt): Promise<string | null>
+  /** A Git action changed this thread's folder, so the thread's Git status is read again without waiting for the timer. */
+  acted?(threadId: string): void
 }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const inside = (root: string, target: string): boolean => {
@@ -40,7 +42,7 @@ export class GitChangesService extends ToolOperations {
   private readonly pullRequests: GitPullRequestsService
   constructor(private readonly dependencies: GitDependencies) {
     super()
-    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}), ...(dependencies.draftPullRequestText ? { draftText: dependencies.draftPullRequestText } : {}) })
+    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}), ...(dependencies.draftPullRequestText ? { draftText: dependencies.draftPullRequestText } : {}), ...(dependencies.acted ? { acted: dependencies.acted } : {}) })
   }
   reviewPullRequest(payload: unknown) { return this.pullRequests.review(payload) }
   draftPullRequestText(payload: unknown) { return this.pullRequests.draft(payload) }
@@ -171,6 +173,7 @@ export class GitChangesService extends ToolOperations {
       await this.git(root, args).catch(error => fail('blocked', String((error as { stderr?: string }).stderr || (error as Error).message).slice(-1800)))
       const updated = await this.listing(owner)
       this.dependencies.emit({ threadId: request.threadId, workspaceId: request.workspaceId, revision: updated.revision })
+      this.dependencies.acted?.(request.threadId)
       return updated
     } finally { this.mutations.delete(root) }
   }) }

@@ -6,6 +6,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
+import { gitStatusSchema } from './gitStatus'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -170,6 +171,8 @@ export const agentWorktreeSchema = z.object({
   projectRelativePath: z.string().optional(),
   baseBranch: z.string().optional(), startFromOrigin: z.boolean().optional(),
   existingWorktreePath: z.string().optional(), reused: z.boolean().optional(), temporaryBranch: z.boolean().optional(),
+  /** The folder's Git status as the host last read it: branch, upstream, ahead and behind, dirty, the pull request. */
+  git: gitStatusSchema.optional(),
   /** The branch this worktree was on when Sotto last sent to the thread. Absent before the first send,
    * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
   sentBranch: z.string().optional(),

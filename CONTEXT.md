@@ -36,6 +36,12 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Temporary thread branch.** The short starting branch of a new worktree, created on its first send and eligible for a descriptive name from that first prompt. It stops being replaceable once the user or agent changes its branch, or another thread shares the folder.
 
+**Git status.** What the host last read of a working copy's Git state, carried on the thread's worktree record and reaching every client through the state stream: the branch, its upstream, ahead and behind against the local tracking ref, whether the tree is dirty and how much changed, the default branch and the distance from it, the branch's pull request, and when the remote was last fetched. It is read the way T3 Code reads it (ADR-0027): after finished work, on a refresh, and on a timer for the threads a window is looking at while that window is in front. Avoid: "git state", "sync status".
+
+**In front (a window).** The condition under which the host reads remotes on its own: the Sotto window is showing and has the focus, or had it within the last 45 seconds; on a headless host, a paired client holds an open socket. Nothing is fetched for a window that is not in front.
+
+**Git fetch interval.** The setting under Application that says how often, while the window is in front, the host fetches a project's origin so its threads' Git status knows ahead and behind. Off stops every background fetch; a refresh still reads the remote, at most once in 15 seconds.
+
 **Reclaim (a worktree).** Removing a thread's own worktree folder while keeping its branch and the thread; the next send puts the folder back on that branch. It happens on the user's word (**Remove worktree** in the Working copy panel, or the question Settle asks) or under a cleanup rule the user turned on, never for a folder with uncommitted work without their answer (ADR-0019). Each host reclaims only its own worktrees, under the rules in its own settings. Avoid: "delete the worktree", "clean up the thread".
 
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.

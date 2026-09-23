@@ -20,7 +20,9 @@ const githubRemote = (remote: string): string | null => {
 const safeRemote = (remote: string): string => remote.replace(/((?:https?|ssh):\/\/)[^\s/@]+@/gi, '$1')
 interface Dependencies { files: FilesService; mutations: Set<string>; canMutate?(threadId: string): Promise<boolean> | boolean; command?: GitPrCommand
   /** Sotto's own writing of the form. Absent, or resolving to null, leaves the form as the user found it. */
-  draftText?: PullRequestDraftWriter }
+  draftText?: PullRequestDraftWriter
+  /** A push or a created pull request changed what the thread's Git status says, so it is read again at once. */
+  acted?(threadId: string): void }
 const NO_DRAFT: PrDraft = { title: null, body: null }
 export class GitPullRequestsService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
@@ -124,6 +126,7 @@ export class GitPullRequestsService extends ToolOperations {
       if (destinationRevision !== review.revision) return fail('workspace-changed', 'The push destination changed. Review the target again before publishing.')
       if (request.action === 'push') {
         await this.command(root, 'git', ['push', '--', pushUrl, `${review.head}:refs/heads/${review.branch}`]).catch(error => fail('blocked', `Push failed: ${safeRemote((error as Error).message).slice(-1500)} Refresh before retrying.`))
+        this.dependencies.acted?.(request.threadId)
         return { message: 'Branch pushed.', pullRequest: null }
       }
       if (review.error || !review.repository) return fail('unavailable', review.error ?? 'Choose a GitHub remote before creating a pull request.')
@@ -144,6 +147,7 @@ export class GitPullRequestsService extends ToolOperations {
       // Always reconcile a create, including a lost acknowledgement; never repeat the write automatically.
       const pullRequest = await this.findPr(root, review.repository, review.branch).catch(() => null)
       if (!pullRequest) return fail('unavailable', `Pull request creation was not confirmed. Refresh before trying again. ${creationError instanceof Error ? safeRemote(creationError.message).slice(-900) : ''}`)
+      this.dependencies.acted?.(request.threadId)
       return { message: creationError ? 'Found the created pull request after reconnecting.' : 'Pull request created.', pullRequest }
     } finally { this.dependencies.mutations.delete(root) }
   }) }

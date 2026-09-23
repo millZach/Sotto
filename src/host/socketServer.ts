@@ -346,6 +346,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   return {
     descriptor, adminToken,
+    /** How many paired clients hold an open socket: the host's measure of a window being in front. */
+    peers: (): number => peers.size,
     close: async (): Promise<void> => {
       closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); shellPublisher.dispose(); detailPublisher.dispose()
       for (const peer of peers) peer.frames.close()

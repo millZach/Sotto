@@ -7,6 +7,7 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../../src/shared/th
 import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
+import type { GitStatus } from '../../../src/shared/gitStatus'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -500,6 +501,47 @@ describe('durable project/thread organization', () => {
     expect(inspect.mock.calls.length - reads).toBe(1) // one re-read for the burst, not one per record
     // The branch of the last send is what the pane compares against, so it stays where it was.
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.sentBranch).toBe('sotto/thread-fixture')
+  })
+
+  it('carries the Git status of the folder on the worktree record: the remote on a refresh, the timer while a window looks, and again after an action', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 5 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const base: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
+    let current = base, inFront = true
+    const reads: Array<{ cwd: string; remote: boolean }> = []
+    const source = { read: vi.fn(async (cwd: string, options: { remote: boolean }) => { reads.push({ cwd, remote: options.remote }); return current }), invalidate: vi.fn() }
+    f.host.setGitStatus(source, { pollIntervalMs: () => 10, tickMs: 5, foreground: () => inFront })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const record = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    // A refresh is an ask, so it reads the remote half too.
+    await f.host.updateThreadWorktree('local', false)
+    expect(record()?.git).toMatchObject({ branch: 'main', ahead: 0 })
+    expect(reads.at(-1)).toEqual({ cwd: project.path, remote: true })
+    // The timer reads only the threads a window is looking at.
+    current = { ...base, ahead: 2 }
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(record()?.git?.ahead).toBe(0)
+    f.host.observeThreads(['local'])
+    await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2))
+    // Nothing is read while the window is not in front.
+    inFront = false
+    const before = reads.length
+    current = { ...base, ahead: 3 }
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(reads.length).toBe(before)
+    expect(record()?.git?.ahead).toBe(2)
+    // A Git action drops the caches and reads at once.
+    await f.host.gitActionFinished('local')
+    expect(source.invalidate).toHaveBeenCalled()
+    expect(record()?.git?.ahead).toBe(3)
+    // An unchanged status publishes nothing.
+    const published: AgentHostSnapshot[] = []
+    f.host.subscribe(snapshot => published.push(snapshot))
+    await f.host.gitActionFinished('local')
+    expect(published).toHaveLength(0)
   })
 
   it('restores the branch of the last send by hand, and leaves uncommitted work alone until it is confirmed', async () => {

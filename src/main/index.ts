@@ -572,11 +572,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
   }
   let openedThreadFolder: string | null = null
+  // T3's rule for background Git reads: the window is showing and has the focus, or had it within the last 45 seconds.
+  let windowBlurredAt = 0
+  app.on('browser-window-focus', () => { windowBlurredAt = 0 })
+  app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
+    && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront },
     openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
@@ -996,6 +1003,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),
+        acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.projects(), git: runWorktreeGit,
