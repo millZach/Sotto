@@ -32,7 +32,10 @@ export class ClaudeActivity {
     const observedAt = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp))
       ? new Date(frame.timestamp).toISOString() : live ? new Date().toISOString() : undefined
     const parentTool = typeof frame.parent_tool_use_id === 'string' ? frame.parent_tool_use_id : undefined
-    const model = text(object(frame.message)?.model)
+    // Claude Code files its own error notices from a `<synthetic>` model. That is not what the agent ran on,
+    // and taking it would outrank the launch's resolved model and stop the subagent transcript read.
+    const replyModel = text(object(frame.message)?.model)
+    const model = replyModel === '<synthetic>' ? undefined : replyModel
     if (parentTool && model) {
       this.pendingModels.set(parentTool, model.slice(0, 512))
       const prior = this.agentsByTool.get(parentTool)

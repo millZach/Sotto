@@ -129,6 +129,24 @@ describe('observational subagent roster metadata', () => {
     expect(silent[0]!.agents![0]).toMatchObject({ status: 'running', model: 'claude-opus-5-5' })
   })
 
+  it('ignores a <synthetic> sidechain notice and settles a stopped agent that has no model', () => {
+    const projection = new ClaudeActivity()
+    let rows = projection.apply([], claudeTool('launch', { prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
+    rows = projection.apply(rows, { type: 'system', subtype: 'task_started', task_id: 'a3a0e66ba6fe555ae', tool_use_id: 'launch', task_type: 'local_agent', timestamp }, 'turn', 'message', '/p')
+    // Claude Code's own error notice is not the model the agent ran on, so it neither names the row
+    // nor outranks the launch's resolved model, and the transcript stays watched until that arrives.
+    rows = projection.apply(rows, { type: 'assistant', timestamp, parent_tool_use_id: 'launch', message: { model: '<synthetic>', content: [] } }, 'turn', 'message', '/p')
+    expect(rows.flatMap(row => row.agents ?? []).map(agent => agent.model)).not.toContain('<synthetic>')
+    const id = rows[0]!.agents![0]!.id
+    expect(projection.modelTargets()).toEqual([{ id, transcript: { agentId: 'a3a0e66ba6fe555ae' }, settled: false }])
+    // A stopped agent that never named a model is still read, but marked settled so the reader gives up.
+    rows = projection.apply(rows, { type: 'system', subtype: 'task_notification', task_id: 'a3a0e66ba6fe555ae', tool_use_id: 'launch', status: 'completed', timestamp }, 'turn', 'message', '/p')
+    expect(projection.modelTargets()).toEqual([{ id, transcript: { agentId: 'a3a0e66ba6fe555ae' }, settled: true }])
+    rows = projection.apply(rows, { type: 'user', timestamp, tool_use_result: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae', resolvedModel: 'claude-opus-5-5' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
+    expect(rows.filter(row => row.agents?.length).map(row => row.agents![0]!.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+    expect(projection.modelTargets()).toEqual([])
+  })
+
   it('waits for streamed Agent input before identifying a resumed child and resolves durable hashed aliases', () => {
     const first = new ClaudeActivity()
     let rows = first.apply([], claudeTool('original', { prompt: 'First' }), 'turn', 'message', '/p')
