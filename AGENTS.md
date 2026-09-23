@@ -23,6 +23,7 @@ Only what the tree does not say for itself.
 
 - `src/main/agents/` is the coordinator (`control.ts`) and the three provider adapters (`claude.ts`, `codex.ts`, `grok.ts`). `src/main/ipc/registerIpc.ts` registers every channel.
 - `src/renderer/src/agents/` is the Threads page: panes, composer, sidebar, pickers. `features/` holds the other pages, `state/` the app context and hooks, `widget/` the floating widget's own renderer.
+- `apps/ios/` is the native iPhone client: a SwiftUI app and a SottoCore Swift package with its own XCTest suite, outside npm. Only the macOS CI job compiles it, and it speaks host protocol version 1 and nothing else from the desktop.
 - `src/shared/` is what both processes use: types, zod schemas, `settings.ts`, `channels.ts`, `themes/`. The renderer reaches main only through `src/preload/` (`window.sotto`).
 - Tests live under `tests/`, never in `src/`: `unit/` mirrored by source area, `integration/` over real child processes and the fake providers in `fixtures/`, `e2e/` Playwright specs that launch the built app locally, `perf/` benchmarks. Every adapter passes `tests/integration/adapterContract.ts`.
 - `docs/`: `adr/` decisions, `verification/` evidence notes, `perf/` measurements, `research/` source studies, `plans/` implementation plans, `ci.md`, `release/`, `agents/`. `artifacts/<slug>/` holds the screenshots and JSON a verification note cites: the images the note names or describes, not every intermediate capture. The folder is 190 MB of committed images and every clone downloads all of it.

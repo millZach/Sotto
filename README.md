@@ -190,7 +190,7 @@ Unit and integration tests cover settings recovery, history privacy, audio math 
 
 The deterministic boundary is rejected in packaged builds and accepts calls only from the trusted main renderer. It never logs transcript text or PCM.
 
-Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). End-to-end tests, live provider suites and packaging stay local. See the [continuous integration guide](docs/ci.md) for what each step does and how to read a failed check.
+Every push to `main` and every pull request against it runs typecheck, lint, `vitest run` and the third-party notices check on a Windows runner (`.github/workflows/ci.yml`). End-to-end tests, live provider suites and packaging stay local. A separate macOS job tests and builds the native iOS client. See the [continuous integration guide](docs/ci.md) for what each step does and how to read a failed check.
 
 ## Build Windows artifacts
 
