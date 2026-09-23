@@ -5,13 +5,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
 import { ThreadWorkingCopy } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import type { HostsBridge, HostsState } from '../../../src/shared/hosts'
+import { HOST_VERSION_MISMATCH } from '../../../src/shared/hostProtocol'
 
 afterEach(cleanup)
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
-function fixture(phase: 'connected' | 'connecting' | 'disconnected' = 'connected', reconnecting = false, owned?: boolean) {
+function fixture(phase: 'connected' | 'connecting' | 'disconnected' | 'error' = 'connected', reconnecting = false, owned?: boolean, error?: string) {
   const state: HostsState = { localHostEnabled: true, localHostRunning: true, localHostId: LOCAL, activeHostId: LOCAL,
-    hosts: [{ id: REMOTE, hostId: REMOTE, name: 'Build box', target: 'build', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase, reconnecting, owned }] }
+    hosts: [{ id: REMOTE, hostId: REMOTE, name: 'Build box', target: 'build', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase, reconnecting, owned, error }] }
   const command = vi.fn<HostsBridge['command']>(async input => ({ ...state, ...(input.type === 'select' ? { activeHostId: input.hostId } : {}) }))
   const bridge: HostsBridge = { get: async () => state, command, onChanged: () => () => undefined }
   return { bridge, command, state }
@@ -49,6 +50,20 @@ it('offers Stop host only for a host Sotto started, and confirms before stopping
   const discovered = fixture('connected', false, false)
   render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={discovered.bridge} />)
   expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Stop host' })).toBeNull()
+})
+it('offers Stop host beside the sentence that asks for it when the host Sotto started runs another version', async () => {
+  const { bridge, command } = fixture('error', false, true, HOST_VERSION_MISMATCH), user = userEvent.setup()
+  render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
+  expect((await screen.findByRole('alert')).textContent).toBe(HOST_VERSION_MISMATCH)
+  expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy()
+  await user.click(screen.getByRole('button', { name: 'Stop host' }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stop host' }))
+  await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'stop-host', id: REMOTE }))
+  cleanup()
+  const failed = fixture('error', false, undefined, 'The host could not start.')
+  render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={failed.bridge} />)
+  expect(await screen.findByRole('button', { name: 'Connect' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Stop host' })).toBeNull()
 })
 it('says what Forget does to a host it cannot reach, and starts a new host blank', async () => {

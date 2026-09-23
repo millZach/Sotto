@@ -58,7 +58,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
         {host.phase === 'connected' || host.phase === 'connecting'
           ? <Button variant="secondary" onClick={() => void run({ type: 'disconnect', id: host.id })}>Disconnect</Button>
           : <Button onClick={() => void run({ type: 'connect', id: host.id })}>Connect</Button>}
-        {host.phase === 'connected' && host.owned && <Button variant="ghost" onClick={() => setStopId(host.id)}>Stop host</Button>}
+        {(host.phase === 'connected' || host.phase === 'error') && host.owned && <Button variant="ghost" onClick={() => setStopId(host.id)}>Stop host</Button>}
         {host.phase === 'disconnected' || host.phase === 'error' ? <Button variant="ghost" onClick={() => setDraft({ id: host.id, name: host.name, target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory, identityFile: host.identityFile })}>Edit</Button> : null}
         <Button variant="ghost" onClick={() => setForgetId(host.id)}>Forget</Button>
       </div>

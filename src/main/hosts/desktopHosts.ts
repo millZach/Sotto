@@ -4,6 +4,7 @@ import { remoteHostSchema, type HostsCommand, type HostsState, type HostStatus }
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
+import { HOST_VERSION_MISMATCH } from '../../shared/hostProtocol'
 import { SshHostLauncher, type SshHostConnection } from './sshLauncher'
 import type { DesktopHostRouter } from './desktopHostRouter'
 
@@ -18,7 +19,9 @@ type SavedHost = z.infer<typeof savedHostSchema>
 interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
 interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active: LiveHost | undefined }
 /** Drops that only the user can resolve stop the reconnect backoff instead of retrying. */
-const FINAL_FAILURES = ['identity changed', 'host key changed', 'installation was not found', 'connection record could not be read', 'identity file could not be read', 'could not pair again']
+const FINAL_FAILURES = ['identity changed', 'host key changed', 'installation was not found', 'connection record could not be read', 'identity file could not be read', 'could not pair again', 'different version of Sotto']
+/** Sotto cannot stop a host it did not start, so the version sentence for one says where to stop it instead. */
+const UNOWNED_VERSION_MISMATCH = 'This host is running a different version of Sotto. Nothing on the host was lost. Sotto did not start it, so stop it on that machine, then connect again to start the new version.'
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
@@ -119,6 +122,18 @@ export class DesktopHosts {
       await this.openSocket(host, active)
     } catch (error) {
       let failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
+      if (error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active && active.tunnel) {
+        await active.socket?.close().catch(() => undefined)
+        delete active.socket
+        // A host Sotto started keeps its SSH session, so Stop host can reach the host the sentence names.
+        // Connect closes that session first, and a host Sotto did not start has nothing to keep it for.
+        if (active.tunnel.owned) {
+          this.clearRetry(host.id)
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: HOST_VERSION_MISMATCH })
+          return this.get()
+        }
+        failure = new Error(UNOWNED_VERSION_MISMATCH)
+      }
       if (error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.tunnel) {
         await active.socket?.close().catch(() => undefined)
         delete active.socket
@@ -167,7 +182,10 @@ export class DesktopHosts {
     this.retries.set(host.id, entry)
   }
   private dropped(host: SavedHost, active: LiveHost): void {
-    if (active.closing || this.status.get(host.id)?.phase !== 'connected') return
+    const status = this.status.get(host.id)
+    // The SSH session kept open for Stop host has ended, so Stop host can no longer reach the host.
+    if (!active.closing && status?.phase === 'error' && status.owned) { this.update(host.id, { owned: undefined }); return }
+    if (active.closing || status?.phase !== 'connected') return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
@@ -196,7 +214,9 @@ export class DesktopHosts {
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost, active: LiveHost | undefined): void {
-    if (!active?.tunnel || this.status.get(host.id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before stopping its host.`)
+    // A host of another version leaves its SSH session open in the error phase for exactly this press.
+    const status = this.status.get(host.id)
+    if (!active?.tunnel || !(status?.phase === 'connected' || status?.phase === 'error' && status.owned)) throw new Error(`Connect to ${host.name} before stopping its host.`)
     if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
   }
   /** Asks the launch script to stop the host. False means it may still run. */
