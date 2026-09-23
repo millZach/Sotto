@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Copy, FolderOutput, X } from 'lucide-react'
+import { Copy, FolderOutput, WrapText, X } from 'lucide-react'
 import type { FilePreview as FilePreviewValue, FilesError } from '../../../shared/files'
 import { MessageContent, formatAttachmentSize } from '../agents/MessageContent'
 import type { PreviewState, ThreadFiles } from './filesBrowser'
@@ -84,7 +84,8 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
   </>
 
   // One line over the open file: its name, size and that it is read only, then its own actions. The wrap switch
-  // sits here too, so no second bar under the file competes with the panel's footer.
+  // sits here too, as an icon the size of the others, so no second bar under the file competes with the panel's
+  // footer and the head stays one line in the narrowest panel.
   return <section className="files-preview" aria-label={`Preview of ${name}`}>
     <header className="files-preview__head">
       <div className="files-preview__title" title={preview.path}>
@@ -93,7 +94,7 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
       </div>
       <div className="files-preview__actions">
         {renderable ? <button type="button" className="files-toggle tt-focusable" aria-pressed={!rendered} onClick={() => onMarkdownView(rendered ? 'source' : 'rendered')}>Source</button> : null}
-        {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-toggle tt-focusable" aria-pressed={wrap} onClick={() => setWrap(value => !value)}>Wrap lines</button> : null}
+        {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-icon tt-focusable" aria-label="Wrap lines" title={wrap ? 'Wrap lines: on' : 'Wrap lines: off'} aria-pressed={wrap} onClick={() => setWrap(value => !value)}><WrapText size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={`Copy path of ${name}`} title="Copy path" onClick={onCopyPath}><Copy size={16} aria-hidden="true" /></button>
         <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${name}`} title={revealLabel(platform)} onClick={onReveal}><FolderOutput size={16} aria-hidden="true" /></button>
         <button type="button" className="files-icon tt-focusable" aria-label="Close preview" title="Close preview" onClick={onClose}><X size={16} aria-hidden="true" /></button>
