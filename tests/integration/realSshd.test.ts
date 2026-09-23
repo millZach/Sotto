@@ -196,16 +196,25 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     const before = new PairedClients(data); await before.load()
     expect(before.list().map(item => item.clientId)).toEqual([clientId])
     await manager.command({ type: 'forget', id: remote.id })
+    const spawned = spawnCount, retries = scheduled.length
     expect(manager.get().hosts).toEqual([])
     expect(credentials.has(`remote-host:${remote.id}`)).toBe(false)
     await vi.waitFor(() => expect(alive(second.pid)).toBe(false), { timeout: 10_000 })
     const after = new PairedClients(data); await after.load()
     expect(after.list()).toEqual([])
 
+    // Nothing pairs again on its own: a reconnect Forget failed to cancel would have started by the
+    // first backoff step, so wait past it and look again.
+    await new Promise(done => setTimeout(done, reconnectDelayMs(0) + 2_000))
+    expect(spawnCount).toBe(spawned)
+    expect(scheduled).toHaveLength(retries)
+    const settled = new PairedClients(data); await settled.load()
+    expect(settled.list()).toEqual([])
+
     // A further connect does not pair again: the host is no longer saved, and no ssh starts.
-    const spawned = spawnCount
     await expect(manager.command({ type: 'connect', id: remote.id })).rejects.toThrow('no longer saved')
     expect(spawnCount).toBe(spawned)
+    expect(versionChecks).toBe(1)
     const later = new PairedClients(data); await later.load()
     expect(later.list()).toEqual([])
   })
