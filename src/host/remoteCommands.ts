@@ -55,15 +55,17 @@ export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has
  * not committed. Each is the user's answer to a question, so it needs the same remote-answer policy
- * record an answer does. A permission setting whose allowance is nothing grants nothing and is free;
- * `askingProviderModes` names those for the thread's model, by what each allows rather than by where it
- * sits in the list, because the list is only the modes the provider happens to report.
+ * record an answer does. A permission setting whose allowance is nothing grants nothing and is free, so a
+ * paired device can always put a thread back to asking: Sotto's own `approval-required` runtime mode, and
+ * the provider modes `askingProviderModes` names for the thread's model, by what each allows rather than by
+ * where it sits in the list, because the list is only the modes the provider happens to report.
  */
 export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProviderModes: readonly string[]): boolean {
   switch (command.type) {
     case 'answer': return true
     case 'create-thread': case 'configure-thread':
-      return command.runtimeMode !== undefined || (command.providerMode !== undefined && !askingProviderModes.includes(command.providerMode))
+      return (command.runtimeMode !== undefined && command.runtimeMode !== 'approval-required')
+        || (command.providerMode !== undefined && !askingProviderModes.includes(command.providerMode))
     case 'restore-thread-branch': case 'reclaim-thread-worktree': return command.withUncommittedChanges === true
     default: return false
   }

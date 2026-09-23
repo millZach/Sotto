@@ -72,6 +72,8 @@ describe('authenticated host socket', () => {
     await expect(client.command({ type: 'restore-thread-branch', threadId: 'missing', withUncommittedChanges: true })).rejects.toMatchObject({ code: 'forbidden' })
     await expect(client.command({ type: 'update-client', provider: 'codex' })).rejects.toMatchObject({ code: 'forbidden' })
     await expect(client.command({ type: 'open-thread-folder', threadId: 'missing' })).rejects.toMatchObject({ code: 'forbidden' })
+    // Asking first grants nothing, so it reaches the host like any ordinary change.
+    await expect(client.command({ type: 'configure-thread', threadId: 'missing', runtimeMode: 'approval-required' })).resolves.toBeDefined()
     // Without the discard, leaving a clean folder is ordinary work and reaches the host.
     await expect(client.command({ type: 'reclaim-thread-worktree', threadId: 'missing', withUncommittedChanges: false })).resolves.toBeDefined()
   })
