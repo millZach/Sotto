@@ -5,13 +5,25 @@ export const HOSTS_COMMAND = 'hosts:command'
 export const HOSTS_CHANGED = 'hosts:changed'
 export const HOSTS_SSH_SUGGESTIONS = 'hosts:ssh-suggestions'
 
+/** Where a new host's installation and data folders default to on the SSH host. */
+export const DEFAULT_HOST_INSTALL_PATH = '~/.local/share/sotto-host'
+export const DEFAULT_HOST_DATA_DIRECTORY = '~/.sotto'
+
 export const remoteHostSchema = z.object({
   id: z.uuid(), name: z.string().trim().min(1).max(80),
   target: z.string().trim().min(1).max(256), identityFile: z.string().max(4096).default(''),
   installPath: z.string().min(1).max(4096), dataDirectory: z.string().min(1).max(4096),
+  /** The SSH port when it is not the one the SSH configuration gives; passed to ssh as `-p`. */
+  sshPort: z.number().int().min(1).max(65535).optional(),
+  /**
+   * Whether the host is switched on: kept connected now and at every launch. Absent on hosts saved before
+   * the switch existed, which count as on.
+   */
+  enabled: z.boolean().optional(),
 }).strict()
 export type RemoteHost = z.infer<typeof remoteHostSchema>
-export interface HostStatus extends RemoteHost {
+export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
+  enabled: boolean
   phase: 'disconnected' | 'connecting' | 'connected' | 'error'
   reconnecting?: boolean | undefined
   hostId?: string
@@ -24,9 +36,17 @@ export interface HostStatus extends RemoteHost {
   error?: string | undefined
   prompt?: { id: string; kind: 'host-key' | 'password' | 'passphrase'; text: string }
 }
-export interface HostsState { hosts: HostStatus[]; localHostEnabled: boolean; localHostRunning: boolean; activeHostId?: string; localHostId?: string }
+export interface HostsState {
+  hosts: HostStatus[]; localHostEnabled: boolean; localHostRunning: boolean; activeHostId?: string; localHostId?: string
+  /** The host the Add host dialog is connecting to. It is saved, and joins `hosts`, only once it answers and pairs. */
+  adding?: HostStatus
+}
 export const hostsCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('save'), host: remoteHostSchema }).strict(),
+  z.object({ type: z.literal('add'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
+  z.object({ type: z.literal('cancel-add'), id: z.uuid() }).strict(),
+  z.object({ type: z.literal('save'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
+  z.object({ type: z.literal('rename'), id: z.uuid(), name: z.string().trim().min(1).max(80) }).strict(),
+  z.object({ type: z.literal('set-enabled'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ type: z.literal('connect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('disconnect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('stop-host'), id: z.uuid() }).strict(),
