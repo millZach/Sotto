@@ -6,7 +6,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -207,6 +207,15 @@ export class ConfiguredProviderHost implements AgentHost {
     const host = this.options.hosts[provider]
     if (!host.rollbackThread) throw new Error('This provider does not support conversation rewind.')
     return host.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+  }
+  /**
+   * The thread's own provider writes or nothing does (ADR-0026). A client that is not connected is not
+   * started for a side call, and no other provider is asked in its place.
+   */
+  async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const id = this.providerForThread(threadId)
+    if (!id || this.slots.get(id)!.status.connection !== 'connected') return null
+    return await this.options.hosts[id].writeShortText?.(threadId, prompt, signal) ?? null
   }
   providerForThread(threadId: string): ProviderId | undefined {
     try { return this.owner(threadId) } catch { return undefined }

@@ -104,6 +104,24 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     } catch { throw new Error('Claude Code did not return a valid JSON decision. Check the selected model and subscription in Claude Code.') }
   }
 
+  /**
+   * Short text written by the user's own Claude Code on the thread's model, for Sotto's side writing
+   * (ADR-0026). The call is a single print run with no tools, no customisations, no permission prompts and
+   * no session file, so it cannot act, and neither Claude Code's resume list nor the thread's transcript
+   * ever learns of it. The instruction is the system prompt and the material arrives on stdin, never argv.
+   */
+  async write(request: { instruction: string; material: string; model: string; effort?: string; workingDirectory: string; executable: string; timeoutMs: number; signal?: AbortSignal }): Promise<string> {
+    if (!MODEL_ID.safeParse(request.model).success || (request.effort !== undefined && !/^[a-z][a-z0-9_-]{0,31}$/u.test(request.effort))) throw new Error('Choose a valid Claude model before asking it to write.')
+    const output = await this.run(request.executable, [
+      '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
+      '--output-format', 'json', '--model', request.model, ...(request.effort ? ['--effort', request.effort] : []), '--system-prompt', request.instruction,
+    ], request.material, request.timeoutMs, request.signal, request.workingDirectory)
+    let envelope: z.infer<typeof RESULT>
+    try { envelope = RESULT.parse(JSON.parse(output)) } catch { throw new Error('Claude Code did not return its answer in a form Sotto can read.') }
+    if (envelope.is_error) throw new Error('Claude Code could not write this text. Check its subscription and usage limits in the native client.')
+    return envelope.result
+  }
+
   private async inspect(signal?: AbortSignal): Promise<{ account: SubscriptionAccount; executable: string | null }> {
     const executable = await this.findExecutable()
     const account: SubscriptionAccount = { provider: 'claude', label: 'Claude Code subscription', installed: Boolean(executable), ready: false,
@@ -175,13 +193,13 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     try { return (await this.run(executable, ['--version'], '', timeoutMs)).trim().slice(0, 200) } catch { return '' }
   }
 
-  private run(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  private run(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal, cwd = this.workingDirectory): Promise<string> {
     return new Promise((resolve, reject) => {
       signal?.throwIfAborted()
       let child: ChildProcessWithoutNullStreams
       try {
         child = spawn(executable, [...(this.options.prefixArgs ?? []), ...args], {
-          cwd: this.workingDirectory, env: this.environment(), shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+          cwd, env: this.environment(), shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
         })
       } catch {
         reject(new Error('Could not start Claude Code. Check its installation and try again.'))

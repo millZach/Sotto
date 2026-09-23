@@ -54,7 +54,6 @@ const customSettings = {
   llmQuality: 'high',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
-  writingModel: 'anthropic/claude-haiku-4.5',
   threadTitles: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
@@ -93,6 +92,16 @@ describe('settings', () => {
     for (const field of ['modelPreset', 'inferencePreference', 'remoteAsr', 'remoteAsrUrl']) {
       expect(parseSettings(legacy)).not.toHaveProperty(field)
     }
+  })
+
+  it('drops the retired writing model and keeps every other choice, whichever model was saved', () => {
+    // Short writing moved to each thread's own provider (ADR-0026); an older settings file still names a model.
+    for (const writingModel of ['google/gemini-3.1-flash-lite', 'anthropic/claude-haiku-4.5', 'no-longer-offered']) {
+      const legacy = { ...customSettings, writingModel }
+      expect(parseSettings(legacy)).toEqual(customSettings)
+      expect(parseSettings(legacy)).not.toHaveProperty('writingModel')
+    }
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('writingModel')
   })
 
   it('tolerates persisted theme values and defaults an unknown value', () => {
@@ -212,7 +221,6 @@ describe('settings', () => {
       llmQuality: 'low',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
-      writingModel: 'google/gemini-3.1-flash-lite',
       threadTitles: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},

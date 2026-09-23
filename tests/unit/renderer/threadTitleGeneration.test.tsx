@@ -52,6 +52,17 @@ describe('asking Sotto to name a thread again', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
   })
 
+  it('offers nothing on a Devin thread, whose provider writes no names (ADR-0026)', () => {
+    const state = threadsStateFixture()
+    state.host.threads.find(thread => thread.id === 'weekly-note')!.providerId = 'devin'
+    state.host.threads.find(thread => thread.id === 'visual-gate')!.providerId = 'devin'
+    mount(state)
+    expect(within(row('Weekly note')).queryByRole('button', { name: 'Regenerate title for Weekly note' })).toBeNull()
+    const menu = openPaneMenu(header())
+    expect(within(menu).queryByRole('menuitem', { name: 'Regenerate title' })).toBeNull()
+    expect(within(menu).getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
+  })
+
   it('offers nothing for an archived thread', () => {
     const state = threadsStateFixture()
     state.host.threads.find(thread => thread.id === 'weekly-note')!.archivedAt = new Date(E2E_THREADS_NOW).toISOString()

@@ -20,7 +20,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 ## What CI deliberately does not run
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
-- **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
+- **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, `SOTTO_SIDE_WRITING_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
 - **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters. Its elapsed-time comparison is opt-in like the other stopwatch budgets below.
 - **Wall-clock budgets.** See below.
 - **Desktop packaging and all publishing.** Desktop releases are still cut by hand on the Windows PC and the Apple silicon Mac. The Linux host archive is built and verified in its separate job, then published manually.

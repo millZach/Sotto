@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
-import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
+import { providerWritesShortText, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import type { GitChangesBridge } from '../../../shared/gitChanges'
@@ -339,7 +339,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
-  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} />
+  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} drafts={providerWritesShortText(thread.providerId)} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line

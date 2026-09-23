@@ -74,7 +74,6 @@ import {
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
-import { ShortTextWriter } from './llm/shortTextWriter'
 import { pullRequestTextWriter } from './llm/pullRequestText'
 import { commitMessageWriter } from './llm/commitMessage'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
@@ -503,13 +502,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
   const agentMemoryEnabled = startupSettings.memoryEnabled
-  // Sotto's own short writing: thread titles, commit message drafts and pull request drafts.
-  // E2E runs never reach the network, so every title there resolves to the stand-in name.
-  const shortTextWriter = new ShortTextWriter({
-    getSettings: () => settings.forFormatting(),
-    onFailure: failure => { console.error(`[Sotto] writing-model-failed ${failure.purpose} ${failure.reason}`) },
-    ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
-  })
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -583,9 +575,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
-    settings: () => workingCopySettings, formattingSettings: () => settings.forFormatting(),
+    settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
-    shortTextWriter, openExternal: url => shell.openExternal(url),
+    openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
       const error = await shell.openPath(path); if (error) throw new Error(error)
@@ -604,7 +596,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
   }) : await inactiveLocalHost(userDataPath)
-  const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
+  const { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter } = localRuntime
+  const writingSettings = (): Promise<AppSettings> => settings.get()
   let browserService: BrowserService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService)
   agentHost.useBrowserTools(browserAgentServer)
@@ -1005,8 +998,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
-        draftPullRequestText: pullRequestTextWriter(shortTextWriter, () => settings.forFormatting()),
-        writeCommitMessage: commitMessageWriter(shortTextWriter, () => settings.forFormatting()),
+        draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
+        writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.projects(), git: runWorktreeGit,

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { access, constants, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { access, constants, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -28,13 +28,38 @@ const SAFE_ENVIRONMENT = new Set(['path', 'pathext', 'systemroot', 'windir', 'te
 const CONNECTION_ERROR = 'Could not verify the Grok subscription. Open Grok and check its sign-in, then check the connection in Sotto. Sotto will not switch to API billing.'
 async function removeSession(directory: string, parent: string): Promise<void> {
   if (dirname(resolve(directory)) !== resolve(parent)) throw new Error('Unexpected temporary Grok session directory.')
-  await rm(directory, { recursive: true, force: true })
+  // Windows can hold a file for a moment after Grok exits; a home left behind keeps the prompt on disk.
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
+const sweeps = new Map<string, Promise<void>>()
+/**
+ * Removes the throwaway Grok homes an earlier run of Sotto left in `parent`, once per folder per process: a
+ * crash, a kill or a removal that failed mid-call leaves one behind, holding the call's prompt in Grok's
+ * session store where nothing ever reads it. Only folders made before this process started are touched, so
+ * a call already running here keeps its home, and every call waits for the sweep before it makes its own.
+ */
+export function sweepLeftoverSessions(parent: string): Promise<void> {
+  const key = resolve(parent)
+  let sweep = sweeps.get(key)
+  if (!sweep) {
+    const started = Date.now() - process.uptime() * 1000
+    sweep = (async () => {
+      for (const entry of await readdir(key, { withFileTypes: true }).catch(() => [])) {
+        if (!entry.isDirectory() || !entry.name.startsWith('grok-')) continue
+        const directory = join(key, entry.name)
+        try { if ((await stat(directory)).mtimeMs < started) await removeSession(directory, key) } catch { /* The next start tries again. */ }
+      }
+    })()
+    sweeps.set(key, sweep)
+  }
+  return sweep
 }
 
 /** The native Grok process reads its own auth path; Sotto never reads or copies credentials. */
 export class GrokSubscriptionClient implements SubscriptionClient {
   constructor(private readonly workingDirectory: string, private readonly options: GrokSubscriptionOptions = {}) {
     if (!isAbsolute(workingDirectory)) throw new Error('Grok reasoning requires an absolute isolated working directory.')
+    void sweepLeftoverSessions(workingDirectory)
   }
 
   async status(signal?: AbortSignal): Promise<SubscriptionAccount> {
@@ -84,14 +109,44 @@ export class GrokSubscriptionClient implements SubscriptionClient {
     }, signal)
   }
 
-  private async initialize(rpc: GrokRpc, directory: string, system = 'You are a text-only reasoning assistant. Return one JSON object and do not use tools.') {
+  /**
+   * Short text written by the user's own Grok on the thread's model, for Sotto's side writing (ADR-0026).
+   * It is the reasoning session's shape with the answer kept as text: a throwaway Grok home removed
+   * afterwards, so neither Grok's own session list, the thread's leader session nor Sotto's alias store
+   * ever learns of it, and every tool denied inside Grok itself. The session opens in the thread's folder
+   * and runs at the least thorough effort the thread's model reports.
+   */
+  async write(request: { instruction: string; material: string; model: string; workingDirectory: string; timeoutMs: number; signal?: AbortSignal }): Promise<string> {
+    if (!IDENTIFIER.safeParse(request.model).success) throw new Error('Choose a valid Grok model before asking it to write.')
+    const executable = await this.findExecutable()
+    if (!executable) throw new Error('Install Grok CLI and sign in with your Grok subscription first.')
+    return this.withSession(executable, request.timeoutMs, async rpc => {
+      const session = await this.initialize(rpc, request.workingDirectory, request.instruction, 'writing')
+      const selected = this.account(session).models.find(candidate => candidate.id === request.model)
+      if (!selected) throw new Error('Grok no longer offers this thread’s model. Choose an available model for the thread.')
+      const effort = selected.reasoningEfforts?.[0]
+      rpc.sessionId = session.sessionId
+      const selectedResult = await rpc.request('session/set_model', { sessionId: session.sessionId, modelId: selected.id, ...(effort ? { _meta: { reasoningEffort: effort } } : {}) })
+      if (!z.object({ _meta: z.object({ model: z.object({ Ok: z.literal(selected.id) }) }) }).safeParse(selectedResult).success) throw new Error('Grok did not select the thread’s model. Check the connection and try again.')
+      await rpc.confirmSelection(selected.id, effort)
+      // The instruction goes in the turn too: with it only in the system prompt, a live Grok answered the
+      // first message it was given instead of naming it.
+      const result = await rpc.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text: `${request.instruction}\n\n${request.material}` }] })
+      if (!result || typeof result !== 'object' || (result as { stopReason?: string }).stopReason !== 'end_turn') throw new Error('Grok did not finish writing. Check its subscription and usage limits, then try again.')
+      await rpc.drain()
+      return rpc.text
+    }, request.signal, request.workingDirectory)
+  }
+
+  private async initialize(rpc: GrokRpc, directory: string, system = 'You are a text-only reasoning assistant. Return one JSON object and do not use tools.', purpose: 'reasoning' | 'writing' = 'reasoning') {
     const initial = await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '1' } })
     const parsed = z.object({ protocolVersion: z.literal(1), authMethods: z.array(z.object({ id: z.string() })) }).parse(initial)
     if (!parsed.authMethods.some(method => method.id === 'cached_token') || parsed.authMethods.some(method => /api.?key/iu.test(method.id))) throw new Error(CONNECTION_ERROR)
     await rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } })
+    const format = purpose === 'reasoning' ? 'Return exactly one JSON object. Do not include Markdown or commentary outside it. ' : ''
     return SESSION.parse(await rpc.request('session/new', { cwd: directory, mcpServers: [], _meta: {
-      systemPromptOverride: `${system}\nReturn exactly one JSON object. Do not include Markdown or commentary outside it. Tools and all computer actions are unavailable in this reasoning session.`, yoloMode: false, autoMode: false,
-      agentProfile: { name: 'sotto-reasoning', description: 'Text-only Sotto reasoning', injectDefaultTools: false, tools: [], permissionMode: 'dontAsk', discoverSkills: false, inheritSkills: false, agentsMd: false, mcpInheritance: 'none', hooks: {} },
+      systemPromptOverride: `${system}\n${format}Tools and all computer actions are unavailable in this ${purpose} session.`, yoloMode: false, autoMode: false,
+      agentProfile: { name: `sotto-${purpose}`, description: `Text-only Sotto ${purpose}`, injectDefaultTools: false, tools: [], permissionMode: 'dontAsk', discoverSkills: false, inheritSkills: false, agentsMd: false, mcpInheritance: 'none', hooks: {} },
     } }))
   }
 
@@ -107,9 +162,11 @@ export class GrokSubscriptionClient implements SubscriptionClient {
       detail: 'Uses your signed-in Grok subscription. Its usage limits and existing account settings apply.' }
   }
 
-  private async withSession<T>(executable: string, timeoutMs: number, work: (rpc: GrokRpc, directory: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  /** `cwd` is where the native session works; absent, the throwaway folder that also holds its Grok home. */
+  private async withSession<T>(executable: string, timeoutMs: number, work: (rpc: GrokRpc, directory: string) => Promise<T>, signal?: AbortSignal, cwd?: string): Promise<T> {
     signal?.throwIfAborted()
     await mkdir(this.workingDirectory, { recursive: true })
+    await sweepLeftoverSessions(this.workingDirectory)
     const directory = await mkdtemp(join(this.workingDirectory, 'grok-'))
     const environment = this.options.environment ?? process.env
     const nativeHome = environment.GROK_HOME && isAbsolute(environment.GROK_HOME) ? environment.GROK_HOME : join(homedir(), '.grok')
@@ -128,13 +185,13 @@ export class GrokSubscriptionClient implements SubscriptionClient {
     // Native live canary: attempted terminal write returned permission denied;
     // the file was never created without any client-side tool interception.
     await writeFile(join(env.GROK_HOME!, 'requirements.toml'), '[permission]\nrules = [{ action = "deny", tool = "any" }]\n', { mode: 0o600 })
-    const args = [...(this.options.prefixArgs ?? []), '--cwd', directory, '--tools', '', '--no-subagents', '--disable-web-search', '--permission-mode', 'dontAsk',
+    const args = [...(this.options.prefixArgs ?? []), '--cwd', cwd ?? directory, '--tools', '', '--no-subagents', '--disable-web-search', '--permission-mode', 'dontAsk',
       '--deny', '*', 'agent', '--no-leader', 'stdio']
     let rpc: GrokRpc | undefined
     const stop = () => rpc?.cancel()
     try {
       signal?.throwIfAborted()
-      rpc = new GrokRpc(spawn(executable, args, { cwd: directory, env, shell: false, windowsHide: true, stdio: 'pipe' }), timeoutMs, this.options.outputLimitBytes ?? 2_000_000)
+      rpc = new GrokRpc(spawn(executable, args, { cwd: cwd ?? directory, env, shell: false, windowsHide: true, stdio: 'pipe' }), timeoutMs, this.options.outputLimitBytes ?? 2_000_000)
       signal?.addEventListener('abort', stop, { once: true })
       return await work(rpc, directory)
     } finally {

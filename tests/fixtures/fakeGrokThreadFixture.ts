@@ -5,6 +5,14 @@ import { dirname, join, resolve } from 'node:path'
 import { GrokAcpHost } from '../../src/main/agents/grok'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterSessionOptions } from '../integration/adapterContract'
+/** The frames the fake client's one-shot mode was sent, grouped into Sotto's side calls (ADR-0026). */
+async function sideCalls(root: string): Promise<{ cwd: string; model: string | undefined; material: string }[]> {
+ const frames = (await readFile(join(root,'oneshot.jsonl'),'utf8').catch(()=>'')).trim().split('\n').filter(Boolean).map(line => (JSON.parse(line) as { frame: { method?: string; params?: Record<string, unknown> } }).frame)
+ const opened = frames.filter(frame => frame.method === 'session/new')
+ return opened.map((open, index) => ({ cwd: String(open.params?.cwd),
+  model: frames.filter(frame => frame.method === 'session/set_model')[index]?.params?.modelId as string | undefined,
+  material: ((frames.filter(frame => frame.method === 'session/prompt')[index]?.params?.prompt as { text: string }[] | undefined) ?? []).map(part => part.text).join('') }))
+}
 // The deadline also covers the fake agent's process start; see the note on claudeFixture.
 export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}) {
  root ??= await mkdtemp(join(tmpdir(),'sotto-grok-thread-'))
@@ -15,6 +23,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
  const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root,'grok-threads.json'),'utf8'))[id].grokSessionId
  const action = async (id: string, value: Record<string,unknown>) => { await writeFile(join(root,'control.json'),JSON.stringify({id:randomUUID(),sessionId:await realId(id),...value})) }
  return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,
+  sideWriting:{answer:(text:string)=>writeFile(join(root,'oneshot.json'),JSON.stringify({text})),calls:()=>sideCalls(root)},
   protocol:{promptMethod:'session/prompt',resumeMethod:'session/load',permissionDecision:(record:RecordedRpc): boolean|undefined=>{
    const outcome = record.result?.outcome as {outcome?:string;optionId?:string}|undefined
    return outcome?.outcome === 'cancelled' ? false : outcome?.outcome === 'selected' ? outcome.optionId === 'yes' : undefined

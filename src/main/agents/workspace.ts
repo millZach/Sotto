@@ -10,7 +10,7 @@ import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, R
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, StoredMessageIdentity } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
@@ -135,11 +135,12 @@ export class WorkspaceHost implements AgentHost {
   private readonly eventChanged = new Set<string>()
 
   private workingCopyDefault: (projectId: string) => 'independent' | 'shared' = () => 'shared'
-  private branchNameWriter: ((prompt: string) => Promise<string | null>) | undefined
+  private branchNameWriter: ((threadId: string, prompt: string) => Promise<string | null>) | undefined
   private readonly namingBranches = new Set<string>()
   private readonly branchWrites = new Set<Promise<void>>()
   setWorkingCopyDefaults(resolver: (projectId: string) => 'independent' | 'shared'): void { this.workingCopyDefault = resolver }
-  setBranchNameWriter(writer: (prompt: string) => Promise<string | null>): void { this.branchNameWriter = writer }
+  /** Names a new worktree's branch from its first prompt, asking that thread's own provider (ADR-0026). */
+  setBranchNameWriter(writer: (threadId: string, prompt: string) => Promise<string | null>): void { this.branchNameWriter = writer }
   /** Whether something outside this host, a Tools terminal, still runs in the thread's folder. */
   private worktreeInUse: (threadId: string) => boolean = () => false
   setWorktreeInUse(inUse: (threadId: string) => boolean): void { this.worktreeInUse = inUse }
@@ -237,7 +238,7 @@ export class WorkspaceHost implements AgentHost {
     if (this.stopping || !this.branchNameWriter || this.namingBranches.has(threadId)) return
     this.namingBranches.add(threadId)
     const writer = this.branchNameWriter
-    const pending = this.exclusivelyOwnsCheckout(threadId).then(exclusive => !this.stopping && exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(prompt) : null)
+    const pending = this.exclusivelyOwnsCheckout(threadId).then(exclusive => !this.stopping && exclusive && this.thread(threadId).worktree?.temporaryBranch ? writer(threadId, prompt) : null)
       .then(name => !this.stopping && name ? this.renameTemporaryBranch(threadId, name) : undefined).catch(() => undefined)
     this.branchWrites.add(pending)
     void pending.finally(() => this.branchWrites.delete(pending))
@@ -1309,6 +1310,15 @@ export class WorkspaceHost implements AgentHost {
   resolveProjectId(id: string): string { return this.inner.resolveProjectId?.(id) ?? id }
   resolveModelId(id: string): string { return this.inner.resolveModelId?.(id) ?? id }
   providerForThread(id: string): ProviderId | undefined { return this.state.snapshot.threads.find(thread => thread.id === id)?.providerId ?? this.inner.providerForThread?.(id) }
+  /**
+   * A side call on the thread's own client (ADR-0026). A thread whose native session has not started has
+   * no client, model or folder to ask yet, so it gets nothing rather than a session started for it.
+   */
+  async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
+    return this.inner.writeShortText(threadId, prompt, signal)
+  }
   /**
    * The threads a window says it is looking at. Only those hold their messages in memory: one leaving the
    * set drops to its summary, one joining it is given the first window of its history from the store.

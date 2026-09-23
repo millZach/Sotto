@@ -90,6 +90,8 @@ it.runIf(process.env.SOTTO_NATIVE_CODEX_CONTRACT === '1')('dispatches modern and
     await writeFile(markerScript, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`)
     await writeFile(join(fixture.home, 'auth.json'), apiLogin)
     await writeFile(join(fixture.home, 'config.toml'), [
+      // The user's own turn-complete program, which would be handed the prompt and the reply if Sotto left it on.
+      `notify=[${JSON.stringify(process.execPath)}, ${JSON.stringify(markerScript)}]`,
       '[features]', 'hooks=true',
       '[mcp_servers.sotto_fixture]', `command=${JSON.stringify(process.execPath)}`, `args=[${JSON.stringify(markerScript)}]`,
     ].join('\n'))

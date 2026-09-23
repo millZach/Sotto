@@ -9,7 +9,8 @@ import type { PullRequestMaterial, PullRequestText } from '../llm/pullRequestTex
 import { fail, parse, ToolOperations, workspace } from './common'
 
 export type GitPrCommand = (cwd: string, command: 'git' | 'gh', args: string[], stdin?: string) => Promise<string>
-export type PullRequestDraftWriter = (material: PullRequestMaterial) => Promise<PullRequestText | null>
+/** Drafts the form by asking the named thread's own provider (ADR-0026). */
+export type PullRequestDraftWriter = (threadId: string, material: PullRequestMaterial) => Promise<PullRequestText | null>
 const repositorySchema = z.object({ nameWithOwner: z.string(), url: z.string().url(), defaultBranchRef: z.object({ name: z.string() }).nullable() })
 const rawPrSchema = z.object({ number: z.number(), title: z.string(), url: z.string().url(), state: z.string(), baseRefName: z.string(), headRefName: z.string(), isDraft: z.boolean(), headRepository: z.object({ name: z.string() }).nullable(), headRepositoryOwner: z.object({ login: z.string() }).nullable(), reviewDecision: z.string().nullable().optional(), statusCheckRollup: z.array(z.object({ name: z.string().optional(), context: z.string().optional(), status: z.string().optional(), state: z.string().optional(), conclusion: z.string().nullable().optional(), detailsUrl: z.string().nullable().optional(), targetUrl: z.string().nullable().optional() })).nullable().optional() })
 const githubRemote = (remote: string): string | null => {
@@ -19,7 +20,7 @@ const githubRemote = (remote: string): string | null => {
 const safeRemote = (remote: string): string => remote.replace(/((?:https?|ssh):\/\/)[^\s/@]+@/gi, '$1')
 interface Dependencies { files: FilesService; mutations: Set<string>; canMutate?(threadId: string): Promise<boolean> | boolean; command?: GitPrCommand
   /** Sotto's own writing of the form. Absent, or resolving to null, leaves the form as the user found it. */
-  draftText?(material: PullRequestMaterial): Promise<PullRequestText | null> }
+  draftText?: PullRequestDraftWriter }
 const NO_DRAFT: PrDraft = { title: null, body: null }
 export class GitPullRequestsService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
@@ -82,9 +83,10 @@ export class GitPullRequestsService extends ToolOperations {
   }
   /**
    * The drafted title and body for the form. Reading only: it runs no `gh` and
-   * changes nothing, and every way of having no text - no writer, no key,
-   * generation off, a detached head, no commits on the branch, a failed request
-   * - is the same quiet `{ title: null, body: null }`, never an error.
+   * changes nothing, and every way of having no text - no writer, a provider
+   * that writes nothing, generation off, a detached head, no commits on the
+   * branch, a failed request - is the same quiet `{ title: null, body: null }`,
+   * never an error.
    */
   draft(payload: unknown) { return this.run(async () => {
     const request = parse(prDraftRequestSchema, payload)
@@ -100,7 +102,7 @@ export class GitPullRequestsService extends ToolOperations {
       .split('\n').map(subject => subject.trim()).filter(Boolean)
     if (subjects.length === 0) return NO_DRAFT
     const excerpt = diffExcerpt(await git('diff', '--no-color', '--no-ext-diff', '--unified=3', start, 'HEAD').catch(() => ''))
-    const written = await write({ subjects, diff: excerpt.text }).catch(() => null)
+    const written = await write(request.threadId, { subjects, diff: excerpt.text }).catch(() => null)
     return written ? { title: written.title, body: written.body } : NO_DRAFT
   }) }
   act(payload: unknown) { return this.run(async () => {

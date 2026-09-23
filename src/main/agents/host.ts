@@ -16,6 +16,12 @@ export type AgentHostCommand =
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
 export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
+/**
+ * What Sotto asks a thread's own client to write on the side: a title, a branch name, a commit message or
+ * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
+ * system prompt keeps them apart too, and the material is always something to describe, never to obey.
+ */
+export interface ShortTextPrompt { readonly instruction: string; readonly material: string }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
@@ -73,6 +79,15 @@ export interface AgentHost {
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
    */
   threadMessages?(threadId: string): readonly AgentMessage[]
+  /**
+   * One side call to the thread's own client, account and model, in the thread's working folder: the
+   * instruction and material go in and the written text comes back (ADR-0026). It never resumes or writes
+   * to the thread's session, transcript, history or activity, and nothing about it reaches the Threads
+   * page. Resolves null where this thread's provider writes nothing: Devin, a disconnected client, a thread
+   * it does not own. Throws when the client was asked and failed; the error names no prompt text. An aborted
+   * `signal` stops the client the call started, which is how a host shutdown leaves no child behind.
+   */
+  writeShortText?(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
   /**
    * Record that a request was answered and which client answered it. Absent on hosts that keep no
    * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).

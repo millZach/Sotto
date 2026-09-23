@@ -13,15 +13,16 @@ const INSTRUCTION = [
 ].join(' ')
 
 /**
- * The first user message alone names a new worktree's temporary branch. This
- * shares the generated-title switch and its local-history privacy boundary;
- * the existing short-text writer owns the OpenRouter key and failure logging.
- * The caller decides whether the thread still owns a replaceable branch.
+ * The first user message alone names a new worktree's temporary branch, and the
+ * thread's own provider writes the name on the side (ADR-0026). This shares the
+ * generated-title switch and its local-history privacy boundary; the short-text
+ * writer owns the side call and failure logging. The caller decides whether the
+ * thread still owns a replaceable branch.
  */
 export function threadBranchWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
-): (firstPrompt: string) => Promise<string | null> {
+): (threadId: string, firstPrompt: string) => Promise<string | null> {
   return settingsGatedWriter(writer, getSettings, {
     enabled: settings => settings.threadTitles && settings.historyEnabled,
     worthAsking: prompt => prompt.trim().length > 0,
@@ -30,7 +31,6 @@ export function threadBranchWriter(
       instruction: INSTRUCTION,
       material: prompt.trim().slice(0, PROMPT_EXCERPT_CHARACTERS),
       maxCharacters: BRANCH_SLUG_MAX_CHARACTERS,
-      maxTokens: 48,
     }),
     shape: branchName,
   })

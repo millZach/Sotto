@@ -11,6 +11,7 @@ import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { startHeadlessHost } from '../../../src/host'
+import { threadTitleRequest } from '../../../src/main/llm/threadTitle'
 
 const roots: string[] = []
 async function directory(): Promise<string> {
@@ -28,7 +29,7 @@ async function runtime(options: Partial<AgentRuntimeOptions> = {}) {
   })
   await credentials.load()
   return createAgentRuntime({
-    directory: root, credentials, settings: () => DEFAULT_SETTINGS, formattingSettings: async () => DEFAULT_SETTINGS,
+    directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined,
     ...(options.providers ? {} : { host: new E2EAgentHost() }), reasoner: e2eAgentReasoner, ...options,
   })
@@ -42,6 +43,21 @@ afterEach(async () => {
 })
 
 describe('host runtime shutdown', () => {
+  it('stops a side call still writing a title, so no client outlives the host (ADR-0026)', async () => {
+    const host = await runtime()
+    let signal: AbortSignal | undefined
+    const entered = deferred()
+    vi.spyOn(host.agentHost, 'writeShortText').mockImplementation((_threadId, _prompt, received) => {
+      signal = received; entered.resolve()
+      return new Promise<string | null>((_resolve, reject) => { received!.addEventListener('abort', () => reject(new Error('Client stopped')), { once: true }) })
+    })
+    const pending = host.shortTextWriter.write('thread-a', threadTitleRequest({ prompt: 'Fix the contrast', reply: 'Done' }))
+    await entered.promise
+    await host.close()
+    expect(signal!.aborted).toBe(true)
+    await expect(pending).resolves.toBeNull()
+  })
+
   it('waits for a pending organization save before closing the event store', async () => {
     const host = await runtime()
     await host.hostService.command({ type: 'connect' }, desktopWindowClient())

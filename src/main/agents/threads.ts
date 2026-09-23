@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -176,6 +176,15 @@ export class SottoThreadHost implements AgentHost {
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
     return this.read(() => this.inner.refreshThread?.(binding.sessionId) ?? this.inner.snapshot())
+  }
+
+  /** The adapter is asked about its own session; a thread bound to another provider is none of its business. */
+  async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.inner.writeShortText) return null
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (!binding || binding.provider !== this.provider) return null
+    return this.inner.writeShortText(binding.sessionId, prompt, signal)
   }
 
   /** Bindings for newly discovered threads reach disk before the coordinator can persist a reference to them. */

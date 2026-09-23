@@ -347,6 +347,8 @@ describe('durable project/thread organization', () => {
     await local(f)
     await f.host.execute(send())
     await vi.waitFor(() => expect(writer).toHaveBeenCalledTimes(1))
+    // The branch is named by the thread whose first prompt it is, so its own provider is the one asked.
+    expect(writer).toHaveBeenCalledWith('local', send().text)
     const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
     await git(thread.workingDirectory!, ['switch', '-c', 'feat/agent-choice'])
     await f.host.updateThreadWorktree('local', false)

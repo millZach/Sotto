@@ -211,11 +211,11 @@ export class AgentControl {
     preferences?: Pick<MemoryProfile, 'retrieve'>
     openThreadFolder?: (path: string) => Promise<void>
     /**
-     * Writes a thread's name from its first exchange. `null` leaves the thread the name it has,
-     * which is also what an off switch, a missing key and every failure resolve to. Absent here
-     * means no thread is ever named by Sotto.
+     * Writes a thread's name from its first exchange, asking that thread's own provider on the side
+     * (ADR-0026). `null` leaves the thread the name it has, which is also what an off switch, a provider
+     * that writes nothing and every failure resolve to. Absent here means no thread is ever named by Sotto.
      */
-    writeThreadTitle?: (exchange: ThreadTitleExchange) => Promise<string | null>
+    writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
     /** Local record of a silent failure; never a banner, never shown to the user. */
     logFailure?: (code: string, detail: string) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
@@ -905,6 +905,10 @@ export class AgentControl {
     if (this.dependencies.historyEnabled?.() === false) return
     for (const thread of this.state.host.threads) {
       if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
+      // A client shows the first reply while its turn is still running and ends the turn on a later frame
+      // that adds no message, so a running thread is not yet checked: checking it would record this count
+      // and skip the frame that finishes the turn.
+      if (thread.status === 'running') continue
       // A thread's history lives in the store, so read it only when this thread has said something new:
       // otherwise a thread that will never be named would be read on every provider frame.
       const messageCount = threadSummaryOf(thread).messageCount
@@ -927,7 +931,7 @@ export class AgentControl {
   private async writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
     if (this.disposed) return
     try {
-      const title = await this.dependencies.writeThreadTitle!(exchange)
+      const title = await this.dependencies.writeThreadTitle!(threadId, exchange)
       if (this.disposed || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
@@ -1014,7 +1018,7 @@ export class AgentControl {
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
-    // Naming a thread is Sotto's own record too, and it asks a writing model, never the provider.
+    // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.
     if (command.type === 'regenerate-thread-title') return this.regenerateThreadTitle(command.threadId)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.

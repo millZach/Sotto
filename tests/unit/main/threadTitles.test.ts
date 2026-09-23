@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * A thread naming itself: the coordinator asks the writing model for a name once the first reply lands on a
- * thread that still carries a stand-in name, leaves a name set by hand alone, and asks for nothing when
- * generation is off, no OpenRouter key is stored, or local history is not kept.
+ * A thread naming itself: the coordinator asks the thread's own provider, on the side, for a name once the
+ * first reply lands on a thread that still carries a stand-in name (ADR-0026), leaves a name set by hand
+ * alone, and asks for nothing when generation is off or local history is not kept.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
@@ -22,14 +22,18 @@ const removals: (() => Promise<void>)[] = []
 
 async function coordinator(options: {
   root?: string
-  writeThreadTitle?: (exchange: ThreadTitleExchange) => Promise<string | null>
+  writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
+  /** Names threads through the provider hosts' own side calls rather than a stand-in writer. */
+  providerWriting?: AppSettings
   historyEnabled?: () => boolean
 } = {}) {
   const workspace = await workspaceFixture(options.root)
   if (options.root === undefined) removals.push(workspace.remove)
   const credentials = new AgentCredentials(workspace.root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
   await credentials.load()
-  const titles = vi.fn(options.writeThreadTitle ?? (async () => 'Dark theme contrast'))
+  const settings = options.providerWriting
+  const writer = settings ? threadTitleWriter(new ShortTextWriter({ write: (threadId, prompt) => workspace.host.writeShortText(threadId, prompt) }), () => settings) : undefined
+  const titles = vi.fn<(threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>>(options.writeThreadTitle ?? writer ?? (async () => 'Dark theme contrast'))
   const control = new AgentControl({
     schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner, membership,
     writeThreadTitle: titles,
@@ -88,8 +92,8 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId).title).toBe('Workshop')
     reply(f.adapters.codex)
     await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
-    // Only the first message and the first reply were offered to the writing model.
-    expect(f.titles.mock.calls).toEqual([[{ prompt: 'The palette is unreadable in dark mode.', reply: 'I raised the foreground contrast on both dark themes.' }]])
+    // Only the first message and the first reply were offered, for this thread.
+    expect(f.titles.mock.calls).toEqual([[threadId, { prompt: 'The palette is unreadable in dark mode.', reply: 'I raised the foreground contrast on both dark themes.' }]])
     // The provider still calls its session "Workshop"; the written name is not flickered back to the default.
     f.adapters.codex.emit()
     await f.control.command({ type: 'refresh' })
@@ -99,6 +103,22 @@ describe('naming a thread from its first exchange', () => {
     const reopened = await coordinator({ root: f.root })
     expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' })
     expect(reopened.titles).not.toHaveBeenCalled()
+  })
+
+  it('names a thread whose reply streamed in while the turn was still running, once the turn ends', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    // A real client shows the reply while the turn is still running, and ends the turn on a later frame
+    // that adds no message. The name is asked for on that later frame, not skipped for good.
+    reply(f.adapters.codex)
+    f.adapters.codex.state.threads[0]!.status = 'running'
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh' })
+    expect(f.titles).not.toHaveBeenCalled()
+    f.adapters.codex.state.threads[0]!.status = 'idle'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
+    expect(f.titles).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a name set by hand alone, and a rename after the name was written sticks', async () => {
@@ -135,7 +155,7 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId)).toMatchObject({ title: 'Palette work', titleSource: 'user' })
   })
 
-  it('keeps the stand-in name and shows no error when the writing model fails, and does not ask again', async () => {
+  it('keeps the stand-in name and shows no error when the provider writes nothing, and does not ask again', async () => {
     const f = await coordinator({ writeThreadTitle: async () => null })
     const threadId = workshop(f.control).id
     reply(f.adapters.codex)
@@ -163,20 +183,45 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, workshop(f.control).id).title).toBe('Workshop')
   })
 
-  it('requests nothing of OpenRouter with generation off or with no key stored', async () => {
-    for (const settings of [
-      { ...DEFAULT_SETTINGS, llmApiKey: 'sk-or-v1-test', threadTitles: false },
-      { ...DEFAULT_SETTINGS, llmApiKey: '', threadTitles: true },
-    ] satisfies AppSettings[]) {
-      const fetchFn = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Never asked' } }] }), { status: 200 }))
-      const writer = new ShortTextWriter({ getSettings: () => settings, fetchFn })
-      const f = await coordinator({ writeThreadTitle: threadTitleWriter(writer, () => settings) })
-      const threadId = workshop(f.control).id
-      reply(f.adapters.codex)
-      await f.control.command({ type: 'refresh' })
-      await vi.waitFor(() => expect(f.titles).toHaveBeenCalledTimes(1))
-      expect(fetchFn).not.toHaveBeenCalled()
-      expect(titled(f.control, threadId).title).toBe('Workshop')
-    }
+  it("asks the thread's own provider on the side, and the thread's session sees nothing of it", async () => {
+    const f = await coordinator({ providerWriting: DEFAULT_SETTINGS })
+    f.adapters.codex.sideWriter = async () => '"Dark theme contrast."'
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
+    // The provider was asked about its own session, never another provider and never inside the thread.
+    expect(f.adapters.codex.sideWrites).toHaveLength(1)
+    expect(f.adapters.codex.sideWrites[0]!.sessionId).toBe(f.registry.byThread(threadId)!.sessionId)
+    expect(f.adapters.codex.sideWrites[0]!.prompt.material).toContain('The palette is unreadable in dark mode.')
+    expect(f.adapters.claude.sideWrites).toEqual([])
+    expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toEqual([])
+    expect(f.adapters.codex.state.threads[0]!.messages.map(message => message.id)).toEqual(['first-prompt', 'first-reply'])
+  })
+
+  it('keeps the stand-in name for a provider that writes nothing, or one that is disconnected', async () => {
+    const devinLike = await coordinator({ providerWriting: DEFAULT_SETTINGS })
+    const threadId = workshop(devinLike.control).id
+    reply(devinLike.adapters.codex)
+    await devinLike.control.command({ type: 'refresh' })
+    await vi.waitFor(() => expect(devinLike.adapters.codex.sideWrites).toHaveLength(1))
+    expect(titled(devinLike.control, threadId)).toMatchObject({ title: 'Workshop' })
+    expect(devinLike.control.get().error).toBeNull()
+
+    const disconnected = await coordinator({ providerWriting: DEFAULT_SETTINGS })
+    disconnected.adapters.codex.sideWriter = async () => 'Never asked'
+    disconnected.native.disconnect('codex')
+    await expect(disconnected.host.writeShortText(workshop(disconnected.control).id, { instruction: 'Name it', material: 'Anything' })).resolves.toBeNull()
+    expect(disconnected.adapters.codex.sideWrites).toEqual([])
+  })
+
+  it('asks the provider nothing with generation off', async () => {
+    const f = await coordinator({ providerWriting: { ...DEFAULT_SETTINGS, threadTitles: false } })
+    f.adapters.codex.sideWriter = async () => 'Never asked'
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await f.control.command({ type: 'refresh' })
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledTimes(1))
+    expect(f.adapters.codex.sideWrites).toEqual([])
+    expect(titled(f.control, threadId).title).toBe('Workshop')
   })
 })
