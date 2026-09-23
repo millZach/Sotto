@@ -18,6 +18,7 @@ export default tseslint.config(
       '.claude/worktrees/**',
       'coverage/**',
       'artifacts/question-choices/**',
+      'artifacts/sidebar-question/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',
