@@ -48,7 +48,7 @@ const PAINTED: Record<string, string> = {
 }
 const resolve = (css: string): string | null => /^#[0-9a-f]{6}([0-9a-f]{2})?$/iu.test(css) ? css.toLowerCase() : PAINTED[css] ?? null
 
-const OCEAN_DARK = {
+const TERMINAL_DARK = {
   '--tt-terminal-background': 'oklch(0.242641 0.024125 250.573)',
   '--tt-terminal-foreground': 'color-mix(in oklab, oklch(0.990339 0.008411 325.64) 100%, oklch(0.242641 0.024125 250.573))',
   '--tt-terminal-cursor': 'oklch(0.758933 0.105833 241.548)',
@@ -56,7 +56,7 @@ const OCEAN_DARK = {
   '--tt-terminal-scrollbar': 'oklch(0.58613 0.012959 267.22)',
   '--tt-terminal-scrollbar-hover': 'oklch(0.681569 0.010909 276.465)',
 }
-const OCEAN_LIGHT = {
+const TERMINAL_LIGHT = {
   '--tt-terminal-background': 'oklch(0.974199 0.002856 241.597)',
   '--tt-terminal-foreground': 'oklch(0.222003 0.03479 328.979)',
   '--tt-terminal-cursor': 'oklch(0.536684 0.120219 247.01)',
@@ -79,7 +79,7 @@ describe('terminal colours', () => {
   it('reads the theme’s terminal roles, resolved to colours xterm parses, with the opaque selection it draws text above', () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'
-    paint(root, OCEAN_DARK)
+    paint(root, TERMINAL_DARK)
     const theme = terminalTheme(root, resolve)
     expect(theme).toMatchObject({
       background: '#1b2430', foreground: '#fcf8fc', cursor: '#58b6ec', cursorAccent: '#1b2430',
@@ -94,7 +94,7 @@ describe('terminal colours', () => {
   it('picks the ANSI set from how light the terminal field is, not from the mode name', () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'
-    paint(root, OCEAN_LIGHT)
+    paint(root, TERMINAL_LIGHT)
     const theme = terminalTheme(root, resolve)
     expect(theme).toMatchObject({ background: '#f6f8f9', foreground: '#28172a', selectionBackground: '#d8e4ee', selectionInactiveBackground: '#e5edf3', red: '#b42318' })
   })
@@ -150,8 +150,8 @@ describe('a live terminal', () => {
   it('repaints the same xterm when the theme, its mode or its colours change on the root, and only then', async () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'
-    root.dataset.themeId = 'ocean'
-    paint(root, OCEAN_DARK)
+    root.dataset.themeId = 'slate'
+    paint(root, TERMINAL_DARK)
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }))
     const view = createXtermView({ onInput: () => undefined, onInterrupt: () => undefined }, { resolveColor: resolve })
     view.mount(document.body.appendChild(document.createElement('div')))
@@ -167,7 +167,7 @@ describe('a live terminal', () => {
 
     // Another theme with the same mode.
     root.dataset.themeId = 'paper'
-    paint(root, OCEAN_LIGHT)
+    paint(root, TERMINAL_LIGHT)
     await flush()
     expect(terminal.themes.at(-1)).toMatchObject({ background: '#f6f8f9', foreground: '#28172a' })
 
@@ -179,7 +179,7 @@ describe('a live terminal', () => {
     expect(xterm.instances).toHaveLength(1)
 
     view.dispose()
-    paint(root, OCEAN_DARK)
+    paint(root, TERMINAL_DARK)
     await flush()
     expect(terminal.themes).toHaveLength(repaints)
   })
@@ -187,7 +187,7 @@ describe('a live terminal', () => {
   it('stops and restarts the same xterm’s cursor blink when reduced motion changes, from Sotto’s setting or the system', async () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'
-    paint(root, OCEAN_DARK)
+    paint(root, TERMINAL_DARK)
     const system = { matches: false, listeners: new Set<() => void>() }
     vi.stubGlobal('matchMedia', () => ({
       get matches() { return system.matches },

@@ -9,10 +9,10 @@ import { ORB_INK_FILTER, colorBeneathInkFilter, createOrb, inkableColor, orbColo
 import { SottoMark } from '../../../src/renderer/src/components/SottoMark'
 import { applyAppearance, type AppearanceChoice } from '../../../src/renderer/src/state/appearance'
 import { defaultAgentConfiguration } from '../../../src/shared/agents'
-import { themeBrand } from '../../../src/shared/themeBranding'
+import { APP_ICON_BRAND, themeBrand } from '../../../src/shared/themeBranding'
 import { parseThemeRgb, rgbToOklch } from '../../../src/shared/themes/color'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
-import { BUILT_IN_THEMES, getThemeColorsForMode, parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, DEFAULT_THEME_ID, getThemeColorsForMode, parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
 import type { ThemeAppearance } from '../../../src/shared/themes/palettes'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -22,7 +22,7 @@ vi.mock('../../../src/renderer/src/agents/orb/orb', async (original) => ({
 }))
 
 const choice = (patch: Partial<AppearanceChoice> = {}): AppearanceChoice => ({
-  appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean', appearanceContrast: 100, glassOpacity: 80, effortColor: 'ember', customThemes: [], ...patch,
+  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, glassOpacity: 80, effortColor: 'ember', customThemes: [], ...patch,
 })
 
 function builtIn(id: string, mode: ThemeAppearance) {
@@ -61,6 +61,7 @@ afterEach(() => {
   root.removeAttribute('style')
   delete root.dataset.theme
   delete root.dataset.themeId
+  delete root.dataset.brand
   vi.mocked(createOrb).mockReset()
   vi.unstubAllGlobals()
   localStorage.clear()
@@ -78,13 +79,13 @@ describe('SottoMark in the main window', () => {
       expect(svg.querySelector('rect[x="26"]')).toHaveAttribute('fill', brand.glyph)
       expect(svg.querySelector('path')).toHaveAttribute('stroke', brand.glyph)
     }
-    await expectBrand(builtIn('ocean', 'dark'), 'dark')
+    await expectBrand(builtIn('nocturne', 'dark'), 'dark')
 
-    paint(choice({ darkTheme: 'ember' }))
-    await expectBrand(builtIn('ember', 'dark'), 'dark')
+    paint(choice({ darkTheme: 'tropic' }))
+    await expectBrand(builtIn('tropic', 'dark'), 'dark')
 
-    paint(choice({ appearance: 'light', lightTheme: 'iris' }))
-    await expectBrand(builtIn('iris', 'light'), 'light')
+    paint(choice({ appearance: 'light', lightTheme: 'citrine' }))
+    await expectBrand(builtIn('citrine', 'light'), 'light')
 
     const saffron = custom()
     paint(choice({ appearance: 'light', lightTheme: saffron.id, customThemes: [saffron] }))
@@ -97,6 +98,23 @@ describe('SottoMark in the main window', () => {
     // Geometry is untouched.
     expect(svg.querySelector('rect[x="26"]')).toHaveAttribute('height', '56')
   })
+
+  it('wears the app icon itself on the default theme, in both modes', async () => {
+    paint(choice({ darkTheme: DEFAULT_THEME_ID, lightTheme: DEFAULT_THEME_ID }))
+    const { container } = render(<SottoMark />)
+    const svg = container.querySelector('svg')!
+    for (const mode of ['dark', 'light'] as const) {
+      paint(choice({ appearance: mode, darkTheme: DEFAULT_THEME_ID, lightTheme: DEFAULT_THEME_ID }))
+      await waitFor(() => expect(svg).toHaveAttribute('data-tile', APP_ICON_BRAND.tile))
+      expect(svg).toHaveAttribute('data-glyph', APP_ICON_BRAND.glyph)
+    }
+
+    // Any other theme hands the mark back to its own accent, which the light default is not.
+    paint(choice({ appearance: 'light', lightTheme: 'citrine' }))
+    const citrine = themeBrand(builtIn('citrine', 'light'), 'light')
+    await waitFor(() => expect(svg).toHaveAttribute('data-tile', citrine.tile))
+    expect(citrine.tile).not.toBe(APP_ICON_BRAND.tile)
+  })
 })
 
 describe('AgentOrb', () => {
@@ -106,16 +124,16 @@ describe('AgentOrb', () => {
     paint(choice())
     const { rerender } = render(<AgentOrb state="wake" />)
     const canvas = document.querySelector('canvas.agent-orb')!
-    const ocean = themeBrand(builtIn('ocean', 'dark'), 'dark').orb
+    const nocturne = themeBrand(builtIn('nocturne', 'dark'), 'dark').orb
     expect(createOrb).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(createOrb).mock.calls[0]![1]).toMatchObject({ state: 'wake', colors: ocean })
-    expect(canvas).toHaveAttribute('data-orb-colors', ocean.join(' '))
+    expect(vi.mocked(createOrb).mock.calls[0]![1]).toMatchObject({ state: 'wake', colors: nocturne })
+    expect(canvas).toHaveAttribute('data-orb-colors', nocturne.join(' '))
 
-    paint(choice({ darkTheme: 'iris' }))
-    const iris = themeBrand(builtIn('iris', 'dark'), 'dark').orb
-    await waitFor(() => expect(orb.setColors).toHaveBeenLastCalledWith(iris))
-    expect(iris).not.toEqual(ocean)
-    expect(canvas).toHaveAttribute('data-orb-colors', iris.join(' '))
+    paint(choice({ darkTheme: 'citrine' }))
+    const citrine = themeBrand(builtIn('citrine', 'dark'), 'dark').orb
+    await waitFor(() => expect(orb.setColors).toHaveBeenLastCalledWith(citrine))
+    expect(citrine).not.toEqual(nocturne)
+    expect(canvas).toHaveAttribute('data-orb-colors', citrine.join(' '))
 
     rerender(<AgentOrb state="speaking" />)
     expect(orb.setState).toHaveBeenLastCalledWith('speaking')
@@ -130,16 +148,16 @@ describe('AgentOrb', () => {
   it('draws beneath the light room ink filter so the theme colour is what shows', async () => {
     const orb = handle()
     vi.mocked(createOrb).mockReturnValue(orb)
-    paint(choice({ appearance: 'light', lightTheme: 'ember' }))
+    paint(choice({ appearance: 'light', lightTheme: 'tropic' }))
     render(<AgentOrb state="idle" />)
     const canvas = document.querySelector<HTMLCanvasElement>('canvas.agent-orb')!
-    const visible = themeBrand(builtIn('ember', 'light'), 'light').orb
+    const visible = themeBrand(builtIn('tropic', 'light'), 'light').orb
     act(() => { canvas.style.filter = ORB_INK_FILTER })
-    paint(choice({ appearance: 'light', lightTheme: 'iris' }))
-    const iris = themeBrand(builtIn('iris', 'light'), 'light').orb
-    await waitFor(() => expect(orb.setColors).toHaveBeenLastCalledWith(orbColorsBeneath(ORB_INK_FILTER, iris)))
-    expect(canvas).toHaveAttribute('data-orb-colors', iris.join(' '))
-    expect(visible).not.toEqual(iris)
+    paint(choice({ appearance: 'light', lightTheme: 'citrine' }))
+    const citrine = themeBrand(builtIn('citrine', 'light'), 'light').orb
+    await waitFor(() => expect(orb.setColors).toHaveBeenLastCalledWith(orbColorsBeneath(ORB_INK_FILTER, citrine)))
+    expect(canvas).toHaveAttribute('data-orb-colors', citrine.join(' '))
+    expect(visible).not.toEqual(citrine)
   })
 })
 

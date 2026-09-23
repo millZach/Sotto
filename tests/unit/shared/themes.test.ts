@@ -12,11 +12,15 @@ import {
   canonicalizeTheme,
   customThemeSchema,
   customThemesSchema,
+  findTheme,
+  getThemeColorsForMode,
   parseCustomThemes,
   parseThemeFile,
   resolveThemeFor,
+  resolveThemeHalfId,
   serializeThemeFile,
   uniqueThemeId,
+  type ThemeColorRole,
 } from '../../../src/shared/themes/library'
 import { isVsCodeThemeFile, pairVsCodeThemes, parseVsCodeThemeFile, resolveThemeLabelCollisions } from '../../../src/shared/themes/vscodeImport'
 
@@ -55,8 +59,8 @@ describe('theme colours', () => {
 })
 
 describe('built-in themes', () => {
-  it('ships the six built-in themes with every role, Sotto the default and carrying both palettes', () => {
-    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 't3-chat', 'grove', 'ocean', 'ember', 'iris'])
+  it('ships Sotto and its five companions in picker order, each with every role in both halves', () => {
+    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'])
     expect(DEFAULT_THEME_ID).toBe('t3-code')
     for (const theme of BUILT_IN_THEMES) {
       for (const mode of ['light', 'dark'] as const) {
@@ -67,13 +71,49 @@ describe('built-in themes', () => {
     }
   })
 
-  it('gives the built-ins Sotto names, once each, on the ids they shipped under', () => {
+  it('gives the built-ins Sotto names, once each, and carries no T3 name', () => {
     expect(BUILT_IN_THEMES.map(theme => [theme.id, theme.label])).toEqual([
-      ['t3-code', 'Sotto'], ['t3-chat', 'Rose'], ['grove', 'Fern'], ['ocean', 'Tide'], ['ember', 'Copper'], ['iris', 'Dusk'],
+      ['t3-code', 'Sotto'], ['hush', 'Hush'], ['linen', 'Linen'], ['nocturne', 'Nocturne'], ['tropic', 'Tropic'], ['citrine', 'Citrine'],
     ])
     const labels = BUILT_IN_THEMES.map(theme => theme.label.toLowerCase())
     expect(new Set(labels).size).toBe(labels.length)
     for (const t3Name of ['t3 code', 't3 chat', 'grove', 'ocean', 'ember', 'iris']) expect(labels).not.toContain(t3Name)
+  })
+
+  it('wears the app icon’s teal on Sotto’s dark half', () => {
+    expect(getThemeColorsForMode(T3_CODE_THEME, 'dark')!.accent).toBe(toCanonicalThemeColor('#47b8a9'))
+  })
+
+  it('keeps every foreground readable on the surface it sits on, in both halves of every built-in', () => {
+    // The pairs a user reads as text: 4.5:1 is the bar ADR-0011 sets for body copy.
+    const pairs = [
+      ['text', 'canvas'], ['text', 'surface'], ['text', 'surfaceRaised'],
+      ['textMuted', 'canvas'], ['textMuted', 'surface'],
+      ['sidebarForeground', 'sidebar'], ['sidebarMutedForeground', 'sidebar'],
+      ['messageForeground', 'messageSurface'],
+      ['accentForeground', 'accent'],
+      ['messageActionForeground', 'messageAction'],
+      ['accentSurfaceForeground', 'accentSurface'],
+      ['codeForeground', 'codeBackground'],
+      ['mutedForeground', 'muted'],
+      ['secondaryForeground', 'secondary'],
+      ['updateForeground', 'updateSurface'],
+      ['toolbarForeground', 'toolbar'],
+      ['placeholder', 'surfaceRaised'],
+    ] as const satisfies ReadonlyArray<readonly [ThemeColorRole, ThemeColorRole]>
+
+    for (const theme of BUILT_IN_THEMES) {
+      for (const mode of ['light', 'dark'] as const) {
+        const colors = getThemeColorsForMode(theme, mode)!
+        // A translucent role is seen over the canvas, and a foreground over the surface it sits on.
+        const canvas = parseThemeRgb(colors.canvas, { r: 0, g: 0, b: 0 })
+        for (const [foreground, background] of pairs) {
+          const behind = parseThemeRgb(colors[background], canvas)
+          const ratio = contrastRatio(parseThemeRgb(colors[foreground], behind), behind)
+          expect(ratio, `${theme.id} ${mode} ${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+    }
   })
 
   it('paints each half from the theme that can render it, falling back to Sotto', () => {
@@ -81,7 +121,18 @@ describe('built-in themes', () => {
     const selection = { lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] }
     expect(resolveThemeFor(selection, 'light').theme.id).toBe(lightOnly.id)
     expect(resolveThemeFor(selection, 'dark').theme.id).toBe('t3-code')
-    expect(resolveThemeFor({ lightTheme: 'missing', darkTheme: 'iris', customThemes: [] }, 'light').colors).toEqual(T3_CODE_THEME.variants?.light ?? T3_CODE_THEME.colors)
+    expect(resolveThemeFor({ lightTheme: 'missing', darkTheme: 'citrine', customThemes: [] }, 'light').colors).toEqual(T3_CODE_THEME.variants?.light ?? T3_CODE_THEME.colors)
+  })
+
+  it('sends a half saved on a retired T3 built-in back to Sotto and frees its id, while T3’s aliases stay reserved', () => {
+    for (const retired of ['t3-chat', 'grove', 'ocean', 'ember', 'iris']) {
+      expect(findTheme(retired, []), retired).toBeNull()
+      expect(resolveThemeHalfId(retired, 'dark', []), retired).toBe(DEFAULT_THEME_ID)
+      expect(uniqueThemeId(retired, new Set()), retired).toBe(retired)
+    }
+    for (const alias of ['t3-chat-dark', 't3-grove', 't3-ocean', 't3-ember', 't3-iris']) {
+      expect(uniqueThemeId(alias, new Set()), alias).toBe(`${alias}-2`)
+    }
   })
 })
 
@@ -112,7 +163,8 @@ describe('theme files', () => {
       [{ ...valid, colors: { canvas: 'url(x)' } }, /literal CSS color/u],
       [{ ...valid, colors: { 'background-image': '#fff' } }, /not a supported theme color role/u],
       [{ ...valid, id: 'Bad Id' }, /lowercase/u],
-      [{ ...valid, id: 'ocean' }, /reserved/u],
+      [{ ...valid, id: 'nocturne' }, /reserved/u],
+      [{ ...valid, id: 't3-ocean' }, /reserved/u],
       [{ ...valid, name: 'Light' }, /reserved/u],
       [{ ...valid, variants: { dark: { canvas: '#000' } } }, /repeat the base appearance/u],
       [{ ...valid, variants: { sepia: { canvas: '#000' } } }, /light" or "dark/u],
@@ -123,7 +175,7 @@ describe('theme files', () => {
 
   it('reads a saved library leniently but stores it strictly, without duplicates or overflow', () => {
     const theme = canonicalizeTheme(parseThemeFile({ version: 1, name: 'Harbor', appearance: 'dark', colors: { canvas: '#102a33' } }))
-    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'ocean', label: 'Ocean', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
+    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'nocturne', label: 'Nocturne', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
     expect(parsed.map(entry => entry.id)).toEqual([theme.id, 'other'])
     expect(parsed[1]!.colors.canvas).toBe(getDefaultThemeColors('dark').canvas)
     expect(customThemesSchema.safeParse([theme, theme]).success).toBe(false)
@@ -136,7 +188,7 @@ describe('theme files', () => {
   it('numbers ids that are taken or reserved', () => {
     expect(uniqueThemeId('harbor', new Set())).toBe('harbor')
     expect(uniqueThemeId('harbor', new Set(['harbor', 'harbor-2']))).toBe('harbor-3')
-    expect(uniqueThemeId('ocean', new Set())).toBe('ocean-2')
+    expect(uniqueThemeId('nocturne', new Set())).toBe('nocturne-2')
   })
 })
 

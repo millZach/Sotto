@@ -86,6 +86,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
           <ThemeGallery
             shown={shown}
             resolved={resolved}
+            system={system}
             onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, 'Color scheme saved.')}
             onSelect={select}
             onRemove={remove}

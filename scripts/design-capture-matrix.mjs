@@ -11,7 +11,7 @@
 export const DESIGN_CAPTURE_THEME = 'dark'
 export const DESIGN_CAPTURE_APP_THEMES = Object.freeze(['dark', 'light'])
 /** The built-in themes, in the order Settings shows them; Sotto (`t3-code`) is the default. */
-export const DESIGN_CAPTURE_BUILT_IN_THEMES = Object.freeze(['t3-code', 't3-chat', 'grove', 'ocean', 'ember', 'iris'])
+export const DESIGN_CAPTURE_BUILT_IN_THEMES = Object.freeze(['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'])
 export const DESIGN_CAPTURE_DEFAULT_THEME = 't3-code'
 /** The narrowest main window the Phase 1 surfaces are reviewed at. */
 export const DESIGN_CAPTURE_MINIMUM_WIDTH = 760

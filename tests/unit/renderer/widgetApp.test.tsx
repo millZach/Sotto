@@ -11,7 +11,8 @@ import type {
 } from '../../../src/shared/contracts'
 import { MICROPHONE_NOT_SET_UP_DETAIL, type WidgetErrorCode, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import { DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
+import { APP_ICON_BRAND, APP_ICON_BRAND_ATTRIBUTE, DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
+import { DEFAULT_THEME_ID } from '../../../src/shared/themes/library'
 import { threadsStateFixture } from './liveAgentState'
 import {
   WidgetApp,
@@ -46,6 +47,7 @@ function setWindowSize(width: number, height: number): void {
 afterEach(() => {
   cleanup()
   document.documentElement.removeAttribute('data-theme')
+  document.documentElement.removeAttribute('data-brand')
   document.documentElement.removeAttribute('data-reduced-motion')
   setWindowSize(1_024, 768)
   vi.useRealTimers()
@@ -380,8 +382,8 @@ describe('WidgetApp', () => {
     ['cancelled', snapshot({ status: 'cancelled', sessionId: 'mark' })],
     ['error', snapshot({ status: 'error', sessionId: 'mark', code: 'NO_SPEECH' })],
   ] as const)('leads the %s capsule with the decorative app mark', (_name, activeSnapshot) => {
-    const ember = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'ember', customThemes: [] })
-    const release = applyRootPresentation({ theme: 'dark', palette: ember, reducedMotion: 'system' }, true)
+    const tropic = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'tropic', customThemes: [] })
+    const release = applyRootPresentation({ theme: 'dark', palette: tropic, reducedMotion: 'system' }, true)
     const { container } = render(
       <WidgetApp snapshot={activeSnapshot} platform="win32" now={1_000} />,
     )
@@ -391,12 +393,33 @@ describe('WidgetApp', () => {
     expect(glyph).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
     // The mark wears the painted theme half: its accent tile and a readable glyph.
-    const brand = themeBrand(ember.dark, 'dark')
+    const brand = themeBrand(tropic.dark, 'dark')
     expect([...glyph.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
       .toEqual([brand.tile, brand.tile])
     expect(glyph.querySelector('rect[x="26"]')).toHaveAttribute('fill', brand.glyph)
     expect(glyph.querySelector('path')).toHaveAttribute('stroke', brand.glyph)
     release()
+  })
+
+  it('wears the app icon on the half the default theme paints, and gives the attribute back on release', () => {
+    const root = document.documentElement
+    // One half on the default theme, the other on a built-in, so the two answers show in one palette.
+    const split = widgetPaletteFor({ lightTheme: DEFAULT_THEME_ID, darkTheme: 'tropic', customThemes: [] })
+    expect(split.appIcon).toEqual({ light: true, dark: false })
+
+    const release = applyRootPresentation({ theme: 'light', palette: split, reducedMotion: 'system' }, false)
+    expect(root.dataset.brand).toBe(APP_ICON_BRAND_ATTRIBUTE)
+    render(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'icon', startedAt: 0, level: 0.4 })} platform="win32" now={1_000} />)
+    const mark = screen.getByTestId('widget-glyph').querySelector('svg')
+    expect(mark).toHaveAttribute('data-tile', APP_ICON_BRAND.tile)
+    expect(mark).toHaveAttribute('data-glyph', APP_ICON_BRAND.glyph)
+
+    // The dark half belongs to another theme, so the mark goes back to that theme's accent.
+    applyRootPresentation({ theme: 'dark', palette: split, reducedMotion: 'system' }, true)
+    expect(root.dataset.brand).toBeUndefined()
+
+    release()
+    expect(root).not.toHaveAttribute('data-brand')
   })
 
   it('leaves the resting sliver free of the app mark', () => {
@@ -775,28 +798,28 @@ describe('WidgetEntry', () => {
   it('repaints the mark, voice bars and surfaces live when a new palette arrives, without a new session', async () => {
     const { bridge, emit } = liveBridge()
     render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
-    const ocean = widgetPaletteFor({ lightTheme: 'ocean', darkTheme: 'ocean', customThemes: [] })
-    const iris = widgetPaletteFor({ lightTheme: 'ocean', darkTheme: 'iris', customThemes: [] })
+    const nocturne = widgetPaletteFor({ lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [] })
+    const citrine = widgetPaletteFor({ lightTheme: 'nocturne', darkTheme: 'citrine', customThemes: [] })
     const listening = { status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true } as const
     const root = document.documentElement
 
-    emit(snapshot({ ...listening, theme: 'dark', palette: ocean }))
+    emit(snapshot({ ...listening, theme: 'dark', palette: nocturne }))
     expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
-    expect(root.style.getPropertyValue('--theme-accent')).toBe(ocean.dark.accent)
-    expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(ocean.dark, 'dark').tile)
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(nocturne.dark.accent)
+    expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(nocturne.dark, 'dark').tile)
 
     // Same session, next level update carries the newly selected dark half.
-    emit(snapshot({ ...listening, level: 0.5, theme: 'dark', palette: iris }))
-    expect(root.style.getPropertyValue('--theme-accent')).toBe(iris.dark.accent)
-    expect(root.style.getPropertyValue('--theme-surface-raised')).toBe(iris.dark.surfaceRaised)
-    expect(root.style.getPropertyValue('--theme-error-foreground')).toBe(iris.dark.errorForeground)
-    await waitFor(() => expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(iris.dark, 'dark').tile))
-    expect(themeBrand(iris.dark, 'dark').tile).not.toBe(themeBrand(ocean.dark, 'dark').tile)
+    emit(snapshot({ ...listening, level: 0.5, theme: 'dark', palette: citrine }))
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(citrine.dark.accent)
+    expect(root.style.getPropertyValue('--theme-surface-raised')).toBe(citrine.dark.surfaceRaised)
+    expect(root.style.getPropertyValue('--theme-error-foreground')).toBe(citrine.dark.errorForeground)
+    await waitFor(() => expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(citrine.dark, 'dark').tile))
+    expect(themeBrand(citrine.dark, 'dark').tile).not.toBe(themeBrand(nocturne.dark, 'dark').tile)
 
     // Back to idle keeps the theme; the resting sliver paints from the same roles.
-    emit(snapshot({ status: 'idle', theme: 'dark', palette: iris }))
+    emit(snapshot({ status: 'idle', theme: 'dark', palette: citrine }))
     expect(screen.getByTestId('widget-sliver')).toBeInTheDocument()
-    expect(root.style.getPropertyValue('--theme-accent')).toBe(iris.dark.accent)
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(citrine.dark.accent)
   })
 
   it('follows the system scheme live by painting the matching theme half', async () => {
@@ -810,7 +833,7 @@ describe('WidgetEntry', () => {
     try {
       const { bridge, emit } = liveBridge()
       render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
-      const palette = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'iris', customThemes: [] })
+      const palette = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'citrine', customThemes: [] })
       emit(snapshot({ status: 'requesting-permission', sessionId: 'scheme', theme: 'system', palette, cancellable: true }))
       const root = document.documentElement
       expect(root).toHaveAttribute('data-theme', 'light')

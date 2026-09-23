@@ -153,10 +153,10 @@ test.describe('theme branding evidence', () => {
   test.skip(!enabled, 'Run with SOTTO_THEME_BRANDING_EVIDENCE=1 after npm run build')
   test.setTimeout(240_000)
 
-  test('mark, sphere and widget wear Ocean and contrasting themes, live, in both modes and after restart', async () => {
+  test('mark, sphere and widget wear Nocturne and contrasting themes, live, in both modes and after restart', async () => {
     await mkdir(evidenceRoot, { recursive: true })
     const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-theme-branding-'))
-    let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean', customThemes: [saffron] }
+    let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [saffron] }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     await enableVoiceCoordinator(profile)
     let launched: LaunchedSotto | undefined
@@ -167,28 +167,28 @@ test.describe('theme branding evidence', () => {
       await openAgents(page)
       let widget = await widgetOf(launched)
 
-      // Ocean, dark room and dark widget.
-      await expectRoom(page, settings, 'dark', 'ocean-dark')
-      await expectWidget(widget, settings, 'dark', 'ocean-dark', null)
+      // Nocturne, dark room and dark widget.
+      await expectRoom(page, settings, 'dark', 'nocturne-dark')
+      await expectWidget(widget, settings, 'dark', 'nocturne-dark', null)
       await startDictation(widget)
-      await expectWidget(widget, settings, 'dark', 'ocean-dark', page)
+      await expectWidget(widget, settings, 'dark', 'nocturne-dark', page)
 
-      // Iris selected mid-session: the capsule repaints without a new session.
-      settings = { ...settings, darkTheme: 'iris' }
-      await update(page, { darkTheme: 'iris' })
-      await expectRoom(page, settings, 'dark', 'iris-dark-live')
-      await expectWidget(widget, settings, 'dark', 'iris-dark-live', page)
+      // Citrine selected mid-session: the capsule repaints without a new session.
+      settings = { ...settings, darkTheme: 'citrine' }
+      await update(page, { darkTheme: 'citrine' })
+      await expectRoom(page, settings, 'dark', 'citrine-dark-live')
+      await expectWidget(widget, settings, 'dark', 'citrine-dark-live', page)
       await cancelDictation(widget)
 
-      // Light room with Ember; the widget follows the system to its light half while idle.
-      settings = { ...settings, appearance: 'light', lightTheme: 'ember' }
-      await update(page, { appearance: 'light', lightTheme: 'ember' })
-      await expectRoom(page, settings, 'light', 'ember-light-live')
-      await expectWidget(widget, settings, 'light', 'ember-light-idle', null)
+      // Light room with Tropic; the widget follows the system to its light half while idle.
+      settings = { ...settings, appearance: 'light', lightTheme: 'tropic' }
+      await update(page, { appearance: 'light', lightTheme: 'tropic' })
+      await expectRoom(page, settings, 'light', 'tropic-light-live')
+      await expectWidget(widget, settings, 'light', 'tropic-light-idle', null)
       await startDictation(widget)
-      await expectWidget(widget, settings, 'light', 'ember-light', page)
-      // The system turning dark flips the widget to the dark half, Iris, mid-session.
-      await expectWidget(widget, settings, 'dark', 'system-dark-iris', page)
+      await expectWidget(widget, settings, 'light', 'tropic-light', page)
+      // The system turning dark flips the widget to the dark half, Citrine, mid-session.
+      await expectWidget(widget, settings, 'dark', 'system-dark-citrine', page)
       await cancelDictation(widget)
 
       // A custom theme on the light half.
@@ -207,14 +207,14 @@ test.describe('theme branding evidence', () => {
       await openAgents(page)
       widget = await widgetOf(launched)
       await expectRoom(page, settings, 'light', 'restart-custom-light')
-      await expectWidget(widget, settings, 'dark', 'restart-iris-dark-idle', null)
+      await expectWidget(widget, settings, 'dark', 'restart-citrine-dark-idle', null)
       await startDictation(widget)
-      await expectWidget(widget, settings, 'dark', 'restart-iris-dark', page)
+      await expectWidget(widget, settings, 'dark', 'restart-citrine-dark', page)
       await expectWidget(widget, settings, 'light', 'restart-custom-light', page)
       await cancelDictation(widget)
       settings = { ...settings, appearance: 'dark' }
       await update(page, { appearance: 'dark' })
-      await expectRoom(page, settings, 'dark', 'restart-iris-dark')
+      await expectRoom(page, settings, 'dark', 'restart-citrine-dark')
     } finally {
       await writeFile(resolve(evidenceRoot, 'samples.json'), `${JSON.stringify(samples, null, 2)}\n`, 'utf8')
       if (launched !== undefined) await closeSotto(launched)
@@ -225,7 +225,7 @@ test.describe('theme branding evidence', () => {
   test('a failed dictation keeps the theme error role, distinct from the accent', async () => {
     await mkdir(evidenceRoot, { recursive: true })
     const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-theme-branding-error-'))
-    const settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'light', lightTheme: 'ember', darkTheme: 'iris' }
+    const settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'light', lightTheme: 'tropic', darkTheme: 'citrine' }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     let launched: LaunchedSotto | undefined
     try {
@@ -258,7 +258,7 @@ test.describe('theme branding evidence', () => {
         expect(colors.error).not.toBe(colors.accent)
         expect(await widget.evaluate(() => document.documentElement.style.getPropertyValue('--theme-error-foreground'))).toBe(roles.errorForeground)
         await settle(widget)
-        await widget.screenshot({ path: resolve(evidenceRoot, `error-${scheme === 'light' ? 'ember-light' : 'iris-dark'}-widget.png`), animations: 'disabled' })
+        await widget.screenshot({ path: resolve(evidenceRoot, `error-${scheme === 'light' ? 'tropic-light' : 'citrine-dark'}-widget.png`), animations: 'disabled' })
         const dismiss = widget.getByRole('button', { name: /dismiss|close/i })
         if (await dismiss.isVisible().catch(() => false)) await dismiss.click()
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 20_000 })

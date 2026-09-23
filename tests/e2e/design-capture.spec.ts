@@ -1108,7 +1108,7 @@ test.describe('authoritative design-review captures', () => {
       for (const theme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
-        await expect(section.getByRole('button', { name: 'Follow the system appearance' })).toHaveAttribute('aria-pressed', 'true')
+        await expect(section.getByRole('radio', { name: /^Match (Windows|macOS)$/u })).toHaveAttribute('aria-checked', 'true')
         await assertRenderedRoom(page, theme)
         await captureSection(page, section, `appearance-system-${theme}.png`, { category: 'appearance', state: 'system-settings', theme })
       }

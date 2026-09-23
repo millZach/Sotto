@@ -11,8 +11,9 @@ import {
   type AppearanceChoice,
 } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { APP_ICON_BRAND_ATTRIBUTE } from '../../../src/shared/themeBranding'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
-import { parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
+import { DEFAULT_THEME_ID, parseThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -21,8 +22,8 @@ afterEach(() => {
 
 const base: AppearanceChoice = {
   appearance: 'dark',
-  lightTheme: 'ocean',
-  darkTheme: 'ocean',
+  lightTheme: 'nocturne',
+  darkTheme: 'nocturne',
   appearanceContrast: 100,
   glassOpacity: 80,
   effortColor: 'ember',
@@ -45,7 +46,7 @@ describe('main-window appearance', () => {
   it('paints the theme that owns the resolved half, as canonical colours only', () => {
     const root = document.createElement('html')
     const custom = aurora()
-    const choice: AppearanceChoice = { ...base, appearance: 'system', lightTheme: 'ember', darkTheme: custom.id, customThemes: [custom] }
+    const choice: AppearanceChoice = { ...base, appearance: 'system', lightTheme: 'tropic', darkTheme: custom.id, customThemes: [custom] }
 
     expect(applyAppearance(choice, root, true)).toBe('dark')
     expect(root.dataset.themeId).toBe(custom.id)
@@ -53,9 +54,23 @@ describe('main-window appearance', () => {
 
     // The system turning light hands the root to the independent light half.
     expect(applyAppearance(choice, root, false)).toBe('light')
-    expect(root.dataset.themeId).toBe('ember')
+    expect(root.dataset.themeId).toBe('tropic')
     expect(root.style.getPropertyValue('--theme-canvas')).toMatch(/^oklch\(/u)
     expect(root.style.getPropertyValue('--theme-canvas')).not.toBe(custom.colors.canvas)
+  })
+
+  it('asks for the app icon brand only while the default theme paints', () => {
+    const root = document.createElement('html')
+    applyAppearance({ ...base, darkTheme: DEFAULT_THEME_ID }, root, true)
+    expect(root.dataset.brand).toBe(APP_ICON_BRAND_ATTRIBUTE)
+
+    applyAppearance(base, root, true)
+    expect(root.dataset.brand).toBeUndefined()
+
+    // A draft is its own palette, never the default one, so the mark follows the draft instead of the icon.
+    applyAppearance({ ...base, darkTheme: DEFAULT_THEME_ID }, root, true, { appearance: 'dark', colors: aurora().colors })
+    expect(root.dataset.themeId).toBe(THEME_PREVIEW_ID)
+    expect(root.dataset.brand).toBeUndefined()
   })
 
   it('writes contrast and glass strengths, clamped to their steps', () => {
@@ -102,11 +117,11 @@ describe('main-window appearance', () => {
     expect(applyAppearance(base, root, true, { appearance: 'light', colors: draftColors })).toBe('light')
     expect(root.dataset.themeId).toBe(THEME_PREVIEW_ID)
     expect(root.style.getPropertyValue('--theme-canvas')).toBe(draftColors.canvas)
-    expect(readCachedAppearance().darkTheme).toBe('ocean')
+    expect(readCachedAppearance().darkTheme).toBe('nocturne')
 
     applyAppearance(base, root, true, null)
     expect(root.dataset.theme).toBe('dark')
-    expect(root.dataset.themeId).toBe('ocean')
+    expect(root.dataset.themeId).toBe('nocturne')
     expect(root.style.getPropertyValue('--theme-canvas')).toBe(saved)
   })
 
@@ -120,7 +135,7 @@ describe('main-window appearance', () => {
     applyAppearance({ ...base, appearanceContrast: 120 }, root, true)
     expect(root.dataset.themeSwitching).toBeUndefined()
 
-    applyAppearance({ ...base, darkTheme: 'iris' }, root, true)
+    applyAppearance({ ...base, darkTheme: 'citrine' }, root, true)
     expect(root.dataset.themeSwitching).toBe('')
     frames.shift()!(0)
     expect(root.dataset.themeSwitching).toBe('')
@@ -134,7 +149,7 @@ describe('main-window appearance', () => {
     const unused = parseThemeFile({ version: 1, name: 'Unused', appearance: 'light', colors: { canvas: '#ffffff' } })
     applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, glassOpacity: 60, customThemes: [custom, unused] }, root, true)
     const cached = readCachedAppearance()
-    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'ocean', darkTheme: custom.id, glassOpacity: 60 })
+    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, glassOpacity: 60 })
     expect(cached.customThemes.map(theme => theme.id)).toEqual([custom.id])
 
     // A cache that cannot be trusted comes back as the shipped defaults, not as the chosen halves.
@@ -149,19 +164,19 @@ describe('main-window appearance', () => {
     const preview = new AppearancePreview()
     const persisted = { ...DEFAULT_SETTINGS }
     const light = preview.choose({ appearance: 'light' })
-    const iris = preview.choose({ lightTheme: 'iris' })
-    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'iris', darkTheme: DEFAULT_SETTINGS.darkTheme })
+    const citrine = preview.choose({ lightTheme: 'citrine' })
+    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'citrine', darkTheme: DEFAULT_SETTINGS.darkTheme })
 
     // An older theme choice is superseded before its save answers.
-    const ember = preview.choose({ lightTheme: 'ember' })
-    preview.settle(iris, false, persisted)
-    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'ember' })
+    const tropic = preview.choose({ lightTheme: 'tropic' })
+    preview.settle(citrine, false, persisted)
+    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'tropic' })
 
     preview.settle(light, true, persisted)
     const caughtUp = { ...persisted, appearance: 'light' as const }
-    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'ember' })
+    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'tropic' })
 
-    preview.settle(ember, false, caughtUp)
+    preview.settle(tropic, false, caughtUp)
     expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: DEFAULT_SETTINGS.lightTheme })
   })
 

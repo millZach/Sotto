@@ -35,52 +35,11 @@ export type LibraryState = Pick<AppearanceChoice, 'lightTheme' | 'darkTheme' | '
 export type LibraryPatch = Pick<SettingsPatch, 'lightTheme' | 'darkTheme' | 'customThemes'>
 
 // ---------------------------------------------------------------------------
-// Cards
+// Picker
 
-const THEME_PREVIEW_ROLES = ['sidebar', 'canvas', 'surface', 'accentSurface', 'accent', 'messageSurface', 'messageAction'] as const
-export type ThemePreviewRole = (typeof THEME_PREVIEW_ROLES)[number]
-export type ThemePreviewColors = Readonly<Record<ThemePreviewRole, string>>
-
-export interface ThemeCardPreview {
-  readonly mode: ThemeAppearance
-  readonly colors: ThemePreviewColors
-}
-
-export function themeCardPreviews(theme: ThemeDefinition): ThemeCardPreview[] {
-  return getThemeModes(theme).map(mode => {
-    const colors = getThemeColorsForMode(theme, mode) ?? theme.colors
-    return { mode, colors: Object.fromEntries(THEME_PREVIEW_ROLES.map(role => [role, colors[role]])) as unknown as ThemePreviewColors }
-  })
-}
-
-/** The halves a theme owns right now, in light-then-dark order. */
-export function activeModesFor(state: LibraryState, id: string): ThemeAppearance[] {
-  const modes: ThemeAppearance[] = []
-  if (state.lightTheme === id) modes.push('light')
-  if (state.darkTheme === id) modes.push('dark')
-  return modes
-}
-
-/** Saved themes grouped the way cards show them: one card per collection, one per loose theme. */
-export function groupCustomThemes(customThemes: readonly ThemeDefinition[]): Array<readonly [string, ThemeDefinition[]]> {
-  const groups = new Map<string, ThemeDefinition[]>()
-  for (const theme of customThemes) {
-    const key = theme.collection ? `collection:${theme.collection.id}` : `theme:${theme.id}`
-    const group = groups.get(key)
-    if (group) group.push(theme)
-    else groups.set(key, [theme])
-  }
-  return [...groups.entries()]
-}
-
-/** "Catppuccin Latte" and "Catppuccin Mocha" show as "Latte" and "Mocha" inside their collection. */
-export function collectionVariantLabels(themes: readonly ThemeDefinition[]): string[] {
-  if (themes.length === 0) return []
-  const words = themes.map(theme => theme.label.trim().split(/\s+/u))
-  const firstWords = words[0]!
-  const sharedWordCount = firstWords.findIndex((word, index) => words.some(labelWords => labelWords[index]?.toLocaleLowerCase() !== word.toLocaleLowerCase()))
-  const prefixLength = sharedWordCount === -1 ? firstWords.length - 1 : sharedWordCount
-  return themes.map((theme, index) => words[index]?.slice(Math.max(0, prefixLength)).join(' ').trim() || theme.label)
+/** The colours a theme paints one half with; the picker only lists a theme under a half it carries. */
+export function halfColors(theme: ThemeDefinition, half: ThemeAppearance): ThemeColors {
+  return getThemeColorsForMode(theme, half) ?? theme.colors
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +49,7 @@ export function assignHalfPatch(appearance: ThemeAppearance, id: string): Librar
   return appearance === 'light' ? { lightTheme: id } : { darkTheme: id }
 }
 
-/** Clicking a card: a one-appearance theme takes only its own half; a full theme takes both. */
+/** Installing a theme: a one-appearance theme takes only its own half; a full theme takes both. */
 export function useThemePatch(theme: ThemeDefinition): LibraryPatch {
   const modes = getThemeModes(theme)
   if (modes.length === 1) return assignHalfPatch(modes[0]!, theme.id)
