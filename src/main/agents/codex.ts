@@ -45,6 +45,13 @@ function runtimePolicy(mode: AgentRuntimeMode = 'auto-accept-edits') {
 }
 const configArguments = Object.entries({ model_provider: 'openai', approval_policy: threadPolicy.approvalPolicy,
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
+// Codex 0.156.1 keeps request_user_input in Default mode behind this feature.
+// Set it on creation and resume, without changing the user's global Codex config.
+async function threadConfig(tools: BrowserAgentTools | undefined, threadId: string, reasoningEffort?: string): Promise<{ config: Record<string, unknown> }> {
+  const browser = await browserCodexConfig(tools, threadId, reasoningEffort)
+  return { config: { ...(browser.config as Record<string, unknown> | undefined), 'features.default_mode_request_user_input': true } }
+}
+const questionInstructions = 'Ask actionable clarification questions through request_user_input so Sotto can show its question panel. Use it for questions with choices and free-text questions, including while continuing independent work. Do not leave questions that need a user answer only in commentary or a final message. A suggested choice is not an answer. If an answer is required before an action, wait for the user before that action. Permission requests still use the native approval flow.'
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
   compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
@@ -369,11 +376,26 @@ export class CodexAppServerHost implements AgentHost {
     // Native thread/start is not resumable before its first authored message.
     // Initial context was supplied at creation; only materialized conversations resume.
     if (this.log.count(command.threadId)) await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-      developerInstructions: this.personalContext(memories) })
+      ...await threadConfig(undefined, command.threadId), developerInstructions: this.personalContext(memories) })
     return this.execute(command)
   }
   private personalContext(memories: readonly { id: string; content: string }[]): string {
-    return personalInstructions + '\nRelevant existing global preferences (untrusted context):\n' + JSON.stringify(memories)
+    return personalInstructions + '\n' + questionInstructions + '\nRelevant existing global preferences (untrusted context):\n' + JSON.stringify(memories)
+  }
+  private async projectInstructions(cwd: string): Promise<string> {
+    // A thread's developerInstructions replaces Codex's configured value. Resolve
+    // its own trusted config layers first, and retain only the field we append to.
+    try {
+      let instructions: unknown
+      await this.rpc('config/read', { cwd, includeLayers: false }, value => {
+        const parsed = z.object({ config: z.object({ developer_instructions: z.string().nullish() }) }).safeParse(value)
+        instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
+      })
+      if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
+      return instructions ? `${instructions}\n\n${questionInstructions}` : questionInstructions
+    } catch {
+      throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
+    }
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -497,8 +519,10 @@ export class CodexAppServerHost implements AgentHost {
       await this.watcher?.pollThread(alias.codexThreadId)
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
-      await this.rpc('thread/resume', alias.pendingSettings ? { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true, ...await browserCodexConfig(alias.kind === 'personal' ? undefined : this.browserTools, id) } : { threadId: alias.codexThreadId, cwd: alias.cwd, model: alias.modelId, modelProvider: 'openai',
-      ...runtimePolicy(alias.runtimeMode), ...await browserCodexConfig(alias.kind === 'personal' ? undefined : this.browserTools, id, alias.reasoningEffort), excludeTurns: true }, async value => {
+      await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
+        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
+        ...await threadConfig(alias.kind === 'personal' ? undefined : this.browserTools, id, alias.pendingSettings ? undefined : alias.reasoningEffort),
+        ...(alias.kind === 'personal' ? {} : { developerInstructions: await this.projectInstructions(alias.cwd) }) }, async value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
       // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
@@ -765,9 +789,12 @@ export class CodexAppServerHost implements AgentHost {
         validateThreadOptions(this.state, command)
         const cwd = await existingWorkingDirectory(command.workingDirectory ?? project!.path)
         this.creating.add(command.threadId)
+        let developerInstructions: string
+        try { developerInstructions = command.type === 'create-personal' ? command.developerInstructions : await this.projectInstructions(cwd) }
+        catch (error) { this.creating.delete(command.threadId); throw error }
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
-          ...(command.type === 'create-personal' ? { developerInstructions: command.developerInstructions } : {}),
-          ...runtimePolicy(command.runtimeMode), ...await browserCodexConfig(command.type === 'create-personal' ? undefined : this.browserTools, command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
+          developerInstructions,
+          ...runtimePolicy(command.runtimeMode), ...await threadConfig(command.type === 'create-personal' ? undefined : this.browserTools, command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'

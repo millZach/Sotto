@@ -126,11 +126,17 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
   if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
+  if (method === 'config/read') {
+    reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
+      : { config: { developer_instructions: script.developerInstructions ?? null }, origins: {}, layers: null })
+    return
+  }
   if (method === 'initialize') reply({ userAgent: 'codex/0.154.0', codexHome: process.env.CODEX_HOME, platformFamily: 'windows', platformOs: 'windows' })
   else if (method === 'model/list') reply(script.modelPages?.[params.cursor ?? 'first'] ?? { data: script.models ?? [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })
   else if (method === 'thread/start') {
     const thread = { id: randomUUID(), cwd: params.cwd, model: params.model, createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: [],
+      defaultModeRequestUserInput: params.config?.['features.default_mode_request_user_input'] === true,
       approvalPolicy: params.approvalPolicy, approvalsReviewer: params.approvalsReviewer, sandbox: params.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? 'low' }
     state.threads[thread.id] = thread
     loadedThreads.add(thread.id)
@@ -151,6 +157,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       if (method === 'thread/resume' && !loadedThreads.has(thread.id)) {
         for (const key of ['model', 'approvalPolicy', 'approvalsReviewer', 'sandbox']) if (params[key] !== undefined) thread[key] = params[key]
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
+        if (params.config && 'features.default_mode_request_user_input' in params.config) thread.defaultModeRequestUserInput = params.config['features.default_mode_request_user_input'] === true
         loadedThreads.add(thread.id)
         save()
       }
@@ -203,6 +210,10 @@ createInterface({ input: process.stdin }).on('line', line => {
       notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
     }
     reply({ turn })
+    // The installed Codex client gates request_user_input in Default mode behind this feature.
+    // Its request is non-blocking there, so the turn remains active while Sotto shows the question.
+    if (script.questionWhenAvailable && thread.defaultModeRequestUserInput) raise(thread, 'question', script.questionWhenAvailable,
+      'item/tool/requestUserInput', { isBlocking: false, ...script.questionParams })
     if (script.question) raise(thread, 'question', script.question)
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
