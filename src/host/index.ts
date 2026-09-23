@@ -26,6 +26,8 @@ export interface HeadlessHostOptions {
 
 /** Refused startup because another host holds, or may hold, the data folder. The message is safe to print. */
 export class HostLockError extends Error {}
+/** The command line itself was wrong. The message names the fix and is safe to print; the key-file hint would only mislead. */
+export class HostArgumentError extends Error {}
 
 /** Whether the process a lock names is still running. A process another account owns counts as running. */
 function lockHolderAlive(pid: number): boolean {
@@ -151,14 +153,14 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   let port = 0
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]
-    if (argument !== '--data' && argument !== '--key-file' && argument !== '--port') throw new Error('Use --data <folder> and optionally --key-file <file>.')
+    if (argument !== '--data' && argument !== '--key-file' && argument !== '--port') throw new HostArgumentError('Use --data <folder> and optionally --key-file <file>.')
     const value = args[++index]
-    if (!value || value.startsWith('--')) throw new Error('Each host option needs a value.')
+    if (!value || value.startsWith('--')) throw new HostArgumentError('Each host option needs a value.')
     if (argument === '--data') dataDirectory = value
     else if (argument === '--key-file') keyFile = value
-    else { port = Number(value); if (!/^\d+$/.test(value) || !Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Choose a port from 0 through 65535.') }
+    else { port = Number(value); if (!/^\d+$/.test(value) || !Number.isInteger(port) || port < 0 || port > 65535) throw new HostArgumentError('Choose a port from 0 through 65535.') }
   }
-  if (!dataDirectory?.trim()) throw new Error('Choose a host data folder with --data or SOTTO_HOST_DATA.')
+  if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}) }
 }
 
@@ -171,7 +173,7 @@ export async function runHeadlessCommandLine(): Promise<void> {
     try {
       const index = args.indexOf(action)
       const clientId = action === '--pairing-code' ? undefined : args[index + 1]
-      if (action !== '--pairing-code' && (!clientId || clientId.startsWith('--'))) throw new Error('Choose a paired client.')
+      if (action !== '--pairing-code' && (!clientId || clientId.startsWith('--'))) throw new HostArgumentError('Choose a paired client by its client ID.')
       const options = parseHostArguments(args.filter((_, position) => position !== index && (clientId === undefined || position !== index + 1)))
       const descriptor = JSON.parse(await readFile(join(options.dataDirectory, 'host-listener.json'), 'utf8')) as { port: number; hostId: string; adminToken: string }
       if (!Number.isInteger(descriptor.port) || descriptor.port < 1 || descriptor.port > 65535 || typeof descriptor.adminToken !== 'string') throw new Error('The host descriptor is invalid.')
@@ -183,7 +185,10 @@ export async function runHeadlessCommandLine(): Promise<void> {
       const result = await response.json() as { hostId?: string }
       if (result.hostId !== descriptor.hostId) throw new Error('The host identity changed.')
       process.stdout.write(JSON.stringify(result) + '\n')
-    } catch { console.error('The running host could not complete this action. Check its data folder and try again.'); process.exitCode = 1 }
+    } catch (error) {
+      console.error(error instanceof HostArgumentError ? error.message : 'The running host could not complete this action. Check its data folder and try again.')
+      process.exitCode = 1
+    }
     return
   }
   let stopping = false
@@ -208,7 +213,7 @@ export async function runHeadlessCommandLine(): Promise<void> {
     process.removeListener('SIGTERM', stop)
     process.removeListener('SIGINT', stop)
     console.error('[Sotto] host-start-failed')
-    if (error instanceof HostLockError) console.error(error.message)
+    if (error instanceof HostLockError || error instanceof HostArgumentError) console.error(error.message)
     else console.error('Check the data folder and its original key file, then retry with the same --data and --key-file: host/index.js from an extracted archive, out/host/index.js from a checkout.')
     process.exitCode = 1
   }

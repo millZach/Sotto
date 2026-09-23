@@ -2,9 +2,9 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import { HostCredentialEncryption, openHostCredentials } from '../../../src/host/credentials'
-import { parseHostArguments } from '../../../src/host'
+import { HostArgumentError, parseHostArguments, runHeadlessCommandLine } from '../../../src/host'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -53,5 +53,22 @@ describe('headless host credentials', () => {
     expect(parseHostArguments([], { SOTTO_HOST_DATA: './saved' })).toEqual({ dataDirectory: resolve('saved'), port: 0 })
     expect(() => parseHostArguments(['--data', '--key-file'], {})).toThrow('needs a value')
     expect(() => parseHostArguments(['--unknown'], {})).toThrow('Use --data')
+    expect(() => parseHostArguments(['--port', '70000'], {})).toThrow(HostArgumentError)
+  })
+
+  it('prints what was wrong with the command line instead of the key-file hint', async () => {
+    const argv = process.argv, exitCode = process.exitCode
+    const printed: string[] = []
+    const error = vi.spyOn(console, 'error').mockImplementation((line: unknown) => { printed.push(String(line)) })
+    try {
+      process.argv = ['node', 'host', '--port', '70000', '--data', 'unused']
+      await runHeadlessCommandLine()
+      expect(printed).toEqual(['[Sotto] host-start-failed', 'Choose a port from 0 through 65535.'])
+      printed.length = 0
+      process.argv = ['node', 'host', '--revoke-client']
+      await runHeadlessCommandLine()
+      expect(printed).toEqual(['Choose a paired client by its client ID.'])
+      expect(process.exitCode).toBe(1)
+    } finally { error.mockRestore(); process.argv = argv; process.exitCode = exitCode }
   })
 })
