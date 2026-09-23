@@ -1,4 +1,4 @@
-import { PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
@@ -172,7 +172,7 @@ function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: numbe
 
 function describe(state: AgentState, thread: AgentThread, now: number): ThreadRow {
   const project = state.host.projects.find(entry => entry.id === thread.projectId)
-  const model = state.host.models.find(entry => entry.id === thread.modelId)
+  const model = hostForThread(state.host, thread).models.find(entry => entry.id === thread.modelId)
   const assignment = state.assignments.find(entry => entry.threadId === thread.id)
   const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the

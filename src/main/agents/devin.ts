@@ -96,7 +96,7 @@ type DevinMode = (typeof DEVIN_MODES)[number]
 function offeredModes(reported: ReadonlyMap<string, { readonly name: string; readonly description?: string | undefined }>): AgentProviderMode[] {
   return DEVIN_MODES.filter(mode => reported.has(mode.devinMode)).map(mode => {
     const own = mode.id === mode.devinMode ? reported.get(mode.devinMode) : undefined
-    return { id: mode.id, name: own?.name ?? mode.name, description: own?.description ?? mode.description, asks: mode.asks }
+    return { id: mode.id, name: own?.name ?? mode.name, description: own?.description ?? mode.description, asks: mode.asks, allows: mode.allows }
   })
 }
 /** An unknown or missing mode is the asking one, never a more permissive guess. */

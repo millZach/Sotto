@@ -37,7 +37,8 @@ export class GrokSubscriptionClient implements SubscriptionClient {
     if (!isAbsolute(workingDirectory)) throw new Error('Grok reasoning requires an absolute isolated working directory.')
   }
 
-  async status(): Promise<SubscriptionAccount> {
+  async status(signal?: AbortSignal): Promise<SubscriptionAccount> {
+    signal?.throwIfAborted()
     const executable = await this.findExecutable()
     const account: SubscriptionAccount = { provider: 'grok', label: 'Grok subscription', installed: Boolean(executable), ready: false, models: [],
       detail: executable ? CONNECTION_ERROR : 'Install Grok CLI and sign in with your Grok subscription, then check the connection in Sotto.' }
@@ -46,11 +47,12 @@ export class GrokSubscriptionClient implements SubscriptionClient {
       return await this.withSession(executable, this.options.statusTimeoutMs ?? 20_000, async (rpc, directory) => {
         const session = await this.initialize(rpc, directory)
         return this.account(session)
-      })
+      }, signal)
     } catch { return account }
   }
 
-  async complete(system: string, input: unknown, model: string, effort?: string): Promise<unknown> {
+  async complete(system: string, input: unknown, model: string, effort?: string, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
     if ((model && !IDENTIFIER.safeParse(model).success) || (effort && !EFFORT.safeParse(effort).success)) throw new Error('Choose a valid Grok model and reasoning effort.')
     let prompt: string
     try { prompt = JSON.stringify(input) } catch { throw new Error('Grok reasoning needs a JSON-compatible request.') }
@@ -79,7 +81,7 @@ export class GrokSubscriptionClient implements SubscriptionClient {
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected JSON object')
         return value
       } catch { throw new Error('Grok did not return a valid JSON decision. Try again or choose another available Grok model.') }
-    })
+    }, signal)
   }
 
   private async initialize(rpc: GrokRpc, directory: string, system = 'You are a text-only reasoning assistant. Return one JSON object and do not use tools.') {
@@ -105,7 +107,8 @@ export class GrokSubscriptionClient implements SubscriptionClient {
       detail: 'Uses your signed-in Grok subscription. Its usage limits and existing account settings apply.' }
   }
 
-  private async withSession<T>(executable: string, timeoutMs: number, work: (rpc: GrokRpc, directory: string) => Promise<T>): Promise<T> {
+  private async withSession<T>(executable: string, timeoutMs: number, work: (rpc: GrokRpc, directory: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted()
     await mkdir(this.workingDirectory, { recursive: true })
     const directory = await mkdtemp(join(this.workingDirectory, 'grok-'))
     const environment = this.options.environment ?? process.env
@@ -128,10 +131,14 @@ export class GrokSubscriptionClient implements SubscriptionClient {
     const args = [...(this.options.prefixArgs ?? []), '--cwd', directory, '--tools', '', '--no-subagents', '--disable-web-search', '--permission-mode', 'dontAsk',
       '--deny', '*', 'agent', '--no-leader', 'stdio']
     let rpc: GrokRpc | undefined
+    const stop = () => rpc?.cancel()
     try {
+      signal?.throwIfAborted()
       rpc = new GrokRpc(spawn(executable, args, { cwd: directory, env, shell: false, windowsHide: true, stdio: 'pipe' }), timeoutMs, this.options.outputLimitBytes ?? 2_000_000)
+      signal?.addEventListener('abort', stop, { once: true })
       return await work(rpc, directory)
     } finally {
+      signal?.removeEventListener('abort', stop)
       await rpc?.close()
       await removeSession(directory, this.workingDirectory)
     }
@@ -199,6 +206,7 @@ class GrokRpc {
     if (this.failed) throw this.failed
     throw new Error('Grok did not confirm the requested model and reasoning effort. Check the connection and try again.')
   }
+  cancel(): void { this.fail(new Error('Sotto reasoning stopped.')) }
   async close(): Promise<void> {
     this.closing = true
     clearTimeout(this.timeout)

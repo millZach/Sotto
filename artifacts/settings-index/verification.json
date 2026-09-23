@@ -40,6 +40,15 @@
       "width": 1280,
       "height": 800,
       "mode": "dark",
+      "category": "Hosts",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "dark",
       "category": "Agents",
       "pageOverflow": false,
       "formOverflow": false,
@@ -112,6 +121,15 @@
       "width": 1280,
       "height": 800,
       "mode": "light",
+      "category": "Hosts",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "mode": "light",
       "category": "Agents",
       "pageOverflow": false,
       "formOverflow": false,
@@ -184,6 +202,15 @@
       "width": 1600,
       "height": 1000,
       "mode": "dark",
+      "category": "Hosts",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "dark",
       "category": "Agents",
       "pageOverflow": false,
       "formOverflow": false,
@@ -256,6 +283,15 @@
       "width": 1600,
       "height": 1000,
       "mode": "light",
+      "category": "Hosts",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 1600,
+      "height": 1000,
+      "mode": "light",
       "category": "Agents",
       "pageOverflow": false,
       "formOverflow": false,
@@ -328,6 +364,15 @@
       "width": 820,
       "height": 560,
       "mode": "dark",
+      "category": "Hosts",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "dark",
       "category": "Agents",
       "pageOverflow": false,
       "formOverflow": false,
@@ -392,6 +437,15 @@
       "height": 560,
       "mode": "light",
       "category": "Providers",
+      "pageOverflow": false,
+      "formOverflow": false,
+      "clippedControls": []
+    },
+    {
+      "width": 820,
+      "height": 560,
+      "mode": "light",
+      "category": "Hosts",
       "pageOverflow": false,
       "formOverflow": false,
       "clippedControls": []

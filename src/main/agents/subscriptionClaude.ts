@@ -76,14 +76,15 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     if (!isAbsolute(workingDirectory)) throw new Error('Claude reasoning needs an absolute working directory.')
   }
 
-  async status(): Promise<SubscriptionAccount> { return (await this.inspect()).account }
+  async status(signal?: AbortSignal): Promise<SubscriptionAccount> { return (await this.inspect(signal)).account }
 
-  async complete(system: string, input: unknown, model: string, effort?: string): Promise<unknown> {
+  async complete(system: string, input: unknown, model: string, effort?: string, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
     if (model && !MODEL_ID.safeParse(model).success) throw new Error('Choose a valid Claude model before starting reasoning.')
     let prompt: string
     try { prompt = JSON.stringify(input) } catch { throw new Error('Claude reasoning needs a JSON-compatible request.') }
     if (!prompt || Buffer.byteLength(prompt) > 1_000_000 || system.length > 30_000) throw new Error('The Claude reasoning request is too large or invalid.')
-    const { account, executable } = await this.inspect()
+    const { account, executable } = await this.inspect(signal)
     if (!account.ready || !executable) throw new Error(account.detail)
     const selectedModel = model || account.defaultModelId
     if (effort && !account.models.find(candidate => candidate.id === selectedModel)?.reasoningEfforts?.includes(effort)) {
@@ -93,7 +94,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
       '--output-format', 'json', ...(selectedModel ? ['--model', selectedModel] : []), ...(effort ? ['--effort', effort] : []), '--system-prompt',
       `${system}\nReturn exactly one JSON object. Do not include Markdown or commentary outside that object.`,
-    ], prompt, this.options.completionTimeoutMs ?? 180_000)
+    ], prompt, this.options.completionTimeoutMs ?? 180_000, signal)
     try {
       const envelope = RESULT.parse(JSON.parse(output))
       if (envelope.is_error) throw new Error('Provider reported failure')
@@ -103,25 +104,25 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     } catch { throw new Error('Claude Code did not return a valid JSON decision. Check the selected model and subscription in Claude Code.') }
   }
 
-  private async inspect(): Promise<{ account: SubscriptionAccount; executable: string | null }> {
+  private async inspect(signal?: AbortSignal): Promise<{ account: SubscriptionAccount; executable: string | null }> {
     const executable = await this.findExecutable()
     const account: SubscriptionAccount = { provider: 'claude', label: 'Claude Code subscription', installed: Boolean(executable), ready: false,
       detail: 'Install Claude Code and sign in with your Claude subscription, then check the connection in Sotto.', models: [] }
     if (!executable) return { account, executable }
     try {
       await mkdir(this.workingDirectory, { recursive: true })
-      const help = await this.run(executable, ['--help'], '', 10_000)
+      const help = await this.run(executable, ['--help'], '', 10_000, signal)
       if (!REQUIRED_FLAGS.every(flag => help.includes(flag))) {
         account.detail = 'Update Claude Code to a version supporting safe mode and tool-free reasoning, then check the connection in Sotto.'
         return { account, executable }
       }
-      const output = await this.run(executable, ['--safe-mode', 'auth', 'status', '--json'], '', 10_000)
+      const output = await this.run(executable, ['--safe-mode', 'auth', 'status', '--json'], '', 10_000, signal)
       const auth = AUTH.parse(JSON.parse(output))
       if (!auth.loggedIn || auth.authMethod !== 'claude.ai' || !auth.subscriptionType) {
         account.detail = 'Sign in to Claude Code with your Claude subscription, then check the connection in Sotto. Sotto will not switch to API billing.'
         return { account, executable }
       }
-      account.models = await this.models(executable)
+      account.models = await this.models(executable, signal)
       if (account.models.some(model => model.id === 'default')) account.defaultModelId = 'default'
       account.allowCustomModel = true
       account.ready = true
@@ -132,14 +133,14 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     return { account, executable }
   }
 
-  private async models(executable: string): Promise<SubscriptionAccount['models']> {
+  private async models(executable: string, signal?: AbortSignal): Promise<SubscriptionAccount['models']> {
     const requestId = randomUUID()
     // Native control initialization is metadata only: no user message or model
     // turn is sent. EOF closes the unmodified CLI after it reports capabilities.
     const output = await this.run(executable, [
       '--print', '--safe-mode', '--tools', '', '--permission-prompts', 'none', '--no-session-persistence',
       '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    ], `${JSON.stringify({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false } })}\n`, 15_000)
+    ], `${JSON.stringify({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false } })}\n`, 15_000, signal)
     for (const line of output.split('\n')) {
       let message: unknown
       try { message = JSON.parse(line) } catch { continue }
@@ -174,8 +175,9 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
     try { return (await this.run(executable, ['--version'], '', timeoutMs)).trim().slice(0, 200) } catch { return '' }
   }
 
-  private run(executable: string, args: string[], input: string, timeoutMs: number): Promise<string> {
+  private run(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
     return new Promise((resolve, reject) => {
+      signal?.throwIfAborted()
       let child: ChildProcessWithoutNullStreams
       try {
         child = spawn(executable, [...(this.options.prefixArgs ?? []), ...args], {
@@ -193,6 +195,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       const finish = (error: Error | null): void => {
         if (settled) return
         settled = true; clearTimeout(timer); clearTimeout(terminationTimer)
+        signal?.removeEventListener('abort', stop)
         if (error) reject(error)
         else resolve(Buffer.concat(chunks).toString('utf8'))
       }
@@ -209,6 +212,8 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
         }, 2_000)
       }
       const timer = setTimeout(() => abort(new Error('Claude Code did not finish in time. Check the native client before retrying.')), timeoutMs)
+      const stop = () => abort(new Error('Sotto reasoning stopped.'))
+      signal?.addEventListener('abort', stop, { once: true })
       const consume = (chunk: Buffer, stdout: boolean): void => {
         if (settled || failure) return
         bytes += chunk.length

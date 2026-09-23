@@ -80,6 +80,8 @@ function browserAllowance(server: string, definitions: readonly { name: string }
 }
 export interface ClaudeStreamJsonHostOptions {
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
+  /** Desktop supplies its packaged SDK resource; Node resolves the installed development SDK. */
+  historyModulePath?: string
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
 }
@@ -283,7 +285,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Rewinding restarts the CLI, which would end the agents it is still running for this thread.
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning('rewinding it'))
     const generation = this.generation
-    const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd)
+    const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, this.options.historyModulePath)
     await this.refreshThread(id)
     const matches = (): boolean => isDeepStrictEqual([...this.messageLog.userMessageIds(id)], [...expectedUserMessageIds])
     if (!matches()) throw new Error('Claude conversation changed. Refresh the checkpoint preview.')
@@ -330,7 +332,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private async finishRollback(id: string, alias: Alias): Promise<Alias> {
     const pending = alias.rollbackPending
     if (!pending?.targetSessionId) throw new Error('Claude rollback has no confirmed native fork identity.')
-    const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd)
+    const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, this.options.historyModulePath)
     const source = await history.read(pending.sourceSessionId)
     if (claudeDigest(JSON.stringify(source)) !== pending.sourceDigest) throw new Error('Claude source history changed during rewind.')
     const boundaryIndex = pending.boundary ? source.findIndex(message => message.uuid === pending.boundary) : -1

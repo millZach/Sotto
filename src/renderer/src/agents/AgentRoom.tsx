@@ -1,3 +1,4 @@
+import { hostForThread } from '../../../shared/agents'
 import React, { useState, type ReactNode } from 'react'
 import { Mic, MicOff, Settings2, Volume2, VolumeX } from 'lucide-react'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -50,7 +51,7 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
     const result = await command({ type: 'select-thread', threadId: thread.id })
     if (result && !result.error) setSheet('session')
   }
-  const provider = (thread: AgentThread): string => state.host.models.find(model => model.id === thread.modelId)?.provider ?? state.configuration.provider
+  const provider = (thread: AgentThread): string => hostForThread(state.host, thread).models.find(model => model.id === thread.modelId)?.provider ?? state.configuration.provider
   return <div className="agent-room">
     <div className="agent-room__tools">
       <Button variant="ghost" iconOnly aria-label="Configure agents" onClick={() => setSheet('settings')}><Settings2 size={17} /></Button>

@@ -114,6 +114,7 @@ const settingKeys = [
   'autoUpdateCheck',
   'webLinkDestination',
   'responseStreaming',
+  'localHostEnabled',
   'showBrowserPreviews',
   'voiceCoordinatorEnabled',
   'memoryEnabled',

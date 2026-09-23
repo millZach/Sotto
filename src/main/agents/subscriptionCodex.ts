@@ -86,8 +86,10 @@ export async function findExecutable(): Promise<string | null> {
 /** One owned, bounded child. No shell, persistent daemon, retries or raw error output. */
 function childOperation<T>(executable: string, args: string[], cwd: string, timeout: number,
   operation: (child: ChildProcessWithoutNullStreams, finish: (value: T) => void, fail: (detail?: string) => void) => (line: string) => void,
+  signal?: AbortSignal,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
+    signal?.throwIfAborted()
     const child = spawn(executable, args, { cwd, env: nativeEnvironment(), windowsHide: true, shell: false, stdio: 'pipe' })
     let finishing = false
     let closed = false
@@ -100,6 +102,7 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
     const settle = () => {
       clearTimeout(timer)
       clearTimeout(reapTimer)
+      signal?.removeEventListener('abort', stop)
       if (rejected) reject(new Error(failureDetail))
       else resolve(result as T)
     }
@@ -125,6 +128,8 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
       if (detail) failureDetail = detail
       finish(undefined, true)
     }
+    const stop = () => fail('Sotto reasoning stopped.')
+    signal?.addEventListener('abort', stop, { once: true })
     const timer = setTimeout(fail, timeout)
     let consume: (line: string) => void
     try { consume = operation(child, (value) => finish(value), fail) } catch { fail(); return }
@@ -167,7 +172,7 @@ export class CodexSubscriptionClient implements SubscriptionClient {
     return { provider: 'codex', label: 'ChatGPT through Codex', installed, ready, detail, models }
   }
 
-  private async session(completion?: { system: string; prompt: string; model: string; effort: string }): Promise<{ account: SubscriptionAccount; value?: unknown }> {
+  private async session(completion?: { system: string; prompt: string; model: string; effort: string }, signal?: AbortSignal): Promise<{ account: SubscriptionAccount; value?: unknown }> {
     const executable = await findExecutable()
     if (!executable) return { account: this.account(false, 'Install the Codex CLI and sign in with ChatGPT to connect this subscription.', false) }
     if (!isAbsolute(this.workingDirectory)) throw new Error(UNAVAILABLE)
@@ -307,24 +312,25 @@ export class CodexSubscriptionClient implements SubscriptionClient {
             finish({ account, value })
           }
         }
-      })
+      }, signal)
     } finally {
       if (completion) await rmdir(directory).catch(() => undefined)
     }
   }
 
-  async status(): Promise<SubscriptionAccount> {
-    try { return (await this.session()).account }
+  async status(signal?: AbortSignal): Promise<SubscriptionAccount> {
+    try { return (await this.session(undefined, signal)).account }
     catch { return this.account(false, UNAVAILABLE) }
   }
 
-  async complete(system: string, input: unknown, model: string, effort = ''): Promise<unknown> {
+  async complete(system: string, input: unknown, model: string, effort = '', signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
     if (this.completing) throw new Error('A Codex subscription decision is already running. Wait for it to finish.')
     const prompt = JSON.stringify(input)
     if (!prompt || Buffer.byteLength(prompt) > 180_000 || Buffer.byteLength(system) > 20_000) throw new Error('The Sotto reasoning context is too large for this subscription request.')
     this.completing = true
     try {
-      const response = await this.session({ system, prompt, model, effort })
+      const response = await this.session({ system, prompt, model, effort }, signal)
       if (!response.account.ready) throw new Error(response.account.detail)
       return response.value
     } finally {

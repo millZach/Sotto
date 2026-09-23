@@ -1,7 +1,8 @@
 import { resolve } from 'node:path'
+import { isBuiltin } from 'node:module'
 
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import type { Plugin } from 'vite'
+import { build as buildVite, type Plugin } from 'vite'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
@@ -70,6 +71,26 @@ function bundledDependencyInventory(fileName = 'bundled-dependencies.json'): Plu
   }
 }
 
+/** A separate Node bundle prevents desktop-only modules entering the host's dependency graph. */
+function headlessHostBuild(): Plugin {
+  return {
+    name: 'sotto-headless-host',
+    async closeBundle() {
+      await buildVite({
+        configFile: false,
+        build: {
+          ssr: resolve(__dirname, 'src/host/index.ts'), target: 'node24',
+          outDir: resolve(__dirname, 'out/host'), emptyOutDir: true, minify: false,
+          rollupOptions: {
+            external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
+            output: { format: 'cjs', entryFileNames: 'index.js' },
+          },
+        },
+      })
+    },
+  }
+}
+
 export default defineConfig({
   main: {
     build: { rollupOptions: { external: ['node-pty'], input: {
@@ -83,6 +104,7 @@ export default defineConfig({
     // self-contained resource, so SDK peers are not production dependencies.
     plugins: [
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),
+      headlessHostBuild(),
       externalDependencyInventory('main'),
       bundledDependencyInventory(),
     ],

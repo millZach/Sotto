@@ -298,6 +298,19 @@ export async function verifyThirdPartyNotices(options = {}) {
     }
   }
 
+  // Standalone archives redistribute the external host dependency closure, too.
+  const hostInventoryPath = join(root, 'out', 'host', 'external-dependencies.json')
+  if (existsSync(hostInventoryPath)) {
+    const inventory = JSON.parse(await readFile(hostInventoryPath, 'utf8'))
+    for (const name of [...inventory.imports, ...inventory.dynamicImports]) {
+      if (!name.startsWith('node:') && !names.has(name)) fail(`host dependency is not inventoried: ${name}`)
+    }
+    const bundledPath = join(root, 'out', 'host', 'bundled-dependencies.json')
+    for (const name of JSON.parse(await readFile(bundledPath, 'utf8')).packages) {
+      if (!names.has(name)) fail(`host bundle dependency is not inventoried: ${name}`)
+    }
+  }
+
   for (const requiredText of [
     '## Electron MIT license',
     '## Lucide ISC and Feather MIT licenses',

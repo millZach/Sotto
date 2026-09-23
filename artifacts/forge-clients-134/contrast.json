@@ -1,0 +1,38 @@
+[
+  {
+    "variant": "A",
+    "mode": "dark",
+    "minimum": 7.785491738528429,
+    "failures": []
+  },
+  {
+    "variant": "A",
+    "mode": "light",
+    "minimum": 6.25820861194014,
+    "failures": []
+  },
+  {
+    "variant": "B",
+    "mode": "dark",
+    "minimum": 7.254033856382867,
+    "failures": []
+  },
+  {
+    "variant": "B",
+    "mode": "light",
+    "minimum": 6.25820861194014,
+    "failures": []
+  },
+  {
+    "variant": "C",
+    "mode": "dark",
+    "minimum": 7.785491738528429,
+    "failures": []
+  },
+  {
+    "variant": "C",
+    "mode": "light",
+    "minimum": 6.715268961965502,
+    "failures": []
+  }
+]

@@ -251,7 +251,8 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
   }, [open, chrome.expanded])
 
-  const threadId = thread?.id
+  // A thread on a paired host keeps its tools on that machine; nothing here reads its folder.
+  const threadId = thread?.remoteHost ? undefined : thread?.id
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
   // and refreshes when its own surface comes back.
   const onFiles = chrome.surface === 'files'
@@ -334,6 +335,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   if (target === null) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div></>
   else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
     <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div></>
+  else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />

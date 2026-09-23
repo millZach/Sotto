@@ -1,6 +1,7 @@
+import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
-import { defaultThreadModelId, isSubscriptionReasoning, PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, defaultThreadModelId, isSubscriptionReasoning, PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
@@ -58,8 +59,11 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const titleId = useId()
   const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === (initialChoices?.projectId ?? initialProjectId)) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
+  const projectHost = hostForThread(state.host, { hostId: project?.hostId ?? parseHostEntityKey(project?.id ?? '')?.hostId ?? state.hostId })
+  const localHostId = state.connections ? state.connections.find(host => host.kind === 'local')?.hostId : state.hostId
+  const defaultKey = (id: string): string => { const key = parseHostEntityKey(id); return key && key.hostId === localHostId ? key.id : id }
   const [title, setTitle] = useState(initialChoices?.title ?? '')
-  const [modelId, setModelId] = useState(() => initialChoices?.modelId ?? defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts))
+  const [modelId, setModelId] = useState(() => initialChoices?.modelId ?? defaultThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts))
   // Choices carried back from a refused creation are the user's own; the default must not move under them.
   const modelChosen = useRef(initialChoices !== undefined)
   const [reasoningEffort, setReasoningEffort] = useState<string | undefined>(initialChoices?.reasoningEffort)
@@ -81,7 +85,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     return () => { current = false }
   }, [defaultsRead])
   useEffect(() => {
-    if (!workingCopyChosen.current) setWorkingSelection({ workingCopy: (project && defaults.projects[project.id]) || defaults.global, startFromOrigin: true })
+    if (!workingCopyChosen.current) setWorkingSelection({ workingCopy: (project && defaults.projects[defaultKey(project.id)]) || defaults.global, startFromOrigin: true })
   }, [project, defaults])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(initialError ?? null)
@@ -94,29 +98,29 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const attemptedFolders = useRef(new Set<string>())
   const chooser = useProjectChooser(state, choice => {
     setError(null); workingCopyChosen.current = false
-    setWorkingSelection({ workingCopy: (choice.project && defaults.projects[choice.project.id]) || defaults.global, startFromOrigin: true })
+    setWorkingSelection({ workingCopy: (choice.project && defaults.projects[defaultKey(choice.project.id)]) || defaults.global, startFromOrigin: true })
     if (choice.project) setProject(choice.project); else setFolder(choice.folder)
   })
   const focusSearch = useRef(chooser.focusSearch)
   focusSearch.current = chooser.focusSearch
   const selectedFolder = project?.path ?? folder
   const inheritedProvider = isSubscriptionReasoning(state.configuration.reasoning) ? state.configuration.reasoning : null
-  const inheritedModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
+  const inheritedModelId = defaultThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts)
   const inheritedAccount = state.reasoningAccounts.find(account => account.provider === inheritedProvider)
   const inheritedModel = inheritedAccount?.models.find(model => model.id === (state.configuration.reasoningModel || inheritedAccount.defaultModelId))
-  const selectedModel: AgentModel | undefined = state.host.models.find(model => model.id === modelId)
+  const selectedModel: AgentModel | undefined = projectHost.models.find(model => model.id === modelId)
     ?? (inheritedProvider && modelId === inheritedModelId ? {
       id: modelId, providerId: inheritedProvider, provider: PROVIDER_LABELS[inheritedProvider], ready: false,
       name: inheritedModel?.name || state.configuration.reasoningModel || (PROVIDER_LABELS[inheritedProvider] + ' default'),
     } : undefined)
   // The permission setting shown is the one sent, so an unchosen one is the first the provider offers.
   const startMode = startingProviderMode(selectedModel, providerMode)
-  const modelChoices = selectedModel && !state.host.models.some(model => model.id === selectedModel.id) ? [...state.host.models, selectedModel] : state.host.models
-  const selectedProvider = state.host.providers?.find(provider => provider.id === selectedModel?.providerId)
-  const canCreateThread = selectedProvider?.capabilities.threads ?? state.host.capabilities.threads
-  const connected = selectedModel?.ready === true && (selectedModel.providerId && state.host.providers
-    ? state.host.providers.some(provider => provider.id === selectedModel.providerId && provider.connection === 'connected')
-    : state.connection === 'connected')
+  const modelChoices = selectedModel && !projectHost.models.some(model => model.id === selectedModel.id) ? [...projectHost.models, selectedModel] : projectHost.models
+  const selectedProvider = projectHost.providers?.find(provider => provider.id === selectedModel?.providerId)
+  const canCreateThread = selectedProvider?.capabilities.threads ?? projectHost.capabilities.threads
+  const connected = selectedModel?.ready === true && (selectedModel.providerId && projectHost.providers
+    ? projectHost.providers.some(provider => provider.id === selectedModel.providerId && provider.connection === 'connected')
+    : projectHost.connected)
   useEffect(() => {
     const previous = document.activeElement
     const element = dialog.current
@@ -135,7 +139,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     else focusSearch.current()
   }, [selectedFolder, loadingDefaults])
   // Providers connect one at a time; follow the default as models become ready until a model is picked here.
-  useEffect(() => { if (!modelChosen.current) setModelId(defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)) }, [state.configuration, state.host.models, state.reasoningAccounts])
+  useEffect(() => { if (!modelChosen.current) setModelId(defaultThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts)) }, [state.configuration, projectHost.models, state.reasoningAccounts])
   const create = async (): Promise<void> => {
     if (creating.current || completed.current || defaultsError || loadingDefaults || submitting || state.globalLaneBusy || !connected || !canCreateThread || !selectedFolder || !modelId) return
     creating.current = true
@@ -150,7 +154,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
         setProject(selectedProject)
       }
       if (!selectedProject) return
-      const workingCopy = workingCopyChosen.current ? workingSelection.workingCopy : defaults.projects[selectedProject.id] ?? defaults.global
+      const workingCopy = workingCopyChosen.current ? workingSelection.workingCopy : defaults.projects[defaultKey(selectedProject.id)] ?? defaults.global
       const worktreeChoices = workingCopy === 'independent' ? { ...(workingSelection.baseBranch ? { baseBranch: workingSelection.baseBranch } : {}), startFromOrigin: workingSelection.startFromOrigin ?? true, ...(workingSelection.existingWorktreePath ? { existingWorktreePath: workingSelection.existingWorktreePath } : {}) } : {}
       const choices: NewThreadChoices = { projectId: selectedProject.id, title: title.trim() || 'New thread', modelId, workingCopy, ...worktreeChoices,
         ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}), ...(startMode ? { providerMode: startMode } : {}) }
@@ -160,7 +164,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
         ...(reasoningEffort ? { reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}), ...(startMode ? { providerMode: startMode } : {}) } as const
       if (onCreating) {
         // The window shows the thread under this ID at once; main adopts the same ID when it catches up.
-        const threadId = crypto.randomUUID()
+        const threadId = hostEntityKey(selectedProject.hostId ?? parseHostEntityKey(selectedProject.id)?.hostId ?? state.hostId, crypto.randomUUID())
         const thread = draftThread({ id: threadId, projectId: choices.projectId, title: choices.title, modelId, workingCopy, ...worktreeChoices,
           ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
           reasoningEffort: reasoningEffort ?? selectedModel?.defaultReasoningEffort, runtimeMode, providerMode: startMode })
