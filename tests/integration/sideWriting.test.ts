@@ -80,7 +80,9 @@ describe('Codex side writing', () => {
     await expect(f.host.writeShortText!(f.id, prompt)).resolves.toBe('Fixture title')
     const [call] = await recorded(f.root)
     const args = call!.args as string[]
-    expect(args).toEqual(expect.arrayContaining(['--ephemeral', '--skip-git-repo-check', '--json', 'approval_policy="never"', 'mcp_servers={}', 'project_doc_max_bytes=0', 'history.persistence="none"']))
+    expect(args).toEqual(expect.arrayContaining(['--ephemeral', '--skip-git-repo-check', '--json', 'approval_policy="never"', 'mcp_servers={}', 'project_doc_max_bytes=0', 'history.persistence="none"',
+      'features.skip_host_skill_discovery=true', 'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false', 'instructions=""']))
+    expect(args).not.toContain('approval_policy="on-request"')
     expect(args[args.indexOf('--model') + 1]).toBe('fixture-model')
     expect(args.at(-1)).toBe('-')
     expect(args.join(' ')).not.toContain('Fix the dark theme contrast')

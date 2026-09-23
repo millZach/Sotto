@@ -20,16 +20,21 @@ const DISABLED_FEATURES = [
   'sleep_tool', 'workspace_dependencies',
 ] as const
 
-const configArguments = [
+/**
+ * What every one-off Codex call Sotto makes switches off, for reasoning and for side writing alike: every tool
+ * and integration a turn could reach (skills and MCP through the orchestrator as well as directly), the
+ * project's instruction files, web search and history.
+ */
+const isolationArguments = [
   ...DISABLED_FEATURES.map((name) => `features.${name}=false`),
   'features.skip_host_skill_discovery=true', 'web_search="disabled"',
   'skills.include_instructions=false', 'skills.bundled.enabled=false',
   'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false',
   'project_doc_max_bytes=0', 'mcp_servers={}', 'instructions=""',
   'history.persistence="none"',
-  'model_provider="openai"',
-  'approval_policy="on-request"', 'sandbox_mode="read-only"',
-].flatMap((value) => ['-c', value])
+  'model_provider="openai"', 'sandbox_mode="read-only"',
+]
+const configArguments = [...isolationArguments, 'approval_policy="on-request"'].flatMap((value) => ['-c', value])
 
 const outputSchema = {
   type: 'object', properties: { json: { type: 'string' } },
@@ -159,17 +164,12 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
 }
 
 /**
- * What a side call switches off (ADR-0026): every tool and integration a turn could reach, the project's
- * instruction files, web search, MCP servers and history. The shell tool is off as well as the sandbox
- * being read-only, so there is nothing an approval could be asked for and nobody is waiting to answer one.
+ * A side call (ADR-0026) switches off everything the reasoning path does, and it matters more here because
+ * the call runs in the thread's real project folder rather than an empty scratch one. Only the approval
+ * policy differs: the shell tool is off as well as the sandbox being read-only, so there is nothing an
+ * approval could be asked for and nobody is waiting to answer one.
  */
-const sideWritingArguments = [
-  ...DISABLED_FEATURES.map((name) => `features.${name}=false`),
-  'web_search="disabled"',
-  'skills.include_instructions=false', 'skills.bundled.enabled=false',
-  'project_doc_max_bytes=0', 'mcp_servers={}', 'history.persistence="none"',
-  'model_provider="openai"', 'approval_policy="never"', 'sandbox_mode="read-only"',
-].flatMap((value) => ['-c', value])
+const sideWritingArguments = [...isolationArguments, 'approval_policy="never"'].flatMap((value) => ['-c', value])
 const execEvent = z.object({ type: z.string(), item: z.object({ type: z.string(), text: z.string().optional() }).passthrough().optional() }).passthrough()
 /**
  * The items a side call may produce. `error` items are Codex's own warnings (an unknown model's metadata,

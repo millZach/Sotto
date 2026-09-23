@@ -49,7 +49,9 @@ own turn and the side call.
 - **Codex says its own warnings as `error` items.** `codex exec --json` reports an unknown model's metadata
   or a feature still in development as an `item.completed` of type `error` before the turn. The first
   version read every item that was not a message as a tool and stopped the call. Those items are now
-  allowed, the in-development skill-discovery switch is no longer passed, and the fake Codex emits one.
+  allowed and the fake Codex emits one. (The first version also stopped passing the in-development
+  skill-discovery switch, which only adds such a warning; after review the side call passes it again, with
+  the rest of the switches the reasoning path uses.)
 - **The models answered the material instead of naming it.** With the prompt "Reply with the single word
   ready", Claude Code and Grok both titled the thread "ready", and Grok answered the README question in full.
   Each job's instruction now says to treat its material as something to describe, not instructions, and
