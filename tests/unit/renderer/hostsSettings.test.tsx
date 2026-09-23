@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
+import { HostQuestionDialog } from '../../../src/renderer/src/features/settings/HostQuestionDialog'
 import { ThreadWorkingCopy } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import type { HostsBridge, HostsCommand, HostsState, HostStatus, SshHostSuggestion } from '../../../src/shared/hosts'
 import { hostVersionMismatch } from '../../../src/shared/hostProtocol'
@@ -243,4 +244,39 @@ it('keeps the remote Open folder control visible and explains where it acts', as
   expect(button.getAttribute('aria-disabled')).toBe('true')
   await user.click(button)
   expect(command).not.toHaveBeenCalled()
+})
+
+it("asks a saved host's SSH question on any page, sends the answer, and Switch it off switches the host off", async () => {
+  const reconnecting = host({ name: 'forge', phase: 'connecting', reconnecting: true })
+  const { bridge, command, push } = fixture([reconnecting]), user = userEvent.setup()
+  // Rendered on its own, the way the app shell renders it over whichever page is open.
+  render(<HostQuestionDialog bridge={bridge} />)
+  await waitFor(() => expect(command).not.toHaveBeenCalled())
+  expect(screen.queryByRole('dialog')).toBeNull()
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-2', kind: 'passphrase', text: 'Enter passphrase for key' } }] })
+  const dialog = screen.getByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  expect(dialog.textContent).toContain('Sotto is connecting to forge, and SSH needs your key passphrase to sign in.')
+  await user.type(within(dialog).getByLabelText('Key passphrase'), 'synthetic')
+  await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+  expect(command).toHaveBeenCalledWith({ type: 'ssh-answer', id: REMOTE, promptId: 'prompt-2', answer: 'synthetic' })
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-3', kind: 'host-key', text: 'The authenticity of host forge cannot be established.' } }] })
+  const trust = screen.getByRole('dialog', { name: 'Trust the SSH host forge?' })
+  await user.keyboard('{Escape}')
+  expect(command).toHaveBeenLastCalledWith({ type: 'set-enabled', id: REMOTE, enabled: false })
+  push({ hosts: [{ ...reconnecting, phase: 'disconnected', enabled: false }] })
+  expect(trust.isConnected).toBe(false)
+})
+
+it("waits with a saved host's SSH question while a Hosts dialog is open", async () => {
+  const reconnecting = host({ name: 'forge', phase: 'connecting', reconnecting: true })
+  const { bridge, push } = fixture([reconnecting]), user = userEvent.setup()
+  render(<><HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} /><HostQuestionDialog bridge={bridge} /></>)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+  push({ hosts: [{ ...reconnecting, prompt: { id: 'prompt-4', kind: 'password', text: 'zach@forge password:' } }] })
+  // Rename keeps the screen; the question does not stack on it.
+  expect(screen.getAllByRole('dialog')).toEqual([screen.getByRole('dialog', { name: 'Rename forge' })])
+  await user.keyboard('{Escape}')
+  const question = await screen.findByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  expect(within(question).getByLabelText('SSH password')).toBeTruthy()
 })

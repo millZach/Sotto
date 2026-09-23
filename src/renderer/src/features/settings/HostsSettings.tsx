@@ -124,7 +124,6 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const [renameId, setRenameId] = useState<string | null>(null)
   const [forgetId, setForgetId] = useState<string | null>(null)
   const [stopId, setStopId] = useState<string | null>(null)
-  const [answer, setAnswer] = useState('')
   const addButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!bridge) return
@@ -133,9 +132,6 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
-  // A saved host reconnecting on its own can still need an answer from SSH; Add host asks its own questions.
-  const promptHost = state?.hosts.find(host => host.prompt)
-  useEffect(() => { setAnswer('') }, [promptHost?.prompt?.id])
   const run = async (command: HostsCommand): Promise<boolean> => {
     if (!bridge) return false
     setError(null)
@@ -185,9 +181,5 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     {stopping && <ConfirmationDialog title={`Stop the host on ${stopping.name}?`} confirmLabel="Stop host" cancelLabel="Keep it running" onCancel={() => setStopId(null)}
       failureMessage={error} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
       description={`This stops the host Sotto started on ${stopping.name} and switches it off. Turns running there are interrupted; threads and history stay in its data folder. Switch it on to start it again.`} />}
-    {promptHost?.prompt && !dialog && <ConfirmationDialog title={promptHost.prompt.kind === 'host-key' ? `Trust the SSH host ${promptHost.name}?` : `Unlock the SSH connection to ${promptHost.name}`} danger={false}
-      confirmLabel={promptHost.prompt.kind === 'host-key' ? 'Trust host' : 'Continue'} cancelLabel="Switch it off" onCancel={() => { setAnswer(''); void run({ type: 'set-enabled', id: promptHost.id, enabled: false }) }}
-      onConfirm={async () => { await run({ type: 'ssh-answer', id: promptHost.id, promptId: promptHost.prompt!.id, answer: promptHost.prompt!.kind === 'host-key' ? 'yes' : answer }); setAnswer(''); return false }}
-      description={<div className="hosts-dialog__fields"><pre className="hosts-challenge">{promptHost.prompt.text}</pre>{promptHost.prompt.kind !== 'host-key' && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{promptHost.prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label><input id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}</div>} />}
   </div>
 }

@@ -1,7 +1,15 @@
-import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { DEFAULT_HOST_DATA_DIRECTORY, DEFAULT_HOST_INSTALL_PATH, type HostsBridge, type HostsState, type HostStatus, type RemoteHost, type SshHostSuggestion } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
+
+/** How many Hosts modals are open, so a saved host's SSH question waits rather than stacking on one. */
+let openModals = 0
+const modalListeners = new Set<() => void>()
+const subscribeModals = (listener: () => void): (() => void) => { modalListeners.add(listener); return () => { modalListeners.delete(listener) } }
+const modalsChanged = (change: number): void => { openModals += change; for (const listener of modalListeners) listener() }
+/** Whether Add host, Edit connection or Rename is open. */
+export const useHostsModalOpen = (): boolean => useSyncExternalStore(subscribeModals, () => openModals > 0)
 
 /**
  * A modal for Settings > Hosts: focus starts inside it, Tab stays inside it, Escape answers it (after
@@ -15,6 +23,7 @@ export function HostsModal({ title, onClose, busy = false, children, footer, cla
   const titleId = useId()
   const close = useRef(onClose)
   close.current = onClose
+  useEffect(() => { modalsChanged(1); return () => modalsChanged(-1) }, [])
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus()
