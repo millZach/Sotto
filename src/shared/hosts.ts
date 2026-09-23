@@ -15,7 +15,10 @@ export interface HostStatus extends RemoteHost {
   reconnecting?: boolean | undefined
   hostId?: string
   clientId?: string
-  /** True while connected to a host this Sotto started; only such a host answers Stop host. */
+  /**
+   * True while connected to a host this Sotto started, or while the SSH session to one running another
+   * Sotto version stays open for Stop host; only such a host answers Stop host.
+   */
   owned?: boolean | undefined
   error?: string | undefined
   prompt?: { id: string; kind: 'host-key' | 'password' | 'passphrase'; text: string }

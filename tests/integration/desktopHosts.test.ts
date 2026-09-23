@@ -16,6 +16,9 @@ import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHos
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
+import { hostVersionMismatch } from '../../src/shared/hostProtocol'
+import { version as packageVersion } from '../../package.json'
+import { createServer, type Server } from 'node:http'
 import { HOST_BUSY } from '../../src/shared/hostProtocol'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
@@ -25,6 +28,8 @@ let retryDelay: (attempt: number) => number = () => 0
 /** Every reconnect the manager scheduled, by attempt: an empty list proves no retry can fire, with no waiting. */
 const scheduled: number[] = []
 let owned = true, stopResult: boolean | Error = true
+/** Where the fixture tunnel leads; by default the real host's listener. */
+let tunnelUrl: (() => string) | undefined
 /** Runs before a stop answers; the real host closes its listener, dropping every peer, before it replies. */
 let beforeStopReply: () => Promise<void> = async () => undefined
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -41,7 +46,7 @@ class FixtureSsh extends SshHostLauncher {
     this.callbacks = callbacks
     const failure = failures.shift()
     if (failure) throw failure
-    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned,
+    return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned,
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       revokeClient: adminRevoke,
@@ -56,7 +61,7 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined
+  launchers.length = 0; failures.length = 0; stops.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined
   manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
   await manager.start()
 })
@@ -298,5 +303,57 @@ describe('desktop remote host management over a real socket', () => {
     expect(manager.get().hosts[0]!.phase).toBe('disconnected')
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(launchers.length).toBe(1)
+  })
+})
+
+describe('a host from before protocol v1 froze', () => {
+  let old: Server | undefined
+  afterEach(async () => { await new Promise<void>(resolve => old ? old.close(() => resolve()) : resolve()); old = undefined })
+  /** The tunnel reaches a host that answers health the way 0.1.15 did: protocol 1, with no Sotto version or features. */
+  async function connectToOldHost(): Promise<RemoteHost> {
+    old = createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ v: 1, status: 'ready', hostId: reportedHostId, pid: 4242, port: 4319 })) })
+    await new Promise<void>(resolve => old!.listen(0, '127.0.0.1', resolve))
+    const address = old.address()
+    if (!address || typeof address === 'string') throw new Error('No loopback port.')
+    tunnelUrl = () => 'http://127.0.0.1:' + address.port
+    const remote = { id: randomUUID(), name: 'Forge fixture', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data/sotto' }
+    await manager.command({ type: 'save', host: remote })
+    // Already paired, so the only thing the old host is asked is its health.
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set(`remote-host:${remote.id}`, paired.token)
+    await manager.command({ type: 'connect', id: remote.id })
+    return remote
+  }
+  it('says to install this version, stop the host and connect again, keeps Stop host for a host Sotto started, and does not retry', async () => {
+    const remote = await connectToOldHost()
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true, error: hostVersionMismatch(packageVersion, undefined, true) })
+    expect(manager.get().hosts[0]!.error).toContain('press Stop host, then connect again.')
+    expect(scheduled).toEqual([])
+    await manager.command({ type: 'stop-host', id: remote.id })
+    expect(stops).toEqual([reportedHostId])
+    expect(manager.get().hosts[0]!.phase).toBe('disconnected')
+  })
+  it('stops a host Sotto started when it is forgotten while its session is kept for Stop host', async () => {
+    const remote = await connectToOldHost()
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(stops).toEqual([reportedHostId])
+    expect(manager.get().hosts).toEqual([])
+  })
+  it('lets Edit change the installation folder while the session is kept for Stop host, and offers Stop host again on the next Connect', async () => {
+    const remote = await connectToOldHost()
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true })
+    await manager.command({ type: 'save', host: { ...remote, installPath: '/opt/sotto-new' } })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', installPath: '/opt/sotto-new' })
+    expect(manager.get().hosts[0]!.owned).toBeUndefined()
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true })
+  })
+  it('sends the user to the host machine for a host Sotto did not start', async () => {
+    owned = false
+    await connectToOldHost()
+    expect(manager.get().hosts[0]!.phase).toBe('error')
+    expect(manager.get().hosts[0]!.owned).toBeUndefined()
+    expect(manager.get().hosts[0]!.error).toBe(hostVersionMismatch(packageVersion, undefined, false))
+    expect(scheduled).toEqual([])
   })
 })

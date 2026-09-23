@@ -67,6 +67,7 @@ User authorized implementation after accepting B, Tailscale, existing-thread sco
 - [x] #138: validated direct SSH spawn, prompts, discover/start/forward and owned-host shutdown, fake-process integration coverage. The real Forge journey in its acceptance is still owed.
 - [x] #142: Settings Hosts, pairing B, remote routing and optional local host, desktop journeys. Pick recorded: one window shows every connected host's threads together, with one selected host for new work.
 - [x] iOS: native app package, protocol client, Keychain, existing-thread journey, lifecycle recovery and signed-device preparation, as source. No Mac has compiled it; the CI job is the first check. Moved to its own pull request, #225, on September 22 to land after protocol v1 is frozen.
+- [x] #238, #239: protocol v1 frozen before the iPhone client builds against it. Detail travels as deltas, and health, the listener file and hello carry the Sotto version and host features ([host protocol](../host-protocol.md), ADR-0025's September 23 amendment).
 - [x] #140: host archive, checksum/runtime manifest and Linux socket CI gate. The Linux job has not run yet; a Windows smoke is not a Linux release.
 - [x] Final gates and standards/spec review on September 21 (`docs/verification/2026-09-20-forge-client-foundations.md`, "September 21 review and gates").
 - [ ] Live Forge and native iOS verification. Blocked on Forge being reachable and on a Mac build host.
