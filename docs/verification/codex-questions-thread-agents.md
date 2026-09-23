@@ -44,3 +44,9 @@ The native-instruction regression failed before the correction and passed afterw
 Final gates passed: `npm run typecheck`, `npm run lint`, `npm run notices:verify` (174 components), and `npm test -- --maxWorkers=2`. The full suite exited 0: 374 files passed and 19 skipped; 4,847 tests passed and 44 skipped, in 451.68 seconds. The first full run exposed two stale assertions that forbade all resume config; the updated assertions allow the question feature while continuing to forbid unconfirmed model, effort and permission replay. The corrected tree passed the final full run without source edits during it. The local log is `.cache/codex-questions-gates/test-final.log`.
 
 Windows rendering was inspected; macOS and live model tool selection remain unverified. These results cover the local build; they do not establish installation or release of the fixes.
+
+## Pull request verification
+
+PR #280 integrated main's activity-snapshot optimization at `a15d3424`. The combined build and typecheck passed, as did 98 focused Codex, browser, Agents and activity-snapshot tests and all three Agents/question Electron journeys.
+
+The first Windows CI run exposed a queue-answer test race: it observed the coordinator selecting Docs before the renderer committed its pending shell on the next animation frame. The test now waits for the visible draft-ownership notice before asserting the retained answer. This changes no product behavior or timeout. Hosted Bugbot and Greptile reviews could not run because their account usage limits were reached; the local two-axis review remains the review evidence.
