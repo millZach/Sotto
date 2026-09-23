@@ -347,11 +347,10 @@ describe('coalesced thread detail at the IPC boundary', () => {
   it('holds an update published while the lane is sending until that send has reached everyone', () => {
     const sent: string[] = []
     const clock = new TestClock()
-    let publisher: ReturnType<typeof coalesceAgentThreadDetailPublishes> | undefined
     // The first listener's send publishes the next revision, the way a whole read inside a send does.
-    publisher = coalesceAgentThreadDetailPublishes(item => {
+    const publisher = coalesceAgentThreadDetailPublishes(item => {
       sent.push(`first:${item.revision}`)
-      if (item.revision === 1) publisher!.publish(detail('workshop', 2))
+      if (item.revision === 1) publisher.publish(detail('workshop', 2))
       sent.push(`second:${item.revision}`)
     }, { schedule: clock.schedule })
     publisher.publish(detail('workshop', 1))
