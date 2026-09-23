@@ -16,8 +16,8 @@ export interface DiagramPalette {
   readonly accent: string
 }
 
-// Tide's palette (id `ocean`), used when the tokens cannot be read (tests, detached documents). It is no
-// longer the default theme, but any readable palette will do here: this is the fallback for having none.
+// A fixed palette (taken from T3's Ocean, a built-in until ADR-0024), used when the tokens cannot be read (tests,
+// detached documents). Any readable palette will do here: this is the fallback for having none.
 const DARK_FALLBACK = { text: '#fffaff', muted: '#a5aab3', node: '#333b45', border: '#848e9b', group: '#324e66', block: '#252e38', accent: '#70b9ee' }
 const LIGHT_FALLBACK = { text: '#241523', muted: '#635b66', node: '#edeff1', border: '#837f8a', group: '#d8e4ee', block: '#f0f1f3', accent: '#2672af' }
 const HEX = /^#(?:[\da-f]{3}|[\da-f]{6})$/iu

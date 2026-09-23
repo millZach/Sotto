@@ -230,9 +230,13 @@ Answering a question or permission request and creating a project are also part 
 
 **Appearance.** The main window's mode setting: System, Light or Dark. Dark is the default for new and upgraded installs (ADR-0009). System follows the operating system's scheme live. The `theme` setting is the floating widget's mode, not a Theme. Avoid: "theme" for the mode.
 
-**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins (Sotto, Rose, Fern, Tide, Copper, Dusk; five of them T3 Code's palettes under Sotto's own names, and Sotto's own look on the sixth) or a custom theme the user created, duplicated or imported (ADR-0011). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
+**Theme.** A named palette of colour roles (background, text, accent, sidebar, terminal and so on) in the T3 Code file format: one of the six built-ins, all Sotto's own (Sotto, Hush, Linen, Nocturne, Tropic, Citrine), or a custom theme the user created, duplicated or imported (ADR-0011, ADR-0024). A theme has a light variant, a dark variant or both. The selected palettes also colour the Sotto mark, the voice sphere and the floating widget, except that on the default theme the mark is the app icon itself. The widget still resolves its own mode from the system. Avoid: "accent" for the palette; the accent chooser is gone.
 
-**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently and both start on Sotto.
+**Light half, dark half.** The two theme selections, `lightTheme` and `darkTheme`: the theme that paints the window when it resolves to Light, and the one for Dark. They are chosen independently, in the Light and Dark columns of Settings → Appearance, and both start on Sotto. The column for the mode the window is in says it is painting the window now.
+
+**Ink.** Sotto's own dark half: an almost-black room for the thread beside a lighter graphite sidebar, with the app icon's teal as the accent. Not a separate theme; it is the dark variant of the Sotto theme.
+
+**App icon brand.** How the Sotto mark looks on the default theme: the icon's own teal tile (`#47b8a9`) and black glyph in both halves, whatever the half's accent. Both windows mark the root `data-brand="app-icon"` when the default theme paints it; on any other theme the mark takes that theme's accent (ADR-0024).
 
 **Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
 
@@ -274,7 +278,7 @@ Answering a question or permission request and creating a project are also part 
 - `scripts/asr-bench/` — the transcription bench (`bench-stt.mjs`) and its results; `docs/perf/` holds the decision reports.
 - `src/renderer/src/styles/tokens.css` and `global.css` — every `--tt-*` token derived from the theme roles, and shared styles; `glass.css` paints floating surfaces; `src/renderer/src/state/appearance.ts` applies the mode, theme, contrast and glass to the window root; `src/renderer/src/assets/fonts/` holds the bundled typefaces.
 - `scripts/design-capture-matrix.mjs` — the design gate's capture matrix (dark and light rooms, built-in themes, minimum width, scales, motion, focus).
-- `src/shared/themes/` — the theme model: T3 palettes, colour parsing, token engine, library and file format, VS Code import; `src/renderer/src/features/settings/themes/` — gallery, editor, inspector and import dialog; `src/main/themes/` — export and the Open VSX client behind IPC.
+- `src/shared/themes/` — the theme model: the built-in palettes, colour parsing, token engine, library and file format, VS Code import; `src/renderer/src/features/settings/themes/` — the Light and Dark columns, editor, inspector and import dialog; `src/main/themes/` — export and the Open VSX client behind IPC.
 - `src/shared/agents.ts` — schemas for state, commands and snapshots shared with the renderer.
 - `src/main/agents/control.ts` — the coordinator (`AgentControl`): assignments, queue, drafts, outbox.
 - `src/main/agents/host.ts` — the `AgentHost` interface and command shapes.

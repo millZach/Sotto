@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { BUILT_IN_THEMES, getThemeColorsForMode } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
 
@@ -12,7 +13,7 @@ import { forceDomTerminalRenderer } from './support/terminal'
 // browser, terminal and personal chat services are real. Coding providers and the personal Codex connection come from the
 // explicit unpackaged E2E fixtures; no native account or installed client runs. Each refusal is produced for real: the
 // browser's working folder is moved away, and the personal fixture's own storage is made unwritable so its send fails
-// after the service has accepted it. The terminal selection check writes explicit Ocean roles to isolate color conversion
+// after the service has accepted it. The terminal selection check writes explicit Nocturne roles to isolate color conversion
 // and contrast. phase-three-ui-final-fixes.spec.ts separately verifies the retained terminal through real theme controls.
 
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-ui-recovery')
@@ -198,21 +199,17 @@ test('recovers a message Codex did not take into the composer, after a newer dra
   }
 })
 
-/** Ocean's terminal roles from the theme engine's tokens.css, and its contrast properties, per mode. */
-const OCEAN: Record<Mode, Record<string, string>> = {
-  dark: {
-    '--theme-terminal-background': 'oklch(0.242641 0.024125 250.573)', '--theme-terminal-foreground': 'oklch(0.990339 0.008411 325.64)',
-    '--theme-terminal-cursor': 'oklch(0.758933 0.105833 241.548)', '--theme-terminal-selection': 'oklch(0.439946 0.0561 243.479)',
-    '--theme-terminal-scrollbar': 'oklch(0.58613 0.012959 267.22)', '--theme-terminal-scrollbar-hover': 'oklch(0.681569 0.010909 276.465)',
-    '--theme-contrast-target': 'white',
-  },
-  light: {
-    '--theme-terminal-background': 'oklch(0.974199 0.002856 241.597)', '--theme-terminal-foreground': 'oklch(0.222003 0.03479 328.979)',
-    '--theme-terminal-cursor': 'oklch(0.536684 0.120219 247.01)', '--theme-terminal-selection': 'oklch(0.895373 0.023469 241.913)',
-    '--theme-terminal-scrollbar': 'oklch(0.826271 0.006191 305.456)', '--theme-terminal-scrollbar-hover': 'oklch(0.756866 0.008685 313.721)',
-    '--theme-contrast-target': 'black',
-  },
+/** Nocturne's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
+function nocturneTerminal(mode: Mode): Record<string, string> {
+  const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, mode)!
+  return {
+    '--theme-terminal-background': colors.terminalBackground, '--theme-terminal-foreground': colors.terminalForeground,
+    '--theme-terminal-cursor': colors.terminalCursor, '--theme-terminal-selection': colors.terminalSelection,
+    '--theme-terminal-scrollbar': colors.terminalScrollbar, '--theme-terminal-scrollbar-hover': colors.terminalScrollbarHover,
+    '--theme-contrast-target': mode === 'dark' ? 'white' : 'black',
+  }
 }
+const NOCTURNE: Record<Mode, Record<string, string>> = { dark: nocturneTerminal('dark'), light: nocturneTerminal('light') }
 /** The semantic terminal variables exactly as tokens.css derives them. */
 const ROLES = {
   '--tt-terminal-background': 'var(--theme-terminal-background)',
@@ -316,30 +313,30 @@ test('repaints a running terminal with the DOM fallback for theme, same-mode col
     const box = (await row.locator('span').first().boundingBox())!
     const select = () => page.mouse.dblclick(box.x + 30, box.y + box.height / 2)
 
-    // Ocean dark, as the theme engine applies it.
-    await paintTheme(page, 'dark', 'ocean', { ...OCEAN.dark, '--theme-contrast-base': '100%', '--theme-contrast-boost': '0%', ...ROLES })
+    // Nocturne dark, as the theme engine applies it.
+    await paintTheme(page, 'dark', 'nocturne', { ...NOCTURNE.dark, '--theme-contrast-base': '100%', '--theme-contrast-boost': '0%', ...ROLES })
     await select()
     const dark = await expectSelection()
     expect(dark.contrast, JSON.stringify(dark)).toBeGreaterThanOrEqual(4.5)
-    await view.screenshot({ path: join(SHOTS, 'terminal-ocean-selected-dark.png'), animations: 'disabled' })
+    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-dark.png'), animations: 'disabled' })
 
     // Same mode and theme, editor changes with the word still selected: field and selection, foreground, then contrast.
-    await paintTheme(page, 'dark', 'ocean', { '--theme-terminal-background': 'oklch(0.2 0.03 160)', '--theme-terminal-selection': 'oklch(0.5 0.09 160)' })
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-background': 'oklch(0.2 0.03 160)', '--theme-terminal-selection': 'oklch(0.5 0.09 160)' })
     await expectSelection()
-    await paintTheme(page, 'dark', 'ocean', { '--theme-terminal-foreground': 'oklch(0.72 0.02 160)' })
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-foreground': 'oklch(0.72 0.02 160)' })
     const dimmer = await expectSelection()
-    await paintTheme(page, 'dark', 'ocean', { '--theme-contrast-boost': '60%' })
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-contrast-boost': '60%' })
     const boosted = await expectSelection()
     // Both colors can reach the same minimum-contrast floor; the boost must not reduce readability.
     expect(boosted.contrast, `${JSON.stringify(dimmer)} -> ${JSON.stringify(boosted)}`).toBeGreaterThanOrEqual(dimmer.contrast)
     await view.screenshot({ path: join(SHOTS, 'terminal-edited-selected-dark.png'), animations: 'disabled' })
 
-    // Ocean light.
-    await paintTheme(page, 'light', 'ocean', { ...OCEAN.light, '--theme-contrast-boost': '0%' })
+    // Nocturne light.
+    await paintTheme(page, 'light', 'nocturne', { ...NOCTURNE.light, '--theme-contrast-boost': '0%' })
     const light = await expectSelection()
     expect(light.contrast, JSON.stringify(light)).toBeGreaterThanOrEqual(4.5)
-    await view.screenshot({ path: join(SHOTS, 'terminal-ocean-selected-light.png'), animations: 'disabled' })
-    await page.screenshot({ path: join(SHOTS, 'terminal-ocean-panel-1280-light.png'), animations: 'disabled' })
+    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(SHOTS, 'terminal-nocturne-panel-1280-light.png'), animations: 'disabled' })
 
     // The same xterm and shell throughout: its element, its tab, its earlier output, and it still runs commands.
     await expect(panel.locator('.xterm')).toHaveAttribute('data-probe', 'same-terminal')

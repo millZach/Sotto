@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import type { ThemeAppearance } from '../../../shared/themes/palettes'
-import { themeBrand, type ThemeBrand } from '../../../shared/themeBranding'
+import { APP_ICON_BRAND_ATTRIBUTE, themeBrand, type ThemeBrand } from '../../../shared/themeBranding'
 
 /**
  * The brand of whichever window this renderer is. Both windows paint the
@@ -12,7 +12,7 @@ import { themeBrand, type ThemeBrand } from '../../../shared/themeBranding'
  */
 
 const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
-const WATCHED_ATTRIBUTES = ['style', 'data-theme', 'data-theme-id']
+const WATCHED_ATTRIBUTES = ['style', 'data-theme', 'data-theme-id', 'data-brand']
 
 function rootMode(root: HTMLElement): ThemeAppearance {
   const painted = root.dataset.theme
@@ -35,7 +35,7 @@ function readRootBrand(root: HTMLElement): ThemeBrand {
     canvas: readRole(root, '--theme-canvas'),
     accent: readRole(root, '--theme-accent'),
     accentForeground: readRole(root, '--theme-accent-foreground'),
-  }, rootMode(root))
+  }, rootMode(root), { appIcon: root.dataset.brand === APP_ICON_BRAND_ATTRIBUTE })
 }
 
 function brandKey(brand: ThemeBrand): string {

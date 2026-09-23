@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, type EffortColor } from '../../../shared/settings'
+import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
@@ -113,6 +114,9 @@ export function applyAppearance(
   if (changed && draft === null) suppressTransitions(root)
   root.dataset.theme = resolved
   root.dataset.themeId = themeId
+  // On the default theme the mark is the app icon itself (ADR-0024); an editor draft is never the default.
+  if (wearsAppIcon(themeId)) root.dataset.brand = APP_ICON_BRAND_ATTRIBUTE
+  else delete root.dataset.brand
   const painted = draft?.colors ?? colors
   for (const role of THEME_COLOR_ROLES) {
     // Only canonical OKLCH text reaches the style: a half-typed draft value

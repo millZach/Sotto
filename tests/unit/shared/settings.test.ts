@@ -21,7 +21,7 @@ const customSettings = {
   version: 1,
   theme: 'light',
   appearance: 'light',
-  lightTheme: 'ember',
+  lightTheme: 'tropic',
   darkTheme: aurora.id,
   appearanceContrast: 135,
   glassOpacity: 60,
@@ -117,11 +117,13 @@ describe('settings', () => {
     }
   })
 
-  it('keeps a selection saved under the built-in ids from before the rename', () => {
-    const saved = parseSettings({ ...customSettings, lightTheme: 'grove', darkTheme: 'iris' })
-    expect([saved.lightTheme, saved.darkTheme]).toEqual(['grove', 'iris'])
+  it('sends a half saved on a retired T3 built-in back to Sotto and keeps a half on one of Sotto’s own', () => {
+    for (const retired of ['t3-chat', 'grove', 'ocean', 'ember', 'iris']) {
+      const saved = parseSettings({ ...customSettings, lightTheme: retired, darkTheme: retired })
+      expect([saved.lightTheme, saved.darkTheme], retired).toEqual(['t3-code', 't3-code'])
+    }
     expect(parseSettings({ ...customSettings, lightTheme: 't3-code', darkTheme: 't3-code' })).toMatchObject({ lightTheme: 't3-code', darkTheme: 't3-code' })
-    expect(parseSettings({ ...customSettings, lightTheme: 't3-chat', darkTheme: 'ember' })).toMatchObject({ lightTheme: 't3-chat', darkTheme: 'ember' })
+    expect(parseSettings({ ...customSettings, lightTheme: 'hush', darkTheme: 'tropic' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'tropic' })
   })
 
   it('keeps every valid appearance and theme choice and recovers an unusable one field by field', () => {
@@ -143,7 +145,7 @@ describe('settings', () => {
 
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffdf8' } })
-    expect(parseSettings({ lightTheme: 't3-chat', darkTheme: 'grove' })).toMatchObject({ lightTheme: 't3-chat', darkTheme: 'grove' })
+    expect(parseSettings({ lightTheme: 'hush', darkTheme: 'linen' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'linen' })
     expect(parseSettings({ lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] })).toMatchObject({ lightTheme: lightOnly.id, darkTheme: 't3-code' })
     // A custom theme that was removed from the library no longer owns a half.
     expect(parseSettings({ darkTheme: aurora.id, customThemes: [] })).toMatchObject({ darkTheme: 't3-code' })
@@ -151,7 +153,7 @@ describe('settings', () => {
 
   it('keeps valid custom themes one by one and never lets a hostile colour through', () => {
     const hostile = { ...aurora, id: 'hostile', label: 'Hostile', colors: { ...aurora.colors, canvas: 'red;background:url(https://example.com/x)' } }
-    const reserved = { ...aurora, id: 'ocean' }
+    const reserved = { ...aurora, id: 'nocturne' }
     const parsed = parseSettings({ customThemes: [aurora, hostile, reserved, 'junk', { ...aurora }], darkTheme: aurora.id })
     // The damaged role is repaired from the theme's defaults; the reserved id, junk and duplicate are dropped.
     expect(parsed.customThemes.map(theme => theme.id)).toEqual([aurora.id, 'hostile'])

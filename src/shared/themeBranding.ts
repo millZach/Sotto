@@ -14,6 +14,7 @@ import {
   mixRgb,
   oklchToRgb,
   parseThemeColor,
+  parseThemeRgb,
   readableForeground,
   rgbToHex,
   rgbToOklch,
@@ -42,10 +43,14 @@ export const WIDGET_THEME_ROLES = [
 export type WidgetThemeRole = (typeof WIDGET_THEME_ROLES)[number]
 export type WidgetThemeColors = Readonly<Record<WidgetThemeRole, string>>
 
-/** Both halves, so a widget following the system scheme can switch without a new snapshot. */
+/**
+ * Both halves, so a widget following the system scheme can switch without a new snapshot. `appIcon` says, per
+ * half, whether the default theme paints it, in which case the mark wears the app icon's own colours.
+ */
 export interface WidgetPalette {
   readonly light: WidgetThemeColors
   readonly dark: WidgetThemeColors
+  readonly appIcon: Readonly<Record<ThemeAppearance, boolean>>
 }
 
 const widgetThemeColorsSchema = z.object(
@@ -55,6 +60,7 @@ const widgetThemeColorsSchema = z.object(
 export const widgetPaletteSchema: z.ZodType<WidgetPalette> = z.object({
   light: widgetThemeColorsSchema,
   dark: widgetThemeColorsSchema,
+  appIcon: z.object({ light: z.boolean(), dark: z.boolean() }).strict(),
 }).strict()
 
 function pickWidgetRoles(colors: ThemeColors): WidgetThemeColors {
@@ -63,9 +69,12 @@ function pickWidgetRoles(colors: ThemeColors): WidgetThemeColors {
 
 /** The widget's projection of the themes that own each half, resolved exactly as the main window resolves them. */
 export function widgetPaletteFor(selection: ThemeSelection): WidgetPalette {
+  const light = resolveThemeFor(selection, 'light')
+  const dark = resolveThemeFor(selection, 'dark')
   return {
-    light: pickWidgetRoles(resolveThemeFor(selection, 'light').colors),
-    dark: pickWidgetRoles(resolveThemeFor(selection, 'dark').colors),
+    light: pickWidgetRoles(light.colors),
+    dark: pickWidgetRoles(dark.colors),
+    appIcon: { light: wearsAppIcon(light.theme.id), dark: wearsAppIcon(dark.theme.id) },
   }
 }
 
@@ -88,6 +97,20 @@ export interface ThemeBrand {
 
 export type ThemeBrandRoles = Pick<ThemeColors, 'canvas' | 'accent' | 'accentForeground'>
 
+/**
+ * The app icon's own colours (build/icon.svg). On the default theme the mark is the icon: this tile and glyph in
+ * both halves, whatever the half's accent (ADR-0024).
+ */
+export const APP_ICON_BRAND = { tile: '#47b8a9', glyph: '#000000' } as const
+
+/** The root attribute value that asks for the app icon's brand; both windows set `data-brand` to it on the default theme. */
+export const APP_ICON_BRAND_ATTRIBUTE = 'app-icon'
+
+/** Whether the theme painting a half wears the app icon's brand: only the default theme does. */
+export function wearsAppIcon(themeId: string): boolean {
+  return themeId === DEFAULT_THEME_ID
+}
+
 /** The mark's glyph must read on its tile at least this well, as body text would. */
 export const MARK_GLYPH_CONTRAST = 4.5
 
@@ -101,18 +124,23 @@ function opaqueRole(value: string, under: ThemeRgb): ThemeRgb | null {
 }
 
 /**
- * Derive the brand from a theme's roles. The tile is the accent; the glyph is
- * the theme's own accent foreground when it reads on the tile, else the most
- * readable foreground. The orb keeps the accent's hue: on a dark room a pale
+ * Derive the brand from a theme's roles. The tile is the accent, or the app
+ * icon's teal when `appIcon` is set; the glyph is the icon's black then, and
+ * otherwise the theme's own accent foreground when it reads on the tile, else
+ * the most readable foreground. The orb keeps the accent's hue: on a dark room a pale
  * tint runs into a deep tone, as the original teal orb did; on a light room
  * the orb is drawn as ink, so it runs from a deep tone into a softer one.
  */
-export function themeBrand(roles: ThemeBrandRoles, appearance: ThemeAppearance): ThemeBrand {
+export function themeBrand(roles: ThemeBrandRoles, appearance: ThemeAppearance, options: { readonly appIcon?: boolean } = {}): ThemeBrand {
   const fallback = DEFAULT_WIDGET_PALETTE[appearance]
   const canvas = opaqueRole(roles.canvas, { r: 0, g: 0, b: 0 }) ?? opaqueRole(fallback.canvas, { r: 0, g: 0, b: 0 })!
-  const tile = opaqueRole(roles.accent, canvas) ?? opaqueRole(fallback.accent, canvas)!
+  const tile = options.appIcon === true
+    ? parseThemeRgb(APP_ICON_BRAND.tile, canvas)
+    : opaqueRole(roles.accent, canvas) ?? opaqueRole(fallback.accent, canvas)!
   const ownGlyph = opaqueRole(roles.accentForeground, tile)
-  const glyph = ownGlyph !== null && contrastRatio(ownGlyph, tile) >= MARK_GLYPH_CONTRAST ? ownGlyph : readableForeground(tile)
+  const glyph = options.appIcon === true
+    ? parseThemeRgb(APP_ICON_BRAND.glyph, tile)
+    : ownGlyph !== null && contrastRatio(ownGlyph, tile) >= MARK_GLYPH_CONTRAST ? ownGlyph : readableForeground(tile)
 
   const accent = rgbToOklch(tile)
   // A near-grey accent has no meaningful hue; keep it grey rather than inventing one.

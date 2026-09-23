@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { oklchToRgb, parseThemeColor, rgbToOklch } from '../../../src/shared/themes/color'
-import { BUILT_IN_THEMES, THEME_COLOR_ROLES, type ThemeColors } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, DEFAULT_THEME_ID, THEME_COLOR_ROLES, type ThemeColors } from '../../../src/shared/themes/library'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 
 /**
@@ -70,7 +70,7 @@ export interface PaintOptions {
 }
 
 /** The custom properties on the root for one mode, with a palette and strengths written inline as applyAppearance does. */
-export function rootDeclarations(mode: Mode, themeId = 'ocean', options: PaintOptions = {}, blocks: readonly Block[] = parseTokenBlocks()): Map<string, string> {
+export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID, options: PaintOptions = {}, blocks: readonly Block[] = parseTokenBlocks()): Map<string, string> {
   const effortColor = options.effortColor ?? 'ember'
   const applicable = blocks
     .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode, effortColor) ?? -1)) }))

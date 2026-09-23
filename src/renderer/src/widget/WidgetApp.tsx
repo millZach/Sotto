@@ -39,7 +39,7 @@ import {
   type WidgetSnapshot,
 } from '../../../shared/dictation'
 import type { SottoPlatform } from '../../../shared/platform'
-import { DEFAULT_WIDGET_PALETTE, WIDGET_THEME_ROLES, type WidgetThemeRole } from '../../../shared/themeBranding'
+import { APP_ICON_BRAND_ATTRIBUTE, DEFAULT_WIDGET_PALETTE, WIDGET_THEME_ROLES, type WidgetThemeRole } from '../../../shared/themeBranding'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import type { ThemeAppearance } from '../../../shared/themes/palettes'
 import { ListeningBars } from '../components/ListeningBars'
@@ -616,6 +616,8 @@ export function applyRootPresentation(
   const scheme = resolveWidgetScheme(presentation.theme, systemDark)
   root.setAttribute('data-theme', scheme)
   const colors = presentation.palette[scheme]
+  if (presentation.palette.appIcon[scheme]) root.dataset.brand = APP_ICON_BRAND_ATTRIBUTE
+  else delete root.dataset.brand
   for (const role of WIDGET_THEME_ROLES) {
     const value = colors[role]
     const variable = themeRoleVariable(role)
@@ -626,6 +628,7 @@ export function applyRootPresentation(
 
   return () => {
     root.removeAttribute('data-theme')
+    root.removeAttribute('data-brand')
     root.removeAttribute('data-reduced-motion')
     for (const role of WIDGET_THEME_ROLES) root.style.removeProperty(themeRoleVariable(role))
   }
