@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentHost, ThreadHostEvent } from '../../src/main/agents/host'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -46,6 +47,14 @@ export interface AdapterFixture {
     stopped(threadId: string): Promise<boolean>
   }
   skips?: Partial<Record<'uncertain' | 'restart' | 'lazy', string>>
+  /**
+   * Sotto's side writing on this provider's own client (ADR-0026): script the next answer, and read back
+   * what each side call was given. Absent where the provider writes nothing, whose adapter answers null.
+   */
+  sideWriting?: {
+    answer(text: string): Promise<void>
+    calls(): Promise<{ cwd: string; model: string | undefined; material: string }[]>
+  }
 }
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
@@ -108,6 +117,31 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const text = [...reply.map(message => message.text), ...appended.map(event => (event.event as Extract<ThreadHostEvent['event'], { kind: 'message-text-appended' }>).appendText)].join('')
       expect(text).toContain('Completed reply')
       expect(kinds()).not.toContain('answer-given')
+    })
+    it('writes short text on the side, and the thread\'s own session never hears of it (ADR-0026)', async () => {
+      await send()
+      await f.driver.completeTurn(sessionId, 'Completed reply')
+      await expect.poll(async () => (await thread()).status).toBe('idle')
+      const messages = (await thread()).messages.map(message => message.id)
+      const published = events.length
+      const prompt = { instruction: 'Name this coding conversation in a few words.', material: 'First message:\nSide-writing marker 7c1f' }
+      if (!f.sideWriting) {
+        // A provider with no one-shot path writes nothing, and says so without failing.
+        await expect(f.host.writeShortText?.(sessionId, prompt) ?? Promise.resolve(null)).resolves.toBeNull()
+        return
+      }
+      await f.sideWriting.answer('Contract title')
+      await expect(f.host.writeShortText!(sessionId, prompt)).resolves.toBe('Contract title')
+      const calls = await f.sideWriting.calls()
+      expect(calls).toHaveLength(1)
+      // The thread's own model, in the thread's own folder, carrying the material it was given.
+      expect(calls[0]!.model).toBe(f.modelId)
+      expect((await realpath(calls[0]!.cwd)).toLowerCase()).toBe((await realpath(f.root)).toLowerCase())
+      expect(calls[0]!.material).toContain('Side-writing marker 7c1f')
+      // Nothing of it reached the thread: no traffic on its session, no message, no event.
+      expect(JSON.stringify(await f.driver.requests())).not.toContain('Side-writing marker 7c1f')
+      expect((await thread()).messages.map(message => message.id)).toEqual(messages)
+      expect(events.slice(published).filter(event => event.threadId === sessionId).map(event => event.event.kind)).toEqual([])
     })
     it('cancels a running turn', async () => {
       await send()

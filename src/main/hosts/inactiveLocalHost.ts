@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
 import type { createAgentRuntime } from '../agents/runtime'
 import { loadHostIdentity } from '../agents/hostIdentity'
+import { ShortTextWriter } from '../llm/shortTextWriter'
 
 export function emptyDesktopState(hostId?: string): AgentState {
   return {
@@ -47,6 +48,8 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     agentControl: refuseMissing(control), agentHost: refuseMissing(host), threadRegistry: null,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
     hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable() },
+    // With the local host off there is no thread here whose provider could write anything.
+    shortTextWriter: new ShortTextWriter({ write: async () => null }),
     close: async () => undefined,
   } as unknown as Awaited<ReturnType<typeof createAgentRuntime>>
 }

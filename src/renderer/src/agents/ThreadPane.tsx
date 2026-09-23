@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Columns2, Pencil, Plug, Shrink, Sparkles, Square, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
+import { capabilitiesForThread, isThreadBusy, providerWritesShortText, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadNameField } from './ThreadName'
 import { Button } from '../components/Button'
@@ -179,8 +179,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
     ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => setRenaming(true) }] : []),
-    // Sotto writes the name from the thread's first exchange; a name typed by hand is left alone and offers no rewrite.
-    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user'
+    // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
+    // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
+    ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
       ? [{ id: 'regenerate', label: 'Regenerate title', icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
     ...(onOpenBeside ? [{ id: 'beside', label: 'Open beside', icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
   ]

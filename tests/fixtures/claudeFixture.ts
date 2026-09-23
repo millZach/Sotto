@@ -6,6 +6,12 @@ import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterFixture, AdapterSessionOptions } from '../integration/adapterContract'
 
+/** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
+async function oneShots(root: string): Promise<Record<string, unknown>[]> {
+  return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+}
+const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
+
 // The acknowledgement deadline also covers the fake CLI's process start, which a loaded two-core runner
 // stretches past a second. Tests that need a lost acknowledgement script one instead of shortening this.
 export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
@@ -21,6 +27,10 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
       const behavior = frame?.response?.response?.behavior
       return behavior === 'allow' ? true : behavior === 'deny' ? false : undefined
     } }, restartStatus: 'idle',
+    sideWriting: {
+      answer: text => writeFile(join(root, 'oneshot.json'), JSON.stringify({ text })),
+      calls: async () => (await oneShots(root)).map(call => ({ cwd: String(call.cwd), model: flag(call.args, '--model'), material: String(call.input) })),
+    },
     sessions: {
       // One CLI per thread: a launch or a resume is a session start, and the child records its own exit.
       starts: async id => {

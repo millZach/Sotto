@@ -237,28 +237,21 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ showBrowserPreviews: false })
   })
 
-  it('offers the writing model and the off switch for generated thread titles', async () => {
+  it("offers the off switches for generated text and no writing model, since each thread's own model writes", async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
     await selectCategory('Cleanup')
 
-    const model = screen.getByRole('combobox', { name: 'Writing model' })
-    expect(model).toHaveValue('google/gemini-3.1-flash-lite')
-    await user.selectOptions(model, 'anthropic/claude-haiku-4.5')
-    expect(update).toHaveBeenCalledWith({ writingModel: 'anthropic/claude-haiku-4.5' })
-
-    // Turning generation off stops every title request, so the model choice has nothing left to pick for.
+    expect(screen.queryByRole('combobox', { name: 'Writing model' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Generated thread titles' })).toHaveAccessibleDescription(/thread's own model/u)
     await user.click(screen.getByRole('switch', { name: 'Generated thread titles' }))
     expect(update).toHaveBeenCalledWith({ threadTitles: false })
     await user.click(screen.getByRole('switch', { name: 'Generated commit messages' }))
     expect(update).toHaveBeenCalledWith({ commitMessages: false })
     await user.click(screen.getByRole('switch', { name: 'Generated pull request text' }))
     expect(update).toHaveBeenCalledWith({ pullRequestText: false })
-    cleanup()
-    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, threadTitles: false, commitMessages: false, pullRequestText: false } })} />)
-    await selectCategory('Cleanup')
-    expect(screen.getByRole('combobox', { name: 'Writing model' })).toBeDisabled()
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ writingModel: expect.anything() }))
   })
 
   it('resynchronizes numeric drafts from authoritative settings', async () => {

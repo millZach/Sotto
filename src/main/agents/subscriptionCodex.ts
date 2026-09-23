@@ -87,10 +87,11 @@ export async function findExecutable(): Promise<string | null> {
 function childOperation<T>(executable: string, args: string[], cwd: string, timeout: number,
   operation: (child: ChildProcessWithoutNullStreams, finish: (value: T) => void, fail: (detail?: string) => void) => (line: string) => void,
   signal?: AbortSignal,
+  env: NodeJS.ProcessEnv = nativeEnvironment(),
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted()
-    const child = spawn(executable, args, { cwd, env: nativeEnvironment(), windowsHide: true, shell: false, stdio: 'pipe' })
+    const child = spawn(executable, args, { cwd, env, windowsHide: true, shell: false, stdio: 'pipe' })
     let finishing = false
     let closed = false
     let result: T | undefined
@@ -155,6 +156,54 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
       settle()
     })
   })
+}
+
+/**
+ * What a side call switches off (ADR-0026): every tool and integration a turn could reach, the project's
+ * instruction files, web search, MCP servers and history. The shell tool is off as well as the sandbox
+ * being read-only, so there is nothing an approval could be asked for and nobody is waiting to answer one.
+ */
+const sideWritingArguments = [
+  ...DISABLED_FEATURES.map((name) => `features.${name}=false`),
+  'web_search="disabled"',
+  'skills.include_instructions=false', 'skills.bundled.enabled=false',
+  'project_doc_max_bytes=0', 'mcp_servers={}', 'history.persistence="none"',
+  'model_provider="openai"', 'approval_policy="never"', 'sandbox_mode="read-only"',
+].flatMap((value) => ['-c', value])
+const execEvent = z.object({ type: z.string(), item: z.object({ type: z.string(), text: z.string().optional() }).passthrough().optional() }).passthrough()
+/**
+ * The items a side call may produce. `error` items are Codex's own warnings (an unknown model's metadata,
+ * a feature still in development), said before the turn and harmless; every other kind is a tool.
+ */
+const SIDE_WRITING_ITEMS = new Set(['agent_message', 'reasoning', 'error'])
+
+/**
+ * Short text written by the user's own Codex on the thread's model, for Sotto's side writing (ADR-0026).
+ * `codex exec --ephemeral` writes no session file, so neither Codex's own thread list nor the adapter's
+ * session-log watcher can learn of the call, and the thread's app-server session is never asked anything.
+ * The instruction and the material go in on stdin, never argv. The last agent message is the whole answer;
+ * a tool item of any kind stops the call rather than being allowed to run.
+ */
+export function writeWithCodexExec(request: {
+  executable: string; prefixArgs?: readonly string[]; codexHome: string
+  instruction: string; material: string; model: string; effort?: string; workingDirectory: string; timeoutMs: number; signal?: AbortSignal
+}): Promise<string> {
+  if (!/^[a-z0-9][a-z0-9._:/-]{0,159}$/iu.test(request.model) || (request.effort !== undefined && !/^[a-z][a-z0-9_-]{0,31}$/u.test(request.effort))) {
+    return Promise.reject(new Error('Choose a valid Codex model before asking it to write.'))
+  }
+  const args = [...(request.prefixArgs ?? []), 'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', '--color', 'never',
+    '--cd', request.workingDirectory, '--model', request.model, ...(request.effort ? ['-c', `model_reasoning_effort="${request.effort}"`] : []), ...sideWritingArguments, '-']
+  return childOperation<string>(request.executable, args, request.workingDirectory, request.timeoutMs, (child, finish, fail) => {
+    let text: string | undefined
+    child.stdin.end(`${request.instruction}\n\n${request.material}`)
+    return (line) => {
+      const event = execEvent.parse(JSON.parse(line))
+      if ((event.type === 'item.started' || event.type === 'item.completed') && event.item && !SIDE_WRITING_ITEMS.has(event.item.type)) { fail('Codex tried to use a tool while writing. Sotto stopped the call.'); return }
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message' && typeof event.item.text === 'string') text = event.item.text
+      if (event.type === 'turn.failed' || event.type === 'error') { fail(); return }
+      if (event.type === 'turn.completed') { if (text === undefined) fail(); else finish(text) }
+    }
+  }, request.signal, { ...nativeEnvironment(), CODEX_HOME: request.codexHome })
 }
 
 /**

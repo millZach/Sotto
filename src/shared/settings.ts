@@ -29,21 +29,6 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
- * The models offered for Sotto's short writing jobs: thread titles, commit
- * message drafts and pull request drafts. They are the same cheap, fast
- * OpenRouter models the cleanup tiers use, named here so the choice is one
- * setting rather than one per job.
- */
-export const WRITING_MODELS = [
-  { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite — fastest' },
-  { id: 'inception/mercury-2', label: 'Mercury 2' },
-  { id: 'amazon/nova-2-lite-v1', label: 'Nova 2 Lite' },
-  { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 — best writing' },
-] as const
-export type WritingModelId = (typeof WRITING_MODELS)[number]['id']
-export const WRITING_MODEL_IDS = WRITING_MODELS.map(model => model.id) as unknown as [WritingModelId, ...WritingModelId[]]
-
-/**
  * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0019), the same four
  * T3 Code offers. `afterDays` counts idle days since the thread's last activity; `null` is never.
  * `unchanged` means the folder's commits are all in the repository's default branch already;
@@ -136,9 +121,11 @@ export interface AppSettings {
   llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
-  /** The OpenRouter model that writes Sotto's short text, starting with thread titles. */
-  writingModel: WritingModelId
-  /** Off stops thread-title and temporary-worktree-branch naming requests. */
+  /**
+   * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
+   * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
+   * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
+   */
   threadTitles: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
@@ -219,7 +206,6 @@ const fieldSchemas = {
   llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
-  writingModel: z.enum(WRITING_MODEL_IDS),
   threadTitles: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
@@ -276,17 +262,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
-  writingModel: 'google/gemini-3.1-flash-lite',
-  // On by default, but nothing is ever requested without an OpenRouter key, so
-  // an install that never configures one keeps its stand-in names offline.
+  // On by default: the thread's own provider names it, on the account the thread
+  // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
   worktreeCleanup: DEFAULT_WORKTREE_CLEANUP,
   pullRequestText: true,
-  // On by default for the same reason: with no OpenRouter key nothing is ever
-  // requested, and the commit form simply opens empty.
+  // On by default for the same reason: a thread whose provider writes nothing
+  // simply opens the commit form empty.
   commitMessages: true,
   streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
@@ -372,7 +357,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmQuality: parseField(persisted, 'llmQuality', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
-    writingModel: parseField(persisted, 'writingModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),

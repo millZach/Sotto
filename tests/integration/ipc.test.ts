@@ -1173,6 +1173,10 @@ describe('IPC validation and lifecycle', () => {
     await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
       'Invalid IPC payload',
     )
+    // The OpenRouter writing model is gone (ADR-0026): nothing may set it, so nothing can bring it back.
+    await expect(ipc.invoke(SETTINGS_UPDATE, { writingModel: 'anthropic/claude-haiku-4.5' })).rejects.toThrow(
+      'Invalid IPC payload',
+    )
     await expect(
       ipc.invoke(SETTINGS_UPDATE, { theme: 'dark', injectedChannel: 'app:quit' }),
     ).rejects.toThrow('Invalid IPC payload')

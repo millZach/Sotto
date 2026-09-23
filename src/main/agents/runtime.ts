@@ -29,7 +29,8 @@ export interface AgentRuntimeOptions {
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
-  formattingSettings: () => Promise<AppSettings>
+  /** What the short-writing switches read (ADR-0026). No key is needed: each thread's own provider writes. */
+  writingSettings: () => Promise<AppSettings>
   historyEnabled: () => boolean
   coordinatorEnabled: () => boolean
   observeActiveThread?: boolean
@@ -39,7 +40,6 @@ export interface AgentRuntimeOptions {
   preferences?: ControlDependencies['preferences']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
-  shortTextWriter?: ShortTextWriter
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
   /** Native process overrides keep tests on the production coordinator path. */
@@ -50,10 +50,6 @@ export interface AgentRuntimeOptions {
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
-  const shortTextWriter = options.shortTextWriter ?? new ShortTextWriter({
-    getSettings: options.formattingSettings,
-    onFailure: failure => options.logFailure?.('writing-model-failed', failure.purpose + ' ' + failure.reason),
-  })
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory }),
@@ -74,7 +70,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
-  agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.formattingSettings))
+  // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
+  // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
+  const shortTextWriter = new ShortTextWriter({
+    write: (threadId, prompt, signal) => agentHost.writeShortText(threadId, prompt, signal),
+    onFailure: failure => options.logFailure?.('short-writing-failed', failure.purpose + ' ' + failure.reason),
+  })
+  agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,
     resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
@@ -95,7 +97,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
-    writeThreadTitle: threadTitleWriter(shortTextWriter, options.formattingSettings),
+    writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     reasoner,
   })
   let closing: Promise<void> | undefined
@@ -124,5 +126,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const hostService = new LocalHostService({ control: agentControl, events: agentHost })
-  return { agentHost, agentControl, threadRegistry, turns, membership, hostService, close }
+  return { agentHost, agentControl, threadRegistry, turns, membership, hostService, shortTextWriter, close }
 }

@@ -10,7 +10,9 @@ import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
+import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
+import { GrokSubscriptionClient } from './subscriptionGrok'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -350,6 +352,19 @@ export class GrokAcpHost implements AgentHost {
       if (generation !== this.generation) throw new Error('Grok connection changed while discovering skills.')
       return catalog
     } catch { return { threadId, providerId: 'grok', cwd, status: 'error', skills: [], errors: [], error: 'Grok native skill discovery failed. Check that the installed client supports inspect --json.' } }
+  }
+  /**
+   * A side call on this thread's client, account and model, in its folder (ADR-0026). It is its own
+   * short-lived Grok process with a throwaway home, not a session on this connection's leader, so the
+   * thread's session is never loaded for it and this adapter's alias store never learns of it.
+   */
+  async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const alias = this.aliases[id]
+    if (!this.state.connected || !alias?.grokSessionId) return null
+    const writer = new GrokSubscriptionClient(join(this.userDataDirectory, 'writing', 'grok'), {
+      ...(this.options.executable ? { executable: this.options.executable } : {}), ...(this.options.args ? { prefixArgs: this.options.args } : {}),
+      ...(this.options.environment ? { environment: this.options.environment } : {}) })
+    return writer.write({ ...prompt, model: alias.nativeModelId ?? alias.modelId, workingDirectory: await existingWorkingDirectory(alias.cwd), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session.')

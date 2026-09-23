@@ -12,7 +12,8 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, attachmentSizeBytes, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ThreadHistorySource, ThreadHostEvent } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
+import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -239,6 +240,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (generation !== this.generation) throw new Error('Claude connection changed while discovering skills.')
       return catalog
     } catch { return { threadId, providerId: 'claude', cwd, status: 'error', skills: [], errors: [], error: 'Claude native skill discovery failed. Reconnect or check the installed client.' } }
+  }
+  /**
+   * A side call on this thread's client, account and model, in its folder (ADR-0026). It is a separate
+   * print run with no session file, so the thread's own CLI is neither started nor resumed for it and
+   * its transcript never sees the prompt.
+   */
+  async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const alias = this.aliases[id]
+    if (!this.state.connected || !alias || !this.executable) return null
+    const effort = sideWritingEffort(this.state.models, alias.modelId)
+    return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd),
+      executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')

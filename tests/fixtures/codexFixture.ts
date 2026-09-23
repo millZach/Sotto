@@ -10,6 +10,11 @@ import type { AdapterSessionOptions } from '../integration/adapterContract'
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
+/** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
+async function oneShots(root: string): Promise<Record<string, unknown>[]> {
+  return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+}
+const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
 export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions = {}) {
@@ -38,6 +43,10 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
     await writeFile(join(root, 'control.json'), JSON.stringify({ id: randomUUID(), threadId: await realId(sessionId), ...value }))
   }
   const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId,
+    sideWriting: {
+      answer: (text: string) => writeFile(join(root, 'oneshot.json'), JSON.stringify({ text })),
+      calls: async () => (await oneShots(root)).map(call => ({ cwd: String(call.cwd), model: flag(call.args, '--model'), material: String(call.input) })),
+    },
     driver: {
       typeInProvider: async (id: string, text: string) => {
         const codexThreadId = await realId(id)

@@ -15,6 +15,18 @@ if (args.includes('--help')) {
   console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose'); process.exit(0)
 }
 if (args.includes('auth')) { console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' })); process.exit(0) }
+// Sotto's side writing (ADR-0026): one print run with no tools and no session file. It records what it was
+// given in oneshot.jsonl, never in requests.jsonl or a session log, and answers from oneshot.json.
+if (args.includes('--no-session-persistence') && value('--output-format') === 'json') {
+  const input = await new Promise(resolve => { let text = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => { text += chunk }); process.stdin.on('end', () => resolve(text)) })
+  const script = existsSync(join(root, 'oneshot.json')) ? JSON.parse(readFileSync(join(root, 'oneshot.json'), 'utf8')) : {}
+  appendFileSync(join(root, 'oneshot.jsonl'), JSON.stringify({ args, cwd: process.cwd(), input }) + '\n')
+  if (value('--tools') !== '' || !args.includes('--safe-mode') || value('--permission-prompts') !== 'none') appendFileSync(join(root, 'violations.jsonl'), 'Side writing must run with no tools, no customisations and nobody to prompt\n')
+  if (script.fail) process.exit(1)
+  if (script.delayMs) await new Promise(resolve => setTimeout(resolve, script.delayMs))
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: script.text ?? 'Fixture title' }))
+  process.exit(0)
+}
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
 if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')

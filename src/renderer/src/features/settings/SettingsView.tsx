@@ -19,9 +19,8 @@ import type {
   ReducedMotion,
   SettingsPatch,
   WorktreeCleanupDays,
-  WritingModelId,
 } from '../../../../shared/settings'
-import { WORKTREE_CLEANUP_DAYS, WRITING_MODELS } from '../../../../shared/settings'
+import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
@@ -554,10 +553,9 @@ export function SettingsView({
                     </Field>
 
                   </div>
-                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a thread from its first exchange and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
-                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
-                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
-                  <Field label="Writing model" description="Writes thread and branch names, and drafts commit and pull request text."><Select disabled={!settings.threadTitles && !settings.commitMessages && !settings.pullRequestText} value={settings.writingModel} onChange={(event) => void save({ writingModel: event.currentTarget.value as WritingModelId })}>{WRITING_MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</Select></Field>
+                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Ask a thread's own model to name the thread from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Ask the thread's own model to draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
+                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
 
                 </div>
               </Card>

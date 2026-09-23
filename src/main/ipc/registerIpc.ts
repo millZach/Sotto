@@ -103,7 +103,6 @@ const settingKeys = [
   'llmQuality',
   'llmTimeoutMs',
   'llmMinWords',
-  'writingModel',
   'threadTitles',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',

@@ -1,9 +1,13 @@
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt } from '../../src/main/agents/host'
 
 /** Provider-facing fake: session IDs deliberately differ from Sotto thread IDs. */
 export class FakeProviderHost implements AgentHost {
   readonly commands: AgentHostCommand[] = []
+  /** Every side call this provider was asked for, under its own session ID (ADR-0026). */
+  readonly sideWrites: { sessionId: string; prompt: ShortTextPrompt }[] = []
+  /** What a side call answers; absent, this provider writes nothing, the way Devin does. */
+  sideWriter: ((sessionId: string, prompt: ShortTextPrompt) => Promise<string | null>) | undefined
   observed: readonly string[] = []
   connectCalls = 0
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
@@ -35,6 +39,10 @@ export class FakeProviderHost implements AgentHost {
   }
   emit(): void { for (const listener of this.listeners) listener(structuredClone(this.state)) }
   observeThreads(threadIds: readonly string[]): void { this.observed = [...threadIds] }
+  async writeShortText(sessionId: string, prompt: ShortTextPrompt): Promise<string | null> {
+    this.sideWrites.push({ sessionId, prompt: structuredClone(prompt) })
+    return this.sideWriter ? this.sideWriter(sessionId, prompt) : null
+  }
   disconnect(): void { this.state.connected = false }
 
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {

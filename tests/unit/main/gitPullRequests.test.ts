@@ -83,15 +83,18 @@ it('drafts the form from the commit subjects and the capped diff alone, and crea
   git(f.repo, 'commit', '-q', '--allow-empty', '-m', 'Second subject')
   await writeFile(join(f.repo, 'work.txt'), 'padding line\n'.repeat(2_000)); git(f.repo, 'commit', '-qam', 'Pad the diff past the cap')
   const material: { subjects: readonly string[]; diff: string }[] = []
+  const asked: string[] = []
   const gh = vi.fn()
   const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => { if (executable === 'gh') { gh(); throw new Error('Must not reach GitHub') } return git(cwd, ...args) }
   const service = new GitPullRequestsService({
     files: f.files, mutations: new Set(), command,
-    draftText: async input => { material.push(input); return { title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' } },
+    draftText: async (threadId, input) => { asked.push(threadId); material.push(input); return { title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' } },
   })
   const drafted = unwrap(await service.draft({ threadId: 'a', base: 'main', remote: 'origin' }))
   expect(drafted).toEqual({ title: 'Draft the pull request form', body: '## What changed\n\n- Drafted text.' })
   expect(material).toHaveLength(1)
+  // The thread whose form asked is the thread whose provider writes the draft (ADR-0026).
+  expect(asked).toEqual(['a'])
   expect(material[0]!.subjects).toEqual(['Add the first piece', 'Second subject', 'Pad the diff past the cap'])
   expect(material[0]!.diff.length).toBeLessThan(21_000)
   expect(material[0]!.diff).toContain('padding line')
@@ -102,7 +105,7 @@ it('drafts the form from the commit subjects and the capped diff alone, and crea
 it('leaves the form alone when nothing is written and never fails over it', async () => {
   const f = await fixture()
   const command = async (cwd: string, executable: 'git' | 'gh', args: string[]) => { if (executable === 'gh') throw new Error('Must not reach GitHub'); return git(cwd, ...args) }
-  // No writer at all: the key is missing, or generation is off, so main never asks.
+  // No writer at all, so main never asks a provider anything.
   const silent = new GitPullRequestsService({ files: f.files, mutations: new Set(), command })
   expect(unwrap(await silent.draft({ threadId: 'a', base: 'main' }))).toEqual({ title: null, body: null })
   // A writer that answers nothing, and a branch with no base to compare against.

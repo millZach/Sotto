@@ -1,6 +1,6 @@
 /**
  * The cap every request that carries a Git diff shares. Sotto sends a diff to
- * the writing model only to describe it, so a large branch is cut rather than
+ * the thread's provider only to describe it, so a large branch is cut rather than
  * sent whole: the cut is at a line boundary, the excerpt says it was cut, and
  * the caller learns the same fact so a surface can say so too.
  */

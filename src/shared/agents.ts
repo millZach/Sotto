@@ -195,7 +195,7 @@ export const agentThreadSchema = z.object({
   hostLabel: z.string().max(80).optional(), remoteHost: z.boolean().optional(), clientConnected: z.boolean().optional(),
   hostId: z.uuid().optional(),
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
-  /** Who named this thread: the user by hand, Sotto's writing model, or the stand-in/provider name.
+  /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
@@ -522,6 +522,14 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
+/**
+ * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
+ * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
+ * list, so a Devin thread keeps its placeholder and is offered no Regenerate title that could do nothing.
+ */
+export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
+  return providerId !== 'devin'
+}
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
   return thread.summary ?? summarizeThread(thread)
 }
@@ -574,7 +582,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
-  /** Ask the writing model for this thread's name again, replacing a generated or stand-in one. */
+  /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */

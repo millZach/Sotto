@@ -17,10 +17,11 @@ import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentS
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadHistorySource, ThreadHostEvent } from './host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
+import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { findExecutable, nativeEnvironment } from './subscriptionCodex'
+import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -388,6 +389,21 @@ export class CodexAppServerHost implements AgentHost {
     const pending = new Set([...Object.keys(this.aliases).filter(id => this.aliases[id]!.pendingSettings), ...this.unconfirmedDispatchSessionIds])
     if (this.state.connected) await Promise.all([...pending].map(id => this.refreshThread(id).catch(() => undefined)))
     return this.current()
+  }
+  /**
+   * A side call on this thread's client, account and model, in its folder (ADR-0026). It runs as its own
+   * ephemeral `codex exec`, not on this connection's app-server, so no thread is started, resumed or
+   * listed for it and the session-log watcher never sees a rollout. Test launches put their own
+   * arguments in front of `exec`, the way they stand in for the app-server's.
+   */
+  async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const alias = this.aliases[id]
+    if (!this.state.connected || !alias) return null
+    const executable = this.options.executable ?? await findExecutable()
+    if (!executable) return null
+    const effort = sideWritingEffort(this.state.models, alias.modelId)
+    return writeWithCodexExec({ ...prompt, executable, prefixArgs: this.options.args ?? [], codexHome: this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
+      model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   async refreshThread(id: string): Promise<AgentHostSnapshot> {
     if (!this.aliases[id]) throw new Error('That Codex thread is unavailable.')

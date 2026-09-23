@@ -23,8 +23,8 @@ interface GitDependencies {
   checkpoints?: CheckpointService
   /** Sotto's own writing of a pull request form; absent, the form drafts nothing. */
   draftPullRequestText?: PullRequestDraftWriter
-  /** Writes a commit message from the staged diff, or null when Sotto writes nothing. */
-  writeCommitMessage?(excerpt: DiffExcerpt): Promise<string | null>
+  /** Writes a commit message from the staged diff by asking the thread's own provider, or null when Sotto writes nothing. */
+  writeCommitMessage?(threadId: string, excerpt: DiffExcerpt): Promise<string | null>
 }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const inside = (root: string, target: string): boolean => {
@@ -177,8 +177,9 @@ export class GitChangesService extends ToolOperations {
   /**
    * The commit form's draft. Nothing is committed here: the message goes back to
    * the panel for the user to edit, and only the Commit button sends it on. The
-   * staged diff is the only thing the writer is given, and with no key or
-   * generation off the writer answers null and the form stays empty.
+   * staged diff is the only thing the writer is given, and it goes to the
+   * thread's own provider (ADR-0026). With generation off or a provider that
+   * writes nothing, the writer answers null and the form stays empty.
    */
   draftCommitMessage(payload: unknown) { return this.run(async (): Promise<GitCommitDraft> => {
     const request = parse(gitCommitDraftRequestSchema, payload)
@@ -199,7 +200,7 @@ export class GitChangesService extends ToolOperations {
     }
     const excerpt = diffExcerpt(patch, COMMIT_DIFF_MAX_CHARACTERS)
     await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const message = await this.dependencies.writeCommitMessage(excerpt)
+    const message = await this.dependencies.writeCommitMessage(request.threadId, excerpt)
     return { message, truncated: excerpt.truncated }
   }) }
   diff(payload: unknown) { return this.run(() => this.readDiff(payload)) }

@@ -8,6 +8,35 @@ const root = process.argv[2]
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
 if (process.argv.includes('inspect')) { process.stdout.write(JSON.stringify(read('skills.json', { skills: [] }))); process.exit(0) }
+// Sotto's side writing (ADR-0026): its own `agent --no-leader stdio` process on a throwaway home, never the
+// thread's leader. It records each frame it was sent in oneshot.jsonl as it arrives (the client kills it
+// on close), never in requests.jsonl or the native sessions, and answers from oneshot.json.
+if (process.argv.includes('--no-leader')) {
+ const script = read('oneshot.json', {})
+ const reply = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
+ const call = { args: process.argv.slice(3), cwd: process.cwd(), home: process.env.GROK_HOME }
+ const catalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }, { id: 'low' }] } }] }
+ createInterface({ input: process.stdin }).on('line', line => {
+  const frame = JSON.parse(line); appendFileSync(path('oneshot.jsonl'), JSON.stringify({ ...call, frame }) + '\n')
+  const p = frame.params ?? {}
+  if (frame.method === 'initialize') reply({ id: frame.id, result: { protocolVersion: 1, authMethods: [{ id: 'cached_token' }] } })
+  else if (frame.method === 'authenticate') reply({ id: frame.id, result: {} })
+  else if (frame.method === 'session/new') {
+   const profile = p._meta?.agentProfile
+   if (!profile || profile.injectDefaultTools !== false || profile.tools?.length !== 0 || p.mcpServers?.length !== 0) appendFileSync(path('violations.jsonl'), JSON.stringify({ reason: 'Side writing must open a tool-free session' }) + '\n')
+   reply({ id: frame.id, result: { sessionId: 'side-writing-session', models: catalog } })
+  } else if (frame.method === 'session/set_model') {
+   reply({ id: frame.id, result: { _meta: { model: { Ok: p.modelId } } } })
+   reply({ method: '_x.ai/session_notification', params: { sessionId: p.sessionId, update: { sessionUpdate: 'model_changed', model_id: p.modelId, reasoning_effort: p._meta?.reasoningEffort } } })
+  } else if (frame.method === 'session/prompt') {
+   if (script.fail) { reply({ id: frame.id, error: { code: -32603, message: 'Scripted failure' } }); return }
+   reply({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } } } })
+   reply({ id: frame.id, result: { stopReason: 'end_turn' } })
+  } else if (frame.id !== undefined) reply({ id: frame.id, error: { code: -32601, message: 'Not in this fixture' } })
+ }).on('close', () => process.exit(0))
+ // The thread agent below never starts in this process: module evaluation waits here until the call ends.
+ await new Promise(() => {})
+}
 const sessions = read('native-sessions.json', {})
 // Leader work survives proxy restart, but replies for the departed proxy are not rerouted.
 for (const session of Object.values(sessions)) delete session.promptId
