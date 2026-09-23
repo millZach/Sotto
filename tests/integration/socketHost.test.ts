@@ -100,7 +100,7 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.requests).toContainEqual(expect.objectContaining({ id: 'permission-two' }))
   })
   it('refuses a second listener before it can open or overwrite the running host stores', async () => {
-    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is still running`)
+    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder`)
     expect((await fetch(url + '/v1/health')).status).toBe(200)
   })
   it('does not turn caller-supplied IPC identity into permission authority', async () => {
