@@ -34,8 +34,10 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const forget = state?.hosts.find(host => host.id === forgetId)
   const stopping = state?.hosts.find(host => host.id === stopId)
   const forgetDescription = (host: HostStatus): string => {
-    const stop = host.phase === 'connected' && host.owned ? ' It also stops the host Sotto started there.' : ''
-    const access = host.phase === 'connected'
+    // A host of another version Sotto started is still reached through the SSH session kept for Stop host.
+    const reachable = host.phase === 'connected' || host.phase === 'error' && host.owned === true
+    const stop = reachable && host.owned ? ' It also stops the host Sotto started there.' : ''
+    const access = reachable
       ? "This revokes this computer's access on the host and removes the saved connection."
       : `This removes the saved connection. This computer's access on ${host.name} stays until you connect again or revoke it there.`
     return `${access}${stop} Threads stay on the host.`

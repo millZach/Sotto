@@ -61,6 +61,9 @@ it('offers Stop host beside the sentence that asks for it when the host Sotto st
   await user.click(screen.getByRole('button', { name: 'Stop host' }))
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stop host' }))
   await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'stop-host', id: REMOTE }))
+  // Forget still reaches that host, so it says it revokes and stops rather than leaving access behind.
+  await user.click(screen.getByRole('button', { name: 'Forget' }))
+  expect(within(screen.getByRole('dialog')).getByText("This revokes this computer's access on the host and removes the saved connection. It also stops the host Sotto started there. Threads stay on the host.")).toBeTruthy()
   cleanup()
   const failed = fixture('error', false, undefined, 'The host could not start.')
   render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={failed.bridge} />)

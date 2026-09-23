@@ -94,7 +94,8 @@ export class DesktopHosts {
       this.clearRetry(host.id)
       const active = this.live.get(host.id)
       // A host that cannot be reached is still forgotten here; the dialog says its access stays until revoked there.
-      if (active?.tunnel && this.status.get(host.id)?.phase === 'connected') {
+      // A host of another version is reached through the SSH session kept open for Stop host.
+      if (active?.tunnel && this.reachable(host.id)) {
         // Revoke first: the admin endpoint that revokes lives on the running host, so it cannot follow a stop.
         // The revoke drops this computer's socket, which `closing` keeps from reconnecting and pairing again.
         active.closing = true
@@ -219,9 +220,13 @@ export class DesktopHosts {
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost, active: LiveHost | undefined): void {
     // A host of another version leaves its SSH session open in the error phase for exactly this press.
-    const status = this.status.get(host.id)
-    if (!active?.tunnel || !(status?.phase === 'connected' || status?.phase === 'error' && status.owned)) throw new Error(`Connect to ${host.name} before stopping its host.`)
+    if (!active?.tunnel || !this.reachable(host.id)) throw new Error(`Connect to ${host.name} before stopping its host.`)
     if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
+  }
+  /** Whether the host's SSH session can reach it: connected, or kept open in the error phase for a host of another version. */
+  private reachable(id: string): boolean {
+    const status = this.status.get(id)
+    return status?.phase === 'connected' || status?.phase === 'error' && status.owned === true
   }
   /** Asks the launch script to stop the host. False means it may still run. */
   private async stopOwnedHost(active: LiveHost): Promise<boolean> {
