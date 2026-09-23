@@ -55,9 +55,9 @@
 .tools-rail__icon { flex: none; }
 /* Words keep the app's 12px floor, a touch above the mock-up's 10.5px, and still fit the 50px tile. */
 .tools-rail__word { max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Something live on a surface: its words are the tab's description. */
+/* Something live on a surface that is not open: its words are the surface's description in the rail. */
 .tools-rail__live { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tools-bg); pointer-events: none; }
-.tools-rail__tab[aria-selected='true'] .tools-rail__live { box-shadow: 0 0 0 2px var(--tt-selected); }
+.tools-rail__tab:hover .tools-rail__live { box-shadow: 0 0 0 2px var(--tools-hover); }
 /* Pin, fill and close sit at the rail's foot, under a short rule. */
 .tools-rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 40px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
 

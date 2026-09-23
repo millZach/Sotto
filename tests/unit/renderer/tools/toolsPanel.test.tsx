@@ -403,7 +403,7 @@ describe('shared tools panel', () => {
     expect(panel().querySelector('.tools-chrome')).toHaveTextContent('Files')
   })
 
-  it('marks a surface with something live, and says what in the tab’s description', () => {
+  it('marks a surface with something live, and says what in the surface’s description', () => {
     const state = threadsStateFixture()
     state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, total: 3, working: 2 } } : thread)
     const { store, rerender } = setup({ state })
@@ -417,6 +417,12 @@ describe('shared tools panel', () => {
       expect(tab.querySelector('.tools-rail__live')).toBeNull()
       expect(tab).not.toHaveAttribute('aria-description')
     }
+    // The open surface keeps its words but draws no dot; its line of chrome already says what is live.
+    act(() => store.setSurface('agents'))
+    expect(agents).toHaveAccessibleDescription('2 agents are working')
+    expect(agents.querySelector('.tools-rail__live')).toBeNull()
+    act(() => store.setSurface('files'))
+    expect(agents.querySelector('.tools-rail__live')).not.toBeNull()
     rerender('grok-previews')
     expect(within(panel()).getByRole('tab', { name: 'Agents', exact: true }).querySelector('.tools-rail__live')).toBeNull()
   })

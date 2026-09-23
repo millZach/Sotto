@@ -144,7 +144,9 @@ const RAIL_STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp
 
 /**
  * The panel's surfaces as a rail on its outer edge: an icon over a short word, the open one raised. A dot marks a
- * surface with something live, and its words are the tab's description. Only implemented surfaces are listed.
+ * surface with something live, and its words are the surface's description in the rail. The open surface draws no
+ * dot, since its own line of chrome already says what is live there; a screen reader still hears the words. Only
+ * implemented surfaces are listed.
  */
 function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceId; readonly live: Partial<Record<ToolSurfaceId, string>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   return <div className="tools-rail__tabs" role="tablist" aria-label="Tools" aria-orientation="vertical">
@@ -162,7 +164,7 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
       }}>
       {React.createElement(SURFACE_ICONS[surface.id], { size: 18, 'aria-hidden': true, className: 'tools-rail__icon' })}
       <span className="tools-rail__word">{surface.label}</span>
-      {live[surface.id] ? <span className="tools-rail__live" aria-hidden="true" /> : null}
+      {live[surface.id] && value !== surface.id ? <span className="tools-rail__live" aria-hidden="true" /> : null}
     </button>)}
   </div>
 }
