@@ -17,10 +17,13 @@ const errors: Record<HostErrorCode, string> = {
   forbidden: 'This action is not allowed from this device. Check its permission policy or complete the action on the host.',
   unavailable: 'The host could not complete this request. Refresh the thread before trying again.',
   busy: 'The host has too many pending requests. Wait for them to finish and try again.',
-  too_large: 'A thread on this host is too large to send to this device. Open it on the host machine.',
+  too_large: 'A thread on this host is too large to send to this device. Nothing on the host was lost, and the thread keeps working there. Your other threads still load here.',
 }
-/** A shell push is the thread list, not one thread, so its oversize error says so. */
-const SHELL_TOO_LARGE = 'The thread list on this host is too large to send to this device. Open it on the host machine.'
+/**
+ * A shell push is the thread list, not one thread, so its oversize error says so. The headless host has no
+ * window, so neither message sends the user to the host machine; each says what was kept instead.
+ */
+const SHELL_TOO_LARGE = 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.'
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
 interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
 export interface SocketServerOptions {
