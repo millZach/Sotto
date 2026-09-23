@@ -2,7 +2,9 @@
 import { performance } from 'node:perf_hooks'
 import { afterEach, expect, it } from 'vitest'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
+import { isImmutableActivities, subscribeActivitySnapshots } from '../../src/main/agents/activitySnapshots'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { codexFixture } from '../fixtures/codexFixture'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { expectWithinBudget } from '../fixtures/perfBudget'
@@ -30,11 +32,16 @@ it('keeps the event loop responsive through a three-thread Codex output burst', 
     threadId: nativeIds[index], turnId: threads.find(thread => thread.id === id)!.lastTurn!.id,
     item: { type: 'commandExecution', id: `command-${item}`, command: 'fixture', cwd: f.root, status: 'inProgress', aggregatedOutput: 'x'.repeat(8_000) },
   } })))
+  let publications = 0
+  let latest: AgentHostSnapshot | undefined
+  const off = subscribeActivitySnapshots(f.adapter, snapshot => { publications += 1; latest = snapshot })
   await f.action(ids[0]!, { type: 'notify-burst', frames })
   await expect.poll(() => workspace.workspaceSnapshot().threads.every(thread => (thread.activities?.filter(a => a.kind === 'command').length ?? 0) === 12)).toBe(true)
-
-  let publications = 0
-  const off = f.adapter.subscribe(() => { publications += 1 })
+  await expect.poll(() => latest?.threads.every(thread => thread.activities?.filter(a => a.kind === 'command').length === 12)).toBe(true)
+  const frozenBefore = latest!.threads.flatMap(thread => thread.activities ?? []).find(item => item.kind === 'command' && item.output === 'x'.repeat(8_000))!
+  expect(isImmutableActivities(latest!.threads.find(thread => thread.activities?.includes(frozenBefore))?.activities)).toBe(true)
+  expect(Object.isFrozen(frozenBefore)).toBe(true)
+  publications = 0
   const delays: number[] = []
   let previous = performance.now()
   const heartbeat = setInterval(() => { const now = performance.now(); delays.push(now - previous); previous = now }, 5)
@@ -45,6 +52,12 @@ it('keeps the event loop responsive through a three-thread Codex output burst', 
     } }))
     await f.action(ids[0]!, { type: 'notify-burst', frames: burst })
     await expect.poll(() => workspace.workspaceSnapshot().threads.every(thread => thread.activities?.find(a => a.kind === 'command' && a.output?.endsWith('.'.repeat(200))) !== undefined)).toBe(true)
+    await expect.poll(() => latest?.threads.every(thread => thread.activities?.some(a => a.kind === 'command' && a.output?.endsWith('.'.repeat(200))))).toBe(true)
+    expect(frozenBefore.output).toBe('x'.repeat(8_000))
+    const grown = latest!.threads.flatMap(thread => thread.activities ?? []).find(item => item.id === frozenBefore.id && item.output?.endsWith('.'.repeat(200)))
+    expect(grown).toBeDefined()
+    expect(grown).not.toBe(frozenBefore)
+    expect(latest!.threads.flatMap(thread => thread.activities ?? []).filter(item => item.kind === 'command' && item.output?.endsWith('.'.repeat(200)))).toHaveLength(3)
     const worst = Math.max(...delays, performance.now() - previous)
     console.info(`Codex burst: ${publications} snapshots for 600 frames; longest heartbeat gap ${Math.round(worst)} ms`)
     expect(publications).toBeLessThan(60)

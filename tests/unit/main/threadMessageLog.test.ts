@@ -3,10 +3,27 @@ import { describe, expect, it } from 'vitest'
 import { ThreadMessageLog } from '../../../src/main/agents/threadMessageLog'
 import type { AgentMessage } from '../../../src/shared/agents'
 import type { ThreadHostEvent } from '../../../src/main/agents/host'
+import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import type { AgentActivity } from '../../../src/shared/agentActivity'
 
 const message = (id: string, role: AgentMessage['role'], text: string): AgentMessage => ({ id, role, text, createdAt: '2026-09-19T10:00:00.000Z' })
 
 describe('the append path a provider rail is handed to', () => {
+  it('reuses immutable activity facts without retaining stale messages or mutable activity facts', () => {
+    const log = new ThreadMessageLog()
+    const source: AgentActivity[] = [{ id: 'turn', turnId: 'turn', sequence: 0, kind: 'turn', status: 'running', title: 'Work', startedAt: '2026-09-23T10:00:00Z' }]
+    const owned = immutableActivities(source)
+    log.set('t', [message('a', 'assistant', 'First')])
+    expect(log.summaryBeside('t', owned)).toMatchObject({ activityCount: 1, runningTurnStartedAt: source[0]!.startedAt, lastAssistant: { text: 'First' } })
+    log.set('t', [message('a', 'assistant', 'First and more')])
+    expect(log.summaryBeside('t', owned).lastAssistant?.text).toBe('First and more')
+    const completed = immutableActivities([{ ...owned[0]!, status: 'completed' }])
+    expect(log.summaryBeside('t', completed).runningTurnStartedAt).toBeUndefined()
+    expect(log.summaryBeside('t', source).runningTurnStartedAt).toBe(source[0]!.startedAt)
+    source[0]!.status = 'completed'
+    expect(log.summaryBeside('t', source).runningTurnStartedAt).toBeUndefined()
+    expect(log.summaryBeside('t', owned).runningTurnStartedAt).toBe('2026-09-23T10:00:00Z')
+  })
   it('treats a shorter or partial list as a partial read, never as a rewind', () => {
     const log = new ThreadMessageLog()
     const events: ThreadHostEvent[] = []

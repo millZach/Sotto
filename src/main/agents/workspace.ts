@@ -3,6 +3,7 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
@@ -62,8 +63,16 @@ const markOf = (message: AgentMessage): MessageMark =>
  * Subagent task/result text has only one durable copy, in the roster store. The ordinary activity
  * store and JSON migration fallback retain only text-free subagent classification.
  */
+const retainedActivityViews = new WeakMap<AgentActivity[], AgentActivity[]>()
 function retainedActivities(activities: AgentActivity[]): AgentActivity[] {
-  return activities.map(activity => activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined ? subagentActivityClassification(activity) : activity)
+  const immutable = isImmutableActivities(activities)
+  const held = immutable ? retainedActivityViews.get(activities) : undefined
+  if (held) return held
+  const records = activities.map(activity => activity.kind === 'subagent' || activity.agents?.length || activity.taskUpdatesExcluded !== undefined ? subagentActivityClassification(activity) : activity)
+  if (!immutable) return records
+  const retained = immutableActivities(records)
+  retainedActivityViews.set(activities, retained)
+  return retained
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
@@ -97,6 +106,8 @@ export class WorkspaceHost implements AgentHost {
   private hostId: string | undefined
   private ready = false
   private stopping = false
+  private deliveryStopped = false
+  private readonly providerSubscriptions: Array<() => void> = []
   private dirty = false
   private saving: Promise<void> | undefined
   /** Someone asked for the state to be on disk before they continue, so a write in flight is followed by another. */
@@ -109,6 +120,9 @@ export class WorkspaceHost implements AgentHost {
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
   private activityJsonFallbackAllowed = true
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
+  private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
@@ -301,16 +315,19 @@ export class WorkspaceHost implements AgentHost {
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
     this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
-    inner.subscribe(snapshot => {
-      if (!this.ready) return
+    this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
+      if (!this.ready || this.deliveryStopped) return
       this.accept(snapshot)
       this.writeSoon()
       this.publishSoon()
-    })
+    }))
     // A host that says what changed is believed: its events are this thread's history, and the array
     // comparison below is left for a host that publishes whole histories and nothing else.
     this.eventSourced = typeof inner.subscribeEvents === 'function'
-    inner.subscribeEvents?.(({ threadId, event }) => this.recordEvent(threadId, event))
+    const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
+      if (!this.deliveryStopped) this.recordEvent(threadId, event)
+    })
+    if (unsubscribeEvents) this.providerSubscriptions.push(unsubscribeEvents)
   }
 
   initialize(): Promise<void> {
@@ -356,7 +373,9 @@ export class WorkspaceHost implements AgentHost {
       }
       this.adoptSavedActivities(snapshot)
       // Cached running activity is evidence of an unfinished observation, not a live process.
-      for (const thread of snapshot.threads) for (const activity of thread.activities ?? []) if (activity.status === 'running') activity.status = 'unknown'
+      // Disk reads are private mutable copies. Certify them only when live activity is merged, so
+      // reopening a large archive does not pay for an ownership transfer it may never need.
+      for (const thread of snapshot.threads) if (thread.activities) thread.activities = thread.activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)
       for (const thread of snapshot.threads) {
         this.trackSubagents(thread, false)
         thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
@@ -660,6 +679,7 @@ export class WorkspaceHost implements AgentHost {
       }
       records = above.size ? activities.filter(record => !above.has(record.turnId)) : activities
     }
+    if (isImmutableActivities(activities)) records = immutableActivities(records)
     this.paneViews.set(activities, { messages: thread.messages, hidden, watched, status: thread.status,
       generation: this.storedAnchors.get(threadId)?.generation ?? 0, records })
     return records
@@ -714,16 +734,22 @@ export class WorkspaceHost implements AgentHost {
     this.writeEvents()
     return this.threadStore.eventsAfter(seq, threadId, limit)
   }
-  /** Stop provider delivery first, then drain organization writes before closing SQLite. */
+  private stopDelivery(): void {
+    this.stopping = true
+    this.deliveryStopped = true
+    for (const unsubscribe of this.providerSubscriptions.splice(0)) unsubscribe()
+  }
+  /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
     await Promise.allSettled([...this.branchWrites, ...this.lanes.values()])
+    this.stopDelivery()
     try { if (this.ready) await this.flush() } finally { this.dispose() }
   }
 
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
-    this.stopping = true
+    this.stopDelivery()
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer)
     for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
@@ -732,6 +758,9 @@ export class WorkspaceHost implements AgentHost {
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear()
+    this.subagentInputs.clear()
+    this.ready = false
   }
 
   async subagentPage(request: SubagentPageRequest) {
@@ -773,7 +802,7 @@ export class WorkspaceHost implements AgentHost {
         this.subagentInputs.set(thread.id, input)
         this.subagentsChanged(this.subagentStore.ingest(thread.id, [], thread.historyEpoch))
       }
-      if (input.activities !== thread.activities) {
+      if (!isImmutableActivities(thread.activities) || input.activities !== thread.activities) {
         const observations: NonNullable<AgentActivity['agents']> = []
         const classifications: AgentActivity[] = []
         const retained = new Set<string>()
@@ -827,7 +856,37 @@ export class WorkspaceHost implements AgentHost {
     if (this.saveError) snapshot.error = this.saveError
     return snapshot
   }
-  private publish(): void { for (const listener of this.listeners) listener(this.workspaceSnapshot()) }
+  private publish(): void {
+    for (const listener of this.listeners) listener(this.workspaceSnapshot())
+    if (this.activityListeners.size) {
+      this.applyEvents()
+      for (const listener of this.activityListeners) {
+        const snapshot = cloneActivitySnapshot(this.state.snapshot)
+        if (this.saveError) snapshot.error = this.saveError
+        listener(snapshot)
+      }
+    }
+  }
+
+  /** Native snapshots upsert records. Reused input records have already been merged, so only changed
+   * records need that work again. An epoch, mutable input or replacement of the held output reconciles
+   * the complete list; array identity is never evidence for legacy mutable snapshots. */
+  private mergeActivities(thread: AgentThread, old: AgentThread | undefined): AgentActivity[] {
+    const input = thread.activities
+    const previous = this.activityInputs.get(thread.id)
+    const stable = isImmutableActivities(input)
+    const reusable = stable && previous && old && previous.epoch === thread.historyEpoch
+      && old.historyEpoch === thread.historyEpoch && old.activities === previous.output
+    if (reusable && previous.input === input) return previous.output
+    const incoming = reusable ? input!.filter(record => previous.records.get(record.id) !== record) : input ?? []
+    const merged = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
+    // Legacy input cannot be reused on the next update. Keep its full reconciliation path
+    // without adding an ownership copy that every subsequent publication must replace.
+    const output = stable ? immutableActivities(merged) : merged
+    if (stable) this.activityInputs.set(thread.id, { input: input!, output, epoch: thread.historyEpoch, records: new Map(input!.map(record => [record.id, record])) })
+    else this.activityInputs.delete(thread.id)
+    return output
+  }
   /**
    * A publish the providers asked for. The first of a burst goes out at once, so a reply appearing
    * still feels immediate, and everything inside the window behind it becomes one publish at its
@@ -854,6 +913,8 @@ export class WorkspaceHost implements AgentHost {
   }
   private accept(snapshot: AgentHostSnapshot): void {
     const previous = this.state.snapshot
+    const previousThreads = new Map(previous.threads.map(thread => [thread.id, thread]))
+    const connectedInputs = new Set<string>()
     const projects = new Map(previous.projects.map(project => [project.id, project]))
     for (const project of snapshot.projects) {
       // Hide only registrations introduced for our pending creation, never merge
@@ -869,7 +930,9 @@ export class WorkspaceHost implements AgentHost {
     const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined, backgroundWork: undefined } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
-      this.trackSubagents(thread, isThreadProviderConnected(snapshot, thread))
+      const connected = isThreadProviderConnected(snapshot, thread)
+      if (connected && !thread.archivedAt) connectedInputs.add(thread.id)
+      this.trackSubagents(thread, connected)
       const creation = this.state.creations.find(item => item.threadId === thread.id)
       if (creation) creation.phase = 'started'
       // A new provider registration may have a different project ID. The original Sotto
@@ -880,7 +943,7 @@ export class WorkspaceHost implements AgentHost {
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         messages: [],
-        ...(old?.activities || thread.activities ? { activities: old?.historyEpoch !== thread.historyEpoch ? thread.activities ?? [] : mergeAgentActivities(old?.activities, thread.activities) } : {}),
+        ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
         workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
       // A provider that is still loading a thread's history has published no history yet, so the
@@ -901,17 +964,22 @@ export class WorkspaceHost implements AgentHost {
       }
       threads.set(thread.id, merged)
     }
+    // Retained workspace history is not a live provider input. Reconnect reconciles it afresh.
+    for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
     for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) { delete thread.monitoring; delete thread.backgroundWork }
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
-      const old = previous.threads.find(item => item.id === thread.id)
+      const old = previousThreads.get(thread.id)
       if (!old) continue
-      const before = settledHeadMovers(old.activities)
-      if (old.status === 'running' && thread.status !== 'running'
-        || [...settledHeadMovers(thread.activities)].some(id => !before.has(id))) this.scheduleWorktreeRefresh(thread.id)
+      let moved = old.status === 'running' && thread.status !== 'running'
+      if (!moved && old.activities !== thread.activities) {
+        const before = settledHeadMovers(old.activities)
+        moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
+      }
+      if (moved) this.scheduleWorktreeRefresh(thread.id)
     }
     this.dirty = true
   }
@@ -996,6 +1064,7 @@ export class WorkspaceHost implements AgentHost {
    * back on hands the file over from here, and what was not kept is gone.
    */
   async privacyChanged(): Promise<void> {
+    this.activityInputs.clear()
     if (!this.historyEnabled()) this.activityJsonFallbackAllowed = false
     if (!this.subagentUnavailable && this.subagentStore.ephemeral === this.historyEnabled()) {
       try {
@@ -1473,4 +1542,5 @@ export class WorkspaceHost implements AgentHost {
     this.publish()
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.activityListeners.add(listener); return () => this.activityListeners.delete(listener) }
 }

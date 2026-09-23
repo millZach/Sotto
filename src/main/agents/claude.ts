@@ -16,6 +16,7 @@ import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, Res
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -103,9 +104,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly starting = new Map<string, Promise<Runtime>>()
   private readonly logs = new Map<string, ClaudeSessionLog>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly publisher = new ProviderSnapshotPublisher(() => {
-    const snapshot = this.view()
-    for (const listener of this.listeners) listener(snapshot)
+    for (const listener of this.listeners) listener(this.view())
+    if (this.activityListeners.size) {
+      const snapshot = this.activityView()
+      for (const listener of this.activityListeners) listener(cloneActivitySnapshot(snapshot))
+    }
   })
   private readonly acknowledgements = new Map<string, () => void>()
   private readonly dispatching = new Set<string>()
@@ -271,6 +276,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return this.view()
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.activityListeners.add(listener); return () => this.activityListeners.delete(listener)
+  }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.messageLog.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   observeThreads(ids: readonly string[]): void {
@@ -846,6 +854,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private view(): AgentHostSnapshot {
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) })
+  }
+  private activityView(): AgentHostSnapshot {
+    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
+      thread.activities = immutableActivities(thread.activities)
+    }
+    return { ...this.state, threads: [...this.threads.values()]
+      .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) }
   }
   /**
    * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report

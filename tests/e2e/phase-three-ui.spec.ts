@@ -335,8 +335,9 @@ test('starts, continues and resumes a project-free chat, by keyboard, across dis
     await expect(page.getByRole('heading', { name: 'Plan a quiet weekend near the coast', level: 2 })).toBeVisible()
     await expect(page.getByLabel('Chat transcript', { exact: true }).getByRole('heading', { name: 'A saved conversation' })).toBeVisible()
     await expect(page.getByRole('textbox', { name: 'Message' })).toHaveValue('Second thought: the trains')
-    await page.getByRole('button', { name: 'Connect Codex' }).click()
+    // A restart lifts the session's Disconnect: the chat's provider connects at launch with no press.
     await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Connect Codex' })).toHaveCount(0)
     const after = await page.evaluate(async () => {
       const state = await window.sotto!.agents!.command({ type: 'connect' })
       return { projects: state.host.projects.map(project => project.id), threads: state.host.threads.map(thread => thread.id), assignments: state.assignments.length }

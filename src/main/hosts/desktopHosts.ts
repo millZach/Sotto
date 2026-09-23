@@ -68,7 +68,13 @@ export class DesktopHosts {
     if (command.type === 'save') {
       const host = command.host
       this.clearRetry(host.id)
-      if (this.live.has(host.id)) throw new Error('Disconnect this host before changing its connection.')
+      if (this.live.has(host.id)) {
+        // A host of another version keeps its SSH session only so Stop host can reach it, and its row offers
+        // Edit, not Disconnect: saving closes that session. The next Connect finds the host still running
+        // and offers Stop host again.
+        if (this.status.get(host.id)?.phase === 'error') await this.disconnect(host.id)
+        else throw new Error('Disconnect this host before changing its connection.')
+      }
       const existing = this.saved.find(item => item.id === host.id)
       // Editing a route must not silently transfer a credential to a different host.
       const next = existing ? { ...existing, ...host } : host
@@ -99,7 +105,8 @@ export class DesktopHosts {
       this.clearRetry(host.id)
       const active = this.live.get(host.id)
       // A host that cannot be reached is still forgotten here; the dialog says its access stays until revoked there.
-      if (active?.tunnel && this.status.get(host.id)?.phase === 'connected') {
+      // A host of another version is reached through the SSH session kept open for Stop host.
+      if (active?.tunnel && this.reachable(host.id)) {
         // Revoke first: the admin endpoint that revokes lives on the running host, so it cannot follow a stop.
         // The revoke drops this computer's socket, which `closing` keeps from reconnecting and pairing again.
         active.closing = true
@@ -130,6 +137,19 @@ export class DesktopHosts {
       await this.openSocket(host, active)
     } catch (error) {
       let failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
+      if (error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active && active.tunnel) {
+        const newer = active.socket?.hostIsNewer() ?? false
+        await active.socket?.close().catch(() => undefined)
+        delete active.socket
+        // An older host Sotto started keeps its SSH session, so Stop host can reach the host the sentence
+        // names. Connect closes that session first. A host Sotto did not start, or one newer than this
+        // computer, has nothing to keep it for: the sentence already says what to do instead.
+        if (active.tunnel.owned && !newer) {
+          this.clearRetry(host.id)
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: error.message })
+          return this.get()
+        }
+      }
       if (error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.tunnel) {
         await active.socket?.close().catch(() => undefined)
         delete active.socket
@@ -139,7 +159,10 @@ export class DesktopHosts {
           await this.openSocket(host, active)
           this.clearRetry(host.id)
           return this.get()
-        } catch { failure = new FinalHostError('This device is no longer paired and could not pair again. Check the host, then connect again.') }
+        } catch (repair) {
+          // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
+          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new FinalHostError('This device is no longer paired and could not pair again. Check the host, then connect again.')
+        }
       }
       await active.socket?.close().catch(() => undefined)
       await active.launcher.disconnect().catch(() => undefined)
@@ -162,7 +185,10 @@ export class DesktopHosts {
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
     await this.save()
   }
-  private final(error: Error): boolean { return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) }
+  /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
+  private final(error: Error): boolean {
+    return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
+  }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
   private scheduleReconnect(host: SavedHost, active: LiveHost | undefined): void {
     if (this.closed) return
@@ -178,7 +204,10 @@ export class DesktopHosts {
     this.retries.set(host.id, entry)
   }
   private dropped(host: SavedHost, active: LiveHost): void {
-    if (active.closing || this.status.get(host.id)?.phase !== 'connected') return
+    const status = this.status.get(host.id)
+    // The SSH session kept open for Stop host has ended, so Stop host can no longer reach the host.
+    if (!active.closing && status?.phase === 'error' && status.owned) { this.update(host.id, { owned: undefined }); return }
+    if (active.closing || status?.phase !== 'connected') return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
@@ -190,7 +219,9 @@ export class DesktopHosts {
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) },
       onPushError: message => { if (this.live.get(host.id) === active) { pushError = message; this.update(host.id, { error: message }) } },
-      onPushErrorCleared: () => { if (this.live.get(host.id) === active && pushError !== undefined && this.status.get(host.id)?.error === pushError) this.update(host.id, { error: undefined }); pushError = undefined }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId })
+      onPushErrorCleared: () => { if (this.live.get(host.id) === active && pushError !== undefined && this.status.get(host.id)?.error === pushError) this.update(host.id, { error: undefined }); pushError = undefined }, url: active.tunnel!.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: active.tunnel!.hostId, owned: active.tunnel!.owned,
+      // Nothing on the desktop reads a host's event log, so a connect asks for none of it.
+      catchUpEvents: false })
     active.socket = socket
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
@@ -207,8 +238,14 @@ export class DesktopHosts {
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost, active: LiveHost | undefined): void {
-    if (!active?.tunnel || this.status.get(host.id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before stopping its host.`)
+    // A host of another version leaves its SSH session open in the error phase for exactly this press.
+    if (!active?.tunnel || !this.reachable(host.id)) throw new Error(`Connect to ${host.name} before stopping its host.`)
     if (!active.tunnel.owned) throw new Error(`Sotto did not start the host on ${host.name}, so it cannot stop it. Stop it on that machine.`)
+  }
+  /** Whether the host's SSH session can reach it: connected, or kept open in the error phase for a host of another version. */
+  private reachable(id: string): boolean {
+    const status = this.status.get(id)
+    return status?.phase === 'connected' || status?.phase === 'error' && status.owned === true
   }
   /** Asks the launch script to stop the host. False means it may still run. */
   private async stopOwnedHost(active: LiveHost): Promise<boolean> {
