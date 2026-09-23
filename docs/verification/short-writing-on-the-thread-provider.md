@@ -1,6 +1,6 @@
 # Short writing on the thread's own provider: a live check
 
-September 22, 2026, Windows 11, from `feat/short-writing-on-the-thread-provider` (#256, ADR-0026), against the
+September 22, 2026, Windows 11, from `feat/short-writing-on-the-thread-provider` (#256, ADR-0026) rebased on the main that carries the Forge host (#181), against the
 clients installed and signed in on the development machine: Claude Code 2.1.280, Codex 0.156.0 and Grok 1.0.41.
 
 ## What was run
@@ -30,9 +30,9 @@ Codex lists mini models a ChatGPT sign-in cannot use.
 
 | Client | Model | Title written | Time from start to title |
 | --- | --- | --- | --- |
-| Claude Code 2.1.280 | Haiku 4.5 | RESULT_CLAUDE | TIME_CLAUDE |
-| Codex 0.156.0 | GPT-6-Astra | RESULT_CODEX | TIME_CODEX |
-| Grok 1.0.41 | Grok 4.7 Fast | RESULT_GROK | TIME_GROK |
+| Claude Code 2.1.280 | Haiku 4.5 | "README file contents" | 22 s |
+| Codex 0.156.0 | GPT-6-Astra | "Explain what a repository README contains" | 11 s |
+| Grok 1.0.41 | Grok 4.7 Fast | "What a README file usually contains" | 9 s |
 
 All three passed every check above: 3 tests, 3 passed. The times include starting the client, the thread's
 own turn and the side call.
@@ -54,3 +54,12 @@ own turn and the side call.
   ready", Claude Code and Grok both titled the thread "ready", and Grok answered the README question in full.
   Each job's instruction now says to treat its material as something to describe, not instructions, and
   Grok's side call carries the instruction in the turn as well as the system prompt.
+
+## Settings
+
+Settings → Cleanup no longer has a Writing model field, and the three Generated switches say the thread's own
+model writes. The `settings-cleanup` design baseline was retaken on purpose for that change alone; the other
+captures `npm run design:capture` rewrote were put back, and `node scripts/verify-design-captures.mjs`
+verifies all 144 tuples.
+
+![Settings, Cleanup](../../artifacts/design/app-review/baseline/settings-cleanup.png)
