@@ -170,7 +170,7 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
 }
 
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
-function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, changed: number | null): Partial<Record<ToolSurfaceId, string>> {
+function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null): Partial<Record<ToolSurfaceId, string>> {
   const tasks = useBrowserTasks(store.browser)
   if (!thread) return {}
   const live: Partial<Record<ToolSurfaceId, string>> = {}
@@ -179,7 +179,7 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
   else if (threadTasks.some(task => task.status === 'working')) live.browser = 'A browser task is working'
   // Changes reads Git only while it is open, so its last count stands until then; before the first read a
   // worktree's own dirty mark answers.
-  if (changed !== null && changed > 0) live.changes = `${changed} changed ${changed === 1 ? 'file' : 'files'}`
+  if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
   else if (changed === null && thread.worktree?.dirty) live.changes = 'Has uncommitted changes'
   const working = thread.subagentSummary?.working ?? 0
   if (working > 0) live.agents = `${working} ${working === 1 ? 'agent is' : 'agents are'} working`
@@ -270,7 +270,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     wasOpen.current = open
   }, [open, chrome.surface])
 
-  const changedFiles = threadChanges?.list.status === 'ready' ? threadChanges.list.files.length : null
+  const changedFiles = threadChanges?.list.status === 'ready' ? { count: threadChanges.list.files.length, truncated: threadChanges.list.truncated } : null
   const live = useLiveSurfaces(store, thread, changedFiles)
 
   const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} enabled={showBrowserPreviews} />

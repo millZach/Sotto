@@ -15,7 +15,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
 
-function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileDiff['content']>; listError?: 'not-repository' } = {}) {
+function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileDiff['content']>; listError?: 'not-repository'; truncated?: boolean } = {}) {
   let files: GitChange[] = options.files ?? [
     { path: 'src/app.ts', status: 'modified', staged: false, unstaged: true },
     { path: 'docs/new.md', status: 'untracked', staged: false, unstaged: true },
@@ -28,7 +28,7 @@ function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileD
   const bridge: GitChangesBridge = {
     list: vi.fn(async (): Promise<ToolsResult<never>> => options.listError
       ? { ok: false, error: { code: options.listError, message: 'no repo' } }
-      : { ok: true, value: { workspace, branch: 'feature/changes', revision, files, truncated: false } as never }),
+      : { ok: true, value: { workspace, branch: 'feature/changes', revision, files, truncated: options.truncated ?? false } as never }),
     diff: vi.fn(async ({ path }): Promise<ToolsResult<GitFileDiff>> => {
       if (path === 'docs/new.md' && held.resolve === null && diffHold.on) await new Promise<void>(resolve => { held.resolve = resolve })
       return { ok: true, value: { workspace, path, revision, content: diffs[path] ?? { kind: 'unavailable', message: 'gone' } } }
@@ -271,4 +271,11 @@ describe('Changes surface', () => {
     expect(await within(panel()).findByText('This working folder is not a Git repository.')).toBeInTheDocument()
     expect(within(panel()).queryByRole('button', { name: 'Try again' })).toBeNull()
   })
+
+  it('says a cut-off list is at least its count in the Changes description', async () => {
+    setup(fakeGit({ truncated: true }))
+    await within(panel()).findByText('3+ changed files')
+    expect(within(panel()).getByRole('tab', { name: 'Changes', exact: true })).toHaveAccessibleDescription('3+ changed files')
+  })
+
 })
