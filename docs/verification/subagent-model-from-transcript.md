@@ -22,7 +22,7 @@ Two runs in empty temporary folders outside the repository, each `claude -p --mo
 - No sidechain frames at all.
 - Files: `<session-id>/subagents/workflows/<runId>/agent-<agentId>.jsonl` and `.meta.json` (`agentType: "workflow-subagent"`, no model; older runs on this machine recorded an alias such as `opus`), plus `journal.jsonl` (`type`, `key`, `agentId`). The agent transcript has the same shape as a background agent's.
 
-An existing workflow folder from earlier Claude Code work on this machine had the same layout. No frame, file name or model value from these runs is stored in the repository; the fixture writes its own.
+An existing workflow folder from earlier Claude Code work on this machine had the same layout. No task text, reply or protocol body from these runs is stored in the repository, and the fixture writes its own transcripts. This note and the tests quote only opaque identifiers from the runs (the task ids, the run id) and model names.
 
 ## What Sotto does now
 
