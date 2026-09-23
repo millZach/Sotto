@@ -1,0 +1,59 @@
+/* T3's Git action in the pane header: the quick action and its chevron, one control in two halves. */
+.git-action { display: inline-flex; flex: none; align-items: center; height: 30px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; }
+.git-action__quick { display: inline-flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding: 0 9px; border: 0; border-radius: 7px 0 0 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.git-action__quick > svg { flex: none; }
+.git-action__quick:hover:not([aria-disabled='true']) { background: var(--tt-hover); color: var(--tt-text); }
+.git-action__quick[aria-disabled='true'] { color: var(--tt-text-muted); cursor: default; }
+.git-action[data-running] .git-action__quick { cursor: progress; }
+/* The chevron half is the pane's usual icon button, narrower, on the row's hairline. */
+.git-action .pane-menu.git-action__more { height: 100%; border-left: 1px solid var(--tt-hairline); }
+.git-action .git-action__more > .pane-action { width: 22px; height: 100%; border-radius: 0 7px 7px 0; }
+/* Narrow pane: the label leaves and the icon says which action stands (the name stays in the accessible name and title). */
+@container thread-pane (max-width: 720px) {
+  .git-action__quick { padding: 0 7px; }
+  .git-action__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* The notice above the composer: the stage as it runs, then the toast with its next step. */
+.git-action-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); }
+.git-action-notice[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
+.git-action-notice > p { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.git-action-notice strong { color: var(--tt-text); font-weight: 500; }
+.git-action-notice[data-tone='error'] strong { color: inherit; }
+.git-action-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.git-action-notice__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.git-action-notice__dismiss:hover { background: var(--tt-hover); }
+.git-action-notice__spinner { flex: none; width: 14px; height: 14px; border: 2px solid var(--tt-hairline); border-top-color: var(--tt-primary); border-radius: 50%; animation: git-action-spin 0.9s linear infinite; }
+@keyframes git-action-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .git-action-notice__spinner { animation: none; border-top-color: var(--tt-primary); } }
+
+/* Commit changes. */
+.commit-dialog { width: min(560px, 100%); display: grid; gap: 12px; }
+.commit-dialog h2 { margin: 0; }
+.commit-dialog__branch { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: 13px; }
+.commit-dialog__branch > svg { color: var(--tt-text-muted); }
+.commit-dialog__tag { padding: 1px 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 11.5px; }
+.commit-dialog__files { display: grid; gap: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); padding: 8px 10px; }
+.commit-dialog__files-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.commit-dialog__edit { padding: 2px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.commit-dialog__edit:hover, .commit-dialog__edit[aria-pressed='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.commit-dialog__note { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.commit-dialog__list { display: grid; gap: 2px; max-height: min(240px, 34vh); overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.commit-dialog__list > li { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 4px; border-radius: 6px; font-size: 13px; }
+.commit-dialog__list > li[data-excluded] { color: var(--tt-text-muted); text-decoration: line-through; }
+.commit-dialog__badge { flex: none; width: 16px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; text-align: center; }
+.commit-dialog__path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--tt-font-mono); font-size: 12.5px; }
+.commit-dialog__counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; }
+.commit-dialog__message { color: var(--tt-text-2); font-size: 13px; }
+.commit-dialog textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm); padding: 8px 10px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13.5px; resize: vertical; }
+.commit-dialog .tt-dialog__status { margin: 0; }
+.commit-dialog__actions, .default-branch-dialog__actions { flex-wrap: wrap; }
+.default-branch-dialog { width: min(520px, 100%); }
+
+/* Publish repository. */
+.publish-dialog form { display: grid; gap: 10px; }
+.publish-dialog label { color: var(--tt-text-2); font-size: 13px; }
+.publish-dialog input:not([type='radio']) { width: 100%; box-sizing: border-box; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm); padding: 8px 10px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13.5px; }
+.publish-dialog__visibility { display: flex; gap: 16px; margin: 0; padding: 0; border: 0; }
+.publish-dialog__visibility legend { padding: 0 0 6px; color: var(--tt-text-2); font-size: 13px; }
+.publish-dialog__visibility label { display: inline-flex; align-items: center; gap: 6px; }

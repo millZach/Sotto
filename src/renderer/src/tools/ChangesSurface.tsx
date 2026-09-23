@@ -42,7 +42,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
   const changes = useThreadChanges(store, threadId)
   const [split, setSplit] = useState(false)
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
-  // Git actions draws its toggles into the line of chrome and the file's staging into its head.
+  // Checkpoints draws its toggle into the line of chrome and the file's staging into its head.
   const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
   const [stageSlot, setStageSlot] = useState<HTMLElement | null>(null)
   if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>
@@ -74,7 +74,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
           onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
       </div>
     </div>
-    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} drafts={drafts} />
+    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} />
     {list.files.length === 0
       ? <div className="files-problem" role="status"><strong>The working copy matches HEAD.</strong></div>
       : <ChangeList files={list.files} selectedPath={selectedPath} onSelect={path => store.select(bridge, threadId, path)} />}

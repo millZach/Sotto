@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { GitCommitHorizontal, History } from 'lucide-react'
+import { History } from 'lucide-react'
 import type { z } from 'zod'
 import type { Checkpoint, checkpointInspectionSchema, checkpointListingSchema } from '../../../shared/checkpoints'
 import type { GitChangesBridge, gitActionSchema } from '../../../shared/gitChanges'
@@ -8,27 +8,22 @@ import type { ToolsResult } from '../../../shared/tools'
 import type { ChangesStore, ThreadChanges } from './changesStore'
 
 /**
- * Local Git actions for the working copy. The two drawers open under the Changes line of chrome; the toggles that
- * open them are drawn into that line (`toggleSlot`) and the selected file's staging into its file head
- * (`stageSlot`), so no bar of their own sits between the line and the work.
+ * The Checkpoints drawer and the selected file's staging. The drawer opens under the Changes line of chrome;
+ * its toggle is drawn into that line (`toggleSlot`) and the staging into the file head (`stageSlot`), so no
+ * bar of their own sits between the line and the work. Commit, branch and push left for the Git action in the
+ * pane header (ADR-0027); staging leaves with the Changes rebuild.
  */
-/**
- * `drafts` is whether the thread's provider writes Sotto's short text (ADR-0026). Without it the form opens
- * as the user left it and offers no Regenerate, because a press could only say Writing… and give up.
- */
-export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot, drafts = true }: {
+export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot }: {
   threadId: string; changes: ThreadChanges; bridge: GitChangesBridge | undefined; store: ChangesStore
-  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null; drafts?: boolean
+  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null
 }): ReactNode {
-  const [open, setOpen] = useState<'git' | 'checkpoints' | null>(null)
-  const [message, setMessage] = useState(''), [branch, setBranch] = useState('')
-  const [branches, setBranches] = useState<string[]>([]), [busy, setBusy] = useState(false), [status, setStatus] = useState('')
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false), [status, setStatus] = useState('')
   const [checkpoints, setCheckpoints] = useState<z.infer<typeof checkpointListingSchema> | null>(null)
   const [inspection, setInspection] = useState<z.infer<typeof checkpointInspectionSchema> | null>(null)
   const [confirmed, setConfirmed] = useState(false)
-  const [drafting, setDrafting] = useState(false), [draftNote, setDraftNote] = useState('')
   const generation = useRef(0)
-  useEffect(() => { generation.current++; setOpen(null); setStatus(''); setMessage(''); setBranch(''); setBranches([]); setCheckpoints(null); setInspection(null); setBusy(false); setDrafting(false); setDraftNote('') }, [threadId, changes.workspace?.workspaceId])
+  useEffect(() => { generation.current++; setOpen(false); setStatus(''); setCheckpoints(null); setInspection(null); setBusy(false) }, [threadId, changes.workspace?.workspaceId])
   if (!changes.workspace || changes.list.status !== 'ready' || !bridge) return null
   const target = { threadId, workspaceId: changes.workspace.workspaceId }, listing = changes.list
   const run = async <T,>(operation: () => Promise<ToolsResult<T>>, success: (value: T) => void | Promise<void>): Promise<void> => {
@@ -42,12 +37,11 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
     } catch { if (token === generation.current) setStatus('Sotto did not confirm this action. Refresh before trying again.') }
     finally { if (token === generation.current) setBusy(false) }
   }
-  const action = (action: z.infer<typeof gitActionSchema>['action'], path?: string): void => {
+  const action = (action: Extract<z.infer<typeof gitActionSchema>['action'], 'stage' | 'unstage'>, path: string): void => {
     if (!bridge.act) return
-    void run(() => bridge.act!({ ...target, revision: listing.revision, action, ...(path ? { path } : {}), ...(action === 'commit' ? { message } : {}), ...(['checkout', 'create-branch'].includes(action) ? { branch } : {}) }), async () => {
-      if (action === 'commit') setMessage('')
+    void run(() => bridge.act!({ ...target, revision: listing.revision, action, path }), async () => {
       await store.refresh(bridge, threadId)
-      setStatus(action === 'commit' ? 'Commit created.' : action === 'stage' ? 'Change staged.' : action === 'unstage' ? 'Change unstaged.' : 'Branch changed.')
+      setStatus(action === 'stage' ? 'Change staged.' : 'Change unstaged.')
     })
   }
   const select = (checkpoint: Checkpoint): void => {
@@ -55,34 +49,10 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
     setInspection(null); setConfirmed(false)
     void run(() => bridge.inspectCheckpoint!({ ...target, checkpointId: checkpoint.id }), setInspection)
   }
-  const staged = listing.files.filter(file => file.staged).length
-  /**
-   * Sotto writes the first draft from the staged diff; the field stays the user's.
-   * A draft that arrives after the user has typed is dropped rather than pasted
-   * over their words, and a draft is never committed on its own.
-   */
-  const draft = (replace: boolean): void => {
-    if (!drafts || !bridge.draftCommitMessage || drafting || staged === 0) return
-    const token = generation.current, from = message
-    if (!replace && from.trim().length > 0) return
-    setDrafting(true); setDraftNote('')
-    void bridge.draftCommitMessage({ ...target, revision: listing.revision })
-      .then(result => {
-        if (token !== generation.current || !result.ok) return
-        const written = result.value.message
-        if (written) setMessage(current => (replace || current === from ? written : current))
-        if (written && result.value.truncated) setDraftNote('The staged diff was too large to send whole, so this draft covers only its first part.')
-      })
-      .catch(() => undefined)
-      .finally(() => { if (token === generation.current) setDrafting(false) })
-  }
   const selected = listing.files.find(file => file.path === changes.selectedPath)
-  const toggle = (next: 'git' | 'checkpoints'): void => {
-    setOpen(open === next ? null : next); setStatus('')
-    if (open === next) return
-    if (next === 'git') draft(false)
-    if (next === 'git' && bridge.branches) void run(() => bridge.branches!(target), value => setBranches(value.branches))
-    if (next === 'checkpoints' && bridge.checkpoints) void run(() => bridge.checkpoints!(target), setCheckpoints)
+  const toggle = (): void => {
+    setOpen(!open); setStatus('')
+    if (!open && bridge.checkpoints) void run(() => bridge.checkpoints!(target), setCheckpoints)
   }
   const revert = (recover: boolean): void => {
     if (!inspection || (!recover && !confirmed)) return
@@ -95,41 +65,18 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
       if (bridge.checkpoints) void bridge.checkpoints(target).then(result => { if (result.ok) setCheckpoints(result.value) })
     })
   }
-  const toggles = <>
-    {bridge.act ? <button type="button" className="tools-chrome__button tt-focusable" title="Git actions" aria-expanded={open === 'git'} onClick={() => toggle('git')}>
-      <GitCommitHorizontal size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Git actions</span></button> : null}
-    {bridge.checkpoints ? <button type="button" className="tools-chrome__button tt-focusable" title="Checkpoints" aria-expanded={open === 'checkpoints'} onClick={() => toggle('checkpoints')}>
-      <History size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Checkpoints</span></button> : null}
-  </>
+  const toggles = bridge.checkpoints ? <button type="button" className="tools-chrome__button tt-focusable" title="Checkpoints" aria-expanded={open} onClick={toggle}>
+    <History size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Checkpoints</span></button> : null
   const staging = selected && bridge.act ? <>
     {selected.unstaged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('stage', selected.path)}>Stage file</button> : null}
     {selected.staged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('unstage', selected.path)}>Unstage file</button> : null}
   </> : null
-  const drawer = open !== null || busy || status !== ''
+  const drawer = open || busy || status !== ''
   return <>
-    {toggleSlot ? createPortal(toggles, toggleSlot) : null}
+    {toggleSlot && toggles ? createPortal(toggles, toggleSlot) : null}
     {stageSlot && staging ? createPortal(staging, stageSlot) : null}
-    {drawer ? <section className="git-actions" aria-label="Local Git actions">
-    {open === 'git' ? <div className="git-actions__drawer">
-      <form onSubmit={event => { event.preventDefault(); action('commit') }}>
-        <label htmlFor={`commit-${threadId}`}>Commit message</label>
-        <textarea id={`commit-${threadId}`} className="tt-focusable" rows={4} value={message} onChange={event => setMessage(event.target.value)} placeholder="Describe the staged changes" maxLength={10000} />
-        {drafting ? <p className="git-actions__status" role="status">Writing…</p> : null}
-        {draftNote ? <p className="git-actions__status">{draftNote}</p> : null}
-        <div className="git-actions__bar">
-          <button className="files-link tt-focusable" type="submit" disabled={busy || !message.trim() || staged === 0}>Commit staged changes ({staged})</button>
-          {drafts && bridge.draftCommitMessage ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || staged === 0} onClick={() => draft(true)}>Regenerate</button> : null}
-        </div>
-      </form>
-      <div className="git-actions__branch">
-        <label htmlFor={`branch-${threadId}`}>Local branch</label>
-        <input id={`branch-${threadId}`} className="tt-focusable" list={`branches-${threadId}`} value={branch} onChange={event => setBranch(event.target.value)} placeholder={listing.branch ?? 'Detached HEAD'} maxLength={240} />
-        <datalist id={`branches-${threadId}`}>{branches.map(name => <option key={name} value={name} />)}</datalist>
-        <div className="git-actions__bar"><button type="button" className="files-link tt-focusable" disabled={busy || !branch.trim()} onClick={() => action('checkout')}>Switch branch</button>
-          <button type="button" className="files-link tt-focusable" disabled={busy || !branch.trim()} onClick={() => action('create-branch')}>Create branch</button></div>
-      </div>
-    </div> : null}
-    {open === 'checkpoints' ? <div className="git-actions__drawer">
+    {drawer ? <section className="git-actions" aria-label="Checkpoints">
+    {open ? <div className="git-actions__drawer">
       {!checkpoints ? <p role="status">Reading checkpoints…</p> : <>
         {!checkpoints.supported ? <p>{checkpoints.reason}</p> : null}
         {checkpoints.checkpoints.length === 0 ? <p>No completed checkpoints yet.</p> : <ul className="checkpoint-list">{checkpoints.checkpoints.map((checkpoint, index) => <li key={checkpoint.id}>
