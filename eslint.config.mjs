@@ -28,6 +28,7 @@ export default tseslint.config(
       'artifacts/working-creature/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
+      'artifacts/forge-hand-test/**',
       'artifacts/effort-furnace/**',
       'artifacts/effort-slider/**',
       'artifacts/natural-voice-qa/**',

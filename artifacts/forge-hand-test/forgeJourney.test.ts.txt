@@ -1,0 +1,156 @@
+// @vitest-environment node
+/**
+ * One-off hand-test driver, kept beside its logs rather than in the suite: the real launcher and askpass
+ * helper against the real host `forge` over Tailscale SSH. Opt-in through SOTTO_FORGE=1. By default it
+ * drives Git Bash's OpenSSH; SOTTO_FORGE_WINSSH=1 drives the Windows System32 ssh.exe the app spawns,
+ * which has to be run from a process outside a sandboxing harness. Writes a journey log with no tokens in it.
+ */
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { HostCredentialEncryption } from '../../src/host/credentials'
+import { AgentCredentials } from '../../src/main/agents/credentials'
+import { DesktopHosts, reconnectDelayMs } from '../../src/main/hosts/desktopHosts'
+import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
+import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
+import { SshHostLauncher } from '../../src/main/hosts/sshLauncher'
+import { spawnSsh, type SpawnSsh } from '../../src/main/hosts/sshProcess'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
+import type { HostStatus } from '../../src/shared/hosts'
+import type { ChildProcess } from 'node:child_process'
+
+const enabled = process.env.SOTTO_FORGE === '1'
+/** The Windows ssh.exe Sotto spawns in the app, instead of Git Bash's OpenSSH. */
+const WINSSH = process.env.SOTTO_FORGE_WINSSH === '1'
+const GIT_SSH = 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe'
+const TARGET = 'forge'
+const INSTALL = '~/sotto-host', DATA = '~/.sotto'
+const journey: { at: string; step: string; detail?: unknown }[] = []
+const note = (step: string, detail?: unknown): void => { journey.push({ at: new Date().toISOString(), step, ...(detail === undefined ? {} : { detail }) }) }
+const forwards: ChildProcess[] = [], prompts: NonNullable<HostStatus['prompt']>[] = [], scheduled: number[] = []
+let spawnCount = 0, versionChecks = 0
+let root: string, manager: DesktopHosts | undefined, router: DesktopHostRouter | undefined
+
+/** A plain ssh beside the launcher's, to look at the host machine. Output never includes a token. */
+const remote = (command: string): string => execFileSync(GIT_SSH, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', TARGET, command], { encoding: 'utf8', timeout: 60_000 }).trim()
+interface Descriptor { pid: number; port: number; hostId: string; startedBy?: string; sottoVersion?: string; features?: string[] }
+const descriptor = (): Descriptor | undefined => {
+  const text = remote(`cat ${DATA}/host-listener.json 2>/dev/null || true`)
+  if (!text) return undefined
+  const value = JSON.parse(text) as Descriptor & { adminToken?: string }
+  return { pid: value.pid, port: value.port, hostId: value.hostId, ...(value.startedBy ? { startedBy: value.startedBy } : {}), ...(value.sottoVersion ? { sottoVersion: value.sottoVersion } : {}), ...(value.features ? { features: value.features } : {}) }
+}
+const hostAlive = (pid: number): boolean => remote(`kill -0 ${pid} 2>/dev/null && echo yes || echo no`) === 'yes'
+const pairedCount = (): number => Number(remote(`python3 -c 'import json,os; d=json.load(open(os.path.expanduser("${DATA}/paired-clients.json"))); print(len(d["clients"]))' 2>/dev/null || echo -1`))
+
+describe.skipIf(!enabled)('the SSH transport against forge over Tailscale SSH', () => {
+  afterAll(async () => {
+    await manager?.close(); router?.dispose()
+    const out = resolve('artifacts/forge-hand-test')
+    await mkdir(out, { recursive: true })
+    await writeFile(join(out, WINSSH ? 'journey-windows-ssh.json' : 'journey.json'), JSON.stringify({ prompts: prompts.map(prompt => ({ kind: prompt.kind, text: prompt.text })), spawnCount, versionChecks, scheduled, journey }, null, 2) + '\n', 'utf8')
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('connects, pairs itself, reconnects after the forward dies, leaves the host on Disconnect, stops it and forgets it', { timeout: 600_000 }, async () => {
+    expect(existsSync(GIT_SSH)).toBe(true)
+    root = await mkdtemp(join(tmpdir(), 'sotto-forge-'))
+    const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key'))
+    await credentials.load()
+    router = new DesktopHostRouter(emptyDesktopState)
+    const env = { ...process.env }
+    note('before', { remoteNodeOnPath: remote('command -v node || echo none'), descriptor: descriptor() ?? null, hostProcesses: remote('pgrep -af "sotto-host/host/index.js" || echo none') })
+    const spawner: SpawnSsh = (file, args, options) => {
+      if (args.includes('-V')) versionChecks += 1
+      else spawnCount += 1
+      note('spawn', { file, args: args.filter(arg => !arg.includes('SOTTO_') && arg.length < 200) })
+      const child = spawnSsh(WINSSH ? file : GIT_SSH, args, options)
+      if (args.includes('-N')) forwards.push(child)
+      return child
+    }
+    manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined,
+      launcher: () => new SshHostLauncher(WINSSH ? { spawn: spawner, env, readyTimeoutMs: 90_000, authenticationTimeoutMs: 120_000 } : { spawn: spawner, env, platform: 'linux', executable: GIT_SSH, readyTimeoutMs: 90_000, authenticationTimeoutMs: 120_000 }),
+      retryDelayMs: attempt => { scheduled.push(attempt); return reconnectDelayMs(attempt) } })
+    await manager.start()
+    const answered = new Set<string>()
+    manager.subscribe(state => {
+      const host = state.hosts[0]
+      if (host) note('status', { phase: host.phase, reconnecting: host.reconnecting, owned: host.owned, error: host.error, prompt: host.prompt?.kind })
+      const prompt = host?.prompt
+      if (!prompt || answered.has(prompt.id)) return
+      answered.add(prompt.id); prompts.push(prompt)
+      void manager!.command({ type: 'ssh-answer', id: host!.id, promptId: prompt.id, answer: prompt.kind === 'host-key' ? 'yes' : '' })
+    })
+    const saved = { id: randomUUID(), name: 'forge', target: TARGET, installPath: INSTALL, dataDirectory: DATA }
+    const row = () => manager!.get().hosts.find(host => host.id === saved.id)
+    const diagnostics = () => `\nhost row: ${JSON.stringify(row())}`
+    await manager.command({ type: 'save', host: saved })
+
+    note('connect')
+    await manager.command({ type: 'connect', id: saved.id })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
+    const first = descriptor()!
+    note('connected', { row: row(), descriptor: first, spawnCount, versionChecks, prompts: prompts.map(prompt => prompt.kind) })
+    expect(first).toMatchObject({ startedBy: 'launch-script', hostId: row()!.hostId })
+    expect(versionChecks).toBe(1)
+    const { clientId, hostId } = row()!
+
+    expect(router.shell().connections).toEqual([expect.objectContaining({ hostId, kind: 'remote' })])
+    await manager.command({ type: 'select', hostId: hostId! })
+    expect(router.shell().hostId).toBe(hostId)
+    const client = desktopWindowClient('forge-hand-test')
+    await router.command({ type: 'configure', patch: { provider: 'claude', enabledProviders: ['claude'] } }, client)
+    await vi.waitFor(() => expect(router!.shell().configuration.enabledProviders).toEqual(['claude']))
+    note('command-reached-host', { threads: router.shell().host.threads.length, sottoVersion: first.sottoVersion, features: first.features })
+
+    note('kill-forward')
+    const dropped = Date.now()
+    forwards[0]!.kill('SIGKILL')
+    await vi.waitFor(() => expect(row()).toMatchObject({ phase: 'connecting', reconnecting: true }), { timeout: 15_000 })
+    await vi.waitFor(() => expect(row(), diagnostics()).toMatchObject({ phase: 'connected', reconnecting: false }), { timeout: 120_000, interval: 200 })
+    note('reconnected', { afterMs: Date.now() - dropped, scheduled: [...scheduled], row: row(), descriptor: descriptor() })
+    expect(Date.now() - dropped).toBeGreaterThanOrEqual(reconnectDelayMs(0))
+    expect(scheduled).toEqual([0])
+    expect(row()).toMatchObject({ clientId, hostId, owned: true })
+    expect(descriptor()!.pid).toBe(first.pid)
+
+    note('disconnect')
+    await manager.command({ type: 'disconnect', id: saved.id })
+    expect(row()!.phase).toBe('disconnected')
+    expect(hostAlive(first.pid)).toBe(true)
+    note('host-survives-disconnect', { pid: first.pid, health: remote(`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${first.port}/v1/health`) })
+
+    note('connect-again-then-stop-host')
+    await manager.command({ type: 'connect', id: saved.id })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId })
+    await manager.command({ type: 'stop-host', id: saved.id })
+    expect(row()!.phase).toBe('disconnected')
+    await vi.waitFor(() => expect(hostAlive(first.pid)).toBe(false), { timeout: 20_000, interval: 500 })
+    note('host-stopped', { pid: first.pid, descriptorAfterStop: descriptor() ?? null })
+
+    note('connect-new-host-then-forget')
+    await manager.command({ type: 'connect', id: saved.id })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId, hostId })
+    const second = descriptor()!
+    expect(second.pid).not.toBe(first.pid)
+    expect(pairedCount()).toBe(1)
+    await manager.command({ type: 'forget', id: saved.id })
+    const spawned = spawnCount, retries = scheduled.length
+    expect(manager.get().hosts).toEqual([])
+    expect(credentials.has(`remote-host:${saved.id}`)).toBe(false)
+    await vi.waitFor(() => expect(hostAlive(second.pid)).toBe(false), { timeout: 20_000, interval: 500 })
+    expect(pairedCount()).toBe(0)
+    note('forgotten', { secondPid: second.pid, pairedClients: pairedCount() })
+
+    await new Promise(done => setTimeout(done, reconnectDelayMs(0) + 2_000))
+    expect(spawnCount).toBe(spawned)
+    expect(scheduled).toHaveLength(retries)
+    await expect(manager.command({ type: 'connect', id: saved.id })).rejects.toThrow('no longer saved')
+    expect(spawnCount).toBe(spawned)
+    note('done', { spawnCount, versionChecks, scheduled })
+  })
+})
