@@ -82,6 +82,23 @@ jobs:
         run: npm run test:socket
       - name: Package and verify the extracted host archive
         run: npm run package:host
+      # The runner image may not carry sshd. The test runs its own on a loopback port as the runner
+      # account, so the system service this installs is never used.
+      - name: OpenSSH server for the real SSH journey
+        run: |
+          if [ ! -x /usr/sbin/sshd ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends openssh-server
+          fi
+          ssh -V
+      - name: Real OpenSSH server journey
+        env:
+          SOTTO_REAL_SSHD: '1'
+        run: |
+          install="$RUNNER_TEMP/sotto-host"
+          mkdir -p "$install"
+          tar -xzf release/Sotto-host-*-linux-x64.tar.gz -C "$install"
+          SOTTO_REAL_SSHD_INSTALL="$install" npx vitest run tests/integration/realSshd.test.ts --maxWorkers=1
       - name: Third-party notices
         run: npm run notices:verify
       - name: Retain the verified host archive

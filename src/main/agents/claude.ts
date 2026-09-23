@@ -16,6 +16,7 @@ import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, Res
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
@@ -54,6 +55,8 @@ const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edi
  * how Sotto reads "this CLI has no approval surface", because the CLI reports no other sign of it.
  */
 const APPROVAL_SURFACE_TOOL = 'AskUserQuestion'
+/** Shown under a reply whose Claude Code process ended on its own; the next message starts the process again. */
+const SESSION_ENDED = 'Claude Code stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permission prompts, so it denies them itself and nothing reaches you. No work was lost. Answer in Claude Code until this is fixed, and check for a Sotto or Claude Code update.'
 /**
  * Changing settings or rewinding restarts the CLI, and a restart ends the agents a thread still has running
@@ -103,11 +106,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly starting = new Map<string, Promise<Runtime>>()
   private readonly logs = new Map<string, ClaudeSessionLog>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly publisher = new ProviderSnapshotPublisher(() => {
-    const snapshot = this.view()
-    for (const listener of this.listeners) listener(snapshot)
+    for (const listener of this.listeners) listener(this.view())
+    if (this.activityListeners.size) {
+      const snapshot = this.activityView()
+      for (const listener of this.activityListeners) listener(cloneActivitySnapshot(snapshot))
+    }
   })
-  private readonly acknowledgements = new Map<string, () => void>()
+  private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
   private readonly dispatching = new Set<string>()
   private readonly logOrigins = new Map<string, Set<string>>()
   private readonly lastLogDigest = new Map<string, string>()
@@ -271,6 +278,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return this.view()
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.activityListeners.add(listener); return () => this.activityListeners.delete(listener)
+  }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.messageLog.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   observeThreads(ids: readonly string[]): void {
@@ -474,6 +484,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         try {
           await this.refreshThread(id); checkLatestUserMessage()
           if (thread.requests.length || this.threads.get(id)?.status === 'running') throw new Error('The Claude thread started working or needs an answer before another prompt.')
+          if (this.runtimes.get(id) !== runtime) throw new Error('Claude Code stopped before this message was sent. Nothing was sent; send it again.')
         }
         catch (error) {
           alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
@@ -482,7 +493,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         let timer: ReturnType<typeof setTimeout> | undefined
         const acknowledged = new Promise<boolean>(resolve => {
           timer = setTimeout(() => { this.acknowledgements.delete(origin.uuid); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
-          this.acknowledgements.set(origin.uuid, () => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); resolve(true) })
+          this.acknowledgements.set(origin.uuid, (delivered = true) => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); resolve(delivered) })
         })
         thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
@@ -585,9 +596,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const runtime: Runtime = { requests: new Map(), answered: new Set(), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
+        // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others
+        // keep running, and this one starts again from its native session on its next action.
+        const thread = this.threads.get(id)!; const saved = this.aliases[id]; const running = thread.status === 'running'; const turn = running ? thread.lastTurn : undefined
+        // Work still going in the background is lost with the session too, so the thread asks for attention.
+        const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
-        this.runtimes.delete(id); this.threads.get(id)!.requests = []; this.threads.get(id)!.status = 'error'
-        this.state.connected = false; this.state.error = 'Claude Code disconnected. Reconnect to recover its existing session; uncertain prompts will not be resent.'; this.emit()
+        this.runtimes.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
+        if (saved?.compaction?.status === 'running') {
+          saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }
+          thread.compaction = saved.compaction; this.closures.push(this.persist().catch(() => undefined))
+        }
+        if (cut) thread.status = 'error'
+        if (turn?.status === 'running') {
+          thread.lastTurn = { id: turn.id, status: 'failed' }; this.completedOrigins.add(turn.id)
+          // A prompt still waiting for its echo was not confirmed, so its send reports uncertain now rather than at the deadline.
+          this.acknowledgements.get(turn.id)?.(false)
+          this.markTurn(id, 'failed', saved?.origins.find(origin => origin.uuid === turn.id)?.messageId, SESSION_ENDED)
+        }
+        this.emit()
       }) }
     this.runtimes.set(id, runtime); this.closures.push(runtime.protocol.closed)
     try {
@@ -846,6 +873,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private view(): AgentHostSnapshot {
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) })
+  }
+  private activityView(): AgentHostSnapshot {
+    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
+      thread.activities = immutableActivities(thread.activities)
+    }
+    return { ...this.state, threads: [...this.threads.values()]
+      .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.messageLog.publishedThread(thread)) }
   }
   /**
    * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report

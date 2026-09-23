@@ -104,8 +104,8 @@ describe('durable typed queue answers', () => {
     }
     fireEvent.click(mainUi.getByRole('button', { name: 'Docs', exact: true }))
     await waitFor(() => expect(f.control.get().activeThreadId).toBe('docs'))
+    expect(await mainUi.findByText('This draft stays with Workshop.')).toBeInTheDocument()
     expect(mainUi.getByLabelText('Your answer')).toHaveValue('Use the existing indigo palette.')
-    expect(mainUi.getByText('This draft stays with Workshop.')).toBeInTheDocument()
     fireEvent.change(widgetUi.getByLabelText('Your answer'), { target: { value: 'Use indigo with white text.' } })
     await waitFor(() => expect(mainUi.getByLabelText('Your answer')).toHaveValue('Use indigo with white text.'))
     expect(f.control.get()).toMatchObject({ draftThreadId: 'workshop', draftRequestId: 'workshop-colors' })

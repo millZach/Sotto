@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HostLockError, startHeadlessHost } from '../../src/host'
+import { readBootId } from '../../src/host/lock'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 
 let root: string, data: string
@@ -42,13 +43,33 @@ describe('the host data folder lock', () => {
     const held = JSON.stringify({ pid: alive.pid, nonce: 'live' })
     await writeFile(join(data, 'host-listener.lock'), held)
     await expect(start()).rejects.toThrow(HostLockError)
-    await expect(start()).rejects.toThrow(`Another host (process ${alive.pid}) is still running`)
+    await expect(start()).rejects.toThrow(`Another host (process ${alive.pid}) is using this data folder, so this host did not start`)
     expect(await lock()).toBe(held)
     expect(events).not.toContain('host-lock-reclaimed')
   })
   it('refuses a second host in the same folder while the first runs', async () => {
     await start()
-    await expect(start()).rejects.toThrow(`Another host (process ${process.pid}) is still running`)
+    await expect(start()).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder, so this host did not start`)
+  })
+  it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('records this boot in the lease, and reclaims a lock from an earlier boot whose pid a running process now has', async () => {
+    const boot = await readBootId()
+    if (boot === undefined) throw new Error('readBootId found no boot identity on a platform that has one')
+    const reused = sleeper()
+    await new Promise(resolve => reused.once('spawn', resolve))
+    await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: reused.pid, nonce: 'before-reboot', boot: boot + '-earlier' }))
+    const host = await start()
+    expect(JSON.parse(await lock())).toMatchObject({ pid: process.pid, boot })
+    expect(events).toContain('host-lock-reclaimed')
+    await host.close()
+  })
+  it('lets exactly one of two hosts started together after a crash open the folder', async () => {
+    const dead = sleeper()
+    await new Promise(resolve => dead.once('spawn', resolve))
+    dead.kill(); await new Promise(resolve => dead.once('exit', resolve))
+    await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: dead.pid, nonce: 'stale' }))
+    const results = await Promise.allSettled([start(), start()])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.find(result => result.status === 'rejected')).toMatchObject({ reason: expect.any(HostLockError) })
   })
   it('refuses a lock it cannot read rather than removing a file it does not understand', async () => {
     await writeFile(join(data, 'host-listener.lock'), 'not json')

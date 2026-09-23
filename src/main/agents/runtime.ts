@@ -23,6 +23,7 @@ import { GitStatusReader } from './gitStatus'
 import { GitActions } from './gitActions'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
+import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
 import type { AgentHost } from './host'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -54,6 +55,9 @@ export interface AgentRuntimeOptions {
    * whether a window is in front to read for. Absent, thread records carry no Git status.
    */
   gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean }
+  /** What the worktree cleanup (ADR-0019) may reach beyond the workspace: GitHub for the merged rule, and a log of
+   * stable event names. Without `pullRequestMerged` the merged rule never fires; the other rules read only the repository. */
+  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
@@ -119,9 +123,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     reasoner,
   })
+  // Reclaims worktrees only under the rules the user turned on (ADR-0019); every rule starts off. The desktop's
+  // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
+  // checks are wired (the desktop's open terminals), and close drains it before anything it asks is closed.
+  const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup, ...options.worktreeCleanup })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
+      // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
+      await worktreeCleanup.close()
       agentControl.dispose()
       try {
         const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
@@ -145,5 +155,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const hostService = new LocalHostService({ control: agentControl, events: agentHost })
-  return { agentHost, agentControl, threadRegistry, turns, membership, hostService, shortTextWriter, close }
+  return { agentHost, agentControl, threadRegistry, turns, membership, hostService, shortTextWriter, worktreeCleanup, close }
 }

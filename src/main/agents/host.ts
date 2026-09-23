@@ -129,6 +129,10 @@ export interface AgentHost {
   resolveProjectId?(id: string): string
   resolveModelId?(id: string): string
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
+  /** Internal readers may share deeply immutable activity trees. All other containers remain
+   * isolated for the consumer. Callers needing writable activities use subscribe/snapshot instead.
+   * Absence means mutable legacy data: never infer unchanged activity from array identity alone. */
+  subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void): () => void
   /**
    * Every change to what a thread said, as it happens. An adapter that implements this publishes each
    * change once through its own append path, and its snapshots then carry the messages only for the
