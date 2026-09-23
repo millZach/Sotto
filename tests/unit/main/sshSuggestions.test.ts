@@ -91,4 +91,13 @@ describe('discoverSshHosts', () => {
       { alias: 'zeta.example.net', source: 'known-hosts' },
     ])
   })
+
+  it('follows an Include with a wildcard in a folder, as Colima and OrbStack write them', async () => {
+    home = await mkdtemp(join(tmpdir(), 'sotto-ssh-suggestions-'))
+    await write('.ssh/config', 'Include ~/.colima/*/ssh_config\nHost forge\n')
+    await write('.colima/default/ssh_config', 'Host colima\n  HostName 127.0.0.1\n')
+    await write('.colima/work/ssh_config', 'Host colima-work\n')
+    await write('.colima/_lima/ssh_config.bak', 'Host not-included\n')
+    expect((await discoverSshHosts({ home })).map(item => item.alias)).toEqual(['colima', 'colima-work', 'forge'])
+  })
 })

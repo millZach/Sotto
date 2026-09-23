@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, parse, resolve } from 'node:path'
 import type { SshHostSuggestion } from '../../shared/hosts'
 
 /**
@@ -16,6 +16,8 @@ const FILE_LIMIT = 512 * 1024
 /** Include chains deeper than this are a loop the visited set did not catch (a symlink, a case change). */
 const DEPTH_LIMIT = 16
 const SUGGESTION_LIMIT = 200
+/** One Include pattern expands to at most this many files, however many folders its wildcards match. */
+const EXPANSION_LIMIT = 256
 
 export interface SshConfigHost { readonly alias: string; readonly hostname?: string; readonly user?: string }
 /** `includes` are the `Include` patterns in order; `includeAt` says how many of `hosts` were written before each. */
@@ -84,7 +86,7 @@ export function parseKnownHosts(text: string): { host: string; port?: number }[]
   return [...found.values()]
 }
 
-/** A simple `*` and `?` match on one file name, as `Include` uses; no other glob syntax. */
+/** A simple `*` and `?` match on one path segment, as `Include` uses; no other glob syntax. */
 function globMatcher(name: string): RegExp {
   return new RegExp(`^${name.replace(/[.+^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*').replace(/\?/gu, '.')}$`, 'u')
 }
@@ -108,10 +110,21 @@ async function includedPaths(value: string, home: string, files: Files): Promise
   const expanded = value.replace(/^~(?=$|[\\/])/u, home)
   // OpenSSH reads a relative Include from ~/.ssh, whichever file names it.
   const full = isAbsolute(expanded) ? expanded : resolve(join(home, '.ssh'), expanded)
-  const name = basename(full)
-  if (!/[*?]/u.test(name)) return [full]
-  const matcher = globMatcher(name)
-  return (await files.list(dirname(full))).filter(entry => matcher.test(entry)).sort().map(entry => join(dirname(full), entry))
+  // A wildcard may sit in any segment (`~/.colima/*/ssh_config`), as OpenSSH's glob allows; each segment
+  // with one is matched against the folders reached so far, in sorted order.
+  const { root } = parse(full)
+  let paths = [root]
+  for (const segment of full.slice(root.length).split(/[\\/]+/u).filter(Boolean)) {
+    if (!/[*?]/u.test(segment)) { paths = paths.map(path => join(path, segment)); continue }
+    const matcher = globMatcher(segment)
+    const next: string[] = []
+    for (const directory of paths) {
+      next.push(...(await files.list(directory)).filter(entry => matcher.test(entry)).sort().map(entry => join(directory, entry)))
+      if (next.length >= EXPANSION_LIMIT) break
+    }
+    paths = next.slice(0, EXPANSION_LIMIT)
+  }
+  return paths
 }
 
 async function configHosts(path: string, home: string, files: Files, visited: Set<string>, depth: number): Promise<SshConfigHost[]> {
