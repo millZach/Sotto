@@ -1,9 +1,18 @@
 /* Chats: the Threads workspace's sidebar and conversation, with no project folders. Type and spacing are the Threads view's. */
 .personal-chats--unavailable { display: grid; flex: 1; place-items: center; min-width: 0; min-height: 0; }
 .personal-chats__list { margin: 0; padding: 0; list-style: none; }
+/* The list keeps the width it was given: the right edge drags it, and a long title ends in an ellipsis. */
+.personal-chats__nav { position: relative; min-width: 0; }
+.personal-chats__nav[data-collapsed] { padding: 0; }
+.personal-chats__nav[data-resizing] { user-select: none; }
+/* Collapsed, each chat is its provider's mark in a tile; the title is its name and tooltip. */
+.personal-chats__rail { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; padding: 4px 0; list-style: none; }
+.personal-chats__rail .thread-nav__rail-thread { display: grid; place-items: center; }
 .personal-chats .thread-nav__item { grid-template-columns: 18px minmax(0, 1fr); }
 .personal-chats__availability { flex-direction: column; gap: 6px; }
 .personal-chats__availability .thread-prompt__link { color: var(--tt-text); font-size: 13px; }
+/* The window's controls sit over the header's right end, as on Threads; the actions stop short of them. */
+.personal-chat > .thread-workspace__head { padding-right: calc(6px + var(--threads-winctl-inset, 0px)); }
 .personal-chat__none { gap: 12px; }
 .personal-chat__none p { max-width: 42ch; line-height: 1.5; }
 .personal-chat__none .tt-button { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 38px; font-size: 14px; }

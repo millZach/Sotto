@@ -2,6 +2,10 @@ import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { StoredMessageIdentity, ThreadHostEvent } from './host'
+import { isImmutableActivities } from './activitySnapshots'
+
+/** Activity facts are independent of message text. Only certified immutable inputs may be reused. */
+const activitySummaries = new WeakMap<readonly AgentActivity[], AgentThreadSummary>()
 
 /**
  * One adapter's append path. Every change an adapter makes to what a thread said goes through this
@@ -123,7 +127,12 @@ export class ThreadMessageLog {
   }
   /** The same facts with the activity beside them, which is what a thread's own snapshot carries. */
   summaryBeside(threadId: string, activities: readonly AgentActivity[] | undefined): AgentThreadSummary {
-    const beside = summarizeThread({ messages: [], activities: activities === undefined ? undefined : [...activities] })
+    const immutable = isImmutableActivities(activities)
+    let beside = immutable ? activitySummaries.get(activities!) : undefined
+    if (!beside) {
+      beside = summarizeThread({ messages: [], activities: activities === undefined ? undefined : [...activities] })
+      if (immutable) activitySummaries.set(activities!, beside)
+    }
     return { ...this.summary(threadId), activityCount: beside.activityCount,
       ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) }
   }

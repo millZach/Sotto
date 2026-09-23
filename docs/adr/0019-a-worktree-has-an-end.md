@@ -40,4 +40,6 @@ The record keeps `path`, `branch` and `repositoryRoot` and gains `reclaimedAt`. 
 
 The sweep's log carries two event names, `worktree-cleanup-reclaimed` and `worktree-cleanup-skipped`, and never a path or branch.
 
+The sweep belongs to the agent runtime that owns the worktrees, so it runs wherever a host runs: in the desktop when its local host is on, and in every headless host, which reclaims its own worktrees under the rules in its own data folder's settings (amended September 23, 2026 for #245; see ADR-0025). Each drains a sweep in progress before closing the workspace it asks.
+
 Agents working in this repository are told in `AGENTS.md` to remove any worktree they created when they are done with it, and never to make one inside a thread's worktree. The 107 GB was cleared by hand on September 22 with the branches kept and fourteen patches of uncommitted work saved under `%APPDATA%\sotto\backup-worktree-patches\`.

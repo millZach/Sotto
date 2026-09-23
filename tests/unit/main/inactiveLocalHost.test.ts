@@ -16,6 +16,8 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     expect(runtime.threadRegistry).toBeNull()
     await expect(runtime.hostService.command({ type: 'connect' }, desktopWindowClient())).rejects.toThrow('local host is off')
     expect(() => runtime.agentHost.workingCopyOptions('project')).toThrow('local host is off')
+    expect(() => { runtime.worktreeCleanup.start(); runtime.worktreeCleanup.settingsChanged() }).not.toThrow()
+    await expect(runtime.worktreeCleanup.close()).resolves.toBeUndefined()
     await runtime.close()
     expect(await readFile(join(directory, 'workspace.json'), 'utf8')).toBe(saved)
     expect((await readdir(directory)).sort()).toEqual(['host.json', 'workspace.json'])

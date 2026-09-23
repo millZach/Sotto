@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 
 const stores: ThreadStore[] = []
 const databases: DatabaseSync[] = []
@@ -46,6 +47,60 @@ async function onDisk(root: string): Promise<string> {
 }
 
 describe('thread activity store', () => {
+
+  it('does not visit unchanged certified records after a successful save', async () => {
+    const { store } = await fixture()
+    const records = immutableActivities(Array.from({ length: 200 }, (_, index) => activity(`work-${index}`)))
+    store.syncActivities('thread', records)
+    const visited = vi.spyOn(Set.prototype, 'add')
+    store.syncActivities('thread', records)
+    const recordVisits = visited.mock.calls.filter(([id]) => typeof id === 'string' && id.startsWith('work-')).length
+    visited.mockRestore()
+    expect(recordVisits).toBe(0)
+    expect(store.readActivities('thread')).toEqual(records)
+  })
+
+  it('retries the same immutable revision after a failed transaction', async () => {
+    const { store, path } = await fixture()
+    const first = immutableActivities([activity('a', 'First')])
+    const changed = immutableActivities([activity('a', 'Second')])
+    store.syncActivities('thread', first)
+    const db = inspect(path)
+    db.exec("CREATE TRIGGER fail_update BEFORE UPDATE ON activities BEGIN SELECT RAISE(ABORT, 'injected update failure'); END;")
+    expect(() => store.syncActivities('thread', changed)).toThrow('injected update failure')
+    expect(store.readActivities('thread')[0]!.output).toBe('First')
+    db.exec('DROP TRIGGER fail_update')
+    store.syncActivities('thread', changed)
+    store.close(); store.open()
+    expect(store.readActivities('thread')[0]!.output).toBe('Second')
+  })
+
+  it('invalidates a saved immutable revision on redaction and message reset', async () => {
+    const { store } = await fixture()
+    const records = immutableActivities([activity('a')])
+    store.syncActivities('thread', records, 'epoch')
+    store.replaceThreadMessages('thread', [], 'epoch')
+    store.syncActivities('thread', records, 'epoch')
+    expect(store.readActivityResetSequence('thread')).toBe(store.latestSeq())
+    store.redactActivityIdentities('thread', ['a'])
+    store.syncActivities('thread', records, 'epoch')
+    expect(store.readActivities('thread')).toEqual([])
+    store.close(); store.open()
+    store.syncActivities('thread', records, 'epoch')
+    expect(store.readActivities('thread')).toEqual([])
+  })
+
+  it('does not let an immutable cache revive activity across history off and on', async () => {
+    const { store } = await fixture()
+    const records = immutableActivities([activity('a', 'Private output')])
+    store.syncActivities('thread', records)
+    store.becomeEphemeral()
+    store.syncActivities('thread', records)
+    expect(store.readActivities('thread')).toEqual(records)
+    store.becomeDurable()
+    store.syncActivities('thread', records)
+    expect(store.readActivities('thread')).toEqual([])
+  })
 
   it('distinguishes unknown activity from an authoritative empty list across restart', async () => {
     const { store } = await fixture()
