@@ -52,7 +52,17 @@ describe('the host is visible where work happens', () => {
     expect(badges).toContain('forge')
   })
 
-  it('shows no badge with only one host', () => {
+  it('names the host when a remote host is the only one connected', () => {
+    const state = twoHosts()
+    // The local host is switched off, so forge's projects are all there is.
+    state.connections = state.connections!.filter(item => item.kind === 'remote')
+    state.host.projects = state.host.projects.filter(project => project.hostId === FORGE)
+    state.host.threads = state.host.threads.filter(thread => thread.hostId === FORGE)
+    mount(state)
+    expect([...document.querySelectorAll('.host-badge')].map(badge => badge.textContent)).toEqual(['forge'])
+  })
+
+  it('shows no badge while this computer is the only host', () => {
     const state = threadsStateFixture()
     state.connections = [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }]
     mount(state)

@@ -11,12 +11,13 @@ export interface ListedHost { readonly hostId: string; readonly name: string; re
 export const listedHostName = (host: Pick<ListedHost, 'name' | 'kind'>): string => host.kind === 'local' ? 'This computer' : host.name
 
 /**
- * The hosts whose threads the Threads page can list. Empty when there is only one: the host is then shown
- * nowhere, as T3 Code does, since there is nothing to tell it apart from.
+ * The hosts whose threads the Threads page can list, once a remote host is connected (the owner's rule for
+ * #206). Empty while this computer is the only host: the host is then shown nowhere, as T3 Code does. A remote
+ * host alone, with the local host off, is still named, since then every thread runs somewhere else.
  */
 export function listedHosts(state: Pick<AgentState, 'connections'>): readonly ListedHost[] {
   const connections = state.connections ?? []
-  return connections.length > 1 ? connections.map(item => ({ hostId: item.hostId, name: listedHostName(item), kind: item.kind })) : []
+  return connections.some(item => item.kind === 'remote') ? connections.map(item => ({ hostId: item.hostId, name: listedHostName(item), kind: item.kind })) : []
 }
 
 /** The host a project or thread lives on, from its client-scoped ID when it carries no host ID of its own. */

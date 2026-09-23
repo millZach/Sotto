@@ -136,7 +136,7 @@ const folderKey = (section: Section, folderId: string): string => `${section}:${
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
 const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, globalLaneBusy, busyThreadIds, host }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
-  /** The host the project is on, when threads from more than one host are listed; its badge tells same-named projects apart. */
+  /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
   readonly expanded: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
   readonly unseen: ReadonlySet<string>; readonly liveClock: boolean
