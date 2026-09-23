@@ -49,6 +49,8 @@ export function HostsModal({ title, onClose, busy = false, children, footer, cla
   </div>
 }
 
+/** The longest name and SSH target a saved host may have (`remoteHostSchema`). */
+const MAX_NAME_LENGTH = 80, MAX_TARGET_LENGTH = 256
 /** The host part of an SSH target: `forge` in `zach@forge`. */
 export const targetHost = (target: string): string => target.slice(target.lastIndexOf('@') + 1)
 /** The user part of an SSH target, or '' when the SSH configuration decides. */
@@ -167,6 +169,7 @@ export function HostDialog({ mode, bridge, state, onClose }: {
     if (portNumber !== undefined && (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535)) return 'Enter a port between 1 and 65535, or leave Port empty to use your SSH configuration.'
     // A username typed here wins over one typed in front of the host.
     const target = user.trim() ? `${user.trim()}@${targetHost(name)}` : name
+    if (target.length > MAX_TARGET_LENGTH) return 'This SSH host and username are too long together. Nothing was saved. Use a shorter alias from your SSH configuration.'
     return { target, installPath: installPath.trim(), dataDirectory: dataDirectory.trim(), identityFile: identityFile.trim(), ...(portNumber !== undefined ? { sshPort: portNumber } : {}) }
   }
   const submit = async (): Promise<void> => {
@@ -183,7 +186,8 @@ export function HostDialog({ mode, bridge, state, onClose }: {
     }
     const id = crypto.randomUUID()
     setAttempt(id); setSending(true)
-    try { await bridge.command({ type: 'add', host: { id, name: targetHost(route.target), ...route } }) }
+    // A new host is named after its host part until renamed, cut to the length a name may have.
+    try { await bridge.command({ type: 'add', host: { id, name: targetHost(route.target).slice(0, MAX_NAME_LENGTH), ...route } }) }
     catch (failure) { setError(failure instanceof Error ? failure.message : 'The host could not be added. Nothing was saved. Try again.') }
     finally { setSending(false) }
   }
