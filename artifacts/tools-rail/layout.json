@@ -30,13 +30,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 885,
-        "y": 123,
+        "y": 84,
         "width": 657,
-        "height": 845
+        "height": 884
       },
       "mode": "docked"
     },
@@ -55,7 +56,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -75,7 +77,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -95,7 +98,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -115,7 +119,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -135,13 +140,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 885,
-        "y": 123,
+        "y": 84,
         "width": 657,
-        "height": 845
+        "height": 884
       },
       "mode": "docked"
     },
@@ -160,7 +166,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -180,7 +187,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -200,7 +208,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -220,7 +229,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -240,13 +250,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 1221,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 811
+        "height": 884
       },
       "mode": "docked"
     },
@@ -265,7 +276,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -285,7 +297,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -305,7 +318,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -325,7 +339,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -345,13 +360,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 1221,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 811
+        "height": 884
       },
       "mode": "docked"
     },
@@ -370,7 +386,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -390,7 +407,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -410,7 +428,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -430,7 +449,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -450,13 +470,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 813,
-        "y": 123,
+        "y": 84,
         "width": 729,
-        "height": 845
+        "height": 884
       },
       "mode": "docked"
     },
@@ -475,7 +496,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -495,7 +517,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -515,7 +538,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -535,7 +559,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -555,13 +580,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 813,
-        "y": 123,
+        "y": 84,
         "width": 729,
-        "height": 845
+        "height": 884
       },
       "mode": "docked"
     },
@@ -580,7 +606,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -600,7 +627,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -620,7 +648,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -640,7 +669,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 1000,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -660,13 +690,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 733,
-        "y": 123,
+        "y": 84,
         "width": 489,
-        "height": 645
+        "height": 684
       },
       "mode": "docked"
     },
@@ -685,7 +716,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -705,7 +737,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -725,7 +758,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -745,7 +779,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -765,13 +800,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 733,
-        "y": 123,
+        "y": 84,
         "width": 489,
-        "height": 645
+        "height": 684
       },
       "mode": "docked"
     },
@@ -790,7 +826,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -810,7 +847,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -830,7 +868,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -850,7 +889,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -870,13 +910,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 901,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 611
+        "height": 684
       },
       "mode": "docked"
     },
@@ -895,7 +936,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -915,7 +957,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -935,7 +978,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -955,7 +999,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -975,13 +1020,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 901,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 611
+        "height": 684
       },
       "mode": "docked"
     },
@@ -1000,7 +1046,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1020,7 +1067,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1040,7 +1088,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1060,7 +1109,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1080,13 +1130,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 493,
-        "y": 123,
+        "y": 84,
         "width": 729,
-        "height": 645
+        "height": 684
       },
       "mode": "overlay"
     },
@@ -1105,7 +1156,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1125,7 +1177,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1145,7 +1198,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1165,7 +1219,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1185,13 +1240,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 493,
-        "y": 123,
+        "y": 84,
         "width": 729,
-        "height": 645
+        "height": 684
       },
       "mode": "overlay"
     },
@@ -1210,7 +1266,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1230,7 +1287,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1250,7 +1308,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1270,7 +1329,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 800,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1290,13 +1350,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 369,
-        "y": 157,
+        "y": 84,
         "width": 393,
-        "height": 371
+        "height": 444
       },
       "mode": "docked"
     },
@@ -1315,7 +1376,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1335,7 +1397,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1355,7 +1418,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1375,7 +1439,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1395,13 +1460,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 369,
-        "y": 157,
+        "y": 84,
         "width": 393,
-        "height": 371
+        "height": 444
       },
       "mode": "docked"
     },
@@ -1420,7 +1486,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1440,7 +1507,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1460,7 +1528,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1480,7 +1549,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1500,13 +1570,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 441,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 371
+        "height": 444
       },
       "mode": "docked"
     },
@@ -1525,7 +1596,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1545,7 +1617,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1565,7 +1638,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1585,7 +1659,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1605,13 +1680,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 441,
-        "y": 157,
+        "y": 84,
         "width": 321,
-        "height": 371
+        "height": 444
       },
       "mode": "docked"
     },
@@ -1630,7 +1706,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1650,7 +1727,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1670,7 +1748,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": true
+        "stacked": true,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1690,7 +1769,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "docked"
@@ -1710,13 +1790,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 49,
-        "y": 123,
+        "y": 84,
         "width": 713,
-        "height": 405
+        "height": 444
       },
       "mode": "overlay"
     },
@@ -1735,7 +1816,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1755,7 +1837,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1775,7 +1858,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1795,7 +1879,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1815,13 +1900,14 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": {
         "x": 49,
-        "y": 123,
+        "y": 84,
         "width": 713,
-        "height": 405
+        "height": 444
       },
       "mode": "overlay"
     },
@@ -1840,7 +1926,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1860,7 +1947,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1880,7 +1968,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": false
+        "stacked": false,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
@@ -1900,7 +1989,8 @@
         "tileTop": 50,
         "controlsBottom": 44,
         "height": 560,
-        "stacked": null
+        "stacked": null,
+        "detailStubs": []
       },
       "nativeBounds": null,
       "mode": "overlay"
