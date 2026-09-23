@@ -11,6 +11,7 @@ import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserTaskPreview } from './BrowserTaskPreview'
 import { BrowserSurface } from './BrowserSurface'
+import { useBrowserTasks } from './browserStore'
 import { ChangesSurface } from './ChangesSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
@@ -79,6 +80,8 @@ function focusToggle(): void {
 /**
  * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
  * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
+ * Its dot means the thread it follows has agents working or a browser request waiting for the user; the corner preview
+ * can be off or showing another thread, so this is where a waiting request shows before Tools > Browser is open.
  */
 export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
   const chrome = useToolsPanelChrome(store)
@@ -100,15 +103,17 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   const pinned = chrome.pinnedThreadId
   const toolsThreadId = pinned ?? paneThreadId ?? agentState?.activeThreadId
   const workingAgents = (agentState?.host.threads.find(thread => thread.id === toolsThreadId)?.subagentSummary?.working ?? 0) > 0
+  const browserTasks = useBrowserTasks(store.browser)
+  const browserWaiting = browserTasks.some(task => task.threadId === toolsThreadId && task.pendingAction !== null)
   const pinnedElsewhere = chrome.open && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
   return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : `Showing ${pinnedTitle}, pinned`, workingAgents ? 'Agents are working' : null].filter(Boolean).join('. ') || undefined}
+    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : `Showing ${pinnedTitle}, pinned`, workingAgents ? 'Agents are working' : null, browserWaiting ? 'A browser request is waiting for your answer' : null].filter(Boolean).join('. ') || undefined}
     title={pinnedTitle === null ? 'Tools' : `Tools are pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
     {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">Tools</span>
-    {workingAgents ? <span className="tools-toggle__agents-dot" aria-hidden="true" /> : null}
+    {workingAgents || browserWaiting ? <span className="tools-toggle__agents-dot" aria-hidden="true" /> : null}
   </button>
 }
 

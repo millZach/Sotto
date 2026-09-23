@@ -6,6 +6,7 @@ import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserTaskDetails, BrowserTaskPreview } from '../../../../src/renderer/src/tools/BrowserTaskPreview'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraftStore'
 import { threadsStateFixture } from '../liveAgentState'
 
@@ -59,6 +60,24 @@ describe('the shared browser preview', () => {
     expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
     act(() => browser.emit({ type: 'task', task: task({ id: '33333333-3333-4333-8333-333333333333', updatedAt: 3, pendingAction: { id: '44444444-4444-4444-8444-444444444444', action: { type: 'click', x: 1, y: 1 }, description: 'Click', expiresAt: Date.now() + 1000 } }) }))
     expect(screen.queryByRole('complementary', { name: /Browser preview/ })).not.toBeInTheDocument()
+  })
+  it('marks the Tools toggle of the thread whose browser request waits, so it is seen with previews off', async () => {
+    const browser = fake(); const store = new ToolsPanelStore(); const state = threadsStateFixture()
+    render(<>
+      <section className="thread-pane" data-thread-id="visual-gate"><ToolsPanelToggle store={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id="grok-previews"><ToolsPanelToggle store={store} state={state} /></section>
+      <BrowserTaskPreview state={state} focusedThreadId="grok-previews" bridge={browser.bridge} store={store} enabled={false} />
+    </>)
+    await waitFor(() => expect(store.browser.taskSnapshot()).toHaveLength(1))
+    const [waitingPane, otherPane] = screen.getAllByRole('button', { name: 'Tools' })
+    expect(waitingPane).not.toHaveAccessibleDescription(/browser request/)
+    act(() => browser.emit({ type: 'task', task: task({ updatedAt: 3, pendingAction: { id: '44444444-4444-4444-8444-444444444444', action: { type: 'navigate', url: 'http://localhost:5173/about' }, description: 'Go to /about', expiresAt: Date.now() + 1000 } }) }))
+    expect(waitingPane).toHaveAccessibleDescription('A browser request is waiting for your answer')
+    expect(waitingPane!.querySelector('.tools-toggle__agents-dot')).not.toBeNull()
+    expect(otherPane).not.toHaveAccessibleDescription(/browser request/)
+    expect(otherPane!.querySelector('.tools-toggle__agents-dot')).toBeNull()
+    act(() => browser.emit({ type: 'task', task: task({ updatedAt: 4 }) }))
+    expect(waitingPane!.querySelector('.tools-toggle__agents-dot')).toBeNull()
   })
   it('dismisses one task without pausing and keeps it dismissed across progress updates', async () => {
     const browser = fake(); const store = new ToolsPanelStore()
