@@ -7,8 +7,8 @@ type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand
  * Every command a paired client may send over the socket, and every field it may carry. The list is
  * closed: a command type or field added to `agentCommandSchema` is refused remotely until it is added
  * here on purpose, because a paired device is not the user at this computer (ADR-0004). Anything
- * absent is host-local: credentials, membership, voice, reasoning checks, opening a folder on the host
- * machine and installing provider client updates.
+ * absent is host-local: credentials, membership, the voice commands and voice engine, reasoning checks,
+ * opening a folder on the host machine and installing provider client updates.
  */
 export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   configure: ['patch'],
@@ -43,7 +43,12 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   next: [], later: [],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice'],
 }
-/** The coordinator settings a paired client may change; keys, endpoints and voice stay on the host. */
+/**
+ * The coordinator settings a paired client may change. Keys, endpoints and the voice engine (speech
+ * provider, voices, wake word) stay on the host. Turning spoken replies on or off and the orb colour are
+ * preferences, and the follow-up limit only bounds work the user already assigned, which a paired device
+ * may send itself; none of them answers a request.
+ */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
   'reasoning', 'reasoningModel', 'reasoningEffort', 'followupLimit', 'orbColor', 'speak']
 

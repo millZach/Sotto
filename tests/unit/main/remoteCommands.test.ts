@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, remoteCommandRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, remoteCommandRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
@@ -13,6 +13,15 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
+    // Spoken replies on or off and the orb colour are preferences; the follow-up limit bounds work the user
+    // already assigned, and a paired device may send those follow-ups itself. None of them answers anything.
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'followupLimit', 'orbColor', 'provider',
+      'reasoning', 'reasoningEffort', 'reasoningModel', 'speak'])
+    for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(refuse({ type: 'configure', patch }), Object.keys(patch)[0]).toBeNull()
+    for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }, { membershipEndpoint: 'https://untrusted.example' }])
+      expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
+  })
   it('decides every command type and every field the schema knows, so nothing new is remote by default', () => {
     for (const [type, fields] of schemaFields) {
       if (HOST_LOCAL.includes(type)) { expect(REMOTE_COMMANDS[type as AgentCommand['type']], type).toBeUndefined(); continue }
