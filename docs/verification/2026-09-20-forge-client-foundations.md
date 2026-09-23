@@ -71,3 +71,28 @@ The fourth review's fixes followed. The host ADR became ADR-0024, main having ta
 Gates on this Windows PC in CI's form, one at a time: typecheck and lint clean; `npm test -- --maxWorkers=2` 366 files passed and 18 skipped, 4,739 tests passed and 41 skipped (the live and native suites), 447.6 seconds; `npm run notices:verify` 174 components. Playwright on the final build: `hosts.spec.ts`, `host-identity.spec.ts` and `settings-index.spec.ts` 3 passed. `node scripts/verify-design-captures.mjs` verified 144 tuples. The design capture run passed 7, failed the scaling matrix on `scale-125-onboarding` and did not run the two widget tests after it; that capture comes out at the same wrong size on `origin/main` on this machine, so its baseline was left as main's. The settings-index captures were retaken at this machine's 1x scale; main's earlier ones were 1.5x.
 
 Still owed: the hand test against a real sshd (#237).
+
+## September 22, the fifth review
+
+CI's Linux job, Host archive and socket contract (Linux), passed on this PR at b611c9fa in 1 minute 45 seconds (run 35803382481, job 106998593488), next to Gates (Windows). That covers the Linux item listed as unverified above.
+
+This round merged main again (#250, #251 and #252). The only conflict was the settings allow-list, which keeps both `localHostEnabled` and `showBrowserPreviews`. Fixes from the review, each its own commit:
+- The too_large errors no longer send the user to a host with no window. They say nothing on the host was lost and what this device still has, and they name what the oversize message carried: one thread, an attachment preview, or the thread list.
+- A bad host command line prints its own message rather than the key-file hint.
+- A paired device may put a thread back to approval-required without the answer policy.
+- Quitting clears a reconnect left pending by a failed connect.
+- Four tests that slept and then asserted that nothing had happened now assert on what was scheduled or received.
+- The host ADR is now ADR-0025, because open PR #253 claims 0024. It gains an amendment recording the remote command list and which commands need the answer policy.
+- The README and CONTEXT.md describe the iPhone client as planned in #225.
+
+The session-expiry socket test failed once in four local runs, because a shell push arrived before the reply it was waiting for. It now ignores pushes.
+
+`design:verify` failed on `threads-populated.png` on this branch and on `origin/main` at d1c9d77a alike. Main's #251 made the fixture's waiting thread say "Needs your approval" and left the baselines stale. Fourteen Threads baselines were refreshed with only that change. After that, `npm run design:verify` passed 10 tests and verified 144 tuples. The settings-index journey passed, and its eight Application captures were retaken for main's Show browser previews switch.
+
+Gates on this Windows PC in CI's form, one at a time:
+- typecheck and lint clean.
+- `npm test -- --maxWorkers=2`: 371 files passed and 18 skipped, 4,778 tests passed and 41 skipped, in 403.4 seconds.
+- `npm run notices:verify`: 174 components.
+- Playwright on the final build: `hosts.spec.ts` and `host-identity.spec.ts`, 2 passed. `settings-index.spec.ts`, 1 passed. `agentControl.spec.ts`: 8 passed and 1 failed. The failure is "reconciles a lost acknowledgement", which picks `workshop` where it expects `docs`, and it fails the same way on `origin/main` at d1c9d77a.
+
+Still owed: the hand test against a real sshd (#237).
