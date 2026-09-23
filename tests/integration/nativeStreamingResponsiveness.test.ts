@@ -2,8 +2,10 @@
 import { performance } from 'node:perf_hooks'
 import { afterEach, expect, it } from 'vitest'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
+import { isImmutableActivities, subscribeActivitySnapshots } from '../../src/main/agents/activitySnapshots'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
@@ -38,13 +40,28 @@ it.each(['claude', 'grok'] as const)('%s keeps three streaming threads responsiv
     if (provider === 'claude') await Promise.all(batches.map((frames, index) => f.action(sessionIds[index]!, { type: 'raw-burst', frames })))
     else await f.action(sessionIds[0]!, { type: 'raw-burst', frames: batches.flat() })
   }
+  let publications = 0
+  let latest: AgentHostSnapshot | undefined
+  const off = subscribeActivitySnapshots(f.host, snapshot => { publications += 1; latest = snapshot })
   await transmit(ids.map((id, index) => Array.from({ length: 12 }, (_, item) => provider === 'claude'
     ? { type: 'assistant', uuid: `tool-frame-${item}`, message: { id: `tools-${id}`, content: [{ type: 'tool_use', id: `tool-${item}`, name: 'Bash', input: { command: 'x'.repeat(8_000) } }] } }
     : grokFrame(index, { sessionUpdate: 'tool_call', toolCallId: `tool-${item}`, title: 'Fixture', kind: 'execute', status: 'in_progress', rawInput: { command: 'x'.repeat(8_000) } }))))
   await expect.poll(() => workspace.workspaceSnapshot().threads.every(thread => thread.activities?.filter(a => a.kind === 'command').length === 12)).toBe(true)
-
-  let publications = 0
-  const off = f.host.subscribe(() => { publications += 1 })
+  await expect.poll(() => latest?.threads.every(thread => thread.activities?.filter(a => a.kind === 'command').length === 12)).toBe(true)
+  const frozenBefore = latest!.threads.flatMap(thread => thread.activities ?? []).find(item => item.kind === 'command')!
+  expect(isImmutableActivities(latest!.threads.find(thread => thread.activities?.includes(frozenBefore))?.activities)).toBe(true)
+  expect(Object.isFrozen(frozenBefore)).toBe(true)
+  await transmit(ids.map((id, index) => provider === 'claude'
+    ? [{ type: 'user', uuid: `tool-result-${id}`, message: { content: [{ type: 'tool_result', tool_use_id: 'tool-0', content: `Tool result ${id}` }] } }]
+    : [grokFrame(index, { sessionUpdate: 'tool_call_update', toolCallId: 'tool-0', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: `Tool result ${id}` } }] })]))
+  await expect.poll(() => workspace.workspaceSnapshot().threads.every(thread => thread.activities?.some(a => a.kind === 'command' && a.output === `Tool result ${thread.id}`))).toBe(true)
+  await expect.poll(() => latest?.threads.every(thread => thread.activities?.some(a => a.kind === 'command' && a.output?.startsWith('Tool result ')))).toBe(true)
+  expect(frozenBefore.status).toBe('running')
+  expect(frozenBefore.output).toBeUndefined()
+  const completed = latest!.threads.flatMap(thread => thread.activities ?? []).find(item => item.id === frozenBefore.id && item.output?.startsWith('Tool result '))
+  expect(completed).toMatchObject({ status: 'completed' })
+  expect(completed).not.toBe(frozenBefore)
+  publications = 0
   let previous = performance.now()
   const delays: number[] = []
   const timer = setInterval(() => { const now = performance.now(); delays.push(now - previous); previous = now }, 5)

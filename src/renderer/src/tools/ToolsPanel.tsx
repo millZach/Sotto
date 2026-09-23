@@ -81,8 +81,8 @@ function focusToggle(): void {
 /**
  * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
  * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
- * Its dot means the thread it follows has agents working or a browser request waiting for the user; the corner preview
- * can be off or showing another thread, so this is where a waiting request shows before Tools > Browser is open.
+ * Its dot means the selected thread has agents working or the working-copy target has a browser request waiting;
+ * the corner preview can be off or showing another thread, so a waiting request still appears here.
  */
 export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
   const chrome = useToolsPanelChrome(store)
@@ -102,11 +102,12 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
     else store.clearToggleFocus()
   }, [chrome.open, store])
   const pinned = chrome.pinnedThreadId
-  const toolsThreadId = pinned ?? paneThreadId ?? agentState?.activeThreadId
-  const workingAgents = (agentState?.host.threads.find(thread => thread.id === toolsThreadId)?.subagentSummary?.working ?? 0) > 0
+  const selectedThreadId = paneThreadId ?? agentState?.activeThreadId
+  const workingCopyThreadId = pinned ?? selectedThreadId
+  const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0
   const browserTasks = useBrowserTasks(store.browser)
-  const browserWaiting = browserTasks.some(task => task.threadId === toolsThreadId && task.pendingAction !== null)
-  const pinnedElsewhere = chrome.open && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
+  const browserWaiting = browserTasks.some(task => task.threadId === workingCopyThreadId && task.pendingAction !== null)
+  const pinnedElsewhere = chrome.open && chrome.surface !== 'agents' && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
   return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
@@ -178,19 +179,19 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
 }
 
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
-function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean): Partial<Record<ToolSurfaceId, string>> {
+function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean): Partial<Record<ToolSurfaceId, string>> {
   const tasks = useBrowserTasks(store.browser)
-  if (!thread) return {}
   const live: Partial<Record<ToolSurfaceId, string>> = {}
-  const threadTasks = tasks.filter(task => task.threadId === thread.id)
-  if (threadTasks.some(task => task.pendingAction !== null)) live.browser = 'A browser request is waiting for your answer'
-  else if (threadTasks.some(task => task.status === 'working')) live.browser = 'A browser task is working'
-  // Changes reads Git only while it is open. Elsewhere the working copy's own dirty mark, which main reads again
-  // after each turn, is the fresher signal; the last count stands only for a thread that has no such mark.
-  const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
-  if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = 'Has uncommitted changes' }
-  else if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
-  const working = thread.subagentSummary?.working ?? 0
+  if (thread) {
+    const threadTasks = tasks.filter(task => task.threadId === thread.id)
+    if (threadTasks.some(task => task.pendingAction !== null)) live.browser = 'A browser request is waiting for your answer'
+    else if (threadTasks.some(task => task.status === 'working')) live.browser = 'A browser task is working'
+    // Changes reads Git only while it is open. Elsewhere the working copy's own dirty mark is fresher.
+    const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
+    if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = 'Has uncommitted changes' }
+    else if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
+  }
+  const working = agentsThread?.subagentSummary?.working ?? 0
   if (working > 0) live.agents = `${working} ${working === 1 ? 'agent is' : 'agents are'} working`
   return live
 }
@@ -207,9 +208,8 @@ function useTransientStatus(): [string, (message: string) => void] {
 }
 
 /**
- * The shared tools panel beside the thread panes. It follows the focused thread unless pinned, keeps each
- * thread's browsing for the session, and docks only while the panes keep a readable width; otherwise it
- * overlays them.
+ * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
+ * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
 export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
@@ -223,8 +223,12 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const showBrowserPreviews = useOptionalAgents()?.showBrowserPreviews !== false
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
+  const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
+  const workingCopyThread = state.host.threads.find(item => item.id === workingCopyTarget)
+  const selectedThread = state.host.threads.find(item => item.id === focusedThreadId)
   const threadFiles = useThreadFiles(store.files, thread ? target : null)
   const threadChanges = useThreadChanges(store.changes, thread ? target : null)
+  const workingCopyChanges = useThreadChanges(store.changes, workingCopyThread ? workingCopyTarget : null)
   const aside = useRef<HTMLElement>(null)
   const [available, setAvailable] = useState<number | null>(null)
   const [status, showStatus] = useTransientStatus()
@@ -280,8 +284,8 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     wasOpen.current = open
   }, [open, chrome.surface])
 
-  const changedFiles = threadChanges?.list.status === 'ready' ? { count: threadChanges.list.files.length, truncated: threadChanges.list.truncated } : null
-  const live = useLiveSurfaces(store, thread, changedFiles, open && chrome.surface === 'changes')
+  const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
+  const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')
 
   const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} enabled={showBrowserPreviews} />
   if (!open) return preview
@@ -289,7 +293,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
   const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
-  const pinned = chrome.pinnedThreadId !== null
+  const pinned = chrome.surface !== 'agents' && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
   const surfaceLabel = TOOL_SURFACES.find(surface => surface.id === chrome.surface)!.label
 
@@ -333,8 +337,8 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
 
   let body: ReactNode
   if (target === null) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div></>
-  else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>The pinned thread is no longer listed.</strong>
-    <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button></div></>
+  else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{chrome.surface === 'agents' ? 'The selected thread is no longer listed.' : 'The pinned thread is no longer listed.'}</strong>
+    {chrome.surface !== 'agents' ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
   else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
@@ -353,7 +357,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
       <div className="tools-rail">
         <ToolsRailTabs value={chrome.surface} live={live} onChange={surface => store.setSurface(surface)} />
         <div className="tools-rail__foot">
-          {thread ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? `Unpin from ${thread.title}` : 'Pin to this thread'} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
+          {thread && chrome.surface !== 'agents' ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? `Unpin from ${thread.title}` : 'Pin to this thread'} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
           <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? 'Restore tools panel' : 'Expand tools panel'} title={chrome.expanded ? 'Restore' : 'Expand to fill the workspace'} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>
           <button type="button" className="files-icon tt-focusable" aria-label="Close tools panel" title="Close" onClick={close}><X size={16} aria-hidden="true" /></button>
         </div>

@@ -36,7 +36,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Temporary thread branch.** The short starting branch of a new worktree, created on its first send and eligible for a descriptive name from that first prompt. It stops being replaceable once the user or agent changes its branch, or another thread shares the folder.
 
-**Reclaim (a worktree).** Removing a thread's own worktree folder while keeping its branch and the thread; the next send puts the folder back on that branch. It happens on the user's word (**Remove worktree** in the Working copy panel, or the question Settle asks) or under a cleanup rule the user turned on, never for a folder with uncommitted work without their answer (ADR-0019). Avoid: "delete the worktree", "clean up the thread".
+**Reclaim (a worktree).** Removing a thread's own worktree folder while keeping its branch and the thread; the next send puts the folder back on that branch. It happens on the user's word (**Remove worktree** in the Working copy panel, or the question Settle asks) or under a cleanup rule the user turned on, never for a folder with uncommitted work without their answer (ADR-0019). Each host reclaims only its own worktrees, under the rules in its own settings. Avoid: "delete the worktree", "clean up the thread".
 
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
 
@@ -46,7 +46,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **File mention.** A file of a thread's working copy named in a draft by typing `@` and picking it, like a native skill's `$`: both are mentions, a sigil and a name written into the draft's own text. The mention is the reference — deleting its token removes the file from the send — and it reaches every provider as the same `@path` relative to the working copy. Files outside the working copy, git-administrative entries and paths containing a space are never offered.
 
-**Tools panel.** The shared working surface beside the thread panes. It follows the focused thread unless pinned to a particular thread's working copy. Its five surfaces (Browser, Terminal, Files, Changes and Agents) sit on a rail at its outer edge, each surface under one line of chrome naming what is open, and the working copy it reads is its footer. A dot on a surface in the rail means something is live there. Avoid: "tab" for a surface, which is a page or a shell inside one.
+**Tools panel.** The shared working surface beside the thread panes. Its working-copy tools follow the focused thread unless pinned to a particular thread's working copy. Agents always follows the focused thread, even while another working copy is pinned. Its five surfaces (Browser, Terminal, Files, Changes and Agents) sit on a rail at its outer edge, each surface under one line of chrome naming what is open, and the working copy it reads is its footer. A dot on a surface in the rail means something is live there. Avoid: "tab" for a surface, which is a page or a shell inside one.
 
 **Browser task.** One thread's work with a page in Sotto's browser, including its current action, user decisions, checks and evidence. A browser task may be working, paused, completed or failed; its reported result states what was checked and what remains unchecked.
 
