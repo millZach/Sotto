@@ -145,9 +145,9 @@ export interface AppSettings {
   streamingAsr: boolean
   autoUpdateCheck: boolean
   /**
-   * Whether the agent runtime runs on this computer at all. Off relaunches
-   * Sotto with no local host; remote hosts still work, dictation is
-   * unaffected and no saved data is removed.
+   * Whether the agent runtime runs on this computer at all. Read once at
+   * startup; off starts no local host after the next restart. Remote hosts
+   * still work, dictation is unaffected and no saved data is removed.
    */
   localHostEnabled: boolean
   /**
