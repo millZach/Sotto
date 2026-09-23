@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
 export const HOSTS_CHANGED = 'hosts:changed'
+export const HOSTS_SSH_SUGGESTIONS = 'hosts:ssh-suggestions'
 
 export const remoteHostSchema = z.object({
   id: z.uuid(), name: z.string().trim().min(1).max(80),
@@ -35,10 +36,25 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select'), hostId: z.uuid() }).strict(),
 ])
 export type HostsCommand = z.infer<typeof hostsCommandSchema>
+
+/**
+ * A host the user's own SSH setup already knows, offered while typing in Add host: an alias from the SSH
+ * configuration, or a name from known hosts. Read on this computer and never sent anywhere.
+ */
+export interface SshHostSuggestion {
+  readonly alias: string
+  /** Where the alias goes, such as `zach@forge.example.net`, when the configuration says. */
+  readonly detail?: string
+  /** A known host recorded on a port other than 22. */
+  readonly port?: number
+  readonly source: 'config' | 'known-hosts'
+}
 export interface HostsBridge {
   get(): Promise<HostsState>
   command(command: HostsCommand): Promise<HostsState>
   onChanged(listener: (state: HostsState) => void): () => void
+  /** The hosts this computer's SSH configuration and known hosts name, read when asked. */
+  sshSuggestions(): Promise<SshHostSuggestion[]>
 }
 
 /** Client projection only; remote wire payloads keep their original host-local IDs. */
