@@ -213,7 +213,7 @@ describe('Changes surface', () => {
   it('lists the working copy, opens a readable diff from the keyboard and returns focus when it closes', async () => {
     const { git } = setup()
     const list = await within(panel()).findByRole('listbox', { name: 'Changed files' })
-    expect(within(panel()).getByText(/3 changed files/u)).toHaveTextContent('3 changed files on feature/changes')
+    expect(within(panel()).getByText(/3 changed files/u).closest('.changes-summary')).toHaveTextContent('3 changed files on feature/changes')
     expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['app.ts, Modified, in src/', 'new.md, Untracked, in docs/', 'logo.png, Modified'])
     await waitFor(() => expect(git.bridge.watch).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, enabled: true }))
 

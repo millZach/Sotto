@@ -6,6 +6,7 @@ import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskPreview'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { ToolsChrome } from './ToolsChrome'
 
 export interface BrowserSurfaceProps {
   readonly threadId: string
@@ -96,12 +97,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
 
-  if (!browser || browser.status === 'loading' && browser.pages.length === 0) return <p className="files-preview__loading" role="status">Loading pages…</p>
+  if (!browser || browser.status === 'loading' && browser.pages.length === 0) return <><ToolsChrome title="Browser" /><p className="files-preview__loading" role="status">Loading pages…</p></>
   if (browser.status === 'error' && browser.pages.length === 0) {
-    return <div className="files-problem files-problem--root" role="status">
+    return <><ToolsChrome title="Browser" /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(browser.error ?? { code: 'unavailable', message: '' }, bridge !== undefined)}</strong>
       {bridge ? <button type="button" className="files-link tt-focusable" onClick={() => void store.activate(bridge, threadId)}>Try again</button> : null}
-    </div>
+    </div></>
   }
   const { pages } = browser
   const newPage = creating || pages.length === 0
@@ -159,7 +160,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   }
 
   return <div className="browser-surface" ref={surface}>
-    {pages.length > 0 ? <div className="terminal-bar browser-bar">
+    {pages.length > 0 ? <div className="terminal-bar browser-bar tools-chrome">
       <div className="terminal-tabs" role="tablist" aria-label="Pages">
         {pages.map((page, index) => {
           const selected = page.id === activeId && !creating
@@ -184,13 +185,13 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           </button>
         })}
       </div>
-      <div className="terminal-bar__actions">
+      <div className="terminal-bar__actions tools-chrome__actions">
         {active && !creating ? <button type="button" className="files-icon tt-focusable" aria-label={`Close page: ${pageLabel(active)}`} title="Close page" disabled={browser.busy}
           onClick={() => void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activePageId; if (next) focusTab(next) })}><X size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
           disabled={full || !bridge} onClick={() => creating ? (setCreating(false), setDraft(null)) : startNew()}><Plus size={16} aria-hidden="true" /></button>
       </div>
-    </div> : null}
+    </div> : <ToolsChrome title="Browser" />}
 
     <form className="browser-toolbar" aria-label={newPage ? 'Open a page' : 'Page address'} onSubmit={submit} data-loading={(!newPage && active?.status === 'loading') || undefined}>
       {!newPage && active ? <>

@@ -62,7 +62,9 @@ describe('shared tools panel', () => {
     expect(screen.getAllByRole('button')).toEqual([screen.getByRole('button', { name: 'Tools', exact: true })])
     await userEvent.click(screen.getByRole('button', { name: 'Tools' }))
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-pressed', 'true')
-    const tabs = within(panel()).getAllByRole('tab')
+    const rail = within(panel()).getByRole('tablist', { name: 'Tools' })
+    expect(rail).toHaveAttribute('aria-orientation', 'vertical')
+    const tabs = within(rail).getAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
     expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'terminal', 'files', 'changes', 'agents'])
     expect(within(panel()).getByRole('tab', { name: 'Files' })).toHaveFocus()
@@ -314,10 +316,11 @@ describe('shared tools panel', () => {
     const copy = panel().querySelector('.tools-panel__copy')!
     expect(copy.textContent).toBe('workshop\u00b7sotto/thread-f2a30b8c')
     expect(copy).toHaveAttribute('title', 'workshop \u00b7 Worktree branch sotto/thread-f2a30b8c')
-    // One copy and one reveal for the folder; nothing else in the head repeats the path.
+    // The working copy is the panel's footer: one copy and one reveal for the folder, and nothing else there repeats the path.
+    expect(copy.closest('footer')).toHaveClass('tools-panel__foot')
     await userEvent.click(within(panel()).getByRole('button', { name: 'Copy working folder path' }))
     expect(bridge.copyPath).toHaveBeenCalledWith({ threadId: 'visual-gate', path: '', workspaceId: TOKEN_A })
-    expect(panel().querySelector('header')!.textContent!.split(worktree)).toHaveLength(2)
+    expect(panel().querySelector('footer')!.textContent!.split(worktree)).toHaveLength(2)
   })
 
   it('shows the pane\u2019s toggle as not its own while the panel is pinned to another thread', async () => {
@@ -354,6 +357,70 @@ describe('shared tools panel', () => {
     fireEvent.keyDown(handle, { key: 'Home' })
     expect(store.getSnapshot().width).toBe(380)
   })
+  it('moves along the rail with the arrow keys, Home and End, as a single tab stop', async () => {
+    const { store } = setup()
+    act(() => store.setOpen(true))
+    const tab = (name: string) => within(panel()).getByRole('tab', { name, exact: true })
+    expect(within(panel()).getAllByRole('tab').filter(item => item.tabIndex === 0)).toEqual([tab('Files')])
+    tab('Files').focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(tab('Changes')).toHaveFocus()
+    expect(tab('Changes')).toHaveAttribute('aria-selected', 'true')
+    expect(store.getSnapshot().surface).toBe('changes')
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}')
+    expect(tab('Terminal')).toHaveFocus()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(tab('Browser')).toHaveFocus()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(tab('Agents')).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(tab('Browser')).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    expect(tab('Agents')).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{Home}')
+    expect(tab('Browser')).toHaveFocus()
+    expect(within(panel()).getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'tools-tab-browser')
+  })
+
+  it('reads rail, then the surface’s line of chrome, then its work, then the working-copy footer', async () => {
+    const { store } = setup()
+    act(() => store.setOpen(true))
+    const tree = await within(panel()).findByRole('tree')
+    const order = [
+      within(panel()).getByRole('tab', { name: 'Files' }),
+      within(panel()).getByRole('button', { name: 'Close tools panel' }),
+      within(panel()).getByRole('button', { name: 'Refresh files' }),
+      tree,
+      within(panel()).getByRole('button', { name: 'Copy working folder path' }),
+    ]
+    for (let index = 1; index < order.length; index++) {
+      expect(order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    // The pin, fill and close buttons sit at the rail's foot, not above the work.
+    const foot = panel().querySelector('.tools-rail__foot')!
+    expect(within(foot as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Pin to Visual gate flake', 'Expand tools panel', 'Close tools panel'])
+    expect(panel().querySelectorAll('.tools-chrome')).toHaveLength(1)
+    expect(panel().querySelector('.tools-chrome')).toHaveTextContent('Files')
+  })
+
+  it('marks a surface with something live, and says what in the tab’s description', () => {
+    const state = threadsStateFixture()
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, total: 3, working: 2 } } : thread)
+    const { store, rerender } = setup({ state })
+    act(() => store.setOpen(true))
+    const agents = within(panel()).getByRole('tab', { name: 'Agents', exact: true })
+    expect(agents).toHaveAccessibleDescription('2 agents are working')
+    expect(agents.querySelector('.tools-rail__live')).not.toBeNull()
+    expect(agents.querySelector('.tools-rail__live')).toHaveAttribute('aria-hidden', 'true')
+    for (const name of ['Browser', 'Terminal', 'Files', 'Changes']) {
+      const tab = within(panel()).getByRole('tab', { name, exact: true })
+      expect(tab.querySelector('.tools-rail__live')).toBeNull()
+      expect(tab).not.toHaveAttribute('aria-description')
+    }
+    rerender('grok-previews')
+    expect(within(panel()).getByRole('tab', { name: 'Agents', exact: true }).querySelector('.tools-rail__live')).toBeNull()
+  })
+
   it('expands the tool without losing the selected file, restores width and reopens from the header toggle', async () => {
     const { store } = setup({ inPane: true })
     const area = document.querySelector('.thread-workspace__body') as HTMLElement
