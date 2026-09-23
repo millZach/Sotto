@@ -239,8 +239,9 @@ describe('desktop remote host management over a real socket', () => {
     const connect = vi.spyOn(SocketHostService.prototype, 'connect'), readEvents = vi.spyOn(SocketHostService.prototype, 'readEvents')
     try {
       const remote = await add()
-      // The hello carried none of the log, and a routed command reads none after it.
-      expect((connect.mock.contexts[0] as SocketHostService).events(0)).toEqual([])
+      // The host sent none of the log in the hello, and a routed command reads none after it.
+      const hello = (index: number) => connect.mock.results[index]!.value as ReturnType<SocketHostService['connect']>
+      expect(await hello(0)).toMatchObject({ events: [], latestSeq: Number.MAX_SAFE_INTEGER, hasMore: false })
       await router.command({ type: 'configure', patch: { enabled: false } }, client)
       await manager.command({ type: 'disconnect', id: remote.id })
       await host.service.command({ type: 'configure', patch: { enabled: true } }, client)
@@ -248,7 +249,7 @@ describe('desktop remote host management over a real socket', () => {
       expect(manager.get().hosts[0]!.phase).toBe('connected')
       expect(router.shell().configuration.enabled).toBe(true)
       expect(router.shell().host.threads.map(thread => thread.id)).toContain(hostEntityKey(reportedHostId, threadId))
-      expect((connect.mock.contexts[1] as SocketHostService).events(0)).toEqual([])
+      expect(await hello(1)).toMatchObject({ events: [], latestSeq: Number.MAX_SAFE_INTEGER, hasMore: false })
       expect(readEvents).not.toHaveBeenCalled()
     } finally { connect.mockRestore(); readEvents.mockRestore() }
   })
