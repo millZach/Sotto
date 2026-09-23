@@ -118,15 +118,23 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   </button>
 }
 
-/** Which working copy the panel reads, in the pane chip's words: the project, then its branch or folder. */
-function WorkingCopyLine({ thread, project }: { readonly thread: AgentThread; readonly project: AgentProject | undefined }): ReactNode {
+/**
+ * Which working copy the panel reads: the project, then the branch in mono when it is known, then the kind of
+ * folder in the pane chip's words. The thread's recorded branch comes first; a project folder with no record
+ * takes the branch Changes last read. The branch gives way before the project and the folder's kind.
+ */
+function WorkingCopyLine({ thread, project, knownBranch }: { readonly thread: AgentThread; readonly project: AgentProject | undefined; readonly knownBranch: string | undefined }): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
-  const kind = facts.mode === 'independent' && facts.branch ? `Worktree branch ${facts.branch}` : facts.label
-  return <div className="tools-panel__copy" title={project ? `${project.title} · ${kind}` : kind}>
+  const branch = facts.branch ?? knownBranch
+  // A ready record's label is its branch, which now has its own place; the folder's kind stands in for it.
+  const place = facts.status === 'ready' && facts.mode === 'independent' ? 'Worktree' : facts.status === 'ready' && facts.mode === 'shared' && facts.label === facts.branch ? 'Project folder' : facts.label
+  const words = [project?.title, branch === undefined ? undefined : `Branch ${branch}`, place].filter(Boolean).join(' · ')
+  return <div className="tools-panel__copy" title={words}>
     <Icon size={14} aria-hidden="true" />
     {project ? <><span className="tools-panel__project">{project.title}</span><span className="tools-panel__sep" aria-hidden="true">·</span></> : null}
-    <span className="tools-panel__label">{facts.label}</span>
+    {branch !== undefined ? <><bdi className="tools-panel__branch">{branch}</bdi><span className="tools-panel__sep" aria-hidden="true">·</span></> : null}
+    <span className="tools-panel__label">{place}</span>
   </div>
 }
 
@@ -351,7 +359,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
       <div className="tools-panel__main">
         <div className="tools-panel__body" id={`tools-surface-${chrome.surface}`} role="tabpanel" aria-labelledby={`tools-tab-${chrome.surface}`}>{body}</div>
         {thread ? <footer className="tools-panel__foot" title={`${thread.title}${workspace ? ` · ${workspace.workingDirectory}` : ''}`}>
-          <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} />
+          <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} knownBranch={threadChanges?.list.status === 'ready' ? threadChanges.list.branch ?? undefined : undefined} />
           <span className={pinned ? 'tools-panel__pinned-owner' : 'tools-panel__accessible'}>{pinned ? <Pin size={12} aria-hidden="true" /> : null}<span className="tools-panel__thread-title">{thread.title}</span>{pinned ? <span className="tools-panel__tag">Pinned</span> : null}</span>
           {workspace ? <span className="tools-panel__foot-actions">
             <span className="tools-panel__path-text tools-panel__accessible" title={workspace.workingDirectory}>{workspace.workingDirectory}</span>

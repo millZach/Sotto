@@ -122,7 +122,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await expect(panes).toHaveAttribute('data-narrow', 'true')
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', actual.directory)
     await expect(panel.locator('.tools-panel__path-text')).toHaveText(actual.directory)
-    await expect(panel.locator('.tools-panel__copy')).toHaveText(`repo-app·${actual.branch}`)
+    await expect(panel.locator('.tools-panel__copy')).toHaveText(`repo-app·${actual.branch}·Worktree`)
     const tree = panel.getByRole('tree')
     await expect(tree.getByRole('treeitem')).toHaveText(['docs', 'src', 'README.md'])
     await tree.getByRole('treeitem', { name: 'README.md' }).click()

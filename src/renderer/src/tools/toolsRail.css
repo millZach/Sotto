@@ -95,8 +95,8 @@
 .tools-panel .git-pr__toolbar.tools-chrome { flex-wrap: wrap; gap: 6px 8px; padding-block: 7px; }
 .tools-panel .git-pr__toolbar .tools-chrome__actions { flex-wrap: wrap; gap: 8px; }
 
-/* The working copy the panel reads, as one quiet line: project, then branch or folder. The branch loses its end,
-   never the project. The folder's two actions sit at the line's end. */
+/* The working copy the panel reads, as one quiet line: project, then the branch in mono, then the folder's kind.
+   The branch loses its end first, never the project. The folder's two actions sit at the line's end. */
 .tools-panel__foot {
   display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 6px 0 14px;
   border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; white-space: nowrap;
@@ -105,7 +105,8 @@
 .tools-panel__copy > svg { flex: none; color: var(--tt-text-muted); }
 .tools-panel__project { flex: none; max-width: 50%; overflow: hidden; font-weight: 500; text-overflow: ellipsis; }
 .tools-panel__sep { flex: none; color: var(--tt-text-muted); }
-.tools-panel__label { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+.tools-panel__branch { flex: 0 10 auto; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); text-overflow: ellipsis; }
+.tools-panel__label { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
 .tools-panel__pinned-owner { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
 .tools-panel__pinned-owner > svg { flex: none; color: var(--tt-accent-text); }
 .tools-panel__pinned-owner .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; }

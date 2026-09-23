@@ -314,8 +314,9 @@ describe('shared tools panel', () => {
     expect(path).toHaveAttribute('title', worktree)
     expect(path).toHaveClass('tools-panel__accessible')
     const copy = panel().querySelector('.tools-panel__copy')!
-    expect(copy.textContent).toBe('workshop\u00b7sotto/thread-f2a30b8c')
-    expect(copy).toHaveAttribute('title', 'workshop \u00b7 Worktree branch sotto/thread-f2a30b8c')
+    expect(copy.textContent).toBe('workshop\u00b7sotto/thread-f2a30b8c\u00b7Worktree')
+    expect(copy.querySelector('.tools-panel__branch')).toHaveTextContent('sotto/thread-f2a30b8c')
+    expect(copy).toHaveAttribute('title', 'workshop \u00b7 Branch sotto/thread-f2a30b8c \u00b7 Worktree')
     // The working copy is the panel's footer: one copy and one reveal for the folder, and nothing else there repeats the path.
     expect(copy.closest('footer')).toHaveClass('tools-panel__foot')
     await userEvent.click(within(panel()).getByRole('button', { name: 'Copy working folder path' }))
