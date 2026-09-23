@@ -403,6 +403,31 @@ describe('Add host, the switch and reconnect on launch', () => {
     expect(credentials.has('remote-host:' + remote.id)).toBe(false)
     expect(host.pairing.list()).toEqual([])
   })
+  for (const ending of ['Cancel', 'quitting Sotto'] as const) {
+    it(`revokes the pairing and keeps no credential when ${ending} ends an add after pairing`, async () => {
+      const remote = connection()
+      // Pairing succeeds, and the session is still opening when the add is ended.
+      let refuse: ((error: Error) => void) | undefined
+      const opening = vi.spyOn(SocketHostService.prototype, 'connect').mockImplementationOnce(() => new Promise((_resolve, reject) => { refuse = reject }))
+      try {
+        const pending = manager.command({ type: 'add', host: remote })
+        await vi.waitFor(() => expect(refuse).toBeTypeOf('function'))
+        expect(credentials.has('remote-host:' + remote.id)).toBe(true)
+        expect(host.pairing.list()).toHaveLength(1)
+        const ended = ending === 'Cancel' ? manager.command({ type: 'cancel-add', id: remote.id }) : manager.close()
+        // The session gives up only once the add has let go of it, as a socket to a closed tunnel does.
+        await vi.waitFor(() => expect(host.pairing.list()).toEqual([]))
+        refuse!(new Error('The host closed the connection. Try again.'))
+        await ended
+        // Quitting waits for the add to finish letting go, so the credential is gone before the quit drain ends.
+        expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+        await pending
+      } finally { opening.mockRestore() }
+      expect(manager.get().adding).toBeUndefined()
+      expect(manager.get().hosts).toEqual([])
+      expect(await savedFile()).toEqual([])
+    })
+  }
   it('asks its SSH question in the dialog, and Cancel there leaves nothing behind', async () => {
     askOnConnect = 'passphrase'
     const remote = connection()

@@ -68,6 +68,8 @@ export class DesktopHosts {
    * host's, and it joins the saved hosts only once the host answers and this computer pairs.
    */
   private adding: SavedHost | undefined
+  /** Add host's connect, which close() waits for so a quit does not leave its credential behind. */
+  private pendingAdd: Promise<void> = Promise.resolve()
   private generation = 0
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
@@ -204,12 +206,19 @@ export class DesktopHosts {
     this.adding = host
     this.status.set(host.id, { ...this.fields(host), phase: 'connecting' })
     this.emit()
-    await this.open(host)
+    const pending = this.open(host)
+    this.pendingAdd = pending.catch(() => undefined)
+    await pending
     return this.get()
   }
   private async cancelAdd(id: string): Promise<void> {
-    if (this.adding?.id !== id) return
+    const host = this.adding
+    if (host?.id !== id) return
     this.adding = undefined
+    // Pairing already finished, so the host holds a record of this computer that nothing will use. Revoke it
+    // while the connection is still open; `closing` keeps the drop the revoke causes from being read as a failure.
+    const active = this.live.get(id)
+    if (host.clientId && active?.tunnel) { active.closing = true; await active.tunnel.revokeClient(host.clientId).catch(() => false) }
     await this.disconnect(id)
     this.status.delete(id)
     await this.forgetCredential(id)
@@ -351,6 +360,8 @@ export class DesktopHosts {
   private async pairOverTunnel(host: SavedHost, active: LiveHost): Promise<void> {
     const code = await active.tunnel!.showHostPairingCode()
     const pairing = await SocketHostService.pair(active.tunnel!.url, code.code, 'Sotto desktop')
+    // Cancelled or quit while pairing: keep no credential. The record the host made stays revocable there.
+    if (this.live.get(host.id) !== active) throw new Error('The connection was closed while this computer paired.')
     if (pairing.hostId !== active.tunnel!.hostId || host.hostId && pairing.hostId !== host.hostId) throw new Error('This is a different host. Check the address before pairing.')
     await this.options.credentials.set(`remote-host:${host.id}`, pairing.token)
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
@@ -445,6 +456,10 @@ export class DesktopHosts {
   async close(): Promise<void> {
     this.closed = true
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
+    // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
+    // the quit drain does not end before its credential is cleared and its pairing revoked.
+    if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
+    await this.pendingAdd
     await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing
   }
 }
