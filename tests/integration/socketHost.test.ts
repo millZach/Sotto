@@ -13,7 +13,7 @@ import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentCommand, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../src/shared/agents'
-import { HOST_VERSION_MISMATCH } from '../../src/shared/hostProtocol'
+import { hostVersionMismatch } from '../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../package.json'
 
 let root: string
@@ -470,14 +470,13 @@ describe('host version and features', () => {
     const { client } = await pair()
     await expect(client.command(unreadable)).rejects.toMatchObject({ code: 'invalid_request', message: expect.stringContaining('This request is not supported') })
     expect(await client.receipt('still-open')).toEqual({ status: 'unknown' })
-    // A host of another version: the same refusal is version skew, and says how to start the new version.
+    // A host of another version: the same refusal is version skew, and says which side to bring up to date.
     const server = await startSocketServer({ service: host.service, pairing: host.pairing, sottoVersion: '0.0.1' })
     const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Older host')
     const skewed = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(skewed)
     try {
       expect((await skewed.connect()).sottoVersion).toBe('0.0.1')
-      await expect(skewed.command(unreadable)).rejects.toMatchObject({ code: 'version_mismatch', message: HOST_VERSION_MISMATCH })
-      expect(HOST_VERSION_MISMATCH).toContain('Stop host, then connect again to start the new version.')
+      await expect(skewed.command(unreadable)).rejects.toMatchObject({ code: 'version_mismatch', message: hostVersionMismatch(packageVersion, '0.0.1', false) })
       expect(await skewed.receipt('still-open')).toEqual({ status: 'unknown' })
     } finally { await skewed.close(); await server.close() }
   })

@@ -6,7 +6,7 @@ import { SocketFrames } from '../../host/socketFrames'
 import { agentStateSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
-import { HOST_VERSION_MISMATCH, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity } from './hostService'
 import { version as clientVersion } from '../../../package.json'
@@ -22,6 +22,8 @@ export interface SocketHostServiceOptions {
   onPushError?: (message: string) => void
   /** What the last push error was about has since arrived: the thread it named, or the shell when it named none. */
   onPushErrorCleared?: () => void
+  /** Whether Sotto started this host, so the version sentence offers Stop host only when it is there to press. */
+  owned?: boolean
 }
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
@@ -79,8 +81,14 @@ export class SocketHostService implements HostService {
     const healthResponse = await fetch(this.endpoint('/v1/health'), { signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
     if (!healthResponse.ok) throw new HostConnectionError('The host did not answer its health check. Connect again.', 'unavailable')
-    const health = hostHealthFeatures(await healthResponse.json().catch(() => null))
-    if (!health) throw new HostConnectionError(HOST_VERSION_MISMATCH, 'version_mismatch')
+    const healthBody: unknown = await healthResponse.json().catch(() => null)
+    const health = hostHealthFeatures(healthBody)
+    if (!health) {
+      // A host of another protocol version may still say which Sotto it runs, which decides the way out.
+      const advertised = healthBody !== null && typeof healthBody === 'object' && 'sottoVersion' in healthBody ? healthBody.sottoVersion : undefined
+      this.hostVersion = typeof advertised === 'string' ? advertised : undefined
+      throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    }
     this.hostVersion = health.sottoVersion; this.features = health.features
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
@@ -150,7 +158,7 @@ export class SocketHostService implements HostService {
         this.pending.delete(message.id); clearTimeout(pending.timer)
         if (message.ok) pending.resolve(message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
-        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(HOST_VERSION_MISMATCH, 'version_mismatch', pending.command ? message.id : undefined))
+        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? message.id : undefined))
         else pending.reject(new HostConnectionError(message.error.message, message.error.code, pending.command ? message.id : undefined))
       }
     } catch { this.frames?.close() }
@@ -164,17 +172,21 @@ export class SocketHostService implements HostService {
     if (!this.skewed()) { this.frames?.close(); return }
     const id = raw !== null && typeof raw === 'object' && 'id' in raw && typeof raw.id === 'string' ? raw.id : undefined
     const pending = id === undefined ? undefined : this.pending.get(id)
-    if (id === undefined || !pending) { this.options.onPushError?.(HOST_VERSION_MISMATCH); return }
+    if (id === undefined || !pending) { this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
-    pending.reject(new HostConnectionError(HOST_VERSION_MISMATCH, 'version_mismatch', pending.command ? id : undefined))
+    pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== clientVersion }
+  /** The version sentence for this host, which says which side to bring up to date. */
+  private mismatch(): string { return hostVersionMismatch(clientVersion, this.hostVersion, this.options.owned ?? false) }
+  /** Whether the host last advertised a later Sotto than this client: stopping it would not help. */
+  hostIsNewer(): boolean { return hostIsNewer(this.hostVersion, clientVersion) }
   /** Reads what the host answered; from a host of another version, an answer this client cannot read is named as skew. */
   private read<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value)
     if (parsed.success) return parsed.data
-    if (this.skewed()) throw new HostConnectionError(HOST_VERSION_MISMATCH, 'version_mismatch')
+    if (this.skewed()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     throw parsed.error
   }
   /**

@@ -138,7 +138,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Host protocol.** What a client and a host exchange over HTTP and the socket, listed message by message in `docs/host-protocol.md`. Its version is `v: 1` on every message and is separate from the Sotto version; version 1 is frozen and grows only by optional fields, host features and push forms a client asks for (ADR-0025). Avoid: "API", "wire format" as a name for it.
 
-**Host feature.** A named part of the host protocol beyond version 1's base, such as `detail-delta`, which a host lists in `features` in its health, its listener file and its hello reply. A client uses one only when the host lists it and asks for a push form by naming it in hello's `accepts`. A host with no feature list predates the freeze, and the desktop asks the user to stop it and connect again to start the new version. Distinct from hello's `capabilities`, which is what this client may do on this host, and from a provider's capabilities in the shell. Avoid: "capability" for this.
+**Host feature.** A named part of the host protocol beyond version 1's base, such as `detail-delta`, which a host lists in `features` in its health, its listener file and its hello reply. A client uses one only when the host lists it and asks for a push form by naming it in hello's `accepts`. A host with no feature list predates the freeze, and the desktop asks the user to install this computer's version of the host, stop it and connect again. Distinct from hello's `capabilities`, which is what this client may do on this host, and from a provider's capabilities in the shell. Avoid: "capability" for this.
 
 ## Personal conversations
 

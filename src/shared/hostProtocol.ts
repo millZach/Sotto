@@ -16,11 +16,32 @@ export const HOST_PROTOCOL_VERSION = 1 as const
 export const HOST_FEATURES = ['detail-delta'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
- * What a client says when a host speaks a version of the protocol it cannot use: a host from before v1
- * froze, or one of another Sotto version sending what this client cannot read. The last sentence is
- * the instruction; the host keeps running, so nothing on it is lost.
+ * Whether a host's Sotto version is later than this client's, by release number. A version that cannot
+ * be read, such as a host from before v1 froze that advertises none, is never newer.
  */
-export const HOST_VERSION_MISMATCH = 'This host is running a different version of Sotto. Nothing on the host was lost. Stop host, then connect again to start the new version.'
+export function hostIsNewer(hostVersion: string | undefined, clientVersion: string): boolean {
+  const parts = (version: string): number[] | null => {
+    const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version)
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
+  }
+  const host = hostVersion === undefined ? null : parts(hostVersion), client = parts(clientVersion)
+  if (!host || !client) return false
+  for (let index = 0; index < 3; index += 1) if (host[index] !== client[index]) return host[index]! > client[index]!
+  return false
+}
+/**
+ * What a client says when a host speaks a version of the protocol it cannot use: a host from before v1
+ * froze, or one of another Sotto version sending what this client cannot read. The host keeps running,
+ * so nothing on it is lost. The last sentence is the way out, and it depends on which side is behind:
+ * Connect starts whatever is in the host installation folder, so an older host needs this computer's
+ * version put there before it is stopped, and a newer one needs this computer updated instead.
+ * `owned` says whether Sotto started the host, and so whether Stop host is there to press.
+ */
+export function hostVersionMismatch(clientVersion: string, hostVersion: string | undefined, owned: boolean): string {
+  if (hostIsNewer(hostVersion, clientVersion)) return 'This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.'
+  const stop = owned ? 'press Stop host' : 'stop the host on that machine'
+  return `This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto ${clientVersion} host in its installation folder, ${stop}, then connect again.`
+}
 export const HOST_MAX_FRAME_BYTES = 16 * 1024 * 1024
 export const HOST_EVENT_PAGE_SIZE = 256
 const id = z.string().min(1).max(512)

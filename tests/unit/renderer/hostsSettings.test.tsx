@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
 import { ThreadWorkingCopy } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import type { HostsBridge, HostsState } from '../../../src/shared/hosts'
-import { HOST_VERSION_MISMATCH } from '../../../src/shared/hostProtocol'
+import { hostVersionMismatch } from '../../../src/shared/hostProtocol'
 
 afterEach(cleanup)
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -53,9 +53,10 @@ it('offers Stop host only for a host Sotto started, and confirms before stopping
   expect(screen.queryByRole('button', { name: 'Stop host' })).toBeNull()
 })
 it('offers Stop host beside the sentence that asks for it when the host Sotto started runs another version', async () => {
-  const { bridge, command } = fixture('error', false, true, HOST_VERSION_MISMATCH), user = userEvent.setup()
+  const mismatch = hostVersionMismatch('0.1.16', '0.1.15', true)
+  const { bridge, command } = fixture('error', false, true, mismatch), user = userEvent.setup()
   render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
-  expect((await screen.findByRole('alert')).textContent).toBe(HOST_VERSION_MISMATCH)
+  expect((await screen.findByRole('alert')).textContent).toBe(mismatch)
   expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy()
   await user.click(screen.getByRole('button', { name: 'Stop host' }))
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stop host' }))

@@ -16,7 +16,8 @@ import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHos
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
-import { HOST_VERSION_MISMATCH } from '../../src/shared/hostProtocol'
+import { hostVersionMismatch } from '../../src/shared/hostProtocol'
+import { version as packageVersion } from '../../package.json'
 import { createServer, type Server } from 'node:http'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
@@ -258,10 +259,10 @@ describe('a host from before protocol v1 froze', () => {
     await manager.command({ type: 'connect', id: remote.id })
     return remote
   }
-  it('says to stop the host and connect again, keeps Stop host for a host Sotto started, and does not retry', async () => {
+  it('says to install this version, stop the host and connect again, keeps Stop host for a host Sotto started, and does not retry', async () => {
     const remote = await connectToOldHost()
-    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true, error: HOST_VERSION_MISMATCH })
-    expect(manager.get().hosts[0]!.error).toContain('Stop host, then connect again to start the new version.')
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', owned: true, error: hostVersionMismatch(packageVersion, undefined, true) })
+    expect(manager.get().hosts[0]!.error).toContain('press Stop host, then connect again.')
     expect(scheduled).toEqual([])
     await manager.command({ type: 'stop-host', id: remote.id })
     expect(stops).toEqual([reportedHostId])
@@ -272,7 +273,7 @@ describe('a host from before protocol v1 froze', () => {
     await connectToOldHost()
     expect(manager.get().hosts[0]!.phase).toBe('error')
     expect(manager.get().hosts[0]!.owned).toBeUndefined()
-    expect(manager.get().hosts[0]!.error).toContain('stop it on that machine, then connect again to start the new version')
+    expect(manager.get().hosts[0]!.error).toBe(hostVersionMismatch(packageVersion, undefined, false))
     expect(scheduled).toEqual([])
   })
 })
