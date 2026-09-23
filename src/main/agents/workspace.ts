@@ -17,10 +17,14 @@ import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, ty
 import { validateThreadOptions } from './threadOptions'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { existingWorkingDirectory, ThreadWorktrees } from './threadWorktrees'
+import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
+import type { GitStatusSource } from './gitStatus'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
 const WORKTREE_REFRESH_DELAY_MS = 1_500
+/** How often the Git status timer looks at whether a remote read is due. */
+const GIT_STATUS_TICK_MS = 5_000
 /** Work that can leave the worktree on another branch: a finished turn, a shell command it ran, or files it changed. */
 const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', 'command', 'file-change', 'tool'])
 /** The finished records that could have moved HEAD, by ID, so only new ones ask for a re-read. */
@@ -120,6 +124,12 @@ export class WorkspaceHost implements AgentHost {
   private checkpointHooks: { beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
   /** One pending worktree re-read per thread, so a busy turn asks for a single read rather than one per record. */
   private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Reads a folder's Git status the way T3 does; without one, records carry no status. */
+  private gitStatus: GitStatusSource | undefined
+  private gitStatusOptions: { foreground: () => boolean; pollIntervalMs: () => number } = { foreground: () => true, pollIntervalMs: () => 0 }
+  private gitStatusTimer: ReturnType<typeof setInterval> | undefined
+  private gitStatusPolledAt = 0
+  private gitStatusPolling = false
   /** A thread's own history: the log and the message projection every window reads (issue #119). */
   private readonly subagentStore: SubagentStore
   private subagentUnavailable = false
@@ -171,6 +181,54 @@ export class WorkspaceHost implements AgentHost {
   /** Whether something outside this host, a Tools terminal, still runs in the thread's folder. */
   private worktreeInUse: (threadId: string) => boolean = () => false
   setWorktreeInUse(inUse: (threadId: string) => boolean): void { this.worktreeInUse = inUse }
+  /**
+   * Gives the workspace its Git status source. Status is read with the worktree after a turn, with the
+   * remote on a refresh, and for the threads a window is looking at on a timer while that window is in
+   * front, once per fetch interval; an interval of zero leaves the timer with nothing to do.
+   */
+  setGitStatus(source: GitStatusSource, options: { foreground?: () => boolean; pollIntervalMs: () => number; tickMs?: number }): void {
+    this.gitStatus = source
+    this.gitStatusOptions = { foreground: options.foreground ?? (() => true), pollIntervalMs: options.pollIntervalMs }
+    if (this.gitStatusTimer) clearInterval(this.gitStatusTimer)
+    this.gitStatusTimer = setInterval(() => { void this.pollGitStatus() }, options.tickMs ?? GIT_STATUS_TICK_MS)
+    this.gitStatusTimer.unref?.()
+  }
+  /** A Git action changed this thread's folder: read it again, remote and all, without waiting for the timer. */
+  gitActionFinished(threadId: string): Promise<void> {
+    this.gitStatus?.invalidate()
+    return this.onLane(threadId, () => this.readGitStatus(threadId, true))
+  }
+  private async pollGitStatus(): Promise<void> {
+    if (this.gitStatusPolling || this.stopping || !this.gitStatus || !this.declared) return
+    const interval = this.gitStatusOptions.pollIntervalMs()
+    if (interval <= 0 || Date.now() - this.gitStatusPolledAt < interval || !this.gitStatusOptions.foreground()) return
+    this.gitStatusPolling = true
+    this.gitStatusPolledAt = Date.now()
+    try {
+      for (const threadId of [...this.watched.keys()]) {
+        if (this.stopping) break
+        await this.onLane(threadId, () => this.readGitStatus(threadId, true)).catch(() => undefined)
+      }
+    } finally { this.gitStatusPolling = false }
+  }
+  /** Reads the thread's folder and publishes only a status that changed. Callers hold the thread's lane. */
+  private async readGitStatus(threadId: string, remote: boolean): Promise<void> {
+    if (!this.gitStatus || this.stopping) return
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const worktree = thread?.worktree
+    if (!thread || !worktree || worktree.status !== 'ready' || worktree.reclaimedAt) return
+    let folder: string
+    try { folder = resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)) } catch { return }
+    let status: GitStatus
+    try { status = await this.gitStatus.read(folder, { remote }) } catch { return }
+    const current = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
+    if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
+    current.worktree = { ...current.worktree, git: status }
+    this.dirty = true
+    try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+    this.publish()
+  }
   /**
    * Removes this thread's own worktree folder because the user asked, or a rule the user turned on did
    * (ADR-0019). The thread keeps its record and its branch keeps its commits; the next send puts the
@@ -727,6 +785,7 @@ export class WorkspaceHost implements AgentHost {
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer)
     for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
+    if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
     try { if (this.ready) { this.writeEvents(); this.saveActivities() } }
     catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
     finally { this.threadStore.close(); this.subagentStore.close() }
@@ -934,11 +993,14 @@ export class WorkspaceHost implements AgentHost {
       try { inspected = await this.worktrees.inspect(worktree) } catch { return }
       const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
       if (current?.worktree?.status !== 'ready') return
-      if (inspected.branch === current.worktree.branch && inspected.dirty === current.worktree.dirty) return
-      current.worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
-      this.dirty = true
-      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
-      this.publish()
+      if (inspected.branch !== current.worktree.branch || inspected.dirty !== current.worktree.dirty) {
+        current.worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
+        this.dirty = true
+        try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+        this.publish()
+      }
+      // Finished work may have committed, so the counts are read again; the remote waits for the timer or a refresh.
+      await this.readGitStatus(threadId, false)
     })
   }
   /** Serializes work for one thread or project without holding up unrelated provider work. */
@@ -1154,6 +1216,8 @@ export class WorkspaceHost implements AgentHost {
         }
         this.thread(threadId).worktree = metadata
         this.dirty = true; await this.flush(); this.publish()
+        // A refresh is the user's or the window's ask, so the remote is read too, fetching when the interval allows.
+        await this.readGitStatus(threadId, true)
       }
       return this.workspaceSnapshot()
     })
@@ -1180,6 +1244,7 @@ export class WorkspaceHost implements AgentHost {
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
+      await this.readGitStatus(threadId, false)
       return this.workspaceSnapshot()
     })
   }

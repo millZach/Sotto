@@ -96,9 +96,12 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
   try {
     const policy = memory ? new PolicyStore(memory) : undefined
+    // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
+    let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled, coordinatorEnabled: () => startup.voiceCoordinatorEnabled,
+      gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected() },
       ...(policy ? { authority: policy } : {}),
       ...(memory && startup.memoryEnabled ? { preferences: new MemoryProfile(memory) } : {}),
       ...(options.providers ? { providers: options.providers } : {}),
@@ -123,6 +126,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
             if (allowed) policy.grantRemoteAnswers(clientId, 'The user allowed this paired device to answer permission requests on the host.')
           },
         })
+        const started = listener
+        peersConnected = () => started.peers() > 0
         await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken }) + '\n', { encoding: 'utf8', mode: 0o600 })
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }

@@ -19,6 +19,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
+import { GitStatusReader, type GitStatusSource } from './gitStatus'
 import type { AgentHost } from './host'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -45,6 +46,11 @@ export interface AgentRuntimeOptions {
   /** Native process overrides keep tests on the production coordinator path. */
   providers?: Partial<Record<ProviderId, NativeHost>>
   reasoner?: ControlDependencies['reasoner']
+  /**
+   * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
+   * whether a window is in front to read for. Absent, thread records carry no Git status.
+   */
+  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean; source?: GitStatusSource }
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
@@ -70,6 +76,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
+  if (options.gitStatus) {
+    const { fetchIntervalMs, foreground, source } = options.gitStatus
+    agentHost.setGitStatus(source ?? new GitStatusReader({ fetchIntervalMs }), { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
+  }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
   const shortTextWriter = new ShortTextWriter({

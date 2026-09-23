@@ -58,6 +58,7 @@ const customSettings = {
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
+  gitFetchIntervalSeconds: 60,
   pullRequestText: false,
   commitMessages: false,
   streamingAsr: false,
@@ -84,6 +85,9 @@ describe('settings', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
     expect(parseSettings({ worktreeCleanup: { afterDays: 14, merged: false, onSettle: true, unchanged: false } }).worktreeCleanup).toEqual({ afterDays: 14, merged: false, onSettle: true, unchanged: false })
     expect(parseSettings({ worktreeCleanup: { afterDays: 3, merged: false, onSettle: true, unchanged: false } }).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
+    expect(parseSettings({}).gitFetchIntervalSeconds).toBe(30)
+    expect(parseSettings({ gitFetchIntervalSeconds: 0 }).gitFetchIntervalSeconds).toBe(0)
+    expect(parseSettings({ gitFetchIntervalSeconds: 7 }).gitFetchIntervalSeconds).toBe(30)
   })
   it('drops retired transcription settings while preserving valid settings', () => {
     const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
@@ -225,6 +229,7 @@ describe('settings', () => {
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
+      gitFetchIntervalSeconds: 30,
       pullRequestText: true,
       commitMessages: true,
       streamingAsr: true,
