@@ -256,6 +256,33 @@ describe('shell updates while the main window is hidden', () => {
   })
 })
 
+describe('a sync command reply racing a low-priority broadcast', () => {
+  it('is not overtaken once its transition finally catches up', async () => {
+    // Hidden, a broadcast commits directly as a transition (no frame holds it). Publishing it here does
+    // not await React's own scheduling of that low-priority work, so it is still unsettled — exactly
+    // like the real Scheduler, which runs it on its own macrotask — when the command below replies.
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const initial = fullState([thread('workshop', [])], 'workshop')
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    let resolveCommand!: (state: AgentState) => void
+    vi.mocked(wire.bridge.command).mockImplementationOnce(() => new Promise(resolve => { resolveCommand = resolve }))
+    wire.publish({ ...initial, notice: 'from the broadcast' })
+    // `refresh` is a provider operation and runs at once rather than waiting behind the command lane,
+    // so `bridge.command` (and `resolveCommand`) is called synchronously here.
+    const sending = result.current.command({ type: 'refresh' })
+    resolveCommand({ ...initial, notice: 'from the command' })
+    // The command's reply is urgent: it lands as soon as its own promise settles.
+    await act(async () => { await sending })
+    expect(result.current.state?.notice).toBe('from the command')
+    // Give the older broadcast's transition every chance to run its own render; React replays the
+    // whole update queue in call order whenever it does, so the later, urgent call still wins.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(result.current.state?.notice).toBe('from the command')
+  })
+})
+
 it('keeps monitoring on the live shell but never caches or restores it', () => {
   const watched = thread('workshop', [])
   watched.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch only while connected' }]
