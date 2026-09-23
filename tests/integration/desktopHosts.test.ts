@@ -471,6 +471,19 @@ describe('Add host, the switch and reconnect on launch', () => {
     expect(launchers).toHaveLength(1)
     expect(router.shell().connections ?? []).toEqual([])
   })
+  it('reads Switched off, not Needs attention, when switched off while its launch connect is still running', async () => {
+    await add()
+    askOnConnect = 'passphrase'
+    await relaunch()
+    const id = manager.get().hosts[0]!.id
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.prompt?.id).toBe('prompt-1'))
+    await manager.command({ type: 'set-enabled', id, enabled: false })
+    // The cancelled connect settles, with no real waiting, after the switch has set the row; it must not report the cancel.
+    await new Promise(resolve => setImmediate(resolve))
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', enabled: false })
+    expect(manager.get().hosts[0]!.error).toBeUndefined()
+    expect(scheduled).toEqual([])
+  })
   it('switches a host off when Stop host stops it, so the next launch does not start it again', async () => {
     const remote = await add()
     await manager.command({ type: 'stop-host', id: remote.id })

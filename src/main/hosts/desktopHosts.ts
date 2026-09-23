@@ -326,7 +326,10 @@ export class DesktopHosts {
       }
       await active.socket?.close().catch(() => undefined)
       await active.launcher.disconnect().catch(() => undefined)
-      if (this.live.get(host.id) === active) this.live.delete(host.id)
+      // Superseded: switched off, disconnected, stopped or replaced by a newer attempt while this one ran. Whatever
+      // did that has already set the row, and a cancelled connect is not something to report or retry.
+      const current = this.live.get(host.id) === active
+      if (current) this.live.delete(host.id)
       if (unsaved) {
         delete host.hostId; delete host.clientId
         await this.forgetCredential(host.id)
@@ -335,7 +338,7 @@ export class DesktopHosts {
         return
       }
       // A host forgotten or edited while it connected has no row left for this attempt to report to.
-      if (!this.saved.includes(host)) return
+      if (!this.saved.includes(host) || !current) return
       if (this.retries.has(host.id) && !this.final(failure) && !this.status.get(host.id)?.prompt) {
         this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
         this.scheduleReconnect(host, undefined)
