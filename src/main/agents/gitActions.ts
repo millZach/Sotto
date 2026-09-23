@@ -101,7 +101,7 @@ export class GitActions {
       const wantsPr = action === 'create_pr' || action === 'commit_push_pr'
       const wantsPush = action === 'push' || action === 'commit_push' || action === 'commit_push_pr' || (action === 'create_pr' && (!status.upstream || status.ahead > 0))
       const featureBranch = input.featureBranch === true
-      if (featureBranch && !wantsCommit && !wantsPush) throw new GitActionRefusal('Feature-branch checkout is only supported for commit actions.')
+      if (featureBranch && !wantsCommit && !wantsPush) throw new GitActionRefusal('A feature branch is cut only for an action that commits or pushes.')
       if (input.filePaths !== undefined && input.filePaths.length === 0) throw new GitActionRefusal('Choose at least one file to commit.')
       if (action === 'create_pr' && status.dirty) throw new GitActionRefusal('Commit local changes before creating a PR.')
       if (!status.branch && wantsPush && !featureBranch) throw new GitActionRefusal('Cannot push from detached HEAD.')

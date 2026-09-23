@@ -28,7 +28,8 @@ export function quickAction(status: GitStatus | undefined): GitQuickAction | nul
   if (!status.isRepository) return { kind: 'init', label: 'Initialize Git' }
   const open = openPullRequest(status)
   if (status.dirty) {
-    if (!status.hasRemote) return { kind: 'commit', label: 'Commit' }
+    // A detached HEAD can take a commit, not a push: the host refuses to push from it, so the press offers only what runs.
+    if (!status.hasRemote || !status.branch) return { kind: 'commit', label: 'Commit' }
     if (open || status.isDefaultBranch) return { kind: 'commit_push', label: 'Commit & push' }
     return { kind: 'commit_push_pr', label: 'Commit, push & PR' }
   }

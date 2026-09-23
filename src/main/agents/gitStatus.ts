@@ -215,7 +215,6 @@ export class GitStatusReader implements GitStatusSource {
     return snapshot
   }
 
-  /** One read per folder at a time: two threads sharing a checkout share the answer. */
   /**
    * The changed files of a working copy as the commit dialog lists them: every path `status` reports,
    * with the line counts `diff --numstat HEAD` gives a tracked change. An untracked file's lines are
@@ -246,6 +245,7 @@ export class GitStatusReader implements GitStatusSource {
     return { isRepository: true, files, truncated }
   }
 
+  /** One read per folder at a time: two threads sharing a checkout share the answer. */
   read(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus> {
     const key = `${cwd}\0${options.remote}`
     const pending = this.reads.get(key)

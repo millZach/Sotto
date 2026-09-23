@@ -33,6 +33,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('the quick action, T3\'s table', () => {
   it.each<[string, Partial<GitStatus>, string, string | undefined]>([
     ['dirty, no remote', { dirty: true, hasRemote: false, upstream: null }, 'Commit', undefined],
+    ['dirty, detached HEAD', { dirty: true, branch: null, upstream: null }, 'Commit', undefined],
     ['dirty, open PR', { dirty: true, pullRequest: pr }, 'Commit & push', undefined],
     ['dirty, on the default branch', { dirty: true, branch: 'main', isDefaultBranch: true, upstream: 'origin/main' }, 'Commit & push', undefined],
     ['dirty, otherwise', { dirty: true }, 'Commit, push & PR', undefined],

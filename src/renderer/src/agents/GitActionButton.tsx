@@ -6,6 +6,9 @@ import type { GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile, GitChangedFiles } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
 import { Button } from '../components/Button'
+import { useDialogFocus } from '../components/useDialogFocus'
+import { useOptionalApp } from '../state/AppContext'
+import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
@@ -18,6 +21,7 @@ function changedFilesBridge(): ((request: { threadId: string }) => Promise<GitCh
   return window.sotto?.agents?.gitChangedFiles
 }
 
+/** The glyph for each action, on the button and in its menu. */
 const ICONS: Record<GitQuickKind, typeof GitCommitHorizontal> = {
   commit: GitCommitHorizontal, commit_push: GitCommitHorizontal, commit_push_pr: GitCommitHorizontal,
   push: ArrowUpFromLine, push_pr: ArrowUpFromLine, pull: ArrowDownToLine, create_pr: GitPullRequestArrow, view_pr: GitPullRequestArrow,
@@ -103,9 +107,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
       }
     }
   }
-  const menu: PaneMenuItem[] = menuEntries(status).map(entry => ({ id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}),
-    icon: entry.id === 'commit' ? <GitCommitHorizontal size={15} aria-hidden="true" /> : entry.id === 'push' ? <ArrowUpFromLine size={15} aria-hidden="true" /> : entry.id === 'publish' ? <Upload size={15} aria-hidden="true" /> : <GitPullRequestArrow size={15} aria-hidden="true" />,
-    run: () => press(entry.id) }))
+  const menu: PaneMenuItem[] = menuEntries(status).map(entry => {
+    const EntryIcon = ICONS[entry.id]
+    return { id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}), icon: <EntryIcon size={15} aria-hidden="true" />, run: () => press(entry.id) }
+  })
 
   const notice = shown ? <GitActionNotice notice={shown} running={running}
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
@@ -147,37 +152,6 @@ function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notic
   </div>
 }
 
-/** Focus the first control on open, keep Tab inside, answer Escape, and give focus back on close: what every dialog here does. */
-function useDialogFocus(onCancel: () => void, initial: React.RefObject<HTMLElement | null>): React.RefObject<HTMLElement | null> {
-  const dialog = useRef<HTMLElement>(null)
-  const cancel = useRef(onCancel)
-  cancel.current = onCancel
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    initial.current?.focus()
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel.current(); return }
-      if (event.key !== 'Tab') return
-      const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])]
-      if (focusable.length === 0) return
-      const first = focusable[0]!, last = focusable.at(-1)!
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      // Focus goes back to where it was, unless the next dialog has already taken it (the commit dialog hands over to the question).
-      queueMicrotask(() => {
-        const active = document.activeElement
-        if (active && active !== document.body && active.isConnected) return
-        if (previous?.isConnected) previous.focus()
-      })
-    }
-  }, [initial])
-  return dialog
-}
-
 /**
  * T3's Commit changes dialog: the branch with its Default branch tag, the changed files with their counts
  * and an Edit mode that leaves files out, a message that may be left empty for the host to write, and
@@ -194,8 +168,12 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
   const [message, setMessage] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
   const messageField = useRef<HTMLTextAreaElement>(null)
-  const dialog = useDialogFocus(onCancel, messageField)
+  const dialog = useDialogFocus({ onEscape: onCancel, initialFocus: messageField })
   const titleId = useId(), messageId = useId()
+  // Ctrl+Enter (Cmd+Enter on a Mac) commits from the message, unless the dictation hotkey already means those keys.
+  const app = useOptionalApp()
+  const platform = app?.platform ?? 'win32'
+  const submitChord = chordClaimed('mod+enter', app?.settings?.hotkey, platform) ? 'mod+enter' : null
   useEffect(() => {
     let live = true
     const read = changedFilesBridge()
@@ -212,14 +190,14 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
   }
   const toggle = (file: GitChangedFile): void => setExcluded(current => { const next = new Set(current); if (next.has(file.path)) next.delete(file.path); else next.add(file.path); return next })
   const nothing = files !== null && listed.length === 0
-  return <div className="tt-dialog-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) onCancel() }}>
+  return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog commit-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <h2 id={titleId}>Commit changes</h2>
       <p className="commit-dialog__branch"><GitBranch size={14} aria-hidden="true" /><span>{status.branch ?? 'Detached HEAD'}</span>{status.isDefaultBranch ? <span className="commit-dialog__tag">Default branch</span> : null}</p>
       <div className="commit-dialog__files">
         <div className="commit-dialog__files-head">
           <span>{files ? `${fileCount(included.length)}${excluded.size > 0 ? ` of ${listed.length}` : ''}${files.truncated ? ' (more than Sotto lists)' : ''}` : failure ? 'Changed files' : 'Reading changes…'}</span>
-          {listed.length > 0 ? <button type="button" className="commit-dialog__edit tt-focusable" aria-pressed={editing} onClick={() => setEditing(value => !value)}>{editing ? 'Done' : 'Edit'}</button> : null}
+          {listed.length > 0 ? <button type="button" className="commit-dialog__edit tt-focusable" onClick={() => setEditing(value => !value)}>{editing ? 'Done' : 'Edit'}</button> : null}
         </div>
         {failure ? <p className="commit-dialog__note" role="alert">{failure}</p> : null}
         {nothing ? <p className="commit-dialog__note">No changes to commit.</p> : null}
@@ -229,7 +207,7 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
           const out = excluded.has(file.path)
           return <li key={file.path} data-excluded={out || undefined}>
             {editing ? <input type="checkbox" className="tt-focusable" checked={!out} aria-label={`Include ${file.path}`} onChange={() => toggle(file)} /> : null}
-            <span className="commit-dialog__badge" data-status={file.status} title={label}>{letter}</span>
+            <span className="commit-dialog__badge" data-status={file.status} role="img" aria-label={label} title={label}>{letter}</span>
             <span className="commit-dialog__path" dir="auto">{file.path}</span>
             {counts ? <span className="commit-dialog__counts" aria-label={`${file.insertions} added, ${file.deletions} removed`}>{counts}</span> : null}
           </li>
@@ -237,7 +215,7 @@ function CommitDialog({ threadId, status, action, onCancel, onCommit }: {
       </div>
       <label className="commit-dialog__message" htmlFor={messageId}>Commit message (optional)</label>
       <textarea ref={messageField} id={messageId} className="tt-focusable" rows={3} value={message} maxLength={10_000} placeholder="Leave empty to auto-generate"
-        onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); submit(false) } }} />
+        onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (submitChord && chordMatches(event, submitChord, platform)) { event.preventDefault(); submit(false) } }} />
       {refusal ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{refusal}</div> : null}
       <div className="tt-dialog__actions commit-dialog__actions">
         <Button variant="secondary" onClick={onCancel}>Cancel</Button>
@@ -253,7 +231,7 @@ function DefaultBranchDialog({ status, request, onCancel, onPush, onFeatureBranc
   readonly status: GitStatus; readonly request: ActionRequest; readonly onCancel: () => void; readonly onPush: () => void; readonly onFeatureBranch: () => void
 }): ReactNode {
   const abort = useRef<HTMLButtonElement>(null)
-  const dialog = useDialogFocus(onCancel, abort)
+  const dialog = useDialogFocus({ onEscape: onCancel, initialFocus: abort })
   const titleId = useId(), descriptionId = useId()
   const words = defaultBranchQuestion(request.action, status.branch ?? status.defaultBranch ?? 'the default branch')
   return <div className="tt-dialog-backdrop" role="presentation">
@@ -275,7 +253,7 @@ function PublishDialog({ onCancel, onPublish }: { readonly onCancel: () => void;
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [refusal, setRefusal] = useState<string | null>(null)
   const field = useRef<HTMLInputElement>(null)
-  const dialog = useDialogFocus(onCancel, field)
+  const dialog = useDialogFocus({ onEscape: onCancel, initialFocus: field })
   const titleId = useId(), fieldId = useId()
   const submit = (): void => {
     const name = repository.trim()

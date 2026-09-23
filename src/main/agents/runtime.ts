@@ -19,9 +19,8 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
-import { GitStatusReader } from './gitStatus'
+import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitActions } from './gitActions'
-import { runWithGhStandIn } from './gitStatus'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
@@ -87,9 +86,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
+  /** How Git and gh are run; only a journey's stand-in changes it. */
+  let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
     const { fetchIntervalMs, foreground, ghStandIn } = options.gitStatus
-    gitStatus = new GitStatusReader({ fetchIntervalMs, ...(ghStandIn ? { run: runWithGhStandIn(ghStandIn) } : {}) })
+    if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
+    gitStatus = new GitStatusReader({ fetchIntervalMs, ...(gitRun ? { run: gitRun } : {}) })
     agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
@@ -100,7 +102,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
-  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(options.gitStatus?.ghStandIn ? { run: runWithGhStandIn(options.gitStatus.ghStandIn) } : {}),
+  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings) }))
   const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,
