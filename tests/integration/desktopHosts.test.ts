@@ -9,10 +9,10 @@ import { startHeadlessHost } from '../../src/host'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
-import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
+import { DesktopHosts, reconnectDelayMs } from '../../src/main/hosts/desktopHosts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHostConfiguration } from '../../src/main/hosts/sshLauncher'
+import { SshFailure, SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHostConfiguration } from '../../src/main/hosts/sshLauncher'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
@@ -200,7 +200,7 @@ describe('desktop remote host management over a real socket', () => {
   })
   it('stops retrying when a reconnect fails with an error only the user can fix', async () => {
     await add()
-    failures.push(new Error('The host installation was not found. Check its folder on the SSH host and reconnect.'))
+    failures.push(new SshFailure('archive-missing'))
     launchers[0]!.callbacks!.onDisconnected!('dropped')
     await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining('installation was not found') }))
     await new Promise(resolve => setTimeout(resolve, 50))
@@ -209,7 +209,7 @@ describe('desktop remote host management over a real socket', () => {
   it('clears a retry left by a failed reconnect when Sotto quits, so no SSH session starts during the drain', async () => {
     const remote = await add()
     retryDelay = attempt => attempt === 0 ? 0 : 60_000
-    failures.push(new Error('The SSH connection closed before the host answered.'))
+    failures.push(new SshFailure('ssh-unreachable'))
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       launchers[0]!.callbacks!.onDisconnected!('dropped')
@@ -223,6 +223,23 @@ describe('desktop remote host management over a real socket', () => {
       await manager.command({ type: 'connect', id: remote.id })
       expect(launchers).toHaveLength(2)
     } finally { vi.useRealTimers() }
+  })
+  it('decides on the failure code, so rewording a message changes no retry decision', async () => {
+    await add()
+    // Words that once meant "stop retrying", on a failure a retry can fix: it is retried.
+    failures.push(new SshFailure('ssh-unreachable', 'The host installation was not found, the host key changed and the identity changed.'))
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(launchers).toHaveLength(3)
+    // Words that say nothing, on a failure only the user can fix: it stops.
+    failures.push(new SshFailure('node-too-old', 'Something is not right.'))
+    launchers[2]!.callbacks!.onDisconnected!('dropped')
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: 'Something is not right.' }))
+    expect(launchers).toHaveLength(4)
+    expect(scheduled).toEqual([0, 1, 0])
+  })
+  it('backs off 3, 4, 8 and then 16 seconds between reconnects, and keeps retrying', () => {
+    expect([0, 1, 2, 3, 4, 5, 50].map(reconnectDelayMs)).toEqual([3_000, 4_000, 8_000, 16_000, 16_000, 16_000, 16_000])
   })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()
