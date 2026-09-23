@@ -157,6 +157,7 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/agents/requests/requests.css',
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',

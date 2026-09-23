@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, isThreadProviderConnected, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, capabilitiesForThread, isThreadBusy, isThreadProviderConnected, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker } from './ModelPicker'
@@ -104,6 +104,7 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
  * start is unknown) the thread stays with its own provider.
  */
 function threadModelChoices(state: AgentState, thread: AgentThread): { readonly models: AgentModel[]; readonly locked: boolean } {
+  state = { ...state, host: hostForThread(state.host, thread) }
   if (thread.nativeSessionStarted === false) {
     const models = state.host.models.filter(model => model.id === thread.modelId || canCreateWith(state, model))
     return { models, locked: false }

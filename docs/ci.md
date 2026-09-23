@@ -1,6 +1,6 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds installers, never publishes, and uses no secrets.
+`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A separate Linux job builds and verifies the plain Node host archive.
 
 ## What the job runs
 
@@ -23,7 +23,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
 - **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters. Its elapsed-time comparison is opt-in like the other stopwatch budgets below.
 - **Wall-clock budgets.** See below.
-- **Packaging and publishing.** Releases are still cut by hand on the Windows PC and the Apple silicon Mac.
+- **Desktop packaging and all publishing.** Desktop releases are still cut by hand on the Windows PC and the Apple silicon Mac. The Linux host archive is built and verified in its separate job, then published manually.
 
 ## Devin native verification
 
@@ -150,6 +150,26 @@ Measured on a warm developer machine: install 18 s, runtime preparation 1 s, typ
 Run `npm run build && npx playwright test tests/e2e/subagents.spec.ts` for the real Electron roster journey, history, state changes and light/dark captures at the three desktop sizes. As with other UI journeys, it stays local. Run the existing opt-in queue-feedback and streaming heartbeat gates while verifying performance; their 100 ms and 250 ms limits are unchanged.
 
 For the local HEAD/current startup, update and memory comparison, run `node tests/perf/subagents-bench.mjs` with `SOTTO_PERF_ASSERT=1`. See [the performance note](perf/issue-124-agents.md) for its workload, baseline revision, measurements and limits.
+
+## Headless host foundations
+
+`npm run test:host` runs the Node-only host lifecycle and credential checks, shared adapter contracts and HostService journeys with fake providers. The normal unit/integration gate includes these tests. The process test builds a temporary plain-Node entry and checks its import graph for Electron; it does not use the shipped Electron executable. On Windows its SIGTERM handler is exercised through an owned IPC signal fixture because Windows process termination cannot deliver a graceful POSIX SIGTERM. The separate Linux host job delivers a real SIGTERM to both the lifecycle fixture and the extracted archive smoke test.
+
+`tests/e2e/host-identity.spec.ts` launches the real desktop with a legacy workspace, verifies durable host identity and raw persisted Sotto IDs, then checks host-scoped panes and a saved draft after restart. Run it with the daily-workspace and coordinator journeys when changing the host/client boundary.
+
+## Linux host archive and socket contract
+
+The **Host archive and socket contract (Linux)** job runs on `ubuntu-latest` with Node 24, read-only repository access and no provider credentials. It installs the locked dependencies without downloading Electron, then runs:
+
+| Command | Evidence |
+| --- | --- |
+| `npm run test:socket` | The shared HostService contract through `SocketHostService` against a built Node child and all four scripted providers; pairing, the remote command allow-list, receipts and reconnect boundaries; headless startup and native SIGTERM; the SSH launcher and launch script, including a real pseudo-terminal that echoes every request, which on Linux is the cooked-mode echo OpenSSH gets. |
+| `npm run package:host` | A standalone Node build, reviewed external dependency closure, notices, runtime manifest, provenance and SHA256; extraction into a fresh directory, listener health and persisted identity after native SIGTERM. |
+| `npm run notices:verify` | The host's external and bundled dependency inventories are covered by the maintained notices. |
+
+The job retains `Sotto-host-*-linux-x64.tar.gz` and its checksum sidecar as a workflow artifact for 14 days. It does not publish them. The archive contains zod and no native modules; a new dependency or native binary fails the packaging check until its runtime/release path is reviewed. The desktop's Windows node-pty installation is never copied into a Linux archive.
+
+Run `npm run package:host` locally for the same extraction and startup check. The filename records the actual platform. `npm run host:verify -- <extracted-directory>` verifies an existing extracted archive against its manifest and provenance; `node scripts/smoke-host-archive.mjs <extracted-directory>` additionally starts and stops it. On Windows only, smoke shutdown exercises the signal handler through IPC, since Windows cannot deliver a graceful POSIX SIGTERM. The Linux CI run and a real Forge SSH connection remain separate evidence from a local Windows pass.
 
 ## Browser provider and desktop verification
 

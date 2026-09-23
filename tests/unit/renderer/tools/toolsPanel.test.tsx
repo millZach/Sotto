@@ -380,3 +380,17 @@ describe('shared tools panel', () => {
   })
 
 })
+
+it('keeps remote tools visible without starting local file or terminal actions', async () => {
+  const state = threadsStateFixture()
+  state.host.threads = state.host.threads.map(thread => ({ ...thread, remoteHost: true }))
+  const { store } = setup({ state })
+  const files = vi.spyOn(store.files, 'activate'), terminals = vi.spyOn(store.terminals, 'activate')
+  act(() => { store.setOpen(true); store.setSurface('terminal') })
+  expect(await screen.findByText('Terminal is on the host machine.')).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Terminal', exact: true })).toBeVisible()
+  expect(files).not.toHaveBeenCalled(); expect(terminals).not.toHaveBeenCalled()
+  act(() => store.setSurface('files'))
+  expect(screen.getByText('Files is on the host machine.')).toBeVisible()
+  expect(files).not.toHaveBeenCalled()
+})

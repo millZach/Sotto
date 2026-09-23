@@ -17,6 +17,7 @@ import {
   designCaptureTupleKey,
 } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS, type Appearance } from '../../src/shared/settings'
@@ -974,7 +975,8 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, `threads-split-workspace-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-workspace' })
       await resize(820)
       await expect(page.getByRole('tablist', { name: 'Open panes' })).toBeVisible()
-      await expect(page.locator('#thread-pane-grok-previews')).toHaveAttribute('inert')
+      const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
+      await expect(page.locator(`[id="thread-pane-${hostEntityKey(hostId, 'grok-previews')}"]`)).toHaveAttribute('inert')
       await capturePage(page, `threads-split-focus-820-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-focus-820' })
       await page.getByRole('button', { name: 'Tools', exact: true }).click()
       const tools = page.getByRole('complementary', { name: 'Tools', exact: true })

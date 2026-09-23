@@ -60,3 +60,36 @@ jobs:
 
       - name: Third-party notices
         run: npm run notices:verify
+
+  host:
+    name: Host archive and socket contract (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Shared socket contract and native host lifecycle
+        run: npm run test:socket
+      - name: Package and verify the extracted host archive
+        run: npm run package:host
+      - name: Third-party notices
+        run: npm run notices:verify
+      - name: Retain the verified host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-host-linux-x64
+          path: |
+            release/Sotto-host-*-linux-x64.tar.gz
+            release/Sotto-host-*-linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14

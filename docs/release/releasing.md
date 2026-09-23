@@ -34,3 +34,43 @@ macOS builds are ad-hoc signed (`identity: '-'`) and not notarized, so the relea
 ## Where the feeds point
 
 electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand.
+
+## Linux host archive
+
+The host is a Node process, not a Linux desktop app. Build on Linux with Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host`. The CI job **Host archive and socket contract (Linux)** does the same work and retains its archive for review. CI never publishes a release.
+
+`package:host` builds only the headless entry. It produces `release/Sotto-host-X.Y.Z-linux-x64.tar.gz` and a matching `.tar.gz.sha256` sidecar on the x64 Linux runner. Local builds carry their actual platform and architecture in the filename; a Windows smoke build is not a Linux release. There is no cross-platform native-module copy or Electron packaging step.
+
+The archive extracts directly into an installation directory:
+
+```text
+host/index.js
+host/external-dependencies.json
+host/bundled-dependencies.json
+node_modules/zod/
+package.json
+runtime-manifest.json
+build-provenance.json
+LICENSE.md
+THIRD_PARTY_NOTICES.md
+```
+
+The manifest requires Node `>=24 <25`; Node itself and provider CLIs are not included. Install Node 24 and the desired provider CLI on the host and sign in there. The reviewed runtime closure is Node built-ins and zod, with no bundled dependencies or native modules. Packaging refuses a new external, an unexpected transitive dependency, or a native binary. The existing notices check covers the host inventory. Provenance records the source commit, dirty-tree status, build-input digest, Node/build platform, and every packaged file's size and digest. Only a reviewed clean-commit build is eligible for publication.
+
+The packaging command verifies the staged directory, extracts the resulting archive into a fresh temporary directory, verifies all hashes again, starts its `host/index.js` outside the checkout, checks the loopback listener's identity, and verifies that shutdown saved the workspace. Linux delivers a real SIGTERM. A Windows development smoke substitutes that signal through a test-only IPC handler; it is not evidence of Linux execution.
+
+After reviewing the green Linux job and its matching provenance, attach the Linux archive beside the desktop installers on `millZach/Sotto-releases`. Add its sidecar line to the combined `SHA256SUMS.txt` before uploading that file last. Do not publish a Windows smoke archive as Linux. Publishing is still a separate manual release action.
+
+On Forge, verify the release checksum, extract into a versioned installation directory, and start from there:
+
+```sh
+sha256sum -c Sotto-host-X.Y.Z-linux-x64.tar.gz.sha256
+mkdir -p "$HOME/.local/share/sotto-host/X.Y.Z"
+tar -xzf Sotto-host-X.Y.Z-linux-x64.tar.gz -C "$HOME/.local/share/sotto-host/X.Y.Z"
+cd "$HOME/.local/share/sotto-host/X.Y.Z"
+node host/index.js --data "$HOME/.sotto"
+```
+
+No `npm install` is needed in the extracted archive. Keep the data directory outside the versioned installation. A new empty host can start without a credential key; saving hosted-provider credentials requires a separately stored key file passed with `--key-file` or `SOTTO_HOST_KEY_FILE`. Never copy the desktop credential store to Forge. The listener binds loopback only. Point the desktop's SSH host settings at the extracted installation directory, then pair explicitly. Installing an archive grants no permission authority.
+
+The scripts and CI job do not establish that an archive has been published or that Forge has been tested. Record the release URL, Linux CI run, and actual Forge SSH connection evidence when those acceptance checks are completed.

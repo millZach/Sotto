@@ -68,6 +68,8 @@ export class WorktreeCleanup {
   /** The rules changed; look again rather than wait for the hour. */
   settingsChanged(): void { this.request() }
   dispose(): void { this.disposed = true; if (this.timer) clearInterval(this.timer); this.unsubscribe?.() }
+  /** Stops sweeping and waits for a sweep already under way, which stops before its next worktree. */
+  close(): Promise<void> { this.dispose(); return this.running }
   /** One sweep at a time; a request during a sweep runs one more afterwards. */
   request(): Promise<void> {
     if (this.disposed) return Promise.resolve()

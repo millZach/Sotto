@@ -1,5 +1,6 @@
+import { HostsSettings } from './HostsSettings'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Command, Mic, Palette, Settings2, Sparkles, Workflow } from 'lucide-react'
+import { ArrowUpRight, AudioLines, ChevronRight, Command, Mic, Palette, Server, Settings2, Sparkles, Workflow } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -80,6 +81,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-transcription', label: 'Transcription', icon: AudioLines },
   { id: 'settings-formatting', label: 'Cleanup', icon: Sparkles },
   { id: 'settings-providers', label: 'Providers', icon: Command },
+  { id: 'settings-hosts', label: 'Hosts', icon: Server },
   { id: 'settings-agents', label: 'Agents', icon: Workflow },
   { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
@@ -561,6 +563,8 @@ export function SettingsView({
               </Card>
 
               <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
+
+              <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}><div className="settings-section__heading"><h2>Hosts</h2><p>Local & remote hosts</p></div><HostsSettings localHostEnabled={settings.localHostEnabled} onLocalHostChange={enabled => onUpdateSettings({ localHostEnabled: enabled })} /></Card>
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>{settings.voiceCoordinatorEnabled ? 'Reasoning, voice & projects' : 'Reasoning & projects'}</p></div><AgentSetupFields /></Card>
 

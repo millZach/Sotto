@@ -108,7 +108,7 @@ describe('the host service boundary', () => {
     const eventsAfter = vi.fn(() => stored)
     const service = new LocalHostService({ control: f.control, events: { eventsAfter } })
     expect(service.events(6, 'workshop')).toEqual(stored)
-    expect(eventsAfter).toHaveBeenCalledWith(6, 'workshop')
+    expect(eventsAfter).toHaveBeenCalledWith(6, 'workshop', undefined)
   })
 
   it('passes a listener straight through to the coordinator', async () => {

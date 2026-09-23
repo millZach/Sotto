@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { AgentCommand, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
@@ -87,6 +88,7 @@ test('limits automatic fixes, stops repeated failures, and never answers permiss
     await event(page, { type: 'failure', threadId: 'workshop', text: 'fixable test three' })
     await expect.poll(async () => (await state(page)).queue.some(q => q.text.includes('repeating a failure'))).toBe(true)
     await event(page, { type: 'permission', threadId: 'workshop', text: 'Publish this project?' })
+    await expect.poll(async () => { const current = await state(page); return current.host.threads.find(thread => thread.id === hostEntityKey(current.hostId, 'workshop'))?.requests.length }).toBe(1)
     let snapshot = await state(page)
     expect(snapshot.host.threads[0]?.requests).toHaveLength(1)
     expect(snapshot.queue.some(q => q.kind === 'permission')).toBe(true)
@@ -118,7 +120,7 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A draft that must survive a restart.')
     const snapshot = await state(launched.page)
     expect(snapshot.assignments[0]?.mode).toBe('manual')
-    expect(snapshot.draftThreadId).toBe('workshop')
+    expect(snapshot.draftThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))
     expect(JSON.parse(await readFile(join(directory, 'agents.json'), 'utf8')).draft).toBe(snapshot.draft)
   } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
 })
@@ -143,11 +145,12 @@ test('reconciles a lost acknowledgement without resubmitting, and keeps skipped 
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     await event(page, { type: 'permission', threadId: 'workshop', text: 'Delete project?' })
     await event(page, { type: 'ready', threadId: 'docs', text: 'Docs completed.' })
+    await expect.poll(async () => { const current = await state(page); return current.queue.some(item => item.threadId === hostEntityKey(current.hostId, 'docs')) }).toBe(true)
     await command(page, { type: 'later' })
     snapshot = await state(page)
-    expect(snapshot.activeThreadId).toBe('docs')
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'docs'))
     expect(snapshot.host.threads[0]?.requests).toHaveLength(1)
-    expect(snapshot.queue.some(q => q.threadId === 'workshop' && q.kind === 'permission' && q.deferred)).toBe(true)
+    expect(snapshot.queue.some(q => q.threadId === hostEntityKey(snapshot.hostId, 'workshop') && q.kind === 'permission' && q.deferred)).toBe(true)
     await command(page, { type: 'refresh' })
     expect((await state(page)).queue.filter(q => q.kind === 'permission')).toHaveLength(1)
   } finally { await closeSotto(launched) }
@@ -185,7 +188,8 @@ test('keeps the explicitly selected queued thread across host refresh and anothe
     await event(page, { type: 'question', threadId: 'docs', text: 'Which audience should these docs address?' })
     await command(page, { type: 'utterance', text: 'Select Workshop' })
     await command(page, { type: 'refresh' })
-    expect((await state(page)).activeThreadId).toBe('workshop')
+    const selected = await state(page)
+    expect(selected.activeThreadId).toBe(hostEntityKey(selected.hostId, 'workshop'))
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
 
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Workshop is ready to review.' })
@@ -197,9 +201,9 @@ test('keeps the explicitly selected queued thread across host refresh and anothe
     await command(page, { type: 'refresh' })
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Workshop checks have also completed.' })
     const snapshot = await state(page)
-    expect(snapshot.activeThreadId).toBe('docs')
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'docs'))
     expect(snapshot.speech.id).toBe(briefing)
-    expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests).toHaveLength(1)
+    expect(snapshot.host.threads.find(thread => thread.id === hostEntityKey(snapshot.hostId, 'docs'))?.requests).toHaveLength(1)
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
   } finally { await closeSotto(launched) }
 })
@@ -254,7 +258,8 @@ test('redacts processed assignment context when local history is disabled while 
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue(draft)
     const saved = JSON.parse(await readFile(join(launched.userData, 'agents.json'), 'utf8')) as { draft: string }
     expect(saved.draft).toBe(draft)
-    expect((await state(page)).host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(1)
+    const snapshot = await state(page)
+    expect(snapshot.host.threads.find(thread => thread.id === hostEntityKey(snapshot.hostId, 'workshop'))?.requests).toHaveLength(1)
   } finally { await closeSotto(launched) }
 })
 
@@ -284,12 +289,12 @@ test('expires dormant context after seven days without forgetting manual ownersh
     launched = await launchSotto('success', directory)
     await openThreads(launched.page)
     const snapshot = await state(launched.page)
-    const dormant = snapshot.assignments.find(assignment => assignment.threadId === 'workshop')!
+    const dormant = snapshot.assignments.find(assignment => assignment.threadId === hostEntityKey(snapshot.hostId, 'workshop'))!
     expect(dormant.instruction).toBe('')
     expect(dormant.paused).toBe(true)
     expect(dormant.mode).toBe('manual')
     expect(dormant.followups).toBe(1)
-    expect(snapshot.assignments.find(assignment => assignment.threadId === 'docs')?.instruction).toBe(recentInstruction)
+    expect(snapshot.assignments.find(assignment => assignment.threadId === hostEntityKey(snapshot.hostId, 'docs'))?.instruction).toBe(recentInstruction)
     await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A recoverable unsent draft.')
     await expect.poll(async () => (await readFile(path, 'utf8')).includes(oldInstruction)).toBe(false)
   } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }

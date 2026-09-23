@@ -147,6 +147,12 @@ export interface AppSettings {
   streamingAsr: boolean
   autoUpdateCheck: boolean
   /**
+   * Whether the agent runtime runs on this computer at all. Read once at
+   * startup; off starts no local host after the next restart. Remote hosts
+   * still work, dictation is unaffected and no saved data is removed.
+   */
+  localHostEnabled: boolean
+  /**
    * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
    * widget's voice controls and assignment) is hidden for the beta. Off keeps
    * every one of those surfaces out of the window; dictation is unaffected.
@@ -222,6 +228,7 @@ const fieldSchemas = {
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  localHostEnabled: z.boolean(),
   voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
@@ -286,6 +293,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // On by default: this computer is still the host until the owner pairs a
+  // remote one and chooses to run clients only.
+  localHostEnabled: true,
   // Off for the beta: the voice coordinator is not ready to ship, so nothing
   // voice-shaped is shown until it is turned on here.
   voiceCoordinatorEnabled: false,
@@ -371,6 +381,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
   }

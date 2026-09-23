@@ -1,0 +1,106 @@
+# Forge client foundations and pairing prototypes
+
+Work for #134's first parallel batch: #135, #136, #139 and #141. This note distinguishes local evidence from Forge and phone acceptance. Local implementation and review are complete; the checks and remaining external acceptance gaps are recorded below.
+
+## Pairing prototype (#139)
+
+Run `node docs/prototypes/pairing-prototype.mjs` and open `http://127.0.0.1:4325/`. `?variant=A` confirms the laptop after SSH; `?variant=B` asks for a code read from Forge; `?variant=C` is the iOS app design fixture. The bottom arrows and keyboard arrows change variants. The prototype uses fixture data only; it cannot pair or grant access to anything. All client state is in memory.
+
+Inspected against the existing Settings Providers reference. Figtree, the theme role colors, a left settings column, thin separators and one primary action carry into the new Hosts section. A presents confirmation inline; B moves code entry into a dialog; C removes desktop navigation to explore pairing inside the iOS app; the HTML implementation is only a design fixture. Removed the repeated phone heading. There is no decorative image: the host identity and code are the useful focal content.
+
+Rendered in Chromium at 1600×1000, 1280×800 and 820×560 for desktop, 390×844 and 375×667 for the iPhone-sized preview, and 700×850 between them; both light and dark checked. No horizontal overflow. Smaller heights scroll the product view independently of the prototype controls. Review controls originally covered content at minimum height; that was corrected before the final captures. Native iOS layout, its onscreen keyboard, safe areas, lifecycle and an actual iPhone remain unverified. The owner corrected the target to an iOS app on September 21; these browser captures validate only the HTML design fixture.
+
+Exercised Pair, invalid code, expired code, new code, expired session and Reconnect, paired-client list, Forget confirmation, Keep client, Escape and focus return. Reduced motion resolves the reveal animation to `none`. No browser page errors were recorded. Rendered text contrast measured at least 6.25:1 across the three variants and two modes (disabled fixture navigation excluded), above the 4.5:1 requirement. Input placeholder uses the existing faint-text token.
+
+The default A screen's primary text purposes are Hosts, Forge, Pair this laptop, the explicit action, and Cancel (five). Connection state, displayed code and its label, the pairing instruction and the authority explanation are necessary operation/feedback text; sidebar and prototype controls are supporting navigation. C keeps Connect to Forge, Forge and its primary action; field labeling, code instructions and authority feedback remain. Pairing is explicitly admission, and the prototype never records a policy grant. The reveal lasts 220 ms, with no motion under reduced motion.
+
+Local captures and raw checks are in `artifacts/forge-clients-134/`: `A-1280-dark.png`, `A-820-light.png`, `B-code-dialog.png`, `C-390-light.png`, `A-paired.png`, `A-forget.png`, `A-expired-code.png`, `A-expired-session.png`, `C-invalid-code.png`, `review.json` and `contrast.json`. Only final evidence needs retaining when this prototype is captured on its throwaway branch. The owner selected desktop variant B on September 21, 2026. The local #139 mock-ups, captures, recorded pick and chosen copy are ready; this does not claim production implementation or a closed GitHub issue.
+
+## Phone research (#141)
+
+The [source study](../research/2026-09-20-phone-client-contracts.md) records an iOS app similar to T3 Code as the chosen target, following the September 21 correction. It identifies the contract work still required, including per-client subscriptions, version/capability negotiation, full reconnect semantics and bounded on-demand detail. Its recommended follow-ups are proposed bodies, not filed GitHub tickets. No claim of a running phone client is made.
+
+## Forge access
+
+On September 20, local `tailscale status --json` reported this Windows PC online and its backend Running. Forge was offline (last seen 2026-09-19 04:34:57 UTC). `ssh -o BatchMode=yes -o ConnectTimeout=10 forge` timed out on port 22. No remote files were changed, host deployed or release published. The user was asked to restore connectivity while local implementation continued.
+
+## Integrated checks
+
+- Final integrated desktop/headless build: passed; `out/host/index.js` produced alongside Electron output.
+- Third-party notices: 174 components verified.
+- Final typecheck and lint: passed.
+- Desktop journeys: 17 passed across host identity/restart, daily workspace, agent control, onboarding/dictation/history/settings, personal-chat recovery and personal-chat restart. The two personal-chat checks ran on the final build after the lifecycle repair.
+- One additional desktop journey failed: phase-four-personal-providers cannot click Disconnect because the Windows title-bar controls cover it in the Chats view. An isolated checkout of the starting commit d0fbf3e8f5babc3eacf24039df6c11b4cdafdb4f, with its own npm ci and build, failed the unchanged spec at the same line with the same window-control interception. This confirms the overlap predates this batch. Current evidence is personal-chat-control-overlap.png; baseline evidence is baseline-personal-chat-control-overlap.png, baseline-personal-chat-error-context.md and baseline-personal-chat-result.txt. The pre-existing UI defect remains unresolved, and this additional desktop journey is not green.
+- Final two-worker unit/integration gate: passed, 333 files and 4,271 tests; 17 files / 34 tests skipped. Run duration 354.77 seconds. Source was frozen for this run.
+
+## Implementation and independent review
+
+#135 shares the coordinator/provider/workspace bootstrap between Electron and Node, with the packaged Claude history module supplied only by the desktop. The host credentials use the existing slots and a separate user-held key file. Import-graph checks include dynamic imports; an indirect Electron import in Claude history was found and removed from the host graph.
+
+The shared `describeHostServiceContract` in `tests/integration/adapterContract.ts` drives `startHeadlessHost` with native fake-provider processes. It covers streaming, provider takeover, questions, explicit allow/deny, cancellation, uncertain acknowledgement without resend, restart and session reaping. The lower-level shared adapter contract still checks its own acknowledgements and provider protocol. These two interfaces deliberately have distinct fixtures. The compiled CLI process test uses no enabled providers; on Windows its actual SIGTERM handler receives an owned IPC event because Windows termination cannot deliver POSIX SIGTERM. Actual Linux SIGTERM remains unverified.
+
+#136 preserves original Sotto IDs in host records and scopes client keys at the preload boundary. Reviewed the real desktop after migrating and restarting: the host UUID remains stable, both panes return and the saved draft is visible. The two-host same-thread-ID case is covered in renderer tests; no real remote connection exists yet. Captures `desktop-identity-restarted.png`, `desktop-workspace-dark.png` and `desktop-minimum-light.png` sit beside the pairing captures in this task's local artifact folder. Existing committed workspace capture baselines were restored after the tests.
+
+Independent spec review found the initial bespoke host journey insufficient; it was replaced with the shared HostService contract above. Independent standards review found background naming work could outlive the stores. Reasoning requests, writer requests, title/branch tasks, command lanes, provider children and pending writes are now canceled or drained in order, with late-result and failure-propagation regression tests. No additional material review findings remained after those fixes.
+
+The first full-suite attempt overlapped implementation. It identified the lost nested preload freeze and the explicit history-off corrupt-workspace recovery regression, both fixed and individually rechecked. It also loaded older writer/process modules alongside newer runtime code. A later run overlapped the new direct-command shutdown regression and caught the old implementation (4,268 passed, one failed). The missing active-command drain was then fixed and all four shutdown regressions passed. The next frozen-source run passed 4,268 tests and exposed one personal-chat restart failure: a provider callback could append an atomic history write after close had captured its drain. Two deterministic regressions reproduced that lifecycle bug, including early return when another provider failed to close. The fix unsubscribes before the final drain, waits for every provider closure and persists outstanding jobs before propagating a failure. All 54 targeted personal-chat checks passed; a separate review found no material issue in the fix. The final run recorded above is the acceptance gate.
+## September 21 review and gates
+
+The implementation batch (#137, #138, #142, #140 and the iOS package) was reviewed as one diff against `AGENTS.md` and against each issue, then gated on this Windows PC with nothing else running.
+
+Review findings, all fixed in the same batch: the `localHostEnabled` setting had been inserted between the voice coordinator's doc comment and its field, so the comment described the wrong setting; the sidebar's host label separator had lost its middle dot to an encoding slip and rendered as a question mark; the settings nav separators in `crossing-settings.css` are positional, so inserting Hosts had moved Output into the Appearance group, and the second separator now sits after Output again; three tests still described the tree before this batch (the preload bridge key list, the `eventsAfter` call shape now that the socket passes a page limit, and the settings defaults). The pairing-prototype captures this note cites had been left in a gitignored folder; the cited ones now live in `artifacts/forge-clients-134/` and nothing else from that folder was kept.
+
+Not fixed, and worth knowing: the socket listener keeps a receipt per command for the life of the process and refuses new commands at ten thousand rather than pruning (fixed September 22: settled receipts are dropped after five minutes, see below); `SshHostConnection.showHostPairingCode()` is now called by the desktop itself after the tunnel opens; the phone keeps the code flow, and `--allow-answers <clientId>` remains required before that client's permission answers count. The README's Hosts section says so.
+
+T3 parity changes, made after the gates above: a host Sotto started over SSH now runs detached and survives the connection (the launch script, then called `sshSupervisor` and now `src/main/hosts/launchScript.ts`, writes `host-launcher.json`, and `stop-host` ends only an owned host; covered by `tests/integration/launchScript.test.ts`, then `sshSupervisor.test.ts`, and `tests/integration/sshLauncher.test.ts`); the desktop pairs itself over the tunnel instead of asking for a code (`desktopHosts.pairOverTunnel`, covered by `tests/integration/desktopHosts.test.ts`); and a dropped connection reconnects with capped backoff while user-actionable failures stop retrying (same file). These landed after the recorded gate run and are covered by the named integration tests rather than a new full-suite record here.
+
+Gates in CI's form: typecheck and lint clean; `npm test -- --maxWorkers=2` 345 files and 4,382 tests passed, 17 files and 34 tests skipped (the live and native suites), 445.7 seconds; `npm run build` produced `out/host/index.js` beside the Electron output; `npm run notices:verify` 174 components. Playwright: `hosts.spec.ts`, `host-identity.spec.ts` and `settings-index.spec.ts` passed on the final build. `npm run design:capture` was rerun on purpose because Settings gained the Hosts entry: the 25 settings, focus and scale captures that show the nav were regenerated, and the threads, help and onboarding captures that came back within the noise limit were restored from `main` so the diff carries only real changes. `appearance-system-*` also changed because `main`'s baseline predates the effort colour section; that is a stale baseline on `main`, not this batch's work. An early full-suite run that overlapped `npm run build` lost the socket contract's built host and crashed a worker out of memory; the sequential rerun is the figure above.
+
+Still unverified, and said so where it matters: a real SSH connection to Forge (offline throughout), the Linux CI job, native compilation of `apps/ios`, and every iPhone check in `apps/ios/README.md`. The iOS client and its macOS job have since moved to #225, which carries those checks; the Linux job has run on this PR since (see September 22).
+
+## September 21 target correction
+
+The owner specified an installed iOS app similar to T3 Code. The plan, ADR and phone variant now reflect that target. The HTML fixture was rerun across its existing desktop and phone sizes in light and dark, with no horizontal overflow or page errors; pairing states, Escape/focus return and reduced motion still pass. The corrected 390-pixel capture was visually inspected. This is design-fixture evidence only, not an iOS app build or real-device test. Production source and dependencies were unchanged by this correction, so the earlier production gate results were not rerun.
+
+## September 22 review fixes and gates
+
+The third review's fixes landed first: requests to the launch script and its replies carry different markers (`SOTTO_REQ_` and `SOTTO_REP_`), so a terminal echoing a request is never read as a reply, with a node-pty echo test; a paired client may send only the commands and fields on the closed allow-list in `src/host/remoteCommands.ts`; Stop host and Forget mark the host as closing so neither reconnects to the host it is closing; settled receipts are dropped after five minutes, so a long-running host never reports itself busy; socket pushes are coalesced, and a message too large for one frame becomes an explicit `too_large` error instead of a closed socket.
+
+The fourth review's fixes followed. The host ADR became ADR-0024, main having taken 0023 twice; it is now ADR-0025 (see below). A paired device without the remote-answer policy may pick a permission mode only if its allowance is nothing, judged by what the mode allows rather than where it is listed (`tests/integration/socketHost.test.ts` lists Smart first and shows it refused). A shell push too large to carry its events goes without them and tells the client to fetch them, so the client's place in the event stream is kept. Stop host waits longer than the launch script lets the host drain. A push error leaves the Hosts row once what it named arrives. Hosts has its own Settings icon and a subtitle. The design manifest keeps main's geometry for the baselines this branch does not change.
+
+Gates on this Windows PC in CI's form, one at a time: typecheck and lint clean; `npm test -- --maxWorkers=2` 366 files passed and 18 skipped, 4,739 tests passed and 41 skipped (the live and native suites), 447.6 seconds; `npm run notices:verify` 174 components. Playwright on the final build: `hosts.spec.ts`, `host-identity.spec.ts` and `settings-index.spec.ts` 3 passed. `node scripts/verify-design-captures.mjs` verified 144 tuples. The design capture run passed 7, failed the scaling matrix on `scale-125-onboarding` and did not run the two widget tests after it; that capture comes out at the same wrong size on `origin/main` on this machine, so its baseline was left as main's. The settings-index captures were retaken at this machine's 1x scale; main's earlier ones were 1.5x.
+
+Still owed: the hand test against a real sshd (#237).
+
+## September 22, the fifth review
+
+CI's Linux job, Host archive and socket contract (Linux), passed on this PR at b611c9fa in 1 minute 45 seconds (run 35803382481, job 106998593488), next to Gates (Windows). That covers the Linux item listed as unverified above.
+
+This round merged main again (#250, #251 and #252). The only conflict was the settings allow-list, which keeps both `localHostEnabled` and `showBrowserPreviews`. Fixes from the review, each its own commit:
+- The too_large errors no longer send the user to a host with no window. They say nothing on the host was lost and what this device still has, and they name what the oversize message carried: one thread, an attachment preview, or the thread list.
+- A bad host command line prints its own message rather than the key-file hint.
+- A paired device may put a thread back to approval-required without the answer policy.
+- Quitting clears a reconnect left pending by a failed connect.
+- Four tests that slept and then asserted that nothing had happened now assert on what was scheduled or received.
+- The host ADR is now ADR-0025, because open PR #253 claims 0024. It gains an amendment recording the remote command list and which commands need the answer policy.
+- The README and CONTEXT.md describe the iPhone client as planned in #225.
+
+The session-expiry socket test failed once in four local runs, because a shell push arrived before the reply it was waiting for. It now ignores pushes.
+
+`design:verify` failed on `threads-populated.png` on this branch and on `origin/main` at d1c9d77a alike. Main's #251 made the fixture's waiting thread say "Needs your approval" and left the baselines stale. Fourteen Threads baselines were refreshed with only that change. After that, `npm run design:verify` passed 10 tests and verified 144 tuples. The settings-index journey passed, and its eight Application captures were retaken for main's Show browser previews switch.
+
+Gates on this Windows PC in CI's form, one at a time:
+- typecheck and lint clean.
+- `npm test -- --maxWorkers=2`: 371 files passed and 18 skipped, 4,778 tests passed and 41 skipped, in 403.4 seconds.
+- `npm run notices:verify`: 174 components.
+- Playwright on the final build: `hosts.spec.ts` and `host-identity.spec.ts`, 2 passed. `settings-index.spec.ts`, 1 passed. `agentControl.spec.ts`: 8 passed and 1 failed. The failure is "reconciles a lost acknowledgement", which picks `workshop` where it expects `docs`, and it fails the same way on `origin/main` at d1c9d77a.
+
+Later the same day main merged #253, Sotto's own palettes, which holds ADR-0024; this branch's host ADR was already 0025. After that merge, a full `design:capture` changed only the 18 Settings captures that show the Hosts entry, and those were regenerated on the new palettes. `npm run design:verify` passed 10 tests and verified 144 tuples.
+
+Gates on the merged tree, run the same way:
+- typecheck and lint clean.
+- `npm test -- --maxWorkers=2`: 371 files passed and 18 skipped, 4,789 tests passed and 41 skipped, in 482.3 seconds.
+- `npm run notices:verify`: 174 components.
+- Playwright: `settings-index`, `hosts` and `host-identity`, 3 passed. `agentControl.spec.ts`: 8 passed and 1 failed, the same failure as on main.
+
+Still owed: the hand test against a real sshd (#237).
