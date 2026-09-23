@@ -69,6 +69,7 @@ User authorized implementation after accepting B, Tailscale, existing-thread sco
 - [x] iOS: native app package, protocol client, Keychain, existing-thread journey, lifecycle recovery and signed-device preparation, as source. No Mac has compiled it; the CI job is the first check. Moved to its own pull request, #225, on September 22 to land after protocol v1 is frozen.
 - [x] #140: host archive, checksum/runtime manifest and Linux socket CI gate. The Linux job has not run yet; a Windows smoke is not a Linux release.
 - [x] Final gates and standards/spec review on September 21 (`docs/verification/2026-09-20-forge-client-foundations.md`, "September 21 review and gates").
+- [ ] #236, #205, #240 and #242's launcher record: one-shot piped ssh per control operation, askpass prompts, typed failures, T3 Code's backoff and a Node probe (ADR-0025, September 23 amendment). Local and fake-ssh evidence only until the real-sshd job (#237) and a real host run it.
 - [ ] Live Forge and native iOS verification. Blocked on Forge being reachable and on a Mac build host.
 
 Forge still reports offline; SSH port 22 timed out on the resumed check. The user was asked for Forge availability and a Mac build host while local work continues. No cloud build or TestFlight upload has been performed. Once Forge is back, the acceptance in #138 and #140 (add the host, connect, pair, see its threads, send, disconnect, reconnect) is the next step, and any of the eight issues closes only on that evidence.

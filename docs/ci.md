@@ -163,7 +163,7 @@ The **Host archive and socket contract (Linux)** job runs on `ubuntu-latest` wit
 
 | Command | Evidence |
 | --- | --- |
-| `npm run test:socket` | The shared HostService contract through `SocketHostService` against a built Node child and all four scripted providers; pairing, the remote command allow-list, receipts and reconnect boundaries; headless startup and native SIGTERM; the SSH launcher and launch script, including a real pseudo-terminal that echoes every request, which on Linux is the cooked-mode echo OpenSSH gets. |
+| `npm run test:socket` | The shared HostService contract through `SocketHostService` against a built Node child and all four scripted providers; pairing, the remote command allow-list, receipts and reconnect boundaries; headless startup and native SIGTERM; the SSH launcher over a fake ssh that asks its questions through the real askpass helper; the launch script, including the Node probe's POSIX shell, which only this job runs; and that the host listener answers on loopback and on no other interface. |
 | `npm run package:host` | A standalone Node build, reviewed external dependency closure, notices, runtime manifest, provenance and SHA256; extraction into a fresh directory, listener health and persisted identity after native SIGTERM. |
 | `npm run notices:verify` | The host's external and bundled dependency inventories are covered by the maintained notices. |
 
