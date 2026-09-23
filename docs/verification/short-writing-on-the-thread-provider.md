@@ -20,13 +20,25 @@ for the coordinator to rename it with a `generated` title. Then it checks:
 - no short-writing failure was logged;
 - the thread's own transcript, read back from its client after a refresh, holds that one prompt as its only
   user message and nothing of the title instruction;
-- no file under the client's own session store (`~/.claude/projects`, `~/.codex/sessions`, `~/.grok/sessions`)
-  or under Sotto's data folder written during the run contains the title instruction's first sentence.
+- no file the client keeps and wrote during the run holds the side call's material: the whole of
+  `~/.claude` and `~/.claude.json` for Claude Code (session files, prompt history and settings), the whole of
+  `CODEX_HOME` for Codex (sessions, archived sessions, prompt history and its state, thread-history and log
+  databases, read in chunks because the logs run to gigabytes), and the whole of `~/.grok` for Grok. The
+  prompt carries a reference made fresh for the run, and the search is for that prompt under the
+  "First message:" heading only the side call gives it, so no other session or earlier run can match;
+- nothing under Sotto's data folder written during the run holds the title instruction's first sentence or
+  that material;
+- for Grok, the side call's throwaway home, which holds the call's session while it runs, is gone when the
+  call ends. The check cannot read that home mid-call, so what it proves for Grok is that the real `~/.grok`
+  never holds the side call and the throwaway one does not outlive it.
 
 Claude Code ran on the Haiku model, Grok on its Fast model, and Codex on the model it recommends, because
 Codex lists mini models a ChatGPT sign-in cannot use.
 
 ## Result
+
+The first run searched only each client's session folder (`~/.claude/projects`, `~/.codex/sessions`,
+`~/.grok/sessions`) for the instruction's first sentence:
 
 | Client | Model | Title written | Time from start to title |
 | --- | --- | --- | --- |
@@ -34,8 +46,17 @@ Codex lists mini models a ChatGPT sign-in cannot use.
 | Codex 0.156.0 | GPT-6-Astra | "Explain what a repository README contains" | 11 s |
 | Grok 1.0.41 | Grok 4.7 Fast | "What a README file usually contains" | 9 s |
 
-All three passed every check above: 3 tests, 3 passed. The times include starting the client, the thread's
-own turn and the side call.
+After review the check was widened to the stores above, and the Codex side call gained the reasoning
+path's full set of switches and an empty `notify`. The run after those changes:
+
+| Client | Model | Title written | Time from start to title |
+| --- | --- | --- | --- |
+| Claude Code 2.1.280 | Haiku 4.5 | "README file overview" | 17 s |
+| Codex 0.156.0 | GPT-6-Astra | "Explain what a repository README contains" | 12 s |
+| Grok 1.0.41 | Grok 4.7 Fast | "What a README file usually holds" | 10 s |
+
+Both runs passed every check they made: 3 tests, 3 passed each time. The times include starting the client,
+the thread's own turn and the side call.
 
 ## What the first runs found
 
