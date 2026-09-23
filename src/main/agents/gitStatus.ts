@@ -1,11 +1,14 @@
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 
 export interface GitCommandOptions {
   readonly timeoutMs?: number
   readonly env?: Readonly<Record<string, string>>
+  /** Each line the command prints as it prints it, for a commit whose hooks are worth watching. */
+  readonly onLine?: (text: string, stream: 'stdout' | 'stderr') => void
 }
+const OUTPUT_MAX_BYTES = 8_000_000
 /** Runs `git` or `gh` in a folder and resolves with stdout; rejects with stderr as the message. */
 export type RunGitCommand = (cwd: string, command: 'git' | 'gh', args: readonly string[], options?: GitCommandOptions) => Promise<string>
 
@@ -26,11 +29,31 @@ export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options =
   // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
   // reaches the remote the way the user's own Git does.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
-  execFile(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], {
-    cwd, windowsHide: true, shell: false, timeout: options.timeoutMs ?? 30_000, maxBuffer: 8_000_000, env, encoding: 'utf8',
-  }, (error, stdout, stderr) => {
-    if (error) reject(error.code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : Object.assign(new Error(stderr.trim() || error.message), { code: error.code }))
-    else accept(stdout)
+  const child = spawn(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], { cwd, windowsHide: true, shell: false, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  let stdout = '', stderr = '', timedOut = false, settled = false
+  const partial = { stdout: '', stderr: '' }
+  const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
+    if (stream === 'stdout') { if (stdout.length < OUTPUT_MAX_BYTES) stdout += chunk } else if (stderr.length < OUTPUT_MAX_BYTES) stderr += chunk
+    if (!options.onLine) return
+    partial[stream] += chunk
+    const lines = partial[stream].split(/\r?\n/u)
+    partial[stream] = lines.pop() ?? ''
+    for (const line of lines) options.onLine(line, stream)
+  }
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => feed('stdout', chunk))
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => feed('stderr', chunk))
+  const timer = setTimeout(() => { timedOut = true; child.kill() }, options.timeoutMs ?? 30_000)
+  const finish = (error: Error | null): void => {
+    if (settled) return
+    settled = true; clearTimeout(timer)
+    if (error) reject(error); else accept(stdout)
+  }
+  child.on('error', error => finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
+  child.on('close', code => {
+    if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)
+    if (timedOut) finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' }))
+    else if (code !== 0) finish(Object.assign(new Error(stderr.trim() || `${command} exited with ${code ?? 'a signal'}.`), { code }))
+    else finish(null)
   })
 })
 

@@ -20,6 +20,9 @@ import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
 import { GitStatusReader } from './gitStatus'
+import { GitActions } from './gitActions'
+import { commitMessageWriter } from '../llm/commitMessage'
+import { pullRequestTextWriter } from '../llm/pullRequestText'
 import type { AgentHost } from './host'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -76,9 +79,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
+  let gitStatus: GitStatusReader | undefined
   if (options.gitStatus) {
     const { fetchIntervalMs, foreground } = options.gitStatus
-    agentHost.setGitStatus(new GitStatusReader({ fetchIntervalMs }), { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
+    gitStatus = new GitStatusReader({ fetchIntervalMs })
+    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
@@ -87,6 +92,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     onFailure: failure => options.logFailure?.('short-writing-failed', failure.purpose + ' ' + failure.reason),
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
+  // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
+  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus,
+    writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
+    writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings) }))
   const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,
     resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })

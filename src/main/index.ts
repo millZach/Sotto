@@ -1004,6 +1004,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change))
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
+      agentHost.setMutationGuard(checkpointIntegration.canMutate)
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),

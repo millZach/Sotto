@@ -7,6 +7,7 @@ import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
+import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -206,6 +207,8 @@ export const agentThreadSchema = z.object({
   providerMode: providerEntityId.optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
+  /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
+  gitAction: gitActionProgressSchema.optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -603,6 +606,20 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
+  /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
+   * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`
+   * is the client's word that pushing from the default branch was confirmed. */
+  z.object({ type: z.literal('git-action'), threadId: id, actionId: z.uuid(), action: gitStackedActionSchema,
+    commitMessage: z.string().max(10_000).optional(), featureBranch: z.boolean().optional(),
+    filePaths: z.array(z.string().min(1).max(4_096)).max(2_000).optional(), allowDefaultBranch: z.boolean().optional() }).strict(),
+  /** `git pull --ff-only` on the thread's folder; a diverged branch is refused. */
+  z.object({ type: z.literal('git-pull'), threadId: id }).strict(),
+  /** Check out a branch in the thread's folder, creating it from HEAD when `create` is set; a remote ref gets a tracking branch. */
+  z.object({ type: z.literal('git-switch-branch'), threadId: id, ref: z.string().min(1).max(512), create: z.boolean().optional() }).strict(),
+  /** `git init` in a thread's folder that is not a repository yet. */
+  z.object({ type: z.literal('git-init'), threadId: id }).strict(),
+  /** Publish the thread's repository to GitHub through `gh`, adding `origin` and pushing (GitHub only, ADR-0027). */
+  z.object({ type: z.literal('git-publish'), threadId: id, repository: z.string().min(3).max(200), visibility: z.enum(['private', 'public']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
