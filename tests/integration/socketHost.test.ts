@@ -193,6 +193,36 @@ it('drains a pushed catch-up page even when the host never publishes another she
   } finally { await client.close(); await server.close() }
 })
 
+it('keeps a client’s place in the event stream when a shell and its events are too large for one push', async () => {
+  let rows: import('../../src/shared/threadEvents').StoredThreadEvent[] = []
+  let large = false, publish = (): void => undefined
+  // About 11 MB of messages in the shell and 6.4 MB of events: each fits a frame, together they do not.
+  const messages = Array.from({ length: 110 }, (_, index) => ({ id: 'm' + index, role: 'assistant' as const, text: 'x'.repeat(100_000), createdAt: new Date().toISOString() }))
+  const service: HostService = {
+    shell: () => { const state = host.service.shell(); return large ? { ...state, host: { ...state.host, threads: state.host.threads.map((thread, index) => index === 0 ? { ...thread, messages } : thread) } } : state },
+    state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+    command: (command, identity) => host.service.command(command, identity),
+    events: (afterSeq, threadId, limit) => rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit),
+    subscribe: listener => { publish = () => listener(host.service.shell()); return () => undefined },
+  }
+  await host.service.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, desktopWindowClient())
+  await host.service.command({ type: 'connect', provider: 'codex' }, desktopWindowClient())
+  expect(host.service.shell().host.threads.length).toBeGreaterThan(0)
+  const server = await startSocketServer({ service, pairing: host.pairing })
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Large shell')
+  const pushErrors: string[] = []
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onPushError: message => pushErrors.push(message) }); clients.push(client)
+  try {
+    await client.connect()
+    rows = Array.from({ length: 256 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'message-text-appended', at: new Date().toISOString(), messageId: 'm', appendText: 'y'.repeat(25_000) } }))
+    large = true
+    publish()
+    // The shell goes without its events and says there are more, and the client reads them itself.
+    await expect.poll(() => client.events(0).length, { timeout: 10_000 }).toBe(256)
+    expect(pushErrors).toEqual([])
+  } finally { await client.close(); await server.close() }
+})
+
 it('frees a permission mode by what it allows, not by being listed first', async () => {
   // Devin lists only the modes its CLI reports. Without Accept edits there is no Ask first, and Smart,
   // which lets Devin edit unasked, comes first; it still needs the answer policy.

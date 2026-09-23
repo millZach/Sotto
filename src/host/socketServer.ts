@@ -19,6 +19,8 @@ const errors: Record<HostErrorCode, string> = {
   busy: 'The host has too many pending requests. Wait for them to finish and try again.',
   too_large: 'A thread on this host is too large to send to this device. Open it on the host machine.',
 }
+/** A shell push is the thread list, not one thread, so its oversize error says so. */
+const SHELL_TOO_LARGE = 'The thread list on this host is too large to send to this device. Open it on the host machine.'
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
 interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
 export interface SocketServerOptions {
@@ -62,17 +64,20 @@ export async function startSocketServer(options: SocketServerOptions) {
     return { ...state, activeThreadId: peer.selectedThreadId, activeProjectId: peer.selectedProjectId }
   }
   const authenticated = (peer: Peer): boolean => pairing.verifySession(peer.session) === peer.client.clientId
+  const fits = (text: string): boolean => Buffer.byteLength(text) <= HOST_MAX_FRAME_BYTES
   /**
-   * Sends one message, or an explicit too_large error in its place when it would not fit in a frame.
-   * Closing the socket instead would only have the client reconnect and be sent the same message again.
+   * Sends one message, or an explicit too_large error in its place when it would not fit in a frame, and
+   * says whether the message itself went. Closing the socket instead would only have the client reconnect
+   * and be sent the same message again.
    */
-  const deliver = (peer: Peer, value: HostPush | HostResponse): void => {
+  const deliver = (peer: Peer, value: HostPush | HostResponse): boolean => {
     const text = JSON.stringify(value)
-    if (Buffer.byteLength(text) <= HOST_MAX_FRAME_BYTES) { peer.frames.sendText(text); return }
-    const error = { code: 'too_large' as const, message: errors.too_large }
+    if (fits(text)) { peer.frames.sendText(text); return true }
+    const error = { code: 'too_large' as const, message: 'event' in value && value.event === 'shell' ? SHELL_TOO_LARGE : errors.too_large }
     peer.frames.send('event' in value ? { v: 1, event: 'error', ...(value.event === 'detail' ? { threadId: value.threadId } : {}), error } : { v: 1, id: value.id, ok: false, error })
+    return false
   }
-  const push = (peer: Peer, value: HostPush): void => { if (!authenticated(peer)) peer.frames.close(); else deliver(peer, value) }
+  const push = (peer: Peer, value: HostPush): boolean => { if (!authenticated(peer)) { peer.frames.close(); return false } return deliver(peer, value) }
   const events = (afterSeq: number, threadId?: string) => {
     const all = service.events(afterSeq, threadId, HOST_EVENT_PAGE_SIZE + 1), page = all.slice(0, HOST_EVENT_PAGE_SIZE)
     return { events: page, latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
@@ -82,15 +87,21 @@ export async function startSocketServer(options: SocketServerOptions) {
     await service.command({ type: 'observe-threads', threadIds: ids }, { clientId: 'socket-observations', user: '', transport: 'socket' })
   }
   const track = <T>(task: Promise<T>): Promise<T> => { operations.add(task); void task.finally(() => operations.delete(task)).catch(() => undefined); return task }
-  const detail = (peer: Peer, threadId: string): void => push(peer, { v: 1, event: 'detail', threadId, detail: service.threadDetail(threadId) })
+  const detail = (peer: Peer, threadId: string): void => { push(peer, { v: 1, event: 'detail', threadId, detail: service.threadDetail(threadId) }) }
   // A streaming thread changes the shell many times a second. Pushes go out at most once a window, the
   // same way the desktop's own IPC coalesces them, and each carries the state as it is when it is sent.
   // Details come through their own subscription when the service has one, so a shell change resends no history.
   const detailsFollowShell = service.subscribeThreadDetail === undefined
+  // The peer's event cursor moves only once the events have gone or the client has been told to fetch them:
+  // a page too large to ride along is left behind and the shell says there is more, so the client reads
+  // the events itself from its own cursor instead of never being sent them.
   const shellPublisher = coalesceAgentStatePublishes(() => {
     for (const peer of peers) {
-      const eventPage = events(peer.afterSeq); peer.afterSeq = eventPage.latestSeq
-      push(peer, { v: 1, event: 'shell', state: shell(peer), eventPage })
+      if (!authenticated(peer)) { peer.frames.close(); continue }
+      const state = shell(peer), eventPage = events(peer.afterSeq)
+      const full = JSON.stringify({ v: 1, event: 'shell', state, eventPage })
+      if (fits(full)) { peer.frames.sendText(full); peer.afterSeq = eventPage.latestSeq }
+      else if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) peer.afterSeq = eventPage.latestSeq
       if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
     }
   })
