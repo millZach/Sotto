@@ -21,11 +21,13 @@ export interface ActivityGroup {
 
 export interface ActivityPlacement {
   readonly after: ReadonlyMap<string, readonly ActivityGroup[]>
+  /** Precedes the first message: work from before every turn the messages show, when nothing earlier can be loaded. */
+  readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
 }
 
-const EMPTY: ActivityPlacement = { after: new Map(), trailing: [] }
+const EMPTY: ActivityPlacement = { after: new Map(), leading: [], trailing: [] }
 
 /** The provider's turn lifecycle, as opposed to a status notice such as a retry. */
 export function isTurnRecord(record: AgentActivity): boolean {
@@ -36,15 +38,23 @@ const bySequence = (a: AgentActivity, b: AgentActivity): number => a.sequence - 
 
 /**
  * Puts each record after the message it followed when the provider produced it. A record without
- * a known anchor joins the nearest anchored record of its own turn (earlier first); a turn with no
- * anchor at all trails the conversation. Records anchored above the rendered page stay hidden until
+ * a known anchor joins the nearest anchored record of its own turn (earlier first), else the turn's
+ * own message when the messages hold it. Records anchored above the rendered page stay hidden until
  * the reader shows earlier messages. Messages are never moved, renamed or duplicated.
+ *
+ * A turn with no place in the messages is placed by when it began. Begun after the earliest turn the
+ * messages show, it is newer than they are and trails the conversation. Begun before it, the turn sits
+ * above them: it waits with the earlier messages the store still holds (`earlierAvailable`), which
+ * give it its places once loaded, and otherwise leads the conversation. Either way a turn's work never
+ * lands under the answer of a turn that came after it. Main already keeps back the work it can place above
+ * the loaded window, so this is the rule for work it could not place.
  */
 export function placeActivities(
   messages: readonly AgentMessage[],
   rendered: readonly AgentMessage[],
   activities: readonly AgentActivity[] | undefined,
   historyLoading = false,
+  earlierAvailable = false,
 ): ActivityPlacement {
   if (!activities?.length) return EMPTY
   const known = new Set(messages.map(message => message.id))
@@ -63,8 +73,15 @@ export function placeActivities(
   for (const record of [...sorted].reverse()) {
     const anchor = anchors.get(record)
     if (anchor) nextByTurn.set(record.turnId, anchor)
-    else anchors.set(record, nextByTurn.get(record.turnId) ?? null)
+    else anchors.set(record, nextByTurn.get(record.turnId) ?? (known.has(record.turnId) ? record.turnId : null))
   }
+
+  // When each turn began, and the earliest beginning among the turns the messages give a place. With no
+  // placed turn there is nothing to be earlier than, so an unplaced turn still trails as the newest work.
+  const began = new Map<string, number>()
+  for (const record of sorted) if (!began.has(record.turnId)) began.set(record.turnId, record.sequence)
+  let shownFrom: number | undefined
+  for (const record of sorted) if (anchors.get(record) !== null) shownFrom = Math.min(shownFrom ?? Number.POSITIVE_INFINITY, began.get(record.turnId)!)
 
   interface Draft { key: string; turnId: string; anchorMessageId: string | null; records: AgentActivity[]; turn?: AgentActivity; first: number; boundary?: boolean }
   const drafts = new Map<string, Draft>()
@@ -95,14 +112,18 @@ export function placeActivities(
   }
 
   const after = new Map<string, ActivityGroup[]>()
+  const leading: ActivityGroup[] = []
   const trailing: ActivityGroup[] = []
+  // Work that leads the conversation is only in view while nothing sits above the first message.
+  const leads = !historyLoading && !earlierAvailable && rendered[0] !== undefined && rendered[0].id === messages[0]?.id
   for (const draft of [...drafts.values()].sort((a, b) => a.first - b.first)) {
     if (!shouldShow(draft)) continue
     const group: ActivityGroup = { key: draft.key, turnId: draft.turnId, anchorMessageId: draft.anchorMessageId, records: draft.records, ...(draft.turn ? { turn: draft.turn } : {}) }
-    if (draft.anchorMessageId === null) { if (!historyLoading) trailing.push(group) }
-    else if (visible.has(draft.anchorMessageId)) after.set(draft.anchorMessageId, [...after.get(draft.anchorMessageId) ?? [], group])
+    if (draft.anchorMessageId !== null) { if (visible.has(draft.anchorMessageId)) after.set(draft.anchorMessageId, [...after.get(draft.anchorMessageId) ?? [], group]) }
+    else if (shownFrom !== undefined && began.get(draft.turnId)! < shownFrom) { if (leads) leading.push(group) }
+    else if (!historyLoading) trailing.push(group)
   }
-  return { after, trailing }
+  return { after, leading, trailing }
 }
 
 /** A lone lifecycle record is shown only when it says something the answer does not: the turn stopped or failed. The live row covers a running turn. */

@@ -415,7 +415,8 @@ export class AgentControl {
     const messages = structuredClone(thread.messages)
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
     // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
-    const activities = thread.activities === undefined ? undefined : structuredClone(thread.activities)
+    const pane = this.paneActivities(thread)
+    const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
     this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone(thread.messages),
@@ -424,6 +425,14 @@ export class AgentControl {
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
     return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }),
       ...(thread.earlierAvailable ? { earlierAvailable: true } : {}) }
+  }
+  /**
+   * The activity a detail carries beside the thread's messages. The host keeps back the work of turns above
+   * the loaded window, which waits there with their messages; everything else in main reads every record.
+   */
+  private paneActivities(thread: AgentThread): readonly AgentActivity[] | undefined {
+    if (thread.activities === undefined) return undefined
+    return this.dependencies.host.paneActivities?.(thread.id, thread.activities) ?? thread.activities
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -442,7 +451,7 @@ export class AgentControl {
   private detailRevision(thread: AgentThread): number {
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${(thread.activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')}`
+      + `|${(this.paneActivities(thread) ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? 0) + 1
@@ -607,7 +616,7 @@ export class AgentControl {
   private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, thread, revision)
+      const delta = diffAgentThreadDetail(held, { messages: thread.messages, activities: this.paneActivities(thread) }, revision)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
         this.detailSnapshots.set(thread.id, advanced)

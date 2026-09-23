@@ -194,6 +194,30 @@ describe('detail deltas while a thread streams', () => {
     expect(update.messageDeltas).toEqual([])
   })
 
+  it('carries only the activity the host keeps beside the window, and the rest once the window widens', async () => {
+    const f = await fixture()
+    const details: AgentThreadDetailUpdate[] = []
+    f.control.subscribeThreadDetail(item => details.push(item))
+    // The host keeps back a turn above the loaded window; the pane is given it once its messages load.
+    const above = new Set(['above'])
+    Object.assign(f.host, { paneActivities: (_threadId: string, records: readonly AgentActivity[]) => records.filter(item => !above.has(item.id)) })
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working',
+      activities: [record('above', { turnId: 'turn-0', status: 'completed' }), record('build')] })
+    await f.control.command({ type: 'refresh' })
+    expect(details.flatMap(update => isAgentThreadDetailDelta(update) ? update.activityDeltas.flatMap(item => 'record' in item ? [item.record.id] : []) : (update.activities ?? []).map(item => item.id)))
+      .not.toContain('above')
+    expect(f.control.threadDetail('workshop')!.activities!.map(item => item.id)).toEqual(['build'])
+    // Everything else in main still reads every record.
+    expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.activities!.map(item => item.id)).toEqual(['above', 'build'])
+
+    details.length = 0
+    above.clear()
+    await f.control.command({ type: 'refresh' })
+    // The record lands before one the window holds, so the window is sent the whole detail in order.
+    expect(whole(details.at(-1)).activities!.map(item => item.id)).toEqual(['above', 'build'])
+  })
+
   it('frees the snapshot of a thread that leaves the viewed set, so the next detail is a whole one', async () => {
     const f = await fixture()
     const details: AgentThreadDetailUpdate[] = []
