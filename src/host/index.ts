@@ -24,6 +24,12 @@ export interface HeadlessHostOptions {
   providers?: AgentRuntimeOptions['providers']
   reasoner?: AgentRuntimeOptions['reasoner']
   log?: (event: string) => void
+  /**
+   * Set when the desktop's launch script started this host over SSH (SOTTO_HOST_STARTED_BY). The host
+   * writes it into its listener descriptor, which only the lock holder writes, so the desktop can tell
+   * a host Sotto started, and may stop, from one the user started, however many launches raced.
+   */
+  startedBy?: 'launch-script'
 }
 
 export { HostLockError } from './lock'
@@ -91,7 +97,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
             if (allowed) policy.grantRemoteAnswers(clientId, 'The user allowed this paired device to answer permission requests on the host.')
           },
         })
-        await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken }) + '\n', { encoding: 'utf8', mode: 0o600 })
+        await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }
     } catch (error) { await listener?.close(); await runtime.close(); throw error }
@@ -131,7 +137,8 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
     else { port = Number(value); if (!/^\d+$/.test(value) || !Number.isInteger(port) || port < 0 || port > 65535) throw new HostArgumentError('Choose a port from 0 through 65535.') }
   }
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
-  return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}) }
+  return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
+    ...(env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' as const } : {}) }
 }
 
 /** The process stays available without a provider connection; SIGTERM and SIGINT stop it cleanly. */
@@ -175,7 +182,10 @@ export async function runHeadlessCommandLine(): Promise<void> {
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
   try {
-    host = await startHeadlessHost({ ...parseHostArguments(process.argv.slice(2)), log: event => console.error('[Sotto] ' + event) })
+    const options = parseHostArguments(process.argv.slice(2))
+    // Read once: the provider processes this host starts must not inherit the mark.
+    delete process.env.SOTTO_HOST_STARTED_BY
+    host = await startHeadlessHost({ ...options, log: event => console.error('[Sotto] ' + event) })
     if (stopping) stop()
     else { console.error('[Sotto] host-ready'); if (host.descriptor) process.stdout.write(JSON.stringify({ ...host.descriptor, event: 'ready' }) + '\n') }
   } catch (error) {

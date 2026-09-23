@@ -4,7 +4,7 @@ import { remoteHostSchema, type HostsCommand, type HostsState, type HostStatus }
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
-import { SshHostLauncher, type SshHostConnection } from './sshLauncher'
+import { SshFailure, SshHostLauncher, type SshFailureCode, type SshHostConnection } from './sshLauncher'
 import type { DesktopHostRouter } from './desktopHostRouter'
 
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
@@ -17,8 +17,19 @@ type SavedHost = z.infer<typeof savedHostSchema>
  */
 interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
 interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active: LiveHost | undefined }
-/** Drops that only the user can resolve stop the reconnect backoff instead of retrying. */
-const FINAL_FAILURES = ['identity changed', 'host key changed', 'installation was not found', 'connection record could not be read', 'identity file could not be read', 'could not pair again', 'different version of Sotto', 'newer version of Sotto']
+/**
+ * Failures only the user can resolve stop the reconnect backoff instead of retrying: SSH refused this
+ * account, a host key changed or was not trusted, a prompt went unanswered, the host machine lacks what
+ * the host needs. Everything else (an unreachable network, a host still starting) is retried. The code
+ * decides, never the message.
+ */
+const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(['ssh-missing', 'ssh-too-old', 'auth-failed', 'host-key-changed', 'host-key-rejected',
+  'identity-file-unreadable', 'prompt-unanswered', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid'])
+/** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
+class FinalHostError extends Error {}
+/** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
+const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
+export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
@@ -120,7 +131,7 @@ export class DesktopHosts {
         onDisconnected: () => { if (this.live.get(host.id) === active && !active.closing) this.dropped(host, active) },
       })
       if (this.live.get(host.id) !== active) { await active.tunnel.close(); return this.get() }
-      if (host.hostId && host.hostId !== active.tunnel.hostId) throw new Error('The host identity changed. Check its data folder before connecting again.')
+      if (host.hostId && host.hostId !== active.tunnel.hostId) throw new FinalHostError('The host identity changed. Check its data folder before connecting again.')
       this.update(host.id, { hostId: active.tunnel.hostId })
       if (!this.options.credentials.has(`remote-host:${host.id}`)) await this.pairOverTunnel(host, active)
       await this.openSocket(host, active)
@@ -150,7 +161,7 @@ export class DesktopHosts {
           return this.get()
         } catch (repair) {
           // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
-          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new Error('This device is no longer paired and could not pair again. Check the host, then connect again.')
+          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new FinalHostError('This device is no longer paired and could not pair again. Check the host, then connect again.')
         }
       }
       await active.socket?.close().catch(() => undefined)
@@ -174,7 +185,10 @@ export class DesktopHosts {
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
     await this.save()
   }
-  private final(error: Error): boolean { return FINAL_FAILURES.some(part => error.message.includes(part)) }
+  /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
+  private final(error: Error): boolean {
+    return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
+  }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
   private scheduleReconnect(host: SavedHost, active: LiveHost | undefined): void {
     if (this.closed) return
@@ -185,7 +199,7 @@ export class DesktopHosts {
       if (this.retries.get(host.id) !== entry) return
       if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return
       void this.command({ type: 'connect', id: host.id })
-    }, (this.options.retryDelayMs ?? (attempt => Math.min(30_000, 1_000 * 2 ** attempt)))(entry.attempt))
+    }, (this.options.retryDelayMs ?? reconnectDelayMs)(entry.attempt))
     entry.attempt += 1
     this.retries.set(host.id, entry)
   }
