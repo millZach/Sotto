@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-09-10.
+Accepted — 2026-09-10. ADR-0025's September 22 amendment applies this to paired clients: the commands a paired device may send, and which of them need a `remote-answer` policy record.
 
 ## Context
 
