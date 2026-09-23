@@ -10,7 +10,7 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
   const types = option.shape.type.options ?? [option.shape.type.value!]
   return types.map(type => [type, Object.keys(option.shape).filter(key => key !== 'type').sort()] as const)
 }))
-const refuse = (command: AgentCommand, mayAnswer = false, startingProviderMode?: string) => remoteCommandRefusal(command, { mayAnswer, startingProviderMode })
+const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
   it('decides every command type and every field the schema knows, so nothing new is remote by default', () => {
@@ -40,14 +40,16 @@ describe('remote command allow-list', () => {
       { type: 'answer', threadId: 'thread', requestId: 'request', answer: 'Allow', approved: true },
     ]
     for (const command of gated) {
-      expect(refuse(command, false, 'ask'), command.type).toBe('forbidden')
-      expect(refuse(command, true, 'ask'), command.type).toBeNull()
+      expect(refuse(command, false, ['ask']), command.type).toBe('forbidden')
+      expect(refuse(command, true, ['ask']), command.type).toBeNull()
     }
   })
-  it('lets a device without the policy start on the mode that asks about everything and leave clean folders', () => {
-    expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'devin', providerMode: 'ask' }, false, 'ask')).toBeNull()
-    expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, 'ask')).toBeNull()
+  it('lets a device without the policy pick a mode that allows nothing and leave clean folders', () => {
+    expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'devin', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()
+    expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, undefined)).toBe('forbidden')
+    // Being first in the list is not what makes a mode free: Smart allows edits wherever the provider lists it.
+    expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'smart' }, false, ['plan'])).toBe('forbidden')
     expect(refuse({ type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: false })).toBeNull()
     expect(refuse({ type: 'restore-thread-branch', threadId: 'thread' })).toBeNull()
   })

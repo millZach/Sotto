@@ -99,12 +99,12 @@ export async function startSocketServer(options: SocketServerOptions) {
   })
   const unsubscribe = service.subscribe(state => shellPublisher.publish(state))
   const unsubscribeDetails = service.subscribeThreadDetail?.(update => detailPublisher.publish(update))
-  /** The permission setting a new or changed thread would start on: its model's first, which asks about everything. */
-  const startingProviderMode = (input: AgentCommand): string | undefined => {
-    if (input.type !== 'create-thread' && input.type !== 'configure-thread') return undefined
+  /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
+  const askingProviderModes = (input: AgentCommand): string[] => {
+    if (input.type !== 'create-thread' && input.type !== 'configure-thread') return []
     const host = service.shell().host
     const modelId = input.modelId ?? (input.type === 'configure-thread' ? host.threads.find(thread => thread.id === input.threadId)?.modelId : undefined)
-    return host.models.find(model => model.id === modelId)?.providerModes?.[0]?.id
+    return host.models.find(model => model.id === modelId)?.providerModes?.filter(mode => mode.allows === 'nothing').map(mode => mode.id) ?? []
   }
   const command = async (peer: Peer, request: Extract<HostRequest, { op: 'command' }>): Promise<unknown> => {
     const key = peer.client.clientId + ':' + request.id
@@ -117,7 +117,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       return shell(peer)
     }
     const input = request.command
-    const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, startingProviderMode: startingProviderMode(input) })
+    const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input) })
     if (refusal) throw new Refusal(refusal)
     const recorded = !UNRECEIPTED.has(input.type)
     if (recorded) makeRoomForReceipt()

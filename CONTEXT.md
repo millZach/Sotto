@@ -130,7 +130,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Launch script.** The fixed Node script the desktop runs on a remote host's machine over SSH, for as long as that SSH session lasts: it finds the host or starts one detached, and on request asks it for a pairing code, revokes a client, or stops a host Sotto started. Requests and replies each carry their own marker, because the terminal ssh runs under echoes every request back. `src/main/hosts/launchScript.ts`. Avoid: "supervisor", which is Sotto following an assigned thread (supervision); "daemon".
 
-**Remote command.** A command a paired client may send over the socket. The list in `src/host/remoteCommands.ts` is closed: a new command or field is refused remotely until it is added on purpose. Commands that change what a thread may do unasked (a runtime mode, a provider mode other than the one that asks about everything) or discard uncommitted work need the same `remote-answer` policy record an answer does. Avoid: "remote API".
+**Remote command.** A command a paired client may send over the socket. The list in `src/host/remoteCommands.ts` is closed: a new command or field is refused remotely until it is added on purpose. Commands that change what a thread may do unasked (a runtime mode, a provider mode whose allowance is more than nothing) or discard uncommitted work need the same `remote-answer` policy record an answer does. Avoid: "remote API".
 
 ## Personal conversations
 

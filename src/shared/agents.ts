@@ -104,9 +104,11 @@ export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSc
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
  * and `description` are the provider's words; `asks` is Sotto's, and says what it will still put to the
  * user while the mode is set -- the one sentence that keeps a mode called "Bypass Permissions" from
- * implying Sotto stops asking when it does not (ADR-0022).
+ * implying Sotto stops asking when it does not (ADR-0022). `allows` is the mode's allowance, what it lets the
+ * provider do unasked; a mode without one is treated as allowing something, never as asking about everything.
  */
-export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id, description: text.optional(), asks: text.optional() }).strict()
+export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id, description: text.optional(), asks: text.optional(),
+  allows: z.enum(['nothing', 'edits', 'everything']).optional() }).strict()
 export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })

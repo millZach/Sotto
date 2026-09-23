@@ -193,6 +193,30 @@ it('drains a pushed catch-up page even when the host never publishes another she
   } finally { await client.close(); await server.close() }
 })
 
+it('frees a permission mode by what it allows, not by being listed first', async () => {
+  // Devin lists only the modes its CLI reports. Without Accept edits there is no Ask first, and Smart,
+  // which lets Devin edit unasked, comes first; it still needs the answer policy.
+  const model = { id: 'devin-smart-first', provider: 'Devin', name: 'Devin', ready: true, providerModes: [
+    { id: 'smart', name: 'Smart', allows: 'edits' as const }, { id: 'plan', name: 'Plan', allows: 'nothing' as const }] }
+  const commands: string[] = []
+  const service: HostService = {
+    shell: () => { const state = host.service.shell(); return { ...state, host: { ...state.host, models: [...state.host.models, model] } } },
+    state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+    command: (command, identity) => { if (command.type === 'create-thread') commands.push(command.providerMode ?? ''); return host.service.command(command, identity) },
+    events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit), subscribe: listener => host.service.subscribe(listener),
+  }
+  const server = await startSocketServer({ service, pairing: host.pairing })
+  const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Modes')
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(client)
+  try {
+    await client.connect()
+    await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Smart', modelId: model.id, providerMode: 'smart' })).rejects.toMatchObject({ code: 'forbidden' })
+    // Plan allows nothing, so it reaches the host; whether the host can make the thread is its own answer.
+    await client.command({ type: 'create-thread', projectId: 'project', title: 'Plan', modelId: model.id, providerMode: 'plan' }).catch(() => undefined)
+    expect(commands).toEqual(['plan'])
+  } finally { await client.close(); await server.close() }
+})
+
 it('keeps no receipts for selections and drops settled ones, so a long-running host is never falsely busy', async () => {
   let now = 1_000_000
   const release: (() => void)[] = []

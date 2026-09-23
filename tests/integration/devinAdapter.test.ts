@@ -231,6 +231,8 @@ describe('Devin dispatch and decision boundaries', () => {
     // Every mode says what Sotto will still put to the user under it, including the one named for not asking.
     expect(model.providerModes?.every(mode => (mode.asks ?? '').length > 0)).toBe(true)
     expect(model.providerModes?.find(mode => mode.id === 'bypass')?.asks).toMatch(/nothing/iu)
+    // What each allows travels with it, so a paired device's choice is judged by that and not by list order.
+    expect(Object.fromEntries(model.providerModes?.map(mode => [mode.id, mode.allows]) ?? [])).toEqual({ 'ask-first': 'nothing', 'accept-edits': 'edits', smart: 'edits', plan: 'nothing', ask: 'nothing', bypass: 'everything' })
     expect(await thread()).toMatchObject({ providerMode: 'ask-first', runtimeMode: 'approval-required' })
   })
 
