@@ -1515,7 +1515,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-files-unavailable-dark.png",
       "width": 820,
       "height": 800,
-      "sha256": "b656c9fc25ff34a237b9fa92d7120efe834ce096f1e48bcd96eb7a884b830f97"
+      "sha256": "0cc72b7c0a07d9a08c10af43377d35a668e48baf11fd9a3d1b85a3f59b3e6378"
     },
     {
       "theme": "light",
@@ -1529,7 +1529,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-files-unavailable-light.png",
       "width": 820,
       "height": 800,
-      "sha256": "8e2c32efa4d0fd93ae1676748e5c4ebfd62f76ac17440e5a9ac7d3ce3b43b278"
+      "sha256": "1c5449b11f349ef8da2f087816ded3bd987817615fbe86fb17a2a66b3a018a8d"
     },
     {
       "theme": "dark",
