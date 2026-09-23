@@ -24,6 +24,8 @@ const reviewedInventories = Object.freeze({
       'node:http',
       'node:https',
       'node:module',
+      // The SSH launcher listens on a loopback port it picks and validates host addresses (#181).
+      'node:net',
       'node:os',
       'node:path',
       'node:sqlite',
@@ -45,8 +47,8 @@ const reviewedInventories = Object.freeze({
       'zlib',
       'zod',
     ]),
-    // Claude's isolated history helper checks packaged resources only in Electron.
-    dynamicImports: Object.freeze(['electron', 'node-pty']),
+    // The terminal loads node-pty on demand (ADR-0018). The headless host removed the dynamic Electron import (#181).
+    dynamicImports: Object.freeze(['node-pty']),
   }),
   preload: Object.freeze({
     version: 1,
