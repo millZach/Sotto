@@ -101,7 +101,7 @@
 .tools-panel__status:empty { display: none; }
 .tools-panel__status {
   position: absolute; bottom: 46px; left: 50%; z-index: 2; max-width: calc(100% - 24px); margin: 0; padding: 7px 14px;
-  border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm);
+  border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: var(--tt-field); box-shadow: var(--tt-shadow-sm);
   color: var(--tt-text); font-size: 13px; text-align: center; white-space: normal; transform: translateX(-50%);
 }
 
