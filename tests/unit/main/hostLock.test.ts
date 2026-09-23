@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -135,6 +136,29 @@ describe('the host lock', () => {
     await acquired
     expect(await lock()).toBe(JSON.stringify(mine))
     expect(await readdir(root)).toEqual(['host-listener.lock'])
+  })
+
+  it('always tries to take the folder after a reclaim, however many reclaims it takes', async () => {
+    const crashed = JSON.stringify({ pid: await deadPid(), nonce: 'crashed' })
+    await writeFile(path, crashed)
+    // Each time this host removes a dead lock, another dead lock is there before it places its own; three times over.
+    let refills = 3
+    const refill = (event: string): void => { log(event); if (event === 'host-lock-reclaimed' && refills-- > 0) writeFileSync(path, crashed) }
+    const mine = lease('mine')
+    await acquireHostLock(path, mine, { log: refill })
+    expect(await lock()).toBe(JSON.stringify(mine))
+    expect(events).toEqual(Array(4).fill('host-lock-reclaimed'))
+  })
+
+  it('says a refusal came after removing a stopped host\'s lock, not that nothing changed', async () => {
+    await writeFile(path, JSON.stringify({ pid: await deadPid(), nonce: 'crashed' }))
+    const other = JSON.stringify(lease('other'))
+    // Another host places its lease in the moment after this host removed the dead lock.
+    const race = (event: string): void => { log(event); if (event === 'host-lock-reclaimed') writeFileSync(path, other) }
+    const refusal = acquireHostLock(path, lease('mine'), { log: race })
+    await expect(refusal).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder, so this host did not start. It removed a lock left by a host that had stopped, and changed nothing else in the folder.`)
+    await expect(refusal).rejects.not.toThrow('Nothing in the folder was changed')
+    expect(await lock()).toBe(other)
   })
 
   it('reclaims a lock from an earlier boot even when its pid now belongs to a running process', async () => {

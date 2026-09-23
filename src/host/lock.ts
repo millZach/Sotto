@@ -89,8 +89,16 @@ async function placeExclusive(path: string, content: string): Promise<void> {
   } finally { await unlink(draft).catch(() => undefined) }
 }
 
-const heldMessage = (pid: number): string =>
-  `Another host (process ${pid}) is using this data folder, so this host did not start. Nothing in the folder was changed. Stop that host, or wait for it to stop, then start again. To run both, give this one its own data folder.`
+/** What a refusal says about the folder: nothing changed, or only a stopped host's lock was removed before the refusal. */
+const unchanged = (reclaimed: boolean): string => reclaimed
+  ? 'It removed a lock left by a host that had stopped, and changed nothing else in the folder.'
+  : 'Nothing in the folder was changed.'
+
+const heldMessage = (pid: number, reclaimed = false): string =>
+  `Another host (process ${pid}) is using this data folder, so this host did not start. ${unchanged(reclaimed)} Stop that host, or wait for it to stop, then start again. To run both, give this one its own data folder.`
+
+const unlockableMessage = (reclaimed: boolean): string =>
+  `This host data folder could not be locked, so this host did not start. ${unchanged(reclaimed)} Check that the folder can be written, then start again.`
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms) })
 
@@ -130,10 +138,10 @@ async function removeIfStill(path: string, seen: string): Promise<Removal> {
  * two hosts clear at once. A turn lasts one read and one removal, so a host that finds it taken waits; a turn
  * left by a host that stopped in the middle of one is removed the same careful way as a stale lock.
  */
-async function takeReclaimTurn(turn: string, content: string, boot: string | undefined, log?: (event: string) => void): Promise<void> {
+async function takeReclaimTurn(turn: string, content: string, boot: string | undefined, reclaimed: boolean, log?: (event: string) => void): Promise<void> {
   for (let look = 0; look < TURN_LOOKS; look++) {
     try { await placeExclusive(turn, content); return }
-    catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError('This host data folder could not be locked, so this host did not start. Nothing in the folder was changed. Check that the folder can be written, then start again.', { cause: error }) }
+    catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError(unlockableMessage(reclaimed), { cause: error }) }
     let seen: string, holder: HostLease
     try { seen = await readFile(turn, 'utf8'); holder = parseLease(seen) }
     catch (error) { if (code(error) !== 'ENOENT') await delay(TURN_WAIT_MS); continue }
@@ -141,7 +149,7 @@ async function takeReclaimTurn(turn: string, content: string, boot: string | und
     const removal = await removeIfStill(turn, seen).catch(() => undefined)
     if (removal?.outcome === 'lost') log?.('host-lock-restore-failed')
   }
-  throw new HostLockError('Another host kept its turn to clear this data folder\'s lock, so this host did not start. Nothing in the folder was changed. Wait a moment, then start again. If no host is starting, remove host-listener.lock.reclaim from the data folder first.')
+  throw new HostLockError(`Another host kept its turn to clear this data folder's lock, so this host did not start. ${unchanged(reclaimed)} Wait a moment, then start again. If no host is starting, remove host-listener.lock.reclaim from the data folder first.`)
 }
 
 /**
@@ -162,31 +170,35 @@ async function takeReclaimTurn(turn: string, content: string, boot: string | und
 export async function acquireHostLock(path: string, lease: HostLease, options: HostLockOptions = {}): Promise<void> {
   const content = JSON.stringify(lease)
   const turn = `${path}.reclaim`
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Only a look that found nothing to reclaim counts toward giving up, so a reclaim is always followed by a try
+  // to place this host's lease; the round cap only stops a folder that somehow keeps filling with dead leases.
+  let reclaimed = false
+  for (let misses = 0, rounds = 0; misses < 3 && rounds < 12; rounds++) {
     try { await placeExclusive(path, content); return }
-    catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError('This host data folder could not be locked, so this host did not start. Nothing in the folder was changed. Check that the folder can be written, then start again.', { cause: error }) }
+    catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError(unlockableMessage(reclaimed), { cause: error }) }
     let seen: string, holder: HostLease
     try { seen = await readFile(path, 'utf8'); holder = parseLease(seen) }
     catch (error) {
-      if (code(error) === 'ENOENT') continue
-      throw new HostLockError('The host-listener.lock in this data folder could not be read, so this host did not start. Nothing in the folder was changed. If no host uses the folder, remove that file and start again.', { cause: error })
+      if (code(error) === 'ENOENT') { misses++; continue }
+      throw new HostLockError(`The host-listener.lock in this data folder could not be read, so this host did not start. ${unchanged(reclaimed)} If no host uses the folder, remove that file and start again.`, { cause: error })
     }
-    if (leaseHolderAlive(holder, options.boot)) throw new HostLockError(heldMessage(holder.pid))
+    if (leaseHolderAlive(holder, options.boot)) throw new HostLockError(heldMessage(holder.pid, reclaimed))
     await options.beforeReclaim?.()
-    await takeReclaimTurn(turn, content, options.boot, options.log)
+    await takeReclaimTurn(turn, content, options.boot, reclaimed, options.log)
     let removal: Removal
     try { removal = await removeIfStill(path, seen) }
     catch (error) {
-      throw new HostLockError('A lock left by a host that has stopped could not be removed, so this host did not start. Nothing in the folder was changed. Remove host-listener.lock from the data folder and start again.', { cause: error })
+      throw new HostLockError(`A lock left by a host that has stopped could not be removed, so this host did not start. ${unchanged(reclaimed)} Remove host-listener.lock from the data folder and start again.`, { cause: error })
     } finally { await releaseHostLock(turn, lease).catch(() => undefined) }
-    if (removal.outcome === 'removed') options.log?.('host-lock-reclaimed')
+    if (removal.outcome === 'removed') { reclaimed = true; options.log?.('host-lock-reclaimed'); continue }
     if (removal.outcome === 'lost') {
       options.log?.('host-lock-restore-failed')
       throw new HostLockError('Another host took this data folder while this one was starting, and its lock could not be put back, so a third host may have opened the folder too. This host did not start. Stop every host that uses this data folder, then start one of them again.')
     }
     // 'changed' or 'gone': another host cleared the dead lease first. Look again; a live new holder is refused above.
+    misses++
   }
-  throw new HostLockError('Other hosts kept taking and releasing this data folder, so this host did not start. Nothing in the folder was changed. Wait a moment, then start again.')
+  throw new HostLockError(`Other hosts kept taking and releasing this data folder, so this host did not start. ${unchanged(reclaimed)} Wait a moment, then start again.`)
 }
 
 /** Removes the lock only if it is still this host's lease, so a stop never removes a lock another host took. */
