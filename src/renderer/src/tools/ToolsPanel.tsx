@@ -170,17 +170,18 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
 }
 
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
-function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null): Partial<Record<ToolSurfaceId, string>> {
+function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean): Partial<Record<ToolSurfaceId, string>> {
   const tasks = useBrowserTasks(store.browser)
   if (!thread) return {}
   const live: Partial<Record<ToolSurfaceId, string>> = {}
   const threadTasks = tasks.filter(task => task.threadId === thread.id)
   if (threadTasks.some(task => task.pendingAction !== null)) live.browser = 'A browser request is waiting for your answer'
   else if (threadTasks.some(task => task.status === 'working')) live.browser = 'A browser task is working'
-  // Changes reads Git only while it is open, so its last count stands until then; before the first read a
-  // worktree's own dirty mark answers.
-  if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
-  else if (changed === null && thread.worktree?.dirty) live.changes = 'Has uncommitted changes'
+  // Changes reads Git only while it is open. Elsewhere the working copy's own dirty mark, which main reads again
+  // after each turn, is the fresher signal; the last count stands only for a thread that has no such mark.
+  const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
+  if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = 'Has uncommitted changes' }
+  else if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
   const working = thread.subagentSummary?.working ?? 0
   if (working > 0) live.agents = `${working} ${working === 1 ? 'agent is' : 'agents are'} working`
   return live
@@ -271,7 +272,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   }, [open, chrome.surface])
 
   const changedFiles = threadChanges?.list.status === 'ready' ? { count: threadChanges.list.files.length, truncated: threadChanges.list.truncated } : null
-  const live = useLiveSurfaces(store, thread, changedFiles)
+  const live = useLiveSurfaces(store, thread, changedFiles, open && chrome.surface === 'changes')
 
   const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} enabled={showBrowserPreviews} />
   if (!open) return preview

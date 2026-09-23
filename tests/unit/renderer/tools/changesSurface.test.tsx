@@ -278,4 +278,27 @@ describe('Changes surface', () => {
     expect(within(panel()).getByRole('tab', { name: 'Changes', exact: true })).toHaveAccessibleDescription('3+ changed files')
   })
 
+  it('lets the working copy’s dirty mark, not the last count, light the Changes dot once another surface is open', async () => {
+    const withWorktree = (dirty: boolean) => {
+      const state = threadsStateFixture()
+      const thread = state.host.threads.find(item => item.id === 'visual-gate')!
+      Object.assign(thread, { worktree: { mode: 'shared', status: 'ready', path: 'D:\work\workshop', repositoryRoot: 'D:\work\workshop', branch: 'feature/changes', dirty } })
+      return state
+    }
+    const git = fakeGit({ files: [] })
+    const store = new ToolsPanelStore()
+    store.setOpen(true)
+    store.setSurface('changes')
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\work\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
+    const view = render(<ToolsPanel focusedThreadId="visual-gate" state={withWorktree(false)} files={files} gitChanges={git.bridge} store={store} />)
+    await within(panel()).findByText('No changes')
+    const tab = within(panel()).getByRole('tab', { name: 'Changes', exact: true })
+    expect(tab).not.toHaveAttribute('aria-description')
+    act(() => store.setSurface('files'))
+    expect(tab.querySelector('.tools-rail__live')).toBeNull()
+    // An agent edits a file while Changes is closed, and main's read after the turn marks the working copy dirty.
+    view.rerender(<ToolsPanel focusedThreadId="visual-gate" state={withWorktree(true)} files={files} gitChanges={git.bridge} store={store} />)
+    expect(tab).toHaveAccessibleDescription('Has uncommitted changes')
+    expect(tab.querySelector('.tools-rail__live')).not.toBeNull()
+  })
 })
