@@ -5,7 +5,7 @@ Owner authorized implementation September 21, 2026: an installed iOS app like T3
 ## Implementation and acceptance
 
 - [x] Source: standalone apps/ios package, Xcode project/shared scheme, SwiftUI app targeting iOS 17, Foundation HTTP/WebSocket and Security Keychain. No third-party runtime or changes to desktop dependencies.
-- [x] Source: pair by entering the private HTTPS host and code read on Forge. Reject non-HTTPS/non-ts.net routes, URL credentials/query/path; preserve default TLS validation; prohibit credential-bearing redirects. Token only in unlocked/device-only Keychain; no provider keys or transcript logs.
+- [x] Source: pair by entering the private HTTPS host and code read on the host. Reject non-HTTPS/non-ts.net routes, URL credentials/query/path; preserve default TLS validation; prohibit credential-bearing redirects. Token only in unlocked/device-only Keychain; no provider keys or transcript logs.
 - [x] Source: host-scoped thread list/detail, text replies, interrupt, native question choices and explicit permissions. Pairing never grants authority. Unknown request kinds/choices fail closed. No terminal, new-thread, worktree, audio or file controls.
 - [x] Source: foreground obtains a new session, full shell and selected detail. Stable submitted command ID; no automatic replay after uncertain delivery. Persist only pending identifiers, not transcript text; drafts remain in memory across backgrounding, clear on termination/Forget. Host retains work independently.
 - [ ] Meaningful Swift codec, endpoint, question validation and uncertain-command tests. Run on a Swift-capable machine; Windows currently has neither swift nor xcodebuild.
@@ -17,7 +17,7 @@ SwiftUI fits this iOS-only scope with native lifecycle/accessibility, Foundation
 
 ## Design checks
 
-Concept: one quiet thread room on a phone; the proving moment is reading Forge's work and answering its current request explicitly. The selected direction is thread-first navigation (list then full-width transcript); attention-first and split-pane alternatives would compete with the owner's chosen quiet phone flow and are not reopened. Pairing B was already selected, so the prototype validates states instead of asking for another variant vote.
+Concept: one quiet thread room on a phone; the proving moment is reading the host's work and answering its current request explicitly. The selected direction is thread-first navigation (list then full-width transcript); attention-first and split-pane alternatives would compete with the owner's chosen quiet phone flow and are not reopened. Pairing B was already selected, so the prototype validates states instead of asking for another variant vote.
 
 Reference: Sotto's existing Figtree/theme roles and T3's native mobile thread/connection source. Inspect the rendered reference if available; record tool limitations rather than inventing a visual review. Carry a thin navigation strip, open transcript, subdued metadata and one accent action. No marketing, repeated subtitles or decorative cards. New app has no existing native page, so docs/prototypes/ios-thread-prototype.html is the throwaway fixture close to the existing pairing prototype.
 
