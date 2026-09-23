@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
+import { subscribeActivitySnapshots } from './activitySnapshots'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -205,6 +206,11 @@ export class SottoThreadHost implements AgentHost {
     // An event before the durable bindings are loaded would mint IDs the disk then contradicts.
     // Nothing is lost: connect and snapshot deliver the same state once loaded.
     return this.inner.subscribe(snapshot => { if (this.registry.loaded) listener(this.mapSnapshot(snapshot)) })
+  }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    return subscribeActivitySnapshots(this.inner, snapshot => {
+      if (this.registry.loaded) listener(this.mapSnapshot(snapshot))
+    })
   }
 
   /** The store answers about Sotto's thread; the adapter inside asks about its own session. */

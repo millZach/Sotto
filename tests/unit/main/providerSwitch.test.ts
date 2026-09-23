@@ -14,7 +14,22 @@ import { PolicyStore } from '../../../src/main/memory/policies'
 import { memoryTopics } from '../../../src/shared/memory'
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import type { AgentHostSnapshot } from '../../../src/shared/agents'
+import type { ThreadHostEvent } from '../../../src/main/agents/host'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+
+class RetainedCallbacksProvider extends FakeProviderHost {
+  readonly snapshots: Array<(snapshot: AgentHostSnapshot) => void> = []
+  readonly events: Array<(event: ThreadHostEvent) => void> = []
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.snapshots.push(listener)
+    return () => undefined
+  }
+  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void {
+    this.events.push(listener)
+    return () => undefined
+  }
+}
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -45,6 +60,37 @@ async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: Agent
 }
 
 describe('independent thread providers', () => {
+  it('ignores snapshot and event callbacks retained from an earlier provider connection', async () => {
+    const codex = new RetainedCallbacksProvider()
+    const host = new ConfiguredProviderHost({
+      hosts: { codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+      provider: () => 'codex', enabledProviders: () => ['codex'],
+    })
+    const events: ThreadHostEvent[] = []
+    const off = host.subscribeEvents?.(event => events.push(event))
+    await host.connect('codex')
+    const oldSnapshot = codex.snapshots[0]!
+    const oldEvent = codex.events[0]!
+    host.disconnect('codex')
+    await host.connect('codex')
+    expect(codex.snapshots).toHaveLength(2)
+    expect(codex.events).toHaveLength(2)
+
+    const stale = await codex.snapshot()
+    stale.threads[0]!.title = 'Stale callback'
+    oldSnapshot(stale)
+    oldEvent({ threadId: 'session-workshop', event: { kind: 'messages-reset', at: '2026-09-23T00:00:00.000Z' } })
+    expect((await host.snapshot('claude')).threads.find(thread => thread.id === 'session-workshop')?.title).toBe('Workshop')
+    expect(events).toHaveLength(0)
+
+    const fresh = await codex.snapshot()
+    fresh.threads[0]!.title = 'Current callback'
+    codex.snapshots[1]!(fresh)
+    codex.events[1]!({ threadId: 'session-workshop', event: { kind: 'messages-reset', at: '2026-09-23T00:01:00.000Z' } })
+    expect((await host.snapshot('claude')).threads.find(thread => thread.id === 'session-workshop')?.title).toBe('Current callback')
+    expect(events).toHaveLength(1)
+    off?.(); host.disconnect()
+  })
   it('keeps legacy selection and strictly parses scoped commands without injecting configuration defaults', () => {
     const legacy = { ...defaultAgentConfiguration(), provider: 'claude' as const }
     expect(enabledThreadProviders(agentConfigurationSchema.parse(legacy))).toEqual(['claude'])
