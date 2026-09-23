@@ -126,7 +126,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await toggle.focus()
     await page.keyboard.press('Enter')
     const panel = page.getByRole('complementary', { name: 'Tools' })
-    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'Agents'])
     await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
     await page.keyboard.press('ArrowRight')
     await expect(panel.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true')
@@ -181,7 +181,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTO_UI_TERMINAL_OK')
     await page.keyboard.press('Enter')
-    await expect.poll(async () => ((await screen.innerText()).match(/SOTTO_UI_TERMINAL_OK/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
+    await expect.poll(async () => ((await screen.innerText()).replace(/\n/gu, '').match(/SOTTO_UI_TERMINAL_OK/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
     // The shell starts in the thread's working copy: a relative redirect lands in that folder.
     await page.keyboard.type('echo started here > terminal-proof.txt')
     await page.keyboard.press('Enter')

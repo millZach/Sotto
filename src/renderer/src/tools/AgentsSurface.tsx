@@ -2,6 +2,7 @@ import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { ChevronRight, Users } from 'lucide-react'
 import type { SubagentAssignment, SubagentRow, SubagentsBridge } from '../../../shared/subagents'
 import { type SubagentsStore, useThreadSubagents } from './subagentsStore'
+import { ToolsChrome } from './ToolsChrome'
 import './agentsSurface.css'
 
 const STATUS: Record<SubagentRow['status'], string> = { running: 'Working', completed: 'Finished', failed: 'Failed', interrupted: 'Interrupted', unknown: 'Last seen working' }
@@ -131,13 +132,15 @@ export function AgentsSurface({ threadId, store, bridge }: { readonly threadId: 
   const state = useThreadSubagents(store, threadId)
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
   const rows = useMemo(() => nestedSubagents(state.rows), [state.rows])
+  const { total, working, unknown } = state.summary
+  // The roster's count leads its line of chrome; what is working, or not confirmed, sits beside it.
   return <div className="subagents-surface">
+    <ToolsChrome title={total > 0 ? `${total} ${total === 1 ? 'agent' : 'agents'}` : 'Agents'} detail={total > 0 ? working ? `${working} working` : unknown ? 'Activity not confirmed' : 'None working' : null} />
     <div className="subagents-roster">
       {!rows.length && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? 'Loading agents…' : 'No agents spawned in this thread yet.'}</p></div> : null}
       <ul className="subagents-list" aria-label="Spawned agents">{rows.map(({ row, depth }) => <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>
       {state.error ? <p role="status">{state.error} <button type="button" className="files-link tt-focusable" onClick={() => void store.page(threadId)}>Try again</button></p> : null}
       {state.before !== undefined ? <button type="button" className="files-link tt-focusable subagents-older" disabled={state.loading} onClick={() => void store.page(threadId, true)}>{state.loading ? 'Loading agents…' : 'Load earlier agents'}</button> : null}
     </div>
-    {state.summary.total > 0 ? <footer className="subagents-footer"><span>{state.summary.total} {state.summary.total === 1 ? 'agent' : 'agents'}</span><span>{state.summary.working ? `${state.summary.working} working` : state.summary.unknown ? 'Activity not confirmed' : 'None working'}</span></footer> : null}
   </div>
 }

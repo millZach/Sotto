@@ -1,0 +1,1999 @@
+{
+  "errors": [],
+  "sizes": [
+    [
+      1600,
+      1000
+    ],
+    [
+      1280,
+      800
+    ],
+    [
+      820,
+      560
+    ]
+  ],
+  "captures": {
+    "browser-1600x1000-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 885,
+        "y": 84,
+        "width": 657,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1600x1000-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 885,
+        "y": 84,
+        "width": 657,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 884,
+          "width": 716
+        },
+        "main": 657,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1600x1000-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 1221,
+        "y": 84,
+        "width": 321,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1600x1000-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 1221,
+        "y": 84,
+        "width": 321,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 1220,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1600x1000-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 813,
+        "y": 84,
+        "width": 729,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1600x1000-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 813,
+        "y": 84,
+        "width": 729,
+        "height": 884
+      },
+      "mode": "docked"
+    },
+    "terminal-1600x1000-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1600x1000-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1600x1000-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1600x1000-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 812,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 1000,
+        "footBottom": 992.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 1000,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1280x800-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 733,
+        "y": 84,
+        "width": 489,
+        "height": 684
+      },
+      "mode": "docked"
+    },
+    "terminal-1280x800-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1280x800-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1280x800-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1280x800-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1280x800-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 733,
+        "y": 84,
+        "width": 489,
+        "height": 684
+      },
+      "mode": "docked"
+    },
+    "terminal-1280x800-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1280x800-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1280x800-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1280x800-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 732,
+          "width": 548
+        },
+        "main": 489,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1280x800-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 901,
+        "y": 84,
+        "width": 321,
+        "height": 684
+      },
+      "mode": "docked"
+    },
+    "terminal-1280x800-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1280x800-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1280x800-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1280x800-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1280x800-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 901,
+        "y": 84,
+        "width": 321,
+        "height": 684
+      },
+      "mode": "docked"
+    },
+    "terminal-1280x800-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-1280x800-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-1280x800-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-1280x800-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 900,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-1280x800-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 493,
+        "y": 84,
+        "width": 729,
+        "height": 684
+      },
+      "mode": "overlay"
+    },
+    "terminal-1280x800-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "files-1280x800-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "changes-1280x800-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "agents-1280x800-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "browser-1280x800-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 493,
+        "y": 84,
+        "width": 729,
+        "height": 684
+      },
+      "mode": "overlay"
+    },
+    "terminal-1280x800-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "files-1280x800-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "changes-1280x800-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "agents-1280x800-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 492,
+          "width": 788
+        },
+        "main": 729,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 800,
+        "footBottom": 792.0000457763672,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 800,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "browser-820x560-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 369,
+        "y": 84,
+        "width": 393,
+        "height": 444
+      },
+      "mode": "docked"
+    },
+    "terminal-820x560-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-820x560-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-820x560-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-820x560-normal-dark": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-820x560-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 369,
+        "y": 84,
+        "width": 393,
+        "height": 444
+      },
+      "mode": "docked"
+    },
+    "terminal-820x560-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-820x560-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-820x560-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-820x560-normal-light": {
+      "layout": {
+        "sheet": {
+          "x": 368,
+          "width": 452
+        },
+        "main": 393,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-820x560-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 441,
+        "y": 84,
+        "width": 321,
+        "height": 444
+      },
+      "mode": "docked"
+    },
+    "terminal-820x560-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-820x560-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-820x560-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-820x560-minimum-dark": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-820x560-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 441,
+        "y": 84,
+        "width": 321,
+        "height": 444
+      },
+      "mode": "docked"
+    },
+    "terminal-820x560-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "files-820x560-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "changes-820x560-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": true,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "agents-820x560-minimum-light": {
+      "layout": {
+        "sheet": {
+          "x": 440,
+          "width": 380
+        },
+        "main": 321,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "docked"
+    },
+    "browser-820x560-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 49,
+        "y": 84,
+        "width": 713,
+        "height": 444
+      },
+      "mode": "overlay"
+    },
+    "terminal-820x560-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "files-820x560-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "changes-820x560-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "agents-820x560-wide-dark": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "browser-820x560-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": {
+        "x": 49,
+        "y": 84,
+        "width": 713,
+        "height": 444
+      },
+      "mode": "overlay"
+    },
+    "terminal-820x560-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "files-820x560-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "changes-820x560-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": false,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    },
+    "agents-820x560-wide-light": {
+      "layout": {
+        "sheet": {
+          "x": 48,
+          "width": 772
+        },
+        "main": 713,
+        "overflow": 0,
+        "chromeHeight": 44,
+        "chromeUnderControls": 0,
+        "railBottom": 560,
+        "footBottom": 552.0000152587891,
+        "tileTop": 50,
+        "controlsBottom": 44,
+        "height": 560,
+        "stacked": null,
+        "detailStubs": []
+      },
+      "nativeBounds": null,
+      "mode": "overlay"
+    }
+  }
+}

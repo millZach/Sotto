@@ -179,6 +179,8 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
       'src/renderer/src/tools/browserReview.css',
+      'src/renderer/src/tools/tools.css',
+      'src/renderer/src/tools/toolsRail.css',
     ]
     for (const path of owned) {
       const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')

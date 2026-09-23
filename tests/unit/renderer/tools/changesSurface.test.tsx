@@ -15,7 +15,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
 
-function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileDiff['content']>; listError?: 'not-repository' } = {}) {
+function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileDiff['content']>; listError?: 'not-repository'; truncated?: boolean } = {}) {
   let files: GitChange[] = options.files ?? [
     { path: 'src/app.ts', status: 'modified', staged: false, unstaged: true },
     { path: 'docs/new.md', status: 'untracked', staged: false, unstaged: true },
@@ -28,7 +28,7 @@ function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileD
   const bridge: GitChangesBridge = {
     list: vi.fn(async (): Promise<ToolsResult<never>> => options.listError
       ? { ok: false, error: { code: options.listError, message: 'no repo' } }
-      : { ok: true, value: { workspace, branch: 'feature/changes', revision, files, truncated: false } as never }),
+      : { ok: true, value: { workspace, branch: 'feature/changes', revision, files, truncated: options.truncated ?? false } as never }),
     diff: vi.fn(async ({ path }): Promise<ToolsResult<GitFileDiff>> => {
       if (path === 'docs/new.md' && held.resolve === null && diffHold.on) await new Promise<void>(resolve => { held.resolve = resolve })
       return { ok: true, value: { workspace, path, revision, content: diffs[path] ?? { kind: 'unavailable', message: 'gone' } } }
@@ -72,6 +72,23 @@ describe('local Git action feedback', () => {
     expect(await screen.findByText('Resolve the conflicting files first.')).toBeInTheDocument()
     expect(message).toHaveValue('Preserve this commit message')
     expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'commit', message: 'Preserve this commit message' }))
+  })
+
+  it('puts the Git toggles on the line of chrome and the file’s staging in its head, with no bar between', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: undefined as never }))
+    git.bridge.checkpoints = vi.fn(async () => ({ ok: true as const, value: { supported: true, checkpoints: [] } as never }))
+    setup(git)
+    const toggle = await screen.findByRole('button', { name: 'Git actions', exact: true })
+    expect(toggle.closest('.tools-chrome')).toHaveClass('changes-summary')
+    expect(screen.getByRole('button', { name: 'Checkpoints', exact: true }).closest('.tools-chrome')).toHaveClass('changes-summary')
+    expect(panel().querySelector('.git-actions')).toBeNull()
+    await user.click(within(panel()).getByRole('option', { name: /^app\.ts/u }))
+    const stage = await screen.findByRole('button', { name: 'Stage file', exact: true })
+    expect(stage.closest('.files-preview__head')).not.toBeNull()
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(panel().querySelector('.git-actions') as HTMLElement).getByRole('textbox', { name: 'Commit message' })).toBeInTheDocument()
   })
 })
 
@@ -213,7 +230,7 @@ describe('Changes surface', () => {
   it('lists the working copy, opens a readable diff from the keyboard and returns focus when it closes', async () => {
     const { git } = setup()
     const list = await within(panel()).findByRole('listbox', { name: 'Changed files' })
-    expect(within(panel()).getByText(/3 changed files/u)).toHaveTextContent('3 changed files on feature/changes')
+    expect(within(panel()).getByText(/3 changed files/u).closest('.changes-summary')).toHaveTextContent('3 changed files on feature/changes')
     expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['app.ts, Modified, in src/', 'new.md, Untracked, in docs/', 'logo.png, Modified'])
     await waitFor(() => expect(git.bridge.watch).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, enabled: true }))
 
@@ -270,5 +287,35 @@ describe('Changes surface', () => {
     setup(fakeGit({ listError: 'not-repository' }))
     expect(await within(panel()).findByText('This working folder is not a Git repository.')).toBeInTheDocument()
     expect(within(panel()).queryByRole('button', { name: 'Try again' })).toBeNull()
+  })
+
+  it('says a cut-off list is at least its count in the Changes description', async () => {
+    setup(fakeGit({ truncated: true }))
+    await within(panel()).findByText('3+ changed files')
+    expect(within(panel()).getByRole('tab', { name: 'Changes', exact: true })).toHaveAccessibleDescription('3+ changed files')
+  })
+
+  it('lets the working copy’s dirty mark, not the last count, light the Changes dot once another surface is open', async () => {
+    const withWorktree = (dirty: boolean) => {
+      const state = threadsStateFixture()
+      const thread = state.host.threads.find(item => item.id === 'visual-gate')!
+      Object.assign(thread, { worktree: { mode: 'shared', status: 'ready', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work\\workshop', branch: 'feature/changes', dirty } })
+      return state
+    }
+    const git = fakeGit({ files: [] })
+    const store = new ToolsPanelStore()
+    store.setOpen(true)
+    store.setSurface('changes')
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
+    const view = render(<ToolsPanel focusedThreadId="visual-gate" state={withWorktree(false)} files={files} gitChanges={git.bridge} store={store} />)
+    await within(panel()).findByText('No changes')
+    const tab = within(panel()).getByRole('tab', { name: 'Changes', exact: true })
+    expect(tab).not.toHaveAttribute('aria-description')
+    act(() => store.setSurface('files'))
+    expect(tab.querySelector('.tools-rail__live')).toBeNull()
+    // An agent edits a file while Changes is closed, and main's read after the turn marks the working copy dirty.
+    view.rerender(<ToolsPanel focusedThreadId="visual-gate" state={withWorktree(true)} files={files} gitChanges={git.bridge} store={store} />)
+    expect(tab).toHaveAccessibleDescription('Has uncommitted changes')
+    expect(tab.querySelector('.tools-rail__live')).not.toBeNull()
   })
 })

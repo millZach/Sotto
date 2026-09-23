@@ -1,11 +1,12 @@
 import React, { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Columns2, Copy, FolderOutput, RotateCw, X } from 'lucide-react'
+import { Columns2, Copy, FolderOutput, GitPullRequestArrow, RotateCw, X } from 'lucide-react'
 import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, parseUnifiedDiff, useThreadChanges, type ChangesStore, type DiffLine } from './changesStore'
 import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
+import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -39,15 +40,18 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
   const changes = useThreadChanges(store, threadId)
   const [split, setSplit] = useState(false)
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
-  if (!changes) return <p className="files-preview__loading" role="status">Loading…</p>
+  // Git actions draws its toggles into the line of chrome and the file's staging into its head.
+  const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
+  const [stageSlot, setStageSlot] = useState<HTMLElement | null>(null)
+  if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>
   const { list, selectedPath, diff } = changes
-  if (list.status === 'loading') return <p className="files-preview__loading" role="status">Reading changes…</p>
+  if (list.status === 'loading') return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Reading changes…</p></>
   if (list.status === 'error') {
     const repository = list.error.code !== 'not-repository'
-    return <div className="files-problem files-problem--root" role="status">
+    return <><ToolsChrome title="Changes" /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(list.error, bridge !== undefined)}</strong>
       {bridge && repository ? <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button> : null}
-    </div>
+    </div></>
   }
   if (pullRequestOpen && bridge && changes.workspace) return <div className="changes-surface">
     <GitPullRequest key={`${threadId}:${changes.workspace.workspaceId}`} threadId={threadId} workspaceId={changes.workspace.workspaceId} bridge={bridge} onBack={() => setPullRequestOpen(false)} />
@@ -56,14 +60,19 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
   const reveal = (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) }
   const selected = selectedPath === null ? undefined : list.files.find(file => file.path === selectedPath)
   return <div className="changes-surface" data-diff={selectedPath !== null || undefined}>
-    <div className="changes-summary">
-      <span className="changes-summary__text">{list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
-        {list.branch ? <> on <bdi className="changes-summary__branch">{list.branch}</bdi></> : <> · Detached HEAD</>}</span>
-      {bridge?.reviewPullRequest ? <button type="button" className="files-link tt-focusable" onClick={() => setPullRequestOpen(true)}>Pull request</button> : null}
-      <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
-        onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={14} aria-hidden="true" /></button>
+    <div className="changes-summary tools-chrome">
+      {/* The count keeps its words; the branch beside it shows as a readable run or gives way whole. */}
+      <ToolsChromeLead title={list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
+        detail={list.branch ? <><span className="tt-visually-hidden">{' on '}</span><bdi className="changes-summary__branch">{list.branch}</bdi></> : 'Detached HEAD'} />
+      <div className="tools-chrome__actions">
+        <span className="changes-summary__git" ref={setToggleSlot} />
+        {bridge?.reviewPullRequest ? <button type="button" className="tools-chrome__button tt-focusable" title="Pull request" onClick={() => setPullRequestOpen(true)}>
+          <GitPullRequestArrow size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Pull request</span></button> : null}
+        <button type="button" className="files-icon tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
+          onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
+      </div>
     </div>
-    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} />
+    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} />
     {list.files.length === 0
       ? <div className="files-problem" role="status"><strong>The working copy matches HEAD.</strong></div>
       : <ChangeList files={list.files} selectedPath={selectedPath} onSelect={path => store.select(bridge, threadId, path)} />}
@@ -78,6 +87,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
           <span className="files-preview__name" title={selectedPath}>{splitPath(selectedPath).name}</span>
         </div>
         <div className="files-preview__actions">
+          <span className="changes-diff__stage" ref={setStageSlot} />
           <button type="button" className="files-icon tt-focusable" aria-label="Split view" aria-pressed={split} title={split ? 'Show unified diff' : 'Show split diff'} onClick={() => setSplit(value => !value)}><Columns2 size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`Copy path: ${selectedPath}`} title="Copy path" onClick={() => copy(selectedPath)}><Copy size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${selectedPath}`} title={revealLabel(platform)} onClick={() => reveal(selectedPath)}><FolderOutput size={16} aria-hidden="true" /></button>
@@ -141,8 +151,11 @@ function ChangeList({ files, selectedPath, onSelect }: { readonly files: readonl
         onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(file.path) } }}>
         <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>
         <span className="changes-list__name">{name}</span>
-        <span className="changes-list__staging">{file.staged ? file.unstaged ? 'Staged + unstaged' : 'Staged' : 'Unstaged'}</span>
-        {folder ? <span className="changes-list__folder" dir="auto">{folder}</span> : null}
+        {/* One quiet run: the folder when there is one, then staging. */}
+        <span className="changes-list__meta">
+          {folder ? <><span className="changes-list__folder" dir="auto">{folder}</span><span className="changes-list__sep" aria-hidden="true">·</span></> : null}
+          <span className="changes-list__staging">{file.staged ? file.unstaged ? 'Staged + unstaged' : 'Staged' : 'Unstaged'}</span>
+        </span>
       </li>
     })}
   </ul>

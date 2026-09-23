@@ -1,8 +1,9 @@
 import React, { useCallback, useSyncExternalStore, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { RotateCw, X } from 'lucide-react'
 import type { FilesBridge, FilesError } from '../../../shared/files'
 import { FilePreview } from './FilePreview'
 import { FileTree } from './FileTree'
+import { ToolsChrome } from './ToolsChrome'
 import { type FilesBrowserStore, type PathAction, type ThreadFiles } from './filesBrowser'
 
 export function useThreadFiles(store: FilesBrowserStore, threadId: string | null): ThreadFiles | undefined {
@@ -34,15 +35,19 @@ export interface FilesSurfaceProps {
   readonly onPathAction: (action: PathAction, path: string) => void
 }
 
-/** Files for one thread: the working-folder tree beside its preview, stacking in a narrow panel. */
+/** Files for one thread: its line of chrome, then the working-folder tree above its preview, beside it once the panel is wide. */
 export function FilesSurface({ threadId, store, bridge, platform, onPathAction }: FilesSurfaceProps): ReactNode {
   const files = useThreadFiles(store, threadId)
-  if (!files) return <p className="files-preview__loading" role="status">Loading…</p>
+  const folder = files?.workspace ? folderName(files.workspace.workingDirectory) : null
+  const chrome = <ToolsChrome title="Files" detail={folder}>
+    <button type="button" className="files-icon tt-focusable" aria-label="Refresh files" title="Refresh files" data-busy={files?.refreshing || undefined} onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
+  </ToolsChrome>
+  if (!files) return <>{chrome}<p className="files-preview__loading" role="status">Loading…</p></>
   const root = files.listings.get('')
   const rootError = root?.status === 'error' ? root.error : null
-  const label = files.workspace ? `Files in ${folderName(files.workspace.workingDirectory)}` : 'Files'
+  const label = folder ? `Files in ${folder}` : 'Files'
   const preview = files.preview
-  return <div className="files-surface" data-preview={preview && !rootError ? '' : undefined}>
+  return <>{chrome}<div className="files-surface" data-preview={preview && !rootError ? '' : undefined}>
     {files.workspaceChanged ? <div className="files-notice" role="status">
       <span>The working folder changed, so Files started over.</span>
       <button type="button" className="files-icon tt-focusable" aria-label="Dismiss" title="Dismiss" onClick={() => store.dismissWorkspaceChanged(threadId)}><X size={14} aria-hidden="true" /></button>
@@ -56,5 +61,5 @@ export function FilesSurface({ threadId, store, bridge, platform, onPathAction }
       onClose={() => store.closePreview(threadId)} onRetry={() => store.openFile(bridge, threadId, preview.path)}
       onRefreshFolder={() => store.recoverMissing(bridge, threadId, preview.path)}
       onMarkdownView={view => store.setMarkdownView(threadId, view)} /> : null}
-  </div>
+  </div></>
 }

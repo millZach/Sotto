@@ -19,6 +19,7 @@ export default tseslint.config(
       'coverage/**',
       'artifacts/question-choices/**',
       'artifacts/sidebar-question/**',
+      'artifacts/tools-rail-run/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',

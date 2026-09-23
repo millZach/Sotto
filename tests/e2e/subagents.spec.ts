@@ -106,7 +106,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
       expect(await page.locator('.tools-panel__sheet').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
-      expect(await page.locator('.tools-surfaces').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+      expect(await page.locator('.tools-rail').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
       const contrast = await page.locator('.tools-panel__sheet').evaluate(panel => {
         const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
         const ctx = canvas.getContext('2d')!
@@ -114,7 +114,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
         const pixel = (foreground?: string): number[] => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = background; ctx.fillRect(0, 0, 1, 1); if (foreground) { ctx.fillStyle = foreground; ctx.fillRect(0, 0, 1, 1) }; return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3) }
         const luminance = (rgb: number[]): number => rgb.map(value => { const n = value / 255; return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4 }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
         const base = luminance(pixel())
-        return [...panel.querySelectorAll('.subagent-title, .subagent-description, .subagent-model, .subagent-right, .subagents-footer')].map(element => { const text = luminance(pixel(getComputedStyle(element).color)); return (Math.max(base, text) + .05) / (Math.min(base, text) + .05) })
+        return [...panel.querySelectorAll('.subagent-title, .subagent-description, .subagent-model, .subagent-right, .tools-chrome__title, .tools-chrome__detail')].map(element => { const text = luminance(pixel(getComputedStyle(element).color)); return (Math.max(base, text) + .05) / (Math.min(base, text) + .05) })
       })
       expect(Math.min(...contrast)).toBeGreaterThanOrEqual(4.5)
       visualChecks.push({ width, height, actual: await page.evaluate(() => ({ width: innerWidth, height: innerHeight })), appearance, minimumContrast: Math.min(...contrast) })
@@ -125,7 +125,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await page.keyboard.press('Home')
     await expect(resize).toHaveAttribute('aria-valuenow', '380')
     expect(await page.locator('.tools-panel__sheet').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
-    expect(await page.locator('.tools-surfaces').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+    expect(await page.locator('.tools-rail').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
     await page.locator('.subagents-roster').click({ position: { x: 24, y: 3 } })
     await page.mouse.move(40, 40)
     await page.screenshot({ path: join(shots, 'app-roomy-tools-min-380-light.png') })

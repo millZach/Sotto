@@ -1,5 +1,7 @@
 # Sidecar tools verification
 
+**Superseded, 2026-09-22.** The Tools panel was rebuilt around the rail the owner picked in #235: the surfaces moved from the tab row onto a strip at the panel's outer edge, the context row became the working-copy footer, and pin, expand and close moved to the rail's foot. `tests/e2e/tools-sidecar.spec.ts` now proves that composition, and `docs/verification/tools-rail.md` is its record. The behaviour promised below (overlay below a readable pane width, Escape, pinning, expand, keyboard resize and the 950-pixel rule) carries over; the header, tab and class names it describes do not.
+
 Selected reference: prototype A, Sidecar, in the sibling `tools-redesigns` worktree. The accepted composition keeps the conversation alongside a generous right dock, with compact project context, four labeled tool tabs, quieter browser chrome and room for the actual working content.
 
 ## Scope and method
