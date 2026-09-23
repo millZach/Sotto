@@ -217,8 +217,10 @@ export class SshHostLauncher {
   private baseArguments(configuration: ValidatedSshHostConfiguration): string[] {
     // Windows' OpenSSH starts the askpass helper through cmd.exe, which keeps only the first line of a
     // host-key question; at DEBUG1 the key's fingerprint also reaches stderr, where ask() reads it.
+    // A RemoteCommand or RequestTTY in the user's configuration (`RemoteCommand tmux new -A`) would make
+    // every command Sotto runs fail with "Cannot execute command-line and remote command", so both are off.
     return ['-o', 'BatchMode=no', '-o', 'StrictHostKeyChecking=ask', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
-      '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', `LogLevel=${this.platform() === 'win32' ? 'DEBUG1' : 'ERROR'}`, '-e', 'none', ...CONTROL_OPTIONS,
+      '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'RemoteCommand=none', '-o', 'RequestTTY=no', '-o', `LogLevel=${this.platform() === 'win32' ? 'DEBUG1' : 'ERROR'}`, '-e', 'none', ...CONTROL_OPTIONS,
       ...(configuration.identityFile ? ['-i', configuration.identityFile, '-o', 'IdentitiesOnly=yes'] : []),
       ...(configuration.sshPort ? ['-p', String(configuration.sshPort)] : [])]
   }

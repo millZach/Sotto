@@ -52,7 +52,7 @@ it.each(['started', 'discovered'])('discovers readiness, verifies the forward an
   expect(spawned.map(item => item.resolve ? 'resolve' : item.tunnel ? 'forward' : item.op)).toEqual(['resolve', 'launch', 'forward', 'pairing-code'])
   expect(spawned.find(item => item.tunnel)?.args).toContainEqual(expect.stringMatching(/^127\.0\.0\.1:\d+:127\.0\.0\.1:4317$/u))
 })
-it('turns multiplexing off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
+it('turns multiplexing and any configured remote command off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
   const { launcher, spawns } = await fixture('started')
   const connection = await launcher.connect(configuration)
   await connection.showHostPairingCode()
@@ -63,6 +63,8 @@ it('turns multiplexing off and asks through askpass on every ssh, and pipes the 
   for (const item of spawned) {
     const options = item.args.flatMap((value, index) => value === '-o' ? [item.args[index + 1]] : [])
     for (const control of ['ControlMaster=no', 'ControlPath=none', 'ControlPersist=no']) expect(options).toContain(control)
+    // A `RemoteCommand tmux new -A` in the user's configuration must not replace or refuse Sotto's command.
+    expect(options).toEqual(expect.arrayContaining(['RemoteCommand=none', 'RequestTTY=no']))
     expect(item.askpass).toBe(true)
   }
   expect(CONTROL_OPTIONS).toEqual(['-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ControlPersist=no'])
