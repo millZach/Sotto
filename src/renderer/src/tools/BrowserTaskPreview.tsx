@@ -6,8 +6,14 @@ import { useBrowserTasks, type BrowserStore } from './browserStore'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 import './browserReview.css'
 
-export function BrowserTaskPreview({ state, focusedThreadId, bridge, store }: {
+/**
+ * The corner preview of the focused thread's browser task, or the pinned Tools thread's. Another thread's task
+ * never shows here: that thread's pane is where it belongs. With previews turned off nothing shows, but tasks are
+ * still watched so Tools > Browser has them when it opens.
+ */
+export function BrowserTaskPreview({ state, focusedThreadId, bridge, store, enabled = true }: {
   readonly state: AgentState; readonly focusedThreadId: string | null; readonly bridge: BrowserBridge | undefined; readonly store: ToolsPanelStore
+  readonly enabled?: boolean
 }): ReactNode {
   const tasks = useBrowserTasks(store.browser)
   const chrome = useToolsPanelChrome(store)
@@ -15,7 +21,8 @@ export function BrowserTaskPreview({ state, focusedThreadId, bridge, store }: {
   const [placement, setPlacement] = useState<{ bottom: number; maxHeight: number } | undefined>(undefined)
   const ids = state.host.threads.map(thread => thread.id).join('\n')
   useEffect(() => { store.browser.watchTasks(bridge, ids.split('\n').filter(Boolean)) }, [bridge, store, ids])
-  const task = tasks.find(item => !store.browser.isDismissed(item.id) && state.host.threads.some(thread => thread.id === item.threadId))
+  const shownThreads = [focusedThreadId, chrome.pinnedThreadId].filter((id): id is string => id !== null)
+  const task = enabled ? tasks.find(item => shownThreads.includes(item.threadId) && !store.browser.isDismissed(item.id) && state.host.threads.some(thread => thread.id === item.threadId)) : undefined
   const hidden = task && chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === task.threadId
     && store.browser.thread(task.threadId)?.activePageId === task.pageId
   useLayoutEffect(() => {
@@ -58,15 +65,16 @@ export function BrowserTaskDetails({ task, store, bridge }: { readonly task: Bro
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const active = task.status === 'working' || task.status === 'paused'
-  const answer = (allow: boolean): void => {
+  const answer = (allow: boolean, forThread = false): void => {
     setBusy(true); setProblem(null)
-    void store.answerAction(bridge, task, allow).then(error => { setProblem(error); if (!error) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.browser-address')?.focus()) }).finally(() => setBusy(false))
+    void store.answerAction(bridge, task, allow, forThread).then(error => { setProblem(error); if (!error) requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.browser-address')?.focus()) }).finally(() => setBusy(false))
   }
   return <div className="browser-task" data-status={task.status}>
     <div className="browser-task__line"><span>{task.status === 'paused' ? 'Browser paused' : task.summary || task.description}</span>
       {active ? <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.controlTask(bridge, task, task.status === 'paused' ? 'resume' : 'pause').then(setProblem)}>{task.status === 'paused' ? 'Resume' : 'Pause'}</button> : null}</div>
     {task.pendingAction ? <div className="browser-action-request" role="group" aria-label="Browser action permission">
       <p>{task.pendingAction.description}</p><div><button type="button" className="tt-button tt-button--primary tt-focusable" disabled={busy || task.status === 'paused'} onClick={() => answer(true)}>Allow once</button>
+        {task.pendingAction.action.type === 'navigate' ? <button type="button" className="tt-button tt-focusable" disabled={busy || task.status === 'paused'} title="Open this page, and let this thread open and go to pages without asking until you stop it or Sotto closes. Clicks and typing still ask." onClick={() => answer(true, true)}>Allow this thread to open pages</button> : null}
         <button type="button" className="tt-button tt-focusable" disabled={busy} onClick={() => answer(false)}>Deny</button></div></div> : null}
     {task.steps.length || task.unchecked.length ? <details className="browser-task__evidence"><summary className="tt-focusable">{task.steps.length} recorded steps{task.unchecked.length ? `, ${task.unchecked.length} unchecked` : ''}</summary>
       <ol>{task.steps.map(step => <li key={step.id}><span>{step.status === 'failed' ? 'Failed: ' : ''}{step.action}</span>{step.detail ? <span>{step.detail}</span> : null}</li>)}</ol>

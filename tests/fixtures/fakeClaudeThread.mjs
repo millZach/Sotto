@@ -44,6 +44,26 @@ const timer = setInterval(() => {
   if (action.type === 'exit') { process.exit(1) }
   if (action.type === 'raw-burst') { process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join('')); return }
   if (action.type === 'raw') { if (action.persist) persist(action.frame); output(action.frame); return }
+  if (action.type === 'subagent') {
+    // Claude Code 2.1.280: a workflow (with `runId`) or a background Agent call reports one task and no
+    // sidechain message. The real launch result names a background agent's `resolvedModel`; this one
+    // leaves it out, so the agent's own transcript is the only place its model is written.
+    const workflow = typeof action.runId === 'string'
+    const dir = workflow ? join(folder, session, 'subagents', 'workflows', action.runId) : join(folder, session, 'subagents')
+    const agentId = workflow ? action.agentId : action.taskId
+    output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: randomUUID(), role: 'assistant', content: [{ type: 'tool_use', id: action.toolId, name: workflow ? 'Workflow' : 'Agent', input: workflow ? { script: 'export default async () => {}' } : { description: action.description, prompt: action.description, run_in_background: true } }] } })
+    output({ type: 'system', subtype: 'task_started', session_id: session, task_id: action.taskId, tool_use_id: action.toolId, description: action.description, task_type: workflow ? 'local_workflow' : 'local_agent', ...(workflow ? { workflow_name: 'fixture' } : { subagent_type: 'general-purpose', is_backgrounded: true }) })
+    output({ type: 'user', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: action.toolId, content: 'Launched' }] },
+      tool_use_result: workflow ? { status: 'async_launched', taskId: action.taskId, taskType: 'local_workflow', workflowName: 'fixture', runId: action.runId, transcriptDir: dir } : { status: 'async_launched', isAsync: true, agentId } })
+    mkdirSync(dir, { recursive: true })
+    const line = frame => JSON.stringify({ ...frame, isSidechain: true, agentId, sessionId: session, cwd: process.cwd(), timestamp: new Date().toISOString() })
+    writeFileSync(join(dir, `agent-${agentId}.jsonl`), [
+      line({ type: 'user', uuid: randomUUID(), message: { role: 'user', content: action.task ?? 'Fixture subagent task' } }),
+      line({ type: 'attachment', uuid: randomUUID(), attachment: { type: 'fixture' } }),
+      ...(action.model ? [line({ type: 'assistant', uuid: randomUUID(), message: { id: randomUUID(), model: action.model, role: 'assistant', content: [{ type: 'text', text: 'Fixture subagent reply' }] } })] : []),
+    ].join('\n') + '\n')
+    return
+  }
   if (action.type === 'dialog') {
     const request = { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: action.payload }
     pending.set(action.requestId, request); output({ type: 'control_request', request_id: action.requestId, request }); return

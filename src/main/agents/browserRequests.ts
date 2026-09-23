@@ -48,6 +48,6 @@ export function browserRequestText(name: string, input: unknown, server?: string
               : ''
   if (!said) return undefined
   const why = text(args.description).trim() ? '\n“' + text(args.description).trim() + '”' : ''
-  // Answering here only lets it reach the browser. Every page action asks again in Tools (ADR-0020).
-  return 'Use Sotto’s browser to ' + said + '.' + why + '\nOpening a page, going to another, clicking and typing still ask you in Tools.'
+  // Answering here only lets it reach the browser. Page actions ask again in Tools unless a page-opening grant covers them (ADR-0020).
+  return 'Use Sotto’s browser to ' + said + '.' + why + '\nClicking and typing still ask you in Tools, and so do opening a page and going to another unless you let this thread open pages.'
 }

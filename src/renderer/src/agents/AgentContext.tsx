@@ -266,6 +266,8 @@ interface AgentContextValue extends AgentConnection {
   readonly claimPersonalAudio: () => () => void
   readonly waitForPersonalAudio: () => Promise<void>
   readonly responseStreaming: AppSettings['responseStreaming']
+  /** Whether browser tasks show a corner preview; off leaves the work and Tools > Browser unchanged. */
+  readonly showBrowserPreviews: boolean
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null)
@@ -410,6 +412,7 @@ export function AgentProvider({ children, settings, dictation }: {
     claimPersonalAudio,
     waitForPersonalAudio: () => personalRelease.current,
     responseStreaming: settings?.responseStreaming ?? 'live',
+    showBrowserPreviews: settings?.showBrowserPreviews ?? true,
     attention,
     voice,
     muteVoice: () => { void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },

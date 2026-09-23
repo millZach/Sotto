@@ -1187,6 +1187,12 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ webLinkDestination: 'embedded' })
   })
 
+  it('persists turning browser previews off through settings IPC', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { showBrowserPreviews: false })).resolves.toMatchObject({ showBrowserPreviews: false })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ showBrowserPreviews: false })
+  })
+
   it('persists and clears working-copy defaults through the settings allow-list', async () => {
     const { ipc, settings } = createIpcHarness()
     const patch = { threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }

@@ -78,6 +78,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin'
   const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
   const [reviewBusy, setReviewBusy] = useState(false)
+  const [stoppingPageOpening, setStoppingPageOpening] = useState(false)
   const address = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -121,6 +122,14 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
     void bridge.openLink({ url, destination: 'external' }).then(result => { if (!result.ok) onStatus('Could not open the system browser') }, () => onStatus('Could not open the system browser'))
   }
   const focusTab = (id: string): void => document.getElementById(`browser-tab-${id}`)?.focus()
+  // Stop takes its own line away, so focus goes to the address, the next thing the eye reads.
+  const stopPageOpening = (): void => {
+    setStoppingPageOpening(true); setProblem(null)
+    void store.revokePageOpening(bridge, threadId).then(error => {
+      if (error) setProblem(error)
+      else requestAnimationFrame(() => address.current?.focus())
+    }).finally(() => setStoppingPageOpening(false))
+  }
   const startNew = (): void => {
     setCreating(true)
     setDraft({ pageId: null, text: '' })
@@ -154,6 +163,8 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
       <div className="terminal-tabs" role="tablist" aria-label="Pages">
         {pages.map((page, index) => {
           const selected = page.id === activeId && !creating
+          // With previews off, the tab is where a page's waiting request shows before the page is chosen.
+          const waiting = tasks.some(item => item.threadId === threadId && item.pageId === page.id && item.pendingAction !== null)
           return <button key={page.id} id={`browser-tab-${page.id}`} type="button" role="tab" className="terminal-tabs__tab browser-tabs__tab tt-focusable"
             aria-selected={selected} aria-controls="browser-page" tabIndex={page.id === activeId ? 0 : -1} data-status={page.status} title={`${pageLabel(page)}\n${page.url}`}
             onClick={() => { setCreating(false); store.select(threadId, page.id) }}
@@ -168,6 +179,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
             }}>
             <Globe size={14} aria-hidden="true" />
             <span className="terminal-tabs__name">{pageLabel(page)}</span>
+            {waiting ? <><span className="browser-tabs__waiting" aria-hidden="true" /><span className="tt-visually-hidden">, waiting for your answer</span></> : null}
             {page.status === 'unavailable' ? <span className="tt-visually-hidden">, could not load</span> : page.status === 'loading' ? <span className="tt-visually-hidden">, loading</span> : null}
           </button>
         })}
@@ -199,6 +211,10 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
       {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>Open</button>
         : active ? <button type="button" className="files-icon tt-focusable" aria-label="Open in system browser" title="Open in system browser" onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button> : null}
     </form>
+    {browser.pageOpening ? <div className="browser-page-opening">
+      <span>This thread may open pages without asking</span><span aria-hidden="true">·</span>
+      <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread open pages without asking" title="Opening and going to pages will ask you again" disabled={stoppingPageOpening} onClick={stopPageOpening}>Stop</button>
+    </div> : null}
     {active && !newPage ? <div className="browser-review-bar">
       <select className="tt-focusable" aria-label="Browser viewport size" value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
         <option value="fit">Fit pane</option><option value="1600x1000">1600 x 1000</option><option value="1280x800">1280 x 800</option><option value="820x560">820 x 560</option><option value="390x844">390 x 844</option>
