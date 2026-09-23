@@ -380,6 +380,22 @@ describe('page-opening grant', () => {
     expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === next.task.pageId)?.sharedOrigin).toBe('http://localhost:4600')
   })
 
+  it('also answers the thread’s opens already waiting when it is given, and no other thread’s', async () => {
+    const { service, target } = await browserFixture()
+    const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
+    const other = { threadId: 'b', workspaceId: unwrap(await service.list({ threadId: 'b' })).workspace.workspaceId }
+    const first = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4555/', description: 'Check the app' }))
+    const second = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4600/', description: 'Check the settings page' }))
+    const elsewhere = unwrap(await service.agentOpen({ ...other, url: 'http://localhost:4700/', description: 'Another check' }))
+    const settled = service.waitForAction(second.task.id, second.task.pendingAction!.id)
+    unwrap(await service.answerAction({ ...owner, pageId: first.task.pageId, taskId: first.task.id, actionId: first.task.pendingAction!.id, allow: true, forThread: true }))
+    const answered = await settled
+    expect(answered?.pendingAction).toBeNull()
+    expect(answered?.steps.at(-1)).toMatchObject({ action: 'navigate', status: 'completed', detail: expect.stringContaining('Not asked: you let this thread open pages.') })
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === second.task.pageId)?.sharedOrigin).toBe('http://localhost:4600')
+    expect(unwrap(await service.tasks(other)).find(task => task.id === elsewhere.task.id)?.pendingAction?.id).toBe(elsewhere.task.pendingAction!.id)
+  })
+
   it('lets the thread navigate its shared pages without asking, but still asks for every click and every keystroke', async () => {
     const { service, target } = await browserFixture()
     const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })

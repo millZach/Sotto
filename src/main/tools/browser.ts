@@ -517,14 +517,29 @@ export class BrowserService extends ToolOperations {
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     task.pendingAction = null; this.pending.delete(task.id)
     if (!request.allow) { task.output = 'The user declined this action.'; return this.publishTask(task) }
+    const threadId = record.page.workspace.threadId
     if (request.forThread) {
-      const threadId = record.page.workspace.threadId
       const grant = this.pageOpening.grant(threadId)
       this.dependencies.emit({ type: 'page-opening', threadId, pageOpening: { grantedAt: grant.grantedAt } })
     }
-    const result = await this.perform(record, task, pending.action, scope.initial, scope.target)
-    return result.task
+    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target)).task }
+    finally { if (request.forThread) await this.performWaitingOpens(threadId) }
   }) }
+  /**
+   * The grant answers the thread's opens and navigations that were already waiting when it was given, not only later
+   * ones: they asked before the grant existed, and leaving them to wait out their expiry would contradict it. Each
+   * still has to match the page it asked about; one that no longer does keeps asking, as it would have.
+   */
+  private async performWaitingOpens(threadId: string): Promise<void> {
+    for (const task of [...this.taskRecords.values()]) {
+      const pending = task.pendingAction, scope = this.pending.get(task.id), record = this.pages.get(task.pageId)
+      if (task.threadId !== threadId || task.status !== 'working' || pending?.action.type !== 'navigate' || !scope || !record || pending.expiresAt < Date.now()
+        || scope.generation !== record.generation || scope.url !== record.page.url || this.executing.has(record.page.id) || !this.pageOpening.active(threadId)) continue
+      task.pendingAction = null; this.pending.delete(task.id)
+      // One page failing to load is that task's own failed step; it does not undo the answer the user just gave.
+      await this.perform(record, task, pending.action, scope.initial, undefined, true).catch(() => undefined)
+    }
+  }
   private async perform(record: PageRecord, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string, granted = false): Promise<BrowserAgentResult> {
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     this.executing.add(record.page.id)
