@@ -156,7 +156,7 @@ export class SshHostLauncher {
     const authentication = this.dependencies.authenticationTimeoutMs ?? 120_000
     const timeout = setTimeout(() => this.fail(attempt, new SshFailure(attempt.prompt ? 'prompt-unanswered' : 'connect-timeout')), authentication)
     try {
-      const broker = await AskpassBroker.start((caller, question) => this.ask(attempt, caller, question), { node: this.dependencies.askpassNode ?? process.execPath, platform: this.platform() })
+      const broker = await AskpassBroker.start((caller, question, withdrawn) => this.ask(attempt, caller, question, withdrawn), { node: this.dependencies.askpassNode ?? process.execPath, platform: this.platform() })
       attempt.broker = broker
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       const route = attempt.route = await this.resolve(attempt)
@@ -315,10 +315,14 @@ export class SshHostLauncher {
   }
   /**
    * A question from the askpass helper. On Windows it arrives as its first line only, so a host-key
-   * question gets its fingerprint back from the same ssh process's debug output.
+   * question gets its fingerprint back from the same ssh process's debug output. A notice takes no
+   * answer and is not shown. A question ssh stops waiting for is taken off the screen.
    */
-  private async ask(attempt: Attempt, caller: string, question: AskpassQuestion): Promise<string | null> {
-    if (attempt.closed) return null
+  private async ask(attempt: Attempt, caller: string, question: AskpassQuestion, withdrawn: AbortSignal): Promise<string | null> {
+    if (attempt.closed || withdrawn.aborted) return null
+    // SSH_ASKPASS_PROMPT=none: OpenSSH is telling, not asking ("Confirm user presence for key ..."), and
+    // kills the helper when it is done. Nothing typed may be cached and replayed as an answer.
+    if (question.hint === 'none') return ''
     let text = question.prompt.replace(/\r/gu, '').trim()
     const kind = promptKind(text, question.hint)
     if (kind === 'host-key' && question.hint !== 'confirm' && !/fingerprint is/iu.test(text)) {
@@ -328,12 +332,16 @@ export class SshHostLauncher {
       text = [text.split('\n')[0], run?.hostKey ?? 'Sotto could not read the key fingerprint. Check the key on the host before you trust it.',
         'Are you sure you want to continue connecting?'].join('\n')
     }
-    if (attempt.closed) return null
+    if (attempt.closed || withdrawn.aborted) return null
     const key = `${kind}\n${text}`
     const cached = attempt.answers.get(key)
     if (cached && !cached.callers.has(caller)) { cached.callers.add(caller); return cached.answer }
     if (cached) attempt.answers.delete(key)
-    return new Promise(resolve => { attempt.queue.push({ id: randomUUID(), kind, text, caller, key, resolve }); this.nextPrompt(attempt) })
+    return new Promise(resolve => {
+      const pending: PendingPrompt = { id: randomUUID(), kind, text, caller, key, resolve }
+      withdrawn.addEventListener('abort', () => this.withdraw(attempt, pending.id), { once: true })
+      attempt.queue.push(pending); this.nextPrompt(attempt)
+    })
   }
   private nextPrompt(attempt: Attempt): void {
     while (!attempt.prompt && !attempt.closed && attempt.queue.length) {
@@ -346,8 +354,14 @@ export class SshHostLauncher {
   }
   /** An ssh process that ended no longer needs its questions answered. */
   private dropPrompts(attempt: Attempt, caller: string): void {
-    for (const pending of attempt.queue.filter(item => item.caller === caller)) { attempt.queue.splice(attempt.queue.indexOf(pending), 1); pending.resolve(null) }
-    if (attempt.prompt?.caller !== caller) return
+    for (const pending of attempt.queue.filter(item => item.caller === caller)) this.withdraw(attempt, pending.id)
+    if (attempt.prompt?.caller === caller) this.withdraw(attempt, attempt.prompt.id)
+  }
+  /** A question nobody is waiting for any more: resolved with no answer, and off the screen if it was showing. */
+  private withdraw(attempt: Attempt, id: string): void {
+    const queued = attempt.queue.findIndex(item => item.id === id)
+    if (queued !== -1) { attempt.queue.splice(queued, 1)[0]!.resolve(null); return }
+    if (attempt.prompt?.id !== id) return
     const shown = attempt.prompt
     delete attempt.prompt
     shown.resolve(null)

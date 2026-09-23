@@ -35,11 +35,18 @@ socket.on('error', fail); socket.on('close', fail);
 export interface AskpassQuestion {
   /** OpenSSH's own prompt text. On Windows only its first line arrives: cmd.exe cuts an argument at a line break. */
   readonly prompt: string
-  /** SSH_ASKPASS_PROMPT: `confirm` for a yes-or-no question answered by exit status, otherwise empty. */
+  /**
+   * SSH_ASKPASS_PROMPT: `confirm` for a yes-or-no question answered by exit status, `none` for a notice
+   * that takes no answer (such as "Confirm user presence for key ..." while ssh waits for a security key
+   * to be touched), otherwise empty.
+   */
   readonly hint: string
 }
-/** Resolves with the answer, or null to tell ssh the user gave none. Never logs the question or the answer. */
-export type AskpassHandler = (caller: string, question: AskpassQuestion) => Promise<string | null>
+/**
+ * Resolves with the answer, or null to tell ssh the user gave none. `withdrawn` aborts when the helper goes
+ * away before an answer, which is ssh no longer waiting for it. Never logs the question or the answer.
+ */
+export type AskpassHandler = (caller: string, question: AskpassQuestion, withdrawn: AbortSignal) => Promise<string | null>
 
 interface Caller { readonly id: string; readonly token: Buffer }
 
@@ -124,9 +131,14 @@ export class AskpassBroker {
       try { request = JSON.parse(input.slice(0, at)) as typeof request } catch { socket.destroy(); return }
       const caller = typeof request.token === 'string' ? this.caller(request.token) : undefined
       if (!caller || typeof request.prompt !== 'string') { socket.destroy(); return }
-      void handler(caller.id, { prompt: request.prompt, hint: typeof request.hint === 'string' ? request.hint : '' })
+      // ssh kills its helper when it stops waiting (a notice ended, or ssh gave up), so a helper that goes
+      // away before its answer takes its question with it.
+      const withdrawn = new AbortController()
+      let answered = false
+      socket.once('close', () => { if (!answered) withdrawn.abort() })
+      void handler(caller.id, { prompt: request.prompt, hint: typeof request.hint === 'string' ? request.hint : '' }, withdrawn.signal)
         .catch(() => null)
-        .then(answer => { if (!socket.destroyed) socket.end(JSON.stringify(answer === null ? { cancel: true } : { answer }) + '\n') })
+        .then(answer => { answered = true; if (!socket.destroyed) socket.end(JSON.stringify(answer === null ? { cancel: true } : { answer }) + '\n') })
     }
     socket.on('data', onData)
   }

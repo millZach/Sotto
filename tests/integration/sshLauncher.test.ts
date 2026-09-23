@@ -98,6 +98,32 @@ it('asks again when an answer is refused, instead of repeating it', async () => 
   expect(prompts.map(prompt => prompt.kind)).toEqual(['passphrase', 'passphrase'])
   expect((await events()).filter(event => event.type === 'answered').map(event => event.accepted)).toEqual([false, true, true])
 })
+it('lets a security key notice pass without asking for anything', async () => {
+  const { launcher, events } = await fixture('notice')
+  const prompts: SshPrompt[] = []
+  const connection = await launcher.connect(configuration, { onPrompt: prompt => { if (prompt) prompts.push(prompt) } })
+  await connection.showHostPairingCode()
+  // SSH_ASKPASS_PROMPT=none is OpenSSH telling, not asking: no password field, and each notice ends at once.
+  expect(prompts).toEqual([])
+  expect((await events()).filter(event => event.type === 'notice')).toEqual([
+    { type: 'notice', ended: true }, { type: 'notice', ended: true }, { type: 'notice', ended: true }])
+})
+it('takes a question off the screen when ssh stops waiting for it, and asks the next one fresh', async () => {
+  const { launcher, events } = await fixture('withdraw')
+  const shown: (SshPrompt | null)[] = []
+  const connection = await launcher.connect(configuration, { onPrompt: prompt => {
+    shown.push(prompt)
+    // The first question's helper goes away unanswered; only the question after it is answered.
+    if (prompt && shown.filter(Boolean).length === 2) launcher.answerPrompt(prompt.id, 'test-secret')
+  } })
+  await connection.showHostPairingCode()
+  expect(shown.map(prompt => prompt?.kind ?? null)).toEqual(['password', null, 'password', null])
+  expect(shown[0]!.id).not.toBe(shown[2]!.id)
+  expect(() => launcher.answerPrompt(shown[0]!.id, 'late')).toThrow('no longer waiting')
+  expect((await events()).filter(event => event.type === 'abandoned' || event.type === 'answered')).toEqual([
+    { type: 'abandoned' }, { type: 'answered', kind: 'password', accepted: true },
+    { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }])
+})
 it('shows a host key with its fingerprint and trusts it once', async () => {
   const { launcher, spawns } = await fixture('host-key')
   const prompts: SshPrompt[] = []

@@ -44,18 +44,31 @@ const configuration = remote[3] === 'sotto-launch' ? JSON.parse(remote[4]) : und
 const readAll = stream => new Promise(resolve => { let text = ''; stream.setEncoding('utf8'); stream.on('data', chunk => { text += chunk }); stream.on('end', () => resolve(text)); stream.on('error', () => resolve(text)) })
 const exit = code => { process.exitCode = code }
 
-/** OpenSSH runs SSH_ASKPASS with the prompt as its one argument. Windows goes through cmd.exe, which keeps only the first line. */
-function askpass(prompt) {
+/**
+ * OpenSSH runs SSH_ASKPASS with the prompt as its one argument, and SSH_ASKPASS_PROMPT=none for a notice
+ * that takes no answer. Windows goes through cmd.exe, which keeps only the first line.
+ */
+function askpass(prompt, hint = '') {
   return new Promise(resolve => {
     const program = process.env.SSH_ASKPASS
     if (process.env.SSH_ASKPASS_REQUIRE !== 'force' || !program) { resolve(null); return }
+    const env = { ...process.env, SSH_ASKPASS_PROMPT: hint }
     const child = process.platform === 'win32'
-      ? spawn(`"${program}" "${prompt.split('\n')[0]}"`, { shell: true, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
-      : spawn(program, [prompt], { stdio: ['ignore', 'pipe', 'ignore'] })
+      ? spawn(`"${program}" "${prompt.split('\n')[0]}"`, { shell: true, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
+      : spawn(program, [prompt], { stdio: ['ignore', 'pipe', 'ignore'], env })
     let output = ''
     child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
     child.on('error', () => resolve(null))
     child.on('close', code => resolve(code === 0 ? output.replace(/\r?\n$/u, '') : null))
+  })
+}
+/** A question whose helper ssh kills before the user answers: it reaches the desktop, then the helper goes away. */
+function abandonedQuestion(prompt) {
+  return new Promise(resolve => {
+    const socket = connect({ host: '127.0.0.1', port: Number(process.env.SOTTO_ASKPASS_PORT) })
+    socket.on('connect', () => { socket.write(JSON.stringify({ token: process.env.SOTTO_ASKPASS_TOKEN, prompt, hint: '' }) + '\n'); setTimeout(() => socket.destroy(), 100) })
+    socket.on('error', () => undefined)
+    socket.on('close', () => resolve())
   })
 }
 
@@ -68,11 +81,18 @@ async function authenticate() {
     if (answer !== 'yes') { process.stderr.write('Host key verification failed.\n'); exit(255); return false }
     writeFileSync(knownHosts, 'forge ssh-ed25519 fixture\n')
   }
-  if (mode === 'password' || mode === 'passphrase') {
+  if (mode === 'notice') {
+    // A security key's touch notice. OpenSSH carries on while it shows, and never reads what the helper prints.
+    const answer = await askpass('Confirm user presence for key ED25519-SK SHA256:fixtureKey', 'none')
+    record({ type: 'notice', ended: answer !== null })
+  }
+  if (mode === 'withdraw' && configuration?.op === 'launch') { await abandonedQuestion("user@forge's password: "); record({ type: 'abandoned' }) }
+  if (mode === 'password' || mode === 'passphrase' || mode === 'withdraw') {
     for (let tries = 0; tries < 3; tries++) {
-      const answer = await askpass(mode === 'password' ? "user@forge's password: " : "Enter passphrase for key '/test/key': ")
+      const kind = mode === 'passphrase' ? 'passphrase' : 'password'
+      const answer = await askpass(kind === 'password' ? "user@forge's password: " : "Enter passphrase for key '/test/key': ")
       const accepted = answer === 'test-secret'
-      record({ type: 'answered', kind: mode, accepted }) // Never records what was answered.
+      record({ type: 'answered', kind, accepted }) // Never records what was answered.
       if (accepted) return true
       if (answer === null) break
     }
