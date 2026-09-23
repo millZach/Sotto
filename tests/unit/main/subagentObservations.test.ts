@@ -119,7 +119,7 @@ describe('observational subagent roster metadata', () => {
     let replayed = replay.apply([], claudeTool('launch', { prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
     replayed = replay.apply(replayed, { type: 'user', timestamp, toolUseResult: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae', resolvedModel: 'claude-opus-5-5' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
     expect(replayed[0]!.agents![0]!.model).toBe('claude-opus-5-5')
-    // Without one, the agent's own transcript is watched, and a stopped agent is marked settled.
+    // Without one, the agent's own transcript is watched while the agent runs.
     const quiet = new ClaudeActivity()
     let silent = quiet.apply([], claudeTool('launch', { prompt: 'Check assertions', run_in_background: true }), 'turn', 'message', '/p')
     silent = quiet.apply(silent, { type: 'user', timestamp, toolUseResult: { status: 'async_launched', isAsync: true, agentId: 'a3a0e66ba6fe555ae' }, message: { content: [{ type: 'tool_result', tool_use_id: 'launch', content: 'Launched' }] } }, 'turn', 'message', '/p')
