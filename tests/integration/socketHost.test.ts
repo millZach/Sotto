@@ -8,11 +8,11 @@ import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
-import { HOST_BUSY } from '../../src/shared/hostProtocol'
+import { HOST_BUSY, HOST_EVENT_PAGE_SIZE } from '../../src/shared/hostProtocol'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -356,23 +356,32 @@ describe('request budgets', () => {
     await expect(client.connect()).resolves.toBeDefined()
   })
   it('paces a client paging through a long log instead of closing it at the per-second cutoff', async () => {
-    // 157 pages: more than the 100 messages a second that closes a peer sending anything else.
-    const rows = Array.from({ length: 40_000 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
+    // The hello carries the first page and 101 event pages follow: one more than a peer may send of anything
+    // else in a second. The clock is held still so every page lands in the same second however fast the
+    // runner is; the cutoff would close this peer, and pacing instead holds the last page for a second.
+    const pages = 101, last = HOST_EVENT_PAGE_SIZE * pages + 1
+    const rows = Array.from({ length: last }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
+    let reads = 0
     const service: HostService = {
       shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
       command: (command, identity) => host.service.command(command, identity),
-      events: (afterSeq, threadId, limit) => rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit),
+      events: (afterSeq, threadId, limit) => { reads++; return rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit) },
       subscribe: () => () => undefined,
     }
     const server = await startSocketServer({ service, pairing: host.pairing })
     const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Long log')
     let drops = 0
     const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onConnectionChange: value => { if (!value) drops++ } }); clients.push(client)
+    vi.useFakeTimers({ toFake: ['Date'] })
     try {
+      const started = performance.now()
       await client.connect()
-      expect(client.events(39_999).map(row => row.seq)).toEqual([40_000])
+      // The hello and every page were read in the same held second, and the page past the budget waited for the next.
+      expect(reads).toBe(1 + pages)
+      expect(performance.now() - started).toBeGreaterThanOrEqual(900)
+      expect(client.events(last - 1).map(row => row.seq)).toEqual([last])
       expect(drops).toBe(0)
       await expect(client.readShell()).resolves.toBeDefined()
-    } finally { await client.close(); await server.close() }
+    } finally { vi.useRealTimers(); await client.close(); await server.close() }
   })
 })
