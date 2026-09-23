@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import type { ThreadEvent } from '../../../src/shared/threadEvents'
-import type { ThreadHostEvent } from '../../../src/main/agents/host'
+import type { AgentHost, ThreadHostEvent } from '../../../src/main/agents/host'
+import { immutableActivities, isImmutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -82,6 +83,91 @@ async function longThread() {
 }
 
 describe('the activity a pane is given beside a history window', () => {
+  it('drains a held command and its final provider publication before closing the history store', async () => {
+    const directory = await root()
+    const adapter = new FakeProviderHost()
+    const host = new WorkspaceHost(adapter, directory)
+    cleanup.push(async () => { host.dispose() })
+    await host.connect()
+    const native = adapter.state.threads[0]!
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    vi.spyOn(adapter, 'execute').mockImplementation(async () => { entered(); await held; return { accepted: true } })
+    const pending = host.execute({ type: 'interrupt', commandId: 'stop', threadId: native.id })
+    await started
+    const dispose = vi.spyOn(host, 'dispose')
+    const closing = host.close()
+    await Promise.resolve()
+    expect(dispose).not.toHaveBeenCalled()
+
+    native.messages.push({ id: 'final-reply', role: 'assistant', text: 'Finished before close', createdAt: at(1) })
+    native.activities = [record('final-work', 'turn', { output: 'Completed output' })]
+    adapter.emit()
+    release()
+    await Promise.all([pending, closing])
+    expect(dispose).toHaveBeenCalledOnce()
+
+    // A queued provider callback after disposal cannot reopen the store or restore discarded output.
+    native.messages.push({ id: 'late-reply', role: 'assistant', text: 'After close', createdAt: at(2) })
+    native.activities = [record('late-work', 'turn', { output: 'After close' })]
+    adapter.emit()
+    const store = new ThreadStore(join(directory, 'threads.sqlite'))
+    store.open()
+    try {
+      expect(store.readMessages(native.id).messages.map(item => item.id)).toEqual(['final-reply'])
+      expect(store.readActivities(native.id).map(item => item.id)).toEqual(['final-work'])
+    } finally { store.close() }
+
+    const reopened = new WorkspaceHost(adapter, directory)
+    cleanup.push(async () => { reopened.dispose() })
+    await reopened.initialize()
+    expect(reopened.threadMessages(native.id).map(item => item.text)).toEqual(['Finished before close'])
+    expect(reopened.activities(native.id)?.map(item => item.output)).toEqual(['Completed output'])
+  })
+
+  it('reconciles an in-place legacy subagent status change beside an unchanged activity array', async () => {
+    const directory = await root()
+    const adapter = new FakeProviderHost()
+    const host = await opened(directory, adapter)
+    await host.connect()
+    const native = adapter.state.threads[0]!
+    native.activities = [record('spawn', 'turn', { kind: 'subagent', agents: [{ id: 'child', assignmentId: 'review', status: 'running', observedAt: new Date().toISOString() }] })]
+    adapter.emit()
+    expect(host.workspaceSnapshot().threads[0]!.subagentSummary?.working).toBe(1)
+    expect((await host.subagentPage({ threadId: native.id })).rows[0]?.status).toBe('running')
+
+    const sameArray = native.activities
+    sameArray[0]!.agents![0]!.status = 'completed'
+    adapter.emit()
+    expect(native.activities).toBe(sameArray)
+    expect(host.workspaceSnapshot().threads[0]!.subagentSummary?.working).toBe(0)
+    expect((await host.subagentPage({ threadId: native.id })).rows[0]?.status).toBe('completed')
+  })
+
+  it('certifies a filtered pane only when its input activity is owned and unchanged', async () => {
+    const f = await longThread()
+    const publicActivities = f.published().activities!
+    const mutablePane = f.host.paneActivities(f.provider.id, publicActivities)
+    expect(isImmutableActivities(mutablePane)).toBe(false)
+    expect(mutablePane).toHaveLength(30)
+
+    const owned = immutableActivities(publicActivities)
+    const first = f.host.paneActivities(f.provider.id, owned)
+    expect(isImmutableActivities(first)).toBe(true)
+    expect(first).toHaveLength(30)
+    expect(f.host.paneActivities(f.provider.id, owned)).toBe(first)
+
+    const changed = immutableActivities([...owned, record('new', 't29', { sequence: 90, afterMessageId: 'long-a29', output: 'New result' })])
+    const next = f.host.paneActivities(f.provider.id, changed)
+    expect(isImmutableActivities(next)).toBe(true)
+    expect(next).not.toBe(first)
+    expect(next.at(-1)).toMatchObject({ id: 'new', output: 'New result' })
+    expect(first).toHaveLength(30)
+    expect(ids(first)).not.toContain('new')
+  })
+
   it('keeps back the work above the window and gives it back when the window widens', async () => {
     const f = await longThread()
     // The window holds the newest ten turns, and only their work goes beside it, notes included.
@@ -279,4 +365,34 @@ describe('the activity beside a window a provider writes as events', () => {
     expect(turnsOf(pane())).toEqual([0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
     expect(wholeReads).not.toHaveBeenCalled()
   })
+})
+
+
+it('detaches provider delivery on disposal and rejects callbacks already queued by the provider', async () => {
+  const directory = await root()
+  const adapter = new FakeProviderHost()
+  let snapshotCallback: Parameters<NonNullable<AgentHost['subscribeActivitySnapshots']>>[0] | undefined
+  let eventCallback: ((event: ThreadHostEvent) => void) | undefined
+  const offSnapshot = vi.fn()
+  const offEvents = vi.fn()
+  Object.assign(adapter, {
+    subscribeActivitySnapshots: (callback: NonNullable<typeof snapshotCallback>) => { snapshotCallback = callback; return offSnapshot },
+    subscribeEvents: (callback: NonNullable<typeof eventCallback>) => { eventCallback = callback; return offEvents },
+  })
+  const host = new WorkspaceHost(adapter, directory)
+  await host.initialize(); await host.connect()
+  const published = vi.fn()
+  host.subscribeActivitySnapshots(published)
+  host.dispose()
+  expect(offSnapshot).toHaveBeenCalledTimes(1)
+  expect(offEvents).toHaveBeenCalledTimes(1)
+  const save = vi.spyOn(ThreadStore.prototype, 'syncActivities')
+  expect(() => {
+    snapshotCallback!(adapter.state)
+    eventCallback!({ threadId: adapter.state.threads[0]!.id, event: { kind: 'message-added', at: at(0), message: { id: 'late', role: 'assistant', text: 'Late', createdAt: at(0) } } })
+  }).not.toThrow()
+  expect(published).not.toHaveBeenCalled()
+  expect(save).not.toHaveBeenCalled()
+  host.dispose()
+  expect(offSnapshot).toHaveBeenCalledTimes(1)
 })

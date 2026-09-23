@@ -8,11 +8,15 @@ import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { execFileSync } from 'node:child_process'
+import type { AgentCommand, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { hostVersionMismatch } from '../../src/shared/hostProtocol'
+import { version as packageVersion } from '../../package.json'
+import { HOST_BUSY, HOST_EVENT_PAGE_SIZE } from '../../src/shared/hostProtocol'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -101,7 +105,7 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.requests).toContainEqual(expect.objectContaining({ id: 'permission-two' }))
   })
   it('refuses a second listener before it can open or overwrite the running host stores', async () => {
-    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is still running`)
+    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder`)
     expect((await fetch(url + '/v1/health')).status).toBe(200)
   })
   it('does not turn caller-supplied IPC identity into permission authority', async () => {
@@ -351,4 +355,260 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
     await client.readThreadDetail('huge')
     expect(pushErrors.at(-1)).toBeNull()
   } finally { await client.close(); await server.close() }
+})
+
+/** A peer speaking the wire directly, the way a client of another codebase (the iPhone app) would. */
+async function rawPeer(port: number, session: string) {
+  const key = randomBytes(16).toString('base64')
+  const messages: Record<string, unknown>[] = []
+  const frames = await new Promise<SocketFrames>((resolve, reject) => {
+    const request = httpRequest('http://127.0.0.1:' + port + '/v1/socket', { headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, Authorization: 'Bearer ' + session } })
+    request.on('error', reject)
+    request.on('upgrade', (_response, stream, head) => {
+      const socket = new SocketFrames(stream, true, text => messages.push(JSON.parse(text) as Record<string, unknown>))
+      socket.feed(head); resolve(socket)
+    }); request.end()
+  })
+  const call = async (id: string, operation: Record<string, unknown>) => {
+    frames.send({ v: 1, id, session, ...operation })
+    await expect.poll(() => messages.some(message => message.id === id)).toBe(true)
+    return messages.find(message => message.id === id)!
+  }
+  return { frames, messages, call }
+}
+
+describe('thread detail over the socket', () => {
+  const message = (text: string) => ({ id: 'reply', role: 'assistant' as const, text, createdAt: '2026-09-23T00:00:00.000Z' })
+  const delta = (baseRevision: number, revision: number, appendText: string): AgentThreadDetailDelta => ({ threadId: 'streaming', baseRevision, revision, messageDeltas: [{ id: 'reply', appendText }], activityDeltas: [] })
+  /** A service whose one thread's history the test sets, and whose detail stream the test drives. */
+  async function streamingHost() {
+    const stream: { current: AgentThreadDetail; reads: number; emit: (update: AgentThreadDetailUpdate) => void } = { current: { threadId: 'streaming', revision: 1, messages: [message('Hello')] }, reads: 0, emit: () => undefined }
+    const service: HostService = {
+      shell: () => host.service.shell(), state: () => host.service.state(),
+      threadDetail: id => { if (id !== 'streaming') return host.service.threadDetail(id); stream.reads++; return structuredClone(stream.current) },
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit), subscribe: listener => host.service.subscribe(listener),
+      subscribeThreadDetail: listener => { stream.emit = listener; return () => undefined },
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Streaming')
+    const pushErrors: (string | null)[] = []
+    let connected = true
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onPushError: text => pushErrors.push(text),
+      onPushErrorCleared: () => pushErrors.push(null), onConnectionChange: value => { connected = value } }); clients.push(client)
+    await client.connect()
+    const updates: AgentThreadDetailUpdate[] = []
+    client.subscribeThreadDetail(update => updates.push(update))
+    await client.observe(['streaming'])
+    expect(client.threadDetail('streaming')?.revision).toBe(1)
+    return { stream, server, client, updates, pushErrors, connected: () => connected, session: () => host.pairing.signSession(paired.clientId) }
+  }
+
+  it('pushes what changed as a delta the client applies and passes on, and the whole thread to a client that never asked for deltas', async () => {
+    const { stream, server, client, updates, session } = await streamingHost()
+    try {
+      const reads = stream.reads
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello, world')] }
+      stream.emit(delta(1, 2, ', world'))
+      await expect.poll(() => client.threadDetail('streaming')?.messages[0]?.text).toBe('Hello, world')
+      expect(client.threadDetail('streaming')?.revision).toBe(2)
+      // The window gets the same delta to apply to the revision it holds, and the host read no whole thread.
+      expect(updates.at(-1)).toEqual(delta(1, 2, ', world'))
+      expect(stream.reads).toBe(reads)
+
+      // A client from before the freeze says nothing about deltas in its hello, and keeps getting whole threads.
+      const legacy = await rawPeer(server.descriptor.port, session())
+      try {
+        expect(await legacy.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['detail-delta'] } })
+        await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
+        stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
+        stream.emit(delta(2, 3, '!'))
+        await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(3)
+        await expect.poll(() => legacy.messages.some(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === 3)).toBe(true)
+        expect(legacy.messages.some(item => item.event === 'detail-delta')).toBe(false)
+        expect(updates.at(-1)).toEqual(delta(2, 3, '!'))
+      } finally { legacy.frames.close() }
+    } finally { await client.close(); await server.close() }
+  })
+
+  it('reads the whole thread once when a delta does not follow the revision the client holds', async () => {
+    const { stream, server, client, updates } = await streamingHost()
+    try {
+      const reads = stream.reads
+      // The client holds revision 1 and never saw 1 to 3: neither delta applies, and one read catches it up.
+      stream.current = { threadId: 'streaming', revision: 5, messages: [message('Hello, world, again')] }
+      stream.emit(delta(3, 4, ', world'))
+      stream.emit(delta(4, 5, ', again'))
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(5)
+      expect(client.threadDetail('streaming')?.messages[0]?.text).toBe('Hello, world, again')
+      await client.receipt('settled')
+      expect(stream.reads).toBe(reads + 1)
+      // What the window is given is the whole thread it can hold, not a delta it cannot follow either.
+      expect(updates.at(-1)).toEqual(stream.current)
+    } finally { await client.close(); await server.close() }
+  })
+
+  it('finishes a reconnect with an observed thread too large to send, reporting the thread instead of failing the connection', async () => {
+    const { stream, server, client, pushErrors, connected } = await streamingHost()
+    try {
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello' + 'x'.repeat(17 * 1024 * 1024))] }
+      await client.close()
+      // Failing here would have the desktop retry, and read the same thread whole, for as long as it stayed too large.
+      await client.connect()
+      expect(connected()).toBe(true)
+      expect(pushErrors.at(-1)).toEqual(expect.stringContaining('A thread on this host is too large to send to this device'))
+      expect(await client.receipt('still-open')).toEqual({ status: 'unknown' })
+    } finally { await client.close(); await server.close() }
+  })
+
+  it('answers a delta too large for a frame with an error naming its thread, and does not ask for that thread again until it is observed again', async () => {
+    const { stream, server, client, pushErrors, connected, session } = await streamingHost()
+    // A second peer accepting deltas shows when the host has sent one: it sends to every peer in the same pass.
+    const witness = await rawPeer(server.descriptor.port, session())
+    try {
+      await witness.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+      await witness.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      const reads = stream.reads
+      const huge = 'x'.repeat(17 * 1024 * 1024)
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello' + huge)] }
+      stream.emit(delta(1, 2, huge))
+      await expect.poll(() => pushErrors).toEqual([expect.stringContaining('A thread on this host is too large to send to this device')])
+      expect(witness.messages).toContainEqual(expect.objectContaining({ event: 'error', threadId: 'streaming', error: expect.objectContaining({ code: 'too_large' }) }))
+      // The next delta fits, but follows a revision the client never got; the whole thread would not fit either.
+      stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello' + huge + '!')] }
+      stream.emit(delta(2, 3, '!'))
+      await expect.poll(() => witness.messages.some(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === 3)).toBe(true)
+      await client.receipt('settled')
+      expect(stream.reads).toBe(reads)
+      expect(pushErrors).toHaveLength(1)
+      expect(connected()).toBe(true)
+      // Observing the thread again sends it whole, and once it fits the error clears.
+      stream.current = { threadId: 'streaming', revision: 4, messages: [message('Short again')] }
+      await client.observe(['streaming'])
+      expect(client.threadDetail('streaming')?.revision).toBe(4)
+      expect(pushErrors.at(-1)).toBeNull()
+    } finally { witness.frames.close(); await client.close(); await server.close() }
+  })
+})
+
+describe('host version and features', () => {
+  it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
+    const health = await (await fetch(url + '/v1/health')).json() as Record<string, unknown>
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['detail-delta'] })
+    const listener = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['detail-delta'] })
+    const { client } = await pair()
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta'], capabilities: { mayAnswer: false } })
+  })
+
+  it('keeps the version sentence for an unreadable push from a host of another version when a thread once too large arrives', async () => {
+    const message = (text: string) => ({ id: 'reply', role: 'assistant' as const, text, createdAt: '2026-09-23T00:00:00.000Z' })
+    let current: AgentThreadDetail = { threadId: 'streaming', revision: 1, messages: [message('Hello')] }
+    let emitDetail: (update: AgentThreadDetailUpdate) => void = () => undefined
+    let emitShell: (state: ReturnType<HostService['shell']>) => void = () => undefined
+    let unreadableShell = false
+    const service: HostService = {
+      // What a later host might send: a shell this client cannot read.
+      shell: () => unreadableShell ? { ...host.service.shell(), host: 'a later shape' } as unknown as ReturnType<HostService['shell']> : host.service.shell(),
+      state: () => host.service.state(),
+      threadDetail: id => id === 'streaming' ? structuredClone(current) : host.service.threadDetail(id),
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
+      subscribe: listener => { emitShell = listener; return () => undefined },
+      subscribeThreadDetail: listener => { emitDetail = listener; return () => undefined },
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing, sottoVersion: '0.0.1' })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Older host')
+    const pushErrors: (string | null)[] = []
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, owned: true,
+      onPushError: text => pushErrors.push(text), onPushErrorCleared: () => pushErrors.push(null) }); clients.push(client)
+    try {
+      await client.connect()
+      await client.observe(['streaming'])
+      current = { threadId: 'streaming', revision: 2, messages: [message('Hello' + 'x'.repeat(17 * 1024 * 1024))] }
+      emitDetail(current)
+      await expect.poll(() => pushErrors.at(-1)).toEqual(expect.stringContaining('A thread on this host is too large'))
+      unreadableShell = true
+      emitShell(host.service.shell())
+      const mismatch = hostVersionMismatch(packageVersion, '0.0.1', true)
+      await expect.poll(() => pushErrors.at(-1)).toBe(mismatch)
+      // The thread that was too large arrives again; the skew is still there, so the sentence stays.
+      current = { threadId: 'streaming', revision: 3, messages: [message('Short again')] }
+      await client.observe(['streaming'])
+      expect(client.threadDetail('streaming')?.revision).toBe(3)
+      expect(pushErrors.at(-1)).toBe(mismatch)
+    } finally { await client.close(); await server.close() }
+  })
+
+  it('refuses a request it cannot read by its id, and a client of another version names the version instead', async () => {
+    const unreadable = { type: 'a-command-from-a-later-version', threadId: 'thread' } as unknown as AgentCommand
+    // The same version: the request is refused as unsupported, and the socket stays open.
+    const { client } = await pair()
+    await expect(client.command(unreadable)).rejects.toMatchObject({ code: 'invalid_request', message: expect.stringContaining('This request is not supported') })
+    expect(await client.receipt('still-open')).toEqual({ status: 'unknown' })
+    // A host of another version: the same refusal is version skew, and says which side to bring up to date.
+    const server = await startSocketServer({ service: host.service, pairing: host.pairing, sottoVersion: '0.0.1' })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Older host')
+    const skewed = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(skewed)
+    try {
+      expect((await skewed.connect()).sottoVersion).toBe('0.0.1')
+      await expect(skewed.command(unreadable)).rejects.toMatchObject({ code: 'version_mismatch', message: hostVersionMismatch(packageVersion, '0.0.1', false) })
+      expect(await skewed.receipt('still-open')).toEqual({ status: 'unknown' })
+    } finally { await skewed.close(); await server.close() }
+  })
+})
+
+describe('request budgets', () => {
+  it('counts no health request, so a loop on it never blocks a session', async () => {
+    const { client, result } = await pair()
+    for (let index = 0; index < 150; index++) expect((await fetch(url + '/v1/health')).status).toBe(200)
+    await expect(client.connect()).resolves.toMatchObject({ hostId: result.hostId })
+  })
+  it('keeps a session budget per paired client and says the host is busy past it, not that the device needs pairing', async () => {
+    const first = await pair('First'), second = await pair('Second')
+    const session = (token: string) => fetch(url + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+    // A loop on a token the host does not know spends nobody's budget.
+    for (let index = 0; index < 150; index++) expect((await session('not-a-paired-token')).status).toBe(401)
+    let response = await session(first.result.token)
+    for (let index = 0; response.status === 200 && index < 200; index++) response = await session(first.result.token)
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ error: { code: 'busy', message: HOST_BUSY } })
+    await expect(first.client.connect()).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY, pairingRequired: false })
+    await expect(second.client.connect()).resolves.toMatchObject({ clientId: second.result.clientId })
+  })
+  it('gives pairing a small bucket of its own that sessions do not share', async () => {
+    const { client } = await pair()
+    for (let index = 1; index < 10; index++) await expect(SocketHostService.pair(url, 'WRONG' + index, 'Guess')).rejects.toMatchObject({ code: 'unauthenticated', message: expect.stringContaining('pairing code could not be used') })
+    await expect(SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Late')).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY })
+    await expect(client.connect()).resolves.toBeDefined()
+  })
+  it('paces a client paging through a long log instead of closing it at the per-second cutoff', async () => {
+    // The hello carries the first page and 101 event pages follow: one more than a peer may send of anything
+    // else in a second. The clock is held still so every page lands in the same second however fast the
+    // runner is; the cutoff would close this peer, and pacing instead holds the last page for a second.
+    const pages = 101, last = HOST_EVENT_PAGE_SIZE * pages + 1
+    const rows = Array.from({ length: last }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
+    let reads = 0
+    const service: HostService = {
+      shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => { reads++; return rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit) },
+      subscribe: () => () => undefined,
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Long log')
+    let drops = 0
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onConnectionChange: value => { if (!value) drops++ } }); clients.push(client)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const started = performance.now()
+      await client.connect()
+      // The hello and every page were read in the same held second, and the page past the budget waited for the next.
+      expect(reads).toBe(1 + pages)
+      expect(performance.now() - started).toBeGreaterThanOrEqual(900)
+      expect(client.events(last - 1).map(row => row.seq)).toEqual([last])
+      expect(drops).toBe(0)
+      await expect(client.readShell()).resolves.toBeDefined()
+    } finally { vi.useRealTimers(); await client.close(); await server.close() }
+  })
 })

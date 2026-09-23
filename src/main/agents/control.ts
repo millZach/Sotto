@@ -1,6 +1,7 @@
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
+import { isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -188,6 +189,7 @@ export class AgentControl {
   private broadcastPending = false
   private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
   /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
+  private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
   /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
   private readonly titleChecked = new Map<string, number>()
@@ -340,7 +342,7 @@ export class AgentControl {
     }
     // Subscribe before the first observe: telling the workspace which threads are open now makes it
     // load their history, and that publish has to reach this coordinator (issue #119).
-    this.unsubscribe = this.dependencies.host.subscribe(snapshot => this.acceptSnapshot(snapshot))
+    this.unsubscribe = subscribeActivitySnapshots(this.dependencies.host, snapshot => this.acceptSnapshot(snapshot))
     this.observe()
     if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
       const connection = this.command({ type: 'connect' })
@@ -413,11 +415,25 @@ export class AgentControl {
    * One thread's history — its messages and the activity beside them — for a window looking at it.
    * Handing out a whole detail also resets what the deltas that follow are measured from: a window that
    * asked for this one holds exactly this revision, so the next delta is the one that follows it.
+   *
+   * Every other listener still holds the revision last broadcast. When the thread has moved on since, a
+   * change still waiting in the coalescing window is sent to them first, measured from what they hold,
+   * so the reset never leaves them a delta they cannot apply and a read by one client never sets off a
+   * whole read by another.
    */
   threadDetail(threadId: string): AgentThreadDetail | null {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread) return null
     const revision = this.detailRevision(thread)
+    if (this.detailListeners.size && this.detailSnapshots.has(threadId) && this.publishedDetail.get(threadId) !== revision) {
+      const update = this.detailUpdate(thread, revision)
+      if (update) for (const listener of this.detailListeners) listener(update)
+    }
+    return this.wholeDetail(thread, revision)
+  }
+  /** The whole of a thread's history at a revision, which becomes the base the next delta is measured from. */
+  private wholeDetail(thread: AgentThread, revision: number): AgentThreadDetail {
+    const threadId = thread.id
     const messages = structuredClone(thread.messages)
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
     // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
@@ -455,9 +471,15 @@ export class AgentControl {
    * than the text itself: a streaming chunk must bump it without the cost of copying every message.
    */
   private detailRevision(thread: AgentThread): number {
+    const activities = this.paneActivities(thread)
+    let activitySignature = activities && this.activityDetailSignatures.get(activities)
+    if (activitySignature === undefined) {
+      activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
+      if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
+    }
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${(this.paneActivities(thread) ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')}`
+      + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? 0) + 1
@@ -635,7 +657,7 @@ export class AgentControl {
         return this.decorateDetailDelta(thread, delta)
       }
     }
-    return this.threadDetail(thread.id)
+    return this.wholeDetail(thread, revision)
   }
   /** A delta's whole messages carry the same preview markers a full detail's would; its appends carry text alone. */
   private decorateDetailDelta(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
@@ -2628,7 +2650,9 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
   options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedThreadDetailPublisher {
   const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
   const schedule = options.schedule ?? realPublishScheduler
-  const lanes = new Map<string, { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[] }>()
+  // `sending` holds back an update published while the lane is sending, such as the change a whole read
+  // made inside `send` flushes first: sent at once it would reach later listeners ahead of the one being sent.
+  const lanes = new Map<string, { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean }>()
   let disposed = false
   const flushLane = (threadId: string): void => {
     const lane = lanes.get(threadId) ?? { cancel: null, pending: [] }
@@ -2636,14 +2660,16 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
     lane.cancel?.()
     const queued = lane.pending
     lane.pending = []
-    for (const update of queued) send(update)
+    lane.sending = true
+    try { for (const update of queued) send(update) } finally { lane.sending = false }
+    if (disposed) return
     lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending.length > 0) flushLane(threadId); else lanes.delete(threadId) }, intervalMs)
   }
   return {
     publish: update => {
       if (disposed) return
       const lane = lanes.get(update.threadId)
-      if (lane?.cancel) {
+      if (lane?.cancel || lane?.sending) {
         const held = lane.pending.at(-1)
         const merged = held === undefined ? null : mergeAgentThreadDetailUpdates(held, update)
         if (merged === null) lane.pending.push(update)

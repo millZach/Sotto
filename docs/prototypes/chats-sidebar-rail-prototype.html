@@ -1,0 +1,190 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: the Chats sidebar grew with every regenerated title because it had no width of its own. Zach asked
+  for it to resize (with a width of its own, not shared with Threads) and to collapse to a rail like the Threads
+  sidebar. What should the collapsed rail show for chats?
+
+  Picked September 23, 2026: b, provider tiles. Built in agents/personal/PersonalChatsView.tsx (ChatsSidebar).
+
+  Expanded, every variant is the same: a fixed width you drag at the right edge (arrow keys when the handle is
+  focused, double-click to reset to 320), titles end in an ellipsis, and a Collapse sidebar button sits in the
+  top row, where Threads keeps its own.
+
+  Three collapsed rails on ?variant=a|b|c, and the bar at the bottom (arrow keys too):
+   a  Letter tiles.    What the Threads rail does: one 32px tile per chat with the title's first letter and a
+                       status ring. Same look on both pages.
+   b  Provider tiles.  One tile per chat carrying its provider's mark (Codex, Claude, Grok) instead of a
+                       letter, so a Codex chat and a Claude chat read apart. The title is in the tooltip.
+   c  Rail + flyout.   The rail holds only Expand, New chat and the current chat. Hovering or focusing the rail's
+                       list button opens the full list over the conversation, without moving the layout.
+
+  It opens collapsed, since that is where the variants differ. Expand/Collapse in the bar (or the buttons in the
+  sidebar) switches; Light flips the palette.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chats sidebar rail - prototype</title>
+<style>
+  :root { --bg:#000; --sidebar:#050706; --selected:#101916; --selected-border:#253d36; --hair:#1c211f; --text:#e8ece9; --text2:#b5bcb8; --muted:#7f8984; --hover:rgb(255 255 255/6%); --focus:#5fb7a0; --field:#0a0d0b; --field-border:#2a302d; --warn:#f0b45c; --ok:#5fb7a0; --elev:#1a1f1d; }
+  :root[data-theme=light] { --bg:#fafaf9; --sidebar:#f1f2f0; --selected:#e3ece8; --selected-border:#b7cec5; --hair:#dcdfdc; --text:#161a18; --text2:#3f4642; --muted:#646c68; --hover:rgb(0 0 0/5%); --focus:#2b7a66; --field:#fff; --field-border:#cfd4d1; --warn:#9a5b00; --ok:#2b7a66; --elev:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; display:grid; grid-template-columns:auto minmax(0,1fr); background:var(--bg); color:var(--text); font:14px/1.4 Figtree, "Segoe UI", system-ui, sans-serif; overflow:hidden; }
+  button { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+  nav.side { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--sidebar); border-right:1px solid var(--hair); }
+  .top { display:flex; align-items:center; gap:2px; height:44px; padding:0 6px 0 14px; flex:none; }
+  .brand { display:flex; align-items:center; gap:8px; margin-right:auto; font-weight:600; min-width:0; }
+  .mark { width:18px; height:18px; border-radius:4px; background:var(--ok); flex:none; }
+  .icon-btn { display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:7px; background:transparent; color:var(--muted); cursor:pointer; }
+  .icon-btn:hover { background:var(--hover); color:var(--text); }
+  .head { display:flex; align-items:center; justify-content:space-between; padding:0 12px 12px 18px; }
+  .head h1 { margin:0; font-size:18px; font-weight:500; letter-spacing:-.35px; }
+  .list { flex:1; overflow-y:auto; padding:0 10px 12px; margin:0; list-style:none; }
+  .row button { display:grid; grid-template-columns:18px minmax(0,1fr); column-gap:8px; row-gap:2px; width:100%; padding:8px 10px 8px 8px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text2); text-align:left; cursor:pointer; }
+  .row button:hover { background:var(--hover); }
+  .row button[aria-current] { background:var(--selected); border-color:var(--selected-border); color:var(--text); }
+  .row .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; font-size:13px; }
+  .row .s { grid-column:2; color:var(--muted); font-size:12px; }
+  .pm { width:16px; height:16px; color:var(--text2); }
+  .foot { flex:none; display:flex; align-items:center; gap:8px; padding:10px; border-top:1px solid var(--hair); color:var(--muted); font-size:12px; }
+  .seg { display:inline-flex; padding:2px; border-radius:8px; background:var(--hover); }
+  .seg span { padding:3px 10px; border-radius:6px; }
+  .seg span.on { background:var(--elev); color:var(--text); }
+  .resize { position:absolute; top:0; bottom:0; right:0; width:8px; cursor:col-resize; z-index:5; }
+  .resize::after { content:''; position:absolute; left:3px; top:calc(50% - 18px); height:36px; width:4px; border-radius:4px; background:var(--field-border); }
+  .resize:hover::before, .resize:focus-visible::before, nav.side[data-resizing] .resize::before { content:''; position:absolute; top:0; bottom:0; left:4px; width:2px; background:var(--focus); }
+  .resize:focus-visible { outline:none; }
+  /* rail */
+  .rail { flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; min-height:0; padding-top:12px; }
+  .rail-list { flex:1; min-height:0; width:100%; overflow-y:auto; display:flex; flex-direction:column; align-items:center; gap:8px; padding:4px 0; }
+  .tile { position:relative; flex:none; display:grid; place-items:center; width:32px; height:34px; border:1px solid var(--hair); border-radius:7px; background:transparent; cursor:pointer; color:var(--text); }
+  .tile:hover { background:var(--hover); }
+  .tile[aria-current] { background:var(--selected); border-color:var(--focus); }
+  .ring { position:absolute; right:-2px; bottom:-2px; width:9px; height:9px; border-radius:50%; border:2px solid var(--sidebar); background:var(--muted); }
+  .ring[data-state=working] { background:var(--ok); }
+  .ring[data-state=needs] { background:var(--warn); }
+  .ring[data-state=idle] { display:none; }
+  .rail-foot { display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 0; border-top:1px solid var(--hair); width:100%; }
+  .flyout { position:absolute; left:calc(100% + 6px); top:56px; width:300px; max-height:70vh; overflow:auto; padding:8px; border:1px solid var(--hair); border-radius:10px; background:var(--elev); box-shadow:0 12px 32px rgb(0 0 0/40%); z-index:10; }
+  .flyout h2 { margin:2px 8px 8px; font-size:12px; font-weight:500; color:var(--muted); }
+  /* room */
+  main { display:flex; flex-direction:column; min-width:0; }
+  main header { display:flex; align-items:center; gap:10px; height:44px; padding:0 18px; flex:none; color:var(--text2); font-size:13px; white-space:nowrap; overflow:hidden; }
+  main header .tag { padding:1px 7px; border:1px solid var(--hair); border-radius:6px; }
+  main header h2 { margin:0; font-size:14px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; }
+  .transcript { flex:1; overflow:auto; padding:24px max(24px, calc((100% - 760px)/2)); }
+  .bubble { margin:0 0 20px auto; max-width:620px; padding:14px 18px; border:1px solid var(--hair); border-radius:14px; background:var(--field); }
+  .answer { max-width:760px; color:var(--text2); line-height:1.6; }
+  .composer { margin:0 max(24px, calc((100% - 760px)/2)) 20px; padding:14px 16px; min-height:96px; border:1px solid var(--field-border); border-radius:16px; background:var(--field); color:var(--muted); }
+  /* switcher */
+  .proto-bar { position:fixed; left:50%; bottom:14px; translate:-50% 0; display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:999px; background:#ff3b8b; color:#fff; font:600 13px system-ui; box-shadow:0 6px 24px rgb(0 0 0/45%); z-index:100; }
+  .proto-bar button { border:0; border-radius:999px; padding:4px 10px; background:rgb(255 255 255/20%); color:#fff; font:inherit; cursor:pointer; }
+  .proto-bar output { min-width:230px; text-align:center; }
+  .proto-state { position:fixed; right:12px; bottom:60px; padding:6px 10px; border-radius:8px; background:rgb(0 0 0/70%); color:#fff; font:12px ui-monospace, monospace; z-index:100; }
+</style>
+</head>
+<body>
+<nav class="side" aria-label="Chats" id="side"></nav>
+<main>
+  <header><span>Codex · gpt-6-astra</span><span class="tag">No project</span><h2 id="room-title"></h2></header>
+  <div class="transcript">
+    <div class="bubble">After the Opus 5.5 release and the clear focus on efficiency from OpenAI, I think Elon needs to re-prioritize grok development. Anything you would reword or tighten up on this?</div>
+    <div class="answer">Competing for the best general-purpose frontier model feels out of reach for Grok right now. But focusing on speed, coding, and real-world engineering could give it a distinct and incredibly valuable place in the market.</div>
+  </div>
+  <div class="composer">Reply to Codex</div>
+</main>
+<div class="proto-bar" role="toolbar" aria-label="Prototype switcher">
+  <button id="prev" aria-label="Previous variant">←</button><output id="label"></output><button id="next" aria-label="Next variant">→</button>
+  <button id="fold">Expand</button><button id="light">Light</button>
+</div>
+<div class="proto-state" id="state"></div>
+<script>
+const VARIANTS = { a: 'Letter tiles', b: 'Provider tiles', c: 'Rail + flyout' }
+const KEYS = Object.keys(VARIANTS)
+const chats = [
+  { id: 1, provider: 'claude', title: 'Will you create a prompt for me to use for other agents to create a traffic simulation in the browser?', status: '15 h ago', state: 'idle' },
+  { id: 2, provider: 'claude', title: 'Hey how is it going?', status: '45 h ago', state: 'idle' },
+  { id: 3, provider: 'codex', title: 'Tighten my take on where Grok should focus after the Opus 5.5 release', status: 'Replying', state: 'working' },
+  { id: 4, provider: 'grok', title: 'Plan the Sotto release notes for 0.1.16', status: 'Needs your answer', state: 'needs' },
+  { id: 5, provider: 'codex', title: 'Hey how is it going?', status: '9 h ago', state: 'idle' },
+]
+const PROVIDER = { codex: 'Codex', claude: 'Claude', grok: 'Grok' }
+const markSvg = p => p === 'claude'
+  ? '<svg class="pm" viewBox="0 0 16 16" aria-hidden="true"><g stroke="#d97757" stroke-width="1.6" stroke-linecap="round"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2"/></g></svg>'
+  : p === 'grok'
+    ? '<svg class="pm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M5 3h8v8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+    : '<svg class="pm" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>'
+const ico = { collapse: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11M10.5 6 8.5 8l2 2"/></svg>',
+  expand: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11M9 6l2 2-2 2"/></svg>',
+  pen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8"/><path d="m11.5 2 2.5 2.5L8 10.5H5.5V8z"/></svg>',
+  list: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4h10M3 8h10M3 12h10"/></svg>' }
+const s = { variant: new URLSearchParams(location.search).get('variant') ?? 'a', width: 320, collapsed: new URLSearchParams(location.search).get("expanded") === null, current: 3, flyout: false }
+if (!KEYS.includes(s.variant)) s.variant = 'a'
+const side = document.getElementById('side')
+const esc = t => t.replace(/[&<"]/g, c => ({ '&': '&amp;', '<': '&lt;', '"': '&quot;' })[c])
+const rowHtml = c => `<li class="row"><button type="button" data-open="${c.id}" ${c.id === s.current ? 'aria-current="page"' : ''}>${markSvg(c.provider)}<span class="t">${esc(c.title)}</span><span class="s">${c.status}</span></button></li>`
+function render() {
+  const cur = chats.find(c => c.id === s.current)
+  document.getElementById('room-title').textContent = cur.title
+  side.style.width = (s.collapsed ? 52 : s.width) + 'px'
+  if (!s.collapsed) {
+    side.innerHTML = `<div class="top"><span class="brand"><span class="mark"></span>Sotto</span>
+      <button class="icon-btn" data-act="collapse" aria-label="Collapse sidebar" title="Collapse sidebar">${ico.collapse}</button></div>
+      <div class="head"><h1>Chats</h1><button class="icon-btn" aria-label="New chat" title="New chat">${ico.pen}</button></div>
+      <ul class="list">${chats.map(rowHtml).join('')}</ul>
+      <div class="foot"><span class="seg"><span>Dictate</span><span class="on">Threads</span></span></div>
+      <div class="resize" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" aria-valuemin="260" aria-valuemax="480" aria-valuenow="${s.width}" title="Drag to resize. Use arrow keys when focused. Double-click to reset."></div>`
+  } else {
+    const tile = c => `<button type="button" class="tile" data-open="${c.id}" aria-label="${esc(c.title)}" title="${esc(c.title)} · ${c.status}" ${c.id === s.current ? 'aria-current="page"' : ''}>`
+      + (s.variant === 'b' ? markSvg(c.provider) : `<span aria-hidden="true">${esc(c.title.slice(0, 1))}</span>`)
+      + `<span class="ring" data-state="${c.state}" aria-hidden="true"></span></button>`
+    const list = s.variant === 'c'
+      ? `<button class="icon-btn" data-act="flyout" aria-label="Show chats" aria-expanded="${s.flyout}" title="Show chats">${ico.list}</button>${tile(cur)}`
+      : chats.map(tile).join('')
+    side.innerHTML = `<div class="rail"><span class="mark"></span>
+      <button class="icon-btn" data-act="expand" aria-label="Expand sidebar" title="Expand sidebar">${ico.expand}</button>
+      <button class="icon-btn" aria-label="New chat" title="New chat">${ico.pen}</button>
+      <div class="rail-list">${list}</div>
+      <div class="rail-foot"><span style="font-size:11px;color:var(--muted)">foot</span></div></div>
+      ${s.variant === 'c' && s.flyout ? `<div class="flyout" role="dialog" aria-label="Chats"><h2>Chats</h2><ul class="list" style="padding:0">${chats.map(rowHtml).join('')}</ul></div>` : ''}`
+  }
+  document.getElementById('fold').textContent = s.collapsed ? 'Expand' : 'Collapse'
+  document.getElementById('label').textContent = `${s.variant.toUpperCase()} — ${VARIANTS[s.variant]}`
+  document.getElementById('state').textContent = JSON.stringify({ variant: s.variant, width: s.width, collapsed: s.collapsed, current: s.current, flyout: s.flyout })
+}
+side.addEventListener('click', e => {
+  const open = e.target.closest('[data-open]'); if (open) { s.current = +open.dataset.open; s.flyout = false; return render() }
+  const act = e.target.closest('[data-act]')?.dataset.act
+  if (act === 'collapse') s.collapsed = true
+  if (act === 'expand') { s.collapsed = false; s.flyout = false }
+  if (act === 'flyout') s.flyout = !s.flyout
+  if (act) render()
+})
+side.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.resize'); if (!h) return
+  e.preventDefault(); h.setPointerCapture(e.pointerId); side.dataset.resizing = ''
+  const move = ev => { s.width = Math.round(Math.max(260, Math.min(480, ev.clientX - side.getBoundingClientRect().left))); side.style.width = s.width + 'px'; document.getElementById('state').textContent = JSON.stringify({ variant: s.variant, width: s.width, collapsed: s.collapsed }) }
+  h.addEventListener('pointermove', move)
+  h.addEventListener('pointerup', () => { h.removeEventListener('pointermove', move); delete side.dataset.resizing; render(); side.querySelector('.resize').focus() }, { once: true })
+})
+side.addEventListener('dblclick', e => { if (e.target.closest('.resize')) { s.width = 320; render() } })
+side.addEventListener('keydown', e => {
+  if (!e.target.closest('.resize') || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
+  e.preventDefault(); e.stopPropagation()
+  s.width = e.key === 'Home' ? 260 : e.key === 'End' ? 480 : Math.max(260, Math.min(480, s.width + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 40 : 10)))
+  render(); side.querySelector('.resize').focus()
+})
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && s.flyout) { s.flyout = false; render() } })
+function go(d) { s.variant = KEYS[(KEYS.indexOf(s.variant) + d + KEYS.length) % KEYS.length]; s.flyout = false; history.replaceState(null, '', `?variant=${s.variant}`); render() }
+document.getElementById('fold').onclick = () => { s.collapsed = !s.collapsed; s.flyout = false; render() }
+document.getElementById('prev').onclick = () => go(-1)
+document.getElementById('next').onclick = () => go(1)
+document.getElementById('light').onclick = e => { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : ''; e.target.textContent = light ? 'Dark' : 'Light' }
+document.addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable],.resize')) return; if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1) })
+render()
+</script>
+</body>
+</html>

@@ -166,7 +166,7 @@ import { TERMINALS_EVENT } from '../shared/terminalWorkspace'
 import { TerminalWorkspaceService } from './terminals/service'
 import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
-import { WorktreeCleanup, githubPullRequestMerged } from './agents/worktreeCleanup'
+import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
@@ -602,19 +602,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter } = localRuntime
   const writingSettings = (): Promise<AppSettings> => settings.get()
   let browserService: BrowserService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService)
   agentHost.useBrowserTools(browserAgentServer)
-  // Reclaims worktrees only under the rules the user turned on (ADR-0019); every rule starts off.
-  // Only the local host has worktrees on this computer; with it off there is nothing to reclaim here.
-  const worktreeCleanup = startupSettings.localHostEnabled ? new WorktreeCleanup({
-    host: agentHost, rules: () => workingCopySettings.worktreeCleanup,
-    ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}),
-    log: code => { logOperational(code) },
-  }) : null
+  // The runtime builds the worktree cleanup (ADR-0019). Only the local host has worktrees on this
+  // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
+  const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
@@ -688,8 +685,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   registerQuitDrain(app, async () => {
     unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
-    // A sweep in progress finishes its current worktree before the host it asks is closed.
-    await worktreeCleanup?.close()
+    // Closing the local runtime drains a worktree cleanup sweep in progress before its host closes (ADR-0019).
     const results = await Promise.allSettled([desktopHosts.close(), localRuntime.close(), personalChats.close()])
     hostRouter.dispose()
     const failure = results.find(result => result.status === 'rejected')

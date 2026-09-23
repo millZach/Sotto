@@ -1,15 +1,15 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
-const KEY = 'sotto.threadWorkspace.sidebar'
+/** The Threads sidebar's key; Terminal mode and the pages beside it share it. */
+export const THREADS_SIDEBAR_KEY = 'sotto.threadWorkspace.sidebar'
+/** The Chats list keeps a width and a collapse of its own. */
+export const CHATS_SIDEBAR_KEY = 'sotto.chats.sidebar'
 const CHANGED = 'sotto-sidebar-size'
 const DEFAULT = '{"width":320,"collapsed":false}'
-let fallback = DEFAULT
-let unsaved = false
+/** The last value this window saved for each key, and the keys whose last write storage refused. */
+const fallback = new Map<string, string>()
+const unsaved = new Set<string>()
 
-function read(): string {
-  if (unsaved) return fallback
-  try { return localStorage.getItem(KEY) ?? DEFAULT } catch { return fallback }
-}
 function subscribe(listener: () => void): () => void {
   window.addEventListener(CHANGED, listener)
   window.addEventListener('storage', listener)
@@ -22,7 +22,11 @@ function subscribeWindow(listener: () => void): () => void {
 const windowWidth = (): number => window.innerWidth
 
 /** A window preference like the pane layout. Shrinking the window clamps the view, not the saved width. */
-export function useSidebarSize() {
+export function useSidebarSize(key: string = THREADS_SIDEBAR_KEY) {
+  const read = useCallback((): string => {
+    if (unsaved.has(key)) return fallback.get(key) ?? DEFAULT
+    try { return localStorage.getItem(key) ?? DEFAULT } catch { return fallback.get(key) ?? DEFAULT }
+  }, [key])
   const stored = useSyncExternalStore(subscribe, read, () => DEFAULT)
   const viewport = useSyncExternalStore(subscribeWindow, windowWidth, () => 1280)
   let preferred = 320, collapsed = false
@@ -35,8 +39,9 @@ export function useSidebarSize() {
   } catch { /* An old or damaged preference starts at the default. */ }
   const maximum = Math.min(480, Math.max(260, viewport - 470))
   const save = (width: number, hidden: boolean): void => {
-    fallback = JSON.stringify({ width, collapsed: hidden })
-    try { localStorage.setItem(KEY, fallback); unsaved = false } catch { unsaved = true }
+    const next = JSON.stringify({ width, collapsed: hidden })
+    fallback.set(key, next)
+    try { localStorage.setItem(key, next); unsaved.delete(key) } catch { unsaved.add(key) }
     window.dispatchEvent(new Event(CHANGED))
   }
   return {

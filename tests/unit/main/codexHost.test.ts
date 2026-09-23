@@ -179,7 +179,14 @@ describe('Codex App Server provider adapter', () => {
     expect(resumes.length).toBeGreaterThan(0)
     for (const resume of resumes) {
       expect(resume.params).not.toHaveProperty('approvalPolicy')
-      expect(resume.params).not.toHaveProperty('config')
+      expect(resume.params).not.toHaveProperty('approvalsReviewer')
+      expect(resume.params).not.toHaveProperty('sandbox')
+      expect(resume.params).not.toHaveProperty('model')
+      expect(resume.params).not.toHaveProperty('modelProvider')
+      if (resume.params?.config) {
+        expect(resume.params.config).toMatchObject({ 'features.default_mode_request_user_input': true })
+        expect(resume.params.config).not.toHaveProperty('model_reasoning_effort')
+      }
     }
     expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toEqual(aliases[threadId].pendingSettings)
     await expect(f.host.execute({ type: 'send', commandId: 'blocked', threadId, messageId: 'blocked', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)

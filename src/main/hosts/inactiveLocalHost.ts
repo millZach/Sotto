@@ -3,6 +3,7 @@ import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '..
 import type { createAgentRuntime } from '../agents/runtime'
 import { loadHostIdentity } from '../agents/hostIdentity'
 import { ShortTextWriter } from '../llm/shortTextWriter'
+import type { WorktreeCleanup } from '../agents/worktreeCleanup'
 
 export function emptyDesktopState(hostId?: string): AgentState {
   return {
@@ -50,6 +51,8 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),
+    // No worktrees are owned here, so the cleanup has nothing to sweep and every call does nothing.
+    worktreeCleanup: { start: idle, settingsChanged: idle, dispose: idle, request: async () => undefined, close: async () => undefined } satisfies Pick<WorktreeCleanup, 'start' | 'settingsChanged' | 'dispose' | 'request' | 'close'>,
     close: async () => undefined,
   } as unknown as Awaited<ReturnType<typeof createAgentRuntime>>
 }
