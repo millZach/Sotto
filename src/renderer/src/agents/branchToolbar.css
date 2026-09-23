@@ -1,0 +1,59 @@
+/* T3's branch toolbar under the composer: Run on and Workspace at the left, the pull request badge and the branch picker at
+   the right. One quiet row in the composer's own muted text; the picker's popover rises above it like the option chips' lists. */
+.branch-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; margin: 6px -4px 0; padding-top: 6px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; }
+.branch-toolbar__spacer { flex: 1 1 8px; }
+.branch-toolbar__static { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 26px; padding: 0 4px; white-space: nowrap; }
+.branch-toolbar__static > strong { overflow: hidden; color: var(--tt-text-2); font-weight: 500; text-overflow: ellipsis; }
+
+/* The chips: the same pill as the option chips, a size smaller, the key word muted and the value in the text colour. */
+.branch-toolbar__chip, .branch-toolbar__branch { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 260px; height: 26px; min-height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.branch-toolbar__chip > span, .branch-toolbar__branch > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.branch-toolbar__chip > svg, .branch-toolbar__branch > svg { flex: none; }
+.branch-toolbar__chip-key { color: var(--tt-text-muted); }
+.branch-toolbar__chip:hover:not(:disabled), .branch-toolbar__branch:hover:not(:disabled), .branch-toolbar__chip[aria-expanded='true'], .branch-toolbar__branch[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-hover); color: var(--tt-text); }
+.branch-toolbar__chip:disabled, .branch-toolbar__branch:disabled { opacity: .55; cursor: default; }
+.branch-toolbar__branch { font-family: var(--tt-font-mono); font-size: 12px; }
+.branch-toolbar__branch[data-busy] { cursor: progress; }
+
+/* The pull request badge: the state icon in its colour and the number, the title in the tooltip. */
+.branch-toolbar__pr { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.branch-toolbar__pr:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.branch-toolbar__pr:disabled { cursor: default; }
+.branch-toolbar__pr[data-state='open'] > svg { color: var(--tt-success); }
+.branch-toolbar__pr[data-state='draft'] > svg { color: var(--tt-text-muted); }
+.branch-toolbar__pr[data-state='merged'] > svg { color: var(--tt-accent-text); }
+.branch-toolbar__pr[data-state='closed'] > svg { color: var(--tt-error); }
+
+/* The Workspace list and the picker's panel open upward over the composer, anchored to their chip. */
+.branch-toolbar__menu, .branch-toolbar__picker { position: relative; min-width: 0; }
+.branch-toolbar__list, .branch-toolbar__panel { position: absolute; bottom: calc(100% + 6px); z-index: 30; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
+.branch-toolbar__list { left: 0; min-width: 200px; padding: 6px; }
+.branch-toolbar__panel { right: 0; display: grid; width: min(340px, calc(100vw - 48px)); padding: 6px; }
+.branch-toolbar__list > button, .branch-toolbar__refs > button[role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.branch-toolbar__list > button:hover, .branch-toolbar__list > button:focus-visible, .branch-toolbar__refs > button:hover:not(:disabled), .branch-toolbar__refs > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.branch-toolbar__list > button[aria-selected='true'], .branch-toolbar__refs > button[aria-selected='true'] { color: var(--tt-activity); }
+
+.branch-toolbar__search { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; color: var(--tt-text-muted); }
+.branch-toolbar__search > input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
+.branch-toolbar__search > input::placeholder { color: var(--tt-text-muted); }
+.branch-toolbar__refs { display: grid; max-height: min(320px, calc(100vh - 260px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.branch-toolbar__ref-name { min-width: 0; overflow: hidden; font-family: var(--tt-font-mono); font-size: 12.5px; text-overflow: ellipsis; }
+.branch-toolbar__create .branch-toolbar__ref-name { font-family: inherit; font-size: 13px; }
+.branch-toolbar__badges { display: inline-flex; flex: none; gap: 4px; }
+.branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
+.branch-toolbar__badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }
+.branch-toolbar__badges > small[data-badge='default'] { color: var(--tt-text-2); }
+.branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.branch-toolbar__more:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.branch-toolbar__empty { margin: 0; padding: 10px; color: var(--tt-text-muted); font-size: 12.5px; }
+.branch-toolbar__switch { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; margin: 4px 2px 0; padding: 8px 8px 6px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.branch-toolbar__switch > input { margin: 0; accent-color: var(--tt-accent); }
+.branch-toolbar__switch > small { grid-column: 2; color: var(--tt-text-muted); font-size: 11.5px; }
+
+/* One line under the row for what a press said: the refusal in the warning colour, a copy in the muted one. */
+.branch-toolbar__notice { flex-basis: 100%; margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.4; }
+.branch-toolbar__notice[data-tone='error'] { color: var(--threads-warning-text); }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) :is(.branch-toolbar__list, .branch-toolbar__panel) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
+}

@@ -526,6 +526,15 @@ describe('durable project/thread organization', () => {
     expect(record()?.git?.ahead).toBe(0)
     f.host.observeThreads(['local'])
     await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2))
+    // A thread coming into view with no status yet is read at once, locally, ahead of the timer.
+    f.host.observeThreads([])
+    await f.host.execute({ type: 'create-thread', commandId: 'create-second', threadId: 'second', projectId: project.id, title: 'Second task', modelId: model.id })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git).toBeUndefined()
+    const before_ = reads.length
+    f.host.observeThreads(['second'])
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git?.ahead).toBe(2))
+    expect(reads.slice(before_)).toContainEqual({ cwd: project.path, remote: false }) // the timer's own rounds read the remote
+    f.host.observeThreads(['local'])
     // Nothing is read while the window is not in front.
     inFront = false
     const before = reads.length
@@ -542,6 +551,33 @@ describe('durable project/thread organization', () => {
     f.host.subscribe(snapshot => published.push(snapshot))
     await f.host.gitActionFinished('local')
     expect(published).toHaveLength(0)
+  })
+
+  it('keeps the sent branch in step with a switch made here, so the branch notice is for changes made elsewhere', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    const status = () => ({ isRepository: true, branch, upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' })
+    f.host.setGitStatus({ read: vi.fn(async () => status()), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    const switchBranch = vi.fn(async (_cwd: string, ref: string) => { branch = ref; return { branch: ref } })
+    f.host.setGitActions({ switchBranch } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const record_ = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')
+    const session = f.adapters.codex.state.threads.at(-1)!
+    session.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(record_()?.status).toBe('idle'))
+    await vi.waitFor(() => expect(record_()?.worktree?.sentBranch).toBe('main'))
+    await f.host.switchThreadBranch('local', 'topic', true)
+    expect(switchBranch).toHaveBeenCalledWith(project.path, 'topic', { create: true })
+    expect(record_()?.worktree).toMatchObject({ branch: 'topic', sentBranch: 'topic' })
+    expect(record_()?.worktree?.git?.branch).toBe('topic')
   })
 
   it('lists the branches of the folder a thread works in, a draft reading its project folder', async () => {

@@ -213,7 +213,8 @@ export class WorkspaceHost implements AgentHost {
     else if (thread.workingDirectory) folder = thread.workingDirectory
     else if (project?.path) folder = project.path
     else throw new Error('This thread has no working folder to read branches from.')
-    const { threadId: _threadId, ...options } = request
+    const options = { ...request } as Partial<GitRefsRequest>
+    delete options.threadId
     return this.gitStatus.listRefs(folder, options)
   }
   private gitActionsOrRefuse(): GitActions {
@@ -296,6 +297,9 @@ export class WorkspaceHost implements AgentHost {
     return this.onLane(threadId, async () => {
       await this.gitActionsOrRefuse().switchBranch(await this.gitActionFolder(threadId), ref, { create })
       await this.refreshAfterGitAction(threadId)
+      // A switch made here is the user's own: the branch notice is for a checkout someone else moved (ADR-0014).
+      const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
+      if (worktree?.sentBranch !== undefined && worktree.branch && worktree.sentBranch !== worktree.branch) { worktree.sentBranch = worktree.branch; this.dirty = true; await this.flush().catch(() => undefined); this.publish() }
       return this.workspaceSnapshot()
     })
   }
@@ -1643,6 +1647,9 @@ export class WorkspaceHost implements AgentHost {
     for (const id of wanted) if (!this.watched.has(id) && this.state.snapshot.threads.some(thread => thread.id === id)) {
       this.watched.set(id, FIRST_WINDOW_TURNS)
       this.loadWindow(id)
+      // A thread just come into view reads its folder at once, locally, so its toolbar has a branch to show
+      // before the timer's next remote round; the timer keeps it fresh from there.
+      if (this.gitStatus && !this.state.snapshot.threads.find(thread => thread.id === id)?.worktree?.git) void this.onLane(id, () => this.readGitStatus(id, false)).catch(() => undefined)
       changed = true
     }
     if (changed) this.publish()

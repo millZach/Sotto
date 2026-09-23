@@ -251,14 +251,14 @@ describe('a client-minted thread id', () => {
       initialError="Send or clear your draft before creating another thread." />)
     expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft')
     expect(screen.getByLabelText('Thread name')).toHaveValue('Second attempt')
-    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
+    expect(screen.getByText('Starts in the project folder. Change it under the composer.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
     await waitFor(() => expect(onCreating).toHaveBeenCalledOnce())
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', title: 'Second attempt', modelId: 'codex:model', workingCopy: 'shared', reasoningEffort: 'high' }))
   })
 })
 
-describe('working copy choice', () => {
+describe('working copy default', () => {
   it('does not guess defaults after a settings read fails and allows a retry', async () => {
     const state = fixture([actual])
     const command = vi.fn(async () => state)
@@ -269,49 +269,32 @@ describe('working copy choice', () => {
     expect(screen.getByRole('button', { name: 'Create thread' })).toBeDisabled()
     expect(command).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Retry defaults' }))
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    await waitFor(() => expect(screen.getByText('Starts in a new worktree, made on first send. Change it under the composer.')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Create thread' })).not.toBeDisabled()
   })
 
-  it('honors a project override ahead of the global default and sends selected base and origin', async () => {
+  it('honors a project override ahead of the global default and sends the worktree with its origin start', async () => {
     const state = fixture([actual])
     const command = vi.fn(async () => state)
-    vi.stubGlobal('sotto', {
-      getSettings: vi.fn(async () => ({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: { [actual.id]: 'independent' } })),
-      agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main', 'develop'], worktrees: [] })) },
-    })
+    vi.stubGlobal('sotto', { getSettings: vi.fn(async () => ({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: { [actual.id]: 'independent' } })) })
     render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
-    fireEvent.change(await screen.findByLabelText('Start from'), { target: { value: 'origin:develop' } })
-    expect(screen.getByLabelText('Start from')).toHaveValue('origin:develop')
-    expect(command).not.toHaveBeenCalled()
-    await submit()
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: true }))
-  })
-
-  it('explicitly chooses an existing checkout and explains that its files and branch are shared', async () => {
-    const state = fixture([actual])
-    const command = vi.fn(async () => state)
-    vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [{ path: 'C:/work/task', branch: 'feat/task' }] })) } })
-    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
-    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Existing worktree' })).not.toBeDisabled())
-    fireEvent.click(screen.getByRole('radio', { name: 'Existing worktree' }))
-    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this worktree.')
+    await waitFor(() => expect(screen.getByText('Starts in a new worktree, made on first send. Change it under the composer.')).toBeInTheDocument())
+    // No branch field here: the base is chosen in the composer's branch picker once the thread exists.
     expect(screen.queryByLabelText('Start from')).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
     await submit()
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', existingWorktreePath: 'C:/work/task' }))
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', startFromOrigin: true }))
+    expect(command.mock.calls[0]![0]).not.toHaveProperty('baseBranch')
   })
 
-  it('preserves an explicit local base without origin through creation', async () => {
+  it('carries the worktree choices of a refused creation back through the next attempt', async () => {
     const state = fixture([actual])
     const command = vi.fn(async () => state)
-    vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] })) } })
-    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()} initialProjectId={actual.id} />)
-    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    fireEvent.change(await screen.findByLabelText('Start from'), { target: { value: 'local:' } })
+    render(<NewThreadDialog state={state} command={command} onClose={vi.fn()} onCreated={vi.fn()}
+      initialChoices={{ projectId: actual.id, title: 'Again', modelId: 'codex:model', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: false }} initialError="Provider unavailable." />)
+    expect(screen.getByText('Starts in a new worktree, made on first send. Change it under the composer.')).toBeInTheDocument()
     await submit()
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', startFromOrigin: false }))
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: false }))
   })
 
   it('keeps project defaults out of the creation flow and starts with collapsed options', () => {
@@ -325,28 +308,23 @@ describe('working copy choice', () => {
     expect(screen.getByText('Thread options')).toHaveFocus()
   })
 
-  it('uses the project folder by default and explains shared files and branch', async () => {
+  it('uses the project folder by default and says where to change it', async () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
     setup(command, fixture([actual]))
     await browse()
-    const group = screen.getByRole('group', { name: 'Working copy' })
-    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
-    expect(group).toHaveAccessibleDescription(/Shares files and branch/)
-    expect(group.textContent).not.toMatch(/isolat|memory/i)
+    expect(screen.getByText('Starts in the project folder. Change it under the composer.')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Working copy' })).toBeNull()
     await submit()
     expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', workingCopy: 'shared' }))
   })
 
-  it('sends a deliberately chosen shared project folder and keeps the choice after a rejected create', async () => {
+  it('keeps the same default after a rejected create', async () => {
     let reject = true
     const command = vi.fn(async (request: AgentCommand) => ({ ...fixture([actual]), error: request.type === 'create-thread' && reject ? 'Provider unavailable.' : null }))
     const view = setup(command, fixture([actual]))
     await browse()
-    fireEvent.click(screen.getByRole('radio', { name: 'Project folder' }))
-    expect(screen.getByRole('group', { name: 'Working copy' })).toHaveAccessibleDescription('Shares files and branch with other threads using this folder, including uncommitted edits.')
     await submit()
     expect(screen.getByRole('alert')).toHaveTextContent('Provider unavailable.')
-    expect(screen.getByRole('radio', { name: 'Project folder' })).toBeChecked()
     reject = false
     await submit()
     expect(command.mock.calls.filter(([request]) => request.type === 'create-thread').map(([request]) => request))
@@ -354,12 +332,12 @@ describe('working copy choice', () => {
     expect(view.onCreated).toHaveBeenCalledOnce()
   })
 
-  it('starts keyboard creation at the working-copy choice once a folder is chosen', async () => {
+  it('starts keyboard creation at Thread options once a folder is chosen', async () => {
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => fixture([actual]))
     setup(command, fixture([actual]))
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'ArrowDown' })
     fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search projects' }), { key: 'Enter' })
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Project folder' })).toHaveFocus())
+    await waitFor(() => expect(screen.getByText('Thread options')).toHaveFocus())
   })
 
   it('keeps the name focused when working-copy defaults finish loading', async () => {
@@ -372,18 +350,18 @@ describe('working copy choice', () => {
     name.focus()
     fireEvent.change(name, { target: { value: 'Keep typing' } })
     finish({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: {} })
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'New worktree' })).toBeChecked())
+    await waitFor(() => expect(screen.getByText('Starts in a new worktree, made on first send. Change it under the composer.')).toBeInTheDocument())
     expect(name).toHaveFocus()
     expect(name).toHaveValue('Keep typing')
   })
 
-  it('locks the choice while creation is in flight', async () => {
+  it('locks creation while it is in flight', async () => {
     let finish: (state: AgentState) => void = () => undefined
     const command = vi.fn(() => new Promise<AgentState>(resolve => { finish = resolve }))
     setup(command, fixture([actual]))
     await browse()
     fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Project folder' })).toBeDisabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Creating...' })).toBeDisabled())
     finish(fixture([actual]))
     await waitFor(() => expect(command).toHaveBeenCalledOnce())
   })
