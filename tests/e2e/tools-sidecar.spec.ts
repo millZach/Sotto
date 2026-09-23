@@ -431,12 +431,15 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     // A browser task waiting on another surface puts the corner preview up while Tools shows Files; it stands
     // inside the rail rather than over its lower tiles.
     await select('Files')
+    // The request waits for an answer; a teardown that closes the page first must not hide the failure that caused it.
     const opening = page.evaluate(async request => window.sottoE2E!.browserAgent!(request), { threadId: 'workshop', name: 'browser_open', arguments: { url, description: 'Checking the trail list' } })
+      .catch((error: unknown) => ({ failed: String(error) }))
     const corner = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
     for (const [width, height] of [[1280, 800], [820, 560]] as const) {
       await resize(launched, width, height)
       await expect(corner).toBeVisible()
-      await expect(corner.getByRole('button', { name: 'Allow once' })).toBeVisible()
+      await expect(corner).toContainText('Waiting for your permission')
+      await expect(tab('Browser')).toHaveAttribute('aria-description', 'A browser request is waiting for your answer')
       expect(await page.evaluate(() => {
         const preview = document.querySelector('.browser-corner')!.getBoundingClientRect()
         return [...document.querySelectorAll('.tools-rail__tab, .tools-rail__foot button')].filter(control => {
