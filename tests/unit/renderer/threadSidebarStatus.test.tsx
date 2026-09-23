@@ -46,9 +46,12 @@ describe('a row that needs you says what it needs', () => {
     expect(rowFor(asQuestion(threadsStateFixture()), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer' })
   })
 
-  it('says so for a thread Sotto does not manage, whose request never enters the attention queue', () => {
-    // The coordinator queues only what it watches; the provider's request on the thread is what you answer.
-    const unqueued = (state: AgentState): AgentState => { state.queue = []; return state }
+  it('says so for a thread with no assignment, whose request never enters the attention queue', () => {
+    // The coordinator queues only for threads with an assignment; the provider's request on the thread is what you answer.
+    const unqueued = (state: AgentState): AgentState => {
+      state.queue = []; state.assignments = state.assignments.filter(entry => entry.threadId !== 'visual-gate'); return state
+    }
+    expect(rowFor(unqueued(threadsStateFixture()), 'visual-gate').management).toBe('none')
     expect(rowFor(unqueued(threadsStateFixture()), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval',
       request: { threadId: 'visual-gate', kind: 'permission', requestId: 'visual-gate-permission' } })
     expect(rowFor(unqueued(asQuestion(threadsStateFixture())), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
@@ -66,6 +69,16 @@ describe('a row that needs you says what it needs', () => {
       expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
       expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-waiting', 'question')
     } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
+  })
+
+  it('says so on a managed thread while supervision decides, because the question is still yours to answer', () => {
+    // Supervision keeps a question out of the queue while it decides whether to answer it. The provider still
+    // holds the question and the composer answers it, so the row says the same until either answer lands.
+    const supervised = asQuestion(threadsStateFixture())
+    supervised.queue = []
+    supervised.assignments = supervised.assignments.map(entry => entry.threadId === 'visual-gate' ? { ...entry, instruction: 'Keep the suite green.' } : entry)
+    expect(rowFor(supervised, 'visual-gate')).toMatchObject({ management: 'managed', state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
+      request: { threadId: 'visual-gate', kind: 'question', requestId: 'visual-gate-question' } })
   })
 
   it('keeps the older wording where nothing is pending but you are still needed', () => {

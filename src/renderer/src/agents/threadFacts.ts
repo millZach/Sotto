@@ -180,8 +180,8 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
   const closed = isThreadClosed(thread)
   const queued = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
-  // The attention queue holds only what the coordinator is watching, so a thread you run yourself never has an
-  // item there. Its provider's request is pending all the same, and the composer answers it from the thread.
+  // The attention queue holds requests only for threads with an assignment, and not a question supervision is still
+  // deciding. The provider's request is pending all the same, and the composer answers it from the thread.
   const pending = closed || queued !== undefined ? undefined : thread.requests[0]
   const decision: AgentQueueItem | undefined = queued ?? (pending === undefined ? undefined : {
     id: `${thread.id}:${pending.id}`, threadId: thread.id, requestId: pending.id, kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
