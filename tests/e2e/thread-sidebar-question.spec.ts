@@ -1,5 +1,6 @@
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentRequest, AgentState } from '../../src/shared/agents'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
@@ -39,8 +40,11 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
 
 const state = (page: Page): Promise<AgentState> => page.evaluate(() => window.sotto!.agents!.get())
 const row = (page: Page, title: string): Locator => page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true })
-const pending = async (page: Page, threadId: string): Promise<string[] | undefined> =>
-  (await state(page)).host.threads.find(thread => thread.id === threadId)?.requests.map(request => request.id)
+const scopedThread = (snapshot: AgentState, threadId: string): string => snapshot.hostId ? hostEntityKey(snapshot.hostId, threadId) : threadId
+const pending = async (page: Page, threadId: string): Promise<string[] | undefined> => {
+  const snapshot = await state(page)
+  return snapshot.host.threads.find(thread => thread.id === scopedThread(snapshot, threadId))?.requests.map(request => request.id)
+}
 
 async function emit(page: Page, threadId: string, request: AgentRequest): Promise<void> {
   await page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
@@ -91,11 +95,26 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await emit(page, 'workshop', question)
   await expect.poll(() => pending(page, 'workshop')).toEqual([question.id])
   // The cause of the report: nothing about this thread is in the attention queue.
-  expect((await state(page)).queue.filter(item => item.threadId === 'workshop')).toEqual([])
+  const snapshot = await state(page)
+  expect(snapshot.queue.filter(item => item.threadId === scopedThread(snapshot, 'workshop'))).toEqual([])
   await expectWaiting(page, 'Workshop', 'question', 'Needs your answer', 'question-1280x800-dark')
 
   await open(page, 'Workshop')
   const form = page.locator('.thread-workspace__compose .thread-questions .agent-request')
+  await expect(form).toBeVisible()
+  expect((await state(page)).host.threads.find(thread => thread.id === scopedThread(snapshot, 'workshop'))?.status).toBe('running')
+  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+    await resize(app, page, width, height)
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }) }, appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await expect(form.getByRole('radio', { name: /The weekly report/u })).toBeVisible()
+      expect(await form.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      await page.screenshot({ path: `artifacts/codex-questions-thread-agents/question-${width}-${appearance}.png`, animations: 'disabled' })
+    }
+  }
+  await resize(app, page, 1280, 800)
+  await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
   await form.getByRole('radio', { name: /The weekly report/u }).click()
   await form.getByRole('button', { name: 'Send answer', exact: true }).click()
   await expect(form).toHaveCount(0)
