@@ -1,0 +1,977 @@
+{
+  "prompts": [],
+  "spawnCount": 16,
+  "versionChecks": 1,
+  "scheduled": [
+    0
+  ],
+  "journey": [
+    {
+      "at": "2026-09-23T22:02:00.157Z",
+      "step": "before",
+      "detail": {
+        "remoteNodeOnPath": "none",
+        "descriptor": null,
+        "hostProcesses": "188335 /usr/bin/tailscaled be-child ssh --login-shell=/usr/bin/bash --uid=1000 --gid=1000 --groups=1000,998 --local-user=zach --home-dir=/home/zach --remote-user=millZach@github --remote-ip=100.84.14.56 --has-tty=false --tty-name= --force-v1-behavior --cmd=pgrep -af \"sotto-host/host/index.js\" || echo none\n188342 /usr/bin/bash -c pgrep -af \"sotto-host/host/index.js\" || echo none"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.165Z",
+      "step": "status",
+      "detail": {
+        "phase": "disconnected"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.166Z",
+      "step": "connect"
+    },
+    {
+      "at": "2026-09-23T22:02:00.166Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.168Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-V"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.219Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-G",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.267Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.808Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-N",
+          "-T",
+          "-n",
+          "-o",
+          "ExitOnForwardFailure=yes",
+          "-o",
+          "GatewayPorts=no",
+          "-L",
+          "127.0.0.1:59778:127.0.0.1:35707",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.935Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:00.935Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:01.490Z",
+      "step": "status",
+      "detail": {
+        "phase": "connected",
+        "reconnecting": false,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:01.596Z",
+      "step": "connected",
+      "detail": {
+        "row": {
+          "id": "6a318f40-5296-4982-94b9-5b2362ca9b5b",
+          "name": "forge",
+          "target": "forge",
+          "identityFile": "",
+          "installPath": "~/sotto-host",
+          "dataDirectory": "~/.sotto",
+          "phase": "connected",
+          "hostId": "62c79358-687d-4274-a876-1a0d79e1c195",
+          "reconnecting": false,
+          "clientId": "49b51914-247e-4591-b690-7a9543777442",
+          "owned": true
+        },
+        "descriptor": {
+          "pid": 188438,
+          "port": 35707,
+          "hostId": "62c79358-687d-4274-a876-1a0d79e1c195",
+          "startedBy": "launch-script",
+          "sottoVersion": "0.1.16",
+          "features": [
+            "detail-delta"
+          ]
+        },
+        "spawnCount": 4,
+        "versionChecks": 1,
+        "prompts": []
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:01.597Z",
+      "step": "status",
+      "detail": {
+        "phase": "connected",
+        "reconnecting": false,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:01.616Z",
+      "step": "command-reached-host",
+      "detail": {
+        "threads": 0,
+        "sottoVersion": "0.1.16",
+        "features": [
+          "detail-delta"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:01.616Z",
+      "step": "kill-forward"
+    },
+    {
+      "at": "2026-09-23T22:02:01.618Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting",
+        "reconnecting": true,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:04.621Z",
+      "step": "status",
+      "detail": {
+        "phase": "disconnected"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:04.621Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:04.624Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-G",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:04.664Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:04.888Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-N",
+          "-T",
+          "-n",
+          "-o",
+          "ExitOnForwardFailure=yes",
+          "-o",
+          "GatewayPorts=no",
+          "-L",
+          "127.0.0.1:59838:127.0.0.1:35707",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.003Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.077Z",
+      "step": "status",
+      "detail": {
+        "phase": "connected",
+        "reconnecting": false,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.390Z",
+      "step": "reconnected",
+      "detail": {
+        "afterMs": 3659,
+        "scheduled": [
+          0
+        ],
+        "row": {
+          "id": "6a318f40-5296-4982-94b9-5b2362ca9b5b",
+          "name": "forge",
+          "target": "forge",
+          "identityFile": "",
+          "installPath": "~/sotto-host",
+          "dataDirectory": "~/.sotto",
+          "phase": "connected",
+          "hostId": "62c79358-687d-4274-a876-1a0d79e1c195",
+          "reconnecting": false,
+          "clientId": "49b51914-247e-4591-b690-7a9543777442",
+          "owned": true
+        },
+        "descriptor": {
+          "pid": 188438,
+          "port": 35707,
+          "hostId": "62c79358-687d-4274-a876-1a0d79e1c195",
+          "startedBy": "launch-script",
+          "sottoVersion": "0.1.16",
+          "features": [
+            "detail-delta"
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.491Z",
+      "step": "disconnect"
+    },
+    {
+      "at": "2026-09-23T22:02:05.497Z",
+      "step": "status",
+      "detail": {
+        "phase": "disconnected"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.688Z",
+      "step": "host-survives-disconnect",
+      "detail": {
+        "pid": 188438,
+        "health": "200"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.688Z",
+      "step": "connect-again-then-stop-host"
+    },
+    {
+      "at": "2026-09-23T22:02:05.688Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.691Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-G",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.728Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:05.943Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-N",
+          "-T",
+          "-n",
+          "-o",
+          "ExitOnForwardFailure=yes",
+          "-o",
+          "GatewayPorts=no",
+          "-L",
+          "127.0.0.1:59856:127.0.0.1:35707",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.057Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.120Z",
+      "step": "status",
+      "detail": {
+        "phase": "connected",
+        "reconnecting": false,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.120Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.433Z",
+      "step": "status",
+      "detail": {
+        "phase": "disconnected"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.596Z",
+      "step": "host-stopped",
+      "detail": {
+        "pid": 188438,
+        "descriptorAfterStop": null
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.596Z",
+      "step": "connect-new-host-then-forget"
+    },
+    {
+      "at": "2026-09-23T22:02:06.596Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.599Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-G",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:06.627Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:07.041Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-N",
+          "-T",
+          "-n",
+          "-o",
+          "ExitOnForwardFailure=yes",
+          "-o",
+          "GatewayPorts=no",
+          "-L",
+          "127.0.0.1:59872:127.0.0.1:36229",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:07.158Z",
+      "step": "status",
+      "detail": {
+        "phase": "connecting"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:07.233Z",
+      "step": "status",
+      "detail": {
+        "phase": "connected",
+        "reconnecting": false,
+        "owned": true
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:07.413Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:07.771Z",
+      "step": "spawn",
+      "detail": {
+        "file": "C:\\Program Files\\Git\\usr\\bin\\ssh.exe",
+        "args": [
+          "-o",
+          "BatchMode=no",
+          "-o",
+          "StrictHostKeyChecking=ask",
+          "-o",
+          "ConnectTimeout=15",
+          "-o",
+          "ServerAliveInterval=15",
+          "-o",
+          "ServerAliveCountMax=2",
+          "-o",
+          "ForwardAgent=no",
+          "-o",
+          "ForwardX11=no",
+          "-o",
+          "RemoteCommand=none",
+          "-o",
+          "RequestTTY=no",
+          "-o",
+          "LogLevel=ERROR",
+          "-e",
+          "none",
+          "-o",
+          "ControlMaster=no",
+          "-o",
+          "ControlPath=none",
+          "-o",
+          "ControlPersist=no",
+          "-T",
+          "-o",
+          "ClearAllForwardings=yes",
+          "forge"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:08.095Z",
+      "step": "status",
+      "detail": {
+        "phase": "disconnected"
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:08.379Z",
+      "step": "forgotten",
+      "detail": {
+        "secondPid": 189201,
+        "pairedClients": 0
+      }
+    },
+    {
+      "at": "2026-09-23T22:02:13.382Z",
+      "step": "done",
+      "detail": {
+        "spawnCount": 16,
+        "versionChecks": 1,
+        "scheduled": [
+          0
+        ]
+      }
+    }
+  ]
+}
