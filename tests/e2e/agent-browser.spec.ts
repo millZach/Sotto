@@ -315,6 +315,8 @@ test('a thread the user lets open pages opens them without asking, previews foll
     const quiet = agent('workshop', 'browser_open', { url: `${url}quiet`, description: 'Checking with previews off' })
     await waitingOn('workshop')
     await expect(workshopPreview).toBeHidden()
+    // With no preview, the Tools icon of the thread's pane is what says a request waits.
+    await expect(page.getByRole('button', { name: 'Tools', exact: true })).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
     await expect(panel.getByText(`Open and share this page with the thread: ${url}quiet`, { exact: true })).toBeVisible()
@@ -322,7 +324,7 @@ test('a thread the user lets open pages opens them without asking, previews foll
     await request.getByRole('button', { name: 'Deny' }).click()
     await quiet
     expect(errors).toEqual([])
-    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedOpenWithoutAsking: true, navigateWithoutAsking: true, clickStillAsked: true, stopAskedAgain: true, otherThreadPreviewHidden: true, previewsOffHidden: true, errors }, null, 2))
+    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedOpenWithoutAsking: true, navigateWithoutAsking: true, clickStillAsked: true, stopAskedAgain: true, otherThreadPreviewHidden: true, previewsOffHidden: true, toolsIconMarkedWaiting: true, errors }, null, 2))
   } catch (error) {
     await page.screenshot({ path: join(GRANT_SHOTS, 'failure.png') }).catch(() => undefined)
     console.error(await page.locator('body').innerText().catch(() => 'No renderer'))

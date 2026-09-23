@@ -13,8 +13,8 @@ Checked on September 22, 2026, on Windows, in the built app driven by `tests/e2e
 ## Previews
 
 - `focused-thread-preview.png`: with Workshop focused and a request from Docs waiting, the corner shows Workshop's task and nothing of Docs'.
-- `settings-switch.png`: **Show browser previews** under Settings > Application, turned off; the setting read back as `false` from main.
-- `previews-off-tools.png`: with previews off, a new request from Workshop showed no corner preview. In Tools > Browser the page's tab carried a dot and "waiting for your answer", and the request card was on that page.
+- `settings-switch.png`: **Show browser previews** under Settings > Application, turned off, with the description naming the focused thread and the thread Tools is pinned to; the setting read back as `false` from main.
+- `previews-off-tools.png`: with previews off, a new request from Workshop showed no corner preview. The Tools icon in Workshop's pane carried its dot and described "A browser request is waiting for your answer" before Tools opened. In Tools > Browser the page's tab carried a dot and "waiting for your answer", and the request card was on that page.
 
 `verification.json` records the run. No renderer errors were reported.
 
