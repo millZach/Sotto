@@ -20,6 +20,8 @@ let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentia
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
 let retryDelay: (attempt: number) => number = () => 0
+/** Every reconnect the manager scheduled, by attempt: an empty list proves no retry can fire, with no waiting. */
+const scheduled: number[] = []
 let owned = true, stopResult: boolean | Error = true
 /** Runs before a stop answers; the real host closes its listener, dropping every peer, before it replies. */
 let beforeStopReply: () => Promise<void> = async () => undefined
@@ -52,8 +54,8 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined
-  manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => retryDelay(attempt), launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
+  launchers.length = 0; failures.length = 0; stops.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined
+  manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher } })
   await manager.start()
 })
 afterEach(async () => { await manager?.close(); router?.dispose(); await host?.close(); if (root && dirname(root) === tmpdir() && root.includes('sotto-desktop-hosts-')) await rm(root, { recursive: true, force: true }) })
@@ -201,6 +203,24 @@ describe('desktop remote host management over a real socket', () => {
     await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining('installation was not found') }))
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(launchers.length).toBe(2)
+  })
+  it('clears a retry left by a failed reconnect when Sotto quits, so no SSH session starts during the drain', async () => {
+    const remote = await add()
+    retryDelay = attempt => attempt === 0 ? 0 : 60_000
+    failures.push(new Error('The SSH connection closed before the host answered.'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      launchers[0]!.callbacks!.onDisconnected!('dropped')
+      // The first retry fails, leaving a second one pending for a host that is no longer live.
+      await vi.waitFor(() => expect(scheduled).toEqual([0, 1]))
+      expect(launchers).toHaveLength(2)
+      expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+      await manager.close()
+      // Running every pending timer would fire the retry if close() had left it.
+      vi.runOnlyPendingTimers()
+      await manager.command({ type: 'connect', id: remote.id })
+      expect(launchers).toHaveLength(2)
+    } finally { vi.useRealTimers() }
   })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()

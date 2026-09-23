@@ -29,6 +29,8 @@ export class DesktopHosts {
   private readonly retries = new Map<string, Retry>()
   private readonly listeners = new Set<(state: HostsState) => void>()
   private generation = 0
+  /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
+  private closed = false
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
@@ -99,6 +101,7 @@ export class DesktopHosts {
       this.saved = this.saved.filter(item => item.id !== host.id)
       await this.save(); this.status.delete(host.id); this.emit(); return this.get()
     }
+    if (this.closed) return this.get()
     if (this.live.has(host.id)) await this.disconnect(host.id, true)
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
@@ -151,6 +154,7 @@ export class DesktopHosts {
   private final(error: Error): boolean { return FINAL_FAILURES.some(part => error.message.includes(part)) }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
   private scheduleReconnect(host: SavedHost, active: LiveHost | undefined): void {
+    if (this.closed) return
     const previous = this.retries.get(host.id)
     if (previous) clearTimeout(previous.timer)
     const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined as never }
@@ -210,5 +214,13 @@ export class DesktopHosts {
     const status = this.status.get(id)
     if (status) { delete status.prompt; delete status.error; delete status.reconnecting; delete status.owned; status.phase = 'disconnected'; this.emit() }
   }
-  async close(): Promise<void> { await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing }
+  /**
+   * Clears every pending retry first, including those for hosts whose connect failed and so are no longer
+   * live: a retry that fired during the quit drain would spawn ssh and register with a disposed router.
+   */
+  async close(): Promise<void> {
+    this.closed = true
+    for (const id of [...this.retries.keys()]) this.clearRetry(id)
+    await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing
+  }
 }
