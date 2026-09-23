@@ -152,6 +152,7 @@ Sotto closes to the Windows notification area or the macOS menu bar. Use that me
 - Transcription: MAI-Transcribe-2 through OpenRouter (the only model), your OpenRouter API key with a verify button, language, and conservative whitespace formatting
 - Cleanup: optional AI cleanup with quality tiers and the personal dictionary that also feeds transcription spelling hints
 - Output: mandatory clipboard safety copy, optional automatic paste, paste delay, and success-message duration
+- Appearance: the color scheme (Light, Dark, or match the system), then one theme for light mode and one for dark, chosen in two columns. Sotto ships six themes of its own: Sotto, Hush, Linen, Nocturne, Tropic and Citrine. Sotto is the default, with an almost-black dark room and the app icon's teal (a deeper teal in light mode, so text and links stay readable). You can create a theme, import a T3 Code or VS Code theme file, or install one from Open VSX. Below the themes: the effort color, contrast and glass. A light or dark half saved on one of the older built-ins (Rose, Fern, Tide, Copper or Dusk) returns to Sotto.
 - Updates: the version you are running, an automatic GitHub release check that is on by default and can be turned off, and a manual check (the update control in the sidebar foot, the tray menu and the macOS application menu run the same check)
 - Application and privacy: launch at login, start minimized, local history, retention, clear history, and reset settings
 

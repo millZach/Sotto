@@ -288,52 +288,60 @@ describe('SettingsView', () => {
   it('shows the persisted mode and both theme halves and saves each choice as its own patch', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'iris', darkTheme: 'ember' } })} />)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'citrine', darkTheme: 'tropic' } })} />)
     await selectCategory('Appearance')
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
     expect(within(section).getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
-    // The scope stays short; pressed choices communicate the persisted selections.
+    // The scope stays short; checked choices communicate the persisted selections.
     expect(within(section).getByText('Themes & interface')).toBeVisible()
-    expect(section).not.toHaveTextContent(/using Dusk/u)
+    expect(section).not.toHaveTextContent(/using Citrine/u)
     expect(within(section).queryByRole('radiogroup', { name: 'Accent' })).not.toBeInTheDocument()
-    expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
-    for (const label of ['Sotto', 'Rose', 'Fern', 'Tide', 'Copper', 'Dusk']) {
-      expect(within(section).getByRole('button', { name: new RegExp(`^Use ${label} light mode$`, 'u') })).toBeVisible()
+    expect(within(within(section).getByRole('radiogroup', { name: 'Color scheme' })).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    const light = within(section).getByRole('radiogroup', { name: 'Light theme' })
+    const dark = within(section).getByRole('radiogroup', { name: 'Dark theme' })
+    for (const label of ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']) {
+      expect(within(light).getByRole('radio', { name: label })).toBeVisible()
+      expect(within(dark).getByRole('radio', { name: label })).toBeVisible()
     }
-    expect(within(section).getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(section).getByRole('button', { name: 'Use Copper dark mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(light).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(dark).getByRole('radio', { name: 'Tropic' })).toHaveAttribute('aria-checked', 'true')
 
-    await user.click(within(section).getByRole('button', { name: 'Follow the system appearance' }))
+    await user.click(within(section).getByRole('radio', { name: 'Match Windows' }))
     await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'system' }))
-    await user.click(within(section).getByRole('button', { name: 'Use Fern dark mode' }))
-    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'grove' }))
+    await user.click(within(dark).getByRole('radio', { name: 'Linen' }))
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'linen' }))
     expect(update).toHaveBeenCalledTimes(2)
   })
 
-  it('reaches every mode and theme choice by keyboard as native buttons', async () => {
+  it('reaches the scheme and both halves by keyboard, one Tab stop per group, in reading order', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
     await selectCategory('Appearance')
     const section = document.querySelector('#settings-appearance') as HTMLElement
+    const scheme = within(section).getByRole('radiogroup', { name: 'Color scheme' })
+    const light = within(section).getByRole('radiogroup', { name: 'Light theme' })
+    const dark = within(section).getByRole('radiogroup', { name: 'Dark theme' })
 
-    // The scheme buttons run Light, Dark, System in reading order.
-    within(section).getByRole('button', { name: 'Use light mode' }).focus()
+    // Scheme, then the theme actions, then the Light column and the Dark column, each group one stop.
+    within(scheme).getByRole('radio', { name: 'Dark' }).focus()
     await user.keyboard('{Tab}')
-    expect(within(section).getByRole('button', { name: 'Use dark mode' })).toHaveFocus()
+    expect(within(section).getByRole('button', { name: 'Create theme' })).toHaveFocus()
+    await user.keyboard('{Tab}{Tab}')
+    expect(within(light).getByRole('radio', { name: 'Sotto' })).toHaveFocus()
     await user.keyboard('{Tab}')
-    expect(within(section).getByRole('button', { name: 'Follow the system appearance' })).toHaveFocus()
-    await user.keyboard('{Shift>}{Tab}{Tab}{/Shift}')
-    expect(within(section).getByRole('button', { name: 'Use light mode' })).toHaveFocus()
-    await user.keyboard('{Enter}')
-    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'light' }))
+    expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveFocus()
 
-    const iris = within(section).getByRole('button', { name: /^Use Dusk theme/u })
-    iris.focus()
-    await user.keyboard(' ')
-    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ lightTheme: 'iris', darkTheme: 'iris' }))
-    expect(iris).toHaveFocus()
+    // Arrows choose as they move, and wrap.
+    await user.keyboard('{ArrowUp}')
+    expect(within(dark).getByRole('radio', { name: 'Citrine' })).toHaveFocus()
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'citrine' }))
+
+    within(scheme).getByRole('radio', { name: 'Dark' }).focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(within(scheme).getByRole('radio', { name: 'Match Windows' })).toHaveFocus()
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'system' }))
   })
 
   it('enumerates microphones, preserves an unknown persisted choice, and refreshes on devicechange', async () => {

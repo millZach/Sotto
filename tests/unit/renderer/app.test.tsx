@@ -285,7 +285,7 @@ describe('Sotto application onboarding integration', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark' as const,
         appearance: 'light' as const,
-        lightTheme: 'ember',
+        lightTheme: 'tropic',
         reducedMotion: 'on' as const,
       })),
     })
@@ -296,7 +296,7 @@ describe('Sotto application onboarding integration', () => {
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(document.documentElement).toHaveAttribute('data-theme-id', 'ember')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 'tropic')
   })
 
   it('removes a forced motion attribute when following system motion', () => {
@@ -319,16 +319,16 @@ describe('Sotto application onboarding integration', () => {
     const query = { matches: false, addEventListener: (_: string, listener: () => void) => listeners.add(listener), removeEventListener: (_: string, listener: () => void) => listeners.delete(listener) }
     vi.stubGlobal('matchMedia', vi.fn((media: string) => media === '(prefers-color-scheme: dark)' ? query : { matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }))
     try {
-      renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'system' as const, lightTheme: 't3-chat', darkTheme: 'iris' })) }))
+      renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'system' as const, lightTheme: 'hush', darkTheme: 'citrine' })) }))
       await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'light'))
-      expect(document.documentElement).toHaveAttribute('data-theme-id', 't3-chat')
+      expect(document.documentElement).toHaveAttribute('data-theme-id', 'hush')
       act(() => {
         query.matches = true
         for (const listener of listeners) listener()
       })
       // The system change hands the window to the independently chosen dark half.
       await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
-      expect(document.documentElement).toHaveAttribute('data-theme-id', 'iris')
+      expect(document.documentElement).toHaveAttribute('data-theme-id', 'citrine')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -353,30 +353,31 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Use light mode' }))
+    const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    await user.click(screen.getByRole('button', { name: 'Use Dusk light mode' }))
+    await user.click(within(lightHalf()).getByRole('radio', { name: 'Citrine' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'iris')
-    expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(root).toHaveAttribute('data-theme-id', 'citrine')
+    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
     // Only the light half moved: the dark half still belongs to Sotto.
-    expect(screen.getByRole('button', { name: 'Use Sotto dark mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]!.patch).toEqual({ appearance: 'light' })
     persisted = { ...persisted, appearance: 'light' }
     await act(async () => { saves[0]!.result.resolve(persisted) })
-    expect(root).toHaveAttribute('data-theme-id', 'iris')
+    expect(root).toHaveAttribute('data-theme-id', 'citrine')
 
     await waitFor(() => expect(saves).toHaveLength(2))
-    expect(saves[1]!.patch).toEqual({ lightTheme: 'iris' })
-    persisted = { ...persisted, lightTheme: 'iris' }
+    expect(saves[1]!.patch).toEqual({ lightTheme: 'citrine' })
+    persisted = { ...persisted, lightTheme: 'citrine' }
     await act(async () => { saves[1]!.result.resolve(persisted) })
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'iris')
-    expect(screen.getByRole('button', { name: 'Use light mode' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Use Dusk light mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(root).toHaveAttribute('data-theme-id', 'citrine')
+    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('restores the truthful persisted look when the final overlapping appearance save fails', async () => {
@@ -397,10 +398,11 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance', exact: true }))
-    await user.click(screen.getByRole('button', { name: 'Use light mode' }))
-    await user.click(screen.getByRole('button', { name: /^Use Copper theme/u }))
+    const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    await user.click(within(lightHalf()).getByRole('radio', { name: 'Tropic' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'ember')
+    expect(root).toHaveAttribute('data-theme-id', 'tropic')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     persisted = { ...persisted, appearance: 'light' }
@@ -410,18 +412,18 @@ describe('Sotto application onboarding integration', () => {
 
     await waitFor(() => expect(root).toHaveAttribute('data-theme-id', 't3-code'))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(screen.getByRole('button', { name: 'Use Sotto theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(lightHalf()).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
     expect(document.body).toHaveTextContent(/could not be saved/i)
   })
 
   it('paints the next launch from the last applied look before settings answer', async () => {
-    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'grove', glassOpacity: 55 })) }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'grove'))
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'linen', glassOpacity: 55 })) }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'linen'))
     expect(document.documentElement.style.getPropertyValue('--theme-glass-opacity')).toBe('55%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'grove', darkTheme: 't3-code', glassOpacity: 55 })
-    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"grove","accent":"green"}')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'grove' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 't3-code', glassOpacity: 55 })
+    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"linen","accent":"green"}')
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'linen' })
     expect(readCachedAppearance()).not.toHaveProperty('accent')
     localStorage.setItem('sotto.appearance', 'not json')
     expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code' })

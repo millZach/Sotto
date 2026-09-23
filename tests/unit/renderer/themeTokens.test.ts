@@ -96,7 +96,7 @@ describe('main-window theme tokens', () => {
   })
 
   it.each(MODES)('%s mode: the contrast slider strengthens and softens text and borders around 100', (mode) => {
-    const at = (value: number) => palette(mode, 'ocean', { contrast: value })
+    const at = (value: number) => palette(mode, 'nocturne', { contrast: value })
     const [soft, standard, strong] = [at(50), at(100), at(200)]
     const measure = (color: (name: string) => Rgba, ink: string) => contrast(color(ink), color('canvas'))
     for (const ink of ['text', 'text-muted', 'border']) {
@@ -109,20 +109,20 @@ describe('main-window theme tokens', () => {
 
   it('paints glass as the overlay surface at the chosen opacity', () => {
     for (const glass of [40, 80, 100]) {
-      const declarations = rootDeclarations('dark', 'ocean', { glass })
+      const declarations = rootDeclarations('dark', 'nocturne', { glass })
       expect(resolveColor('--tt-glass', declarations).a).toBeCloseTo(glass / 100, 5)
     }
     // Text stays readable on the most transparent glass, painted over the room.
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'ocean', { glass: 40 })
+      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 })
       const canvas = resolveColor('--tt-canvas', declarations)
       const text = over(resolveColor('--tt-text', declarations), canvas)
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
         expect(contrast(text, over(resolveColor(surface, declarations), canvas)), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
-    const dark = rootDeclarations('dark', 'ocean')
-    const light = rootDeclarations('light', 'ocean')
+    const dark = rootDeclarations('dark', 'nocturne')
+    const light = rootDeclarations('light', 'nocturne')
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
     expect([dark.get('--tt-glass-blur'), dark.get('--tt-glass-saturation')]).toEqual(['16px', '1.08'])
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])

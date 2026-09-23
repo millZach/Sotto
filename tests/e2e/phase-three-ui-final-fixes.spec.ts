@@ -20,7 +20,7 @@ type Mode = 'dark' | 'light'
 
 async function ownedProfile(prefix: string): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), prefix))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', lightTheme: 'ocean', darkTheme: 'ocean' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne' }))
   return profile
 }
 
@@ -195,26 +195,29 @@ test('repaints one running terminal with the DOM fallback through the theme gall
       return want
     }
 
-    await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'ocean')
-    const ocean = await expectField()
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'nocturne')
+    const nocturne = await expectField()
 
-    // The gallery: another built-in theme for both halves.
+    // The picker: another built-in theme for both halves.
     await settings()
-    await page.getByRole('button', { name: 'Use Copper theme', exact: true }).click()
-    await expect(page.locator('html')).not.toHaveAttribute('data-theme-id', 'ocean')
+    for (const half of ['Light', 'Dark'] as const) {
+      await page.getByRole('radiogroup', { name: `${half} theme`, exact: true }).getByRole('radio', { name: 'Tropic', exact: true }).click()
+    }
+    await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'tropic')
     await threads()
-    const emberField = await expectField()
-    expect(near(emberField, ocean, 8)).toBe(false)
+    const tropicField = await expectField()
+    expect(near(tropicField, nocturne, 8)).toBe(false)
 
-    // Light mode from the gallery's own tile.
+    // Light mode from the colour scheme track.
     await settings()
-    await page.getByRole('button', { name: 'Use light mode', exact: true }).click()
+    const scheme = page.getByRole('radiogroup', { name: 'Color scheme', exact: true })
+    await scheme.getByRole('radio', { name: 'Light', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     await threads()
-    const emberLight = await expectField()
-    expect(near(emberLight, emberField, 8)).toBe(false)
+    const tropicLight = await expectField()
+    expect(near(tropicLight, tropicField, 8)).toBe(false)
     await settings()
-    await page.getByRole('button', { name: 'Use dark mode', exact: true }).click()
+    await scheme.getByRole('radio', { name: 'Dark', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
     // The live editor: a terminal background typed in Advanced paints the running terminal while the editor stays open.
@@ -234,7 +237,7 @@ test('repaints one running terminal with the DOM fallback through the theme gall
     // Closing without saving puts the saved theme back on the same terminal.
     await editor.getByRole('button', { name: 'Close the theme editor' }).click()
     await expect(editor).toHaveCount(0)
-    expect(near(await expectField(), emberField)).toBe(true)
+    expect(near(await expectField(), tropicField)).toBe(true)
 
     // Reduced motion from Settings stills the cursor of the same terminal, and Follow system lets it blink again.
     const cursor = panel.locator('.xterm-rows .xterm-cursor')

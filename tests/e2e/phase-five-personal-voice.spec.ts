@@ -84,7 +84,7 @@ test('personal dictation and spoken exchange retain each provider chat, support 
             expect(await page.locator('.personal-voice').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
           }
         }
-        await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light', lightTheme: 'ocean', darkTheme: 'ocean' }))
+        await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light', lightTheme: 'nocturne', darkTheme: 'nocturne' }))
       }
       await page.getByRole('button', { name: 'End voice', exact: true }).click()
       await composer.fill('Keep my typed plan')

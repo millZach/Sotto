@@ -9,8 +9,8 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode, type ThemeDefinition } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
-// The four findings of the Phase 3 final visual review, in the complete app: custom theme names in the gallery, the
-// light and dark preview circles, a minimized theme editor beside the page links, and the composer beside a pending
+// The four findings of the Phase 3 final visual review, in the complete app: custom theme names in the picker, the
+// Light and Dark columns, a minimized theme editor beside the page links, and the composer beside a pending
 // permission. AppShell, renderer, preload, IPC, the theme editor and the browser service are real; providers are the
 // E2E fixtures. Profiles and the local page are owned temporaries. Images land in artifacts/phase-three-final-visual-fixes.
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-final-visual-fixes')
@@ -77,43 +77,55 @@ async function hostViews(app: ElectronApplication): Promise<Electron.Rectangle[]
 // ---------------------------------------------------------------------------------------------------------------------
 // 1 and 2: the gallery
 
-const tide = BUILT_IN_THEMES.find(theme => theme.id === 'ocean')!
-const copper = BUILT_IN_THEMES.find(theme => theme.id === 'ember')!
+const nocturne = BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!
+const tropic = BUILT_IN_THEMES.find(theme => theme.id === 'tropic')!
 const dark = (id: string, label: string, from: ThemeDefinition, extra: Partial<ThemeDefinition> = {}): ThemeDefinition => ({ id, label, appearance: 'dark', colors: getThemeColorsForMode(from, 'dark')!, ...extra })
 const LONGEST = 'Solarized Evening Harbor for Late Review Sessions'.slice(0, 48)
 const CUSTOM: ThemeDefinition[] = [
-  { id: 'harbor-review', label: 'Harbor Review', appearance: 'light', colors: getThemeColorsForMode(tide, 'light')!, variants: { dark: getThemeColorsForMode(copper, 'dark')! } },
-  dark('morning-harbor', 'Morning Harbor', tide),
-  dark('catppuccin-macchiato', 'Catppuccin Macchiato', copper),
-  dark('longest-name', LONGEST, tide),
-  dark('community-frappe', 'Frappé', copper, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
-  dark('community-mocha', 'Mocha', tide, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
+  { id: 'harbor-review', label: 'Harbor Review', appearance: 'light', colors: getThemeColorsForMode(nocturne, 'light')!, variants: { dark: getThemeColorsForMode(tropic, 'dark')! } },
+  dark('morning-harbor', 'Morning Harbor', nocturne),
+  dark('catppuccin-macchiato', 'Catppuccin Macchiato', tropic),
+  dark('longest-name', LONGEST, nocturne),
+  dark('community-frappe', 'Frappé', tropic, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
+  dark('community-mocha', 'Mocha', nocturne, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
 ]
+const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']
 
-/** Every card's name, actions and circles, measured where they are drawn. */
-const galleryLayout = (grid: Locator) => grid.evaluate(element => {
+/** Every option in one half's column, measured where it is drawn. */
+const columnLayout = (column: Locator) => column.evaluate(element => {
   const box = (node: Element) => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height } }
-  return [...element.querySelectorAll('.theme-card')].map(card => {
-    const title = card.querySelector<HTMLButtonElement>('.theme-card__title')!
-    const name = title.querySelector('.theme-card__name')!
-    const actions = card.querySelector('.theme-card__actions')!
+  return [...element.querySelectorAll<HTMLButtonElement>('.theme-option')].map(option => {
+    const name = option.querySelector('.theme-option__name')!
     return {
       name: name.textContent!,
-      tooltip: title.title,
-      accessibleName: title.getAttribute('aria-label')!,
-      clipped: name.scrollHeight > name.clientHeight + 1 || name.scrollWidth > name.clientWidth + 1,
+      tooltip: option.title,
+      clipped: name.scrollWidth > name.clientWidth + 1,
       lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
-      card: box(card), title: box(name), actions: box(actions),
-      circles: [...card.querySelectorAll('.theme-circle')].map(circle => ({
-        button: box(circle),
-        ring: circle.querySelector('.theme-circle__ring') ? box(circle.querySelector('.theme-circle__ring')!) : null,
-        badge: circle.querySelector('.theme-circle__badge') ? box(circle.querySelector('.theme-circle__badge')!) : null,
-      })),
+      option: box(option), title: box(name), chord: box(option.querySelector('.theme-chord')!),
     }
   })
 })
 
-test('custom names read in full beside their actions, and each preview circle keeps its own ring and badge, at 1600, 1280 and 820', async () => {
+/** Every row of Your themes: its name, its modes line, a chord per half it carries, and its actions. */
+const ownLayout = (list: Locator) => list.evaluate(element => {
+  const box = (node: Element) => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height } }
+  return [...element.querySelectorAll('.theme-own__row')].map(row => {
+    const name = row.querySelector('.theme-own__name')!
+    const actions = row.querySelector('.theme-own__actions')!
+    return {
+      id: row.getAttribute('data-theme-row')!,
+      name: name.textContent!,
+      tooltip: (name as HTMLElement).title,
+      modes: row.querySelector('.theme-own__modes')!.textContent!,
+      chords: row.querySelectorAll('.theme-chords > .theme-chord').length,
+      clipped: name.scrollWidth > name.clientWidth + 1,
+      lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
+      row: box(row), title: box(name), actions: box(actions),
+    }
+  })
+})
+
+test('custom names read in full in their own rows, and each half lists the themes that paint it, at 1600, 1280 and 820', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-final-visual-fixes-themes-'))
@@ -126,75 +138,78 @@ test('custom names read in full beside their actions, and each preview circle ke
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
     const section = page.locator('#settings-appearance')
-    const grid = section.locator('.theme-grid')
-    const card = (label: string) => grid.locator('.theme-card').filter({ has: page.locator('.theme-card__name', { hasText: new RegExp(`^${label}$`, 'u') }) })
+    const halves = section.locator('.theme-halves')
+    const column = (half: 'light' | 'dark') => section.locator(`.theme-half[data-half="${half}"] .theme-half__options`)
+    const own = section.getByRole('list', { name: 'Your themes' })
+    const row = (id: string) => own.locator(`li[data-theme-row="${id}"]`)
     const notes: Record<string, unknown> = {}
 
     for (const [width, height] of SIZES) {
       await size(launched, width, height)
-      await grid.scrollIntoViewIfNeeded()
-      const layout = await galleryLayout(grid)
-      expect(layout.map(item => item.name)).toEqual(['Sotto', 'Rose', 'Fern', 'Tide', 'Copper', 'Dusk', 'Harbor Review', 'Morning Harbor', 'Catppuccin Macchiato', LONGEST, 'Catppuccin Community'])
+      await halves.scrollIntoViewIfNeeded()
+      // Each half lists the built-ins in picker order, then the custom themes that carry that half.
+      expect((await columnLayout(column('light'))).map(item => item.name)).toEqual([...BUILT_IN_NAMES, 'Harbor Review'])
+      const layout = await columnLayout(column('dark'))
+      expect(layout.map(item => item.name)).toEqual([...BUILT_IN_NAMES, 'Harbor Review', 'Morning Harbor', 'Catppuccin Macchiato', LONGEST, 'Frappé', 'Mocha'])
       for (const item of layout) {
         const where = `${item.name} at ${width}: ${JSON.stringify(item)}`
-        // 1. Every name up to two lines reads whole; only the 48-character maximum may clamp, and its tooltip and
-        // accessible name still carry it. The name never runs under the (invisible until hover) actions.
-        if (item.name !== LONGEST) expect(item.clipped, where).toBe(false)
-        expect(item.lines, where).toBeLessThanOrEqual(2)
+        // 1. A column is narrow, so a long name is cut to one line rather than wrapped or spilled, and its tooltip
+        // still carries it whole. The name never runs back over the colour strip or out of its option.
+        expect(item.lines, where).toBe(1)
         expect(item.tooltip, where).toBe(item.name)
-        expect(item.accessibleName, where).toContain(item.name)
-        expect(intersects(item.title, item.actions), where).toBe(false)
-        expect(inside(item.actions, item.card), where).toBe(true)
-        // 2. T3's separate circles: 10px apart, each ring and badge inside its own circle and clear of the other.
-        if (item.circles.length === 2) {
-          const [first, second] = item.circles as [typeof item.circles[0], typeof item.circles[0]]
-          expect(Math.round(second.button.left - first.button.right), where).toBe(10)
-          for (const [own, other] of [[first, second], [second, first]] as const) {
-            for (const mark of [own.ring, own.badge]) {
-              if (mark === null) continue
-              expect(inside(mark, own.button), where).toBe(true)
-              expect(intersects(mark, other.button), where).toBe(false)
-            }
-          }
-        }
+        expect(intersects(item.title, item.chord), where).toBe(false)
+        expect(inside(item.title, item.option), where).toBe(true)
+        // The review's finding was a name squeezed by what sits beside it; here it keeps most of the option.
+        expect(item.title.width, where).toBeGreaterThanOrEqual(70)
       }
-      notes[`${width}`] = layout.filter(item => item.card.top >= 0).map(item => ({ name: item.name, lines: item.lines, clipped: item.clipped, title: Math.round(item.title.width), actionsWrapped: item.actions.bottom <= item.title.top + 1 }))
-      // The review's example: at 1600 and 1280, "Morning Harbor" was 89px of 114px.
-      expect(layout.find(item => item.name === 'Morning Harbor')!.clipped).toBe(false)
-      await card('Harbor Review').scrollIntoViewIfNeeded()
+      // 2. The saved themes keep their own row: a chord per half they carry, the name clear of the actions.
+      const rows = await ownLayout(own)
+      expect(rows.map(item => item.id)).toEqual(CUSTOM.map(theme => theme.id))
+      expect(rows.map(item => item.modes)).toEqual(['Light and dark', 'Dark only', 'Dark only', 'Dark only', 'Dark only · Catppuccin Community', 'Dark only · Catppuccin Community'])
+      for (const item of rows) {
+        const where = `${item.name} at ${width}: ${JSON.stringify(item)}`
+        expect(item.lines, where).toBe(1)
+        expect(item.tooltip, where).toBe(item.name)
+        expect(item.chords, where).toBe(item.modes.startsWith('Light and dark') ? 2 : 1)
+        expect(intersects(item.title, item.actions), where).toBe(false)
+        expect(inside(item.actions, item.row), where).toBe(true)
+        expect(item.title.width, where).toBeGreaterThanOrEqual(150)
+      }
+      notes[`${width}`] = { options: layout.map(item => ({ name: item.name, clipped: item.clipped, title: Math.round(item.title.width) })), rows: rows.map(item => ({ name: item.name, clipped: item.clipped, title: Math.round(item.title.width) })) }
+      // The review's example: the row is the wide reading of a name, so "Morning Harbor" reads whole there.
+      expect(rows.find(item => item.name === 'Morning Harbor')!.clipped, `${width}`).toBe(false)
       await page.mouse.move(1, 1)
       await shot(page, `gallery-custom-${width}-dark`)
     }
 
-    // Both halves chosen on one card, close up, beside the review's Tide capture.
+    // One theme chosen for both halves, the two columns close up.
     await size(launched, 1600, 1000)
-    await card('Harbor Review').scrollIntoViewIfNeeded()
+    await halves.scrollIntoViewIfNeeded()
     await page.mouse.move(1, 1)
-    await shot(page, 'card-harbor-review-both-halves-1600-dark', card('Harbor Review'))
-    await card('Tide').getByRole('button', { name: 'Use Tide theme' }).click()
-    await expect(card('Tide').locator('.theme-circle__badge')).toHaveCount(2)
+    await shot(page, 'columns-harbor-review-both-halves-1600-dark', halves)
+    for (const half of ['light', 'dark'] as const) await column(half).getByRole('radio', { name: 'Nocturne', exact: true }).click()
+    for (const half of ['light', 'dark'] as const) await expect(column(half).getByRole('radio', { name: 'Nocturne', exact: true })).toHaveAttribute('aria-checked', 'true')
     await page.mouse.move(1, 1)
-    await shot(page, 'card-tide-both-halves-1600-dark', card('Tide'))
+    await shot(page, 'columns-nocturne-both-halves-1600-dark', halves)
 
-    // Keyboard: from a long name to each of its actions, which show while focus is inside the card.
-    const long = card('Catppuccin Macchiato')
+    // Keyboard: from a long name's first action along the rest of its row.
+    const long = row('catppuccin-macchiato')
     await long.scrollIntoViewIfNeeded()
-    const title = long.getByRole('button', { name: 'Use Catppuccin Macchiato theme', exact: true })
-    await title.focus()
-    for (const action of ['Duplicate Catppuccin Macchiato', 'Edit Catppuccin Macchiato', 'Export Catppuccin Macchiato', 'Remove Catppuccin Macchiato']) {
+    const edit = long.getByRole('button', { name: 'Edit Catppuccin Macchiato', exact: true })
+    await edit.focus()
+    for (const action of ['Duplicate Catppuccin Macchiato', 'Export Catppuccin Macchiato', 'Remove Catppuccin Macchiato']) {
       await page.keyboard.press('Tab')
-      await expect(long.getByRole('button', { name: action, exact: true })).toBeFocused()
-      await expect(long.locator('.theme-card__actions')).toHaveCSS('opacity', '1')
+      const button = long.getByRole('button', { name: action, exact: true })
+      await expect(button).toBeFocused()
+      await expect(button).toBeVisible()
     }
-    await shot(page, 'card-long-name-keyboard-remove-1600-dark', long)
-    await page.keyboard.press('Shift+Tab')
-    await page.keyboard.press('Shift+Tab')
+    await shot(page, 'own-long-name-keyboard-remove-1600-dark', long)
+    await edit.focus()
     await page.keyboard.press('Enter')
     const editor = page.getByRole('dialog', { name: 'Edit theme' })
     await expect(editor).toBeVisible()
     await expect(editor.getByLabel('Theme name', { exact: true })).toBeFocused()
     // Escape and the Close button both hand focus back to the Edit button that opened the editor.
-    const edit = long.getByRole('button', { name: 'Edit Catppuccin Macchiato', exact: true })
     await page.keyboard.press('Escape')
     await expect(editor).toHaveCount(0)
     await expect(edit).toBeFocused()
@@ -204,16 +219,16 @@ test('custom names read in full beside their actions, and each preview circle ke
     await page.keyboard.press('Enter')
     await expect(editor).toHaveCount(0)
     await expect(edit).toBeFocused()
-    // Pointer: the title uses the theme.
-    await title.click()
+    // Pointer: the Dark column uses the theme for the dark half.
+    await column('dark').getByRole('radio', { name: 'Catppuccin Macchiato', exact: true }).click()
     await expect.poll(async () => (await page.evaluate(async () => (await window.sotto!.getSettings()) as AppSettings)).darkTheme).toBe('catppuccin-macchiato')
 
     await appearance(page, 'light')
     await page.emulateMedia({ colorScheme: 'light' })
     for (const [width, height] of [[1280, 860], [820, 560]] as const) {
       await size(launched, width, height)
-      await card('Harbor Review').scrollIntoViewIfNeeded()
-      await card('Morning Harbor').hover()
+      await row('morning-harbor').scrollIntoViewIfNeeded()
+      await row('morning-harbor').hover()
       await shot(page, `gallery-custom-hover-${width}-light`)
     }
     test.info().annotations.push({ type: 'gallery', description: JSON.stringify(notes) })

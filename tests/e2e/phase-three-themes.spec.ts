@@ -88,63 +88,71 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await page.emulateMedia({ colorScheme: 'dark' })
     await setWindowSize(launched, 1600, 1000)
 
-    // First run: Tide (id ocean) for both halves, the accent picker gone.
+    // First run: Sotto (id t3-code) for both halves, the accent picker gone.
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'ocean')
+    await expect(html(page)).toHaveAttribute('data-theme-id', 't3-code')
     const section = await openAppearance(page)
     await expect(section.getByRole('radiogroup', { name: 'Accent' })).toHaveCount(0)
-    await expect(section.getByRole('group', { name: 'Color scheme', exact: true })).toBeVisible()
-    const cards = section.locator('.theme-grid > *')
-    await expect(cards).toHaveCount(6)
-    // Sotto's own names for T3's six palettes, in gallery order, Tide chosen for both halves.
-    await expect(cards.locator('.theme-card__title')).toHaveText(['Sotto', 'Rose', 'Fern', 'Tide', 'Copper', 'Dusk'])
-    await expect(section.getByRole('button', { name: 'Use Tide theme, currently active' })).toHaveAttribute('aria-pressed', 'true')
-    await section.locator('.theme-grid').scrollIntoViewIfNeeded()
+    const scheme = section.getByRole('radiogroup', { name: 'Color scheme', exact: true })
+    await expect(scheme).toBeVisible()
+    const lightColumn = section.getByRole('radiogroup', { name: 'Light theme', exact: true })
+    const darkColumn = section.getByRole('radiogroup', { name: 'Dark theme', exact: true })
+    // Sotto's six palettes, in picker order, under both halves, Sotto chosen for each.
+    const palettes = ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']
+    await expect(lightColumn.getByRole('radio')).toHaveText(palettes)
+    await expect(darkColumn.getByRole('radio')).toHaveText(palettes)
+    await expect(lightColumn.getByRole('radio', { name: 'Sotto', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await expect(darkColumn.getByRole('radio', { name: 'Sotto', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await section.locator('.theme-halves').scrollIntoViewIfNeeded()
     await shot(page, 'themes-default-1600-dark')
-    // The compact gallery keeps its six built-in themes in two rows on the wide page.
-    const columns = await section.locator('.theme-grid').evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(' ').length)
-    expect(columns).toBe(3)
-    const darkTide = await canvas(page)
+    // The two columns stand side by side on the wide page, and the Dark one says it is the one being worn.
+    const columns = await section.locator('.theme-halves').evaluate(halves => getComputedStyle(halves).gridTemplateColumns.split(' ').length)
+    expect(columns).toBe(2)
+    await expect(section.locator('.theme-half[data-half="dark"] .theme-half__head p')).toHaveText('Painting the window now.')
+    const darkSotto = await canvas(page)
 
-    // The compact scheme selector fits inside the settings scroller.
-    const darkTile = section.getByRole('button', { name: 'Use dark mode' })
-    await expect(darkTile).toHaveAttribute('aria-pressed', 'true')
-    const clipped = await darkTile.evaluate(tile => {
-      let scroller = tile.parentElement
+    // The compact scheme track fits inside the settings scroller.
+    const darkStop = scheme.getByRole('radio', { name: 'Dark', exact: true })
+    await expect(darkStop).toHaveAttribute('aria-checked', 'true')
+    const clipped = await darkStop.evaluate(stop => {
+      let scroller = stop.parentElement
       while (scroller && !/(auto|scroll)/u.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
-      const bounds = tile.getBoundingClientRect()
+      const bounds = stop.getBoundingClientRect()
       const frame = (scroller ?? document.documentElement).getBoundingClientRect()
       return bounds.right > frame.right - 1 || bounds.left < frame.left
     })
     expect(clipped).toBe(false)
-    const chosenBackground = await darkTile.evaluate(element => getComputedStyle(element).backgroundColor)
-    expect(chosenBackground).not.toBe('rgba(0, 0, 0, 0)')
-    notes.push(`The selected Dark scheme is painted with ${chosenBackground}.`)
+    const chosenDot = await darkStop.locator('.theme-scheme-track__dot').evaluate(element => getComputedStyle(element).backgroundColor)
+    expect(chosenDot).not.toBe('rgba(0, 0, 0, 0)')
+    notes.push(`The selected Dark stop is filled with ${chosenDot}.`)
 
     // Light and dark halves are chosen independently.
-    const lightMode = section.getByRole('button', { name: 'Use light mode' })
-    await lightMode.click()
+    const lightStop = scheme.getByRole('radio', { name: 'Light', exact: true })
+    await lightStop.click()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(lightMode).toHaveAttribute('aria-pressed', 'true')
-    await expect(darkTile).toHaveAttribute('aria-pressed', 'false')
-    expect(await darkTile.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(chosenBackground)
-    await section.getByRole('button', { name: 'Use Fern light mode' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
-    await section.getByRole('button', { name: 'Use Dusk dark mode' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
-    await expect.poll(async () => { const saved = await savedSettings(page); return [saved.appearance, saved.lightTheme, saved.darkTheme] }).toEqual(['light', 'grove', 'iris'])
-    await section.getByRole('button', { name: 'Use dark mode' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'iris')
-    expect(await canvas(page)).not.toBe(darkTide)
+    await expect(lightStop).toHaveAttribute('aria-checked', 'true')
+    await expect(darkStop).toHaveAttribute('aria-checked', 'false')
+    expect(await darkStop.locator('.theme-scheme-track__dot').evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(chosenDot)
+    await expect(section.locator('.theme-half[data-half="light"] .theme-half__head p')).toHaveText('Painting the window now.')
+    await expect(section.locator('.theme-half[data-half="dark"] .theme-half__head p')).toHaveText('Used when you switch to Dark.')
+    await lightColumn.getByRole('radio', { name: 'Linen', exact: true }).click()
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'linen')
+    await darkColumn.getByRole('radio', { name: 'Citrine', exact: true }).click()
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'linen')
+    await expect.poll(async () => { const saved = await savedSettings(page); return [saved.appearance, saved.lightTheme, saved.darkTheme] }).toEqual(['light', 'linen', 'citrine'])
+    await darkStop.click()
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'citrine')
+    expect(await canvas(page)).not.toBe(darkSotto)
 
     // System follows Windows live, picking the matching half.
-    await section.getByRole('button', { name: 'Follow the system appearance' }).click()
+    await scheme.getByRole('radio', { name: 'Match Windows', exact: true }).click()
     await page.emulateMedia({ colorScheme: 'light' })
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'grove')
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'linen')
+    await expect(section.locator('.theme-half[data-half="dark"] .theme-half__head p')).toHaveText('Used when Windows turns dark.')
     await page.emulateMedia({ colorScheme: 'dark' })
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'iris')
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'citrine')
 
     // Contrast moves ink, never the room; glass reaches floating surfaces.
     const ink = (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector('#settings-appearance h2')!).color)
@@ -283,34 +291,36 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await add.getByRole('button', { name: 'Install Harbor Theme' }).click()
     await expect(add).toHaveCount(0)
     await expect.poll(async () => (await savedSettings(page)).customThemes.map(theme => theme.label)).toEqual(['Aurora', 'Harbor'])
-    await expect(section.getByRole('button', { name: /^Use Harbor/u }).first()).toBeVisible()
+    await expect(section.getByRole('radio', { name: /^Harbor/u }).first()).toBeVisible()
+    // The installed theme is listed with its own row and its actions.
+    await expect(section.getByRole('list', { name: 'Your themes' }).getByRole('button', { name: /^Export Harbor/u }).first()).toBeVisible()
 
-    // Duplicate, then remove with the owned half falling back to Tide.
-    await section.getByRole('button', { name: 'Duplicate Fern' }).click()
+    // Duplicate a saved theme, then remove the copy with the owned half falling back to Sotto.
+    await section.getByRole('button', { name: 'Duplicate Aurora', exact: true }).click()
     const copy = page.getByRole('dialog', { name: 'Create theme' })
-    await expect(copy.getByLabel('Theme name', { exact: true })).toHaveValue('Fern copy')
+    await expect(copy.getByLabel('Theme name', { exact: true })).toHaveValue('Aurora copy')
     await copy.getByRole('button', { name: 'Create theme' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'fern-copy')
-    await section.getByRole('button', { name: 'Remove Fern copy' }).click()
-    const confirm = page.getByRole('dialog', { name: 'Remove “Fern copy”?' })
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'aurora-copy')
+    await section.getByRole('button', { name: 'Remove Aurora copy', exact: true }).click()
+    const confirm = page.getByRole('dialog', { name: 'Remove “Aurora copy”?' })
     await expect(confirm).toBeVisible()
     await confirm.getByRole('button', { name: 'Cancel' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'fern-copy')
-    await section.getByRole('button', { name: 'Remove Fern copy' }).click()
+    await expect(html(page)).toHaveAttribute('data-theme-id', 'aurora-copy')
+    await section.getByRole('button', { name: 'Remove Aurora copy', exact: true }).click()
     await confirm.getByRole('button', { name: 'Remove theme' }).click()
-    await expect(html(page)).toHaveAttribute('data-theme-id', 'ocean')
-    await expect.poll(async () => (await savedSettings(page)).darkTheme).toBe('ocean')
+    await expect(html(page)).toHaveAttribute('data-theme-id', 't3-code')
+    await expect.poll(async () => (await savedSettings(page)).darkTheme).toBe('t3-code')
 
-    // Keyboard: a card chooses on Enter and keeps focus.
-    const aurora = section.getByRole('button', { name: /^Use Aurora theme/u })
+    // Keyboard: a theme in the Dark column chooses on Enter and keeps focus.
+    const aurora = darkColumn.getByRole('radio', { name: 'Aurora', exact: true })
     await aurora.focus()
     await page.keyboard.press('Enter')
     await expect(html(page)).toHaveAttribute('data-theme-id', 'aurora')
-    await expect(section.getByRole('button', { name: /^Use Aurora theme/u })).toBeFocused()
+    await expect(aurora).toBeFocused()
 
     // Reduced motion: no theme transitions run.
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
-    const duration = await section.getByRole('button', { name: 'Use dark mode' }).evaluate(element => getComputedStyle(element).transitionDuration)
+    const duration = await aurora.evaluate(element => getComputedStyle(element).transitionDuration)
     expect(duration.split(',').every(value => Number.parseFloat(value) <= 0.01)).toBe(true)
 
     // Rendered matrix: widths by scheme, settings and the Threads workspace, once notices have gone.
@@ -341,7 +351,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
 
     // Restart: everything chosen above is still in force on the first frame.
     const settingsFile = JSON.parse(await readFile(join(profile, 'settings.json'), 'utf8')) as AppSettings
-    expect([settingsFile.lightTheme, settingsFile.darkTheme, settingsFile.appearanceContrast]).toEqual(['grove', 'aurora', 150])
+    expect([settingsFile.lightTheme, settingsFile.darkTheme, settingsFile.appearanceContrast]).toEqual(['linen', 'aurora', 150])
     launched = await launchSotto('phase3-workspace', profile)
     await expect(html(launched.page)).toHaveAttribute('data-theme-id', 'aurora')
     await expect.poll(() => launched!.page.evaluate(() => document.documentElement.style.getPropertyValue('--theme-contrast-boost'))).toBe('50%')

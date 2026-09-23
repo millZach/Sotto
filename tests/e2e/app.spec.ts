@@ -177,7 +177,7 @@ test('keeps the widget theme apart from the main window and applies a persisted 
 
     await launched.page.evaluate(async () => {
       const bridge = (globalThis as unknown as { sotto: SottoBridge }).sotto
-      await bridge.updateSettings({ appearance: 'light', lightTheme: 'ember' })
+      await bridge.updateSettings({ appearance: 'light', lightTheme: 'tropic' })
     })
     await expect(html).toHaveAttribute('data-theme', 'light')
     await launched.page.reload()
@@ -185,7 +185,7 @@ test('keeps the widget theme apart from the main window and applies a persisted 
     await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
     await expect(html).toHaveAttribute('data-theme', 'light')
-    await expect(html).toHaveAttribute('data-theme-id', 'ember')
+    await expect(html).toHaveAttribute('data-theme-id', 'tropic')
     expect(await launched.page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(darkCanvas)
   } finally {
     await closeSotto(launched)

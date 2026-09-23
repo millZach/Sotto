@@ -31,8 +31,9 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
   const brand = useThemeBrand()
   const systemStill = useSystemStill()
   const widgetMode = systemDark ? 'dark' : 'light'
-  const widgetColors = widgetPaletteFor(shown)[widgetMode]
-  const widgetBrand = themeBrand(widgetColors, widgetMode)
+  const widgetPalette = widgetPaletteFor(shown)
+  const widgetColors = widgetPalette[widgetMode]
+  const widgetBrand = themeBrand(widgetColors, widgetMode, { appIcon: widgetPalette.appIcon[widgetMode] })
   return (
     <aside className="theme-live-preview" aria-label="Appearance preview">
       <h3><Eye size={14} aria-hidden="true" />Live appearance</h3>
