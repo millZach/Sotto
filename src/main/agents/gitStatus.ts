@@ -7,6 +7,8 @@ export interface GitCommandOptions {
   readonly env?: Readonly<Record<string, string>>
   /** Each line the command prints as it prints it, for a commit whose hooks are worth watching. */
   readonly onLine?: (text: string, stream: 'stdout' | 'stderr') => void
+  /** Text handed to the command on its standard input, so a message never appears in an argument list or a file. */
+  readonly stdin?: string
 }
 const OUTPUT_MAX_BYTES = 8_000_000
 /** Runs `git` or `gh` in a folder and resolves with stdout; rejects with stderr as the message. */
@@ -29,7 +31,8 @@ export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options =
   // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
   // reaches the remote the way the user's own Git does.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
-  const child = spawn(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], { cwd, windowsHide: true, shell: false, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], { cwd, windowsHide: true, shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+  if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
   let stdout = '', stderr = '', timedOut = false, settled = false
   const partial = { stdout: '', stderr: '' }
   const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
@@ -40,14 +43,21 @@ export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options =
     partial[stream] = lines.pop() ?? ''
     for (const line of lines) options.onLine(line, stream)
   }
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => feed('stdout', chunk))
-  child.stderr.setEncoding('utf8').on('data', (chunk: string) => feed('stderr', chunk))
-  const timer = setTimeout(() => { timedOut = true; child.kill() }, options.timeoutMs ?? 30_000)
+  // Both are piped above, whatever stdin is.
+  const out = child.stdout!, err = child.stderr!
+  out.setEncoding('utf8').on('data', (chunk: string) => feed('stdout', chunk))
+  err.setEncoding('utf8').on('data', (chunk: string) => feed('stderr', chunk))
   const finish = (error: Error | null): void => {
     if (settled) return
     settled = true; clearTimeout(timer)
     if (error) reject(error); else accept(stdout)
   }
+  // A hook or an ssh the command started can hold the pipes open after the command itself is gone, so a
+  // timeout settles on its own grace rather than waiting for a close that a grandchild may never allow.
+  const timer = setTimeout(() => {
+    timedOut = true; child.kill()
+    setTimeout(() => { out.destroy(); err.destroy(); finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' })) }, 2_000).unref?.()
+  }, options.timeoutMs ?? 30_000)
   child.on('error', error => finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
   child.on('close', code => {
     if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)

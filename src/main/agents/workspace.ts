@@ -27,6 +27,7 @@ import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type Ag
 const WORKTREE_REFRESH_DELAY_MS = 1_500
 /** How often the Git status timer looks at whether a remote read is due. */
 const GIT_STATUS_TICK_MS = 5_000
+const GIT_ACTION_SAVE_ERROR = 'The Git action finished, but its record could not be saved. Check the folder; the notice may not show it.'
 /** Work that can leave the worktree on another branch: a finished turn, a shell command it ran, or files it changed. */
 const HEAD_MOVING_KINDS: ReadonlySet<AgentActivity['kind']> = new Set(['turn', 'command', 'file-change', 'tool'])
 /** The finished records that could have moved HEAD, by ID, so only new ones ask for a re-read. */
@@ -200,6 +201,10 @@ export class WorkspaceHost implements AgentHost {
     this.gitStatusTimer.unref?.()
   }
   setGitActions(actions: GitActions): void { this.gitActions = actions }
+  private gitActionsOrRefuse(): GitActions {
+    if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
+    return this.gitActions
+  }
   setMutationGuard(guard: (threadId: string) => Promise<boolean> | boolean): void { this.mutationGuard = guard }
   /** The folder a Git command may act on now, or the reason it may not, in plain words. */
   private async gitActionFolder(threadId: string): Promise<string> {
@@ -226,7 +231,7 @@ export class WorkspaceHost implements AgentHost {
    */
   runGitAction(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot> {
     return this.onLane(command.threadId, async () => {
-      if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
+      const actions = this.gitActionsOrRefuse()
       const cwd = await this.gitActionFolder(command.threadId)
       const startedAt = new Date().toISOString()
       let progress: GitActionProgress = { actionId: command.actionId, action: command.action, status: 'running', phases: [], phase: null, stage: null, hook: null, startedAt, finishedAt: null, result: null, error: null }
@@ -240,12 +245,12 @@ export class WorkspaceHost implements AgentHost {
         else if (event.kind === 'hook_finished') update({ hook: null })
       }
       try {
-        const result = await this.gitActions.runStackedAction({ threadId: command.threadId, cwd, action: command.action, commitMessage: command.commitMessage, featureBranch: command.featureBranch, filePaths: command.filePaths, allowDefaultBranch: command.allowDefaultBranch, onProgress })
+        const result = await actions.runStackedAction({ threadId: command.threadId, cwd, action: command.action, commitMessage: command.commitMessage, featureBranch: command.featureBranch, filePaths: command.filePaths, allowDefaultBranch: command.allowDefaultBranch, onProgress })
         update({ status: 'done', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), result })
       } catch (error) {
         update({ status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'The Git action failed.' })
       }
-      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+      try { await this.flush() } catch { this.saveError = GIT_ACTION_SAVE_ERROR }
       await this.refreshAfterGitAction(command.threadId)
       return this.workspaceSnapshot()
     })
@@ -266,8 +271,7 @@ export class WorkspaceHost implements AgentHost {
   }
   pullThreadBranch(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }> {
     return this.onLane(threadId, async () => {
-      if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
-      const result = await this.gitActions.pull(await this.gitActionFolder(threadId))
+      const result = await this.gitActionsOrRefuse().pull(await this.gitActionFolder(threadId))
       await this.refreshAfterGitAction(threadId)
       return { snapshot: this.workspaceSnapshot(), result }
     })
@@ -275,16 +279,14 @@ export class WorkspaceHost implements AgentHost {
   /** T3's switch: Git refuses when work would be lost, and the thread follows whatever branch the folder ends up on (ADR-0014). */
   switchThreadBranch(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
-      if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
-      await this.gitActions.switchBranch(await this.gitActionFolder(threadId), ref, { create })
+      await this.gitActionsOrRefuse().switchBranch(await this.gitActionFolder(threadId), ref, { create })
       await this.refreshAfterGitAction(threadId)
       return this.workspaceSnapshot()
     })
   }
   initThreadRepository(threadId: string): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
-      if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
-      await this.gitActions.init(await this.gitActionFolder(threadId))
+      await this.gitActionsOrRefuse().init(await this.gitActionFolder(threadId))
       // A folder that just became a repository is discovered again so its record says so.
       const thread = this.thread(threadId)
       if (thread.worktree?.mode === 'shared') { delete thread.worktree; this.dirty = true }
@@ -295,8 +297,7 @@ export class WorkspaceHost implements AgentHost {
   }
   publishThreadRepository(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }> {
     return this.onLane(threadId, async () => {
-      if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
-      const { url } = await this.gitActions.publish(await this.gitActionFolder(threadId), options)
+      const { url } = await this.gitActionsOrRefuse().publish(await this.gitActionFolder(threadId), options)
       await this.refreshAfterGitAction(threadId)
       return { snapshot: this.workspaceSnapshot(), url }
     })

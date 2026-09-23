@@ -51,6 +51,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
     const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Second change.\n\nWith a body.', onProgress: f.onProgress })
     expect(result.commit).toMatchObject({ status: 'created', subject: 'Second change' })
     expect(git(f.repo, 'log', '-1', '--pretty=%s%n%b')).toBe('Second change\nWith a body.')
+    expect(f.calls.some(call => call[0] === 'git' && call[1] === 'commit' && call.some(argument => argument.includes('Second change')))).toBe(false) // the message rode on stdin, not an argument
     expect(git(f.repo, 'status', '--porcelain')).toBe('')
     expect(result.toast).toEqual({ title: `Committed ${result.commit.sha!.slice(0, 7)}`, description: 'Second change', cta: { kind: 'run_action', label: 'Push', action: 'push' } })
     expect(f.writeCommitMessage).not.toHaveBeenCalled()
@@ -195,6 +196,60 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(f.gh().filter(call => call[2] === 'create')).toHaveLength(1)
     expect(f.events.find(event => event.kind === 'action_started')).toMatchObject({ stages: ['Pushing to origin...', 'Preparing PR...', 'Generating PR content...', 'Creating pull request...'] })
     expect(f.events.filter(event => event.kind === 'phase_started').map(event => (event as { stage: string }).stage)).toEqual(['Pushing to origin...', 'Preparing PR...', 'Generating PR content...', 'Creating pull request...'])
+  }, 40000)
+  it('settles a lost create acknowledgement by what GitHub lists, and refuses only when nothing is there', async () => {
+    let listed = false, createCalls = 0
+    const f = await fixture({ gh: async args => {
+      if (args[1] === 'list') return JSON.stringify(listed ? [{ number: 55, title: 'Ship the feature', url: 'https://github.com/o/r/pull/55', baseRefName: 'main', headRefName: 'feature', state: 'OPEN' }] : [])
+      if (args[1] === 'create') { createCalls++; listed = createCalls === 2; throw new Error('gh: connection reset') }
+      if (args[0] === 'repo') return JSON.stringify({ defaultBranchRef: { name: 'main' } })
+      return ''
+    } })
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    await writeFile(join(f.repo, 'work.txt'), 'feature\n'); commit(f.repo, 'Feature work')
+    git(f.repo, 'push', '-q', '-u', 'origin', 'feature')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'create_pr' })).rejects.toThrow(/Could not create the pull request\. .*connection reset/u)
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'create_pr' })
+    expect(result.pr).toEqual({ status: 'created', head: 'feature', base: 'main', title: 'Ship the feature', url: 'https://github.com/o/r/pull/55', number: 55 })
+    expect(createCalls).toBe(2) // never repeated inside one action
+  }, 40000)
+  it('refuses in T3\'s words: no files chosen, no remote, no repository, a merge half done', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'work.txt'), 'second\n')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', filePaths: [] })).rejects.toThrow('Choose at least one file to commit.')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit_push', commitMessage: 'Second', allowDefaultBranch: true })).rejects.toThrow('Cannot push because no git remote is configured for this repository.')
+    expect(git(f.repo, 'log', '-1', '--pretty=%s')).toBe('Second') // the commit stood; only the push was refused
+    const plain = join(f.root, 'plain'); await mkdir(plain)
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: plain, action: 'commit' })).rejects.toThrow('not a Git repository')
+    await expect(f.actions.publish(plain, { repository: 'o/r', visibility: 'private' })).rejects.toThrow('Initialize Git before publishing.')
+    // A merge in progress is the user's to finish: nothing is staged or committed over it.
+    git(f.repo, 'switch', '-q', '-c', 'side', 'HEAD~1'); await writeFile(join(f.repo, 'work.txt'), 'side\n'); commit(f.repo, 'Side')
+    git(f.repo, 'switch', '-q', 'main')
+    try { git(f.repo, 'merge', 'side') } catch { /* the conflict is the point */ }
+    expect(git(f.repo, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).not.toBe('')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Over the merge' })).rejects.toThrow('A merge or rebase is in progress.')
+    expect(git(f.repo, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).not.toBe('')
+  }, 40000)
+  it('publishes a topic branch cut from the default branch under its own name, never onto the default branch', async () => {
+    const f = await fixture()
+    git(f.repo, 'switch', '-q', '-c', 'fix/main', 'origin/main') // tracks origin/main, as `git switch -c` from a remote ref does
+    expect(git(f.repo, 'rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/main')
+    await writeFile(join(f.repo, 'work.txt'), 'fix\n'); commit(f.repo, 'Fix on a topic branch')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push' })
+    expect(result.push).toEqual({ status: 'pushed', branch: 'fix/main', upstream: 'origin/fix/main', setUpstream: true })
+    expect(git(f.remote, 'log', '-1', '--pretty=%s', 'main')).toBe('First')
+    expect(git(f.remote, 'log', '-1', '--pretty=%s', 'fix/main')).toBe('Fix on a topic branch')
+    expect(git(f.repo, 'config', '--get', 'branch.fix/main.gh-merge-base')).toBe('main')
+  }, 40000)
+  it('pushes to a configured push remote in a triangular workflow, the way git push does', async () => {
+    const f = await fixture()
+    const fork = join(f.root, 'fork.git'); git(f.root, 'init', '--bare', '-q', '-b', 'main', fork)
+    git(f.repo, 'remote', 'add', 'fork', fork); git(f.repo, 'config', 'remote.pushDefault', 'fork')
+    await writeFile(join(f.repo, 'work.txt'), 'second\n'); commit(f.repo, 'Second')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push', allowDefaultBranch: true })
+    expect(result.push).toEqual({ status: 'pushed', branch: 'main', upstream: 'fork/main', setUpstream: true })
+    expect(git(fork, 'log', '-1', '--pretty=%s', 'main')).toBe('Second')
+    expect(git(f.remote, 'log', '-1', '--pretty=%s', 'main')).toBe('First')
   }, 40000)
   it('runs one action per folder at a time', async () => {
     const f = await fixture()

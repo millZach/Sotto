@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -113,6 +113,10 @@ export class GitActions {
       const result: GitActionResult = { action, branch: { status: 'skipped_not_requested' }, commit: { status: 'skipped_not_requested' }, push: { status: 'skipped_not_requested' }, pr: { status: 'skipped_not_requested' }, toast: { title: 'Done', cta: { kind: 'none' } } }
       let branch = status.branch
       if (wantsCommit) {
+        // A merge, cherry-pick or rebase half done is the user's to finish: staging afresh here would drop its state.
+        for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD']) {
+          if (await this.git(cwd, ['rev-parse', '-q', '--verify', marker]).then(() => true, () => false)) throw new GitActionRefusal('A merge or rebase is in progress. Finish or abort it in a terminal before committing here.')
+        }
         const staged = await this.stage(cwd, input.filePaths)
         if (!staged) {
           if (featureBranch) throw new GitActionRefusal('Cannot create a feature branch because there are no changes to commit.')
@@ -167,10 +171,13 @@ export class GitActions {
 
   /** `git commit` with its hooks, each line of what they print passed on, and the hooks named through Git's trace. */
   private async commit(cwd: string, message: { subject: string; body: string }, progress: (event: GitActionEvent) => void): Promise<string> {
+    // The trace file holds Git's own process events (the hook names and their timing), never the message:
+    // the message goes in on standard input, so no argument list and no file on disk carries it.
     const traceDir = await mkdtemp(join(tmpdir(), 'sotto-git-trace-'))
     const trace = join(traceDir, 'trace.jsonl')
-    let hook: string | null = null, seen = 0
-    const readTrace = async (): Promise<void> => {
+    let hook: string | null = null, seen = 0, reading: Promise<void> | undefined
+    const readTrace = (): Promise<void> => { reading ??= readTraceNow().finally(() => { reading = undefined }); return reading }
+    const readTraceNow = async (): Promise<void> => {
       const text = await readFile(trace, 'utf8').catch(() => '')
       const lines = text.split('\n')
       for (const raw of lines.slice(seen, lines.length - 1)) {
@@ -186,8 +193,8 @@ export class GitActions {
     const ticker = setInterval(() => { void readTrace() }, 200)
     ticker.unref?.()
     try {
-      await this.git(cwd, ['commit', '-m', message.subject, ...(message.body ? ['-m', message.body] : [])], {
-        timeoutMs: COMMIT_TIMEOUT_MS, env: { GIT_TRACE2_EVENT: trace },
+      await this.git(cwd, ['commit', '-F', '-'], {
+        timeoutMs: COMMIT_TIMEOUT_MS, env: { GIT_TRACE2_EVENT: trace }, stdin: message.body ? `${message.subject}\n\n${message.body}\n` : `${message.subject}\n`,
         onLine: text => { const line = text.trim().slice(0, 500); if (line) progress({ kind: 'hook_output', hookName: hook, text: line }) },
       })
     } catch (error) {
@@ -196,7 +203,7 @@ export class GitActions {
     } finally {
       clearInterval(ticker)
       await readTrace()
-      await rm(traceDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(traceDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => undefined)
     }
     if (hook) progress({ kind: 'hook_finished', hookName: hook })
     return (await this.git(cwd, ['rev-parse', 'HEAD'])).trim()
@@ -230,7 +237,17 @@ export class GitActions {
         await this.git(cwd, ['push', '-u', remote, `HEAD:refs/heads/${publish}`], { timeoutMs: PUSH_TIMEOUT_MS })
         return { status: 'pushed', branch: publish, upstream: `${remote}/${publish}`, setUpstream: true }
       }
-      if (upstream.branch !== branch && !(branch.endsWith(`/${upstream.branch}`) || upstream.branch.endsWith(`/${branch}`))) {
+      const configuredElsewhere = remote !== upstream.remote && (await this.git(cwd, ['config', '--get', `branch.${branch}.pushRemote`]).catch(() => '')).trim() === remote
+        || remote !== upstream.remote && (await this.git(cwd, ['config', '--get', 'remote.pushDefault']).catch(() => '')).trim() === remote
+      if (configuredElsewhere) {
+        // A triangular workflow: fetched from one remote, pushed to another. Git's own push would go there, so this one does too.
+        await this.git(cwd, ['push', '-u', remote, `HEAD:refs/heads/${publish}`], { timeoutMs: PUSH_TIMEOUT_MS })
+        return { status: 'pushed', branch: publish, upstream: `${remote}/${publish}`, setUpstream: true }
+      }
+      // Only a branch with the upstream's own name, or one named after the remote ref itself, is the same branch.
+      // `fix/main` tracking `origin/main` is a topic branch, and its push publishes it under its own name.
+      const sameBranch = upstream.branch === branch || branch === `${upstream.remote}/${upstream.branch}`
+      if (!sameBranch) {
         // A branch cut from `origin/main` tracks main; pushing publishes it under its own name and moves the upstream there.
         if (!(await this.git(cwd, ['config', '--get', `branch.${branch}.gh-merge-base`]).catch(() => '')).trim()) await this.git(cwd, ['config', `branch.${branch}.gh-merge-base`, upstream.branch]).catch(() => undefined)
         await this.git(cwd, ['push', '-u', remote, `HEAD:refs/heads/${publish}`], { timeoutMs: PUSH_TIMEOUT_MS })
@@ -240,7 +257,7 @@ export class GitActions {
       return { status: 'pushed', branch: upstream.branch, upstream: status.upstream! }
     } catch (error) {
       const detail = error instanceof Error ? error.message : ''
-      if (/non-fast-forward|fetch first|rejected/iu.test(detail)) throw new GitActionRefusal('Branch is behind upstream. Pull/rebase before pushing.')
+      if (/non-fast-forward|fetch first/iu.test(detail)) throw new GitActionRefusal('Branch is behind upstream. Pull/rebase before pushing.')
       throw new GitActionRefusal(`Push failed. ${safeRemote(detail).split('\n').slice(-2).join(' ').slice(0, 600)}`.trim())
     }
   }
@@ -272,7 +289,8 @@ export class GitActions {
     if (existing) return { status: 'opened_existing', url: existing.url, number: existing.number, base: existing.base, head: branch, title: existing.title }
     const base = await this.baseBranch(cwd, branch)
     progress({ kind: 'phase_started', phase: 'pr', stage: 'Generating PR content...' })
-    const range = await this.git(cwd, ['rev-parse', '--verify', '-q', `refs/remotes/origin/${base}^{commit}`]).then(sha => sha.trim() || base, () => base)
+    const remote = parseUpstream(status.upstream).remote
+    const range = await this.git(cwd, ['rev-parse', '--verify', '-q', `refs/remotes/${remote}/${base}^{commit}`]).then(sha => sha.trim() || base, () => base)
     const subjects = (await this.git(cwd, ['log', '--oneline', '--no-merges', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_LOG_MAX).split('\n').map(line => line.replace(/^\S+\s+/u, '').trim()).filter(Boolean).reverse()
     const stat = (await this.git(cwd, ['diff', '--stat', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_STAT_MAX)
     const patch = (await this.git(cwd, ['diff', '--no-ext-diff', '--patch', '--minimal', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_PATCH_MAX)
@@ -281,16 +299,15 @@ export class GitActions {
     const title = written?.title ?? subjects.at(-1) ?? STAND_IN_SUBJECT
     const body = written?.body ?? (template ?? subjects.map(subject => `- ${subject}`).join('\n'))
     progress({ kind: 'phase_started', phase: 'pr', stage: 'Creating pull request...' })
-    const bodyDir = await mkdtemp(join(tmpdir(), 'sotto-pr-body-'))
-    try {
-      const bodyFile = join(bodyDir, 'body.md')
-      await writeFile(bodyFile, body, 'utf8')
-      await this.gh(cwd, ['pr', 'create', '--base', base, '--head', branch, '--title', title, '--body-file', bodyFile], { timeoutMs: 120_000 })
-        .catch(error => { throw new GitActionRefusal(`Could not create the pull request. ${safeRemote(error instanceof Error ? error.message : '').slice(-400)}`.trim()) })
-    } finally { await rm(bodyDir, { recursive: true, force: true }).catch(() => undefined) }
-    // The write is never repeated: what GitHub now lists is the answer, with or without a URL.
+    let creationError: Error | undefined
+    // The body goes in on standard input, so it is never an argument and never a file on disk.
+    await this.gh(cwd, ['pr', 'create', '--base', base, '--head', branch, '--title', title, '--body-file', '-'], { timeoutMs: 120_000, stdin: body })
+      .catch(error => { creationError = error instanceof Error ? error : new Error(String(error)) })
+    // The write is never repeated. A lost acknowledgement is settled by asking what GitHub now lists: a
+    // pull request that is there was created, whatever the reply said; one that is not is the refusal.
     const created = await this.openPullRequest(cwd, branch).catch(() => null)
-    return { status: 'created', head: branch, base, title, ...(created ? { url: created.url, number: created.number } : {}) }
+    if (creationError && !created) throw new GitActionRefusal(`Could not create the pull request. ${safeRemote(creationError.message).slice(-400)}`.trim())
+    return { status: 'created', head: branch, base, title: created?.title ?? title, ...(created ? { url: created.url, number: created.number } : {}) }
   }
 
   /** The repository's one pull request template at the base, where exactly one exists (T3's rule). */
@@ -393,8 +410,15 @@ export class GitActions {
       const status = await this.dependencies.status.read(cwd, { remote: false })
       if (!status.isRepository) throw new GitActionRefusal('Initialize Git before publishing.')
       if (status.hasRemote) throw new GitActionRefusal('This repository already has an origin remote.')
-      const args = ['repo', 'create', options.repository, `--${options.visibility}`, '--source', '.', '--remote', 'origin', ...(status.branch && status.ahead + status.aheadOfDefault! >= 0 && await this.git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false) ? ['--push'] : [])]
-      const output = await this.gh(cwd, args, { timeoutMs: 120_000 }).catch(error => { throw new GitActionRefusal(`Publish failed. ${safeRemote(error instanceof Error ? error.message : '').slice(-400)}`.trim()) })
+      const hasCommit = await this.git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false)
+      const args = ['repo', 'create', options.repository, `--${options.visibility}`, '--source', '.', '--remote', 'origin', ...(hasCommit ? ['--push'] : [])]
+      let output = ''
+      try { output = await this.gh(cwd, args, { timeoutMs: 120_000 }) }
+      catch (error) {
+        // A reply that never came back is settled by the remote gh adds when it succeeds.
+        const origin = (await this.git(cwd, ['remote', 'get-url', 'origin']).catch(() => '')).trim()
+        if (!origin) throw new GitActionRefusal(`Publish failed. ${safeRemote(error instanceof Error ? error.message : '').slice(-400)}`.trim())
+      }
       const url = /https:\/\/\S+/u.exec(output)?.[0] ?? `https://github.com/${options.repository}`
       return { url }
     })

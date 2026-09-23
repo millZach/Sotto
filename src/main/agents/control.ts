@@ -122,6 +122,10 @@ export interface AgentMembership {
 }
 
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
+const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish'] as const
+type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
+const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
+
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly threadActions = new Map<string, Promise<unknown>>()
@@ -889,7 +893,7 @@ export class AgentControl {
    * behind, so a thread can be renamed while its agent is still working.
    */
   /** T3's Git commands, answered in the host's words: a refusal is the notice, never a thrown error the window has to guess at. */
-  private async gitCommand(command: Extract<AgentCommand, { type: 'git-action' | 'git-pull' | 'git-switch-branch' | 'git-init' | 'git-publish' }>): Promise<AgentState> {
+  private async gitCommand(command: GitCommand): Promise<AgentState> {
     const host = this.dependencies.host
     try {
       this.thread(command.threadId)
@@ -1075,7 +1079,7 @@ export class AgentControl {
     }
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
     // A Git action runs as long as its hooks and its push take, on the thread's own lane in the host, never on the global one.
-    if (command.type === 'git-action' || command.type === 'git-pull' || command.type === 'git-switch-branch' || command.type === 'git-init' || command.type === 'git-publish') return this.gitCommand(command)
+    if (isGitCommand(command)) return this.gitCommand(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.
