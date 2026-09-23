@@ -2,6 +2,7 @@ import { HOSTS_GET, HOSTS_COMMAND, HOSTS_CHANGED, hostsCommandSchema, type Hosts
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { hostClientBridge } from './hostClientBridge'
+import { createAgentStateCatalogCache } from './agentStateCatalogCache'
 import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONAL_CHAT_STATE, personalChatStateSchema, personalChatCommandSchema, personalSkillsInputSchema, type PersonalChatBridge, type PersonalChatCommand } from '../shared/personalChats'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
@@ -243,6 +244,9 @@ function validatedRoutedCommand(command: import('../shared/agents').AgentCommand
 }
 
 function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentBridge {
+  // One cache per window: it lives as long as this preload script does, so a reload starts it empty
+  // exactly when the window's own memory of what main sent it also starts empty.
+  const reassembleState = createAgentStateCatalogCache(renderer)
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
@@ -264,8 +268,10 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, validatedRoutedCommand(command)),
+    // The broadcast may omit a model catalog this window already has (issue #286); this puts it back
+    // before the listener ever sees the state, so every consumer keeps reading a whole AgentState.
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
-      trustedState<import('../shared/agents').AgentState>('host'), listener),
+      trustedState<Record<string, unknown>>('host'), raw => reassembleState(raw, listener)),
   })
 }
 
