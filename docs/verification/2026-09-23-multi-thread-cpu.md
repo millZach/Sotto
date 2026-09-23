@@ -1,6 +1,6 @@
 # Multi-thread CPU verification
 
-Local implementation against `11e60a67f5529a1eefad5be5bc5990ef069f5205` on Windows 11, Intel Core Ultra 9 275HX, 24 logical processors. The installed Sotto and user conversations were not changed. This note records the local implementation evidence; the subsequent authorized PR delivery and CI results are recorded below. No release or installation is part of this change.
+Local implementation against `11e60a67f5529a1eefad5be5bc5990ef069f5205` on Windows 11, Intel Core Ultra 9 275HX, 24 logical processors. The installed Sotto and user conversations were not changed. This note records the local implementation evidence; subsequent authorized PR delivery and CI results are linked below. No release or installation is part of this change.
 
 ## What changed
 
@@ -65,4 +65,6 @@ Apple silicon macOS, live native accounts and a controlled before/after trial of
 
 ## Pull request verification
 
-The user authorized committing, publishing the PR, monitoring CI and review, and merging after the required checks pass. The final source is being rechecked with the full local two-worker suite and both hosted CI jobs. Existing local Electron limitations above remain disclosed; green CI does not substitute for live-account or macOS verification.
+The user authorized committing, publishing the PR, monitoring CI and review, and merging after the required checks pass. [PR #279](https://github.com/millZach/Sotto/pull/279) records the final local two-worker suite and hosted CI outcomes. Existing local Electron limitations above remain disclosed; green CI does not substitute for live-account or macOS verification.
+
+The committed-diff Standards review found no hard violations; its only optional smell was the small activity-certification loop repeated across four adapters. Spec review found no confirmed correctness regression or agent restriction. It identified two partial verification requirements: the Electron performance fixture uses a legacy provider rather than one combined native multi-provider route through every layer, and automation interruptions prevented five complete Electron sample pairs. Native adapter and routing seams are covered separately. Neither gap is treated as evidence of a whole-app CPU reduction.
