@@ -32,6 +32,8 @@ export interface HostPairing { v: 1; hostId: string; clientId: string; token: st
 export interface HostReceipt { status: 'pending' | 'completed' | 'unknown'; error?: HostProtocolError | undefined }
 export interface HostDescriptor { v: 1; pid: number; hostId: string; port: number }
 export const HOST_SESSION_REJECTED = 'This connection is no longer authorized. Connect again or pair this device on the host.'
+/** What an HTTP 429 from the host means to the user: nothing is wrong with this device, and waiting is the fix. */
+export const HOST_BUSY = 'The host is busy. Nothing was lost. Try again in a moment.'
 
 
 const eventPageShape = { events: z.array(z.object({ seq: z.number().int().nonnegative(), threadId: id, event: threadEventSchema })).max(HOST_EVENT_PAGE_SIZE), latestSeq: z.number().int().nonnegative(), hasMore: z.boolean() }
