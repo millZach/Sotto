@@ -16,12 +16,18 @@ One journey, the one the Linux CI job runs against a localhost sshd (`tests/inte
 
 No prompt was shown during the run: Tailscale SSH authenticates by tailnet identity, and forge's host key was already in `known_hosts`. Sixteen ssh processes ran for the four connects, plus one `ssh -V`.
 
+## The same journey through the Windows ssh.exe
+
+The first run drove Git Bash's OpenSSH 10.2, because `C:\Windows\System32\OpenSSH\ssh.exe` exits 255 with no output when started from inside the agent harness: `-V`, `-G` and a plain command all do, piped, without `windowsHide`, with a stripped environment and under node-pty's pseudo-console alike. Started through WMI (`Win32_Process.Create`), which puts the process outside the harness's process tree, the same binary printed `OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2` and ran a command on forge with exit 0. The failure belongs to the harness, not to the machine or to how Sotto spawns ssh.
+
+So the driver ran a second time through WMI with `SOTTO_FORGE_WINSSH=1`: the launcher's own defaults, which pick the System32 `ssh.exe` on Windows and pass `LogLevel=DEBUG1`. Every step above passed again (vitest 1 passed in 16.1 s). All sixteen connection processes and the `ssh -V` were `C:\Windows\System32\OpenSSH\ssh.exe`; the version check read 9.5p2 as new enough; the reconnect came 4.1 s after the forward was killed, on the first backoff step; Forget left no paired client and no host running.
+
 ## Evidence
 
-- `artifacts/forge-hand-test/journey.json`: every step with its time, every status the row passed through, the spawn arguments of every ssh (with nothing from the askpass environment), the descriptor read on forge before and after each step, and the counts above. It holds no token, code, key or prompt text.
-- `artifacts/forge-hand-test/forgeJourney.test.ts.txt`: the driver, kept beside the log rather than in the suite. It is `realSshd.test.ts` with the target set to `forge`, the launcher given `platform: 'linux'` and Git Bash's `ssh.exe` as its executable, and the host machine inspected over a second ssh at each step. Run it from a checkout with `SOTTO_FORGE=1` after copying it back under `tests/integration/`.
+- `artifacts/forge-hand-test/journey.json` (Git Bash's OpenSSH) and `journey-windows-ssh.json` (the System32 `ssh.exe`): every step with its time, every status the row passed through, the spawn arguments of every ssh (with nothing from the askpass environment), the descriptor read on forge before and after each step, and the counts above. It holds no token, code, key or prompt text.
+- `artifacts/forge-hand-test/forgeJourney.test.ts.txt`: the driver, kept beside the logs rather than in the suite. It is `realSshd.test.ts` with the target set to `forge` and the host machine inspected over a second ssh at each step. By default it gives the launcher `platform: 'linux'` and Git Bash's `ssh.exe`; with `SOTTO_FORGE_WINSSH=1` it leaves the launcher's Windows defaults alone. Run it from a checkout with `SOTTO_FORGE=1` after copying it back under `tests/integration/`.
 
-Vitest reported 1 passed in 13.5 s.
+Vitest reported 1 passed in 13.5 s through Git Bash's OpenSSH and 1 passed in 16.1 s through the Windows `ssh.exe`.
 
 ## The machine
 
@@ -31,7 +37,8 @@ Vitest reported 1 passed in 13.5 s.
 
 ## What this does not prove
 
-- **The Windows `ssh.exe` Sotto spawns.** The System32 OpenSSH 9.5p2 exits 255 without output from every non-console harness on the laptop, so this run used Git Bash's OpenSSH 10.2 and the POSIX askpass path. Whether ssh.exe starts the `.cmd` askpass shim, prints the `DEBUG1` host-key line the fingerprint recovery reads, and which exit codes it uses are still unverified. That needs the running app: Settings > Hosts, add `forge`, Connect.
+- **The Windows askpass path.** The `ssh.exe` run asked nothing, so whether ssh.exe starts the `.cmd` askpass shim, and whether its `DEBUG1` output carries the `Server host key` line the fingerprint recovery reads, are still unverified. A host behind plain OpenSSH with a new host key or a passphrase-protected key would exercise both.
+- **The released app.** Sotto 0.1.16 was cut from 3ef46ad3, before the five pull requests this run exercises, so the installed app still has the old launcher. It reaches forge but runs a bare `node`, which forge's non-interactive shell does not have, and reports that exit as "SSH refused the connection". A release from `main` carries the launcher proved here.
 - **Password, passphrase and host-key prompts.** Tailscale SSH asked for nothing, so the askpass helper carried no question here. The Linux CI job covers a passphrase and a new host key through the real helper against a loopback sshd.
 - **A provider turn.** No provider client is signed in on forge, so no prompt was sent and no reply seen. #138's acceptance still owes that.
 - **A dropped network.** The forward was killed, not the link, so the `ServerAlive` timeout path did not run.

@@ -1,8 +1,9 @@
 // @vitest-environment node
 /**
- * One-off hand-test driver, never committed: the real launcher and askpass helper against the real host
- * `forge` over Tailscale SSH, through Git Bash's OpenSSH because the Windows System32 ssh.exe cannot run
- * from this harness. Opt-in through SOTTO_FORGE=1. Writes a journey log with no tokens in it.
+ * One-off hand-test driver, kept beside its logs rather than in the suite: the real launcher and askpass
+ * helper against the real host `forge` over Tailscale SSH. Opt-in through SOTTO_FORGE=1. By default it
+ * drives Git Bash's OpenSSH; SOTTO_FORGE_WINSSH=1 drives the Windows System32 ssh.exe the app spawns,
+ * which has to be run from a process outside a sandboxing harness. Writes a journey log with no tokens in it.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -23,6 +24,8 @@ import type { HostStatus } from '../../src/shared/hosts'
 import type { ChildProcess } from 'node:child_process'
 
 const enabled = process.env.SOTTO_FORGE === '1'
+/** The Windows ssh.exe Sotto spawns in the app, instead of Git Bash's OpenSSH. */
+const WINSSH = process.env.SOTTO_FORGE_WINSSH === '1'
 const GIT_SSH = 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe'
 const TARGET = 'forge'
 const INSTALL = '~/sotto-host', DATA = '~/.sotto'
@@ -49,7 +52,7 @@ describe.skipIf(!enabled)('the SSH transport against forge over Tailscale SSH', 
     await manager?.close(); router?.dispose()
     const out = resolve('artifacts/forge-hand-test')
     await mkdir(out, { recursive: true })
-    await writeFile(join(out, 'journey.json'), JSON.stringify({ prompts: prompts.map(prompt => ({ kind: prompt.kind, text: prompt.text })), spawnCount, versionChecks, scheduled, journey }, null, 2) + '\n', 'utf8')
+    await writeFile(join(out, WINSSH ? 'journey-windows-ssh.json' : 'journey.json'), JSON.stringify({ prompts: prompts.map(prompt => ({ kind: prompt.kind, text: prompt.text })), spawnCount, versionChecks, scheduled, journey }, null, 2) + '\n', 'utf8')
     if (root) await rm(root, { recursive: true, force: true })
   })
 
@@ -65,12 +68,12 @@ describe.skipIf(!enabled)('the SSH transport against forge over Tailscale SSH', 
       if (args.includes('-V')) versionChecks += 1
       else spawnCount += 1
       note('spawn', { file, args: args.filter(arg => !arg.includes('SOTTO_') && arg.length < 200) })
-      const child = spawnSsh(GIT_SSH, args, options)
+      const child = spawnSsh(WINSSH ? file : GIT_SSH, args, options)
       if (args.includes('-N')) forwards.push(child)
       return child
     }
     manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined,
-      launcher: () => new SshHostLauncher({ spawn: spawner, env, platform: 'linux', executable: GIT_SSH, readyTimeoutMs: 90_000, authenticationTimeoutMs: 120_000 }),
+      launcher: () => new SshHostLauncher(WINSSH ? { spawn: spawner, env, readyTimeoutMs: 90_000, authenticationTimeoutMs: 120_000 } : { spawn: spawner, env, platform: 'linux', executable: GIT_SSH, readyTimeoutMs: 90_000, authenticationTimeoutMs: 120_000 }),
       retryDelayMs: attempt => { scheduled.push(attempt); return reconnectDelayMs(attempt) } })
     await manager.start()
     const answered = new Set<string>()
