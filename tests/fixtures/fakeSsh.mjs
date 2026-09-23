@@ -140,6 +140,9 @@ async function control(script) {
     // Output a login profile prints, a line cut short and an event this launcher does not know are all read past.
     if (mode === 'noisy') process.stdout.write('Welcome to forge!\n{"type":"pairing-co\n{"type":"progress","percent":50}\n')
     if (mode !== 'discovered') say({ type: 'starting' })
+    // A host that takes this long to start after SSH has signed in.
+    const starting = Number(process.env.FAKE_SSH_START_MS ?? 0)
+    if (starting > 0) await new Promise(resolve => setTimeout(resolve, starting))
     say({ type: 'ready', ...health(), owned: mode !== 'discovered' })
   }
   if (operation === 'pairing-code') { record({ type: 'pairing-requested' }); say({ type: 'pairing-code', hostId, code: 'ABC123', expiresAt: new Date(Date.now() + 60_000).toISOString() }) }

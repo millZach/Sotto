@@ -154,13 +154,16 @@ export class SshHostLauncher {
     this.attempt = attempt
     this.status(attempt, 'connecting')
     const authentication = this.dependencies.authenticationTimeoutMs ?? 120_000
+    // Bounds signing in only. It stops at the launch command's first output, which only a signed-in
+    // session can send; from there each step has its own budget, so a slow sign-in cannot eat the host's start.
     const timeout = setTimeout(() => this.fail(attempt, new SshFailure(attempt.prompt ? 'prompt-unanswered' : 'connect-timeout')), authentication)
+    const signedIn = (): void => clearTimeout(timeout)
     try {
       const broker = await AskpassBroker.start((caller, question, withdrawn) => this.ask(attempt, caller, question, withdrawn), { node: this.dependencies.askpassNode ?? process.execPath, platform: this.platform() })
       attempt.broker = broker
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       const route = attempt.route = await this.resolve(attempt)
-      const result = await this.control(attempt, { op: 'launch' }, authentication + this.readyTimeout(), 'host-start-failed', () => this.status(attempt, 'starting'))
+      const result = await this.control(attempt, { op: 'launch' }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => this.status(attempt, 'starting') })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
       if (!parsed.success) throw new SshFailure('host-start-failed')
@@ -184,7 +187,7 @@ export class SshHostLauncher {
           await Promise.race([delay(100), cancelled])
         }
       }
-      if (!verified) throw new SshFailure('forward-timeout')
+      if (!verified) throw new SshFailure(attempt.prompt ? 'prompt-unanswered' : 'forward-timeout')
       attempt.connected = true
       this.status(attempt, 'ready')
       return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route,
@@ -260,7 +263,8 @@ export class SshHostLauncher {
    * Runs one launch script operation: `ssh <target> sh -c <probe> ...` with the script written to stdin.
    * The last JSON line on stdout is the result; anything a login profile printed before it is skipped.
    */
-  private async control(attempt: Attempt, operation: LaunchOperation, budgetMs: number, fallback: SshFailureCode, onStarting?: () => void): Promise<Record<string, unknown>> {
+  private async control(attempt: Attempt, operation: LaunchOperation, budgetMs: number, fallback: SshFailureCode,
+    events: { readonly onOutput?: () => void; readonly onStarting?: () => void } = {}): Promise<Record<string, unknown>> {
     const configuration = attempt.configuration
     const run = this.start(attempt, [...this.baseArguments(configuration), '-T', '-o', 'ClearAllForwardings=yes', configuration.target,
       launchScriptCommand(configuration, operation, this.readyTimeout())], 'pipe')
@@ -270,11 +274,12 @@ export class SshHostLauncher {
     const read = (line: string): void => {
       const value = resultLine(line.trim())
       if (!value) return
-      if (value.type === 'starting') onStarting?.()
+      if (value.type === 'starting') events.onStarting?.()
       else result = value
     }
     run.child.stdout?.setEncoding('utf8')
     run.child.stdout?.on('data', (chunk: string) => {
+      if (size === 0) events.onOutput?.()
       size += chunk.length
       if (size > OUTPUT_LIMIT) { run.child.kill(); return }
       buffer += chunk
@@ -284,7 +289,10 @@ export class SshHostLauncher {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timedOut = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), budgetMs) })
     try {
-      if (await Promise.race([run.exited, timedOut, attempt.cancelled]) === 'timeout') { run.child.kill(); throw new SshFailure(fallback) }
+      if (await Promise.race([run.exited, timedOut, attempt.cancelled]) === 'timeout') {
+        const asking = attempt.prompt?.caller === run.caller || attempt.queue.some(item => item.caller === run.caller)
+        run.child.kill(); throw new SshFailure(asking ? 'prompt-unanswered' : fallback)
+      }
     } finally { clearTimeout(timer) }
     read(buffer)
     if (result && size <= OUTPUT_LIMIT) return result

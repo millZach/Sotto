@@ -18,11 +18,12 @@ afterEach(async () => {
 const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }
 const SCRIPT_SHA = createHash('sha256').update(LAUNCH_SCRIPT_SOURCE).digest('hex')
 interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; stdinSha256: string; askpass: boolean }
-async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number } = {}) {
+async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; startMs?: number } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-')); directories.push(path)
   const record = join(path, 'ssh.jsonl')
   const spawner: SpawnSsh = (_file, args, spawnOptions) => spawn(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args],
-    { shell: false, windowsHide: true, stdio: [spawnOptions.stdin, 'pipe', 'pipe'], env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path } })
+    { shell: false, windowsHide: true, stdio: [spawnOptions.stdin, 'pipe', 'pipe'],
+      env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0) } })
   const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000, readyTimeoutMs: 5000 })
   launchers.push(launcher)
   const events = async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Spawned & { kind?: string; accepted?: boolean; owned?: boolean })
@@ -174,6 +175,23 @@ it('times out without a result, then connects again with a fresh forward', async
   expect((await events()).filter(item => item.type === 'forward-ready')).toHaveLength(2)
   expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
   await second.close()
+})
+it('gives the host its own time to start however long signing in took', async () => {
+  // Sign-in has 3 s and the host 5 s. A password answered after 1.5 s and a host that then needs 3.5 s
+  // to start take longer than sign-in's budget together, and still connect.
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 3000, startMs: 3500 })
+  const status: string[] = []
+  const connection = await launcher.connect(configuration, { onStatus: value => status.push(value),
+    onPrompt: prompt => { if (prompt) setTimeout(() => launcher.answerPrompt(prompt.id, 'test-secret'), 1500) } })
+  expect(status).toEqual(['connecting', 'starting', 'forwarding', 'ready'])
+  await connection.close()
+})
+it('stops with prompt-unanswered when nobody answers', async () => {
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 500 })
+  let shown = false
+  const error = await failure(launcher.connect(configuration, { onPrompt: prompt => { if (prompt) shown = true } }))
+  expect(shown).toBe(true)
+  expect(error.code).toBe('prompt-unanswered')
 })
 it('reads past what a login profile prints and lines it cannot parse', async () => {
   const { launcher } = await fixture('noisy')
