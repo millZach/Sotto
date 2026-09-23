@@ -30,10 +30,11 @@ function storage(): ShellCacheStorage | null {
  * reference. A restored shell is stale and disconnected: nothing that offers a model needs one beyond what
  * a thread already carries until the real state lands (`ThreadOptions.canCreateWith` already refuses every
  * model but a thread's own while disconnected). The account's full catalog, hundreds of models on some
- * accounts, repaints from main once connected.
+ * accounts, repaints from main once connected. The host's own catalog keeps every thread's model, whichever
+ * host the thread is on: the Agents room and the browser read the active thread's model from it directly.
  */
 function trimCatalogsToReferencedModels(host: AgentHostSnapshot): AgentHostSnapshot {
-  const referenced = new Map<readonly AgentModel[], Set<string>>()
+  const referenced = new Map<readonly AgentModel[], Set<string>>([[host.models, new Set(host.threads.map(thread => thread.modelId))]])
   for (const thread of host.threads) {
     const models = hostForThread(host, thread).models
     let ids = referenced.get(models)

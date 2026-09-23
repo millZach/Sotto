@@ -216,6 +216,22 @@ describe('the startup shell cache', () => {
     expect(restored.host.clientHosts!.find(entry => entry.hostId === 'local-host')!.models).toEqual([ownModel])
     expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
   })
+
+  it('keeps a remote thread\'s model in the host\'s own catalog, where the Agents room looks it up', () => {
+    // Model IDs are not host-keyed, so the same model can sit in both catalogs.
+    const shared = model('native:claude:model:sonnet')
+    const live = fullState([
+      { ...thread('local-thread', []), hostId: 'local-host', modelId: 'claude:local' },
+      { ...thread('remote-thread', []), hostId: 'remote-host', modelId: shared.id },
+    ])
+    const ownCatalog = [model('claude:local'), shared, model('claude:unused')]
+    live.host = { ...live.host, models: ownCatalog, clientHosts: [
+      { hostId: 'local-host', connected: true, models: ownCatalog, capabilities: live.host.capabilities },
+      { hostId: 'remote-host', connected: true, models: [shared], capabilities: live.host.capabilities },
+    ] }
+    writeShellCache(live)
+    expect(readShellCache()!.host.models.map(entry => entry.id)).toEqual(['claude:local', shared.id])
+  })
 })
 
 describe('a shell held for its frame', () => {
