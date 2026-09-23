@@ -9,6 +9,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -148,12 +149,16 @@ export class DevinAcpHost implements AgentHost {
   private readonly dispatching = new Set<string>()
   private readonly observed = new Set<string>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly allProcesses = new Set<DevinRpc>()
   private readonly log = new ThreadMessageLog()
   private history: ThreadHistorySource | undefined
   private readonly publisher = new ProviderSnapshotPublisher(() => {
-    const snapshot = this.current()
-    for (const listener of this.listeners) listener(snapshot)
+    for (const listener of this.listeners) listener(this.current())
+    if (this.activityListeners.size) {
+      const snapshot = this.activitySnapshot()
+      for (const listener of this.activityListeners) listener(cloneActivitySnapshot(snapshot))
+    }
   })
   private readonly reaper: SessionReaper
   private state: AgentHostSnapshot = {
@@ -198,9 +203,18 @@ export class DevinAcpHost implements AgentHost {
   private current(): AgentHostSnapshot {
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) })
   }
+  private activitySnapshot(): AgentHostSnapshot {
+    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
+      thread.activities = immutableActivities(thread.activities)
+    }
+    return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) }
+  }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
     this.listeners.add(listener); return () => this.listeners.delete(listener)
+  }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.activityListeners.add(listener); return () => this.activityListeners.delete(listener)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
