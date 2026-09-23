@@ -21,6 +21,7 @@ import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, Sho
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
 import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscriptionCodex'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
@@ -145,8 +146,13 @@ export class CodexAppServerHost implements AgentHost {
   private readonly waiters = new Map<string, Waiter>()
   private readonly settingsConfirmations = new Map<string, { desired: Alias['pendingSettings']; settle: (confirmed: boolean) => void }>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
+    if (this.activityListeners.size) {
+      const snapshot = this.activitySnapshot()
+      for (const listener of this.activityListeners) listener(cloneActivitySnapshot(snapshot))
+    }
   })
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
@@ -358,6 +364,13 @@ export class CodexAppServerHost implements AgentHost {
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) })
   }
+  private activitySnapshot(): AgentHostSnapshot {
+    for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
+      thread.activities = immutableActivities(thread.activities)
+    }
+    return { ...this.state, threads: [...this.threads.values()]
+      .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.publishedThread(thread)) }
+  }
   personalSnapshot(): CodexPersonalConversation[] {
     return structuredClone([...this.threads.values()].filter((thread): thread is CodexPersonalConversation => 'kind' in thread && thread.kind === 'personal')
       .map(thread => this.log.publishedThread(thread)))
@@ -399,6 +412,9 @@ export class CodexAppServerHost implements AgentHost {
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
+  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.activityListeners.add(listener); return () => this.activityListeners.delete(listener)
+  }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> {

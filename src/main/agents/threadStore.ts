@@ -7,6 +7,7 @@ import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqli
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
+import { isImmutableActivities } from './activitySnapshots'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -70,6 +71,7 @@ interface ActivityState {
   epoch: string | undefined
   resetSequence: number | undefined
   records: Map<string, { position: number; activity: AgentActivity }>
+  input?: { activities: readonly AgentActivity[]; redactionRevision: number } | undefined
 }
 
 function activityIdentityHash(threadId: string, activityId: string): string {
@@ -122,6 +124,7 @@ export class ThreadStore {
   /** Independent successful values: providers may mutate their records after a publish. */
   private readonly activityStates = new Map<string, ActivityState>()
   private readonly activityRedactions = new Set<string>()
+  private redactionRevision = 0
   private readonly redactionChecks = new Map<string, Map<string, boolean>>()
   /** While history is off, this connection writes identity hashes alone, never activity text. */
   private durableRedactions: ThreadStore | undefined
@@ -239,6 +242,7 @@ export class ThreadStore {
       } catch (error) { db.exec('ROLLBACK'); throw error }
     }
     for (const hash of added) this.activityRedactions.add(hash)
+    this.redactionRevision++
     this.redactionChecks.clear()
   }
 
@@ -312,6 +316,9 @@ export class ThreadStore {
     const previous = this.activityState(threadId)
     const resetSequence = this.readMessageEpoch(threadId)?.sequence ?? 0
     const reset = previous.epoch !== epoch || (previous.resetSequence !== undefined && previous.resetSequence !== resetSequence)
+    const immutable = isImmutableActivities(activities)
+    if (immutable && previous.known && !reset && previous.resetSequence === resetSequence
+      && previous.input?.activities === activities && previous.input.redactionRevision === this.redactionRevision) return
     const next: ActivityState = { known: true, epoch, resetSequence, records: new Map() }
     const changed: { position: number; activity: AgentActivity }[] = []
     const moved: { id: string; position: number }[] = []
@@ -332,7 +339,10 @@ export class ThreadStore {
       }
     }
     const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
-    if (previous.known && previous.resetSequence === resetSequence && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) return
+    if (previous.known && previous.resetSequence === resetSequence && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) {
+      previous.input = immutable ? { activities, redactionRevision: this.redactionRevision } : undefined
+      return
+    }
     if (this.memory) this.redactActivityIdentities(threadId, changed.map(({ activity }) => activity.id))
     db.exec('BEGIN IMMEDIATE')
     try {
@@ -351,6 +361,8 @@ export class ThreadStore {
       for (const { id, position } of moved) this.statement('UPDATE activities SET position = ? WHERE thread_id = ? AND activity_id = ?').run(position, threadId, id)
       db.exec('COMMIT')
     } catch (error) { db.exec('ROLLBACK'); throw error }
+    // Only a committed revision can suppress the next save. A failed transaction keeps its retry.
+    if (immutable) next.input = { activities, redactionRevision: this.redactionRevision }
     this.activityStates.set(threadId, next)
   }
 
@@ -466,6 +478,7 @@ export class ThreadStore {
     }
     this.activityStates.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
+    this.redactionRevision++
     this.redactionChecks.clear()
     scrub(db)
   }
@@ -488,6 +501,7 @@ export class ThreadStore {
     }
     this.activityStates.clear()
     for (const hash of hashes) this.activityRedactions.add(hash)
+    this.redactionRevision++
     this.redactionChecks.clear()
     scrub(db)
   }

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { AgentCommand, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
@@ -29,6 +30,10 @@ async function state(page: Page): Promise<AgentState> {
     if (!bridge) throw new Error('Agent bridge unavailable')
     return bridge.get()
   })
+}
+
+function thread(snapshot: AgentState, id: string) {
+  return snapshot.host.threads.find(item => item.id === hostEntityKey(snapshot.hostId, id))
 }
 
 async function event(page: Page, value: HostEvent): Promise<void> {
@@ -67,8 +72,8 @@ test('composes a spoken answer across pauses and advances only after explicit su
     await command(page, { type: 'utterance', text: 'Use the same layout' })
     await expect(page.locator('.agent-composer textarea')).toHaveValue('Use the same layout')
     let snapshot = await state(page)
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.status).toBe('running')
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests.map(request => request.id)).toEqual(['layout-question'])
+    expect(thread(snapshot, 'workshop')?.status).toBe('running')
+    expect(thread(snapshot, 'workshop')?.requests.map(request => request.id)).toEqual(['layout-question'])
 
     // A second host needs attention while the first answer is still being dictated.
     await event(page, docsQuestion)
@@ -76,16 +81,16 @@ test('composes a spoken answer across pauses and advances only after explicit su
     await command(page, { type: 'utterance', text: 'but keep the sidebar.' })
     await expect(page.locator('.agent-composer textarea')).toHaveValue('Use the same layout but keep the sidebar.')
     snapshot = await state(page)
-    expect(snapshot.activeThreadId).toBe('workshop')
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(1)
-    expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests).toHaveLength(1)
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))
+    expect(thread(snapshot, 'workshop')?.requests).toHaveLength(1)
+    expect(thread(snapshot, 'docs')?.requests).toHaveLength(1)
 
     snapshot = await command(page, { type: 'utterance', text: 'send it' })
     expect(snapshot.error).toBeNull()
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
+    expect(thread(snapshot, 'workshop')?.requests).toHaveLength(0)
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)
-    expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
-    expect(snapshot.activeThreadId).toBe('docs')
+    expect(thread(snapshot, 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'docs'))
     await expect(page.locator('.agent-composer textarea')).toHaveValue('')
     await expect(page.getByRole('heading', { name: 'Docs', exact: true })).toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Docs', exact: true }).getByText(docsQuestion.text, { exact: true })).toBeVisible()
@@ -116,10 +121,10 @@ test('restores the pending question binding with its draft after an application 
 
     const snapshot = await command(launched.page, { type: 'utterance', text: 'send it' })
     expect(snapshot.error).toBeNull()
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
+    expect(thread(snapshot, 'workshop')?.requests).toHaveLength(0)
     expect(await userMessageTexts(launched.page, 'workshop')).toHaveLength(0)
-    expect(snapshot.host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
-    expect(snapshot.activeThreadId).toBe('docs')
+    expect(thread(snapshot, 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'docs'))
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
   } finally {
     await closeSotto(launched)
@@ -134,11 +139,11 @@ test('keeps permission decisions explicit while allowing an exact spoken denial 
     await onboard(page)
     await event(page, { type: 'permission', threadId: 'workshop', requestId: 'publish-permission', text: 'Publish this project?', status: 'running' })
     let snapshot = await command(page, { type: 'utterance', text: 'I might allow this later.' })
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests.map(request => request.id)).toEqual(['publish-permission'])
+    expect(thread(snapshot, 'workshop')?.requests.map(request => request.id)).toEqual(['publish-permission'])
     expect(snapshot.draft).toBe('')
     snapshot = await command(page, { type: 'utterance', text: 'deny' })
     expect(snapshot.error).toBeNull()
-    expect(snapshot.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(0)
+    expect(thread(snapshot, 'workshop')?.requests).toHaveLength(0)
     expect(snapshot.draft).toBe('')
   } finally { await closeSotto(launched) }
 })
@@ -154,7 +159,8 @@ test('retains a typed question answer across queue navigation, widget edits, and
     await launched.page.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout')
     await launched.page.getByRole('dialog', { name: 'Workshop', exact: true }).getByRole('button', { name: 'Later', exact: true }).click()
     await expect(launched.page.getByRole('alert').first()).toContainText('Send or clear your draft')
-    expect((await state(launched.page)).activeThreadId).toBe('workshop')
+    const snapshot = await state(launched.page)
+    expect(snapshot.activeThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))
 
     const widget = launched.app.windows().find(window => window.url().endsWith('/widget.html'))!
     await widget.getByTestId('widget-sliver').hover()
@@ -180,8 +186,8 @@ test('retains a typed question answer across queue navigation, widget edits, and
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('Keep the existing layout and controls.')
     expect((await state(launched.page)).draftRequestId).toBe('layout-question')
     await launched.page.getByRole('button', { name: 'Send it', exact: true }).click()
-    await expect.poll(async () => (await state(launched.page)).host.threads.find(thread => thread.id === 'workshop')?.requests.length).toBe(0)
-    expect((await state(launched.page)).host.threads.find(thread => thread.id === 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
+    await expect.poll(async () => thread(await state(launched.page), 'workshop')?.requests.length).toBe(0)
+    expect(thread(await state(launched.page), 'docs')?.requests.map(request => request.id)).toEqual(['audience-question'])
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
   } finally {
     await closeSotto(launched)

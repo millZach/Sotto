@@ -65,7 +65,7 @@ export async function launchSotto(
   let application: ElectronApplication | undefined
   try {
     application = await dependencies.launch({
-      args: ['out/main/index.js'],
+      args: [process.env.SOTTO_E2E_MAIN_ENTRY ?? 'out/main/index.js'],
       env: e2eEnvironment(scenario, profile),
     })
     const page = await dependencies.firstWindow(application)
