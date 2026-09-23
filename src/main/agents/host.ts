@@ -80,6 +80,12 @@ export interface AgentHost {
   recordAnswer?(threadId: string, event: AnswerGivenEvent): void
   /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
   loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
+  /**
+   * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
+   * turn above the window waits there with its messages. A view for the thread detail alone; the records
+   * themselves stay whole everywhere else. Absent on hosts that keep no window, which give every record.
+   */
+  paneActivities?(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[]
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
   configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>

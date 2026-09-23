@@ -2,6 +2,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
@@ -109,5 +110,45 @@ describe('message copy control', () => {
     fireEvent.click(control)
     await waitFor(() => expect(control).toHaveTextContent('Copy failed'))
     expect(control).not.toHaveAttribute('data-copied')
+  })
+})
+
+describe('a pane holding the last turns of a long thread', () => {
+  // The reported shape: the store keeps every message, the pane holds a window of the latest turns,
+  // and the activity list still carries the work of the turns above that window.
+  const clock = (minute: number): string => `2026-09-23T03:${String(minute).padStart(2, '0')}:00.000Z`
+  const say = (id: string, role: AgentMessage['role'], minute: number): AgentMessage => ({ id, role, text: `${role} ${id}`, createdAt: clock(minute) })
+  const history = [say('u0', 'user', 0), say('a0', 'assistant', 1), say('u1', 'user', 10), say('a1', 'assistant', 11),
+    say('u2', 'user', 34), say('a2', 'assistant', 35)]
+  const loaded = history.slice(4)
+  const step = (id: string, turnId: string, afterMessageId: string, sequence: number, command: string, status: AgentActivity['status'] = 'completed'): AgentActivity =>
+    ({ id, turnId, afterMessageId, sequence, kind: 'command', status, title: 'Bash', command })
+  const lifecycle = (turnId: string, sequence: number, status: AgentActivity['status'], durationMs?: number): AgentActivity =>
+    ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status, title: 'Turn', ...(durationMs === undefined ? {} : { durationMs }) })
+  const activities = [
+    lifecycle('u0', 0, 'completed', 214_000), step('c0', 'u0', 'a0', 1, 'npm run earliest'),
+    lifecycle('u1', 2, 'completed', 1_750_000), step('c1', 'u1', 'a1', 3, 'npm run earlier', 'failed'),
+    lifecycle('u2', 4, 'running'), step('c2', 'u2', 'a2', 5, 'npm run now', 'running'),
+  ]
+  const live: ActivityContext = { liveTurn: 'u2', running: true, connected: true, provider: 'claude', onDisclosure: () => undefined }
+
+  it('keeps the work of turns above the window from piling under the newest answer', () => {
+    render(<MessageList messages={loaded} provider="claude" running placement={placeActivities(loaded, loaded, activities, false, true)} context={live} />)
+    const transcript = document.body.textContent ?? ''
+    expect(transcript).not.toContain('npm run earliest')
+    expect(transcript).not.toContain('npm run earlier')
+    expect(screen.queryByText(/Worked for/u)).not.toBeInTheDocument()
+    // The live turn keeps its layout: its answer, then the command it is running.
+    expect(transcript.indexOf('assistant a2')).toBeLessThan(transcript.indexOf('npm run now'))
+  })
+
+  it('puts each turn’s work between its own message and its reply once the earlier messages are loaded', () => {
+    render(<MessageList messages={history} provider="claude" running placement={placeActivities(history, history, activities)} context={live} />)
+    const turns = screen.getAllByRole('region', { name: /Worked for/u })
+    expect(turns.map(turn => turn.getAttribute('aria-label'))).toEqual(['Worked for 3m 34s', 'Worked for 29m 10s'])
+    const transcript = document.body.textContent ?? ''
+    const order = ['user u0', 'Worked for 3m 34s', 'assistant a0', 'user u1', 'Worked for 29m 10s', 'assistant a1', 'user u2', 'assistant a2', 'npm run now']
+    expect(order.map(text => transcript.indexOf(text))).toEqual([...order.map(text => transcript.indexOf(text))].sort((a, b) => a - b))
+    expect(order.every(text => transcript.includes(text))).toBe(true)
   })
 })

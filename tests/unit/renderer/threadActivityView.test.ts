@@ -68,10 +68,86 @@ describe('placing activity in the transcript', () => {
     expect(stopped.after.get('u2')![0]!.turn?.status).toBe('interrupted')
   })
 
+  it('places a turn whose records name no loaded message after its own user message', () => {
+    const activities = [
+      record({ id: 'first', afterMessageId: 'gone', turnId: 'u2', sequence: 1 }),
+      record({ id: 'second', turnId: 'u2', sequence: 2 }),
+    ]
+    const placement = placeActivities(messages, messages, activities)
+    expect(placement.after.get('u2')!.flatMap(group => group.records.map(item => item.id))).toEqual(['first', 'second'])
+    expect(placement.trailing).toEqual([])
+  })
+
   it('keeps group keys stable while records update in place', () => {
     const first = placeActivities(messages, messages, [record({ id: 'a', afterMessageId: 'u1', sequence: 3, status: 'running' })])
     const second = placeActivities(messages, messages, [record({ id: 'a', afterMessageId: 'u1', sequence: 3, status: 'completed' }), record({ id: 'b', afterMessageId: 'u1', sequence: 4 })])
     expect(second.after.get('u1')![0]!.key).toBe(first.after.get('u1')![0]!.key)
+  })
+})
+
+describe('placing activity when the messages are a window of a longer history', () => {
+  // The shape of a long Claude thread whose pane holds its last turns: the store keeps every message and
+  // the pane loads a window of them. Main keeps back the work it can place above the window, so in the app
+  // these records reach the pane only when main could not place them (a turn naming a message the store no
+  // longer holds); the pane still never stacks them under the newest answer.
+  const history = [
+    message('u0', 'user'), message('a0'), message('u1', 'user'), message('a1'),
+    message('u2', 'user'), message('a2'), message('u3', 'user'), message('a3'),
+  ]
+  const loaded = history.slice(4)
+  const activities = [
+    turn({ turnId: 'u0', afterMessageId: 'u0', status: 'completed', sequence: 0 }),
+    record({ id: 'u0-cmd', turnId: 'u0', afterMessageId: 'a0', sequence: 1 }),
+    record({ id: 'u0-agent', turnId: 'u0', kind: 'subagent', sequence: 2 }),
+    turn({ turnId: 'u1', afterMessageId: 'u1', status: 'completed', sequence: 3 }),
+    record({ id: 'u1-cmd', turnId: 'u1', afterMessageId: 'a1', status: 'failed', exitCode: 1, sequence: 4 }),
+    turn({ turnId: 'u2', afterMessageId: 'u2', status: 'completed', sequence: 5 }),
+    record({ id: 'u2-cmd', turnId: 'u2', afterMessageId: 'a2', sequence: 6 }),
+    turn({ turnId: 'u3', afterMessageId: 'u3', status: 'running', sequence: 7 }),
+    record({ id: 'u3-cmd', turnId: 'u3', afterMessageId: 'a3', status: 'running', sequence: 8 }),
+  ]
+  const placed = (placement: ReturnType<typeof placeActivities>): Record<string, string[]> => Object.fromEntries(
+    [...placement.after].map(([id, groups]) => [id, groups.flatMap(group => group.records.map(item => item.id))]))
+
+  it('never stacks the turns above the window under the newest answer', () => {
+    const placement = placeActivities(loaded, loaded, activities, false, true)
+    expect(placement.trailing).toEqual([])
+    expect(placement.leading).toEqual([])
+    expect(placed(placement)).toEqual({ a2: ['u2-cmd'], a3: ['u3-cmd'] })
+  })
+
+  it('gives those turns their places once the earlier messages are loaded', () => {
+    const placement = placeActivities(history, history, activities)
+    expect(placement.trailing).toEqual([])
+    expect(placement.leading).toEqual([])
+    expect(placed(placement)).toEqual({ a0: ['u0-cmd', 'u0-agent'], a1: ['u1-cmd'], a2: ['u2-cmd'], a3: ['u3-cmd'] })
+  })
+
+  it('shows earlier work it cannot place ahead of the conversation when no earlier messages exist', () => {
+    const placement = placeActivities(loaded, loaded, activities)
+    expect(placement.leading.map(group => group.records.map(item => item.id))).toEqual([['u0-cmd', 'u0-agent'], ['u1-cmd']])
+    expect(placement.leading.map(group => group.turn?.turnId)).toEqual(['u0', 'u1'])
+    expect(placement.trailing).toEqual([])
+    // Above the rendered page, it waits with the messages there.
+    expect(placeActivities(loaded, loaded.slice(2), activities).leading).toEqual([])
+    expect(placeActivities(loaded, loaded, activities, true).leading).toEqual([])
+  })
+
+  it('still trails a new turn whose own messages have not arrived', () => {
+    const placement = placeActivities(loaded, loaded, [...activities, record({ id: 'next', turnId: 'u4', afterMessageId: 'a4', status: 'running', sequence: 9 })], false, true)
+    expect(placement.trailing.map(group => group.records.map(item => item.id))).toEqual([['next']])
+    expect(placement.leading).toEqual([])
+  })
+
+  it('trails the only turn it has when no turn is placed, whether or not earlier messages exist', () => {
+    // A provider turn ID that is not a message, on a thread whose message has not reached the pane yet.
+    const live = [record({ id: 'first', turnId: 'codex-turn-9', afterMessageId: 'u9', status: 'running', sequence: 0 })]
+    for (const earlier of [false, true]) {
+      const placement = placeActivities(loaded, loaded, live, false, earlier)
+      expect(placement.trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
+      expect(placement.leading).toEqual([])
+    }
+    expect(placeActivities([], [], live).trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
   })
 })
 

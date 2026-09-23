@@ -27,6 +27,20 @@ function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Se
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
 
+/**
+ * The turn still being worked: the latest running turn record's, or, with none and the thread running, the
+ * turn of its newest record. A running record alone is not enough: a re-read tool call with no result is one.
+ */
+function liveTurn(activities: readonly AgentActivity[], status: AgentThread['status']): string | undefined {
+  let latest: AgentActivity | undefined
+  let newest: AgentActivity | undefined
+  for (const record of activities) {
+    if (record.kind === 'turn' && record.status === 'running' && (!latest || record.sequence > latest.sequence)) latest = record
+    if (!newest || record.sequence > newest.sequence) newest = record
+  }
+  return latest?.turnId ?? (status === 'running' ? newest?.turnId : undefined)
+}
+
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
@@ -124,6 +138,19 @@ export class WorkspaceHost implements AgentHost {
   private declared = false
   /** How many of a watched thread's messages sit before the window loaded into memory. */
   private readonly hidden = new Map<string, number>()
+  /**
+   * Per thread a pane is looking at, what the store said when asked whether it holds a message an activity
+   * record names above the window. Only the asked IDs are kept, so each costs one indexed lookup however
+   * often the thread is published. The answers go with a reset, a failed write, a store switch or the pane.
+   */
+  private readonly storedAnchors = new Map<string, { readonly answers: Map<string, boolean>; generation: number }>()
+  /** Stamps each change to those answers, so a view worked out against older ones is never reused. */
+  private anchorGeneration = 0
+  /** The message IDs of a loaded window, worked out once per loaded array. */
+  private readonly loadedIds = new WeakMap<readonly AgentMessage[], ReadonlySet<string>>()
+  /** The last pane view worked out for an activity list, reused while nothing it depends on has moved. */
+  private readonly paneViews = new WeakMap<readonly AgentActivity[], { readonly messages: readonly AgentMessage[]; readonly hidden: number;
+    readonly watched: boolean; readonly status: AgentThread['status']; readonly generation: number; readonly records: readonly AgentActivity[] }>()
   /** True when the provider host says what changed rather than publishing a whole history to compare. */
   private readonly eventSourced: boolean
   /** Events waiting to be written, so a streamed reply costs one transaction per publish, not per word. */
@@ -344,7 +371,7 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) return
     const carrying = snapshot.threads.filter(thread => thread.messages.length)
     if (carrying.length) {
-      try { for (const thread of carrying) this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch) }
+      try { for (const thread of carrying) { this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch); this.storedAnchors.delete(thread.id) } }
       catch { this.saveError = HISTORY_SAVE_ERROR; return }
       this.dirty = true
     }
@@ -377,6 +404,7 @@ export class WorkspaceHost implements AgentHost {
             // Both legacy projections describe the same JSON generation. Commit its first message
             // reset before activity so even an exit before the later flush leaves a matching marker.
             this.threadStore.replaceThreadMessages(thread.id, thread.messages, thread.historyEpoch)
+            this.storedAnchors.delete(thread.id)
             thread.messages = []
             messageGeneration = this.threadStore.readMessageEpoch(thread.id)
           }
@@ -480,8 +508,8 @@ export class WorkspaceHost implements AgentHost {
     const waiting = [...this.pendingEvents]
     this.pendingEvents.clear()
     for (const [threadId, events] of waiting) {
-      try { this.threadStore.appendMany(threadId, events) }
-      catch { this.saveError = HISTORY_SAVE_ERROR }
+      try { this.threadStore.appendMany(threadId, events); this.noteWritten(threadId, events) }
+      catch { this.saveError = HISTORY_SAVE_ERROR; this.storedAnchors.delete(threadId) }
       // The store, not the published array, is now what this thread's history is compared against.
       this.known.delete(threadId)
       if (events.some(event => event.kind === 'messages-reset')) this.hidden.delete(threadId)
@@ -528,8 +556,12 @@ export class WorkspaceHost implements AgentHost {
     if (this.storeUnavailable) return [...messages]
     const events = this.differences(thread.id, messages, thread.historyEpoch, previousEpoch)
     if (events.length) {
-      try { this.threadStore.appendMany(thread.id, events) }
-      catch { this.saveError = HISTORY_SAVE_ERROR; return [...messages] }
+      try { this.threadStore.appendMany(thread.id, events); this.noteWritten(thread.id, events) }
+      catch {
+        // The whole history goes to the pane as it is, so nothing is above a window any more.
+        this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
+        return [...messages]
+      }
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
     }
@@ -568,6 +600,79 @@ export class WorkspaceHost implements AgentHost {
     this.loadWindow(threadId)
     this.publish()
     return this.workspaceSnapshot()
+  }
+  /**
+   * The records a pane is given beside this thread's loaded window, decided a turn at a time. A turn's
+   * anchors are the messages its records followed, and its own ID when that names a message (Claude, Grok
+   * and Devin name a turn after its prompt). The window is the newest tail of the store, so a turn with an
+   * anchor among the loaded messages is inside it; one whose anchors the store holds elsewhere is above it
+   * and waits there with its messages until the window widens, however new a provider re-read made its
+   * records; one the store knows nothing of is given, for the pane to place. The live turn is always given.
+   *
+   * A thread no pane is looking at holds no messages, so everything but its live turn is above its window.
+   * The records themselves are untouched: the store, the summary and the adapters read them whole.
+   */
+  paneActivities(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[] {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (this.storeUnavailable || !thread || !activities.length) return activities
+    const watched = !this.declared || this.watched.has(threadId)
+    const hidden = watched ? this.hidden.get(threadId) ?? 0 : 0
+    if (watched && hidden <= 0) return activities
+    const held = this.paneViews.get(activities)
+    if (held && held.messages === thread.messages && held.hidden === hidden && held.watched === watched && held.status === thread.status
+      && held.generation === (this.storedAnchors.get(threadId)?.generation ?? 0)) return held.records
+
+    const live = liveTurn(activities, thread.status)
+    let records: readonly AgentActivity[]
+    if (!watched) records = activities.filter(record => record.turnId === live)
+    else {
+      let loaded = this.loadedIds.get(thread.messages)
+      if (!loaded) { loaded = new Set(thread.messages.map(message => message.id)); this.loadedIds.set(thread.messages, loaded) }
+      const anchors = new Map<string, Set<string>>()
+      for (const record of activities) {
+        let ids = anchors.get(record.turnId)
+        if (!ids) { ids = new Set(); anchors.set(record.turnId, ids) }
+        if (record.afterMessageId !== undefined) ids.add(record.afterMessageId)
+      }
+      const above = new Set<string>()
+      for (const [turnId, ids] of anchors) {
+        ids.add(turnId)
+        if (turnId === live || [...ids].some(id => loaded.has(id))) continue
+        const stored = this.storesAny(threadId, ids)
+        if (stored === undefined) return activities
+        if (stored) above.add(turnId)
+      }
+      records = above.size ? activities.filter(record => !above.has(record.turnId)) : activities
+    }
+    this.paneViews.set(activities, { messages: thread.messages, hidden, watched, status: thread.status,
+      generation: this.storedAnchors.get(threadId)?.generation ?? 0, records })
+    return records
+  }
+  /** Whether the store holds any of these messages, asking only about the ones it has not answered for yet. */
+  private storesAny(threadId: string, ids: Iterable<string>): boolean | undefined {
+    let entry = this.storedAnchors.get(threadId)
+    if (!entry) { entry = { answers: new Map(), generation: ++this.anchorGeneration }; this.storedAnchors.set(threadId, entry) }
+    for (const id of ids) {
+      let answer = entry.answers.get(id)
+      if (answer === undefined) {
+        try { answer = this.threadStore.hasMessage(threadId, id) }
+        catch { return undefined }
+        entry.answers.set(id, answer)
+      }
+      if (answer) return true
+    }
+    return false
+  }
+  /** Keeps the store's answers true to what was just written: a reset voids them, an added message is now held. */
+  private noteWritten(threadId: string, events: readonly ThreadEvent[]): void {
+    const entry = this.storedAnchors.get(threadId)
+    if (!entry) return
+    if (events.some(event => event.kind === 'messages-reset')) { this.storedAnchors.delete(threadId); return }
+    let changed = false
+    for (const event of events) {
+      if (event.kind === 'message-added' && entry.answers.get(event.message.id) === false) { entry.answers.set(event.message.id, true); changed = true }
+    }
+    if (changed) entry.generation = ++this.anchorGeneration
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {
@@ -904,6 +1009,7 @@ export class WorkspaceHost implements AgentHost {
         // The switch emptied the store either way, so what mirrored it is no longer true.
         this.known.clear()
         this.hidden.clear()
+        this.storedAnchors.clear()
         for (const thread of this.state.snapshot.threads) delete thread.earlierAvailable
       }
     }
@@ -1298,11 +1404,15 @@ export class WorkspaceHost implements AgentHost {
     if (!this.declared) {
       this.declared = true
       // Everything held only because nobody had said otherwise goes back to its summary now.
-      for (const thread of this.state.snapshot.threads) if (!wanted.has(thread.id) && thread.messages.length) this.unloadWindow(thread.id)
+      for (const thread of this.state.snapshot.threads) if (!wanted.has(thread.id)) {
+        this.storedAnchors.delete(thread.id)
+        if (thread.messages.length) this.unloadWindow(thread.id)
+      }
     }
     for (const id of [...this.watched.keys()]) if (!wanted.has(id)) {
       this.watched.delete(id)
       this.hidden.delete(id)
+      this.storedAnchors.delete(id)
       this.unloadWindow(id)
       changed = true
     }

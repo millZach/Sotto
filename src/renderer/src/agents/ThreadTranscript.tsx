@@ -207,7 +207,8 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
-  return <>{turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
+  return <><ActivityGroups groups={placement.leading} context={context} />
+  {turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
     last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} />)}
   <ActivityGroups groups={placement.trailing} context={context} />
   </>
@@ -348,8 +349,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const lastMessageId = thread.messages.at(-1)?.id
   // Placement is rebuilt whenever a message arrives, but the groups it holds are mostly the ones already on
   // screen; sharing their structure keeps the memoised activity views from redrawing the whole history.
-  const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading'),
-    [thread.messages, messages, thread.activities, thread.historyStatus]))
+  const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading', thread.earlierAvailable === true),
+    [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
   const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...queuedEchoes.map(item => `${item.id}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')

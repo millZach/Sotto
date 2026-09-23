@@ -413,6 +413,11 @@ export class ThreadStore {
       .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant' }))
   }
 
+  /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */
+  hasMessage(threadId: string, messageId: string): boolean {
+    return this.statement('SELECT 1 AS found FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId) !== undefined
+  }
+
   messageCount(threadId: string): number {
     return Number(this.statement('SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?').get(threadId)!.count)
   }
