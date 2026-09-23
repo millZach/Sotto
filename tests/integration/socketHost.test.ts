@@ -159,7 +159,9 @@ describe('socket client isolation and reconnect', () => {
       request.on('error', reject)
       request.on('upgrade', (response, stream, head) => {
         expect(response.headers['sec-websocket-accept']).toBe(createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64'))
-        const socket = new SocketFrames(stream, true, text => resolveMessage(JSON.parse(text))); socket.onClose(() => resolveMessage({ closed: true })); socket.feed(head); resolve(socket)
+        // A shell push can arrive before the reply while the session is still valid; only the reply is the assertion.
+        const socket = new SocketFrames(stream, true, text => { const value = JSON.parse(text) as object; if (!('event' in value)) resolveMessage(value) })
+        socket.onClose(() => resolveMessage({ closed: true })); socket.feed(head); resolve(socket)
       }); request.end()
     })
     try {
