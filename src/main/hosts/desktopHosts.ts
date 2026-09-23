@@ -260,8 +260,11 @@ export class DesktopHosts {
   }
   private async open(host: SavedHost): Promise<void> {
     const adding = this.adding === host
+    const wasOn = host.enabled !== false
     if (this.live.has(host.id)) await this.disconnect(host.id, true)
-    if (this.closed) return
+    // Tearing down the previous session takes a moment. A switch-off, Forget, edit or cancelled add in that
+    // moment already cleared the row, so this attempt has nothing left to connect for.
+    if (this.closed || (adding ? this.adding !== host : !this.saved.includes(host)) || (wasOn && host.enabled === false)) return
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined }); this.emit()
@@ -363,6 +366,8 @@ export class DesktopHosts {
     entry.timer = setTimeout(() => {
       if (this.retries.get(host.id) !== entry) return
       if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return
+      // A host switched off is not reconnected, whatever scheduled this.
+      if (host.enabled === false) { this.retries.delete(host.id); return }
       void this.command({ type: 'connect', id: host.id })
     }, (this.options.retryDelayMs ?? reconnectDelayMs)(entry.attempt))
     entry.attempt += 1
@@ -376,6 +381,8 @@ export class DesktopHosts {
     if (active.closing || status?.phase !== 'connected' || !this.saved.includes(host)) return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
+    // A host that is switched off is not kept connected: its drop only closes what is left of the session.
+    if (host.enabled === false) { void this.disconnect(host.id).catch(() => undefined); return }
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
     if (!this.status.get(host.id)!.prompt) this.scheduleReconnect(host, active)
   }

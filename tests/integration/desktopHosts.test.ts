@@ -453,6 +453,24 @@ describe('Add host, the switch and reconnect on launch', () => {
     expect(host.pairing.list()).toHaveLength(1)
     expect(await savedFile()).toEqual([expect.not.objectContaining({ enabled: false })])
   })
+  it('stays off when switched off while a reconnect is still closing the dropped session', async () => {
+    const remote = await add()
+    retryDelay = () => 60_000
+    // The dropped session's ssh takes its time to exit, as it does on a real network.
+    let exited: (() => void) | undefined
+    vi.spyOn(launchers[0]!, 'disconnect').mockImplementationOnce(() => new Promise<void>(resolve => { exited = resolve }))
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    // The retry fires and starts closing the old session; the user switches the host off in that moment.
+    const retry = manager.command({ type: 'connect', id: remote.id })
+    await vi.waitFor(() => expect(exited).toBeTypeOf('function'))
+    await manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+    exited!()
+    await retry
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', enabled: false })
+    expect(launchers).toHaveLength(1)
+    expect(router.shell().connections ?? []).toEqual([])
+  })
   it('switches a host off when Stop host stops it, so the next launch does not start it again', async () => {
     const remote = await add()
     await manager.command({ type: 'stop-host', id: remote.id })
