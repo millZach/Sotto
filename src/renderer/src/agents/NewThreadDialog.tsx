@@ -1,6 +1,6 @@
 import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, ChevronRight, Folder, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Folder, Laptop, Server, X } from 'lucide-react'
 import { hostForThread, defaultThreadModelId, isSubscriptionReasoning, PROVIDER_LABELS, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
@@ -10,6 +10,7 @@ import { folderName, projectForFolder, useProjectChooser } from './ProjectChoose
 import { startingProviderMode, ThreadOptionFields, threadOptionsSummary } from './ThreadOptions'
 import type { WorkingCopyChoice } from './WorkingCopyFieldset'
 import { ThreadWorkingCopyFields, type ThreadWorkingCopySelection } from './ThreadWorkingCopyFields'
+import { HostBadge, hostIdOf, listedHosts } from './HostBadge'
 
 export { folderKey } from './ProjectChooser'
 
@@ -59,6 +60,10 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const titleId = useId()
   const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === (initialChoices?.projectId ?? initialProjectId)) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
+  // With threads from more than one host listed, New thread starts by choosing the host; its projects follow.
+  const hosts = listedHosts(state)
+  const [hostId, setHostId] = useState<string | undefined>(() => hosts.length ? hostIdOf(project ?? undefined) ?? state.hostId ?? hosts[0]?.hostId : undefined)
+  const chosenHost = hosts.find(item => item.hostId === (hostIdOf(project ?? undefined) ?? hostId))
   const projectHost = hostForThread(state.host, { hostId: project?.hostId ?? parseHostEntityKey(project?.id ?? '')?.hostId ?? state.hostId })
   const localHostId = state.connections ? state.connections.find(host => host.kind === 'local')?.hostId : state.hostId
   const defaultKey = (id: string): string => { const key = parseHostEntityKey(id); return key && key.hostId === localHostId ? key.id : id }
@@ -100,7 +105,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     setError(null); workingCopyChosen.current = false
     setWorkingSelection({ workingCopy: (choice.project && defaults.projects[defaultKey(choice.project.id)]) || defaults.global, startFromOrigin: true })
     if (choice.project) setProject(choice.project); else setFolder(choice.folder)
-  })
+  }, { hostId: chosenHost?.hostId })
   const focusSearch = useRef(chooser.focusSearch)
   focusSearch.current = chooser.focusSearch
   const selectedFolder = project?.path ?? folder
@@ -148,6 +153,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     try {
       let selectedProject = project
       if (!selectedProject && folder) {
+        // A new folder becomes a project on the host chosen above: main adds it to the host selected for new work.
+        if (chosenHost && chosenHost.hostId !== latestState.current.hostId) await window.sotto?.hosts?.command({ type: 'select', hostId: chosenHost.hostId })
         const found = await projectForFolder({ folder, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: selectedModel?.providerId ?? state.configuration.provider })
         if (found.project === null) { setError(found.error); return }
         selectedProject = found.project
@@ -192,7 +199,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     </header>
     {selectedFolder ? <form className="new-thread-dialog__form" onSubmit={event => { event.preventDefault(); void create() }}>
       <div className="new-thread-dialog__body">
-      <div className="new-thread-dialog__folder"><Folder size={22} /><div><strong>{project?.title ?? folderName(selectedFolder)}</strong><span title={selectedFolder}>{selectedFolder}</span></div><Button variant="ghost" disabled={submitting} onClick={() => { setProject(null); setFolder(null) }}>Change</Button></div>
+      <div className="new-thread-dialog__folder"><Folder size={22} /><div><strong>{project?.title ?? folderName(selectedFolder)}{chosenHost ? <> <HostBadge host={chosenHost} /><span className="tt-visually-hidden"> on {chosenHost.name}</span></> : null}</strong><span title={selectedFolder}>{selectedFolder}</span></div><Button variant="ghost" disabled={submitting} onClick={() => { setProject(null); setFolder(null) }}>Change</Button></div>
       <ThreadWorkingCopyFields projectId={project?.id} value={workingSelection} disabled={submitting || loadingDefaults} onChange={value => { workingCopyChosen.current = true; setWorkingSelection(value) }} />
       <details className="new-thread-dialog__options" open={optionsOpen}
         onKeyDown={event => { if (event.key === 'Escape' && optionsOpen && (event.target as HTMLElement).closest('dialog') === dialog.current) { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsSummary.current?.focus() } }}>
@@ -209,7 +216,13 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       {!connected && <p className="agent-muted" role="status">{selectedModel ? (selectedModel.providerId ? PROVIDER_LABELS[selectedModel.providerId] : selectedModel.provider) + ' is not ready with this model. Check Settings → Providers or choose another model in Thread options.' : 'Choose an available model in Thread options.'}</p>}
       </div>
       <div className="new-thread-dialog__submit"><span>{workingSelection.workingCopy === 'independent' && !workingSelection.existingWorktreePath ? 'Worktree created on first send.' : null}</span><Button type="submit" disabled={submitting || defaultsError !== null || loadingDefaults || state.globalLaneBusy || !connected || !modelId || !canCreateThread}>{submitting ? 'Creating...' : 'Create thread'}<ChevronRight size={16} /></Button></div>
-    </form> : chooser.choices}
+    </form> : <>
+      {hosts.length > 1 ? <div className="new-thread-hosts" role="group" aria-label="Host">
+        {hosts.map(item => <button key={item.hostId} type="button" className="tt-focusable" aria-pressed={item.hostId === chosenHost?.hostId} onClick={() => setHostId(item.hostId)}>
+          {item.kind === 'local' ? <Laptop size={15} aria-hidden="true" /> : <Server size={15} aria-hidden="true" />}{item.name}</button>)}
+      </div> : null}
+      {chooser.choices}
+    </>}
     {!selectedFolder ? <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Esc</kbd> Close</span></footer> : null}
   </dialog>
 }

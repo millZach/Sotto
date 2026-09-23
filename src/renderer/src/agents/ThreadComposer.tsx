@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ListPlus, Square } from 'lucide-react'
+import { ArrowUp, Laptop, ListPlus, Server, Square } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
@@ -16,6 +16,7 @@ import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queu
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
+import { listedHosts } from './HostBadge'
 import './composer.css'
 
 type Command = AgentConnection['command']
@@ -243,6 +244,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
+  const threadHost = listedHosts(state).find(item => item.hostId === row.thread.hostId)
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
@@ -282,6 +284,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </ScreenshotInput>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
+          {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen. */}
+          {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
+            {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false}
               {...(editable && !answering && !permission ? { draftText: draft.text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; editText(text); textarea.current?.focus() } } : {})} />

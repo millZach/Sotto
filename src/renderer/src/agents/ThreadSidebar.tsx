@@ -9,6 +9,7 @@ import { showThreads, useFinishedUnseen } from './finishedThreads'
 import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
 import { workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
+import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 
 export { useAddProject } from './addProject'
 
@@ -133,8 +134,10 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, unse
 const folderKey = (section: Section, folderId: string): string => `${section}:${folderId}`
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, globalLaneBusy, busyThreadIds }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, unseen, liveClock, onToggle, onOpen, onNewThread, command, globalLaneBusy, busyThreadIds, host }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
+  /** The host the project is on, when threads from more than one host are listed; its badge tells same-named projects apart. */
+  readonly host?: ListedHost | undefined
   readonly expanded: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
   readonly unseen: ReadonlySet<string>; readonly liveClock: boolean
   readonly onNewThread: (projectId: string) => void; readonly command: Command
@@ -150,9 +153,9 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     <div className="thread-folder__head">
       {/* The toggle includes the visible count in its accessible name, with the project title first. */}
       <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))}
-        aria-label={`${folder.title} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
+        aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
-        <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span><span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
+        <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}<span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
         {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
@@ -201,9 +204,13 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     if (next.has(key)) next.delete(key); else next.add(key)
     return next
   }), [])
+  const connections = state.connections
+  const hosts = useMemo(() => listedHosts({ connections }), [connections])
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = folderKey(section, folder.id)
+    const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} unseen={unseen} liveClock={liveClock}
+      host={hosts.find(item => item.hostId === hostId)}
       expanded={searching || !collapsed.has(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
   }
   const { open, settled } = organization
