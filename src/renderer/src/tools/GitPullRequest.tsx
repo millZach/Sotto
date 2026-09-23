@@ -12,9 +12,9 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack, drafts =
   const generation = useRef(0), locked = useRef(false)
   /**
    * Sotto's own draft of the form, written over the review's prefill. It is
-   * never an error: a request that writes nothing leaves the fields exactly as
-   * the review left them, so a user with no OpenRouter key sees the form they
-   * have always seen. Words the user typed while it was writing are kept over
+   * never an error: generated text turned off, a provider that writes none
+   * (Devin) or a provider that does not answer leaves the fields exactly as the
+   * review left them. Words the user typed while it was writing are kept over
    * the draft unless they pressed Regenerate.
    */
   const draft = async (value: PrReview, from: { title: string; body: string }, replace: boolean): Promise<void> => {
