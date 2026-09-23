@@ -477,6 +477,45 @@ describe('host version and features', () => {
     expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta'], capabilities: { mayAnswer: false } })
   })
 
+  it('keeps the version sentence for an unreadable push from a host of another version when a thread once too large arrives', async () => {
+    const message = (text: string) => ({ id: 'reply', role: 'assistant' as const, text, createdAt: '2026-09-23T00:00:00.000Z' })
+    let current: AgentThreadDetail = { threadId: 'streaming', revision: 1, messages: [message('Hello')] }
+    let emitDetail: (update: AgentThreadDetailUpdate) => void = () => undefined
+    let emitShell: (state: ReturnType<HostService['shell']>) => void = () => undefined
+    let unreadableShell = false
+    const service: HostService = {
+      // What a later host might send: a shell this client cannot read.
+      shell: () => unreadableShell ? { ...host.service.shell(), host: 'a later shape' } as unknown as ReturnType<HostService['shell']> : host.service.shell(),
+      state: () => host.service.state(),
+      threadDetail: id => id === 'streaming' ? structuredClone(current) : host.service.threadDetail(id),
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
+      subscribe: listener => { emitShell = listener; return () => undefined },
+      subscribeThreadDetail: listener => { emitDetail = listener; return () => undefined },
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing, sottoVersion: '0.0.1' })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Older host')
+    const pushErrors: (string | null)[] = []
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, owned: true,
+      onPushError: text => pushErrors.push(text), onPushErrorCleared: () => pushErrors.push(null) }); clients.push(client)
+    try {
+      await client.connect()
+      await client.observe(['streaming'])
+      current = { threadId: 'streaming', revision: 2, messages: [message('Hello' + 'x'.repeat(17 * 1024 * 1024))] }
+      emitDetail(current)
+      await expect.poll(() => pushErrors.at(-1)).toEqual(expect.stringContaining('A thread on this host is too large'))
+      unreadableShell = true
+      emitShell(host.service.shell())
+      const mismatch = hostVersionMismatch(packageVersion, '0.0.1', true)
+      await expect.poll(() => pushErrors.at(-1)).toBe(mismatch)
+      // The thread that was too large arrives again; the skew is still there, so the sentence stays.
+      current = { threadId: 'streaming', revision: 3, messages: [message('Short again')] }
+      await client.observe(['streaming'])
+      expect(client.threadDetail('streaming')?.revision).toBe(3)
+      expect(pushErrors.at(-1)).toBe(mismatch)
+    } finally { await client.close(); await server.close() }
+  })
+
   it('refuses a request it cannot read by its id, and a client of another version names the version instead', async () => {
     const unreadable = { type: 'a-command-from-a-later-version', threadId: 'thread' } as unknown as AgentCommand
     // The same version: the request is refused as unsupported, and the socket stays open.

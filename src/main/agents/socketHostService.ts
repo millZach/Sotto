@@ -174,7 +174,8 @@ export class SocketHostService implements HostService {
     if (!this.skewed()) { this.frames?.close(); return }
     const id = raw !== null && typeof raw === 'object' && 'id' in raw && typeof raw.id === 'string' ? raw.id : undefined
     const pending = id === undefined ? undefined : this.pending.get(id)
-    if (id === undefined || !pending) { this.options.onPushError?.(this.mismatch()); return }
+    // The sentence names no thread and no shell, so no arrival clears it; only a new connection does.
+    if (id === undefined || !pending) { this.pushErrorThread = undefined; this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
     pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
   }
