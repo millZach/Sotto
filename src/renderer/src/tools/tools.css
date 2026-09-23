@@ -57,7 +57,6 @@
 .changes-surface > * { flex: none; }
 .changes-surface > .changes-list { flex: 1; }
 .changes-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
-.changes-summary__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-summary__branch { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 12px; }
 .changes-list { min-height: 0; margin: 0; overflow: auto; padding: 6px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-surface[data-diff] > .changes-list { flex: none; max-height: clamp(96px, 30%, 280px); border-bottom: 1px solid var(--tt-hairline); }

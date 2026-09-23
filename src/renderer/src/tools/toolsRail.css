@@ -70,8 +70,11 @@
   display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: var(--tools-chrome-height); padding: 0 8px 0 16px;
   border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 14px;
 }
+/* The title and its fact wrap inside a one-line box, so a fact with less than six characters of room drops to the
+   hidden second line instead of shrinking to a letter. The title shrinks only when it is alone and still too long. */
+.tools-chrome__lead { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; height: 20px; overflow: hidden; line-height: 20px; }
 .tools-chrome__title { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.tools-chrome__detail { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.tools-chrome__detail { flex: 1 1 6ch; min-width: 6ch; max-width: max-content; overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .tools-chrome__actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
 .tools-panel .tools-chrome .files-icon { width: 30px; height: 30px; border-radius: 7px; }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
@@ -144,7 +147,6 @@
 .tools-panel .files-preview__body { background: var(--tt-code-bg); }
 .tools-panel .files-preview__text { width: auto; min-width: 0; padding: 14px 16px 20px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tools-panel .files-preview__text[data-wrap='false'] { width: max-content; min-width: 100%; white-space: pre; overflow-wrap: normal; }
-.tools-panel .changes-summary__text { flex: none; }
 .tools-panel .changes-summary__branch { color: var(--tt-text-muted); }
 .tools-panel .changes-list { padding: 6px 8px; }
 .tools-panel .changes-list__item { min-height: 30px; border-radius: 6px; }

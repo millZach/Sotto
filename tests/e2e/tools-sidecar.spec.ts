@@ -91,6 +91,7 @@ async function screenshot(launched: LaunchedSotto, name: string, native: boolean
 async function railLayout(panel: Locator): Promise<{
   sheet: { x: number; width: number }; main: number; overflow: number; chromeHeight: number; chromeUnderControls: number
   railBottom: number; footBottom: number; tileTop: number; controlsBottom: number; height: number; stacked: boolean | null
+  detailStubs: string[]
 }> {
   return panel.evaluate(element => {
     const box = (node: Element | null) => node?.getBoundingClientRect() ?? null
@@ -114,6 +115,13 @@ async function railLayout(panel: Locator): Promise<{
       controlsBottom: controls?.bottom ?? 0,
       height: innerHeight,
       stacked: list && detail ? list.bottom <= detail.top + 1 : null,
+      // A fact beside a title shows as a readable run (six characters, about 40px) or drops out of the line whole.
+      detailStubs: [...element.querySelectorAll('.tools-chrome__lead')].flatMap(lead => {
+        const fact = lead.querySelector('.tools-chrome__detail')
+        if (!fact) return []
+        const shown = fact.getBoundingClientRect(), line = lead.getBoundingClientRect()
+        return shown.top < line.bottom && shown.width < 40 ? [fact.textContent ?? ''] : []
+      }),
     }
   })
 }
@@ -309,6 +317,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
             expect(layout.tileTop, `${key} rail under the window controls`).toBeGreaterThanOrEqual(layout.controlsBottom)
             expect(layout.footBottom, `${key} rail foot clipped`).toBeLessThanOrEqual(height)
             expect(layout.chromeHeight, `${key} one line of chrome`).toBeLessThanOrEqual(46)
+            expect(layout.detailStubs, `${key} a fact in the line of chrome cut to a stub`).toEqual([])
             if (tool === 'Files' || tool === 'Changes') expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
             const native = tool === 'Browser'
             const nativeBounds = native ? await browserBounds(launched, url) : null

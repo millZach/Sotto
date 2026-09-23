@@ -6,7 +6,7 @@ import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, parseUnifiedDiff, useThreadChanges, type ChangesStore, type DiffLine } from './changesStore'
 import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
-import { ToolsChrome } from './ToolsChrome'
+import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -58,9 +58,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
   const selected = selectedPath === null ? undefined : list.files.find(file => file.path === selectedPath)
   return <div className="changes-surface" data-diff={selectedPath !== null || undefined}>
     <div className="changes-summary tools-chrome">
-      {/* The count keeps its words; the branch beside it gives way first. */}
-      <span className="changes-summary__text tools-chrome__title">{list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}</span>
-      <span className="tools-chrome__detail">{list.branch ? <><span className="tt-visually-hidden">{' on '}</span><bdi className="changes-summary__branch">{list.branch}</bdi></> : 'Detached HEAD'}</span>
+      {/* The count keeps its words; the branch beside it shows as a readable run or gives way whole. */}
+      <ToolsChromeLead title={list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
+        detail={list.branch ? <><span className="tt-visually-hidden">{' on '}</span><bdi className="changes-summary__branch">{list.branch}</bdi></> : 'Detached HEAD'} />
       <div className="tools-chrome__actions">
         {bridge?.reviewPullRequest ? <button type="button" className="files-link tt-focusable" onClick={() => setPullRequestOpen(true)}>Pull request</button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
