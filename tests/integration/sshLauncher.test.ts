@@ -1,46 +1,231 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { SshHostLauncher, type SshPrompt } from '../../src/main/hosts/sshLauncher'
-import { spawnSsh, type SpawnSsh } from '../../src/main/hosts/sshProcess'
+import { SshFailure, SshHostLauncher, type SshPrompt } from '../../src/main/hosts/sshLauncher'
+import { CONTROL_OPTIONS, type SpawnSsh } from '../../src/main/hosts/sshProcess'
+import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 
-const directories: string[] = [], launchers: SshHostLauncher[] = []
-afterEach(async () => { for (const launcher of launchers.splice(0)) await launcher.disconnect(); for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }) })
-const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '~/.sotto' }
-async function fixture(mode = 'started', timing?: { authenticationTimeoutMs?: number }) {
+const directories: string[] = [], launchers: SshHostLauncher[] = [], hosts: number[] = []
+afterEach(async () => {
+  for (const launcher of launchers.splice(0)) await launcher.disconnect()
+  for (const pid of hosts.splice(0)) { try { process.kill(pid, 'SIGTERM') } catch { /* already exited */ } }
+  for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true })
+})
+const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }
+const SCRIPT_SHA = createHash('sha256').update(LAUNCH_SCRIPT_SOURCE).digest('hex')
+interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; stdinSha256: string; askpass: boolean }
+async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; startMs?: number; version?: string; platform?: NodeJS.Platform } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-')); directories.push(path)
   const record = join(path, 'ssh.jsonl')
-  const children: ReturnType<typeof spawn>[] = []
-  const spawner: SpawnSsh = (_file, args, options) => {
-    const child = spawn(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args], { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...options.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record } })
-    children.push(child)
-    return { write: value => { child.stdin!.write(value) }, kill: () => { child.kill() },
-      onData: listener => { child.stdout!.on('data', data => listener(String(data))); child.stderr!.on('data', data => listener(String(data))); return { dispose: () => { child.stdout!.removeAllListeners('data'); child.stderr!.removeAllListeners('data') } } },
-      onExit: listener => { child.once('exit', code => listener({ exitCode: code ?? 255 })); return { dispose: () => child.removeAllListeners('exit') } } }
-  }
-  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: timing?.authenticationTimeoutMs ?? 5000, closeTimeoutMs: 200 })
+  const spawner: SpawnSsh = (_file, args, spawnOptions) => spawn(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args],
+    { shell: false, windowsHide: true, stdio: [spawnOptions.stdin, 'pipe', 'pipe'],
+      env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0), FAKE_SSH_VERSION: options.version ?? '' } })
+  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000, readyTimeoutMs: 5000,
+    ...(options.platform ? { platform: options.platform } : {}) })
   launchers.push(launcher)
-  return { launcher, children, events: async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; args?: string[]; owned?: boolean; tunnel?: boolean; kind?: string }) }
+  const events = async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Spawned & { kind?: string; accepted?: boolean; owned?: boolean })
+  return { launcher, path, events, spawns: async () => (await events()).filter(event => event.type === 'spawn') }
 }
-it.each(['started', 'discovered'])('discovers readiness, verifies forward and leaves the host running on close: %s', async mode => {
-  const { launcher, events } = await fixture(mode)
+async function failure(promise: Promise<unknown>): Promise<SshFailure> {
+  const error = await promise.then(() => undefined, (reason: unknown) => reason)
+  expect(error).toBeInstanceOf(SshFailure)
+  return error as SshFailure
+}
+
+it.each(['started', 'discovered'])('discovers readiness, verifies the forward and leaves the host running on close: %s', async mode => {
+  const { launcher, spawns } = await fixture(mode)
   const status: string[] = []
   const connection = await launcher.connect(configuration, { onStatus: value => status.push(value) })
   expect(connection.hostId).toBe('11111111-1111-4111-8111-111111111111')
   expect(connection.owned).toBe(mode === 'started')
   expect(connection.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/u)
-  expect(status).toEqual(['connecting', 'starting', 'forwarding', 'ready'])
-  const initial = await events()
-  expect(initial.filter(item => item.type === 'spawn')).toHaveLength(2)
-  expect(initial.find(item => item.tunnel)?.args).toContainEqual(expect.stringMatching(/^127\.0\.0\.1:\d+:127\.0\.0\.1:4317$/u))
-  expect(initial.some(item => item.type === 'pairing-requested')).toBe(false)
+  expect(connection.route).toEqual({ hostname: 'forge.example.net', user: 'user', port: 2222, identityFiles: ['~/.ssh/id_ed25519', '~/.ssh/id_rsa'] })
+  expect(status).toEqual(['connecting', ...(mode === 'started' ? ['starting'] : []), 'forwarding', 'ready'])
   expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123', hostId: connection.hostId })
   await connection.close()
-  expect((await events()).some(item => item.type === 'host-stopped')).toBe(false)
   expect(status.at(-1)).toBe('disconnected')
+  const spawned = await spawns()
+  // -G, launch, forward, pairing code: four ssh processes, and only the forward outlives its answer.
+  expect(spawned.map(item => item.resolve ? 'resolve' : item.tunnel ? 'forward' : item.op)).toEqual(['resolve', 'launch', 'forward', 'pairing-code'])
+  expect(spawned.find(item => item.tunnel)?.args).toContainEqual(expect.stringMatching(/^127\.0\.0\.1:\d+:127\.0\.0\.1:4317$/u))
+})
+it('turns multiplexing and any configured remote command off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
+  const { launcher, spawns } = await fixture('started')
+  const connection = await launcher.connect(configuration)
+  await connection.showHostPairingCode()
+  expect(await connection.revokeClient('22222222-2222-4222-8222-222222222222')).toBe(true)
+  expect(await connection.stopHost()).toBe(true)
+  const spawned = await spawns()
+  expect(spawned).toHaveLength(6)
+  for (const item of spawned) {
+    const options = item.args.flatMap((value, index) => value === '-o' ? [item.args[index + 1]] : [])
+    for (const control of ['ControlMaster=no', 'ControlPath=none', 'ControlPersist=no']) expect(options).toContain(control)
+    // A `RemoteCommand tmux new -A` in the user's configuration must not replace or refuse Sotto's command.
+    expect(options).toEqual(expect.arrayContaining(['RemoteCommand=none', 'RequestTTY=no']))
+    expect(item.askpass).toBe(true)
+  }
+  expect(CONTROL_OPTIONS).toEqual(['-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ControlPersist=no'])
+  const control = spawned.filter(item => item.op)
+  expect(control.map(item => item.op)).toEqual(['launch', 'pairing-code', 'revoke-client', 'stop-host'])
+  for (const item of control) {
+    expect(item.stdinSha256).toBe(SCRIPT_SHA)
+    // The source is never an argument, so it is never in the remote process list.
+    expect(item.args.join(' ')).not.toContain('process.stdout.on')
+  }
+})
+it('asks for a password once per connect although three ssh processes sign in, and never records it', async () => {
+  const { launcher, events } = await fixture('password')
+  const prompts: SshPrompt[] = []
+  let waiting: SshPrompt | null = null
+  const connecting = launcher.connect(configuration, { onPrompt: prompt => { waiting = prompt; if (prompt) prompts.push(prompt) } })
+  await vi.waitFor(() => expect(waiting?.kind).toBe('password'))
+  expect(waiting!.text).toBe("user@forge's password:")
+  launcher.answerPrompt(waiting!.id, 'test-secret')
+  const connection = await connecting
+  await connection.showHostPairingCode()
+  expect(prompts).toHaveLength(1)
+  expect(waiting).toBeNull()
+  expect((await events()).filter(event => event.type === 'answered')).toEqual([
+    { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }])
+  expect(JSON.stringify(await events())).not.toContain('test-secret')
+  expect(() => launcher.answerPrompt(prompts[0]!.id, 'again')).toThrow('no longer waiting')
+})
+it('asks again when an answer is refused, instead of repeating it', async () => {
+  const { launcher, events } = await fixture('passphrase')
+  const prompts: SshPrompt[] = []
+  const connecting = launcher.connect(configuration, { onPrompt: prompt => { if (prompt) { prompts.push(prompt); launcher.answerPrompt(prompt.id, prompts.length === 1 ? 'wrong' : 'test-secret') } } })
+  await connecting
+  expect(prompts.map(prompt => prompt.kind)).toEqual(['passphrase', 'passphrase'])
+  expect((await events()).filter(event => event.type === 'answered').map(event => event.accepted)).toEqual([false, true, true])
+})
+it('lets a security key notice pass without asking for anything', async () => {
+  const { launcher, events } = await fixture('notice')
+  const prompts: SshPrompt[] = []
+  const connection = await launcher.connect(configuration, { onPrompt: prompt => { if (prompt) prompts.push(prompt) } })
+  await connection.showHostPairingCode()
+  // SSH_ASKPASS_PROMPT=none is OpenSSH telling, not asking: no password field, and each notice ends at once.
+  expect(prompts).toEqual([])
+  expect((await events()).filter(event => event.type === 'notice')).toEqual([
+    { type: 'notice', ended: true }, { type: 'notice', ended: true }, { type: 'notice', ended: true }])
+})
+it('takes a question off the screen when ssh stops waiting for it, and asks the next one fresh', async () => {
+  const { launcher, events } = await fixture('withdraw')
+  const shown: (SshPrompt | null)[] = []
+  const connection = await launcher.connect(configuration, { onPrompt: prompt => {
+    shown.push(prompt)
+    // The first question's helper goes away unanswered; only the question after it is answered.
+    if (prompt && shown.filter(Boolean).length === 2) launcher.answerPrompt(prompt.id, 'test-secret')
+  } })
+  await connection.showHostPairingCode()
+  expect(shown.map(prompt => prompt?.kind ?? null)).toEqual(['password', null, 'password', null])
+  expect(shown[0]!.id).not.toBe(shown[2]!.id)
+  expect(() => launcher.answerPrompt(shown[0]!.id, 'late')).toThrow('no longer waiting')
+  expect((await events()).filter(event => event.type === 'abandoned' || event.type === 'answered')).toEqual([
+    { type: 'abandoned' }, { type: 'answered', kind: 'password', accepted: true },
+    { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }])
+})
+it('shows a host key with its fingerprint and trusts it once', async () => {
+  const { launcher, spawns } = await fixture('host-key')
+  const prompts: SshPrompt[] = []
+  const connection = await launcher.connect(configuration, { onPrompt: prompt => { if (prompt) { prompts.push(prompt); launcher.answerPrompt(prompt.id, 'yes') } } })
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toMatchObject({ kind: 'host-key' })
+  expect(prompts[0]!.text).toContain("The authenticity of host 'forge (192.0.2.1)' can't be established.")
+  // Windows' cmd.exe keeps only the first line of the question; the fingerprint comes back from ssh's own debug output.
+  expect(prompts[0]!.text).toMatch(/key fingerprint is SHA256:fixtureKey\./u)
+  expect((await spawns())[0]!.args).toContain(process.platform === 'win32' ? 'LogLevel=DEBUG1' : 'LogLevel=ERROR')
+  await connection.close()
+})
+it('declining a host key never completes a connection and stops there', async () => {
+  const { launcher } = await fixture('host-key')
+  const result = launcher.connect(configuration, { onPrompt: prompt => { if (prompt) launcher.answerPrompt(prompt.id, 'no') } })
+  expect((await failure(result)).code).toBe('host-key-rejected')
+})
+it.each([
+  ['refused', 'auth-failed', 'refused your sign-in'],
+  ['unreachable', 'ssh-unreachable', 'could not reach the host'],
+  ['missing', 'archive-missing', 'installation was not found'],
+  ['port-taken', 'forward-failed', 'forward could not open'],
+  ['wrong-host', 'forward-failed', 'forward could not open'],
+])('fails with a typed reason and a plain message for %s', async (mode, code, message) => {
+  const { launcher } = await fixture(mode)
+  const error = await failure(launcher.connect(configuration))
+  expect(error.code).toBe(code)
+  expect(error.message).toContain(message)
+})
+it('reports Node missing, not an SSH refusal, when the remote shell exits 127', async () => {
+  const { launcher } = await fixture('node-missing')
+  const error = await failure(launcher.connect(configuration))
+  expect(error.code).toBe('node-missing')
+  expect(error.message).toBe('Node was not found on the SSH host. Install Node 24 for that SSH account, then reconnect.')
+})
+it('reports a Node too old for the host with the version the host has', async () => {
+  const { launcher } = await fixture('node-old')
+  const error = await failure(launcher.connect(configuration))
+  expect(error.code).toBe('node-too-old')
+  expect(error.message).toBe('The SSH host runs Node 18.19.0, which is too old for the host. Install Node 24 for that SSH account, then reconnect.')
+})
+it('times out without a result, then connects again with a fresh forward', async () => {
+  const timed = await fixture('timeout', { authenticationTimeoutMs: 300 })
+  expect((await failure(timed.launcher.connect(configuration))).code).toBe('connect-timeout')
+  const { launcher, events } = await fixture('discovered')
+  const first = await launcher.connect(configuration); await first.close()
+  const second = await launcher.connect(configuration)
+  expect((await events()).filter(item => item.type === 'forward-ready')).toHaveLength(2)
+  expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
+  // `ssh -V` runs for the first connect only; its answer holds for the same ssh.
+  expect((await events()).filter(item => item.type === 'version')).toHaveLength(1)
+  await second.close()
+})
+it.each([
+  ['linux', 'OpenSSH_8.1p1', '8.1p1', 'Update OpenSSH on this computer, then reconnect.'],
+  ['win32', 'OpenSSH_for_Windows_7.7p1', '7.7p1', 'Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then reconnect.'],
+] as const)('refuses an OpenSSH older than 8.4 in plain words before signing in: %s', async (platform, banner, version, advice) => {
+  const { launcher, events } = await fixture('password', { version: banner, platform })
+  const prompts: SshPrompt[] = []
+  const error = await failure(launcher.connect(configuration, { onPrompt: prompt => { if (prompt) prompts.push(prompt) } }))
+  expect(error.code).toBe('ssh-too-old')
+  expect(error.message).toBe(`This computer's OpenSSH is version ${version}, which is too old. Sotto needs OpenSSH 8.4 or later. ${advice}`)
+  // Nothing else ran: no lookup, no sign-in, no question.
+  expect((await events()).map(item => item.type)).toEqual(['version'])
+  expect(prompts).toEqual([])
+})
+it('lets OpenSSH 8.4 through', async () => {
+  const { launcher } = await fixture('discovered', { version: 'OpenSSH_8.4p1' })
+  await (await launcher.connect(configuration)).close()
+})
+it('gives the host its own time to start however long signing in took', async () => {
+  // Sign-in has 4 s and the host 5 s. A password answered after 1 s and a host that then needs 4 s to
+  // start take longer than sign-in's budget together, and still connect.
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 4000, startMs: 4000 })
+  const status: string[] = []
+  const connection = await launcher.connect(configuration, { onStatus: value => status.push(value),
+    onPrompt: prompt => { if (prompt) setTimeout(() => launcher.answerPrompt(prompt.id, 'test-secret'), 1000) } })
+  expect(status).toEqual(['connecting', 'starting', 'forwarding', 'ready'])
+  await connection.close()
+})
+it('stops with prompt-unanswered when nobody answers', async () => {
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 3000 })
+  let shown = false
+  const error = await failure(launcher.connect(configuration, { onPrompt: prompt => { if (prompt) shown = true } }))
+  expect(shown).toBe(true)
+  expect(error.code).toBe('prompt-unanswered')
+})
+it('reads past what a login profile prints and lines it cannot parse', async () => {
+  const { launcher } = await fixture('noisy')
+  const connection = await launcher.connect(configuration)
+  expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123' })
+})
+it('reports a dropped forward once connected', async () => {
+  const { launcher } = await fixture('drop')
+  const dropped: string[] = []
+  await launcher.connect(configuration, { onDisconnected: message => dropped.push(message) })
+  await vi.waitFor(() => expect(dropped).toHaveLength(1))
+  expect(dropped[0]).toContain('could not reach the host')
 })
 it.each([['started', true], ['discovered', false]])('stop-host ends only a host this launcher started: %s', async (mode, stopped) => {
   const { launcher, events } = await fixture(mode)
@@ -48,72 +233,22 @@ it.each([['started', true], ['discovered', false]])('stop-host ends only a host 
   expect(await connection.stopHost()).toBe(stopped)
   expect((await events()).find(item => item.type === 'host-stopped')?.owned).toBe(mode === 'started')
 })
-it.each(['password', 'passphrase', 'host-key'])('surfaces split %s prompts for both SSH processes and waits for explicit answers', async mode => {
-  const { launcher, events } = await fixture(mode)
-  const prompts: SshPrompt[] = []
-  let waiting: SshPrompt | null = null
-  const connecting = launcher.connect(configuration, { onPrompt: prompt => { waiting = prompt; if (prompt) prompts.push(prompt) } })
-  await vi.waitFor(() => expect(waiting?.kind).toBe(mode))
-  expect((await events()).some(item => item.type === 'answered')).toBe(false)
-  const first = waiting!
-  launcher.answerPrompt(first.id, mode === 'host-key' ? 'yes' : 'test-secret')
-  await vi.waitFor(() => expect(prompts).toHaveLength(2))
-  launcher.answerPrompt(prompts[1]!.id, mode === 'host-key' ? 'yes' : 'test-secret')
-  const connection = await connecting
-  expect(waiting).toBeNull()
-  expect(() => launcher.answerPrompt(first.id, 'yes')).toThrow('no longer waiting')
-  expect(JSON.stringify(await events())).not.toContain('test-secret')
-  await connection.close()
-})
-it.each([['refused', 'SSH refused'], ['missing', 'installation was not found'], ['port-taken', 'forward could not open'], ['wrong-host', 'forward could not open']])('returns a stable actionable error for %s', async (mode, message) => {
-  const { launcher } = await fixture(mode)
-  await expect(launcher.connect(configuration)).rejects.toThrow(message)
-})
-it('times out without a ready marker and starts a fresh forward before reconnect completes', async () => {
-  const timed = await fixture('timeout', { authenticationTimeoutMs: 100 })
-  await expect(timed.launcher.connect(configuration)).rejects.toThrow('in time')
-  const { launcher, events } = await fixture('discovered')
-  const first = await launcher.connect(configuration); await first.close()
-  const second = await launcher.connect(configuration)
-  expect((await events()).filter(item => item.type === 'forward-ready')).toHaveLength(2)
-  expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
-  await second.close()
-})
-it('reads past reply lines it cannot parse or does not know instead of failing the connection', async () => {
-  const { launcher } = await fixture('noisy')
-  const connection = await launcher.connect(configuration)
-  expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123' })
-  await connection.close()
-})
-it('declining a host key never completes a connection', async () => {
-  const { launcher } = await fixture('host-key')
-  const result = launcher.connect(configuration, { onPrompt: prompt => { if (prompt) launcher.answerPrompt(prompt.id, 'no') } })
-  await expect(result).rejects.toThrow('SSH refused')
-})
 
-// Real OpenSSH runs under a pseudo-terminal in cooked mode, so every request line the launcher writes
-// comes back as echo before any reply. A pipe never echoes, which is how the pairing failure hid.
-async function ptyFixture(mode = 'started') {
-  const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-pty-')); directories.push(path)
-  const record = join(path, 'ssh.jsonl')
-  let output = ''
-  const spawner: SpawnSsh = async (_file, args, options) => {
-    const child = await spawnSsh(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args], { ...options, env: { ...options.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record } })
-    const onData = child.onData.bind(child)
-    return { write: value => child.write(value), kill: () => child.kill(), onExit: listener => child.onExit(listener),
-      onData: listener => onData(data => { output += data; listener(data) }) }
-  }
-  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: 15_000, closeTimeoutMs: 500 })
-  launchers.push(launcher)
-  return { launcher, output: () => output, events: async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string }) }
-}
-it('pairs, revokes and stops through a real pseudo-terminal that echoes every request', async () => {
-  const { launcher, output, events } = await ptyFixture()
-  const connection = await launcher.connect(configuration)
-  expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123', hostId: connection.hostId })
-  // The terminal echoed the request itself, marker and all; the launcher read past it.
-  expect(output()).toMatch(/"type":"pairing-code","id":"[0-9a-f-]{36}"\}/u)
-  expect(await connection.revokeClient('22222222-2222-4222-8222-222222222222')).toBe(true)
-  expect(await connection.stopHost()).toBe(true)
-  expect((await events()).map(item => item.type)).toEqual(expect.arrayContaining(['pairing-requested', 'revoke-requested', 'host-stopped']))
+// The whole path: the real launch script run on this machine behind the fake ssh, a real forward, a fake host.
+it('keeps a host it started owned across a reconnect, so Stop host still stops it', async () => {
+  const { launcher, path } = await fixture('run')
+  const install = join(path, 'opt', 'sotto release', 'host')
+  await mkdir(install, { recursive: true })
+  await writeFile(join(install, '..', 'package.json'), JSON.stringify({ type: 'module' }))
+  await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(install, 'index.js'))
+  const first = await launcher.connect(configuration)
+  expect(first.owned).toBe(true)
+  const descriptor = JSON.parse(await readFile(join(path, 'data', 'sotto', 'host-listener.json'), 'utf8')) as { pid: number }
+  hosts.push(descriptor.pid)
+  expect(await first.showHostPairingCode()).toMatchObject({ code: 'ABC123' })
+  await first.close()
+  const second = await launcher.connect(configuration)
+  expect(second).toMatchObject({ owned: true, hostId: first.hostId })
+  expect(await second.stopHost()).toBe(true)
+  expect(() => process.kill(descriptor.pid, 0)).toThrow()
 })

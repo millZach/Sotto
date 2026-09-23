@@ -19,7 +19,7 @@ export const TOOLS_PANEL_MIN_PANE_WIDTH = 320
 export interface ToolsPanelChrome {
   readonly open: boolean
   readonly surface: ToolSurfaceId
-  /** Sotto thread ID the panel is held on; null follows the focused thread. */
+  /** Sotto thread ID held for working-copy surfaces; Agents always follows the focused thread. */
   readonly pinnedThreadId: string | null
   readonly width: number
   readonly resized: boolean
@@ -99,7 +99,7 @@ export function useToolsPanelChrome(store: ToolsPanelStore = toolsPanelStore): T
   return useSyncExternalStore(store.subscribe, store.getSnapshot)
 }
 
-/** The thread the panel shows: its pin when set, otherwise the focused thread. */
+/** Agents belongs to the focused thread; the other surfaces share a pinned working copy. */
 export function toolsTarget(chrome: ToolsPanelChrome, focusedThreadId: string | null): string | null {
-  return chrome.pinnedThreadId ?? focusedThreadId
+  return chrome.surface === 'agents' ? focusedThreadId : chrome.pinnedThreadId ?? focusedThreadId
 }

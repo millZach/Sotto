@@ -79,6 +79,7 @@ These documents are how Sotto remembers itself, so a change that makes one wrong
 - Branch from `main` as `feat/`, `fix/`, `chore/`, `perf/`, `test/` or `prototype/` plus a short slug (`fix/ci-fixture-deadlines`). One PR closes one issue or one explicit batch of issues.
 - Title: the commit subject, or one sentence covering the batch. Body: the template in `docs/agents/pull-requests.md`.
 - CI (`Gates (Windows)`) is green before merge, and a red gate is fixed at its cause. Merges into `main` are merge commits; release commits are `Release X.Y.Z` on `main`.
+- Once the PR merges, delete its branch on GitHub (`git push origin --delete <branch>`). Its commits are in `main` and the PR keeps the history; a branch with work `main` does not have stays.
 
 ## Issues and releases
 
