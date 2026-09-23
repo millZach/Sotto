@@ -13,6 +13,7 @@ import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { remoteAnswerScope } from '../main/agents/authority'
+import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -106,6 +107,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       openExternal: async () => { throw new Error('Open account settings on the host machine to continue.') },
       openThreadFolder: async () => { throw new Error('This folder is on the host machine. Open it there to continue.') },
       logFailure: code => options.log?.(code),
+      // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0019, ADR-0025).
+      worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
     })
     const pairing = new PairedClients(directory)
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
@@ -127,6 +130,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }
     } catch (error) { await listener?.close(); await runtime.close(); throw error }
+    // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
+    runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
     return {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
