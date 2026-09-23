@@ -126,22 +126,34 @@ async function railLayout(panel: Locator): Promise<{
   })
 }
 
-/** Lowest text contrast in the panel's chrome: rail words, the line of chrome and the footer, on the panel's tone. */
-async function chromeContrast(panel: Locator): Promise<number> {
+/**
+ * Lowest text contrast in the panel's chrome, on whatever it sits on: the rail's words, the line of chrome (its
+ * title and fact, page and shell tabs, worded actions) and the footer (the working copy, and the pinned thread
+ * and its tag while pinned). Each text is painted over every background between it and the sheet.
+ */
+async function chromeContrast(panel: Locator): Promise<{ lowest: number; name: string }> {
   return panel.evaluate(element => {
     const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
     const context = canvas.getContext('2d')!
     const paint = (colors: string[]): number[] => { context.clearRect(0, 0, 1, 1); for (const color of colors) { context.fillStyle = color; context.fillRect(0, 0, 1, 1) } return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3) }
     const luminance = (rgb: number[]): number => rgb.map(value => { const n = value / 255; return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4 }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    const sheet = getComputedStyle(element.querySelector('.tools-panel__sheet')!).backgroundColor
-    const ratios = [...element.querySelectorAll('.tools-rail__tab, .tools-chrome__title, .tools-chrome__detail, .tools-panel__copy, .tools-panel__label, .tools-panel__foot')].map(node => {
-      const own = getComputedStyle(node).backgroundColor
-      const layers = own === 'rgba(0, 0, 0, 0)' ? [sheet] : [sheet, own]
+    const sheet = element.querySelector('.tools-panel__sheet')!
+    const texts = [
+      '.tools-rail__tab', '.tools-chrome__title', '.tools-chrome__detail', '.tools-chrome .terminal-tabs__tab', '.tools-chrome__button:not(:disabled)',
+      '.tools-panel__copy', '.tools-panel__branch', '.tools-panel__label', '.tools-panel__foot', '.tools-panel__pinned-owner .tools-panel__thread-title', '.tools-panel__tag',
+    ].join(', ')
+    const ratios = [...element.querySelectorAll(texts)].map(node => {
+      const layers: string[] = []
+      for (let at: Element | null = node; at && at !== sheet.parentElement; at = at.parentElement) {
+        const color = getComputedStyle(at).backgroundColor
+        if (color !== 'rgba(0, 0, 0, 0)') layers.unshift(color)
+      }
       const base = luminance(paint(layers))
       const text = luminance(paint([...layers, getComputedStyle(node).color]))
-      return (Math.max(base, text) + .05) / (Math.min(base, text) + .05)
+      return { ratio: (Math.max(base, text) + .05) / (Math.min(base, text) + .05), name: `${node.className}: ${node.textContent}` }
     })
-    return Math.min(...ratios)
+    const lowest = ratios.reduce((low, item) => item.ratio < low.ratio ? item : low)
+    return { lowest: lowest.ratio, name: lowest.name }
   })
 }
 
@@ -300,7 +312,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
         await setWidth(panelWidth)
         for (const mode of MODES) {
           await appearance(page, mode)
-          expect(await chromeContrast(panel), `${width}x${height} ${panelWidth} ${mode} chrome contrast`).toBeGreaterThanOrEqual(4.5)
+          const contrast = await chromeContrast(panel)
+          expect(contrast.lowest, `${width}x${height} ${panelWidth} ${mode} chrome contrast, lowest on ${contrast.name}`).toBeGreaterThanOrEqual(4.5)
           expect(await rail.evaluate(element => [...element.querySelectorAll('.tools-rail__word')].filter(word => word.scrollWidth > word.clientWidth).map(word => word.textContent)), 'rail words cut short').toEqual([])
           expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-rail button, .tools-panel__foot button')]
             .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), 'rail and footer controls clipped').toEqual([])
@@ -347,6 +360,13 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await select('Browser')
     await panel.getByRole('button', { name: 'Pin to Workshop', exact: true }).click()
     await expect(panel.locator('.tools-panel__pinned-owner')).toHaveText('WorkshopPinned')
+    // The pinned footer (the thread's name and its Pinned tag) meets the same bar in both appearances.
+    for (const mode of MODES) {
+      await appearance(page, mode)
+      const pinnedContrast = await chromeContrast(panel)
+      expect(pinnedContrast.lowest, `pinned ${mode} chrome contrast, lowest on ${pinnedContrast.name}`).toBeGreaterThanOrEqual(4.5)
+    }
+    await appearance(page, 'dark')
     await screenshot(launched, 'browser-pinned-1280-dark', true)
     await panel.getByRole('button', { name: 'Unpin from Workshop', exact: true }).click()
     const initial = await browserBounds(launched, url)
