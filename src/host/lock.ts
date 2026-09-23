@@ -16,7 +16,7 @@ export interface HostLockOptions {
   /** This machine's boot identity, or undefined when it cannot be read; see readBootId. */
   boot?: string | undefined
   log?: (event: string) => void
-  /** A test seam: runs after a lock is judged stale and before it is moved aside, where a second host may win the race. */
+  /** A test seam: runs after a lock is judged stale and before this host takes its turn to clear it, where other hosts may win the race. */
   beforeReclaim?: () => Promise<void>
 }
 
@@ -92,21 +92,76 @@ async function placeExclusive(path: string, content: string): Promise<void> {
 const heldMessage = (pid: number): string =>
   `Another host (process ${pid}) is using this data folder, so this host did not start. Nothing in the folder was changed. Stop that host, or wait for it to stop, then start again. To run both, give this one its own data folder.`
 
+const delay = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms) })
+
+/** How long a host waits between looks while another host has the turn to clear a stale lock, and how many looks it takes. */
+const TURN_WAIT_MS = 50
+const TURN_LOOKS = 60
+
+type Removal = { outcome: 'removed' | 'gone' } | { outcome: 'changed' | 'lost'; now: string | undefined }
+
+/**
+ * Removes the file at `path` only if it still holds `seen`. It reads the file first and leaves anything else
+ * alone. Then it moves the file to a name only this host uses and checks what it moved, so a second remover
+ * acting in the same moment cannot make it remove the wrong file; if the move took something else after all,
+ * that is linked back into place ('changed'), or reported 'lost' when another file took the place meanwhile.
+ */
+async function removeIfStill(path: string, seen: string): Promise<Removal> {
+  let now: string
+  try { now = await readFile(path, 'utf8') }
+  catch (error) { if (code(error) === 'ENOENT') return { outcome: 'gone' }; throw error }
+  if (now !== seen) return { outcome: 'changed', now }
+  const aside = `${path}.${randomUUID()}.stale`
+  try { await rename(path, aside) }
+  catch (error) { if (code(error) === 'ENOENT') return { outcome: 'gone' }; throw error }
+  const moved = await readFile(aside, 'utf8').catch(() => undefined)
+  if (moved === seen) { await unlink(aside).catch(() => undefined); return { outcome: 'removed' } }
+  // Linking restores the very file, so its owner's own release still finds its lease; neither step replaces a file.
+  let restored = false
+  try { await link(aside, path); restored = true }
+  catch (error) { if (code(error) !== 'EEXIST' && moved !== undefined) restored = await placeExclusive(path, moved).then(() => true, () => false) }
+  if (restored) await unlink(aside).catch(() => undefined)
+  return { outcome: restored ? 'changed' : 'lost', now: moved }
+}
+
+/**
+ * Takes this host's turn to clear a stale lock: `host-listener.lock.reclaim`, placed the same exclusive way as
+ * the lock and holding this host's lease. Only a host holding the turn removes a lock it did not write, so no
+ * two hosts clear at once. A turn lasts one read and one removal, so a host that finds it taken waits; a turn
+ * left by a host that stopped in the middle of one is removed the same careful way as a stale lock.
+ */
+async function takeReclaimTurn(turn: string, content: string, boot: string | undefined, log?: (event: string) => void): Promise<void> {
+  for (let look = 0; look < TURN_LOOKS; look++) {
+    try { await placeExclusive(turn, content); return }
+    catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError('This host data folder could not be locked, so this host did not start. Nothing in the folder was changed. Check that the folder can be written, then start again.', { cause: error }) }
+    let seen: string, holder: HostLease
+    try { seen = await readFile(turn, 'utf8'); holder = parseLease(seen) }
+    catch (error) { if (code(error) !== 'ENOENT') await delay(TURN_WAIT_MS); continue }
+    if (leaseHolderAlive(holder, boot)) { await delay(TURN_WAIT_MS); continue }
+    const removal = await removeIfStill(turn, seen).catch(() => undefined)
+    if (removal?.outcome === 'lost') log?.('host-lock-restore-failed')
+  }
+  throw new HostLockError('Another host kept its turn to clear this data folder\'s lock, so this host did not start. Nothing in the folder was changed. Wait a moment, then start again. If no host is starting, remove host-listener.lock.reclaim from the data folder first.')
+}
+
 /**
  * Takes the data folder's lock for `lease`. A lock left behind by a host that no longer runs (a crash, a
  * reboot) is reclaimed, so a reconnect after either needs no hand cleanup; a lock whose holder still runs, or
  * one that cannot be read, is refused without being changed.
  *
- * Reclaiming is atomic. Two hosts starting together after a crash both see the same dead lease, so the one
- * that removes it must be sure it removes that lease and not the other host's fresh one. It moves the lock to
- * a name only it uses, reads what it moved, and goes on only if that is still the dead lease; anything else
- * belongs to a host that just won, so it puts that lock back and refuses as it would for any live holder.
- * Two hosts can never both own the folder this way. With three or more starting in the same instant, a third
- * could take the empty folder in the moment before the winner's lock is put back; that is logged as
- * `host-lock-restore-failed`, and the launch script's wait for a live holder keeps starts from stacking up so.
+ * Reclaiming is atomic. Hosts starting together after a crash all see the same dead lease, so the one that
+ * removes it must be sure it removes that lease and not another host's fresh one. Hosts take turns to clear a
+ * stale lock (takeReclaimTurn), and in its turn a host reads the lock again and removes it only if it still
+ * holds the dead lease. Only turn holders remove a lock they did not write, and a dead holder never releases
+ * its own, so the lock cannot change between that read and the removal: a live lock is never moved, however
+ * many hosts start at once. The removal also moves the lock aside and checks what it moved. That matters only
+ * if two hosts ever hold the turn together, which needs a host to stop in the middle of its own turn and
+ * several more to start in that same moment; a live lock moved then is put back, and one that cannot be put
+ * back is logged as `host-lock-restore-failed` and refused in words that say another host may have the folder.
  */
 export async function acquireHostLock(path: string, lease: HostLease, options: HostLockOptions = {}): Promise<void> {
   const content = JSON.stringify(lease)
+  const turn = `${path}.reclaim`
   for (let attempt = 0; attempt < 3; attempt++) {
     try { await placeExclusive(path, content); return }
     catch (error) { if (code(error) !== 'EEXIST') throw new HostLockError('This host data folder could not be locked, so this host did not start. Nothing in the folder was changed. Check that the folder can be written, then start again.', { cause: error }) }
@@ -118,30 +173,18 @@ export async function acquireHostLock(path: string, lease: HostLease, options: H
     }
     if (leaseHolderAlive(holder, options.boot)) throw new HostLockError(heldMessage(holder.pid))
     await options.beforeReclaim?.()
-    const aside = `${path}.${randomUUID()}.stale`
-    try { await rename(path, aside) }
+    await takeReclaimTurn(turn, content, options.boot, options.log)
+    let removal: Removal
+    try { removal = await removeIfStill(path, seen) }
     catch (error) {
-      if (code(error) === 'ENOENT') continue
-      throw new HostLockError('A lock left by a host that has stopped could not be moved aside, so this host did not start. Nothing in the folder was changed. Remove host-listener.lock from the data folder and start again.', { cause: error })
+      throw new HostLockError('A lock left by a host that has stopped could not be removed, so this host did not start. Nothing in the folder was changed. Remove host-listener.lock from the data folder and start again.', { cause: error })
+    } finally { await releaseHostLock(turn, lease).catch(() => undefined) }
+    if (removal.outcome === 'removed') options.log?.('host-lock-reclaimed')
+    if (removal.outcome === 'lost') {
+      options.log?.('host-lock-restore-failed')
+      throw new HostLockError('Another host took this data folder while this one was starting, and its lock could not be put back, so a third host may have opened the folder too. This host did not start. Stop every host that uses this data folder, then start one of them again.')
     }
-    const moved = await readFile(aside, 'utf8').catch(() => undefined)
-    if (moved === seen) {
-      await unlink(aside).catch(() => undefined)
-      options.log?.('host-lock-reclaimed')
-      continue
-    }
-    // Another host reclaimed the dead lease first and this move took its live lock. Put it back and step aside.
-    // Linking restores the very file, so the winner's own release still finds its lease; neither step replaces a lock.
-    let restored = false
-    try { await link(aside, path); restored = true }
-    catch (error) { if (code(error) !== 'EEXIST' && moved !== undefined) restored = await placeExclusive(path, moved).then(() => true, () => false) }
-    if (restored) await unlink(aside).catch(() => undefined)
-    else options.log?.('host-lock-restore-failed')
-    let winner: number | undefined
-    try { winner = parseLease(moved ?? '').pid } catch { winner = undefined }
-    throw new HostLockError(winner === undefined
-      ? 'Another host took this data folder while this one was starting, so this host did not start. Nothing in the folder was changed. Stop that host, or wait for it to stop, then start again.'
-      : heldMessage(winner))
+    // 'changed' or 'gone': another host cleared the dead lease first. Look again; a live new holder is refused above.
   }
   throw new HostLockError('Other hosts kept taking and releasing this data folder, so this host did not start. Nothing in the folder was changed. Wait a moment, then start again.')
 }

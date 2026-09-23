@@ -81,6 +81,62 @@ describe('the host lock', () => {
     }
   })
 
+  it('never moves the winner\'s lock when a third host starts while a late host finishes its reclaim', async () => {
+    await writeFile(path, JSON.stringify({ pid: await deadPid(), nonce: 'crashed' }))
+    // A has judged the crashed lock stale; B reclaims and owns the folder; then A goes on while C starts.
+    let judged!: () => void, resume!: () => void
+    const aJudged = new Promise<void>(resolve => { judged = resolve })
+    const aResumes = new Promise<void>(resolve => { resume = resolve })
+    const a = acquireHostLock(path, lease('a'), { log, beforeReclaim: async () => { judged(); await aResumes } })
+    const aOutcome = a.then(() => 'owner', (error: unknown) => error)
+    await aJudged
+    const b = lease('b')
+    await acquireHostLock(path, b, { log })
+    resume()
+    const [aResult, cResult] = await Promise.allSettled([aOutcome, acquireHostLock(path, lease('c'), { log })])
+    expect(aResult).toMatchObject({ status: 'fulfilled', value: expect.any(HostLockError) })
+    expect(cResult).toMatchObject({ status: 'rejected', reason: expect.any(HostLockError) })
+    expect(await lock()).toBe(JSON.stringify(b))
+    expect(await readdir(root)).toEqual(['host-listener.lock'])
+    expect(events).toEqual(['host-lock-reclaimed'])
+  })
+
+  it('gives the folder to exactly one of three hosts started together over a crashed lock', async () => {
+    const crashed = JSON.stringify({ pid: await deadPid(), nonce: 'crashed' })
+    for (let round = 0; round < 25; round++) {
+      await writeFile(path, crashed)
+      const leases = [lease(`a-${round}`), lease(`b-${round}`), lease(`c-${round}`)]
+      const results = await Promise.allSettled(leases.map(each => acquireHostLock(path, each, { log })))
+      const owners = results.flatMap((result, index) => result.status === 'fulfilled' ? [leases[index]] : [])
+      expect(owners).toHaveLength(1)
+      expect(await lock()).toBe(JSON.stringify(owners[0]))
+      expect(await readdir(root)).toEqual(['host-listener.lock'])
+    }
+    expect(events).not.toContain('host-lock-restore-failed')
+  })
+
+  it('clears a turn left by a host that stopped while reclaiming, then reclaims the lock', async () => {
+    const pid = await deadPid()
+    await writeFile(path, JSON.stringify({ pid, nonce: 'crashed' }))
+    await writeFile(`${path}.reclaim`, JSON.stringify({ pid, nonce: 'crashed' }))
+    const mine = lease('mine')
+    await acquireHostLock(path, mine, { log })
+    expect(await lock()).toBe(JSON.stringify(mine))
+    expect(await readdir(root)).toEqual(['host-listener.lock'])
+  })
+
+  it('waits while another host has its turn to clear a stale lock', async () => {
+    await writeFile(path, JSON.stringify({ pid: await deadPid(), nonce: 'crashed' }))
+    const turn = `${path}.reclaim`
+    await writeFile(turn, JSON.stringify(lease('other-turn')))
+    const mine = lease('mine')
+    const acquired = acquireHostLock(path, mine, { log })
+    setTimeout(() => { void rm(turn, { force: true }) }, 120)
+    await acquired
+    expect(await lock()).toBe(JSON.stringify(mine))
+    expect(await readdir(root)).toEqual(['host-listener.lock'])
+  })
+
   it('reclaims a lock from an earlier boot even when its pid now belongs to a running process', async () => {
     // process.pid is running, as a reused pid would be after a reboot; the boot identity says it is not the old holder.
     await writeFile(path, JSON.stringify(lease('before-reboot', { boot: 'boot-1' })))
