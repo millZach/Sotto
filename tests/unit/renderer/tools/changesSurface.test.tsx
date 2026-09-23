@@ -73,6 +73,23 @@ describe('local Git action feedback', () => {
     expect(message).toHaveValue('Preserve this commit message')
     expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'commit', message: 'Preserve this commit message' }))
   })
+
+  it('puts the Git toggles on the line of chrome and the file’s staging in its head, with no bar between', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: undefined as never }))
+    git.bridge.checkpoints = vi.fn(async () => ({ ok: true as const, value: { supported: true, checkpoints: [] } as never }))
+    setup(git)
+    const toggle = await screen.findByRole('button', { name: 'Git actions', exact: true })
+    expect(toggle.closest('.tools-chrome')).toHaveClass('changes-summary')
+    expect(screen.getByRole('button', { name: 'Checkpoints', exact: true }).closest('.tools-chrome')).toHaveClass('changes-summary')
+    expect(panel().querySelector('.git-actions')).toBeNull()
+    await user.click(within(panel()).getByRole('option', { name: /^app\.ts/u }))
+    const stage = await screen.findByRole('button', { name: 'Stage file', exact: true })
+    expect(stage.closest('.files-preview__head')).not.toBeNull()
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(panel().querySelector('.git-actions') as HTMLElement).getByRole('textbox', { name: 'Commit message' })).toBeInTheDocument()
+  })
 })
 
 describe('the drafted commit message', () => {

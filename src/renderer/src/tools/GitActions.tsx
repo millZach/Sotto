@@ -1,11 +1,21 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { GitCommitHorizontal, History } from 'lucide-react'
 import type { z } from 'zod'
 import type { Checkpoint, checkpointInspectionSchema, checkpointListingSchema } from '../../../shared/checkpoints'
 import type { GitChangesBridge, gitActionSchema } from '../../../shared/gitChanges'
 import type { ToolsResult } from '../../../shared/tools'
 import type { ChangesStore, ThreadChanges } from './changesStore'
 
-export function GitActions({ threadId, changes, bridge, store }: { threadId: string; changes: ThreadChanges; bridge: GitChangesBridge | undefined; store: ChangesStore }): ReactNode {
+/**
+ * Local Git actions for the working copy. The two drawers open under the Changes line of chrome; the toggles that
+ * open them are drawn into that line (`toggleSlot`) and the selected file's staging into its file head
+ * (`stageSlot`), so no bar of their own sits between the line and the work.
+ */
+export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot }: {
+  threadId: string; changes: ThreadChanges; bridge: GitChangesBridge | undefined; store: ChangesStore
+  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null
+}): ReactNode {
   const [open, setOpen] = useState<'git' | 'checkpoints' | null>(null)
   const [message, setMessage] = useState(''), [branch, setBranch] = useState('')
   const [branches, setBranches] = useState<string[]>([]), [busy, setBusy] = useState(false), [status, setStatus] = useState('')
@@ -81,15 +91,21 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
       if (bridge.checkpoints) void bridge.checkpoints(target).then(result => { if (result.ok) setCheckpoints(result.value) })
     })
   }
-  return <section className="git-actions" aria-label="Local Git actions">
-    <div className="git-actions__bar">
-      {bridge.act ? <button type="button" className="files-link tt-focusable" aria-expanded={open === 'git'} onClick={() => toggle('git')}>Git actions</button> : null}
-      {bridge.checkpoints ? <button type="button" className="files-link tt-focusable" aria-expanded={open === 'checkpoints'} onClick={() => toggle('checkpoints')}>Checkpoints</button> : null}
-      {selected && bridge.act ? <span className="git-actions__stage">
-        {selected.unstaged ? <button className="files-link tt-focusable" type="button" disabled={busy} onClick={() => action('stage', selected.path)}>Stage file</button> : null}
-        {selected.staged ? <button className="files-link tt-focusable" type="button" disabled={busy} onClick={() => action('unstage', selected.path)}>Unstage file</button> : null}
-      </span> : null}
-    </div>
+  const toggles = <>
+    {bridge.act ? <button type="button" className="tools-chrome__button tt-focusable" title="Git actions" aria-expanded={open === 'git'} onClick={() => toggle('git')}>
+      <GitCommitHorizontal size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Git actions</span></button> : null}
+    {bridge.checkpoints ? <button type="button" className="tools-chrome__button tt-focusable" title="Checkpoints" aria-expanded={open === 'checkpoints'} onClick={() => toggle('checkpoints')}>
+      <History size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Checkpoints</span></button> : null}
+  </>
+  const staging = selected && bridge.act ? <>
+    {selected.unstaged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('stage', selected.path)}>Stage file</button> : null}
+    {selected.staged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('unstage', selected.path)}>Unstage file</button> : null}
+  </> : null
+  const drawer = open !== null || busy || status !== ''
+  return <>
+    {toggleSlot ? createPortal(toggles, toggleSlot) : null}
+    {stageSlot && staging ? createPortal(staging, stageSlot) : null}
+    {drawer ? <section className="git-actions" aria-label="Local Git actions">
     {open === 'git' ? <div className="git-actions__drawer">
       <form onSubmit={event => { event.preventDefault(); action('commit') }}>
         <label htmlFor={`commit-${threadId}`}>Commit message</label>
@@ -127,5 +143,6 @@ export function GitActions({ threadId, changes, bridge, store }: { threadId: str
       </section> : null}
     </div> : null}
     {busy || status ? <p className="git-actions__status" role="status">{busy ? 'Working…' : status}</p> : null}
-  </section>
+    </section> : null}
+  </>
 }

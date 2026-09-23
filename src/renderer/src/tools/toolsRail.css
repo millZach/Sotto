@@ -90,7 +90,8 @@
 .tools-chrome__button:disabled { opacity: .5; cursor: default; }
 .tools-chrome__button:disabled:hover { background: transparent; color: var(--tt-text-2); }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
-.tools-panel .changes-summary.tools-chrome .files-link { min-height: 28px; font-size: 13px; }
+/* Git actions draws its toggles into the Changes line and the file's staging into the file head. */
+.tools-panel :is(.changes-summary__git, .changes-diff__stage) { display: contents; }
 .tools-panel .git-pr__toolbar.tools-chrome { flex-wrap: wrap; gap: 6px 8px; padding-block: 7px; }
 .tools-panel .git-pr__toolbar .tools-chrome__actions { flex-wrap: wrap; gap: 8px; }
 

@@ -175,7 +175,6 @@
 .changes-surface[data-diff] .git-actions { max-height: 240px; }
 @media (max-height: 640px) { .changes-surface[data-diff] .git-actions { max-height: 150px; } }
 .git-actions__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 7px 16px; }
-.git-actions__stage { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
 .git-actions__drawer { display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 16px; }
 .git-actions__drawer form, .git-actions__branch { display: flex; flex-direction: column; gap: 7px; }
 .git-actions__drawer :is(textarea,input:not([type=checkbox])) { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tt-hairline); border-radius: 6px; padding: 8px; background: var(--tt-code-bg); color: var(--tt-text); font: inherit; resize: vertical; }

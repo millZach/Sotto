@@ -1,5 +1,5 @@
 import React, { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Columns2, Copy, FolderOutput, RotateCw, X } from 'lucide-react'
+import { Columns2, Copy, FolderOutput, GitPullRequestArrow, RotateCw, X } from 'lucide-react'
 import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { revealLabel } from './FilePreview'
@@ -40,6 +40,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
   const changes = useThreadChanges(store, threadId)
   const [split, setSplit] = useState(false)
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
+  // Git actions draws its toggles into the line of chrome and the file's staging into its head.
+  const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
+  const [stageSlot, setStageSlot] = useState<HTMLElement | null>(null)
   if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>
   const { list, selectedPath, diff } = changes
   if (list.status === 'loading') return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Reading changes…</p></>
@@ -62,12 +65,14 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
       <ToolsChromeLead title={list.files.length === 0 ? 'No changes' : `${list.files.length}${list.truncated ? '+' : ''} changed ${list.files.length === 1 ? 'file' : 'files'}`}
         detail={list.branch ? <><span className="tt-visually-hidden">{' on '}</span><bdi className="changes-summary__branch">{list.branch}</bdi></> : 'Detached HEAD'} />
       <div className="tools-chrome__actions">
-        {bridge?.reviewPullRequest ? <button type="button" className="files-link tt-focusable" onClick={() => setPullRequestOpen(true)}>Pull request</button> : null}
+        <span className="changes-summary__git" ref={setToggleSlot} />
+        {bridge?.reviewPullRequest ? <button type="button" className="tools-chrome__button tt-focusable" title="Pull request" onClick={() => setPullRequestOpen(true)}>
+          <GitPullRequestArrow size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Pull request</span></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="Refresh changes" title="Refresh changes" data-busy={changes.refreshing || undefined}
           onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
       </div>
     </div>
-    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} />
+    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} />
     {list.files.length === 0
       ? <div className="files-problem" role="status"><strong>The working copy matches HEAD.</strong></div>
       : <ChangeList files={list.files} selectedPath={selectedPath} onSelect={path => store.select(bridge, threadId, path)} />}
@@ -82,6 +87,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
           <span className="files-preview__name" title={selectedPath}>{splitPath(selectedPath).name}</span>
         </div>
         <div className="files-preview__actions">
+          <span className="changes-diff__stage" ref={setStageSlot} />
           <button type="button" className="files-icon tt-focusable" aria-label="Split view" aria-pressed={split} title={split ? 'Show unified diff' : 'Show split diff'} onClick={() => setSplit(value => !value)}><Columns2 size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`Copy path: ${selectedPath}`} title="Copy path" onClick={() => copy(selectedPath)}><Copy size={16} aria-hidden="true" /></button>
           <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${selectedPath}`} title={revealLabel(platform)} onClick={() => reveal(selectedPath)}><FolderOutput size={16} aria-hidden="true" /></button>
