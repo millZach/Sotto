@@ -72,7 +72,7 @@ export class DesktopHosts {
       return this.get()
     }
     // Disconnect only closes this computer's connection. A host Sotto started keeps running, the same as
-    // when Sotto quits, until Stop host or Forget stops it, because a phone may still be using it.
+    // when Sotto quits, until Stop host or Forget stops it, because another paired client may still be using it.
     if (command.type === 'disconnect') { this.clearRetry(host.id); await this.disconnect(host.id); return this.get() }
     if (command.type === 'stop-host') {
       this.clearRetry(host.id)

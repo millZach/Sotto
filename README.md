@@ -54,7 +54,7 @@ Node.js 22 or newer is needed on either platform only when developing from sourc
 
 ## Privacy and cost
 
-When you connect a remote host, Sotto sends your thread reads, prompts and explicit request answers to the host you configured. The host socket listens only on its own loopback address. The desktop uses your SSH connection; the iOS app uses your private Tailscale HTTPS address. Pairing identifies each client and can be revoked. Provider credentials stay on the host, and pairing does not approve permission requests. No public listener, relay account, analytics or new provider service is enabled by connecting a client.
+When you connect a remote host, Sotto sends your thread reads, prompts and explicit request answers to the host you configured. The host socket listens only on its own loopback address. The desktop reaches it through your SSH connection. Pairing identifies each client and can be revoked. Provider credentials stay on the host, and pairing does not approve permission requests. No public listener, relay account, analytics or new provider service is enabled by connecting a client.
 
 The Tools browser contacts the HTTP(S) pages you open, including local development servers, and the subresources those pages request. Browser agents use Sotto's own pages through thread-scoped tools; providers that require MCP connect to an authenticated endpoint on `127.0.0.1` on this computer. When you authorize browser work or send selected page context, its screenshots and relevant page data go to that thread's provider under the provider's data policy. Sotto keeps browser-task evidence and page grants in memory, never in operational logs. Explicitly attached/sent material follows the existing draft and history controls. See [the browser decision](docs/adr/0020-sotto-owned-browser-tasks.md).
 
@@ -95,19 +95,19 @@ A normal stop removes the host's listener descriptor and lock. After a crash or 
 
 A remote host keeps its own OpenRouter key, in its encrypted credential file, and never receives the desktop's: a paired client cannot send a credential. Without a key there, thread titles, branch names and OpenRouter-hosted reasoning on that host fall back to their stand-ins or stay off.
 
-## Desktop and iPhone clients (development)
+## Remote hosts (development)
 
 In **Settings > Hosts**, add any machine you reach over SSH and have installed the host on: its SSH target, the extracted host installation folder and the host data folder. Add as many as you like; each connected host's threads appear in the sidebar with the host's name, and one host is selected for new threads. The desktop uses your SSH configuration and asks before accepting a new host key. Connect starts or discovers the installed host and forwards its loopback listener, then Sotto pairs this computer itself over that connection; no code is typed.
 
-A host Sotto started keeps running until you stop it. Disconnect, quitting Sotto and a dropped connection all leave it working, so a phone can keep using it and running turns finish; a dropped connection reconnects on its own. **Stop host** stops a host Sotto started and disconnects; **Forget** revokes this computer's access, stops a host Sotto started, and removes the saved connection. A host you started yourself is never stopped by Sotto. You can Forget a host you can no longer reach; this computer's access on it then stays until you revoke it there with `--revoke-client`.
+A host Sotto started keeps running until you stop it. Disconnect, quitting Sotto and a dropped connection all leave it working, so another paired client can keep using it and running turns finish; a dropped connection reconnects on its own. **Stop host** stops a host Sotto started and disconnects; **Forget** revokes this computer's access, stops a host Sotto started, and removes the saved connection. A host you started yourself is never stopped by Sotto. You can Forget a host you can no longer reach; this computer's access on it then stays until you revoke it there with `--revoke-client`.
 
-The iPhone enters a code shown on the host. On the host, from the extracted host folder, request a fresh code:
+A client that cannot pair itself over SSH enters a code shown on the host instead. On the host, from the extracted host folder, request a fresh code:
 
 ```sh
 node host/index.js --data /path/to/sotto-data --pairing-code
 ```
 
-The code expires after five minutes. Pairing admits this device; permission answers need a separate policy grant from the host's user. Use the client ID shown by the iPhone or saved desktop connection to grant, deny or revoke access explicitly:
+The code expires after five minutes. Pairing admits this device; permission answers need a separate policy grant from the host's user. Use the client ID the client shows, or the one saved for a desktop connection, to grant, deny or revoke access explicitly:
 
 ```sh
 node host/index.js --data /path/to/sotto-data --allow-answers CLIENT_UUID
@@ -119,7 +119,7 @@ Choose **Use this host** for host-wide actions. Threads from connected hosts sha
 
 After an interrupted command, reconnect and check its result before choosing to send again; Sotto never automatically repeats it.
 
-The native iOS client is its own pull request ([#225](https://github.com/millZach/Sotto/pull/225)) and lands once host protocol version 1 is frozen. It uses the same code-entry pairing through a private, certificate-validated Tailscale HTTPS address. The first version reads existing threads, replies, interrupts and answers requests explicitly. Configure Tailscale Serve on the host machine to reach its fixed loopback port and install Tailscale on the iPhone. Native build, signing, real-device verification and TestFlight upload are separate steps; source and HTML design previews are not an installed iPhone app.
+An iPhone client is planned in its own pull request ([#225](https://github.com/millZach/Sotto/pull/225)) and is not part of this build. Its setup, including the private address it reaches the host through, arrives with it.
 
 ## Agent control center (development beta)
 
