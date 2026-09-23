@@ -118,7 +118,8 @@
 /* Surfaces inside the panel: controls keep to the edges and the page, terminal and code get the field. */
 .tools-panel :is(.browser-surface, .terminal-surface, .files-surface, .changes-surface) { min-width: 0; }
 .tools-panel .terminal-tabs__tab { min-height: 30px; border-radius: 6px; font-size: 13px; }
-.tools-panel .terminal-tabs__tab[aria-selected='true'] { border-color: transparent; }
+.tools-panel .terminal-tabs__tab[aria-selected='true'], .tools-panel .terminal-tabs__item[data-selected] { border-color: transparent; }
+.tools-panel .terminal-tabs__item { border-radius: 6px; }
 .tools-panel .terminal-tabs__dot { width: 6px; height: 6px; }
 .tools-panel .browser-tabs__tab { gap: 7px; }
 .tools-panel .browser-tabs__tab > svg { flex: none; color: var(--tt-text-muted); }

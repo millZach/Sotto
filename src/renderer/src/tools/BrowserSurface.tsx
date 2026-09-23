@@ -166,7 +166,8 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           const selected = page.id === activeId && !creating
           // With previews off, the tab is where a page's waiting request shows before the page is chosen.
           const waiting = tasks.some(item => item.threadId === threadId && item.pageId === page.id && item.pendingAction !== null)
-          return <button key={page.id} id={`browser-tab-${page.id}`} type="button" role="tab" className="terminal-tabs__tab browser-tabs__tab tt-focusable"
+          // The open page carries its own close, the way a tab closes, so the line's end holds only New page.
+          return <span key={page.id} className="terminal-tabs__item" data-selected={selected || undefined}><button id={`browser-tab-${page.id}`} type="button" role="tab" className="terminal-tabs__tab browser-tabs__tab tt-focusable"
             aria-selected={selected} aria-controls="browser-page" tabIndex={page.id === activeId ? 0 : -1} data-status={page.status} title={`${pageLabel(page)}\n${page.url}`}
             onClick={() => { setCreating(false); store.select(threadId, page.id) }}
             onKeyDown={event => {
@@ -183,11 +184,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
             {waiting ? <><span className="browser-tabs__waiting" aria-hidden="true" /><span className="tt-visually-hidden">, waiting for your answer</span></> : null}
             {page.status === 'unavailable' ? <span className="tt-visually-hidden">, could not load</span> : page.status === 'loading' ? <span className="tt-visually-hidden">, loading</span> : null}
           </button>
+          {selected ? <button type="button" className="terminal-tabs__close tt-focusable" aria-label={`Close page: ${pageLabel(page)}`} title="Close page" disabled={browser.busy}
+            onClick={() => void store.close(bridge, threadId, page.id).then(() => { const next = store.thread(threadId)?.activePageId; if (next) focusTab(next) })}><X size={14} aria-hidden="true" /></button> : null}
+          </span>
         })}
       </div>
       <div className="terminal-bar__actions tools-chrome__actions">
-        {active && !creating ? <button type="button" className="files-icon tt-focusable" aria-label={`Close page: ${pageLabel(active)}`} title="Close page" disabled={browser.busy}
-          onClick={() => void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activePageId; if (next) focusTab(next) })}><X size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
           disabled={full || !bridge} onClick={() => creating ? (setCreating(false), setDraft(null)) : startNew()}><Plus size={16} aria-hidden="true" /></button>
       </div>
