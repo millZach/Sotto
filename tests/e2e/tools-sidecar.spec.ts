@@ -13,7 +13,7 @@ import { terminalOutput } from './support/terminal'
 // generated folder; the verification note's images are copied from it into artifacts/tools-rail.
 const run = promisify(execFile)
 const SHOTS = resolve(process.cwd(), 'artifacts/tools-rail-run')
-const SIZES = (process.env.RAIL_SIZES === '820' ? [[820, 560]] : [[1600, 1000], [1280, 800], [820, 560]]) as readonly (readonly [number, number])[]
+const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const MODES = ['dark', 'light'] as const
 const TOOLS = ['Browser', 'Terminal', 'Files', 'Changes', 'Agents'] as const
 type Tool = typeof TOOLS[number]
