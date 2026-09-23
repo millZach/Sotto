@@ -16,6 +16,7 @@ import { SshHostLauncher, type SshCallbacks, type SshHostConnection, type SshHos
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RemoteHost } from '../../src/shared/hosts'
+import { HOST_BUSY } from '../../src/shared/hostProtocol'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
@@ -250,6 +251,25 @@ describe('desktop remote host management over a real socket', () => {
       expect((connect.mock.contexts[1] as SocketHostService).events(0)).toEqual([])
       expect(readEvents).not.toHaveBeenCalled()
     } finally { connect.mockRestore(); readEvents.mockRestore() }
+  })
+  it('says the host is busy when this computer’s session budget is spent, and keeps retrying instead of pairing again', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    // Spend this client's session budget for the minute, the way a loop on its token would.
+    const session = () => fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+    let response = await session()
+    for (let index = 0; response.status === 200 && index < 200; index++) response = await session()
+    expect(response.status).toBe(429)
+    retryDelay = attempt => attempt === 0 ? 0 : 60_000
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    // The busy reconnect is not final: a second retry is scheduled after it.
+    await vi.waitFor(() => expect(scheduled).toEqual([0, 1]))
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', error: HOST_BUSY })
+    expect(credentials.get('remote-host:' + remote.id)).toBe(token)
+    expect(host.pairing.list()).toHaveLength(1)
   })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()

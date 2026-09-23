@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { HostService, ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
-import { HOST_EVENT_PAGE_SIZE, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostPush, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
+import { HOST_BUSY, HOST_EVENT_PAGE_SIZE, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostPush, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
 import type { AgentCommand } from '../shared/agents'
 import { remoteCommandRefusal } from './remoteCommands'
 import { SocketFrames } from './socketFrames'
@@ -52,6 +52,14 @@ const RECEIPT_LIMIT = 10_000
  */
 const MESSAGES_PER_SECOND = 100
 const EVENT_PAGES_PER_SECOND = 100
+/**
+ * HTTP requests a minute, per endpoint class, so no caller can spend another's budget. Health is not
+ * counted: refusing it costs as much as answering it, and the launch script polls it while a host starts.
+ * Pairing has a small bucket of its own. The administrative path, and sessions and revocations per paired
+ * client, are counted only after their token is checked, so a loop on a bad token spends nobody's budget.
+ */
+const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120 } as const
+const HTTP_WINDOW_MS = 60_000
 /** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
 const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
 /** Only this listener owns sockets; clients never get a provider handle or a claimed identity. */
@@ -73,7 +81,15 @@ export async function startSocketServer(options: SocketServerOptions) {
     throw new Refusal('busy')
   }
   let closing = false
-  let httpWindow = Date.now(), httpCount = 0
+  const httpBudgets = new Map<string, { window: number; count: number }>()
+  /** Counts one request against a bucket, dropping buckets whose minute has passed, and refuses past its limit. */
+  const spend = (bucket: string, limit: number): void => {
+    const now = Date.now()
+    for (const [key, entry] of httpBudgets) if (now - entry.window >= HTTP_WINDOW_MS) httpBudgets.delete(key)
+    const entry = httpBudgets.get(bucket) ?? { window: now, count: 0 }
+    httpBudgets.set(bucket, entry)
+    if (++entry.count > limit) throw new Refusal('busy')
+  }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const shell = (peer: Peer) => {
     const state = service.shell()
@@ -231,13 +247,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       try {
         if (closing) throw new Refusal('unavailable')
         if (request.headers.origin && !originAllowed(request.headers.origin, options.origins)) throw new Refusal('unauthenticated')
-        if (Date.now() - httpWindow > 60000) { httpWindow = Date.now(); httpCount = 0 }
-        if (++httpCount > 120) throw new Refusal('busy')
         if (request.method === 'GET' && request.url === '/v1/health') { respond(response, 200, { ...descriptor, status: 'ready' }); return }
         if (request.method !== 'POST') throw new Refusal('invalid_request')
         if (request.url?.startsWith('/v1/admin/')) {
           const token = Buffer.from(bearer(request)), expected = Buffer.from(adminToken)
           if (token.length !== expected.length || !timingSafeEqual(token, expected)) throw new Refusal('unauthenticated')
+          spend('admin', HTTP_BUDGETS.admin)
           if (request.url === '/v1/admin/pairing-code') { respond(response, 200, { v: 1, hostId, ...pairing.issuePairingCode() }); return }
           const input = z.object({ clientId: z.string().min(1).max(512) }).strict().parse(await body(request))
           if (request.url === '/v1/admin/revoke-client') { const revoked = await pairing.revoke(input.clientId); for (const peer of peers) if (!authenticated(peer)) peer.frames.close(); respond(response, 200, { v: 1, hostId, revoked }); return }
@@ -248,6 +263,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           respond(response, 200, { v: 1, hostId, ok: true }); return
         }
         if (request.url === '/v1/pair') {
+          spend('pair', HTTP_BUDGETS.pair)
           const input = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict().parse(await body(request))
           let paired: Awaited<ReturnType<PairedClients['redeem']>>
           try { paired = await pairing.redeem(input.code, input.name) } catch { throw new Refusal('unauthenticated') }
@@ -256,6 +272,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.url === '/v1/revoke') {
           const clientId = pairing.verifyToken(bearer(request))
           if (!clientId) throw new Refusal('unauthenticated')
+          spend('client:' + clientId, HTTP_BUDGETS.client)
           const revoked = await pairing.revoke(clientId)
           for (const peer of peers) if (!authenticated(peer)) peer.frames.close()
           respond(response, 200, { v: 1, hostId, revoked }); return
@@ -263,13 +280,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.url === '/v1/session') {
           const clientId = pairing.verifyToken(bearer(request))
           if (!clientId) throw new Refusal('unauthenticated')
+          spend('client:' + clientId, HTTP_BUDGETS.client)
           const at = Date.now()
           respond(response, 200, { v: 1, hostId, clientId, session: pairing.signSession(clientId, at), expiresAt: new Date(at + SESSION_LIFETIME_MS).toISOString() }); return
         }
         throw new Refusal('invalid_request')
       } catch (error) {
         const code = error instanceof Refusal ? error.code : 'invalid_request'
-        respond(response, code === 'unauthenticated' ? 401 : code === 'busy' ? 429 : 400, { v: 1, error: { code, message: errors[code] } })
+        respond(response, code === 'unauthenticated' ? 401 : code === 'busy' ? 429 : 400, { v: 1, error: { code, message: code === 'busy' ? HOST_BUSY : errors[code] } })
       }
     })())
   })

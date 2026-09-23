@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { HOST_BUSY } from '../../src/shared/hostProtocol'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -330,7 +331,30 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
   } finally { await client.close(); await server.close() }
 })
 
-describe('event paging', () => {
+describe('request budgets', () => {
+  it('counts no health request, so a loop on it never blocks a session', async () => {
+    const { client, result } = await pair()
+    for (let index = 0; index < 150; index++) expect((await fetch(url + '/v1/health')).status).toBe(200)
+    await expect(client.connect()).resolves.toMatchObject({ hostId: result.hostId })
+  })
+  it('keeps a session budget per paired client and says the host is busy past it, not that the device needs pairing', async () => {
+    const first = await pair('First'), second = await pair('Second')
+    const session = (token: string) => fetch(url + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+    // A loop on a token the host does not know spends nobody's budget.
+    for (let index = 0; index < 150; index++) expect((await session('not-a-paired-token')).status).toBe(401)
+    let response = await session(first.result.token)
+    for (let index = 0; response.status === 200 && index < 200; index++) response = await session(first.result.token)
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ error: { code: 'busy', message: HOST_BUSY } })
+    await expect(first.client.connect()).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY, pairingRequired: false })
+    await expect(second.client.connect()).resolves.toMatchObject({ clientId: second.result.clientId })
+  })
+  it('gives pairing a small bucket of its own that sessions do not share', async () => {
+    const { client } = await pair()
+    for (let index = 1; index < 10; index++) await expect(SocketHostService.pair(url, 'WRONG' + index, 'Guess')).rejects.toMatchObject({ code: 'unauthenticated', message: expect.stringContaining('pairing code could not be used') })
+    await expect(SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Late')).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY })
+    await expect(client.connect()).resolves.toBeDefined()
+  })
   it('paces a client paging through a long log instead of closing it at the per-second cutoff', async () => {
     // 157 pages: more than the 100 messages a second that closes a peer sending anything else.
     const rows = Array.from({ length: 40_000 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
