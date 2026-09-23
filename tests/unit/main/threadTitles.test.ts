@@ -105,6 +105,22 @@ describe('naming a thread from its first exchange', () => {
     expect(reopened.titles).not.toHaveBeenCalled()
   })
 
+  it('names a thread whose reply streamed in while the turn was still running, once the turn ends', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    // A real client shows the reply while the turn is still running, and ends the turn on a later frame
+    // that adds no message. The name is asked for on that later frame, not skipped for good.
+    reply(f.adapters.codex)
+    f.adapters.codex.state.threads[0]!.status = 'running'
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh' })
+    expect(f.titles).not.toHaveBeenCalled()
+    f.adapters.codex.state.threads[0]!.status = 'idle'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
+    expect(f.titles).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves a name set by hand alone, and a rename after the name was written sticks', async () => {
     const f = await coordinator()
     const threadId = workshop(f.control).id

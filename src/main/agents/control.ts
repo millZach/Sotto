@@ -905,6 +905,10 @@ export class AgentControl {
     if (this.dependencies.historyEnabled?.() === false) return
     for (const thread of this.state.host.threads) {
       if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
+      // A client shows the first reply while its turn is still running and ends the turn on a later frame
+      // that adds no message, so a running thread is not yet checked: checking it would record this count
+      // and skip the frame that finishes the turn.
+      if (thread.status === 'running') continue
       // A thread's history lives in the store, so read it only when this thread has said something new:
       // otherwise a thread that will never be named would be read on every provider frame.
       const messageCount = threadSummaryOf(thread).messageCount
