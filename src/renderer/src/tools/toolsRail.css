@@ -52,6 +52,10 @@
 /* The open surface's mark is on the tile's outer side, at the window's edge. It is drawn as a shadow so it adds
    no overflow to the tile. */
 .tools-rail__tab[aria-selected='true']::before { position: absolute; top: 13px; right: 0; bottom: 13px; width: 0; border-radius: 2px; box-shadow: 3px 0 0 1px var(--tt-activity); content: ''; }
+/* Forced colours drop the shadow and the tile tone, so the open surface takes a system outline instead. */
+@media (forced-colors: active) {
+  .tools-rail__tab[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -2px; }
+}
 .tools-rail__icon { flex: none; }
 /* Words keep the app's 12px floor, a touch above the mock-up's 10.5px, and still fit the 50px tile. */
 .tools-rail__word { max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
