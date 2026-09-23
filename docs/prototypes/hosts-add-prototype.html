@@ -1,0 +1,460 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway (#206). Three variants of adding and showing a remote host, switchable with ?variant=A|B|C
+  or the arrows in the bottom bar. Each variant covers the same four places: the Add host flow, the saved host
+  row with its on/off switch, the host badge in the Threads sidebar and New thread dialog, and the host selector
+  in the composer footer. Nothing here is wired to Sotto; all state lives in memory. Serve with
+  `node docs/prototypes/hosts-add-prototype.mjs`.
+-->
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sotto · Hosts prototype (#206)</title>
+<link rel="stylesheet" href="/src/renderer/src/styles/tokens.css">
+<style>
+@font-face{font-family:Figtree;src:url('/src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900;font-display:swap}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--tt-surface-sunken, var(--tt-canvas));color:var(--tt-text);font:14px/1.5 Figtree,system-ui,sans-serif;overflow:auto}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:2px}
+.btn{min-height:32px;padding:5px 14px;border-radius:var(--tt-radius-pill,999px);border:1px solid var(--tt-border);background:var(--tt-surface);font-size:13px}
+.btn:hover{background:var(--tt-hover)}
+.btn.primary{background:var(--tt-text);color:var(--tt-canvas);border-color:transparent;font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--tt-text-muted)}
+.btn.ghost:hover{color:var(--tt-text);background:var(--tt-hover)}
+.btn:disabled{opacity:.55;cursor:default}
+.muted{color:var(--tt-text-muted)}
+.faint{color:var(--tt-text-faint)}
+svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* The window */
+.stage{min-height:100%;display:grid;place-items:center;padding:24px 24px 150px}
+.frame{width:var(--w,100%);height:var(--h,calc(100vh - 170px));background:var(--tt-canvas);border:1px solid var(--tt-hairline);border-radius:10px;overflow:hidden;display:grid;grid-template-rows:36px 1fr;position:relative}
+.strip{display:flex;align-items:center;gap:4px;padding:0 10px;border-bottom:1px solid var(--tt-hairline);background:var(--tt-sidebar)}
+.strip .brand{font-weight:650;letter-spacing:-.3px;margin-right:14px}
+.strip button{border:0;background:none;padding:4px 10px;border-radius:6px;color:var(--tt-text-muted);font-size:13px}
+.strip button[aria-current]{color:var(--tt-text);background:var(--tt-selected)}
+.body{min-height:0;display:grid;grid-template-columns:220px 1fr}
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-hairline);overflow:auto;padding:12px 8px}
+.room{min-width:0;overflow:auto}
+
+/* Settings */
+.snav button{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 10px;border-radius:6px;color:var(--tt-text-muted)}
+.snav button[aria-current]{background:var(--tt-selected);color:var(--tt-text)}
+.page{max-width:790px;margin:0 auto;padding:40px 36px 60px}
+.page h1{font-size:24px;letter-spacing:-.5px;margin:0 0 28px;font-weight:600}
+.page h2{font-size:15px;margin:0;font-weight:600}
+.page .intro{margin:6px 0 16px;color:var(--tt-text-muted);max-width:620px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:34px}
+.local{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--tt-hairline)}
+.row{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--tt-hairline)}
+.row .icon{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;background:var(--tt-surface-elevated);color:var(--tt-accent-text)}
+.row .info{flex:1;min-width:0}
+.row .name{font-weight:600}
+.row .meta{color:var(--tt-text-muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .err{color:var(--tt-error-text);font-size:13px;margin-top:2px}
+.row .acts{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--tt-text-faint);flex-shrink:0}
+.dot.connected{background:var(--tt-success)}.dot.connecting{background:var(--tt-warning)}.dot.error{background:var(--tt-error)}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Switch */
+.switch{position:relative;width:34px;height:20px;border-radius:999px;border:1px solid var(--tt-border);background:var(--tt-field);padding:0;flex-shrink:0}
+.switch::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--tt-text-muted);transition:transform .15s}
+.switch[aria-checked=true]{background:var(--tt-accent-surface);border-color:var(--tt-accent-border)}
+.switch[aria-checked=true]::after{transform:translateX(14px);background:var(--tt-accent-surface-text)}
+.switch-label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tt-text-muted)}
+.pill-toggle{min-width:44px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid var(--tt-border);background:transparent;color:var(--tt-text-muted)}
+.pill-toggle[aria-checked=true]{background:var(--tt-accent-surface);color:var(--tt-accent-surface-text);border-color:var(--tt-accent-border)}
+
+/* Fields */
+.field{display:grid;gap:5px;margin:14px 0}
+.field label{font-size:13px;font-weight:500}
+.field .hint{font-size:12px;color:var(--tt-text-muted)}
+.input{width:100%;height:36px;border:1px solid var(--tt-field-border,var(--tt-border));background:var(--tt-field);border-radius:8px;padding:6px 11px}
+.input::placeholder{color:var(--tt-text-faint)}
+.two{display:grid;grid-template-columns:1fr 110px;gap:12px}
+.advanced{margin-top:6px}
+.advanced summary{cursor:pointer;color:var(--tt-text-muted);font-size:13px;padding:4px 0;width:max-content}
+.combo{position:relative}
+.listbox{position:absolute;z-index:5;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;background:var(--tt-surface-overlay,var(--tt-surface-elevated));border:1px solid var(--tt-border);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);max-height:220px;overflow:auto}
+.listbox li{display:flex;align-items:baseline;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer}
+.listbox li[aria-selected=true],.listbox li:hover{background:var(--tt-selected)}
+.listbox li b{font-weight:600}
+.listbox li small{color:var(--tt-text-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.listbox li .src{margin-left:auto;font-size:11px;color:var(--tt-text-faint)}
+.notice{margin:14px 0 0;padding:10px 12px;border-radius:8px;background:var(--tt-surface-elevated);font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.notice.bad{border-left:2px solid var(--tt-error);color:var(--tt-text)}
+.notice.work{border-left:2px solid var(--tt-accent)}
+
+dialog{border:1px solid var(--tt-border);border-radius:14px;background:var(--tt-surface);color:var(--tt-text);width:min(460px,calc(100% - 32px));padding:24px;max-height:calc(100% - 32px);overflow:visible}
+dialog::backdrop{background:color-mix(in srgb,var(--tt-canvas) 70%,transparent)}
+dialog h2{font-size:17px;margin:0 0 4px;font-weight:600}
+dialog .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
+/* Variant B: inline add */
+.addbar{margin:14px 0 6px;padding:14px;border:1px dashed var(--tt-border);border-radius:12px}
+.addbar .line{display:flex;gap:8px}
+.addbar .line .input{flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.chip{border:1px solid var(--tt-border);background:var(--tt-surface);border-radius:999px;padding:3px 11px;font-size:12px}
+.chip:hover{background:var(--tt-hover)}
+
+/* Variant C: sheet */
+.sheet{position:absolute;inset:36px 0 0 auto;width:min(400px,100%);background:var(--tt-surface);border-left:1px solid var(--tt-border);box-shadow:-18px 0 40px rgba(0,0,0,.3);padding:22px;overflow:auto;z-index:6}
+.sheet h2{font-size:17px;margin:0 0 4px}
+.found{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--tt-hairline)}
+.found .info{flex:1;min-width:0}
+.found .info small{display:block;color:var(--tt-text-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu{position:absolute;right:0;top:calc(100% + 4px);z-index:5;background:var(--tt-surface-overlay,var(--tt-surface-elevated));border:1px solid var(--tt-border);border-radius:10px;padding:4px;min-width:170px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:7px 10px;border-radius:6px;font-size:13px}
+.menu button:hover{background:var(--tt-hover)}
+.menu button.danger{color:var(--tt-error-text)}
+.rel{position:relative}
+
+/* Threads */
+.tside{display:flex;flex-direction:column;gap:2px}
+.newthread{display:flex;align-items:center;gap:8px;border:0;background:none;padding:6px 10px;border-radius:6px;color:var(--tt-text);font-weight:500}
+.newthread:hover{background:var(--tt-hover)}
+.group{margin-top:12px}
+.group-head{display:flex;align-items:center;gap:7px;padding:4px 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--tt-text-faint);font-weight:600}
+.proj{display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:6px;color:var(--tt-text-2,var(--tt-text));font-weight:500}
+.proj .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj .count{color:var(--tt-text-faint);font-size:12px}
+.hbadge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--tt-text-muted);border:1px solid var(--tt-border-faint,var(--tt-border));border-radius:999px;padding:0 7px;line-height:18px;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbadge svg.i{width:11px;height:11px}
+.mono{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:700;background:var(--tt-accent-surface);color:var(--tt-accent-surface-text);flex-shrink:0}
+.mono.local{background:var(--tt-surface-elevated);color:var(--tt-text-muted)}
+.thread{display:block;padding:4px 10px 4px 33px;border-radius:6px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread.sel{background:var(--tt-selected);color:var(--tt-text)}
+.pane{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+.crumb{padding:10px 20px;border-bottom:1px solid var(--tt-hairline);color:var(--tt-text-muted);font-size:13px;display:flex;gap:8px;align-items:center}
+.empty{display:grid;place-items:center;color:var(--tt-text-faint);padding:20px;text-align:center}
+.composer{margin:0 20px 18px;border:1px solid var(--tt-border);border-radius:14px;background:var(--tt-surface)}
+.composer textarea{display:block;width:100%;min-height:64px;border:0;background:transparent;resize:none;padding:12px 14px;font:inherit;color:var(--tt-text)}
+.composer textarea::placeholder{color:var(--tt-text-faint)}
+.cfoot{display:flex;align-items:center;gap:6px;padding:6px 8px 8px 10px;flex-wrap:wrap}
+.cchip{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--tt-text-muted);padding:4px 8px;border-radius:999px;font-size:13px}
+.cchip:hover{background:var(--tt-hover);color:var(--tt-text)}
+.cchip.host{border:1px solid var(--tt-border)}
+.spacer{flex:1}
+.send{width:32px;height:32px;border-radius:50%;border:0;background:var(--tt-text);color:var(--tt-canvas);display:grid;place-items:center}
+.split{display:inline-flex;border-radius:999px;overflow:hidden;background:var(--tt-text)}
+.split button{border:0;background:transparent;color:var(--tt-canvas);padding:6px 12px;font-size:13px;font-weight:600}
+.split button+button{border-left:1px solid color-mix(in srgb,var(--tt-canvas) 30%,transparent);padding:6px 9px}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{border:1px solid var(--tt-border);background:var(--tt-surface);border-radius:8px;padding:6px 12px;display:flex;gap:6px;align-items:center;font-size:13px}
+.seg button[aria-pressed=true]{border-color:var(--tt-accent-border);background:var(--tt-accent-surface);color:var(--tt-accent-surface-text)}
+
+/* Prototype chrome, not part of the design */
+.proto-tools{position:fixed;left:50%;transform:translateX(-50%);bottom:64px;display:flex;gap:8px;align-items:center;background:#111;color:#eee;padding:6px 8px;border-radius:10px;z-index:20;font-size:12px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 20px)}
+.proto-tools select,.proto-tools button{background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:4px 8px;font-size:12px}
+.proto-tools label{display:flex;gap:4px;align-items:center}
+.proto-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;display:flex;align-items:center;gap:6px;background:#ffd84d;color:#111;border-radius:999px;padding:4px 6px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:21;font-weight:600}
+.proto-bar button{border:0;background:#111;color:#ffd84d;border-radius:999px;width:30px;height:30px}
+.proto-bar span{min-width:260px;text-align:center;font-size:13px}
+.proto-state{position:fixed;right:12px;top:12px;background:#111;color:#bbb;font:11px/1.4 ui-monospace,monospace;padding:8px 10px;border-radius:8px;z-index:20;max-width:320px;white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body>
+<div class="stage"><div class="frame" id="frame">
+  <div class="strip"><span class="brand">Sotto</span><button id="tab-threads">Threads</button><button id="tab-settings">Settings</button></div>
+  <div class="body" id="body"></div>
+</div></div>
+
+<dialog id="dlg" aria-labelledby="dlg-title"></dialog>
+
+<div class="proto-tools" aria-label="Prototype controls">
+  <label>Scenario <select id="scenario">
+    <option value="fresh">Fresh profile, no hosts</option>
+    <option value="forge" selected>forge saved and on</option>
+    <option value="two">forge and pihole connected</option>
+    <option value="off">forge switched off</option>
+    <option value="error">forge needs attention</option>
+  </select></label>
+  <label><input type="checkbox" id="fail"> Next add fails</label>
+  <label>Window <select id="size"><option value="fit">Fit</option><option value="1600x1000">1600×1000</option><option value="1280x800">1280×800</option><option value="820x560">820×560</option></select></label>
+  <button id="theme">Light</button>
+</div>
+<div class="proto-bar" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+<div class="proto-state" id="pstate" aria-hidden="true"></div>
+
+<script>
+const I = {
+  server: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>',
+  laptop: '<svg class="i" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg>',
+  folder: '<svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  chev: '<svg class="i" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  plus: '<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  more: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>',
+  up: '<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  spin: '<svg class="i spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
+  pen: '<svg class="i" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+// What `ssh -G` and ~/.ssh/config would offer: aliases first, then known_hosts names.
+const SUGGESTIONS = [
+  { alias: 'forge', address: 'zach@forge.tail5728ca.ts.net', source: 'SSH configuration' },
+  { alias: 'pihole', address: 'pi@100.77.163.67', source: 'SSH configuration' },
+  { alias: 'omarchy', address: 'zach@omarchy.tail5728ca.ts.net', source: 'SSH configuration' },
+  { alias: 'buildbox.example.net', address: 'buildbox.example.net', source: 'Known hosts' },
+]
+const VARIANTS = ['A', 'B', 'C']
+const NAMES = { A: 'A · Dialog, like T3 Code', B: 'B · Add inline on the page', C: 'C · Pick from your SSH hosts' }
+let variant = new URLSearchParams(location.search).get('variant'); if (!VARIANTS.includes(variant)) variant = 'A'
+let surface = new URLSearchParams(location.search).get('surface') || 'settings'
+let hosts = [], selected = 'local', menuFor = null, sheetOpen = false, adding = null, addError = '', inlineOptions = false, newThreadHost = null
+const PROJECTS = [
+  { title: 'Sotto', host: 'forge', threads: ['Fix the reconnect backoff', 'Freeze protocol v1'] },
+  { title: 'dotfiles', host: 'forge', threads: ['Tidy the mise config'] },
+  { title: 'Sotto', host: 'local', threads: ['Release notes for 0.1.17'] },
+  { title: 'pihole-lists', host: 'pihole', threads: ['Add the new block list'] },
+]
+function scenario(name) {
+  const forge = { id: 'forge', name: 'forge', alias: 'forge', address: 'zach@forge.tail5728ca.ts.net', on: true, phase: 'connected', owned: true }
+  const pihole = { id: 'pihole', name: 'pihole', alias: 'pihole', address: 'pi@100.77.163.67', on: true, phase: 'connected', owned: false }
+  hosts = name === 'fresh' ? [] : name === 'two' ? [forge, pihole] : name === 'off' ? [{ ...forge, on: false, phase: 'off' }]
+    : name === 'error' ? [{ ...forge, phase: 'error', error: 'SSH could not reach forge. Nothing was lost. Check that forge is on and on your network; Sotto keeps trying every 16 seconds.' }] : [forge]
+  selected = hosts.some(h => h.phase === 'connected') ? hosts.find(h => h.phase === 'connected').id : 'local'
+  menuFor = null; sheetOpen = false; adding = null; addError = ''
+}
+const connected = () => hosts.filter(h => h.phase === 'connected')
+const hostName = id => id === 'local' ? 'This computer' : (hosts.find(h => h.id === id)?.name ?? id)
+const visibleProjects = () => PROJECTS.filter(p => p.host === 'local' || connected().some(h => h.id === p.host))
+const manyHosts = () => connected().length > 0
+const phaseText = h => ({ connected: 'Connected', connecting: 'Connecting…', error: 'Needs attention', off: 'Switched off' })[h.phase]
+
+/* ---------- the add flow, shared by every variant ---------- */
+function startAdd(alias, user, port) {
+  alias = alias.trim(); if (!alias) { addError = 'Enter an SSH host or alias, such as forge or user@server.'; render(); return }
+  if (hosts.some(h => h.alias === alias)) { addError = `${alias} is already saved. Switch it on below instead.`; render(); return }
+  addError = ''
+  const found = SUGGESTIONS.find(s => s.alias === alias)
+  const host = { id: alias + Date.now(), name: alias.split('@').pop().split('.')[0], alias, address: (user ? user + '@' : '') + (found?.address.split('@').pop() ?? alias) + (port ? ':' + port : ''), on: true, phase: 'connecting', owned: true }
+  adding = host
+  if (variant === 'B') hosts.push(host)
+  render()
+  setTimeout(() => {
+    if (document.getElementById('fail').checked) {
+      document.getElementById('fail').checked = false
+      addError = `SSH could not reach ${alias}. Nothing was saved. Check the name and that you can reach it with ssh ${alias}, then try again.`
+      if (variant === 'B') hosts = hosts.filter(h => h !== host)
+      adding = null; render(); return
+    }
+    host.phase = 'connected'
+    if (variant !== 'B') hosts.push(host)
+    adding = null; addError = ''
+    if (variant === 'A') document.getElementById('dlg').close()
+    if (variant === 'C') sheetOpen = false
+    render()
+  }, 1300)
+}
+const connectingNotice = () => adding ? `<div class="notice work" role="status">${I.spin}<div>Connecting to ${esc(adding.alias)}. Sotto signs in over SSH, starts the host if it is not running, and pairs this computer.</div></div>` : ''
+const errorNotice = () => addError ? `<div class="notice bad" role="alert">${esc(addError)}</div>` : ''
+const advancedFields = () => `<details class="advanced"><summary>Folders on the host</summary>
+  <div class="field"><label for="f-install">Host installation folder</label><input class="input" id="f-install" value="~/.sotto-host"></div>
+  <div class="field"><label for="f-data">Host data folder</label><input class="input" id="f-data" value="~/.sotto"><span class="hint">Threads, pairing and settings for this host live here.</span></div></details>`
+
+function comboHtml(id, placeholder) {
+  return `<div class="combo"><input class="input" id="${id}" role="combobox" aria-expanded="false" aria-controls="${id}-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="${placeholder}"><ul class="listbox" id="${id}-list" role="listbox" hidden></ul></div>`
+}
+function wireCombo(id, onPick) {
+  const input = document.getElementById(id), list = document.getElementById(id + '-list'); if (!input) return
+  let active = -1, items = []
+  const draw = () => {
+    const q = input.value.trim().toLowerCase()
+    items = SUGGESTIONS.filter(s => !hosts.some(h => h.alias === s.alias) && (s.alias.includes(q) || s.address.includes(q)))
+    list.innerHTML = items.length ? items.map((s, i) => `<li role="option" id="${id}-o${i}" aria-selected="${i === active}" data-i="${i}"><b>${esc(s.alias)}</b>${s.address !== s.alias ? `<small>${esc(s.address)}</small>` : ''}<span class="src">${s.source}</span></li>`).join('')
+      : `<li role="option" aria-disabled="true"><small>No saved SSH hosts match "${esc(input.value)}". Press Enter to use it as typed.</small></li>`
+    list.hidden = false; input.setAttribute('aria-expanded', 'true')
+    input.setAttribute('aria-activedescendant', active >= 0 ? `${id}-o${active}` : '')
+  }
+  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1 }
+  input.addEventListener('focus', draw); input.addEventListener('input', () => { active = -1; draw() })
+  input.addEventListener('blur', () => setTimeout(close, 120))
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(items.length - 1, active + 1); draw() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(-1, active - 1); draw() }
+    else if (e.key === 'Enter') { e.preventDefault(); if (active >= 0) { input.value = items[active].alias; close(); onPick?.(true) } else { close(); onPick?.(false) } }
+    else if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); e.preventDefault(); close() }
+  })
+  list.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (!li) return; e.preventDefault(); input.value = items[+li.dataset.i].alias; close(); input.focus() })
+}
+
+/* ---------- Settings > Hosts ---------- */
+function localBlock() {
+  return `<h2>This computer</h2><div class="local"><div class="row-icon muted">${I.laptop}</div><div style="flex:1"><div>Runs threads on this computer beside your remote hosts.</div><div class="muted" style="font-size:13px">Dictation and automatic paste always use this computer.</div></div>
+    <label class="switch-label">Run the local host <button class="switch" role="switch" aria-checked="true" aria-label="Run the local host"></button></label></div>`
+}
+function rowA(h) {
+  return `<div class="row"><div class="icon">${I.server}</div><div class="info"><div class="name">${esc(h.name)}</div>
+    <div class="meta">SSH ${esc(h.alias)} · ${phaseText(h)}${h.phase === 'connected' ? ' · 0.1.17' : ''}</div>${h.error ? `<div class="err" role="alert">${esc(h.error)}</div>` : ''}</div>
+    <div class="acts"><label class="switch-label">${h.on ? 'On' : 'Off'} <button class="switch" role="switch" aria-checked="${h.on}" data-toggle="${h.id}" aria-label="Keep ${esc(h.name)} connected, now and when Sotto starts"></button></label>
+    <span class="rel"><button class="btn ghost" data-menu="${h.id}" aria-haspopup="menu" aria-expanded="${menuFor === h.id}" aria-label="More for ${esc(h.name)}">${I.more}</button>${menuFor === h.id ? menuHtml(h) : ''}</span></div></div>`
+}
+function menuHtml(h) {
+  return `<div class="menu" role="menu">${h.owned && h.phase === 'connected' ? `<button role="menuitem">Stop host</button>` : ''}<button role="menuitem">Rename</button><button role="menuitem">Edit connection</button><button role="menuitem" class="danger" data-forget="${h.id}">Forget ${esc(h.name)}…</button></div>`
+}
+function rowB(h) {
+  const status = h.phase === 'connecting' ? `${I.spin} Connecting… signing in and pairing` : phaseText(h)
+  return `<div class="row"><button class="switch" role="switch" aria-checked="${h.on}" data-toggle="${h.id}" aria-label="Keep ${esc(h.name)} connected, now and when Sotto starts"></button>
+    <div class="info"><div class="name" style="display:flex;gap:6px;align-items:center">${esc(h.name)} <button class="btn ghost" style="min-height:24px;padding:0 6px" aria-label="Rename ${esc(h.name)}">${I.pen}</button></div>
+    <div class="meta" style="display:flex;gap:6px;align-items:center">${esc(h.address)} · ${status}</div>${h.error ? `<div class="err" role="alert">${esc(h.error)}</div>` : ''}</div>
+    <div class="acts">${h.owned && h.phase === 'connected' ? '<button class="btn ghost">Stop host</button>' : ''}<button class="btn ghost">Edit</button><button class="btn ghost" data-forget="${h.id}">Forget</button></div></div>`
+}
+function rowC(h) {
+  return `<div class="row"><span class="dot ${h.phase === 'off' ? '' : h.phase}" aria-hidden="true"></span><div class="info"><div class="name">${esc(h.name)} <span class="muted" style="font-weight:400;font-size:13px">· ${phaseText(h)}</span></div>
+    <div class="meta">${esc(h.address)}</div>${h.error ? `<div class="err" role="alert">${esc(h.error)}</div>` : ''}</div>
+    <div class="acts">${h.owned && h.phase === 'connected' ? '<button class="btn ghost">Stop host</button>' : ''}<button class="btn ghost">Edit</button><button class="btn ghost" data-forget="${h.id}">Forget</button>
+    <button class="pill-toggle" role="switch" aria-checked="${h.on}" data-toggle="${h.id}" aria-label="Keep ${esc(h.name)} connected, now and when Sotto starts">${h.on ? 'On' : 'Off'}</button></div></div>`
+}
+function hostsPage() {
+  const intro = 'Connect to machines you reach over SSH. Sotto signs in with your SSH setup, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, and a host Sotto started keeps running until you stop it.'
+  let add = '', rows = hosts.map(variant === 'A' ? rowA : variant === 'B' ? rowB : rowC).join('')
+  if (!hosts.length && variant !== 'B') rows = `<p class="muted" style="padding:18px 0;border-bottom:1px solid var(--tt-hairline)">No remote hosts yet.</p>`
+  if (variant === 'B') {
+    add = `<div class="addbar"><label for="b-host" class="field" style="margin:0 0 8px"><span style="font-weight:500">SSH host or alias</span></label>
+      <div class="line">${comboHtml('b-host', 'forge, or user@server')}<button class="btn primary" id="b-add" ${adding ? 'disabled' : ''}>Add host</button></div>
+      <div class="chips"><span class="faint" style="font-size:12px">From your SSH configuration:</span>${SUGGESTIONS.filter(s => s.source === 'SSH configuration' && !hosts.some(h => h.alias === s.alias)).map(s => `<button class="chip" data-quick="${s.alias}">${esc(s.alias)}</button>`).join('') || '<span class="faint" style="font-size:12px">all added</span>'}</div>
+      <details class="advanced" ${inlineOptions ? 'open' : ''} id="b-opts"><summary>Username, port and folders</summary><div class="two"><div class="field"><label for="b-user">Username</label><input class="input" id="b-user" placeholder="From your SSH configuration"></div><div class="field"><label for="b-port">Port</label><input class="input" id="b-port" inputmode="numeric" placeholder="22"></div></div>${advancedFields().replace('<details class="advanced"><summary>Folders on the host</summary>', '').replace('</details>', '')}</details>
+      ${errorNotice()}</div>`
+  }
+  const addBtn = variant === 'B' ? '' : `<button class="btn" id="open-add">${I.plus} Add host</button>`
+  return `<div class="page"><h1>Hosts</h1>${localBlock()}<div class="sec-head"><h2>Remote hosts</h2>${addBtn}</div><p class="intro">${intro}</p>${add}${rows}</div>`
+}
+
+/* ---------- Variant A dialog ---------- */
+function openDialogA() {
+  addError = ''
+  const d = document.getElementById('dlg')
+  d.innerHTML = `<h2 id="dlg-title">Add host</h2><p class="muted" style="margin:0 0 6px">Sotto connects as soon as you add it.</p>
+    <div class="field"><label for="a-host">SSH host or alias</label>${comboHtml('a-host', 'Search your SSH hosts or type user@server')}<span class="hint">Suggestions come from your SSH configuration and known hosts.</span></div>
+    <div class="two"><div class="field"><label for="a-user">Username <span class="faint">(optional)</span></label><input class="input" id="a-user" placeholder="From your SSH configuration"></div><div class="field"><label for="a-port">Port <span class="faint">(optional)</span></label><input class="input" id="a-port" inputmode="numeric" placeholder="22"></div></div>
+    ${advancedFields()}<div id="a-status"></div>
+    <div class="foot"><button class="btn ghost" id="a-cancel">Cancel</button><button class="btn primary" id="a-add">Add host</button></div>`
+  d.showModal(); wireCombo('a-host', picked => { if (picked) document.getElementById('a-add').focus(); else document.getElementById('a-add').click() })
+  document.getElementById('a-cancel').onclick = () => { d.close(); adding = null }
+  document.getElementById('a-add').onclick = () => startAdd(document.getElementById('a-host').value, document.getElementById('a-user').value, document.getElementById('a-port').value)
+  document.getElementById('a-host').focus()
+}
+function refreshDialogA() {
+  const s = document.getElementById('a-status'); if (!s) return
+  s.innerHTML = connectingNotice() + errorNotice()
+  const b = document.getElementById('a-add'); b.disabled = !!adding; b.textContent = adding ? 'Connecting…' : 'Add host'
+}
+
+/* ---------- Variant C sheet ---------- */
+function sheetHtml() {
+  const list = SUGGESTIONS.filter(s => !hosts.some(h => h.alias === s.alias))
+  return `<aside class="sheet" role="dialog" aria-modal="false" aria-labelledby="c-title"><h2 id="c-title">Add a host</h2><p class="muted" style="margin:0 0 12px">Pick one of the machines your SSH setup already knows. Adding one connects to it.</p>
+    ${list.map(s => `<div class="found">${I.server}<div class="info"><b>${esc(s.alias)}</b><small>${esc(s.address)} · ${s.source}</small></div><button class="btn" data-pick="${s.alias}" ${adding ? 'disabled' : ''}>${adding?.alias === s.alias ? 'Connecting…' : 'Add'}</button></div>`).join('')}
+    <h2 style="font-size:14px;margin:22px 0 0">Another host</h2>
+    <div class="field"><label for="c-host">SSH host or address</label><input class="input" id="c-host" placeholder="user@server or an alias"></div>
+    <div class="two"><div class="field"><label for="c-user">Username <span class="faint">(optional)</span></label><input class="input" id="c-user"></div><div class="field"><label for="c-port">Port</label><input class="input" id="c-port" placeholder="22"></div></div>
+    ${advancedFields()}${connectingNotice()}${errorNotice()}
+    <div class="foot" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="btn ghost" id="c-close">Close</button><button class="btn primary" id="c-add" ${adding ? 'disabled' : ''}>Add host</button></div></aside>`
+}
+
+/* ---------- Threads ---------- */
+function badge(host) {
+  if (!manyHosts()) return ''
+  if (variant === 'A') return `<span class="hbadge" title="On ${esc(hostName(host))}">${host === 'local' ? I.laptop : I.server}${esc(host === 'local' ? 'This computer' : hostName(host))}</span>`
+  return ''
+}
+function projectRow(p) {
+  const lead = variant === 'C' && manyHosts() ? `<span class="mono ${p.host === 'local' ? 'local' : ''}" title="On ${esc(hostName(p.host))}" aria-label="On ${esc(hostName(p.host))}">${p.host === 'local' ? 'PC' : esc(hostName(p.host)[0].toUpperCase())}</span>` : I.folder
+  return `<div class="proj">${I.chev}${lead}<span class="title">${esc(p.title)}</span>${badge(p.host)}<span class="count">${p.threads.length}</span></div>${p.threads.map((t, i) => `<span class="thread ${p.title === 'Sotto' && p.host !== 'local' && i === 0 ? 'sel' : ''}">${esc(t)}</span>`).join('')}`
+}
+function threadsSide() {
+  let body
+  if (variant === 'B' && manyHosts()) {
+    const groups = ['local', ...connected().map(h => h.id)]
+    body = groups.map(g => `<div class="group"><div class="group-head">${g === 'local' ? I.laptop : I.server}${esc(hostName(g))}${g !== 'local' ? '<span class="dot connected" style="margin-left:auto"></span>' : ''}</div>${visibleProjects().filter(p => p.host === g).map(projectRow).join('')}</div>`).join('')
+  } else body = `<div class="group">${visibleProjects().map(projectRow).join('')}</div>`
+  return `<div class="tside"><button class="newthread" id="new-thread">${I.plus} New thread</button>${body}</div>`
+}
+function hostChoices() { return [{ id: 'local', name: 'This computer' }, ...connected()] }
+function composer() {
+  const host = hostName(selected)
+  let lead = '', send = `<button class="send" aria-label="Send">${I.up}</button>`
+  if (variant === 'A') lead = `<span class="rel"><button class="cchip host" id="host-chip" aria-haspopup="menu" aria-label="Run this new thread on ${esc(host)}. Choose another host">${selected === 'local' ? I.laptop : I.server}Run on ${esc(host)}${I.chev}</button>${menuFor === 'composer' ? `<div class="menu" role="menu" style="top:auto;bottom:calc(100% + 4px);left:0;right:auto">${hostChoices().map(h => `<button role="menuitemradio" aria-checked="${h.id === selected}" data-choose="${h.id}">${h.id === selected ? '✓ ' : ''}${esc(h.name)}</button>`).join('')}</div>` : ''}</span>`
+  if (variant === 'B') lead = ''
+  const model = variant === 'B' ? `<span class="rel"><button class="cchip" id="host-chip" aria-haspopup="menu" aria-label="${esc(host)}, Claude Sonnet 5. Choose where this thread runs and its model">${esc(host)} · Claude Sonnet 5${I.chev}</button>${menuFor === 'composer' ? `<div class="menu" role="menu" style="top:auto;bottom:calc(100% + 4px);left:0;right:auto"><div class="faint" style="font-size:11px;padding:6px 10px 2px">RUN ON</div>${hostChoices().map(h => `<button role="menuitemradio" aria-checked="${h.id === selected}" data-choose="${h.id}">${h.id === selected ? '✓ ' : ''}${esc(h.name)}</button>`).join('')}<div class="faint" style="font-size:11px;padding:6px 10px 2px">MODEL</div><button role="menuitemradio" aria-checked="true">✓ Claude Sonnet 5</button><button role="menuitemradio" aria-checked="false">Claude Opus 5.5</button></div>` : ''}</span>` : `<button class="cchip">Claude Sonnet 5${I.chev}</button>`
+  if (variant === 'C') send = `<span class="rel"><span class="split"><button aria-label="Start this thread on ${esc(host)}">Start on ${esc(host)}</button><button id="host-chip" aria-haspopup="menu" aria-label="Choose another host">${I.chev}</button></span>${menuFor === 'composer' ? `<div class="menu" role="menu" style="top:auto;bottom:calc(100% + 4px)">${hostChoices().map(h => `<button role="menuitemradio" aria-checked="${h.id === selected}" data-choose="${h.id}">${h.id === selected ? '✓ ' : ''}Start on ${esc(h.name)}</button>`).join('')}</div>` : ''}</span>`
+  return `<div class="composer"><textarea placeholder="Describe the work for a new thread" aria-label="Message"></textarea><div class="cfoot">${lead}${model}<button class="cchip">High${I.chev}</button><button class="cchip">Asks first${I.chev}</button><span class="spacer"></span>${send}</div></div>`
+}
+function threadsPane() {
+  return `<div class="pane"><div class="crumb">${I.folder} New thread${manyHosts() && variant !== 'C' ? '' : ''}</div><div class="empty"><div><div style="font-size:15px;color:var(--tt-text-muted)">Start a thread</div><div style="font-size:13px">The host it runs on is set for this thread and cannot change later.</div></div></div>${composer()}</div>`
+}
+function newThreadDialog() {
+  newThreadHost = newThreadHost ?? selected
+  const d = document.getElementById('dlg'), choices = hostChoices()
+  let hostField
+  if (variant === 'A') hostField = `<div class="field"><span style="font-size:13px;font-weight:500">Host</span><div class="seg" role="group" aria-label="Host">${choices.map(h => `<button aria-pressed="${h.id === newThreadHost}" data-nt="${h.id}">${h.id === 'local' ? I.laptop : I.server}${esc(h.name)}</button>`).join('')}</div></div>`
+  else if (variant === 'B') hostField = `<div class="field"><label for="nt-host">Host</label><select class="input" id="nt-host">${choices.map(h => `<option value="${h.id}" ${h.id === newThreadHost ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select></div>`
+  else hostField = `<div class="field"><span style="font-size:13px;font-weight:500">Host</span><div class="seg" role="group" aria-label="Host">${choices.map(h => `<button aria-pressed="${h.id === newThreadHost}" data-nt="${h.id}"><span class="mono ${h.id === 'local' ? 'local' : ''}">${h.id === 'local' ? 'PC' : esc(h.name[0].toUpperCase())}</span>${esc(h.name)}</button>`).join('')}</div></div>`
+  const projects = PROJECTS.filter(p => p.host === newThreadHost)
+  d.innerHTML = `<h2 id="dlg-title">New thread</h2>${manyHosts() ? hostField : ''}
+    <div class="field"><label for="nt-project">Project</label><select class="input" id="nt-project">${projects.map(p => `<option>${esc(p.title)}</option>`).join('') || '<option>No projects on this host yet</option>'}</select>${variant === 'A' && manyHosts() ? '' : ''}</div>
+    <div class="foot"><button class="btn ghost" id="nt-cancel">Cancel</button><button class="btn primary" id="nt-go">Start thread on ${esc(hostName(newThreadHost))}</button></div>`
+  if (!d.open) d.showModal()
+  d.querySelectorAll('[data-nt]').forEach(b => b.onclick = () => { newThreadHost = b.dataset.nt; newThreadDialog() })
+  document.getElementById('nt-host')?.addEventListener('change', e => { newThreadHost = e.target.value; newThreadDialog() })
+  document.getElementById('nt-cancel').onclick = () => { newThreadHost = null; d.close() }
+  document.getElementById('nt-go').onclick = () => { selected = newThreadHost; newThreadHost = null; d.close(); render() }
+}
+
+/* ---------- render ---------- */
+function render() {
+  document.getElementById('vlabel').textContent = NAMES[variant]
+  document.getElementById('tab-threads').toggleAttribute('aria-current', surface === 'threads')
+  document.getElementById('tab-settings').toggleAttribute('aria-current', surface === 'settings')
+  const body = document.getElementById('body')
+  if (surface === 'settings') {
+    body.innerHTML = `<nav class="side snav" aria-label="Settings">${['Dictation', 'Transcription', 'Providers', 'Hosts', 'Appearance', 'Application'].map(n => `<button ${n === 'Hosts' ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav><main class="room">${hostsPage()}</main>`
+  } else {
+    body.innerHTML = `<nav class="side" aria-label="Threads">${threadsSide()}</nav><main class="room">${threadsPane()}</main>`
+  }
+  document.querySelector('.sheet')?.remove()
+  if (variant === 'C' && sheetOpen && surface === 'settings') document.getElementById('frame').insertAdjacentHTML('beforeend', sheetHtml())
+  wire(); refreshDialogA()
+  document.getElementById('pstate').textContent = `PROTOTYPE · variant ${variant} · ${surface}\nhosts: ${hosts.map(h => `${h.name}=${h.on ? 'on' : 'off'}/${h.phase}`).join(', ') || 'none'}\nselected for new work: ${hostName(selected)}\nadding: ${adding?.alias ?? '-'}${addError ? '\nerror: ' + addError.slice(0, 60) + '…' : ''}`
+}
+function wire() {
+  document.getElementById('open-add')?.addEventListener('click', () => { if (variant === 'A') openDialogA(); else { sheetOpen = true; addError = ''; render(); document.querySelector('.sheet [data-pick]')?.focus() } })
+  document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
+    const h = hosts.find(x => x.id === b.dataset.toggle); h.on = !h.on
+    if (!h.on) { h.phase = 'off'; delete h.error; if (selected === h.id) selected = 'local'; render() }
+    else { h.phase = 'connecting'; render(); setTimeout(() => { h.phase = 'connected'; render() }, 900) }
+  })
+  document.querySelectorAll('[data-menu]').forEach(b => b.onclick = e => { e.stopPropagation(); menuFor = menuFor === b.dataset.menu ? null : b.dataset.menu; render(); document.querySelector('.menu button')?.focus() })
+  document.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => { hosts = hosts.filter(h => h.id !== b.dataset.forget); if (!hosts.some(h => h.id === selected)) selected = 'local'; menuFor = null; render() })
+  document.querySelectorAll('[data-quick]').forEach(b => b.onclick = () => startAdd(b.dataset.quick, document.getElementById('b-user')?.value, document.getElementById('b-port')?.value))
+  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => startAdd(b.dataset.pick))
+  document.getElementById('b-add')?.addEventListener('click', () => startAdd(document.getElementById('b-host').value, document.getElementById('b-user').value, document.getElementById('b-port').value))
+  document.getElementById('b-opts')?.addEventListener('toggle', e => { inlineOptions = e.target.open })
+  wireCombo('b-host', picked => { if (!picked) document.getElementById('b-add').click() })
+  document.getElementById('c-close')?.addEventListener('click', () => { sheetOpen = false; adding = null; render(); document.getElementById('open-add')?.focus() })
+  document.getElementById('c-add')?.addEventListener('click', () => startAdd(document.getElementById('c-host').value, document.getElementById('c-user').value, document.getElementById('c-port').value))
+  document.getElementById('new-thread')?.addEventListener('click', newThreadDialog)
+  document.getElementById('host-chip')?.addEventListener('click', e => { e.stopPropagation(); menuFor = menuFor === 'composer' ? null : 'composer'; render(); document.querySelector('.menu button')?.focus() })
+  document.querySelectorAll('[data-choose]').forEach(b => b.onclick = () => { selected = b.dataset.choose; menuFor = null; render() })
+}
+document.addEventListener('click', e => { if (menuFor && !e.target.closest('.menu')) { menuFor = null; render() } })
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (menuFor) { menuFor = null; render(); return }
+    if (sheetOpen) { sheetOpen = false; adding = null; render(); document.getElementById('open-add')?.focus(); return }
+  }
+  if (document.getElementById('dlg').open || e.target.closest('input,textarea,select,[contenteditable]')) return
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1) }
+})
+function setUrl() { const u = new URL(location); u.searchParams.set('variant', variant); u.searchParams.set('surface', surface); history.replaceState(null, '', u) }
+function step(d) { variant = VARIANTS[(VARIANTS.indexOf(variant) + d + VARIANTS.length) % VARIANTS.length]; document.getElementById('dlg').close(); sheetOpen = false; menuFor = null; adding = null; addError = ''; setUrl(); render() }
+document.getElementById('prev').onclick = () => step(-1); document.getElementById('next').onclick = () => step(1)
+document.getElementById('tab-threads').onclick = () => { surface = 'threads'; setUrl(); render() }
+document.getElementById('tab-settings').onclick = () => { surface = 'settings'; setUrl(); render() }
+document.getElementById('scenario').onchange = e => { scenario(e.target.value); document.getElementById('dlg').close(); render() }
+document.getElementById('size').onchange = e => { const f = document.getElementById('frame'); if (e.target.value === 'fit') { f.style.removeProperty('--w'); f.style.removeProperty('--h') } else { const [w, h] = e.target.value.split('x'); f.style.setProperty('--w', w + 'px'); f.style.setProperty('--h', h + 'px') } }
+document.getElementById('theme').onclick = e => { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; e.target.textContent = light ? 'Dark' : 'Light' }
+document.getElementById('dlg').addEventListener('close', () => { adding = null; addError = ''; render() })
+scenario('forge'); render()
+</script></body></html>
