@@ -26,6 +26,11 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { HostStatus } from '../../src/shared/hosts'
 
 const enabled = process.env.SOTTO_REAL_SSHD === '1'
+// The Linux CI job runs this file only to run it, and vitest passes a file whose tests all skip. A lost
+// or renamed variable there, or an install given without the switch, must turn the job red instead.
+if (!enabled && (process.env.SOTTO_REAL_SSHD_INSTALL || (process.env.CI === 'true' && process.platform === 'linux'))) {
+  throw new Error('The real-sshd journey would be skipped: set SOTTO_REAL_SSHD=1 wherever this file runs on Linux CI or with SOTTO_REAL_SSHD_INSTALL.')
+}
 // A synthetic passphrase for a throwaway key, so the real ssh asks through the askpass helper.
 const PASSPHRASE = 'synthetic-real-sshd-passphrase'
 let root: string, sshd: ChildProcess | undefined, sshdLog = ''
