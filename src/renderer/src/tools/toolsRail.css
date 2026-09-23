@@ -198,11 +198,10 @@
   .tools-panel .changes-surface[data-diff] > .changes-list { grid-area: list; max-height: none; padding-block: 8px; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
   .tools-panel .changes-surface[data-diff] > .changes-note { grid-area: note; }
   .tools-panel .changes-surface[data-diff] > .changes-diff { grid-area: diff; }
-  .tools-panel .changes-surface[data-diff] .changes-list__item { display: grid; grid-template-columns: minmax(0, 1fr) 20px; gap: 2px 4px; min-height: 50px; padding: 6px 8px; }
+  /* Beside the diff a row is the name over one muted line: the folder, then staging. */
+  .tools-panel .changes-surface[data-diff] .changes-list__item { display: grid; grid-template-columns: minmax(0, 1fr) 20px; gap: 2px 4px; min-height: 40px; padding: 4px 8px; }
   .tools-panel .changes-surface[data-diff] .changes-list__name { grid-area: 1 / 1; max-width: none; }
-  /* Staging is always known and the folder is not, so staging takes the second row and a root file leaves no gap. */
-  .tools-panel .changes-surface[data-diff] .changes-list__staging { grid-area: 2 / 1; }
-  .tools-panel .changes-surface[data-diff] .changes-list__folder { grid-area: 3 / 1; }
+  .tools-panel .changes-surface[data-diff] .changes-list__meta { grid-area: 2 / 1; }
   .tools-panel .changes-surface[data-diff] .changes-list__item > .changes-badge { grid-area: 1 / 2 / span 2; }
 }
 @container tools-body (max-width: 639px) {

@@ -67,7 +67,10 @@
 .changes-list__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .changes-list__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .changes-list__name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The folder gives way first and keeps its end, where the nearest folder name is. */
+/* The folder and staging beside the name, as one muted run. The folder gives way first and keeps its end, where
+   the nearest folder name is. */
+.changes-list__meta { display: flex; flex: 0 1 auto; align-items: baseline; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.changes-list__sep, .changes-list__staging { flex: none; }
 .changes-list__folder { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12px; font-weight: 600; line-height: 1; }
 .changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { border-color: color-mix(in srgb, var(--tt-success) 45%, transparent); color: var(--tt-success); }

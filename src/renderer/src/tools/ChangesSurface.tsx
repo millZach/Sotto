@@ -151,8 +151,11 @@ function ChangeList({ files, selectedPath, onSelect }: { readonly files: readonl
         onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(file.path) } }}>
         <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>
         <span className="changes-list__name">{name}</span>
-        <span className="changes-list__staging">{file.staged ? file.unstaged ? 'Staged + unstaged' : 'Staged' : 'Unstaged'}</span>
-        {folder ? <span className="changes-list__folder" dir="auto">{folder}</span> : null}
+        {/* One quiet run: the folder when there is one, then staging. */}
+        <span className="changes-list__meta">
+          {folder ? <><span className="changes-list__folder" dir="auto">{folder}</span><span className="changes-list__sep" aria-hidden="true">·</span></> : null}
+          <span className="changes-list__staging">{file.staged ? file.unstaged ? 'Staged + unstaged' : 'Staged' : 'Unstaged'}</span>
+        </span>
       </li>
     })}
   </ul>
