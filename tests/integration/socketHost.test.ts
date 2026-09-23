@@ -424,6 +424,19 @@ describe('thread detail over the socket', () => {
     } finally { await client.close(); await server.close() }
   })
 
+  it('finishes a reconnect with an observed thread too large to send, reporting the thread instead of failing the connection', async () => {
+    const { stream, server, client, pushErrors, connected } = await streamingHost()
+    try {
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello' + 'x'.repeat(17 * 1024 * 1024))] }
+      await client.close()
+      // Failing here would have the desktop retry, and read the same thread whole, for as long as it stayed too large.
+      await client.connect()
+      expect(connected()).toBe(true)
+      expect(pushErrors.at(-1)).toEqual(expect.stringContaining('A thread on this host is too large to send to this device'))
+      expect(await client.receipt('still-open')).toEqual({ status: 'unknown' })
+    } finally { await client.close(); await server.close() }
+  })
+
   it('answers a delta too large for a frame with an error naming its thread, and does not ask for that thread again until it is observed again', async () => {
     const { stream, server, client, pushErrors, connected, session } = await streamingHost()
     // A second peer accepting deltas shows when the host has sent one: it sends to every peer in the same pass.

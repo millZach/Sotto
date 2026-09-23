@@ -124,7 +124,9 @@ export class SocketHostService implements HostService {
       let page: HostEventPage = hello
       while (page.hasMore) page = await this.readEvents(this.latestSeq)
       await this.observe(this.observed)
-      for (const id of this.observed) await this.readThreadDetail(id)
+      // A thread too large to send is reported and left out, the way a push of it is, so it cannot fail
+      // the connection and have the reconnect that follows read it whole again, and again.
+      for (const id of this.observed) await this.readThreadDetail(id).catch((error: unknown) => { if (!this.reportedTooLarge(id, error)) throw error })
       this.options.onConnectionChange?.(true)
       return hello
     } catch (error) { this.frames?.close(); throw error }
@@ -209,10 +211,14 @@ export class SocketHostService implements HostService {
   private resync(threadId: string): void {
     if (this.resyncing.has(threadId) || this.tooLarge.has(threadId)) return
     this.resyncing.add(threadId)
-    void this.readThreadDetail(threadId).catch((error: unknown) => {
-      if (!(error instanceof HostConnectionError) || error.code !== 'too_large') return
-      this.tooLarge.add(threadId); this.pushErrorThread = threadId; this.options.onPushError?.(error.message)
-    }).finally(() => { this.resyncing.delete(threadId) })
+    void this.readThreadDetail(threadId).catch((error: unknown) => { this.reportedTooLarge(threadId, error) })
+      .finally(() => { this.resyncing.delete(threadId) })
+  }
+  /** Reports a thread the host said is too large to send, so nothing asks for it again; false for any other failure. */
+  private reportedTooLarge(threadId: string, error: unknown): boolean {
+    if (!(error instanceof HostConnectionError) || error.code !== 'too_large') return false
+    this.tooLarge.add(threadId); this.pushErrorThread = threadId; this.options.onPushError?.(error.message)
+    return true
   }
   private catchUp(): void {
     if (this.catchup) return
