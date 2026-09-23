@@ -281,7 +281,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
   } finally { await client.close(); await server.close() }
 })
 
-it('coalesces a burst of shell changes and answers a thread too large for a frame with an explicit error', async () => {
+it('coalesces a burst of shell changes and answers a thread or an event page too large for a frame with an error naming it', async () => {
   let publish = (): void => undefined
   const huge = { threadId: 'huge', revision: 1, messages: [{ id: 'm', role: 'assistant' as const, text: 'x'.repeat(17 * 1024 * 1024), createdAt: new Date().toISOString() }] }
   let fits = false
@@ -289,7 +289,9 @@ it('coalesces a burst of shell changes and answers a thread too large for a fram
     shell: () => host.service.shell(), state: () => host.service.state(),
     threadDetail: id => id === 'huge' ? (fits ? { ...huge, revision: 2, messages: [] } : huge) : host.service.threadDetail(id),
     command: (command, identity) => host.service.command(command, identity),
-    events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
+    events: (afterSeq, threadId, limit) => threadId === 'huge'
+      ? [{ seq: afterSeq + 1, threadId, event: { kind: 'message-text-appended' as const, at: new Date().toISOString(), messageId: 'm', appendText: 'x'.repeat(17 * 1024 * 1024) } }]
+      : host.service.events(afterSeq, threadId, limit),
     subscribe: listener => { publish = () => listener(host.service.shell()); return () => undefined },
   }
   const server = await startSocketServer({ service, pairing: host.pairing })
@@ -309,7 +311,9 @@ it('coalesces a burst of shell changes and answers a thread too large for a fram
     expect(shells).toBeLessThanOrEqual(2)
     await client.observe(['huge'])
     await expect.poll(() => pushErrors).toEqual([expect.stringContaining('too large to send to this device')])
-    await expect(client.readThreadDetail('huge')).rejects.toMatchObject({ code: 'too_large' })
+    await expect(client.readThreadDetail('huge')).rejects.toMatchObject({ code: 'too_large', message: expect.stringContaining('A thread on this host') })
+    // An event page is part of the thread list's stream, not one thread's detail, and its error says so.
+    await expect(client.readEvents(0, 'huge')).rejects.toMatchObject({ code: 'too_large', message: expect.stringContaining('The thread list') })
     expect(connected).toBe(true)
     // Shell pushes carry on meanwhile and do not clear a thread's error; that thread arriving does.
     publish(); await new Promise(resolve => setTimeout(resolve, 200))

@@ -20,10 +20,16 @@ const errors: Record<HostErrorCode, string> = {
   too_large: 'A thread on this host is too large to send to this device. Nothing on the host was lost, and the thread keeps working there. Your other threads still load here.',
 }
 /**
- * A shell push is the thread list, not one thread, so its oversize error says so. The headless host has no
- * window, so neither message sends the user to the host machine; each says what was kept instead.
+ * An oversize message is named by what it carried: one thread's detail, an attachment preview, or the
+ * thread list (a shell push, the hello, an event page, or the shell a command answers with). The headless
+ * host has no window, so none of these sends the user to the host machine; each says what was kept instead.
  */
-const SHELL_TOO_LARGE = 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.'
+type Oversize = 'thread' | 'preview' | 'list'
+const TOO_LARGE: Record<Oversize, string> = {
+  thread: errors.too_large,
+  preview: 'This attachment is too large to preview on this device. Nothing on the host was lost, and the attachment is unchanged there.',
+  list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
+}
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
 interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null }
 export interface SocketServerOptions {
@@ -73,14 +79,14 @@ export async function startSocketServer(options: SocketServerOptions) {
    * says whether the message itself went. Closing the socket instead would only have the client reconnect
    * and be sent the same message again.
    */
-  const deliver = (peer: Peer, value: HostPush | HostResponse): boolean => {
+  const deliver = (peer: Peer, value: HostPush | HostResponse, carried: Oversize): boolean => {
     const text = JSON.stringify(value)
     if (fits(text)) { peer.frames.sendText(text); return true }
-    const error = { code: 'too_large' as const, message: 'event' in value && value.event === 'shell' ? SHELL_TOO_LARGE : errors.too_large }
+    const error = { code: 'too_large' as const, message: TOO_LARGE[carried] }
     peer.frames.send('event' in value ? { v: 1, event: 'error', ...(value.event === 'detail' ? { threadId: value.threadId } : {}), error } : { v: 1, id: value.id, ok: false, error })
     return false
   }
-  const push = (peer: Peer, value: HostPush): boolean => { if (!authenticated(peer)) { peer.frames.close(); return false } return deliver(peer, value) }
+  const push = (peer: Peer, value: HostPush): boolean => { if (!authenticated(peer)) { peer.frames.close(); return false } return deliver(peer, value, value.event === 'detail' ? 'thread' : 'list') }
   const events = (afterSeq: number, threadId?: string) => {
     const all = service.events(afterSeq, threadId, HOST_EVENT_PAGE_SIZE + 1), page = all.slice(0, HOST_EVENT_PAGE_SIZE)
     return { events: page, latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
@@ -194,7 +200,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: errors[code] } } }
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else deliver(peer, response)
+      else deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'preview' ? 'preview' : 'list')
     })().finally(() => { peer.inFlight-- }))
   }
   const bearer = (request: IncomingMessage): string => /^Bearer ([A-Za-z0-9_.-]{1,2048})$/.exec(request.headers.authorization ?? '')?.[1] ?? ''
