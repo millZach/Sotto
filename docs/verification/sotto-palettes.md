@@ -56,6 +56,12 @@ Run on Windows after rebasing onto `main` at 0c700d75: `npm run typecheck`, `npm
 nearly every capture moved; the five T3 `theme-*` pairs are gone and the new built-ins' pairs are added.
 `npm run design:verify` then verified all 144 tuples.
 
+After the PR opened, `main` moved to d1c9d77a, which refreshed the Application settings baselines. It was merged
+in, the baselines were captured again on the merged code, and the gates passed again: 4568 unit tests passed and
+41 skipped, and `design:verify` verified all 144 tuples. One verify run failed first, because `focus-input.png`
+had a stray "." in the History search box: the capture window takes real keyboard focus, and a key pressed on
+the machine during the run landed in the field. The next run passed unchanged.
+
 The Playwright specs that touch Appearance and themes were updated and run against the built app. Four tests fail
 here, and fail the same way on the base commit, 93b8d016, built in a separate worktree, so they are not this
 change: `phase-three-themes` "a spotlight over a drawn diagram goes quiet" (idle redraws) and "a minimized editor
