@@ -1,6 +1,7 @@
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
+import { isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -182,6 +183,7 @@ export class AgentControl {
   private broadcastPending = false
   private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
   /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
+  private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
   /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
   private readonly titleChecked = new Map<string, number>()
@@ -334,7 +336,7 @@ export class AgentControl {
     }
     // Subscribe before the first observe: telling the workspace which threads are open now makes it
     // load their history, and that publish has to reach this coordinator (issue #119).
-    this.unsubscribe = this.dependencies.host.subscribe(snapshot => this.acceptSnapshot(snapshot))
+    this.unsubscribe = subscribeActivitySnapshots(this.dependencies.host, snapshot => this.acceptSnapshot(snapshot))
     this.observe()
     if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
       const connection = this.command({ type: 'connect' })
@@ -463,9 +465,15 @@ export class AgentControl {
    * than the text itself: a streaming chunk must bump it without the cost of copying every message.
    */
   private detailRevision(thread: AgentThread): number {
+    const activities = this.paneActivities(thread)
+    let activitySignature = activities && this.activityDetailSignatures.get(activities)
+    if (activitySignature === undefined) {
+      activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
+      if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
+    }
     const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${(this.paneActivities(thread) ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')}`
+      + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? 0) + 1

@@ -127,6 +127,22 @@ describe('Agents roster', () => {
     expect(cache.thread('one').rows[0].status).toBe('completed')
   })
 
+  it('never shows an old thread’s delayed roster after switching to an empty selected thread', async () => {
+    const { bridge } = fixture()
+    let resolveOld!: (value: Awaited<ReturnType<SubagentsBridge['page']>>) => void
+    vi.mocked(bridge.page).mockImplementation(({ threadId }) => threadId === 'old'
+      ? new Promise(done => { resolveOld = done })
+      : Promise.resolve({ threadId, revision: 1, rows: [], summary: EMPTY_SUBAGENT_SUMMARY }))
+    const cache = store()
+    const view = render(<AgentsSurface threadId="old" store={cache} bridge={bridge} />)
+    await waitFor(() => expect(bridge.page).toHaveBeenCalledWith({ threadId: 'old' }))
+    view.rerender(<AgentsSurface threadId="new" store={cache} bridge={bridge} />)
+    expect(await screen.findByText('No agents spawned in this thread yet.')).toBeVisible()
+    await act(async () => resolveOld({ threadId: 'old', revision: 1, rows: [row('old-child')], summary }))
+    expect(screen.queryByRole('button', { name: /Task old-child/ })).toBeNull()
+    expect(cache.thread('new').rows).toEqual([])
+  })
+
   it('stops display timers for unknown states, hidden documents, and unmounted surfaces', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-20T10:00:20Z'))

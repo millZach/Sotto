@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { HostService, ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
-import { HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostPush, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
+import { HOST_BUSY, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostDescriptor, type HostErrorCode, type HostPush, type HostReceipt, type HostRequest, type HostResponse } from '../shared/hostProtocol'
 import type { AgentCommand, AgentThreadDetail } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { version as packageVersion } from '../../package.json'
@@ -34,7 +34,7 @@ const TOO_LARGE: Record<Oversize, string> = {
 }
 class Refusal extends Error { constructor(readonly code: HostErrorCode) { super(errors[code]) } }
 /** `deltas` is set by the client's hello: only a client that accepts `detail-delta` is sent one. */
-interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; deltas: boolean }
+interface Peer { frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; deltas: boolean }
 export interface SocketServerOptions {
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
@@ -50,6 +50,21 @@ export interface SocketServerOptions {
  */
 const RECEIPT_LIFETIME_MS = 5 * 60_000
 const RECEIPT_LIMIT = 10_000
+/**
+ * A peer sending more than this many messages in a second is closed, except for event pages, which are
+ * paced instead: a page past its own budget waits for the next second. A client reading a long log one
+ * page after another is doing what the protocol asks, and closing it would only have it start again.
+ */
+const MESSAGES_PER_SECOND = 100
+const EVENT_PAGES_PER_SECOND = 100
+/**
+ * HTTP requests a minute, per endpoint class, so no caller can spend another's budget. Health is not
+ * counted: refusing it costs as much as answering it, and the launch script polls it while a host starts.
+ * Pairing has a small bucket of its own. The administrative path, and sessions and revocations per paired
+ * client, are counted only after their token is checked, so a loop on a bad token spends nobody's budget.
+ */
+const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120 } as const
+const HTTP_WINDOW_MS = 60_000
 /** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
 const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
 /** Only this listener owns sockets; clients never get a provider handle or a claimed identity. */
@@ -72,7 +87,15 @@ export async function startSocketServer(options: SocketServerOptions) {
     throw new Refusal('busy')
   }
   let closing = false
-  let httpWindow = Date.now(), httpCount = 0
+  const httpBudgets = new Map<string, { window: number; count: number }>()
+  /** Counts one request against a bucket, dropping buckets whose minute has passed, and refuses past its limit. */
+  const spend = (bucket: string, limit: number): void => {
+    const now = Date.now()
+    for (const [key, entry] of httpBudgets) if (now - entry.window >= HTTP_WINDOW_MS) httpBudgets.delete(key)
+    const entry = httpBudgets.get(bucket) ?? { window: now, count: 0 }
+    httpBudgets.set(bucket, entry)
+    if (++entry.count > limit) throw new Refusal('busy')
+  }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const shell = (peer: Peer) => {
     const state = service.shell()
@@ -213,8 +236,17 @@ export async function startSocketServer(options: SocketServerOptions) {
     const envelope = parsed.success ? parsed.data : hostRequestEnvelopeSchema.safeParse(raw).data
     if (!envelope) { peer.frames.close(); return }
     const now = Date.now()
-    if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
-    if (++peer.count > 100 || peer.inFlight >= 32) { peer.frames.close(); return }
+    // An unreadable request still spends the message budget, so a client cannot loop on one for free.
+    let wait = 0
+    if (parsed.success && parsed.data.op === 'events') {
+      if (now >= peer.pageWindow + 1000) { peer.pageWindow = now; peer.pages = 0 }
+      if (peer.pages >= EVENT_PAGES_PER_SECOND) { peer.pageWindow += 1000; peer.pages = 0 }
+      peer.pages++; wait = peer.pageWindow - now
+    } else {
+      if (now - peer.window > 1000) { peer.window = now; peer.count = 0 }
+      if (++peer.count > MESSAGES_PER_SECOND) { peer.frames.close(); return }
+    }
+    if (peer.inFlight >= 32) { peer.frames.close(); return }
     // A request from this session that the host cannot read, such as a client of a newer Sotto version
     // sending an operation or field this one does not know, is refused by its id rather than by closing
     // the socket: the client can then say what happened instead of reconnecting into the same refusal.
@@ -225,6 +257,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const request = parsed.data
     peer.inFlight++
     track((async () => {
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
       let response: HostResponse
       try { response = { v: 1, id: request.id, ok: true, result: await dispatch(peer, request) } }
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: errors[code] } } }
@@ -245,13 +278,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       try {
         if (closing) throw new Refusal('unavailable')
         if (request.headers.origin && !originAllowed(request.headers.origin, options.origins)) throw new Refusal('unauthenticated')
-        if (Date.now() - httpWindow > 60000) { httpWindow = Date.now(); httpCount = 0 }
-        if (++httpCount > 120) throw new Refusal('busy')
         if (request.method === 'GET' && request.url === '/v1/health') { respond(response, 200, { ...descriptor, status: 'ready' }); return }
         if (request.method !== 'POST') throw new Refusal('invalid_request')
         if (request.url?.startsWith('/v1/admin/')) {
           const token = Buffer.from(bearer(request)), expected = Buffer.from(adminToken)
           if (token.length !== expected.length || !timingSafeEqual(token, expected)) throw new Refusal('unauthenticated')
+          spend('admin', HTTP_BUDGETS.admin)
           if (request.url === '/v1/admin/pairing-code') { respond(response, 200, { v: 1, hostId, ...pairing.issuePairingCode() }); return }
           const input = z.object({ clientId: z.string().min(1).max(512) }).strict().parse(await body(request))
           if (request.url === '/v1/admin/revoke-client') { const revoked = await pairing.revoke(input.clientId); for (const peer of peers) if (!authenticated(peer)) peer.frames.close(); respond(response, 200, { v: 1, hostId, revoked }); return }
@@ -262,6 +294,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           respond(response, 200, { v: 1, hostId, ok: true }); return
         }
         if (request.url === '/v1/pair') {
+          spend('pair', HTTP_BUDGETS.pair)
           const input = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict().parse(await body(request))
           let paired: Awaited<ReturnType<PairedClients['redeem']>>
           try { paired = await pairing.redeem(input.code, input.name) } catch { throw new Refusal('unauthenticated') }
@@ -270,6 +303,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.url === '/v1/revoke') {
           const clientId = pairing.verifyToken(bearer(request))
           if (!clientId) throw new Refusal('unauthenticated')
+          spend('client:' + clientId, HTTP_BUDGETS.client)
           const revoked = await pairing.revoke(clientId)
           for (const peer of peers) if (!authenticated(peer)) peer.frames.close()
           respond(response, 200, { v: 1, hostId, revoked }); return
@@ -277,13 +311,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.url === '/v1/session') {
           const clientId = pairing.verifyToken(bearer(request))
           if (!clientId) throw new Refusal('unauthenticated')
+          spend('client:' + clientId, HTTP_BUDGETS.client)
           const at = Date.now()
           respond(response, 200, { v: 1, hostId, clientId, session: pairing.signSession(clientId, at), expiresAt: new Date(at + SESSION_LIFETIME_MS).toISOString() }); return
         }
         throw new Refusal('invalid_request')
       } catch (error) {
         const code = error instanceof Refusal ? error.code : 'invalid_request'
-        respond(response, code === 'unauthenticated' ? 401 : code === 'busy' ? 429 : 400, { v: 1, error: { code, message: errors[code] } })
+        respond(response, code === 'unauthenticated' ? 401 : code === 'busy' ? 429 : 400, { v: 1, error: { code, message: code === 'busy' ? HOST_BUSY : errors[code] } })
       }
     })())
   })
@@ -296,7 +331,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { frames, client: identity(clientId), session, observed: new Set(), inFlight: 0, window: Date.now(), count: 0, preview: false, afterSeq: 0, selectedThreadId: null, selectedProjectId: null, deltas: false }
+    const peer: Peer = { frames, client: identity(clientId), session, observed: new Set(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, afterSeq: 0, selectedThreadId: null, selectedProjectId: null, deltas: false }
     peers.add(peer)
     frames.onClose(() => { peers.delete(peer); if (!closing) track(observe().catch(() => undefined)) })
     frames.feed(head)

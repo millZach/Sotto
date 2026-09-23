@@ -19,6 +19,8 @@ import type { RemoteHost } from '../../src/shared/hosts'
 import { hostVersionMismatch } from '../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../package.json'
 import { createServer, type Server } from 'node:http'
+import { HOST_BUSY } from '../../src/shared/hostProtocol'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
@@ -228,6 +230,69 @@ describe('desktop remote host management over a real socket', () => {
       await manager.command({ type: 'connect', id: remote.id })
       expect(launchers).toHaveLength(2)
     } finally { vi.useRealTimers() }
+  })
+  it('opens and reconnects without downloading the host’s event log, and still reads the current shell', async () => {
+    const client = desktopWindowClient('desktop-test')
+    await host.service.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, client)
+    await host.service.command({ type: 'connect', provider: 'codex' }, client)
+    const state = await host.service.command({ type: 'create-project', provider: 'codex', title: 'Logged', path: root, useExisting: true }, client)
+    const project = state.host.projects.find(project => project.path === root)!
+    const threadId = randomUUID()
+    await host.service.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Logged task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+    await host.service.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic logged prompt' }, client)
+    await expect.poll(() => host.service.events(0).length).toBeGreaterThan(0)
+    const connect = vi.spyOn(SocketHostService.prototype, 'connect'), readEvents = vi.spyOn(SocketHostService.prototype, 'readEvents')
+    try {
+      const remote = await add()
+      // The host sent none of the log in the hello, and a routed command reads none after it.
+      const hello = (index: number) => connect.mock.results[index]!.value as ReturnType<SocketHostService['connect']>
+      expect(await hello(0)).toMatchObject({ events: [], latestSeq: Number.MAX_SAFE_INTEGER, hasMore: false })
+      await router.command({ type: 'configure', patch: { enabled: false } }, client)
+      await manager.command({ type: 'disconnect', id: remote.id })
+      await host.service.command({ type: 'configure', patch: { enabled: true } }, client)
+      await manager.command({ type: 'connect', id: remote.id })
+      expect(manager.get().hosts[0]!.phase).toBe('connected')
+      expect(router.shell().configuration.enabled).toBe(true)
+      expect(router.shell().host.threads.map(thread => thread.id)).toContain(hostEntityKey(reportedHostId, threadId))
+      expect(await hello(1)).toMatchObject({ events: [], latestSeq: Number.MAX_SAFE_INTEGER, hasMore: false })
+      expect(readEvents).not.toHaveBeenCalled()
+    } finally { connect.mockRestore(); readEvents.mockRestore() }
+  })
+  it('says the host is busy when this computer’s session budget is spent, and keeps retrying instead of pairing again', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    // Spend this client's session budget for the minute, the way a loop on its token would.
+    const session = () => fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+    let response = await session()
+    for (let index = 0; response.status === 200 && index < 200; index++) response = await session()
+    expect(response.status).toBe(429)
+    retryDelay = attempt => attempt === 0 ? 0 : 60_000
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    // The busy reconnect is not final: a second retry is scheduled after it.
+    await vi.waitFor(() => expect(scheduled).toEqual([0, 1]))
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', error: HOST_BUSY })
+    expect(credentials.get('remote-host:' + remote.id)).toBe(token)
+    expect(host.pairing.list()).toHaveLength(1)
+  })
+  it('keeps retrying when pairing again meets a busy host, instead of calling it a failed pairing', async () => {
+    const remote = await add()
+    await host.pairing.revoke(host.pairing.verifyToken(credentials.get('remote-host:' + remote.id))!)
+    // Spend the host's pairing budget for the minute, the way a loop guessing codes would.
+    const guess = () => fetch('http://127.0.0.1:' + host.descriptor!.port + '/v1/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: 'WRONG', name: 'Guess' }) })
+    let response = await guess()
+    for (let index = 0; response.status !== 429 && index < 20; index++) response = await guess()
+    expect(response.status).toBe(429)
+    retryDelay = attempt => attempt === 0 ? 0 : 60_000
+    launchers[0]!.callbacks!.onDisconnected!('dropped')
+    // The session is refused, pairing again is refused as busy, and a second retry is scheduled after it.
+    await vi.waitFor(() => expect(scheduled).toEqual([0, 1]))
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await manager.command({ type: 'connect', id: remote.id })
+    expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', error: HOST_BUSY })
   })
   it('cancels a pending retry when the user disconnects', async () => {
     const remote = await add()

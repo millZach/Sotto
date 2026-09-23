@@ -7,10 +7,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentThreadDetailPublishes, type PublishScheduler } from '../../../src/main/agents/control'
+import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
+import { isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
+import * as detailMath from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentState, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
@@ -140,6 +143,64 @@ const record = (id: string, patch: Partial<AgentActivity> = {}): AgentActivity =
   ({ id, turnId: 'turn-1', sequence: 1, kind: 'command', status: 'running', title: 'npm test', ...patch })
 
 describe('detail deltas while a thread streams', () => {
+  it('reuses a certified pane signature across unchanged refreshes while messages, activities and filtering still advance detail', async () => {
+    const f = await fixture()
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build', { output: 'one' })] })
+    await f.control.command({ type: 'refresh' })
+    let pane = immutableActivities([record('build', { output: 'one' })])
+    Object.assign(f.host, { paneActivities: () => pane })
+    const signatures = vi.spyOn(detailMath, 'agentActivitySignature')
+    const details: AgentThreadDetailUpdate[] = []
+    f.control.subscribeThreadDetail(item => details.push(item))
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    expect(whole(details.at(-1)).activities?.[0]?.output).toBe('one')
+    expect(signatures.mock.calls.length).toBeGreaterThan(0)
+    signatures.mockClear(); details.length = 0
+
+    for (let index = 0; index < 5; index += 1) {
+      await f.control.command({ type: 'refresh' })
+      f.control.threadDetail('workshop')
+    }
+    expect(signatures).not.toHaveBeenCalled()
+    expect(details).toEqual([])
+
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'A new message.' })
+    await f.control.command({ type: 'refresh' })
+    expect(details.at(-1) && delta(details.at(-1)).messageDeltas).toMatchObject([{ message: { text: 'A new message.' } }])
+    pane = immutableActivities([record('build', { output: 'one two' })])
+    details.length = 0
+    await f.control.command({ type: 'refresh' })
+    expect(delta(details.at(-1)).activityDeltas).toEqual([{ record: expect.objectContaining({ id: 'build', output: 'one two' }) }])
+    pane = immutableActivities([])
+    details.length = 0
+    await f.control.command({ type: 'refresh' })
+    expect(delta(details.at(-1)).activityDeltas).toEqual([{ id: 'build', removed: true }])
+    signatures.mockRestore()
+  })
+
+  it('recomputes a legacy mutable pane signature after the same array changes in place', async () => {
+    const f = await fixture()
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build', { output: 'a' })] })
+    await f.control.command({ type: 'refresh' })
+    const pane = [record('build', { output: 'a' })]
+    Object.assign(f.host, { paneActivities: () => pane })
+    const signatures = vi.spyOn(detailMath, 'agentActivitySignature')
+    const details: AgentThreadDetailUpdate[] = []
+    f.control.subscribeThreadDetail(item => details.push(item))
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    signatures.mockClear(); details.length = 0
+    pane[0]!.output = 'ab'
+    await f.control.command({ type: 'refresh' })
+    expect(signatures.mock.calls.length).toBeGreaterThan(0)
+    expect(delta(details.at(-1)).activityDeltas).toEqual([{ record: expect.objectContaining({ output: 'ab' }) }])
+    signatures.mockClear(); details.length = 0
+    pane[0]!.output = 'abc'
+    await f.control.command({ type: 'refresh' })
+    expect(signatures.mock.calls.length).toBeGreaterThan(0)
+    expect(delta(details.at(-1)).activityDeltas).toEqual([{ record: expect.objectContaining({ output: 'abc' }) }])
+    signatures.mockRestore()
+  })
+
   it('sends the whole detail the first time, and the suffix a streaming message grew by after that', async () => {
     const f = await fixture()
     const details: AgentThreadDetailUpdate[] = []

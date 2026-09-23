@@ -1,0 +1,236 @@
+{
+  "revision": "11e60a67f5529a1eefad5be5bc5990ef069f5205",
+  "scope": "Synthetic provider clone to WorkspaceHost and durable ThreadStore; excludes native providers, coordinator, IPC and renderer.",
+  "node": "v24.14.1",
+  "os": "win32 10.0.26200",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "logicalCpus": 24,
+  "samples": 5,
+  "cases": [
+    {
+      "id": "usage-1-0",
+      "kind": "usage",
+      "threads": 1,
+      "records": 0,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "usage-1-500",
+      "kind": "usage",
+      "threads": 1,
+      "records": 500,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "usage-4-500",
+      "kind": "usage",
+      "threads": 4,
+      "records": 500,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "usage-8-500",
+      "kind": "usage",
+      "threads": 8,
+      "records": 500,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "command-8-500",
+      "kind": "command",
+      "threads": 8,
+      "records": 500,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "subagent-4-50",
+      "kind": "subagent",
+      "threads": 4,
+      "records": 50,
+      "observed": 4,
+      "cadence": "burst",
+      "updates": 120
+    },
+    {
+      "id": "message-4-50-total",
+      "kind": "message",
+      "threads": 4,
+      "records": 50,
+      "observed": 3,
+      "cadence": "total",
+      "updates": 40
+    },
+    {
+      "id": "mixed-8-50-per-thread",
+      "kind": "mixed",
+      "threads": 8,
+      "records": 50,
+      "observed": 0,
+      "cadence": "per-thread",
+      "updates": 40
+    },
+    {
+      "id": "usage-1-2000",
+      "kind": "usage",
+      "threads": 1,
+      "records": 2000,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 60
+    },
+    {
+      "id": "usage-1-50-idle-128",
+      "kind": "usage",
+      "threads": 1,
+      "records": 50,
+      "idle": 128,
+      "observed": 0,
+      "cadence": "burst",
+      "updates": 120
+    }
+  ],
+  "summaries": [
+    {
+      "case": "usage-1-0",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 0,
+      "medianP95Ms": 0.029,
+      "medianHeapDeltaMiB": 2.275,
+      "medianRssDeltaMiB": -0.203
+    },
+    {
+      "case": "usage-1-500",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 0.775,
+      "medianP95Ms": 1.053,
+      "medianHeapDeltaMiB": 6.842,
+      "medianRssDeltaMiB": 4.773
+    },
+    {
+      "case": "usage-4-500",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 2.083,
+      "medianP95Ms": 3.274,
+      "medianHeapDeltaMiB": 6.464,
+      "medianRssDeltaMiB": 3.113
+    },
+    {
+      "case": "usage-8-500",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 4.425,
+      "medianP95Ms": 9.303,
+      "medianHeapDeltaMiB": 16.748,
+      "medianRssDeltaMiB": 26.152
+    },
+    {
+      "case": "command-8-500",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 4.433,
+      "medianP95Ms": 7.973,
+      "medianHeapDeltaMiB": 12.484,
+      "medianRssDeltaMiB": 27.84
+    },
+    {
+      "case": "subagent-4-50",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 1.558,
+      "medianP95Ms": 2.632,
+      "medianHeapDeltaMiB": 0.112,
+      "medianRssDeltaMiB": -0.73
+    },
+    {
+      "case": "message-4-50-total",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 1.55,
+      "medianP95Ms": 3.19,
+      "medianHeapDeltaMiB": 2.167,
+      "medianRssDeltaMiB": 1.566
+    },
+    {
+      "case": "mixed-8-50-per-thread",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 1.575,
+      "medianP95Ms": 2.981,
+      "medianHeapDeltaMiB": 3.673,
+      "medianRssDeltaMiB": -0.09
+    },
+    {
+      "case": "usage-1-2000",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 1.817,
+      "medianP95Ms": 2.616,
+      "medianHeapDeltaMiB": 40.057,
+      "medianRssDeltaMiB": 30.871
+    },
+    {
+      "case": "usage-1-50-idle-128",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 0.783,
+      "medianP95Ms": 1.133,
+      "medianHeapDeltaMiB": 0.499,
+      "medianRssDeltaMiB": 0.266
+    }
+  ],
+  "results": [
+    {"case":"usage-1-0","mode":"baseline","sample":0,"fingerprint":"f27cad469c701d0f5054d32ac56be5a4c9621a254173a800ee94cf9b9766e950","updates":120,"publishes":1,"elapsedMs":3.575,"cpuMs":0,"cpuMsPerUpdate":0,"updateP95Ms":0.021,"heapDeltaMiB":2.267,"rssDeltaMiB":-0.203,"rssMiB":83.844,"eventCount":0,"activityCount":0},
+    {"case":"usage-1-0","mode":"baseline","sample":1,"fingerprint":"f27cad469c701d0f5054d32ac56be5a4c9621a254173a800ee94cf9b9766e950","updates":120,"publishes":1,"elapsedMs":5.144,"cpuMs":0,"cpuMsPerUpdate":0,"updateP95Ms":0.031,"heapDeltaMiB":2.635,"rssDeltaMiB":-0.027,"rssMiB":83.723,"eventCount":0,"activityCount":0},
+    {"case":"usage-1-0","mode":"baseline","sample":2,"fingerprint":"f27cad469c701d0f5054d32ac56be5a4c9621a254173a800ee94cf9b9766e950","updates":120,"publishes":1,"elapsedMs":5.362,"cpuMs":16,"cpuMsPerUpdate":0.133,"updateP95Ms":0.037,"heapDeltaMiB":2.275,"rssDeltaMiB":-0.211,"rssMiB":83.625,"eventCount":0,"activityCount":0},
+    {"case":"usage-1-0","mode":"baseline","sample":3,"fingerprint":"f27cad469c701d0f5054d32ac56be5a4c9621a254173a800ee94cf9b9766e950","updates":120,"publishes":1,"elapsedMs":4.295,"cpuMs":0,"cpuMsPerUpdate":0,"updateP95Ms":0.029,"heapDeltaMiB":2.265,"rssDeltaMiB":-0.102,"rssMiB":83.301,"eventCount":0,"activityCount":0},
+    {"case":"usage-1-0","mode":"baseline","sample":4,"fingerprint":"f27cad469c701d0f5054d32ac56be5a4c9621a254173a800ee94cf9b9766e950","updates":120,"publishes":1,"elapsedMs":3.723,"cpuMs":0,"cpuMsPerUpdate":0,"updateP95Ms":0.029,"heapDeltaMiB":2.635,"rssDeltaMiB":-0.238,"rssMiB":83.629,"eventCount":0,"activityCount":0},
+    {"case":"usage-1-500","mode":"baseline","sample":0,"fingerprint":"3246617a560ee1ef9d1ac22f62ff467147b6f6fe4703512e2ab9ecb1c4f08ce6","updates":120,"publishes":6,"elapsedMs":71.786,"cpuMs":78,"cpuMsPerUpdate":0.65,"updateP95Ms":0.89,"heapDeltaMiB":6.671,"rssDeltaMiB":4.582,"rssMiB":96.715,"eventCount":0,"activityCount":500},
+    {"case":"usage-1-500","mode":"baseline","sample":1,"fingerprint":"3246617a560ee1ef9d1ac22f62ff467147b6f6fe4703512e2ab9ecb1c4f08ce6","updates":120,"publishes":7,"elapsedMs":92.531,"cpuMs":93,"cpuMsPerUpdate":0.775,"updateP95Ms":1.053,"heapDeltaMiB":6.842,"rssDeltaMiB":4.336,"rssMiB":96.398,"eventCount":0,"activityCount":500},
+    {"case":"usage-1-500","mode":"baseline","sample":2,"fingerprint":"3246617a560ee1ef9d1ac22f62ff467147b6f6fe4703512e2ab9ecb1c4f08ce6","updates":120,"publishes":7,"elapsedMs":79.24,"cpuMs":78,"cpuMsPerUpdate":0.65,"updateP95Ms":1.33,"heapDeltaMiB":6.993,"rssDeltaMiB":4.773,"rssMiB":96.16,"eventCount":0,"activityCount":500},
+    {"case":"usage-1-500","mode":"baseline","sample":3,"fingerprint":"3246617a560ee1ef9d1ac22f62ff467147b6f6fe4703512e2ab9ecb1c4f08ce6","updates":120,"publishes":5,"elapsedMs":49.419,"cpuMs":93,"cpuMsPerUpdate":0.775,"updateP95Ms":0.6,"heapDeltaMiB":6.803,"rssDeltaMiB":5.129,"rssMiB":96.488,"eventCount":0,"activityCount":500},
+    {"case":"usage-1-500","mode":"baseline","sample":4,"fingerprint":"3246617a560ee1ef9d1ac22f62ff467147b6f6fe4703512e2ab9ecb1c4f08ce6","updates":120,"publishes":6,"elapsedMs":74.451,"cpuMs":141,"cpuMsPerUpdate":1.175,"updateP95Ms":1.183,"heapDeltaMiB":6.902,"rssDeltaMiB":4.965,"rssMiB":96.68,"eventCount":0,"activityCount":500},
+    {"case":"usage-4-500","mode":"baseline","sample":0,"fingerprint":"a65a8b0d9cb489f6a13a4e2db76e9705ed3abf0d8b95eec8fab92ca326381e33","updates":120,"publishes":20,"elapsedMs":285.253,"cpuMs":297,"cpuMsPerUpdate":2.475,"updateP95Ms":3.872,"heapDeltaMiB":6.464,"rssDeltaMiB":3.648,"rssMiB":119.305,"eventCount":0,"activityCount":500},
+    {"case":"usage-4-500","mode":"baseline","sample":1,"fingerprint":"a65a8b0d9cb489f6a13a4e2db76e9705ed3abf0d8b95eec8fab92ca326381e33","updates":120,"publishes":20,"elapsedMs":279.5,"cpuMs":281,"cpuMsPerUpdate":2.342,"updateP95Ms":4.193,"heapDeltaMiB":6.515,"rssDeltaMiB":3.816,"rssMiB":119.695,"eventCount":0,"activityCount":500},
+    {"case":"usage-4-500","mode":"baseline","sample":2,"fingerprint":"a65a8b0d9cb489f6a13a4e2db76e9705ed3abf0d8b95eec8fab92ca326381e33","updates":120,"publishes":19,"elapsedMs":252.229,"cpuMs":250,"cpuMsPerUpdate":2.083,"updateP95Ms":3.274,"heapDeltaMiB":6.464,"rssDeltaMiB":3.109,"rssMiB":119.77,"eventCount":0,"activityCount":500},
+    {"case":"usage-4-500","mode":"baseline","sample":3,"fingerprint":"a65a8b0d9cb489f6a13a4e2db76e9705ed3abf0d8b95eec8fab92ca326381e33","updates":120,"publishes":15,"elapsedMs":201.69,"cpuMs":204,"cpuMsPerUpdate":1.7,"updateP95Ms":2.611,"heapDeltaMiB":5.643,"rssDeltaMiB":3.113,"rssMiB":119.41,"eventCount":0,"activityCount":500},
+    {"case":"usage-4-500","mode":"baseline","sample":4,"fingerprint":"a65a8b0d9cb489f6a13a4e2db76e9705ed3abf0d8b95eec8fab92ca326381e33","updates":120,"publishes":19,"elapsedMs":272.257,"cpuMs":250,"cpuMsPerUpdate":2.083,"updateP95Ms":3.132,"heapDeltaMiB":6.515,"rssDeltaMiB":2.828,"rssMiB":119.199,"eventCount":0,"activityCount":500},
+    {"case":"usage-8-500","mode":"baseline","sample":0,"fingerprint":"fb62953e5809abd7f8df1fef9bd1427b1ee4f9519bacce67e46aa82175127a6e","updates":120,"publishes":37,"elapsedMs":620.529,"cpuMs":485,"cpuMsPerUpdate":4.042,"updateP95Ms":9.303,"heapDeltaMiB":16.272,"rssDeltaMiB":27.344,"rssMiB":154.914,"eventCount":0,"activityCount":500},
+    {"case":"usage-8-500","mode":"baseline","sample":1,"fingerprint":"fb62953e5809abd7f8df1fef9bd1427b1ee4f9519bacce67e46aa82175127a6e","updates":120,"publishes":36,"elapsedMs":598.133,"cpuMs":484,"cpuMsPerUpdate":4.033,"updateP95Ms":9.484,"heapDeltaMiB":3.628,"rssDeltaMiB":24.84,"rssMiB":152.926,"eventCount":0,"activityCount":500},
+    {"case":"usage-8-500","mode":"baseline","sample":2,"fingerprint":"fb62953e5809abd7f8df1fef9bd1427b1ee4f9519bacce67e46aa82175127a6e","updates":120,"publishes":37,"elapsedMs":614.657,"cpuMs":531,"cpuMsPerUpdate":4.425,"updateP95Ms":9.579,"heapDeltaMiB":20.809,"rssDeltaMiB":26.152,"rssMiB":153.887,"eventCount":0,"activityCount":500},
+    {"case":"usage-8-500","mode":"baseline","sample":3,"fingerprint":"fb62953e5809abd7f8df1fef9bd1427b1ee4f9519bacce67e46aa82175127a6e","updates":120,"publishes":35,"elapsedMs":594.613,"cpuMs":563,"cpuMsPerUpdate":4.692,"updateP95Ms":8.745,"heapDeltaMiB":20.459,"rssDeltaMiB":25.449,"rssMiB":153.082,"eventCount":0,"activityCount":500},
+    {"case":"usage-8-500","mode":"baseline","sample":4,"fingerprint":"fb62953e5809abd7f8df1fef9bd1427b1ee4f9519bacce67e46aa82175127a6e","updates":120,"publishes":37,"elapsedMs":613.082,"cpuMs":579,"cpuMsPerUpdate":4.825,"updateP95Ms":9.24,"heapDeltaMiB":16.748,"rssDeltaMiB":26.465,"rssMiB":154.887,"eventCount":0,"activityCount":500},
+    {"case":"command-8-500","mode":"baseline","sample":0,"fingerprint":"14b37ebc1ee324a24fa09eb7b90a566fc2db765ecd2a6bd443d6bfaf486dbe6c","updates":120,"publishes":38,"elapsedMs":637.378,"cpuMs":562,"cpuMsPerUpdate":4.683,"updateP95Ms":9.095,"heapDeltaMiB":12.484,"rssDeltaMiB":33.633,"rssMiB":160.879,"eventCount":0,"activityCount":500},
+    {"case":"command-8-500","mode":"baseline","sample":1,"fingerprint":"14b37ebc1ee324a24fa09eb7b90a566fc2db765ecd2a6bd443d6bfaf486dbe6c","updates":120,"publishes":33,"elapsedMs":580.001,"cpuMs":546,"cpuMsPerUpdate":4.55,"updateP95Ms":7.914,"heapDeltaMiB":22.111,"rssDeltaMiB":27.84,"rssMiB":154.969,"eventCount":0,"activityCount":500},
+    {"case":"command-8-500","mode":"baseline","sample":2,"fingerprint":"14b37ebc1ee324a24fa09eb7b90a566fc2db765ecd2a6bd443d6bfaf486dbe6c","updates":120,"publishes":36,"elapsedMs":646.543,"cpuMs":532,"cpuMsPerUpdate":4.433,"updateP95Ms":7.973,"heapDeltaMiB":8.34,"rssDeltaMiB":24.824,"rssMiB":152.539,"eventCount":0,"activityCount":500},
+    {"case":"command-8-500","mode":"baseline","sample":3,"fingerprint":"14b37ebc1ee324a24fa09eb7b90a566fc2db765ecd2a6bd443d6bfaf486dbe6c","updates":120,"publishes":37,"elapsedMs":733.917,"cpuMs":531,"cpuMsPerUpdate":4.425,"updateP95Ms":13.268,"heapDeltaMiB":20.584,"rssDeltaMiB":29.238,"rssMiB":156.316,"eventCount":0,"activityCount":500},
+    {"case":"command-8-500","mode":"baseline","sample":4,"fingerprint":"14b37ebc1ee324a24fa09eb7b90a566fc2db765ecd2a6bd443d6bfaf486dbe6c","updates":120,"publishes":34,"elapsedMs":587.278,"cpuMs":500,"cpuMsPerUpdate":4.167,"updateP95Ms":7.793,"heapDeltaMiB":12.18,"rssDeltaMiB":25.453,"rssMiB":153.875,"eventCount":0,"activityCount":500},
+    {"case":"subagent-4-50","mode":"baseline","sample":0,"fingerprint":"32017893415be243c9c6cffa3b3c65645e1115e349e68bd902ed9448523b98ff","updates":120,"publishes":13,"elapsedMs":175.086,"cpuMs":187,"cpuMsPerUpdate":1.558,"updateP95Ms":2.717,"heapDeltaMiB":-0.317,"rssDeltaMiB":-0.687,"rssMiB":88.633,"eventCount":0,"activityCount":50},
+    {"case":"subagent-4-50","mode":"baseline","sample":1,"fingerprint":"32017893415be243c9c6cffa3b3c65645e1115e349e68bd902ed9448523b98ff","updates":120,"publishes":14,"elapsedMs":207.681,"cpuMs":172,"cpuMsPerUpdate":1.433,"updateP95Ms":2.632,"heapDeltaMiB":-0.16,"rssDeltaMiB":-0.801,"rssMiB":88.445,"eventCount":0,"activityCount":50},
+    {"case":"subagent-4-50","mode":"baseline","sample":2,"fingerprint":"32017893415be243c9c6cffa3b3c65645e1115e349e68bd902ed9448523b98ff","updates":120,"publishes":12,"elapsedMs":159.883,"cpuMs":203,"cpuMsPerUpdate":1.692,"updateP95Ms":2.312,"heapDeltaMiB":0.112,"rssDeltaMiB":-0.73,"rssMiB":89.156,"eventCount":0,"activityCount":50},
+    {"case":"subagent-4-50","mode":"baseline","sample":3,"fingerprint":"32017893415be243c9c6cffa3b3c65645e1115e349e68bd902ed9448523b98ff","updates":120,"publishes":12,"elapsedMs":158.728,"cpuMs":219,"cpuMsPerUpdate":1.825,"updateP95Ms":3.244,"heapDeltaMiB":0.298,"rssDeltaMiB":0.148,"rssMiB":89.793,"eventCount":0,"activityCount":50},
+    {"case":"subagent-4-50","mode":"baseline","sample":4,"fingerprint":"32017893415be243c9c6cffa3b3c65645e1115e349e68bd902ed9448523b98ff","updates":120,"publishes":11,"elapsedMs":153.441,"cpuMs":156,"cpuMsPerUpdate":1.3,"updateP95Ms":2.454,"heapDeltaMiB":0.199,"rssDeltaMiB":-0.82,"rssMiB":88.656,"eventCount":0,"activityCount":50},
+    {"case":"message-4-50-total","mode":"baseline","sample":0,"fingerprint":"1d4685d254c24da0059d9633fb7def1884f338c54421954a4449076f8d7780c5","updates":40,"publishes":41,"elapsedMs":976.284,"cpuMs":78,"cpuMsPerUpdate":1.95,"updateP95Ms":2.914,"heapDeltaMiB":2.168,"rssDeltaMiB":1.621,"rssMiB":88.566,"eventCount":48,"activityCount":50},
+    {"case":"message-4-50-total","mode":"baseline","sample":1,"fingerprint":"1d4685d254c24da0059d9633fb7def1884f338c54421954a4449076f8d7780c5","updates":40,"publishes":41,"elapsedMs":976.69,"cpuMs":47,"cpuMsPerUpdate":1.175,"updateP95Ms":3.191,"heapDeltaMiB":2.235,"rssDeltaMiB":0.887,"rssMiB":88.016,"eventCount":48,"activityCount":50},
+    {"case":"message-4-50-total","mode":"baseline","sample":2,"fingerprint":"1d4685d254c24da0059d9633fb7def1884f338c54421954a4449076f8d7780c5","updates":40,"publishes":41,"elapsedMs":976.613,"cpuMs":15,"cpuMsPerUpdate":0.375,"updateP95Ms":3.19,"heapDeltaMiB":2.167,"rssDeltaMiB":2.035,"rssMiB":88.492,"eventCount":48,"activityCount":50},
+    {"case":"message-4-50-total","mode":"baseline","sample":3,"fingerprint":"1d4685d254c24da0059d9633fb7def1884f338c54421954a4449076f8d7780c5","updates":40,"publishes":41,"elapsedMs":977.142,"cpuMs":62,"cpuMsPerUpdate":1.55,"updateP95Ms":3.073,"heapDeltaMiB":2.147,"rssDeltaMiB":1.566,"rssMiB":88.313,"eventCount":48,"activityCount":50},
+    {"case":"message-4-50-total","mode":"baseline","sample":4,"fingerprint":"1d4685d254c24da0059d9633fb7def1884f338c54421954a4449076f8d7780c5","updates":40,"publishes":40,"elapsedMs":977.978,"cpuMs":77,"cpuMsPerUpdate":1.925,"updateP95Ms":6.339,"heapDeltaMiB":2.064,"rssDeltaMiB":1.48,"rssMiB":89.059,"eventCount":48,"activityCount":50},
+    {"case":"mixed-8-50-per-thread","mode":"baseline","sample":0,"fingerprint":"58aa919f5f5fcab83bef639b0258c252724adb134ab635c8484ef4bd61b0e965","updates":40,"publishes":10,"elapsedMs":208.061,"cpuMs":63,"cpuMsPerUpdate":1.575,"updateP95Ms":5.582,"heapDeltaMiB":3.196,"rssDeltaMiB":-0.184,"rssMiB":90.816,"eventCount":26,"activityCount":50},
+    {"case":"mixed-8-50-per-thread","mode":"baseline","sample":1,"fingerprint":"58aa919f5f5fcab83bef639b0258c252724adb134ab635c8484ef4bd61b0e965","updates":40,"publishes":9,"elapsedMs":123.375,"cpuMs":63,"cpuMsPerUpdate":1.575,"updateP95Ms":3.712,"heapDeltaMiB":3.868,"rssDeltaMiB":-0.09,"rssMiB":90.992,"eventCount":26,"activityCount":50},
+    {"case":"mixed-8-50-per-thread","mode":"baseline","sample":2,"fingerprint":"58aa919f5f5fcab83bef639b0258c252724adb134ab635c8484ef4bd61b0e965","updates":40,"publishes":9,"elapsedMs":123.219,"cpuMs":62,"cpuMsPerUpdate":1.55,"updateP95Ms":2.821,"heapDeltaMiB":3.694,"rssDeltaMiB":-0.137,"rssMiB":90.891,"eventCount":26,"activityCount":50},
+    {"case":"mixed-8-50-per-thread","mode":"baseline","sample":3,"fingerprint":"58aa919f5f5fcab83bef639b0258c252724adb134ab635c8484ef4bd61b0e965","updates":40,"publishes":9,"elapsedMs":123.972,"cpuMs":78,"cpuMsPerUpdate":1.95,"updateP95Ms":2.981,"heapDeltaMiB":3.673,"rssDeltaMiB":-0.016,"rssMiB":90.715,"eventCount":26,"activityCount":50},
+    {"case":"mixed-8-50-per-thread","mode":"baseline","sample":4,"fingerprint":"58aa919f5f5fcab83bef639b0258c252724adb134ab635c8484ef4bd61b0e965","updates":40,"publishes":9,"elapsedMs":126.675,"cpuMs":46,"cpuMsPerUpdate":1.15,"updateP95Ms":2.691,"heapDeltaMiB":2.908,"rssDeltaMiB":0.375,"rssMiB":91.23,"eventCount":26,"activityCount":50},
+    {"case":"usage-1-2000","mode":"baseline","sample":0,"fingerprint":"2ad89fba708f9d4e8f8dff99dd9517a6bc809c88b2d43ea0a39d0507149612a8","updates":60,"publishes":10,"elapsedMs":110.099,"cpuMs":109,"cpuMsPerUpdate":1.817,"updateP95Ms":2.616,"heapDeltaMiB":40.057,"rssDeltaMiB":29.953,"rssMiB":146.414,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":1,"fingerprint":"2ad89fba708f9d4e8f8dff99dd9517a6bc809c88b2d43ea0a39d0507149612a8","updates":60,"publishes":11,"elapsedMs":127.107,"cpuMs":109,"cpuMsPerUpdate":1.817,"updateP95Ms":3.15,"heapDeltaMiB":40.139,"rssDeltaMiB":30.871,"rssMiB":146.496,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":2,"fingerprint":"2ad89fba708f9d4e8f8dff99dd9517a6bc809c88b2d43ea0a39d0507149612a8","updates":60,"publishes":10,"elapsedMs":110.563,"cpuMs":109,"cpuMsPerUpdate":1.817,"updateP95Ms":2.605,"heapDeltaMiB":40.368,"rssDeltaMiB":31.234,"rssMiB":147.031,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":3,"fingerprint":"2ad89fba708f9d4e8f8dff99dd9517a6bc809c88b2d43ea0a39d0507149612a8","updates":60,"publishes":14,"elapsedMs":163.703,"cpuMs":141,"cpuMsPerUpdate":2.35,"updateP95Ms":5.011,"heapDeltaMiB":36.156,"rssDeltaMiB":29.316,"rssMiB":145.668,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":4,"fingerprint":"2ad89fba708f9d4e8f8dff99dd9517a6bc809c88b2d43ea0a39d0507149612a8","updates":60,"publishes":7,"elapsedMs":75.153,"cpuMs":94,"cpuMsPerUpdate":1.567,"updateP95Ms":1.738,"heapDeltaMiB":33.04,"rssDeltaMiB":33.402,"rssMiB":150.664,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-50-idle-128","mode":"baseline","sample":0,"fingerprint":"c267037bb3a16a4b855471935941ccf63f949b93643bb209620f68ae77ded35e","updates":120,"publishes":7,"elapsedMs":83.918,"cpuMs":109,"cpuMsPerUpdate":0.908,"updateP95Ms":1.133,"heapDeltaMiB":-0.177,"rssDeltaMiB":0.09,"rssMiB":88.133,"eventCount":0,"activityCount":50},
+    {"case":"usage-1-50-idle-128","mode":"baseline","sample":1,"fingerprint":"c267037bb3a16a4b855471935941ccf63f949b93643bb209620f68ae77ded35e","updates":120,"publishes":6,"elapsedMs":63.882,"cpuMs":78,"cpuMsPerUpdate":0.65,"updateP95Ms":0.924,"heapDeltaMiB":1.117,"rssDeltaMiB":0.691,"rssMiB":88.277,"eventCount":0,"activityCount":50},
+    {"case":"usage-1-50-idle-128","mode":"baseline","sample":2,"fingerprint":"c267037bb3a16a4b855471935941ccf63f949b93643bb209620f68ae77ded35e","updates":120,"publishes":6,"elapsedMs":68.983,"cpuMs":94,"cpuMsPerUpdate":0.783,"updateP95Ms":0.927,"heapDeltaMiB":1.033,"rssDeltaMiB":0.914,"rssMiB":88.59,"eventCount":0,"activityCount":50},
+    {"case":"usage-1-50-idle-128","mode":"baseline","sample":3,"fingerprint":"c267037bb3a16a4b855471935941ccf63f949b93643bb209620f68ae77ded35e","updates":120,"publishes":7,"elapsedMs":84.038,"cpuMs":125,"cpuMsPerUpdate":1.042,"updateP95Ms":1.311,"heapDeltaMiB":0.499,"rssDeltaMiB":0.266,"rssMiB":88.156,"eventCount":0,"activityCount":50},
+    {"case":"usage-1-50-idle-128","mode":"baseline","sample":4,"fingerprint":"c267037bb3a16a4b855471935941ccf63f949b93643bb209620f68ae77ded35e","updates":120,"publishes":7,"elapsedMs":89.488,"cpuMs":93,"cpuMsPerUpdate":0.775,"updateP95Ms":1.382,"heapDeltaMiB":-0.784,"rssDeltaMiB":0.121,"rssMiB":89.016,"eventCount":0,"activityCount":50}
+  ]
+}

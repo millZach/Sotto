@@ -8,13 +8,14 @@ import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentCommand, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch } from '../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../package.json'
+import { HOST_BUSY, HOST_EVENT_PAGE_SIZE } from '../../src/shared/hostProtocol'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -103,7 +104,7 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.requests).toContainEqual(expect.objectContaining({ id: 'permission-two' }))
   })
   it('refuses a second listener before it can open or overwrite the running host stores', async () => {
-    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is still running`)
+    await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder`)
     expect((await fetch(url + '/v1/health')).status).toBe(200)
   })
   it('does not turn caller-supplied IPC identity into permission authority', async () => {
@@ -531,5 +532,60 @@ describe('host version and features', () => {
       await expect(skewed.command(unreadable)).rejects.toMatchObject({ code: 'version_mismatch', message: hostVersionMismatch(packageVersion, '0.0.1', false) })
       expect(await skewed.receipt('still-open')).toEqual({ status: 'unknown' })
     } finally { await skewed.close(); await server.close() }
+  })
+})
+
+describe('request budgets', () => {
+  it('counts no health request, so a loop on it never blocks a session', async () => {
+    const { client, result } = await pair()
+    for (let index = 0; index < 150; index++) expect((await fetch(url + '/v1/health')).status).toBe(200)
+    await expect(client.connect()).resolves.toMatchObject({ hostId: result.hostId })
+  })
+  it('keeps a session budget per paired client and says the host is busy past it, not that the device needs pairing', async () => {
+    const first = await pair('First'), second = await pair('Second')
+    const session = (token: string) => fetch(url + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+    // A loop on a token the host does not know spends nobody's budget.
+    for (let index = 0; index < 150; index++) expect((await session('not-a-paired-token')).status).toBe(401)
+    let response = await session(first.result.token)
+    for (let index = 0; response.status === 200 && index < 200; index++) response = await session(first.result.token)
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ error: { code: 'busy', message: HOST_BUSY } })
+    await expect(first.client.connect()).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY, pairingRequired: false })
+    await expect(second.client.connect()).resolves.toMatchObject({ clientId: second.result.clientId })
+  })
+  it('gives pairing a small bucket of its own that sessions do not share', async () => {
+    const { client } = await pair()
+    for (let index = 1; index < 10; index++) await expect(SocketHostService.pair(url, 'WRONG' + index, 'Guess')).rejects.toMatchObject({ code: 'unauthenticated', message: expect.stringContaining('pairing code could not be used') })
+    await expect(SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Late')).rejects.toMatchObject({ code: 'busy', message: HOST_BUSY })
+    await expect(client.connect()).resolves.toBeDefined()
+  })
+  it('paces a client paging through a long log instead of closing it at the per-second cutoff', async () => {
+    // The hello carries the first page and 101 event pages follow: one more than a peer may send of anything
+    // else in a second. The clock is held still so every page lands in the same second however fast the
+    // runner is; the cutoff would close this peer, and pacing instead holds the last page for a second.
+    const pages = 101, last = HOST_EVENT_PAGE_SIZE * pages + 1
+    const rows = Array.from({ length: last }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset' as const, at: new Date().toISOString() } }))
+    let reads = 0
+    const service: HostService = {
+      shell: () => host.service.shell(), state: () => host.service.state(), threadDetail: id => host.service.threadDetail(id),
+      command: (command, identity) => host.service.command(command, identity),
+      events: (afterSeq, threadId, limit) => { reads++; return rows.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId)).slice(0, limit) },
+      subscribe: () => () => undefined,
+    }
+    const server = await startSocketServer({ service, pairing: host.pairing })
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Long log')
+    let drops = 0
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, onConnectionChange: value => { if (!value) drops++ } }); clients.push(client)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const started = performance.now()
+      await client.connect()
+      // The hello and every page were read in the same held second, and the page past the budget waited for the next.
+      expect(reads).toBe(1 + pages)
+      expect(performance.now() - started).toBeGreaterThanOrEqual(900)
+      expect(client.events(last - 1).map(row => row.seq)).toEqual([last])
+      expect(drops).toBe(0)
+      await expect(client.readShell()).resolves.toBeDefined()
+    } finally { vi.useRealTimers(); await client.close(); await server.close() }
   })
 })

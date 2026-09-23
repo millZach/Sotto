@@ -1,0 +1,58 @@
+{
+  "revision": "11e60a67f5529a1eefad5be5bc5990ef069f5205",
+  "scope": "Synthetic provider clone to WorkspaceHost and durable ThreadStore; excludes native providers, coordinator, IPC and renderer.",
+  "node": "v24.14.1",
+  "os": "win32 10.0.26200",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "logicalCpus": 24,
+  "samples": 5,
+  "cases": [
+    {
+      "id": "usage-1-2000",
+      "kind": "usage",
+      "threads": 1,
+      "records": 2000,
+      "observed": 1,
+      "cadence": "burst",
+      "updates": 1000
+    }
+  ],
+  "summaries": [
+    {
+      "case": "usage-1-2000",
+      "mode": "baseline",
+      "medianCpuMsPerUpdate": 1.171,
+      "medianP95Ms": 1.481,
+      "medianStartupMs": 155.699,
+      "medianArchiveStartupMs": 36.362,
+      "medianHeapMiB": 23.672,
+      "medianRssMiB": 147.449,
+      "medianHeapDeltaMiB": 0.337,
+      "medianRssDeltaMiB": 30.781
+    },
+    {
+      "case": "usage-1-2000",
+      "mode": "candidate",
+      "medianCpuMsPerUpdate": 0.032,
+      "medianP95Ms": 0.013,
+      "medianStartupMs": 158.425,
+      "medianArchiveStartupMs": 40.958,
+      "medianHeapMiB": 23.734,
+      "medianRssMiB": 115.809,
+      "medianHeapDeltaMiB": 0.232,
+      "medianRssDeltaMiB": 0.328
+    }
+  ],
+  "results": [
+    {"case":"usage-1-2000","mode":"baseline","sample":0,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":70,"startupMs":146.633,"archiveStartupMs":37.277,"heapMiB":23.672,"elapsedMs":1119.511,"cpuMs":1188,"cpuMsPerUpdate":1.188,"updateP95Ms":1.624,"heapDeltaMiB":0.337,"rssDeltaMiB":29.559,"rssMiB":146.207,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"candidate","sample":0,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":2,"startupMs":161.067,"archiveStartupMs":42.632,"heapMiB":23.738,"elapsedMs":16.523,"cpuMs":32,"cpuMsPerUpdate":0.032,"updateP95Ms":0.012,"heapDeltaMiB":0.231,"rssDeltaMiB":0.328,"rssMiB":116.113,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"candidate","sample":1,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":2,"startupMs":142.67,"archiveStartupMs":40.958,"heapMiB":23.75,"elapsedMs":14.728,"cpuMs":47,"cpuMsPerUpdate":0.047,"updateP95Ms":0.013,"heapDeltaMiB":0.232,"rssDeltaMiB":0.43,"rssMiB":115.66,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":1,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":69,"startupMs":155.709,"archiveStartupMs":36.362,"heapMiB":23.674,"elapsedMs":1090.64,"cpuMs":1095,"cpuMsPerUpdate":1.095,"updateP95Ms":1.481,"heapDeltaMiB":0.337,"rssDeltaMiB":30.781,"rssMiB":146.93,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":2,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":88,"startupMs":2780.296,"archiveStartupMs":56.664,"heapMiB":22.452,"elapsedMs":1466.868,"cpuMs":1671,"cpuMsPerUpdate":1.671,"updateP95Ms":3.302,"heapDeltaMiB":-0.879,"rssDeltaMiB":161.836,"rssMiB":283.465,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"candidate","sample":2,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":2,"startupMs":158.425,"archiveStartupMs":172.521,"heapMiB":23.734,"elapsedMs":17.723,"cpuMs":16,"cpuMsPerUpdate":0.016,"updateP95Ms":0.017,"heapDeltaMiB":0.232,"rssDeltaMiB":0.57,"rssMiB":115.809,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"candidate","sample":3,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":2,"startupMs":146.979,"archiveStartupMs":40.878,"heapMiB":23.731,"elapsedMs":13.399,"cpuMs":31,"cpuMsPerUpdate":0.031,"updateP95Ms":0.014,"heapDeltaMiB":0.231,"rssDeltaMiB":0.191,"rssMiB":115.621,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":3,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":67,"startupMs":155.699,"archiveStartupMs":34.412,"heapMiB":23.675,"elapsedMs":1060.326,"cpuMs":1171,"cpuMsPerUpdate":1.171,"updateP95Ms":1.446,"heapDeltaMiB":0.337,"rssDeltaMiB":30.164,"rssMiB":147.449,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"baseline","sample":4,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":65,"startupMs":145.771,"archiveStartupMs":35.173,"heapMiB":23.666,"elapsedMs":1032.157,"cpuMs":1093,"cpuMsPerUpdate":1.093,"updateP95Ms":1.434,"heapDeltaMiB":0.33,"rssDeltaMiB":32.254,"rssMiB":149.602,"eventCount":0,"activityCount":2000},
+    {"case":"usage-1-2000","mode":"candidate","sample":4,"fingerprint":{"ids":"6b5b1be490803f1eee71c81021be530605372d8b685b0845cd255d8da7a4b6ff","activities":"b0e5bdd147a075673363fb3d2df47429a7197703758fb9139a0e7946a1a59a9c","usage":"1bfe17ae9f184764c43571498b91781a2f140bb9da2d2c20b3094daaf5d4bf5d","durableAll":"db6bfb0e2c9f82d9f4493a0db842cc6e0039d9fa2d159cdc45c4fbbdded7d23c","messages":"cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05","events":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"},"eventTrace":[],"updates":1000,"publishes":2,"startupMs":187.626,"archiveStartupMs":37.96,"heapMiB":23.733,"elapsedMs":12.987,"cpuMs":46,"cpuMsPerUpdate":0.046,"updateP95Ms":0.012,"heapDeltaMiB":0.233,"rssDeltaMiB":-0.051,"rssMiB":115.813,"eventCount":0,"activityCount":2000}
+  ]
+}

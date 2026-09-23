@@ -1,4 +1,4 @@
-import { chmod, mkdir, open, readFile, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
@@ -13,6 +13,8 @@ import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { remoteAnswerScope } from '../main/agents/authority'
+import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
+import { acquireHostLock, HostLockError, readBootId, releaseHostLock, type HostLease } from './lock'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -24,45 +26,9 @@ export interface HeadlessHostOptions {
   log?: (event: string) => void
 }
 
-/** Refused startup because another host holds, or may hold, the data folder. The message is safe to print. */
-export class HostLockError extends Error {}
+export { HostLockError } from './lock'
 /** The command line itself was wrong. The message names the fix and is safe to print; the key-file hint would only mislead. */
 export class HostArgumentError extends Error {}
-
-/** Whether the process a lock names is still running. A process another account owns counts as running. */
-function lockHolderAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true }
-  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
-}
-
-/**
- * Takes the data folder's lock. A lock left behind by a host that no longer runs (a crash, a reboot) is
- * reclaimed, so a reconnect after either needs no hand cleanup; a lock whose holder still runs, or one
- * that cannot be read, is refused without touching it.
- */
-async function acquireLock(path: string, lease: string, log?: (event: string) => void): Promise<void> {
-  for (let reclaimed = false; ; reclaimed = true) {
-    try {
-      const lock = await open(path, 'wx', 0o600)
-      try { await lock.writeFile(lease, 'utf8'); await lock.sync() } finally { await lock.close() }
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || reclaimed) throw new HostLockError('This host data folder could not be locked. Check that its host-listener.lock can be written, then start again.', { cause: error })
-    }
-    let holder: number
-    try {
-      const value = JSON.parse(await readFile(path, 'utf8')) as { pid?: unknown }
-      if (!Number.isInteger(value.pid) || (value.pid as number) <= 0) throw new Error('invalid')
-      holder = value.pid as number
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-      throw new HostLockError('The host-listener.lock in this data folder could not be read. If no host uses the folder, remove that file and start again.', { cause: error })
-    }
-    if (lockHolderAlive(holder)) throw new HostLockError(`Another host (process ${holder}) is still running with this data folder. Stop it first, or use a different data folder.`)
-    try { await unlink(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new HostLockError('A stale host-listener.lock in this data folder could not be removed. Remove it and start again.', { cause: error }) }
-    log?.('host-lock-reclaimed')
-  }
-}
 
 /** Starts the same coordinator and durable workspace as Electron, with no desktop capabilities. */
 export async function startHeadlessHost(options: HeadlessHostOptions) {
@@ -70,13 +36,13 @@ export async function startHeadlessHost(options: HeadlessHostOptions) {
   const directory = resolve(options.dataDirectory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const path = join(directory, 'host-listener.lock')
-  const lease = JSON.stringify({ pid: process.pid, nonce: randomUUID() })
-  if (options.port !== undefined) await acquireLock(path, lease, options.log)
-  const release = async (): Promise<void> => {
-    if (options.port === undefined) return
-    try { if (await readFile(path, 'utf8') === lease) await unlink(path) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+  let lease: HostLease | undefined
+  if (options.port !== undefined) {
+    const boot = await readBootId()
+    lease = { pid: process.pid, nonce: randomUUID(), ...(boot ? { boot } : {}) }
+    await acquireHostLock(path, lease, { boot, ...(options.log ? { log: options.log } : {}) })
   }
+  const release = async (): Promise<void> => { if (lease) await releaseHostLock(path, lease) }
   try {
     const host = await startHostRuntime(options)
     let closing: Promise<void> | undefined
@@ -106,6 +72,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       openExternal: async () => { throw new Error('Open account settings on the host machine to continue.') },
       openThreadFolder: async () => { throw new Error('This folder is on the host machine. Open it there to continue.') },
       logFailure: code => options.log?.(code),
+      // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0019, ADR-0025).
+      worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
     })
     const pairing = new PairedClients(directory)
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
@@ -127,6 +95,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }
     } catch (error) { await listener?.close(); await runtime.close(); throw error }
+    // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
+    runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
     return {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
