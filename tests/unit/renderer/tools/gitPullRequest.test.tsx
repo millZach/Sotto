@@ -55,6 +55,15 @@ it('leaves the reviewed fields alone and shows no error when nothing is written'
   expect(screen.getByLabelText('PR body')).toHaveValue('')
   expect(screen.queryByRole('status')).toBeNull()
 })
+it('asks for no draft and offers no Regenerate when the thread’s provider writes none', async () => {
+  const draftPullRequestText = vi.fn(async () => ({ ok: true, value: { title: 'Never asked for', body: '' } }))
+  const bridge = { reviewPullRequest: vi.fn(async () => ({ ok: true, value: review })), draftPullRequestText, actPullRequest: vi.fn() } as unknown as GitChangesBridge
+  render(<GitPullRequest threadId="a" workspaceId="w" bridge={bridge} drafts={false} />)
+  await screen.findByDisplayValue('Reviewed title')
+  expect(screen.queryByText('Writing…')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Regenerate' })).toBeNull()
+  expect(draftPullRequestText).not.toHaveBeenCalled()
+})
 it('discards a late response after switching working copies', async () => {
   let resolveFirst!: (value: unknown) => void
   const bridge = { reviewPullRequest: vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve })).mockResolvedValue({ ok: true, value: { ...review, workspace: { ...review.workspace, threadId: 'b' }, branch: 'second', title: 'Second branch' } }) } as unknown as GitChangesBridge

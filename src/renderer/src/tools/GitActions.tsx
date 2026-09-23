@@ -12,9 +12,13 @@ import type { ChangesStore, ThreadChanges } from './changesStore'
  * open them are drawn into that line (`toggleSlot`) and the selected file's staging into its file head
  * (`stageSlot`), so no bar of their own sits between the line and the work.
  */
-export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot }: {
+/**
+ * `drafts` is whether the thread's provider writes Sotto's short text (ADR-0026). Without it the form opens
+ * as the user left it and offers no Regenerate, because a press could only say Writing… and give up.
+ */
+export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot, drafts = true }: {
   threadId: string; changes: ThreadChanges; bridge: GitChangesBridge | undefined; store: ChangesStore
-  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null
+  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null; drafts?: boolean
 }): ReactNode {
   const [open, setOpen] = useState<'git' | 'checkpoints' | null>(null)
   const [message, setMessage] = useState(''), [branch, setBranch] = useState('')
@@ -58,7 +62,7 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
    * over their words, and a draft is never committed on its own.
    */
   const draft = (replace: boolean): void => {
-    if (!bridge.draftCommitMessage || drafting || staged === 0) return
+    if (!drafts || !bridge.draftCommitMessage || drafting || staged === 0) return
     const token = generation.current, from = message
     if (!replace && from.trim().length > 0) return
     setDrafting(true); setDraftNote('')
@@ -114,7 +118,7 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
         {draftNote ? <p className="git-actions__status">{draftNote}</p> : null}
         <div className="git-actions__bar">
           <button className="files-link tt-focusable" type="submit" disabled={busy || !message.trim() || staged === 0}>Commit staged changes ({staged})</button>
-          {bridge.draftCommitMessage ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || staged === 0} onClick={() => draft(true)}>Regenerate</button> : null}
+          {drafts && bridge.draftCommitMessage ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting || staged === 0} onClick={() => draft(true)}>Regenerate</button> : null}
         </div>
       </form>
       <div className="git-actions__branch">

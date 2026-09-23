@@ -48,12 +48,12 @@ function fakeGit(options: { files?: GitChange[]; diffs?: Record<string, GitFileD
   }
 }
 
-function setup(git = fakeGit()) {
+function setup(git = fakeGit(), state = threadsStateFixture()) {
   const store = new ToolsPanelStore()
   store.setOpen(true)
   store.setSurface('changes')
   const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
-  render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} gitChanges={git.bridge} store={store} />)
+  render(<ToolsPanel focusedThreadId="visual-gate" state={state} files={files} gitChanges={git.bridge} store={store} />)
   return { store, git }
 }
 
@@ -138,6 +138,19 @@ describe('the drafted commit message', () => {
     await user.click(screen.getByRole('button', { name: 'Regenerate' }))
     await waitFor(() => expect(message).toHaveValue('Add the drafted commit message'))
     expect(await screen.findByText(/too large to send whole/u)).toBeInTheDocument()
+  })
+
+  it('asks for no draft on a Devin thread and offers no Regenerate, because Devin writes none (ADR-0026)', async () => {
+    const user = userEvent.setup(), git = fakeGit()
+    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: 'Never asked for', truncated: false } }))
+    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
+    const state = threadsStateFixture()
+    setup(git, { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const } : thread) } })
+    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
+    expect(screen.getByRole('textbox', { name: 'Commit message' })).toHaveValue('')
+    expect(screen.queryByText('Writing…')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Regenerate' })).toBeNull()
+    expect(git.bridge.draftCommitMessage).not.toHaveBeenCalled()
   })
 })
 

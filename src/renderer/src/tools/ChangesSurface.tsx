@@ -33,10 +33,12 @@ export interface ChangesSurfaceProps {
   readonly bridge: GitChangesBridge | undefined
   readonly platform?: string | undefined
   readonly onStatus: (message: string) => void
+  /** Whether the thread's provider writes Git drafts (ADR-0026); a Devin thread's forms offer none. */
+  readonly drafts?: boolean
 }
 
 /** The working copy's changes against HEAD: the file list beside its selected diff. Review only. */
-export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: ChangesSurfaceProps): ReactNode {
+export function ChangesSurface({ threadId, store, bridge, platform, onStatus, drafts = true }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
   const [split, setSplit] = useState(false)
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
@@ -54,7 +56,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
     </div></>
   }
   if (pullRequestOpen && bridge && changes.workspace) return <div className="changes-surface">
-    <GitPullRequest key={`${threadId}:${changes.workspace.workspaceId}`} threadId={threadId} workspaceId={changes.workspace.workspaceId} bridge={bridge} onBack={() => setPullRequestOpen(false)} />
+    <GitPullRequest key={`${threadId}:${changes.workspace.workspaceId}`} threadId={threadId} workspaceId={changes.workspace.workspaceId} bridge={bridge} drafts={drafts} onBack={() => setPullRequestOpen(false)} />
   </div>
   const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? 'Path copied' : 'Could not copy the path')) }
   const reveal = (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) }
@@ -72,7 +74,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus }: 
           onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
       </div>
     </div>
-    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} />
+    <GitActions key={threadId} threadId={threadId} changes={changes} bridge={bridge} store={store} toggleSlot={toggleSlot} stageSlot={stageSlot} drafts={drafts} />
     {list.files.length === 0
       ? <div className="files-problem" role="status"><strong>The working copy matches HEAD.</strong></div>
       : <ChangeList files={list.files} selectedPath={selectedPath} onSelect={path => store.select(bridge, threadId, path)} />}

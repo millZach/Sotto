@@ -3,7 +3,8 @@ import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { PrReview } from '../../../shared/gitPullRequests'
 import { threadLinkRouter } from './webLinks'
 
-export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { threadId: string; workspaceId: string; bridge: GitChangesBridge; onBack?: () => void }): ReactNode {
+/** `drafts` is whether the thread's provider writes Sotto's short text (ADR-0026); without it there is no draft and no Regenerate. */
+export function GitPullRequest({ threadId, workspaceId, bridge, onBack, drafts = true }: { threadId: string; workspaceId: string; bridge: GitChangesBridge; onBack?: () => void; drafts?: boolean }): ReactNode {
   const [review, setReview] = useState<PrReview | null>(null)
   const [base, setBase] = useState(''), [title, setTitle] = useState(''), [body, setBody] = useState('')
   const [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [drafting, setDrafting] = useState(false)
@@ -17,7 +18,7 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { thre
    * the draft unless they pressed Regenerate.
    */
   const draft = async (value: PrReview, from: { title: string; body: string }, replace: boolean): Promise<void> => {
-    if (!bridge.draftPullRequestText || value.pullRequest) return
+    if (!drafts || !bridge.draftPullRequestText || value.pullRequest) return
     const token = generation.current
     setDrafting(true)
     try {
@@ -86,7 +87,7 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { thre
           <label>Base branch<input className="tt-focusable" aria-label="Base branch" value={base} disabled={busy} maxLength={240} onChange={event => setBase(event.target.value)} placeholder="main" /></label>
           <label>PR title<input className="tt-focusable" aria-label="PR title" value={title} disabled={busy} maxLength={500} onChange={event => setTitle(event.target.value)} /></label>
           <label>PR body<textarea className="tt-focusable" aria-label="PR body" value={body} disabled={busy} rows={5} maxLength={60000} onChange={event => setBody(event.target.value)} /></label>
-          {bridge.draftPullRequestText ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting} onClick={() => void draft(review, { title, body }, true)}>Regenerate</button> : null}
+          {drafts && bridge.draftPullRequestText ? <button type="button" className="files-link tt-focusable" disabled={busy || drafting} onClick={() => void draft(review, { title, body }, true)}>Regenerate</button> : null}
         </>}
       </> : !busy && !status ? <p>Refresh to review this branch.</p> : null}
     </div>
