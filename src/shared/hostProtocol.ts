@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentAttachmentPreviewRequestSchema, agentCommandSchema, agentStateSchema, agentThreadDetailResultSchema, type AgentState, type AgentThreadDetail } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
+import { gitRefsRequestSchema } from './gitRefs'
 
 export const HOST_PROTOCOL_VERSION = 1 as const
 export const HOST_MAX_FRAME_BYTES = 16 * 1024 * 1024
@@ -16,6 +17,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id }).strict(),
+  /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
+  z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never

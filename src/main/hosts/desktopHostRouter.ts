@@ -1,6 +1,7 @@
 import { agentCommandSchema, agentShell, isThreadProviderConnected, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { ClientIdentity, HostService } from '../agents/hostService'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 
 export interface DesktopHostConnection {
   hostId: string
@@ -9,6 +10,7 @@ export interface DesktopHostConnection {
   service: Pick<HostService, 'shell' | 'command' | 'subscribe'>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
@@ -98,6 +100,12 @@ export class DesktopHostRouter {
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
+  }
+  async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitRefs) throw new Error('Branches are unavailable on this host.')
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its branches.')
+    return connection.gitRefs({ ...request, threadId: id! })
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     this.notice = undefined

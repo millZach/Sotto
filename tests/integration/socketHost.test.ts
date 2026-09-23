@@ -127,6 +127,12 @@ describe('socket client isolation and reconnect', () => {
     await client.command({ type: 'refresh-thread-worktree', threadId })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git?.branch).toBe('main')
     expect(client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git).toMatchObject({ isRepository: true, hasRemote: false, dirty: false, ahead: 0, behind: 0, pullRequest: null })
+    // The branch picker asks the host for a page of refs over the same socket.
+    git('branch', '-q', 'topic')
+    const page = await client.gitRefs({ threadId, query: 'top' })
+    expect(page).toEqual({ refs: [{ name: 'topic', current: false, isDefault: false, worktreePath: null }], isRepository: true, hasRemote: false, nextCursor: null, total: 1 })
+    expect((await client.gitRefs({ threadId })).refs.map(ref => ref.name)).toEqual(['main', 'topic'])
+    await expect(client.gitRefs({ threadId: 'no-such-thread' })).rejects.toThrow()
   })
   it('resyncs after a dropped connection without sending the old command again', async () => {
     const { client } = await pair()

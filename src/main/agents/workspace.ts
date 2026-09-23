@@ -21,6 +21,7 @@ import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
 import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitActions'
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
@@ -201,6 +202,20 @@ export class WorkspaceHost implements AgentHost {
     this.gitStatusTimer.unref?.()
   }
   setGitActions(actions: GitActions): void { this.gitActions = actions }
+  /** The branches of the folder a thread works in, or would work in: a draft reads its project's folder. */
+  async listThreadRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    await this.initialize()
+    if (!this.gitStatus?.listRefs) throw new Error('Branches are unavailable on this host.')
+    const thread = this.thread(request.threadId)
+    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+    let folder: string
+    if (thread.worktree?.status === 'ready' && !thread.worktree.reclaimedAt) folder = resolveThreadWorkingDirectory(thread, project)
+    else if (thread.workingDirectory) folder = thread.workingDirectory
+    else if (project?.path) folder = project.path
+    else throw new Error('This thread has no working folder to read branches from.')
+    const { threadId: _threadId, ...options } = request
+    return this.gitStatus.listRefs(folder, options)
+  }
   private gitActionsOrRefuse(): GitActions {
     if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
     return this.gitActions

@@ -2,6 +2,7 @@ import { userInfo } from 'node:os'
 
 import type { AgentCommand, AgentState, AgentThreadDetail, AgentThreadDetailUpdate, AgentAttachmentPreviewRequest, AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -36,6 +37,8 @@ export interface HostService {
   command(command: AgentCommand, client: ClientIdentity): Promise<AgentState>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** The branches a thread's folder offers, read on request (ADR-0027). */
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
 }
 
 /** The part of the event store a client is allowed to read through the host. */
@@ -73,6 +76,7 @@ export interface LocalHostControl {
   command(command: AgentCommand, client?: ClientIdentity): Promise<AgentState>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
 }
 
 /**
@@ -101,6 +105,10 @@ export class LocalHostService implements HostService {
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   attachmentPreview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult { return this.control.attachmentPreview?.(request) ?? null }
+  gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    if (!this.control.gitRefs) return Promise.reject(new Error('Branches are unavailable on this host.'))
+    return this.control.gitRefs(request)
+  }
   command(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
     if (command.type === 'observe-threads') {
       if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)

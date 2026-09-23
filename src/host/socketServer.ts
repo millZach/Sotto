@@ -181,6 +181,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'receipt': return receipts.get(peer.client.clientId + ':' + request.commandId)?.receipt ?? { status: 'unknown' }
       case 'observe': peer.observed = new Set(request.threadIds); await observe(); for (const id of peer.observed) detail(peer, id); return null
       case 'command': return command(peer, request)
+      case 'git-refs':
+        if (!service.gitRefs) throw new Refusal('invalid_request')
+        try { return await service.gitRefs(request.request) } catch { throw new Refusal('unavailable') }
       case 'preview':
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true

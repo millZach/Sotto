@@ -544,6 +544,23 @@ describe('durable project/thread organization', () => {
     expect(published).toHaveLength(0)
   })
 
+  it('lists the branches of the folder a thread works in, a draft reading its project folder', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const page = { refs: [{ name: 'main', current: true, isDefault: true, worktreePath: null }], isRepository: true, hasRemote: false, nextCursor: null, total: 1 }
+    const listRefs = vi.fn(async () => page)
+    f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('not read here') }), invalidate: vi.fn(), listRefs }, { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await expect(f.host.listThreadRefs({ threadId: 'local', query: 'ma', limit: 10 })).resolves.toEqual(page)
+    expect(listRefs).toHaveBeenCalledWith(project.path, { query: 'ma', limit: 10 })
+    await expect(f.host.listThreadRefs({ threadId: 'missing' })).rejects.toThrow()
+    // A status source with no listing, or none at all, refuses in plain words rather than guessing.
+    f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('not read here') }), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    await expect(f.host.listThreadRefs({ threadId: 'local' })).rejects.toThrow('Branches are unavailable on this host.')
+  })
+
   it('runs a Git action on the thread lane, reports it on the record as it goes, and refuses one while the thread works', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()

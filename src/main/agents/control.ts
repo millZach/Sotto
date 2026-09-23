@@ -122,6 +122,8 @@ export interface AgentMembership {
 }
 
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
@@ -465,6 +467,11 @@ export class AgentControl {
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void {
     this.detailListeners.add(listener)
     return () => this.detailListeners.delete(listener)
+  }
+  /** The branches a thread's folder offers, read on request rather than pushed with every state. */
+  gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    if (!this.dependencies.host.listThreadRefs) throw new Error('Branches are unavailable on this host.')
+    return this.dependencies.host.listThreadRefs(request)
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   attachmentPreview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult {

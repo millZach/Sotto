@@ -619,6 +619,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
+    gitRefs: request => agentControl.gitRefs(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,

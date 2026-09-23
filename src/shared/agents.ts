@@ -8,6 +8,7 @@ import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
+import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -641,6 +642,8 @@ export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
 export interface AgentBridge {
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
+  /** The branches a thread's folder offers, for the picker; the thread is the window's client-scoped one. */
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>

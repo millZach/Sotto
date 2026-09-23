@@ -4,6 +4,7 @@ import { request as httpsRequest } from 'node:https'
 import { SocketFrames } from '../../host/socketFrames'
 import { agentStateSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
+import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity } from './hostService'
@@ -197,6 +198,7 @@ export class SocketHostService implements HostService {
     const result = this.previewTail.then(async () => agentAttachmentPreviewResultSchema.parse(await this.call({ op: 'preview', request })))
     this.previewTail = result.catch(() => undefined); return result
   }
+  async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> { return gitRefsPageSchema.parse(await this.call({ op: 'git-refs', request })) }
   async revokePairing(): Promise<void> {
     const response = await fetch(this.endpoint('/v1/revoke'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.timeout(15000), redirect: 'error' })
     if (!response.ok) throw new HostConnectionError('The host could not forget this device. Connect again and retry.', 'unavailable')

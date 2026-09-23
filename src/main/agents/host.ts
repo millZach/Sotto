@@ -5,6 +5,7 @@ import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 export type AgentHostCommand =
@@ -112,6 +113,8 @@ export interface AgentHost {
   /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
   runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
   pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
+  /** The branches the thread's folder offers, for the picker (ADR-0027). */
+  listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
