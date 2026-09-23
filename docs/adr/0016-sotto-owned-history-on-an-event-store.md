@@ -2,7 +2,7 @@
 
 Accepted September 19, 2026, so that a thread's history stops being something a provider is asked to rebuild, and so the same split serves a machine the user is not sitting at. Transport beyond loopback — which remote path ships first, and what the pairing flow looks like to the user — is left open for the owner to decide and is marked as open below.
 
-Amended September 22, 2026 by ADR-0024: the owner decided both. SSH ships first, with the desktop pairing itself over the SSH session and a phone entering a code read on the host; the host listens on its own loopback address, reached through the SSH forward or Tailscale Serve, and the README's "Privacy and cost" section names that path. Everything else here stands.
+Amended September 22, 2026 by ADR-0025: the owner decided both. SSH ships first, with the desktop pairing itself over the SSH session and a phone entering a code read on the host; the host listens on its own loopback address, reached through the SSH forward or Tailscale Serve, and the README's "Privacy and cost" section names that path. Everything else here stands.
 
 ## Context
 
