@@ -204,7 +204,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
       const state = await agents.command({ type: 'connect' })
-      const thread = state.host.threads.find(item => item.id === 'workshop')!
+      // The renderer names a thread by its host's key (`host:<host>:<id>`); main and the fixture use the bare ID.
+      const thread = state.host.threads.find(item => item.id === (state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path
     })
     expect(folder.startsWith(launched.userData)).toBe(true)
