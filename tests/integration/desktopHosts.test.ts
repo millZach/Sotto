@@ -198,11 +198,14 @@ describe('desktop remote host management over a real socket', () => {
     await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
     expect(launchers.length).toBe(3)
   })
-  it('stops retrying when a reconnect fails with an error only the user can fix', async () => {
+  it.each([
+    ['archive-missing', 'installation was not found'],
+    ['ssh-too-old', "This computer's OpenSSH is too old"],
+  ] as const)('stops retrying when a reconnect fails with an error only the user can fix: %s', async (code, message) => {
     await add()
-    failures.push(new SshFailure('archive-missing'))
+    failures.push(new SshFailure(code))
     launchers[0]!.callbacks!.onDisconnected!('dropped')
-    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining('installation was not found') }))
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining(message) }))
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(launchers.length).toBe(2)
   })

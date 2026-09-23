@@ -4,6 +4,7 @@
  */
 export type SshFailureCode =
   | 'ssh-missing'
+  | 'ssh-too-old'
   | 'ssh-unreachable'
   | 'ssh-failed'
   | 'auth-failed'
@@ -35,6 +36,7 @@ export const HOST_NODE_MAJOR = 24
 
 const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'ssh-missing': 'SSH could not start. Install OpenSSH and check that its executable is available.',
+  'ssh-too-old': "This computer's OpenSSH is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect.",
   'ssh-unreachable': 'SSH could not reach the host. Check the host name and your network, then reconnect.',
   'ssh-failed': 'SSH could not connect to the host. Check the host name and SSH access, then reconnect.',
   'auth-failed': 'The SSH host refused your sign-in. Check the user name, password or identity file, then reconnect.',
@@ -77,6 +79,13 @@ export class SshFailure extends Error {
   }
   static node(code: 'node-too-old' | 'node-too-new', version: string | undefined): SshFailure {
     return new SshFailure(code, nodeMessage(code, version))
+  }
+  /** This computer's ssh is older than askpass needs (OpenSSH 8.4). `version` is what `ssh -V` said, such as `8.1p1`. */
+  static sshTooOld(version: string, platform: NodeJS.Platform): SshFailure {
+    const update = platform === 'win32'
+      ? 'Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then reconnect.'
+      : 'Update OpenSSH on this computer, then reconnect.'
+    return new SshFailure('ssh-too-old', `This computer's OpenSSH is version ${version}, which is too old. Sotto needs OpenSSH 8.4 or later. ${update}`)
   }
 }
 

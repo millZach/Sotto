@@ -18,13 +18,14 @@ afterEach(async () => {
 const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }
 const SCRIPT_SHA = createHash('sha256').update(LAUNCH_SCRIPT_SOURCE).digest('hex')
 interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; stdinSha256: string; askpass: boolean }
-async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; startMs?: number } = {}) {
+async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; startMs?: number; version?: string; platform?: NodeJS.Platform } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-')); directories.push(path)
   const record = join(path, 'ssh.jsonl')
   const spawner: SpawnSsh = (_file, args, spawnOptions) => spawn(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args],
     { shell: false, windowsHide: true, stdio: [spawnOptions.stdin, 'pipe', 'pipe'],
-      env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0) } })
-  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000, readyTimeoutMs: 5000 })
+      env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0), FAKE_SSH_VERSION: options.version ?? '' } })
+  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000, readyTimeoutMs: 5000,
+    ...(options.platform ? { platform: options.platform } : {}) })
   launchers.push(launcher)
   const events = async () => (await readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Spawned & { kind?: string; accepted?: boolean; owned?: boolean })
   return { launcher, path, events, spawns: async () => (await events()).filter(event => event.type === 'spawn') }
@@ -176,20 +177,39 @@ it('times out without a result, then connects again with a fresh forward', async
   const second = await launcher.connect(configuration)
   expect((await events()).filter(item => item.type === 'forward-ready')).toHaveLength(2)
   expect((await events()).filter(item => item.type === 'host-stopped')).toHaveLength(0)
+  // `ssh -V` runs for the first connect only; its answer holds for the same ssh.
+  expect((await events()).filter(item => item.type === 'version')).toHaveLength(1)
   await second.close()
 })
+it.each([
+  ['linux', 'OpenSSH_8.1p1', '8.1p1', 'Update OpenSSH on this computer, then reconnect.'],
+  ['win32', 'OpenSSH_for_Windows_7.7p1', '7.7p1', 'Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then reconnect.'],
+] as const)('refuses an OpenSSH older than 8.4 in plain words before signing in: %s', async (platform, banner, version, advice) => {
+  const { launcher, events } = await fixture('password', { version: banner, platform })
+  const prompts: SshPrompt[] = []
+  const error = await failure(launcher.connect(configuration, { onPrompt: prompt => { if (prompt) prompts.push(prompt) } }))
+  expect(error.code).toBe('ssh-too-old')
+  expect(error.message).toBe(`This computer's OpenSSH is version ${version}, which is too old. Sotto needs OpenSSH 8.4 or later. ${advice}`)
+  // Nothing else ran: no lookup, no sign-in, no question.
+  expect((await events()).map(item => item.type)).toEqual(['version'])
+  expect(prompts).toEqual([])
+})
+it('lets OpenSSH 8.4 through', async () => {
+  const { launcher } = await fixture('discovered', { version: 'OpenSSH_8.4p1' })
+  await (await launcher.connect(configuration)).close()
+})
 it('gives the host its own time to start however long signing in took', async () => {
-  // Sign-in has 3 s and the host 5 s. A password answered after 1.5 s and a host that then needs 3.5 s
-  // to start take longer than sign-in's budget together, and still connect.
-  const { launcher } = await fixture('password', { authenticationTimeoutMs: 3000, startMs: 3500 })
+  // Sign-in has 4 s and the host 5 s. A password answered after 1 s and a host that then needs 4 s to
+  // start take longer than sign-in's budget together, and still connect.
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 4000, startMs: 4000 })
   const status: string[] = []
   const connection = await launcher.connect(configuration, { onStatus: value => status.push(value),
-    onPrompt: prompt => { if (prompt) setTimeout(() => launcher.answerPrompt(prompt.id, 'test-secret'), 1500) } })
+    onPrompt: prompt => { if (prompt) setTimeout(() => launcher.answerPrompt(prompt.id, 'test-secret'), 1000) } })
   expect(status).toEqual(['connecting', 'starting', 'forwarding', 'ready'])
   await connection.close()
 })
 it('stops with prompt-unanswered when nobody answers', async () => {
-  const { launcher } = await fixture('password', { authenticationTimeoutMs: 500 })
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 3000 })
   let shown = false
   const error = await failure(launcher.connect(configuration, { onPrompt: prompt => { if (prompt) shown = true } }))
   expect(shown).toBe(true)

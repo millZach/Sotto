@@ -5,7 +5,7 @@ import { get } from 'node:http'
 import { createServer } from 'node:net'
 import { z } from 'zod'
 import { parseSshResolution, validateSshHost, type SshHostConfiguration, type SshRoute, type ValidatedSshHostConfiguration } from './sshConfiguration'
-import { CONTROL_OPTIONS, spawnSsh, sshExecutable, type SpawnSsh } from './sshProcess'
+import { CONTROL_OPTIONS, openSshVersion, spawnSsh, sshExecutable, tooOld, type SpawnSsh } from './sshProcess'
 import { HOST_STOP_REPLY_MS, LAUNCH_SCRIPT_SOURCE, launchScriptCommand, type LaunchOperation } from './launchScript'
 import { AskpassBroker, type AskpassQuestion } from './sshAskpass'
 import { LAUNCH_REASONS, SshFailure, type SshFailureCode } from './sshFailure'
@@ -76,6 +76,9 @@ function forwardedHealth(port: number): Promise<z.infer<typeof healthSchema>> {
     request.on('error', reject)
   })
 }
+/** The ssh executables each spawner has shown to be new enough, so `ssh -V` runs once, not on every connect. */
+const recentEnough = new WeakMap<SpawnSsh, Set<string>>()
+const VERSION_BUDGET_MS = 5_000
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 async function boundedWait(completion: Promise<unknown>, milliseconds: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -159,6 +162,7 @@ export class SshHostLauncher {
     const timeout = setTimeout(() => this.fail(attempt, new SshFailure(attempt.prompt ? 'prompt-unanswered' : 'connect-timeout')), authentication)
     const signedIn = (): void => clearTimeout(timeout)
     try {
+      await this.checkVersion(attempt)
       const broker = await AskpassBroker.start((caller, question, withdrawn) => this.ask(attempt, caller, question, withdrawn), { node: this.dependencies.askpassNode ?? process.execPath, platform: this.platform() })
       attempt.broker = broker
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
@@ -213,6 +217,43 @@ export class SshHostLauncher {
   disconnect(): Promise<void> { this.revision++; return this.attempt ? this.closeAttempt(this.attempt) : Promise.resolve() }
 
   private platform(): NodeJS.Platform { return this.dependencies.platform ?? process.platform }
+  private spawner(): SpawnSsh { return this.dependencies.spawn ?? spawnSsh }
+  private executable(): string { return this.dependencies.executable ?? sshExecutable(this.platform(), this.dependencies.env ?? process.env) }
+  /** What every ssh runs with, before askpass: OpenSSH's own words in English, and none of Electron's Node settings. */
+  private environment(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...(this.dependencies.env ?? process.env), LC_ALL: 'C', LANG: 'C' }
+    delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
+    return env
+  }
+  /**
+   * `ssh -V`, once for each ssh executable: every prompt depends on SSH_ASKPASS_REQUIRE, which OpenSSH 8.4
+   * added, and an older ssh would sign in with no way to ask. A version it does not print is let through.
+   */
+  private async checkVersion(attempt: Attempt): Promise<void> {
+    const spawner = this.spawner(), executable = this.executable()
+    if (recentEnough.get(spawner)?.has(executable)) return
+    let child: ChildProcess
+    try { child = spawner(executable, ['-V'], { env: this.environment(), stdin: 'ignore' }) }
+    catch { throw new SshFailure('ssh-missing') }
+    let output = ''
+    const read = (chunk: string): void => { output = (output + chunk).slice(0, 4096) }
+    child.stdout?.setEncoding('utf8'); child.stdout?.on('data', read)
+    child.stderr?.setEncoding('utf8'); child.stderr?.on('data', read)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const ended = new Promise<'missing' | 'ended' | 'timeout'>(resolve => {
+      child.on('error', error => { if (!child.pid || (error as NodeJS.ErrnoException).code === 'ENOENT') resolve('missing') })
+      child.once('close', () => resolve('ended'))
+      timer = setTimeout(() => resolve('timeout'), VERSION_BUDGET_MS)
+    })
+    let outcome: Awaited<typeof ended>
+    try { outcome = await Promise.race([ended, attempt.cancelled]) }
+    finally { clearTimeout(timer); if (child.exitCode === null && child.signalCode === null) child.kill() }
+    if (outcome === 'missing') throw new SshFailure('ssh-missing')
+    const version = openSshVersion(output)
+    if (!version) return
+    if (tooOld(version)) throw SshFailure.sshTooOld(version.text, this.platform())
+    recentEnough.set(spawner, (recentEnough.get(spawner) ?? new Set<string>()).add(executable))
+  }
   private readyTimeout(): number { return this.dependencies.readyTimeoutMs ?? 30_000 }
   private baseArguments(configuration: ValidatedSshHostConfiguration): string[] {
     // Windows' OpenSSH starts the askpass helper through cmd.exe, which keeps only the first line of a
@@ -227,14 +268,12 @@ export class SshHostLauncher {
   private start(attempt: Attempt, args: string[], stdin: 'pipe' | 'ignore'): SshRun {
     if (attempt.closed || !attempt.broker) throw attempt.failure ?? new SshFailure('cancelled')
     const caller = randomUUID()
-    const base = this.dependencies.env ?? process.env
-    const env: NodeJS.ProcessEnv = { ...base, LC_ALL: 'C', LANG: 'C', ...attempt.broker.environment(caller),
-      // OpenSSH before 8.4 ignores SSH_ASKPASS_REQUIRE and uses askpass only with a display set.
+    const base = this.environment()
+    const env: NodeJS.ProcessEnv = { ...base, ...attempt.broker.environment(caller),
+      // An ssh whose version checkVersion() could not read may predate 8.4, which uses askpass only with a display set.
       ...(this.platform() !== 'win32' && !base.DISPLAY ? { DISPLAY: 'sotto' } : {}) }
-    delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
-    const executable = this.dependencies.executable ?? sshExecutable(this.platform(), base)
     let child: ChildProcess
-    try { child = (this.dependencies.spawn ?? spawnSsh)(executable, args, { env, stdin }) }
+    try { child = this.spawner()(this.executable(), args, { env, stdin }) }
     catch { attempt.broker.forget(caller); throw new SshFailure('ssh-missing') }
     let exited!: () => void
     const run: SshRun = { caller, child, stderr: '', exited: new Promise<void>(resolve => { exited = resolve }) }

@@ -24,6 +24,12 @@ for (let index = 0; index < args.length; index++) {
 }
 const option = name => { for (let index = 0; index < args.length - 1; index++) if (args[index] === '-o' && args[index + 1].startsWith(name + '=')) return args[index + 1].slice(name.length + 1) }
 const resolveOnly = args.includes('-G'), tunnel = args.includes('-N')
+if (args.includes('-V')) {
+  // `ssh -V` prints its version on stderr and exits; FAKE_SSH_VERSION stands in for an older OpenSSH.
+  record({ type: 'version' })
+  process.stderr.write(`${process.env.FAKE_SSH_VERSION || 'OpenSSH_9.6p1'} Ubuntu-3ubuntu13.19, OpenSSL 3.0.13 30 Jan 2024\n`, () => process.exit(0))
+  await new Promise(() => undefined)
+}
 
 /** Splits a command the way a POSIX shell reads single-quoted words, which is all the launcher sends. */
 function words(text) {

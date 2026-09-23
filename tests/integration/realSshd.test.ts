@@ -32,7 +32,7 @@ let root: string, sshd: ChildProcess | undefined, sshdLog = ''
 let install: string, data: string, fingerprint: string
 let manager: DesktopHosts | undefined, router: DesktopHostRouter | undefined
 const forwards: ChildProcess[] = [], prompts: NonNullable<HostStatus['prompt']>[] = [], scheduled: number[] = []
-let spawnCount = 0
+let spawnCount = 0, versionChecks = 0
 
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
 const descriptor = async (): Promise<{ pid: number; port: number; hostId: string; startedBy?: string } | undefined> => {
@@ -112,7 +112,9 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     delete env.SSH_AUTH_SOCK
     // The real ssh, pointed at the test's own client configuration. The forward is the ssh with -N.
     const spawner: SpawnSsh = (file, args, options) => {
-      spawnCount += 1
+      // `ssh -V` is the version check, which never connects; everything else is a connection's ssh.
+      if (args.includes('-V')) versionChecks += 1
+      else spawnCount += 1
       const child = spawnSsh(file, ['-F', join(root, 'ssh_config'), ...args], options)
       if (args.includes('-N')) forwards.push(child)
       return child
@@ -140,6 +142,8 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase'])
     expect(prompts[0]!.text).toContain(fingerprint)
     expect(spawnCount).toBe(4)
+    // The runner's real `ssh -V` was read and is new enough.
+    expect(versionChecks).toBe(1)
     const first = (await descriptor())!
     expect(first).toMatchObject({ startedBy: 'launch-script', hostId: row()!.hostId })
     const { clientId, hostId } = row()!

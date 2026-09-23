@@ -23,7 +23,7 @@ interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active:
  * the host needs. Everything else (an unreachable network, a host still starting) is retried. The code
  * decides, never the message.
  */
-const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(['ssh-missing', 'auth-failed', 'host-key-changed', 'host-key-rejected',
+const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(['ssh-missing', 'ssh-too-old', 'auth-failed', 'host-key-changed', 'host-key-rejected',
   'identity-file-unreadable', 'prompt-unanswered', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid'])
 /** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
 class FinalHostError extends Error {}
