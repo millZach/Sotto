@@ -1007,6 +1007,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),
+        acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.projects(), git: runWorktreeGit,

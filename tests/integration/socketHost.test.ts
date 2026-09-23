@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { execFileSync } from 'node:child_process'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -111,6 +112,22 @@ describe('authenticated host socket', () => {
 
 
 describe('socket client isolation and reconnect', () => {
+  it('carries a thread\'s Git status to a paired client through the shell it already receives', async () => {
+    // The host reads the folder; the client only reads the record, over the socket, the way any other field arrives.
+    await native.initializeWorkingFolders(join(root, 'workspaces'))
+    const folder = join(root, 'workspaces', 'project') // where initializeWorkingFolders puts the fixture project
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: folder, windowsHide: true, encoding: 'utf8' })
+    git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'commit.gpgSign', 'false')
+    await writeFile(join(folder, 'work.txt'), 'first\n'); git('add', '.'); git('commit', '-qm', 'First')
+    const { client } = await pair()
+    await client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads[0]!.id
+    await client.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic prompt' })
+    await client.command({ type: 'refresh-thread-worktree', threadId })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git?.branch).toBe('main')
+    expect(client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git).toMatchObject({ isRepository: true, hasRemote: false, dirty: false, ahead: 0, behind: 0, pullRequest: null })
+  })
   it('resyncs after a dropped connection without sending the old command again', async () => {
     const { client } = await pair()
     const id = randomUUID()

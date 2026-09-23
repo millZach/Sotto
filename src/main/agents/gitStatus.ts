@@ -16,13 +16,20 @@ export type RunGitCommand = (cwd: string, command: 'git' | 'gh', args: readonly 
  */
 const QUIET_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never', GH_PROMPT_DISABLED: '1' }
 
+const REDIRECTING_GIT_VARIABLES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_CEILING_DIRECTORIES', 'GIT_PREFIX', 'GIT_EXTERNAL_DIFF', 'GIT_EDITOR', 'GIT_SEQUENCE_EDITOR', 'GIT_PAGER'] as const
+/** Thrown when Git itself is missing: no status is published then, rather than a folder called "not a repository". */
+export class GitUnavailableError extends Error {}
+
 export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options = {}) => new Promise((accept, reject) => {
   const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never', ...options.env }
-  for (const key of Object.keys(env)) if (/^GIT_/i.test(key) && !['GIT_TERMINAL_PROMPT', 'GIT_ASKPASS'].includes(key)) delete env[key]
+  // Variables that would point Git at another repository or index are dropped; the ones that carry the
+  // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
+  // reaches the remote the way the user's own Git does.
+  for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
   execFile(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], {
     cwd, windowsHide: true, shell: false, timeout: options.timeoutMs ?? 30_000, maxBuffer: 8_000_000, env, encoding: 'utf8',
   }, (error, stdout, stderr) => {
-    if (error) reject(Object.assign(new Error(error.code === 'ENOENT' ? `${command} is not installed or is not on PATH.` : stderr.trim() || error.message), { code: error.code }))
+    if (error) reject(error.code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : Object.assign(new Error(stderr.trim() || error.message), { code: error.code }))
     else accept(stdout)
   })
 })
@@ -38,11 +45,11 @@ export interface GitStatusReaderOptions {
 export interface GitStatusSource {
   read(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus>
   /** A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches. */
-  invalidate(cwd?: string): void
+  invalidate(): void
 }
 
 const FETCH_TIMEOUT_MS = 5_000
-/** A fetch that succeeded is not repeated for this long, however often status is read (T3's figure). */
+/** A fetch that succeeded is not repeated for this long, however often status is asked for (T3's figure); the timer itself runs at the fetch interval. */
 const FETCH_FRESH_MS = 15_000
 const FETCH_BACKOFF_MS = 30_000
 /** A pull request answer is kept this long before GitHub is asked again. */
@@ -58,7 +65,7 @@ const rawPullRequestSchema = z.array(z.object({
 }))
 
 interface FetchRecord { failures: number; nextAt: number; fetchedAt: number | null; inFlight?: Promise<void> }
-interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null; known: boolean }
+interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null }
 
 const EMPTY: Omit<GitStatus, 'readAt'> = { isRepository: false, branch: null, upstream: null, hasRemote: false, defaultBranch: null, isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null }
 
@@ -103,7 +110,7 @@ export class GitStatusReader implements GitStatusSource {
     const readAt = new Date(this.now()).toISOString()
     let common: string
     try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim() }
-    catch { return { ...EMPTY, readAt } }
+    catch (error) { if (error instanceof GitUnavailableError) throw error; return { ...EMPTY, readAt } }
     const remotes = (await this.git(cwd, ['remote']).catch(() => '')).split('\n').map(line => line.trim()).filter(Boolean)
     const hasRemote = remotes.includes('origin')
     if (options.remote && hasRemote) await this.fetchIfStale(cwd, common)
@@ -183,10 +190,11 @@ export class GitStatusReader implements GitStatusSource {
     const record = this.pullRequests.get(key)
     const stale = !record || record.epoch !== this.epoch || this.now() >= record.nextAt
     if (!refresh || !stale) return record?.value ?? null
-    // A branch nobody has pushed has no pull request, and GitHub is not asked about it.
+    // A branch nobody has pushed has no pull request, and GitHub is not asked about it. That is checked on
+    // every remote read, so a push made in a terminal is seen as soon as the fetch has brought its ref.
     if (!upstream) {
       const published = (await this.git(cwd, ['for-each-ref', '--count=1', '--format=%(refname)', `refs/remotes/*/${branch}`]).catch(() => '')).trim()
-      if (!published) { this.pullRequests.set(key, { epoch: this.epoch, failures: 0, nextAt: this.now() + PULL_REQUEST_FRESH_MS, value: null, known: true }); return null }
+      if (!published) return null
     }
     try {
       const raw = await this.run(cwd, 'gh', ['pr', 'list', '--head', branch, '--state', 'all', '--limit', '20', '--json', 'number,title,url,state,isDraft,headRefName,updatedAt'], { env: QUIET_ENV })
@@ -195,12 +203,12 @@ export class GitStatusReader implements GitStatusSource {
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
       const chosen = candidates.find(item => item.state === 'open') ?? (isDefaultBranch ? undefined : candidates[0])
       const value = chosen ? { number: chosen.number, title: chosen.title, url: chosen.url, state: chosen.state, draft: chosen.isDraft } : null
-      this.pullRequests.set(key, { epoch: this.epoch, failures: 0, nextAt: this.now() + PULL_REQUEST_FRESH_MS, value, known: true })
+      this.pullRequests.set(key, { epoch: this.epoch, failures: 0, nextAt: this.now() + PULL_REQUEST_FRESH_MS, value })
       return value
     } catch {
       const failures = (record?.failures ?? 0) + 1
       // The last answer stands while GitHub cannot be asked; a failure is retried later, not on the next read.
-      this.pullRequests.set(key, { epoch: this.epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null, known: record?.known ?? false })
+      this.pullRequests.set(key, { epoch: this.epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null })
       return record?.value ?? null
     }
   }

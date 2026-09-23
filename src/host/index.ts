@@ -126,8 +126,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
             if (allowed) policy.grantRemoteAnswers(clientId, 'The user allowed this paired device to answer permission requests on the host.')
           },
         })
-        const started = listener
-        peersConnected = () => started.peers() > 0
+        const { peers } = listener
+        peersConnected = () => peers() > 0
         await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken }) + '\n', { encoding: 'utf8', mode: 0o600 })
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }

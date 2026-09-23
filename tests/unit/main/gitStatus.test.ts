@@ -4,12 +4,12 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitStatusReader, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' }).trim()
-const commit = (cwd: string, file: string, text: string, message: string) => { execFileSync('git', ['add', '.'], { cwd, windowsHide: true }); git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', message) }
+const commit = (cwd: string, message: string) => { execFileSync('git', ['add', '.'], { cwd, windowsHide: true }); git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', message) }
 
 /** A repository on `main`, pushed to an owned bare remote, with a second clone that can move the remote under it. */
 async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh?: (args: readonly string[]) => Promise<string> } = {}) {
@@ -17,7 +17,7 @@ async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh
   const repo = join(root, 'repo'), remote = join(root, 'remote.git'), other = join(root, 'other')
   await mkdir(repo)
   git(repo, 'init', '-q', '-b', 'main'); git(repo, 'config', 'user.name', 'Fixture'); git(repo, 'config', 'user.email', 'fixture@example.invalid'); git(repo, 'config', 'commit.gpgSign', 'false'); git(repo, 'config', 'core.autocrlf', 'false')
-  await writeFile(join(repo, 'work.txt'), 'first\n'); commit(repo, 'work.txt', 'first\n', 'First')
+  await writeFile(join(repo, 'work.txt'), 'first\n'); commit(repo, 'First')
   if (options.remote !== false) {
     git(root, 'init', '--bare', '-q', '-b', 'main', remote); git(repo, 'remote', 'add', 'origin', remote)
     git(repo, 'push', '-q', '-u', 'origin', 'main'); git(repo, 'remote', 'set-head', 'origin', 'main')
@@ -54,15 +54,22 @@ describe('Git status the way T3 reads it', () => {
   })
   it('reports ahead and behind against the fetched tracking ref, and diverged as both', async () => {
     const f = await fixture()
-    await writeFile(join(f.repo, 'work.txt'), 'local\n'); commit(f.repo, 'work.txt', 'local\n', 'Local commit')
+    await writeFile(join(f.repo, 'work.txt'), 'local\n'); commit(f.repo, 'Local commit')
     expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ ahead: 1, behind: 0 })
-    await writeFile(join(f.other, 'other.txt'), 'remote\n'); commit(f.other, 'other.txt', 'remote\n', 'Remote commit'); git(f.other, 'push', '-q')
+    await writeFile(join(f.other, 'other.txt'), 'remote\n'); commit(f.other, 'Remote commit'); git(f.other, 'push', '-q')
     // The tracking ref is stale until the remote half fetches.
     expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ ahead: 1, behind: 0 })
     const fetched = await f.reader.read(f.repo, { remote: true })
     expect(fetched).toMatchObject({ ahead: 1, behind: 1 })
     expect(fetched.fetchedAt).not.toBeNull()
     expect(f.fetches()).toBe(1)
+    // Behind alone, once the local commit is dropped.
+    git(f.repo, 'reset', '-q', '--hard', 'origin/main~1')
+    expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ ahead: 0, behind: 1 })
+  })
+  it('refuses to call a folder "not a repository" when Git itself is missing', async () => {
+    const reader = new GitStatusReader({ fetchIntervalMs: () => 0, run: async () => { throw new GitUnavailableError('git is not installed or is not on PATH.') } })
+    await expect(reader.read('C:/anywhere', { remote: false })).rejects.toBeInstanceOf(GitUnavailableError)
   })
   it('fetches at most once per fresh window, backs off after a failure, and never fetches with the interval off', async () => {
     const f = await fixture()
@@ -93,7 +100,7 @@ describe('Git status the way T3 reads it', () => {
     git(f.repo, 'switch', '-q', '--detach')
     expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ branch: null, upstream: null, isDefaultBranch: false, aheadOfDefault: null })
     git(f.repo, 'switch', '-q', '-c', 'feature', 'main')
-    await writeFile(join(f.repo, 'feature.txt'), 'feature\n'); commit(f.repo, 'feature.txt', 'feature\n', 'Feature work')
+    await writeFile(join(f.repo, 'feature.txt'), 'feature\n'); commit(f.repo, 'Feature work')
     expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ branch: 'feature', upstream: null, isDefaultBranch: false, aheadOfDefault: 1, ahead: 1, behind: 0 })
   })
   it('asks GitHub for the branch pull request only once it is published, caches the answer, and asks again after an action', async () => {
@@ -104,11 +111,10 @@ describe('Git status the way T3 reads it', () => {
     ])]
     const f = await fixture({ gh: async () => answers[0]! })
     git(f.repo, 'switch', '-q', '-c', 'feature')
-    await writeFile(join(f.repo, 'feature.txt'), 'feature\n'); commit(f.repo, 'feature.txt', 'feature\n', 'Feature work')
+    await writeFile(join(f.repo, 'feature.txt'), 'feature\n'); commit(f.repo, 'Feature work')
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest).toBeNull()
     expect(f.ghCalls()).toBe(0) // unpublished: nothing to ask about
     git(f.repo, 'push', '-q', '-u', 'origin', 'feature')
-    f.advance(60_001)
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest).toEqual({ number: 9, title: 'Newer', url: 'https://github.com/o/r/pull/9', state: 'open', draft: true })
     expect(f.ghCalls()).toBe(1)
     await f.reader.read(f.repo, { remote: true }); await f.reader.read(f.repo, { remote: false })
