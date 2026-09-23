@@ -67,10 +67,10 @@ describe('stopping a side call', () => {
     const stop = new AbortController()
     const pending = f.host.writeShortText!(f.id, prompt, stop.signal)
     await expect.poll(async () => (await recorded(f.root)).length).toBe(1)
-    const stopped = Date.now()
     stop.abort()
+    // The fake holds its answer for a minute, past this test's deadline, and would then succeed, so a
+    // rejection inside the deadline is the abort ending the call; no stopwatch is needed to show it.
     await expect(pending).rejects.toThrow()
-    expect(Date.now() - stopped).toBeLessThan(30_000)
   })
 })
 
