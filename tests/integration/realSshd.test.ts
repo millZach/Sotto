@@ -130,13 +130,13 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     })
     const remote = { id: randomUUID(), name: 'Real sshd', target: `${userInfo().username}@localhost`, identityFile: join(root, 'client_key'), installPath: install, dataDirectory: data }
     const row = () => manager!.get().hosts.find(host => host.id === remote.id)
-    const failure = () => `\nhost row: ${JSON.stringify(row())}\nsshd:\n${sshdLog}`
+    const diagnostics = () => `\nhost row: ${JSON.stringify(row())}\nsshd:\n${sshdLog}`
     await manager.command({ type: 'save', host: remote })
 
     // Connect: the host key and the key's passphrase are asked once each, through the real askpass
     // helper, although four ssh processes (-G, launch, forward, pairing code) run.
     await manager.command({ type: 'connect', id: remote.id })
-    expect(row(), failure()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase'])
     expect(prompts[0]!.text).toContain(fingerprint)
     expect(spawnCount).toBe(4)
@@ -158,7 +158,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     const dropped = Date.now()
     forwards[0]!.kill('SIGKILL')
     await vi.waitFor(() => expect(row()).toMatchObject({ phase: 'connecting', reconnecting: true }), { timeout: 10_000 })
-    await vi.waitFor(() => expect(row(), failure()).toMatchObject({ phase: 'connected', reconnecting: false }), { timeout: 60_000, interval: 100 })
+    await vi.waitFor(() => expect(row(), diagnostics()).toMatchObject({ phase: 'connected', reconnecting: false }), { timeout: 60_000, interval: 100 })
     expect(Date.now() - dropped).toBeGreaterThanOrEqual(reconnectDelayMs(0))
     expect(scheduled).toEqual([0])
     expect(row()).toMatchObject({ clientId, hostId, owned: true })
@@ -173,7 +173,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
 
     // Stop host stops it.
     await manager.command({ type: 'connect', id: remote.id })
-    expect(row(), failure()).toMatchObject({ phase: 'connected', owned: true, clientId })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId })
     await manager.command({ type: 'stop-host', id: remote.id })
     expect(row()!.phase).toBe('disconnected')
     await vi.waitFor(() => expect(alive(first.pid)).toBe(false), { timeout: 10_000 })
@@ -181,7 +181,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     // The next connect starts a new host on the same identity and pairing, and Forget revokes that
     // pairing on the host and stops it.
     await manager.command({ type: 'connect', id: remote.id })
-    expect(row(), failure()).toMatchObject({ phase: 'connected', owned: true, clientId, hostId })
+    expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId, hostId })
     const second = (await descriptor())!
     expect(second.pid).not.toBe(first.pid)
     const before = new PairedClients(data); await before.load()
