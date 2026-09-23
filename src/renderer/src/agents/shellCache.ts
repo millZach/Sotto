@@ -1,4 +1,4 @@
-import { agentShell, type AgentState } from '../../../shared/agents'
+import { agentShell, hostForThread, type AgentHostSnapshot, type AgentModel, type AgentState } from '../../../shared/agents'
 
 /**
  * The last shell the window saw, kept so the Threads page paints its rows on the first frame after a
@@ -26,6 +26,33 @@ function storage(): ShellCacheStorage | null {
 }
 
 /**
+ * Every catalog on the shell, the host's own and each client host's, trimmed to the models its own threads
+ * reference. A restored shell is stale and disconnected: nothing that offers a model needs one beyond what
+ * a thread already carries until the real state lands (`ThreadOptions.canCreateWith` already refuses every
+ * model but a thread's own while disconnected). The account's full catalog, hundreds of models on some
+ * accounts, repaints from main once connected.
+ */
+function trimCatalogsToReferencedModels(host: AgentHostSnapshot): AgentHostSnapshot {
+  const referenced = new Map<readonly AgentModel[], Set<string>>()
+  for (const thread of host.threads) {
+    const models = hostForThread(host, thread).models
+    let ids = referenced.get(models)
+    if (!ids) referenced.set(models, ids = new Set())
+    ids.add(thread.modelId)
+  }
+  const trimmed = new Map<readonly AgentModel[], AgentModel[]>()
+  const trim = (models: readonly AgentModel[]): AgentModel[] => {
+    const cached = trimmed.get(models)
+    if (cached) return cached
+    const ids = referenced.get(models) ?? new Set<string>()
+    const result = models.filter(model => ids.has(model.id))
+    trimmed.set(models, result)
+    return result
+  }
+  return { ...host, models: trim(host.models), clientHosts: host.clientHosts?.map(entry => ({ ...entry, models: trim(entry.models) })) }
+}
+
+/**
  * The shell as it is safe to keep: what a sidebar row draws, and nothing else. Drafts, follow-ups and
  * delivery evidence are deliberately dropped rather than trimmed — they are durable in main, and a copy
  * from the last run is not evidence of what is on disk now.
@@ -34,7 +61,7 @@ export function cacheableShell(state: AgentState): AgentState {
   const shell = agentShell(state)
   return {
     ...shell,
-    host: { ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], monitoring: undefined, backgroundWork: undefined })) },
+    host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], monitoring: undefined, backgroundWork: undefined })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
     // Attention is live: what needed the user last time is not what needs them now, and a restored

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
-  type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail,
+  type AgentBridge, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail,
   type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks() })
@@ -15,6 +15,8 @@ const message = (id: string, role: AgentMessage['role'], text: string): AgentMes
 function thread(id: string, messages: AgentMessage[]): AgentThread {
   return { id, title: id, projectId: 'project', modelId: 'claude:test', status: 'idle', messages, requests: [] }
 }
+
+const model = (id: string): AgentModel => ({ id, provider: 'Claude Code', providerId: 'claude', name: id, ready: true })
 
 function fullState(threads: AgentThread[], activeThreadId: string | null = null): AgentState {
   return {
@@ -176,6 +178,43 @@ describe('the startup shell cache', () => {
     renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull())
     expect(readShellCache()).toBeNull()
+  })
+
+  it('trims a large catalog to the models its threads reference, so the cache stays under the cap', () => {
+    const kept = model('claude:kept')
+    const catalog = [kept, ...Array.from({ length: 700 }, (_, index) => model(`catalog:unused-${index}`))]
+    const live = { ...fullState([{ ...thread('workshop', []), modelId: kept.id }]) }
+    live.host = { ...live.host, models: catalog }
+    writeShellCache(live)
+    const raw = localStorage.getItem(SHELL_CACHE_KEY)
+    expect(raw).not.toBeNull()
+    expect(raw!.length).toBeLessThan(20_000)
+    const restored = readShellCache()
+    expect(restored!.host.models).toEqual([kept])
+  })
+
+  it('restores each host\'s own catalog, trimmed to what its threads reference, including a remote host\'s own', () => {
+    const ownModel = model('local:kept'), ownUnused = model('local:unused')
+    const remoteModel = model('remote:kept'), remoteUnused = model('remote:unused')
+    const ownCatalog = [ownModel, ownUnused]
+    const remoteCatalog = [remoteModel, remoteUnused]
+    const live = fullState([
+      { ...thread('local-thread', []), hostId: 'local-host', modelId: ownModel.id },
+      { ...thread('remote-thread', []), hostId: 'remote-host', modelId: remoteModel.id },
+    ])
+    live.host = {
+      ...live.host, models: ownCatalog,
+      clientHosts: [
+        // The selected host's own entry is the very array `host.models` holds, as the desktop router produces.
+        { hostId: 'local-host', connected: true, models: ownCatalog, capabilities: live.host.capabilities },
+        { hostId: 'remote-host', connected: true, models: remoteCatalog, capabilities: live.host.capabilities },
+      ],
+    }
+    writeShellCache(live)
+    const restored = readShellCache()!
+    expect(restored.host.models).toEqual([ownModel])
+    expect(restored.host.clientHosts!.find(entry => entry.hostId === 'local-host')!.models).toEqual([ownModel])
+    expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
   })
 })
 
