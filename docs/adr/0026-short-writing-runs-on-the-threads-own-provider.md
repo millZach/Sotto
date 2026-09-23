@@ -18,7 +18,7 @@ Accepted September 22, 2026. Sotto writes four kinds of short text on the user's
 
 ## Consequences
 
-- Naming is slower. A side call starts its client cold, and a title can take from a few seconds (Claude Code, Codex) to half a minute (Grok) where OpenRouter took one or two. Titles and branch names run in the background; the commit and pull request forms wait for their draft as before, up to ninety seconds.
+- Naming is slower. A side call starts its client cold, and a new thread's title arrived 9 to 22 seconds after the first prompt was sent in the live check (`docs/verification/short-writing-on-the-thread-provider.md`), where OpenRouter took one or two seconds. Titles and branch names run in the background; the commit and pull request forms wait for their draft as before, up to ninety seconds.
 - Each side call is billed to the thread's own subscription, at the lowest effort the model offers.
 - The Grok call copies Grok's own runtime into its throwaway home, as the Grok reasoning path does, and removes it when the call ends.
 - A remote host (ADR-0025, issue #209) needs no OpenRouter key for naming or drafting: the providers it runs already write for their own threads. `createAgentRuntime` builds the writer over its own `WorkspaceHost` and reads the switches through `writingSettings`, which carries no key. ADR-0025's sentence that titles and branch names on a host need the key is amended to point here.
