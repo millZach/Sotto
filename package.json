@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:host": "vitest run tests/integration/headlessHost.test.ts tests/integration/headlessProcess.test.ts tests/integration/adapterContract.test.ts tests/integration/claudeAdapter.test.ts tests/integration/grokAdapter.test.ts tests/integration/devinAdapter.test.ts tests/unit/main/headlessCredentials.test.ts tests/unit/main/agentRuntimeShutdown.test.ts tests/unit/main/agentReasonerShutdown.test.ts --maxWorkers=2",
+    "test:host": "vitest run tests/integration/headlessHost.test.ts tests/integration/headlessProcess.test.ts tests/integration/headlessWorktreeCleanup.test.ts tests/integration/adapterContract.test.ts tests/integration/claudeAdapter.test.ts tests/integration/grokAdapter.test.ts tests/integration/devinAdapter.test.ts tests/unit/main/headlessCredentials.test.ts tests/unit/main/agentRuntimeShutdown.test.ts tests/unit/main/agentReasonerShutdown.test.ts --maxWorkers=2",
     "test:tts-bench": "node --test scripts/tts-bench/*.test.mjs",
     "memeval": "node scripts/memeval/bench-memeval.mjs --backend none --cases scripts/memeval/cases/v1.json",
     "test:coverage": "vitest run --coverage",
