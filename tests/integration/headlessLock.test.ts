@@ -51,9 +51,9 @@ describe('the host data folder lock', () => {
     await start()
     await expect(start()).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder, so this host did not start`)
   })
-  it('records this boot in the lease, and reclaims a lock from an earlier boot whose pid a running process now has', async () => {
+  it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('records this boot in the lease, and reclaims a lock from an earlier boot whose pid a running process now has', async () => {
     const boot = await readBootId()
-    if (boot === undefined) return
+    if (boot === undefined) throw new Error('readBootId found no boot identity on a platform that has one')
     const reused = sleeper()
     await new Promise(resolve => reused.once('spawn', resolve))
     await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: reused.pid, nonce: 'before-reboot', boot: boot + '-earlier' }))
