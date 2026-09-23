@@ -40,7 +40,7 @@ export interface ThreadRow {
   readonly stateLabel: string
   /** What a row that needs you is waiting for: a permission to allow or deny, or a question to answer. */
   readonly waitingFor: 'approval' | 'question' | null
-  /** The queue item waiting on a decision, when the row carries one inline. */
+  /** What the row is waiting on you to decide: the attention queue's item, or else the thread's first pending request in its shape. */
   readonly request: AgentQueueItem | undefined
   /** In the attention queue: a pending request or any queue entry. Search never hides these rows. */
   readonly attention: boolean
@@ -179,7 +179,13 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   // messages, and a thread whose messages did arrive derives exactly the same thing.
   const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
   const closed = isThreadClosed(thread)
-  const decision = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
+  const queued = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
+  // The attention queue holds requests only for threads with an assignment, and not a question supervision is still
+  // deciding. The provider's request is pending all the same, and the composer answers it from the thread.
+  const pending = closed || queued !== undefined ? undefined : thread.requests[0]
+  const decision: AgentQueueItem | undefined = queued ?? (pending === undefined ? undefined : {
+    id: `${thread.id}:${pending.id}`, threadId: thread.id, requestId: pending.id, kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
+  })
   const blocked = state.queue.find(item => item.threadId === thread.id && item.kind === 'blocked')
   const attention = !closed && (thread.requests.length > 0 || state.queue.some(item => item.threadId === thread.id))
   // Once you take over, Sotto's earlier stop is history: manual outranks stopped.

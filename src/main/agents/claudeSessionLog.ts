@@ -46,6 +46,8 @@ export class ClaudeSessionLog {
   /** `onSettled` runs once after each read that delivered entries, so a long catch-up costs one publish, not one per line. */
   constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void, private readonly onSettled?: () => void) {}
   async exists(): Promise<boolean> { const path = await this.resolve(); return Boolean(path && (await stat(path).catch(() => undefined))?.isFile()) }
+  /** The session's folder beside its transcript, where Claude Code files its subagents' own transcripts. */
+  async sessionFolder(): Promise<string | undefined> { const path = await this.resolve(); return path ? path.slice(0, -'.jsonl'.length) : undefined }
   /** Start the next read at a stored cursor instead of byte zero, while nothing has been read yet. */
   resume(cursor: ClaudeTranscriptCursor): void { if (!this.offset && !this.line) this.resumeFrom = cursor }
   /** The cursor to store for the next run, or nothing while no file has been read. */

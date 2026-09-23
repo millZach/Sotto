@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/agent-browser/**',
+      'artifacts/browser-grant/**',
       'artifacts/new-thread-setup/**',
       '.cache/**',
       'artifacts/settled-folder-new-thread/**',
@@ -17,6 +18,7 @@ export default tseslint.config(
       '.claude/worktrees/**',
       'coverage/**',
       'artifacts/question-choices/**',
+      'artifacts/sidebar-question/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',

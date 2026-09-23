@@ -224,6 +224,19 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
   })
 
+  it('turns browser previews off through the ordinary patch flow', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
+
+    const toggle = screen.getByRole('switch', { name: 'Show browser previews' })
+    expect(toggle).toBeChecked()
+    await user.click(toggle)
+
+    expect(update).toHaveBeenCalledWith({ showBrowserPreviews: false })
+  })
+
   it('offers the writing model and the off switch for generated thread titles', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)

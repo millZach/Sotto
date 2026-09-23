@@ -48,9 +48,11 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Browser task.** One thread's work with a page in Sotto's browser, including its current action, user decisions, checks and evidence. A browser task may be working, paused, completed or failed; its reported result states what was checked and what remains unchecked.
 
-**Browser preview.** The small corner view of a browser task's page. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work.
+**Browser preview.** The small corner view of a browser task's page, for the focused thread or the thread Tools is pinned to; another thread's task never shows there. Opening it reveals that same page in the Tools panel; dismissing it does not pause the work. **Show browser previews** in Settings turns every preview off without stopping the work or hiding it from Tools > Browser.
 
 **Shared browser page.** A browser page the user has made observable to its owning thread. Sharing observation does not approve navigation, clicks or typing, and revoking it ends that access.
+
+**Page-opening grant.** The user's answer, given on a request to open a page, that lets one thread open pages and go to other pages in Sotto's browser without asking again for the rest of the app session. A page it opens is shared the way Open and share shares it, and nothing more: clicks and typing still ask every time, and a page the user opened stays private until shared. It is shaped like a policy record but held only in memory, and ends at Stop in Tools > Browser, when the thread is gone, and when Sotto closes. Only the user's own answer in Tools makes one; supervision, a memory, repetition or a provider's confirmation never does (ADR-0020). Avoid: "trust", "auto-approve", "allowance", which is a Devin profile's word.
 
 **Browser feedback.** A screenshot and optional selected-element or region context added to a thread's draft by the user. It is unsent draft content until the user sends it.
 
@@ -144,7 +146,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Allowance.** What a Devin thread's owned profile lets Devin do without asking: nothing, edits, or everything. Sotto writes it and reads it back, so it is what decides whether a permission request reaches the user. It carries out the permission mode the user chose; it is not an ADR-0004 policy record and is never a grant of authority. A provider's own conversation mode is set alongside the allowance and never stands in for one: a mode named for not asking says what the provider will not ask itself about, not what Sotto will stop asking (ADR-0022). Avoid: "grant", which is ADR-0004's word; "permission level"; "mode" for the allowance.
 
-**Attention queue.** The ordered list of threads that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
+**Attention queue.** The coordinator's ordered list of the threads with an assignment that need the user: a thread is `ready` for a prompt, has a `question`, has a `permission` request, or is `blocked`. It orders what the coordinator presents and says; it is not where a thread's waiting is recorded. A thread with no assignment never enters it, and neither does a question supervision is still deciding; the sidebar row and composer still say the thread waits on you from its own pending requests. Permissions are never answered automatically and are never inferred. Avoid: "inbox", "notifications".
 
 **Draft.** An unsent prompt or answer, including its attachments, owned by a thread or personal chat and optionally a question request. Each conversation retains its own drafts across navigation and restart. Sending ends a draft: the press starts a fresh empty revision, and what was sent is a sent message from then on. Accepting one submitted revision never clears a newer revision.
 
@@ -300,6 +302,8 @@ Answering a question or permission request and creating a project are also part 
 **Subagent.** A child agent reported by a thread's provider. It belongs to its parent thread and has an observational identity; it is not a Sotto thread or a target for commands.
 
 **Subagent roster.** The thread's retained list of reported subagents, shown in Tools under Agents. It includes finished agents and follows Tools' selected or pinned thread.
+
+**Subagent transcript.** The file Claude Code writes for a subagent it runs as its own session, beside the parent thread's transcript. Sotto reads only the model named on its first reply, for a roster row the stream left without one; the task and replies in it are never kept. Not the thread's own transcript, which Sotto reads for messages and activity.
 
 **Subagent assignment.** One task given to a subagent, with the result it reported. A reused subagent keeps its identity and earlier tasks; unlike a coordinator assignment, a subagent assignment grants Sotto no authority.
 
