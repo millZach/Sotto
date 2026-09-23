@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { access, constants, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { access, constants, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -28,13 +28,38 @@ const SAFE_ENVIRONMENT = new Set(['path', 'pathext', 'systemroot', 'windir', 'te
 const CONNECTION_ERROR = 'Could not verify the Grok subscription. Open Grok and check its sign-in, then check the connection in Sotto. Sotto will not switch to API billing.'
 async function removeSession(directory: string, parent: string): Promise<void> {
   if (dirname(resolve(directory)) !== resolve(parent)) throw new Error('Unexpected temporary Grok session directory.')
-  await rm(directory, { recursive: true, force: true })
+  // Windows can hold a file for a moment after Grok exits; a home left behind keeps the prompt on disk.
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
+const sweeps = new Map<string, Promise<void>>()
+/**
+ * Removes the throwaway Grok homes an earlier run of Sotto left in `parent`, once per folder per process: a
+ * crash, a kill or a removal that failed mid-call leaves one behind, holding the call's prompt in Grok's
+ * session store where nothing ever reads it. Only folders made before this process started are touched, so
+ * a call already running here keeps its home, and every call waits for the sweep before it makes its own.
+ */
+export function sweepLeftoverSessions(parent: string): Promise<void> {
+  const key = resolve(parent)
+  let sweep = sweeps.get(key)
+  if (!sweep) {
+    const started = Date.now() - process.uptime() * 1000
+    sweep = (async () => {
+      for (const entry of await readdir(key, { withFileTypes: true }).catch(() => [])) {
+        if (!entry.isDirectory() || !entry.name.startsWith('grok-')) continue
+        const directory = join(key, entry.name)
+        try { if ((await stat(directory)).mtimeMs < started) await removeSession(directory, key) } catch { /* The next start tries again. */ }
+      }
+    })()
+    sweeps.set(key, sweep)
+  }
+  return sweep
 }
 
 /** The native Grok process reads its own auth path; Sotto never reads or copies credentials. */
 export class GrokSubscriptionClient implements SubscriptionClient {
   constructor(private readonly workingDirectory: string, private readonly options: GrokSubscriptionOptions = {}) {
     if (!isAbsolute(workingDirectory)) throw new Error('Grok reasoning requires an absolute isolated working directory.')
+    void sweepLeftoverSessions(workingDirectory)
   }
 
   async status(signal?: AbortSignal): Promise<SubscriptionAccount> {
@@ -141,6 +166,7 @@ export class GrokSubscriptionClient implements SubscriptionClient {
   private async withSession<T>(executable: string, timeoutMs: number, work: (rpc: GrokRpc, directory: string) => Promise<T>, signal?: AbortSignal, cwd?: string): Promise<T> {
     signal?.throwIfAborted()
     await mkdir(this.workingDirectory, { recursive: true })
+    await sweepLeftoverSessions(this.workingDirectory)
     const directory = await mkdtemp(join(this.workingDirectory, 'grok-'))
     const environment = this.options.environment ?? process.env
     const nativeHome = environment.GROK_HOME && isAbsolute(environment.GROK_HOME) ? environment.GROK_HOME : join(homedir(), '.grok')

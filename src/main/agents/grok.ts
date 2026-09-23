@@ -12,7 +12,7 @@ import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
-import { GrokSubscriptionClient } from './subscriptionGrok'
+import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -256,6 +256,8 @@ export class GrokAcpHost implements AgentHost {
     const generation = this.generation
     await this.usage.load()
     await mkdir(this.userDataDirectory, { recursive: true })
+    // Side calls' throwaway homes that a crash or a failed removal left behind hold thread content (ADR-0026).
+    await sweepLeftoverSessions(join(this.userDataDirectory, 'writing', 'grok'))
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new Error('Install Grok CLI and sign in before connecting Grok.')
     this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.answeredRequests.clear(); this.histories.clear()

@@ -20,6 +20,6 @@ Accepted September 22, 2026. Sotto writes four kinds of short text on the user's
 
 - Naming is slower. A side call starts its client cold, and a new thread's title arrived 9 to 22 seconds after the first prompt was sent in the live check (`docs/verification/short-writing-on-the-thread-provider.md`), where OpenRouter took one or two seconds. Titles and branch names run in the background; the commit and pull request forms wait for their draft as before, up to ninety seconds.
 - Each side call is billed to the thread's own subscription, at the lowest effort the model offers.
-- The Grok call copies Grok's own runtime into its throwaway home, as the Grok reasoning path does, and removes it when the call ends.
+- The Grok call copies Grok's own runtime into its throwaway home, as the Grok reasoning path does, and removes it when the call ends. That home holds the call's prompt in Grok's session store, so a home a crash, a kill or a failed removal left behind is removed the next time Sotto starts a Grok call or connects Grok, for side writing and reasoning alike.
 - A remote host (ADR-0025, issue #209) needs no OpenRouter key for naming or drafting: the providers it runs already write for their own threads. `createAgentRuntime` builds the writer over its own `WorkspaceHost` and reads the switches through `writingSettings`, which carries no key. ADR-0025's sentence that titles and branch names on a host need the key is amended to point here.
 - ADR-0014's sentence that the first prompt goes to the writing model to name a branch is amended to point here.

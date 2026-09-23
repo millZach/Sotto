@@ -6,7 +6,7 @@
  * `adapterContract.ts` covers the success path and the thread's silence for every adapter.
  */
 import { randomUUID } from 'node:crypto'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentHost } from '../../src/main/agents/host'
@@ -116,6 +116,20 @@ describe('Grok side writing', () => {
     expect(await readdir(join(f.root, 'writing', 'grok'))).toEqual([])
     // The thread's leader never saw a prompt or a session it did not own.
     expect(JSON.stringify(await f.driver.requests())).not.toContain('Fix the dark theme contrast')
+  })
+
+  it('removes the throwaway homes an earlier run left behind when it connects, and keeps one made since', async () => {
+    const f = await grokFixture()
+    cleanups.push(() => f.cleanup())
+    const parent = join(f.root, 'writing', 'grok'), earlier = new Date(Date.now() - process.uptime() * 1000 - 60_000)
+    await mkdir(join(parent, 'grok-crashed', 'home', 'sessions'), { recursive: true })
+    await writeFile(join(parent, 'grok-crashed', 'home', 'sessions', 'session.json'), JSON.stringify({ prompt: 'Fix the dark theme contrast' }))
+    await utimes(join(parent, 'grok-crashed'), earlier, earlier)
+    await mkdir(join(parent, 'grok-running'))
+    await mkdir(join(parent, 'not-a-home'))
+    await utimes(join(parent, 'not-a-home'), earlier, earlier)
+    await f.host.connect()
+    expect((await readdir(parent)).sort()).toEqual(['grok-running', 'not-a-home'])
   })
 
   it('rejects a failed prompt and answers null for a thread it does not hold', async () => {
