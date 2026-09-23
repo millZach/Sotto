@@ -7,7 +7,16 @@ import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 const SHOTS = 'artifacts/new-thread-setup'
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim()
+/** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
+const git = (cwd: string, ...args: string[]): string => {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }
+    catch (error) {
+      if (attempt >= 30 || !/index\.lock/u.test(error instanceof Error ? error.message : '')) throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+    }
+  }
+}
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase()
 const countWorktrees = (repo: string): number => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).length
 async function commitFile(repo: string, name: string, text: string): Promise<void> {
