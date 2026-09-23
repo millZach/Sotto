@@ -1,47 +1,6 @@
-/* The shared tools panel beside the thread panes, in the sidebar's tone so both edges of the workspace read
-   as supporting columns around the conversation. Type: tree rows and controls 14px, file text 14px mono,
-   paths and notices 12–13px. Narrow windows overlay the panel instead of shrinking the panes. */
-.tools-panel {
-  --tools-bg: var(--tt-sidebar, #050706);
-  --tools-hover: var(--tt-hover, rgb(255 255 255 / 6%));
-  position: relative; z-index: 5; display: flex; flex: none; width: var(--tools-width, 380px); min-height: 0; height: 100%;
-}
-.tools-panel[data-mode='overlay'] { width: 0; }
-.tools-panel__sheet {
-  container: tools-sheet / inline-size;
-  position: absolute; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: var(--tools-width, 380px); min-width: 0;
-  border-left: 1px solid var(--tt-hairline); background: var(--tools-bg); color: var(--tt-text-2);
-}
-.tools-panel[data-mode='overlay'] .tools-panel__sheet { box-shadow: var(--tt-shadow-lg); }
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .tools-panel__sheet { animation: tools-arrive .16s ease-out; }
-  :root:not([data-reduced-motion='on']) .tools-panel [data-busy] svg { animation: tools-spin .8s linear infinite; }
-  :root:not([data-reduced-motion='on']) .tools-panel .files-tree__chevron { transition: transform .16s ease; }
-  :root:not([data-reduced-motion='on']) .tools-panel .files-tree__loading,
-  :root:not([data-reduced-motion='on']) .tools-panel .files-preview__loading { animation: tools-late .3s step-end both; }
-}
-@keyframes tools-arrive { from { opacity: 0; transform: translateX(12px); } }
-@keyframes tools-spin { to { transform: rotate(360deg); } }
-@keyframes tools-late { from { visibility: hidden; } }
-
-/* The left edge resizes; it shows the accent only while it is used. */
-.tools-panel__resize { position: absolute; top: 0; bottom: 0; left: -4px; z-index: 1; width: 8px; cursor: col-resize; touch-action: none; outline-offset: -3px; }
-.tools-panel__resize::before { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; content: ''; }
-.tools-panel__resize:is(:hover, :focus-visible)::before { background: var(--tt-activity); }
-
-.tools-panel__head { flex: none; border-bottom: 1px solid var(--tt-hairline); }
-.tools-panel__bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 6px 8px 0 10px; }
-.tools-surfaces { display: flex; gap: 2px; min-width: 0; }
-.tools-surfaces__tab { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
-.tools-surfaces__tab:hover { color: var(--tt-text-2); }
-.tools-surfaces__tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
-.tools-panel__actions { display: flex; align-items: center; gap: 2px; padding-bottom: 5px; }
-/* Five tabs stay visible at the minimum width; folder actions use their own line when narrow. */
-@container tools-sheet (max-width: 579px) {
-  .tools-panel__bar { gap: 4px; padding-left: 6px; }
-  .tools-surfaces__tab { padding: 0 7px; }
-  .tools-surfaces__icon { display: none; }
-}
+/* The Tools panel's surfaces: Files, Changes, Terminal and Browser, and the controls they share. The panel
+   around them, its rail, lines of chrome and footer, is toolsRail.css. Type: tree rows and controls 14px, file
+   text 13px mono, paths and notices 12–13px. */
 
 .tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
@@ -52,28 +11,12 @@
 .tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
-.tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.tools-panel__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 999px; color: var(--tt-accent-text); font-size: 12px; }
-/* The working copy in the pane chip's words: project, then branch or folder. The branch loses its end, never the project. */
-.tools-panel__copy { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 8px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
-.tools-panel__copy > svg { flex: none; color: var(--tt-text-muted); }
-.tools-panel__project { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
-.tools-panel__sep { flex: none; color: var(--tt-text-muted); }
-.tools-panel__label { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
-.tools-panel__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; container: tools-body / inline-size; }
-.tools-panel__status:empty { display: none; }
-.tools-panel__status { position: absolute; bottom: 14px; left: 50%; z-index: 2; margin: 0; padding: 7px 14px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); font-size: 13px; white-space: nowrap; transform: translateX(-50%); }
-
 /* Files: the tree, and the open file stacked beneath it (side by side once the panel is wide). */
 .files-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .files-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 8px 0; padding: 4px 4px 4px 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-2); font-size: 13px; line-height: 1.4; }
 .files-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px 6px 18px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 /* A short folder takes only its rows; a long one stops at about a third so the open file keeps the room. */
 .files-surface[data-preview] > .files-tree { flex: none; max-height: clamp(120px, 36%, 340px); border-bottom: 1px solid var(--tt-hairline); padding-bottom: 6px; }
-@container tools-body (min-width: 600px) {
-  .files-surface[data-preview] { flex-direction: row; }
-  .files-surface[data-preview] > .files-tree { width: 240px; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
-}
 .files-tree__list { display: flex; flex-direction: column; min-width: max-content; }
 .files-tree__item, .files-tree__status { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px 0 calc(6px + var(--files-depth, 0) * 16px); border-radius: 7px; font-size: 14px; }
 .files-tree__item { border: 1px solid transparent; color: var(--tt-text-2); cursor: pointer; user-select: none; }
@@ -114,7 +57,6 @@
 .changes-surface > * { flex: none; }
 .changes-surface > .changes-list { flex: 1; }
 .changes-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
-.changes-summary__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-summary__branch { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 12px; }
 .changes-list { min-height: 0; margin: 0; overflow: auto; padding: 6px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-surface[data-diff] > .changes-list { flex: none; max-height: clamp(96px, 30%, 280px); border-bottom: 1px solid var(--tt-hairline); }
@@ -125,7 +67,10 @@
 .changes-list__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .changes-list__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .changes-list__name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The folder gives way first and keeps its end, where the nearest folder name is. */
+/* The folder and staging beside the name, as one muted run. The folder gives way first and keeps its end, where
+   the nearest folder name is. */
+.changes-list__meta { display: flex; flex: 0 1 auto; align-items: baseline; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.changes-list__sep, .changes-list__staging { flex: none; }
 .changes-list__folder { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12px; font-weight: 600; line-height: 1; }
 .changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { border-color: color-mix(in srgb, var(--tt-success) 45%, transparent); color: var(--tt-success); }
@@ -151,13 +96,6 @@
 .changes-line[data-kind='hunk']:first-child { margin-top: 0; }
 .changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
 .changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 10px 16px 20px; color: var(--tt-text-muted); font-size: 13px; }
-@container tools-body (min-width: 600px) {
-  .changes-surface[data-diff] { display: grid; grid-template: 'summary summary' auto 'actions actions' auto 'list note' auto 'list diff' minmax(0, 1fr) / 240px minmax(0, 1fr); }
-  .changes-surface[data-diff] > .changes-summary { grid-area: summary; }
-  .changes-surface[data-diff] > .changes-list { grid-area: list; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
-  .changes-surface[data-diff] > .changes-note { grid-area: note; }
-  .changes-surface[data-diff] > .changes-diff { grid-area: diff; }
-}
 
 /* Terminal: the thread's shells as tabs, one screen at a time. The screen takes the panel field so the
    xterm canvas and its padding read as one surface. */
@@ -168,6 +106,13 @@
 .terminal-tabs__tab:hover { background: var(--tools-hover); color: var(--tt-text-2); }
 .terminal-tabs__tab[aria-selected='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .terminal-tabs__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The open tab and its close share one raised shape. */
+.terminal-tabs__item { display: inline-flex; flex: none; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 7px; }
+.terminal-tabs__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
+.terminal-tabs__item[data-selected] > .terminal-tabs__tab { padding-right: 4px; border-color: transparent; background: transparent; }
+.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.terminal-tabs__close:hover { background: var(--tools-hover); color: var(--tt-text); }
+.terminal-tabs__close:disabled { opacity: .5; cursor: default; }
 .terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
 .terminal-tabs__tab:not([data-status='running']) .terminal-tabs__dot { border: 1px solid var(--tt-text-muted); background: transparent; }
 .terminal-tabs__tab[data-status='unavailable'] .terminal-tabs__dot { border-color: var(--tt-error); }
@@ -229,45 +174,10 @@
 .tools-toggle[aria-pressed='true']:not([data-pinned-elsewhere]) { color: var(--tt-text); border-color: var(--tt-border-faint); }
 .tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 
-@media (prefers-reduced-motion: reduce) { .tools-panel__sheet, .tools-panel [data-busy] svg, .browser-toolbar[data-loading]::after { animation: none; } }
-
-/* Sidecar: the working copy is one quiet row; direct tool navigation sits immediately above the work. */
-.tools-panel { --tools-bg: var(--tt-surface, var(--tt-sidebar)); }
-.tools-panel__context { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 5px 10px 5px 16px; }
-.tools-panel__owner { flex: 1; min-width: 0; }
-.tools-panel__copy { padding: 0; font-size: 12px; }
-.tools-panel__context .tools-panel__actions { flex: none; padding: 0; }
-.tools-panel__bar { align-items: center; padding: 0 9px 0 14px; gap: 8px; }
-.tools-surfaces { flex: 1; gap: 4px; }
-.tools-surfaces__tab { min-height: 42px; gap: 7px; padding-inline: 10px; }
-.tools-surfaces__tab[aria-selected='true'] { color: var(--tt-text); border-color: var(--tt-activity); }
-.tools-panel__folder-actions { display: flex; flex: none; align-items: center; gap: 0; }
-.tools-panel__folder-actions .files-icon { width: 28px; height: 30px; }
-.tools-panel__pinned-owner { display: flex; align-items: center; gap: 7px; padding-top: 3px; }
-.tools-panel__pinned-owner .tools-panel__thread-title { font-size: 12px; color: var(--tt-text-muted); }
-.tools-panel__empty-title { flex: 1; font-size: 14px; }
-.tools-panel__accessible { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip-path: inset(50%); white-space: nowrap!important; border: 0!important; }
-.tools-panel[data-expanded] .tools-panel__resize { display: none; }
-.tools-panel__status { max-width: calc(100% - 24px); white-space: normal; text-align: center; }
-@container tools-sheet (max-width: 519px) {
-  .tools-panel__bar { padding-inline: 7px; gap: 3px; }
-  .tools-surfaces { gap: 0; }
-  .tools-surfaces__tab { padding-inline: 7px; }
-  .tools-surfaces__icon { display: none; }
-  .tools-panel__folder-actions .files-icon { width: 27px; }
-}
-
-/* At the minimum desktop window, Sidecar and the conversation take the field together.
-   Closing Tools restores project navigation; the selected thread and sidebar state stay mounted. */
-@media (max-width: 950px) {
-  .threads-view:has(.tools-panel) { grid-template-columns: minmax(0, 1fr); }
-  .threads-view:has(.tools-panel) > .thread-nav { display: none; }
-}
 .git-actions { grid-area: actions; border-bottom: 1px solid var(--tt-hairline); min-height: 0; max-height: 50%; overflow: auto; color: var(--tt-text-2); font-size: 14px; }
 .changes-surface[data-diff] .git-actions { max-height: 240px; }
 @media (max-height: 640px) { .changes-surface[data-diff] .git-actions { max-height: 150px; } }
 .git-actions__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 7px 16px; }
-.git-actions__stage { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
 .git-actions__drawer { display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 16px; }
 .git-actions__drawer form, .git-actions__branch { display: flex; flex-direction: column; gap: 7px; }
 .git-actions__drawer :is(textarea,input:not([type=checkbox])) { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--tt-hairline); border-radius: 6px; padding: 8px; background: var(--tt-code-bg); color: var(--tt-text); font: inherit; resize: vertical; }
@@ -307,9 +217,3 @@
 .git-pr button { min-height: 32px; font-size: 14px; }
 
 .git-pr button:disabled { opacity: .5; cursor: default; }
-
-@container tools-sheet (max-width: 479px) {
-  .tools-panel__bar { flex-wrap: wrap; }
-  .tools-panel__folder-actions { margin-left: auto; }
-  .tools-panel__folder-actions:empty { display: none; }
-}

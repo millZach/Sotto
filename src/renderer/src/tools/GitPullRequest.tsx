@@ -70,7 +70,7 @@ export function GitPullRequest({ threadId, workspaceId, bridge, onBack }: { thre
   }
   const pr = review?.pullRequest
   return <section className="git-pr" aria-label="Pull request review" aria-busy={busy}>
-    <div className="git-pr__toolbar">{onBack ? <button type="button" className="files-link tt-focusable" onClick={onBack}>Back to changes</button> : null}<button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => void load(review?.remote ?? undefined)}>Refresh pull request</button></div>
+    <div className="git-pr__toolbar tools-chrome"><span className="tools-chrome__title">Pull request</span><div className="tools-chrome__actions">{onBack ? <button type="button" className="files-link tt-focusable" onClick={onBack}>Back to changes</button> : null}<button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => void load(review?.remote ?? undefined)}>Refresh pull request</button></div></div>
     <div className="git-pr__content" ref={content}>
       {review ? <>
         <p className="git-pr__branch"><strong>{review.branch ?? 'Detached HEAD'}</strong> <span>{review.head.slice(0, 8)}</span></p>

@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Plus, RotateCcw, Square, X } from 'lucide-react'
+import { CircleStop, Plus, RotateCcw, X } from 'lucide-react'
 import type { TerminalBridge, TerminalSession } from '../../../shared/terminal'
 import { TerminalViewProblem } from './TerminalViewProblem'
+import { ToolsChrome } from './ToolsChrome'
 import type { ToolsError } from '../../../shared/tools'
 import { sessionStatusText, useThreadTerminals, type TerminalStore, type TerminalViewFactory } from './terminalStore'
 
@@ -45,12 +46,12 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const terminals = useThreadTerminals(store, threadId)
   const [confirming, setConfirming] = useState<string | null>(null)
   const focusNext = useRef(false)
-  if (!terminals || terminals.status === 'loading' && terminals.sessions.length === 0) return <p className="files-preview__loading" role="status">Loading terminals…</p>
+  if (!terminals || terminals.status === 'loading' && terminals.sessions.length === 0) return <><ToolsChrome title="Terminal" /><p className="files-preview__loading" role="status">Loading terminals…</p></>
   if (terminals.status === 'error' && terminals.sessions.length === 0) {
-    return <div className="files-problem files-problem--root" role="status">
+    return <><ToolsChrome title="Terminal" /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(terminals.error ?? { code: 'unavailable', message: '' }, bridge !== undefined)}</strong>
       {bridge ? <button type="button" className="files-link tt-focusable" onClick={() => void store.activate(bridge, threadId)}>Try again</button> : null}
-    </div>
+    </div></>
   }
   const start = (): void => { focusNext.current = true; void store.create(bridge, threadId) }
   const { sessions } = terminals
@@ -60,6 +61,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
 
   if (sessions.length === 0) {
     return <div className="terminal-surface">
+      <ToolsChrome title="Terminal" />
       <div className="files-problem files-problem--root terminal-empty">
         <strong>No terminal is open for this thread.</strong>
         <p>A terminal starts in the thread’s working folder and keeps running while you work elsewhere.</p>
@@ -71,11 +73,12 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
 
   const focusTab = (id: string): void => document.getElementById(`terminal-tab-${id}`)?.focus()
   return <div className="terminal-surface">
-    <div className="terminal-bar">
+    <div className="terminal-bar tools-chrome">
       <div className="terminal-tabs" role="tablist" aria-label="Terminals">
         {sessions.map((session, index) => {
           const selected = session.id === active?.id
-          return <button key={session.id} id={`terminal-tab-${session.id}`} type="button" role="tab" className="terminal-tabs__tab tt-focusable"
+          // The open shell carries its own close, the way a tab closes, so the line's end holds only New terminal.
+          return <span key={session.id} className="terminal-tabs__item" data-selected={selected || undefined}><button id={`terminal-tab-${session.id}`} type="button" role="tab" className="terminal-tabs__tab tt-focusable"
             aria-selected={selected} aria-controls="terminal-screen" tabIndex={selected ? 0 : -1} data-status={session.status}
             title={`${names.get(session.id)} · ${sessionStatusText(session)}`}
             onClick={() => { setConfirming(null); store.select(threadId, session.id) }}
@@ -92,13 +95,14 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
             <span className="terminal-tabs__name">{names.get(session.id)}</span>
             {session.status !== 'running' ? <span className="tt-visually-hidden">, {sessionStatusText(session)}</span> : null}
           </button>
+          {selected ? <button type="button" className="terminal-tabs__close tt-focusable" aria-label={`Close ${names.get(session.id)}`} title="Close terminal" disabled={terminals.busy}
+            onClick={() => session.status === 'running' ? setConfirming(session.id) : void store.close(bridge, threadId, session.id)}><X size={14} aria-hidden="true" /></button> : null}
+          </span>
         })}
       </div>
-      <div className="terminal-bar__actions">
+      <div className="terminal-bar__actions tools-chrome__actions">
         {active?.status === 'running' ? <button type="button" className="files-icon tt-focusable" aria-label="Send Ctrl+C" title="Send Ctrl+C (stop the running command)"
-          onClick={() => store.interrupt(bridge, threadId, active.id)}><Square size={14} aria-hidden="true" /></button> : null}
-        {active ? <button type="button" className="files-icon tt-focusable" aria-label={`Close ${names.get(active.id)}`} title="Close terminal" disabled={terminals.busy}
-          onClick={() => active.status === 'running' ? setConfirming(active.id) : void store.close(bridge, threadId, active.id)}><X size={16} aria-hidden="true" /></button> : null}
+          onClick={() => store.interrupt(bridge, threadId, active.id)}><CircleStop size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New terminal" title={full ? 'A thread can keep 32 terminals' : 'New terminal'}
           disabled={terminals.busy || full || !bridge} onClick={start}><Plus size={16} aria-hidden="true" /></button>
       </div>

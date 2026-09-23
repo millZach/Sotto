@@ -27,7 +27,6 @@
 .subagent-previous { margin-top: 17px; border-top: 1px solid var(--tt-hairline); padding-top: 12px; }
 .subagent-previous summary { color: var(--tt-text-muted); font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
 .subagents-older { margin-top: 18px; }
-.subagents-footer { display: flex; flex: none; justify-content: space-between; gap: 10px; min-height: 40px; border-top: 1px solid var(--tt-hairline); padding: 10px 18px; color: var(--tt-text-muted); font-size: 12px; }
 .subagents-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 190px; padding: 30px; color: var(--tt-text-muted); text-align: center; }
 .subagents-empty p { margin: 0; font-size: 14px; }
 .tools-toggle { position: relative; }
