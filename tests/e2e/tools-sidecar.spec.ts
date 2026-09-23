@@ -294,6 +294,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
           await appearance(page, mode)
           expect(await chromeContrast(panel), `${width}x${height} ${panelWidth} ${mode} chrome contrast`).toBeGreaterThanOrEqual(4.5)
           expect(await rail.evaluate(element => [...element.querySelectorAll('.tools-rail__word')].filter(word => word.scrollWidth > word.clientWidth).map(word => word.textContent)), 'rail words cut short').toEqual([])
+          expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-rail button, .tools-panel__foot button')]
+            .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), 'rail and footer controls clipped').toEqual([])
           for (const tool of TOOLS) {
             await select(tool)
             const key = `${tool.toLowerCase()}-${width}x${height}-${panelWidth}-${mode}`
