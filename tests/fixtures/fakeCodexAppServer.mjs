@@ -46,7 +46,7 @@ if (process.argv.includes('exec')) {
   const script = read('oneshot.json', {})
   appendFileSync(file('oneshot.jsonl'), JSON.stringify({ args, cwd: process.cwd(), input }) + '\n')
   const flag = name => args[args.indexOf(name) + 1]
-  const isolated = ['features.shell_tool=false', 'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false', 'mcp_servers={}'].every(value => args.includes(value))
+  const isolated = ['features.shell_tool=false', 'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false', 'mcp_servers={}', 'notify=[]'].every(value => args.includes(value))
   if (!args.includes('--ephemeral') || flag('--sandbox') !== 'read-only' || !isolated || args.at(-1) !== '-') {
     appendFileSync(file('violations.jsonl'), JSON.stringify({ method: 'exec', reason: 'Side writing must be ephemeral, read-only, tool-free and read its prompt from stdin' }) + '\n')
   }

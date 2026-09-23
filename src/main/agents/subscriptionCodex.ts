@@ -23,7 +23,8 @@ const DISABLED_FEATURES = [
 /**
  * What every one-off Codex call Sotto makes switches off, for reasoning and for side writing alike: every tool
  * and integration a turn could reach (skills and MCP through the orchestrator as well as directly), the
- * project's instruction files, web search and history.
+ * project's instruction files, web search and history. `notify` is emptied so the user's own turn-complete
+ * program is never started and handed Sotto's prompt and the reply, and OpenTelemetry never logs the prompt.
  */
 const isolationArguments = [
   ...DISABLED_FEATURES.map((name) => `features.${name}=false`),
@@ -31,7 +32,7 @@ const isolationArguments = [
   'skills.include_instructions=false', 'skills.bundled.enabled=false',
   'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false',
   'project_doc_max_bytes=0', 'mcp_servers={}', 'instructions=""',
-  'history.persistence="none"',
+  'history.persistence="none"', 'notify=[]', 'otel.log_user_prompt=false',
   'model_provider="openai"', 'sandbox_mode="read-only"',
 ]
 const configArguments = [...isolationArguments, 'approval_policy="on-request"'].flatMap((value) => ['-c', value])

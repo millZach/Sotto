@@ -81,7 +81,9 @@ describe('Codex side writing', () => {
     const [call] = await recorded(f.root)
     const args = call!.args as string[]
     expect(args).toEqual(expect.arrayContaining(['--ephemeral', '--skip-git-repo-check', '--json', 'approval_policy="never"', 'mcp_servers={}', 'project_doc_max_bytes=0', 'history.persistence="none"',
-      'features.skip_host_skill_discovery=true', 'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false', 'instructions=""']))
+      'features.skip_host_skill_discovery=true', 'orchestrator.skills.enabled=false', 'orchestrator.mcp.enabled=false', 'instructions=""',
+      // The user's own turn-complete program would be handed the naming prompt and the reply.
+      'notify=[]', 'otel.log_user_prompt=false']))
     expect(args).not.toContain('approval_policy="on-request"')
     expect(args[args.indexOf('--model') + 1]).toBe('fixture-model')
     expect(args.at(-1)).toBe('-')

@@ -224,7 +224,7 @@ describe('native Codex subscription client', () => {
     f.state.config.mcp_servers = { fixture: { command: 'never-run' }, 'another.server': { command: 'never-run' } }
     expect(await f.complete()).toEqual({ decision: 'human', text: 'Needs your preference.' })
     const execution = f.children.find((child) => child.started)!
-    expect(execution.args).toEqual(expect.arrayContaining(['features.code_mode_host=false', 'features.hooks=false', 'orchestrator.mcp.enabled=false', 'orchestrator.skills.enabled=false', 'skills.include_instructions=false']))
+    expect(execution.args).toEqual(expect.arrayContaining(['features.code_mode_host=false', 'features.hooks=false', 'orchestrator.mcp.enabled=false', 'orchestrator.skills.enabled=false', 'skills.include_instructions=false', 'notify=[]', 'otel.log_user_prompt=false']))
     expect(f.requests.find((request) => request.method === 'thread/start')?.params).toMatchObject({ model, ephemeral: true, environments: [], dynamicTools: [], allowProviderModelFallback: false, config: { mcp_servers: { fixture: { enabled: false }, 'another.server': { enabled: false } } } })
     expect(f.requests.find((request) => request.method === 'turn/start')?.params).toMatchObject({ environments: [], sandboxPolicy: { type: 'readOnly', networkAccess: false }, outputSchema: { required: ['json'] } })
     expect(execution.args).not.toContain('fixture only')
