@@ -299,14 +299,14 @@ describe('Changes surface', () => {
     const withWorktree = (dirty: boolean) => {
       const state = threadsStateFixture()
       const thread = state.host.threads.find(item => item.id === 'visual-gate')!
-      Object.assign(thread, { worktree: { mode: 'shared', status: 'ready', path: 'D:\work\workshop', repositoryRoot: 'D:\work\workshop', branch: 'feature/changes', dirty } })
+      Object.assign(thread, { worktree: { mode: 'shared', status: 'ready', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work\\workshop', branch: 'feature/changes', dirty } })
       return state
     }
     const git = fakeGit({ files: [] })
     const store = new ToolsPanelStore()
     store.setOpen(true)
     store.setSurface('changes')
-    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\work\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { 'a.txt': { kind: 'file', content: text('a') } } } })
     const view = render(<ToolsPanel focusedThreadId="visual-gate" state={withWorktree(false)} files={files} gitChanges={git.bridge} store={store} />)
     await within(panel()).findByText('No changes')
     const tab = within(panel()).getByRole('tab', { name: 'Changes', exact: true })
