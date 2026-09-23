@@ -95,4 +95,12 @@ Gates on this Windows PC in CI's form, one at a time:
 - `npm run notices:verify`: 174 components.
 - Playwright on the final build: `hosts.spec.ts` and `host-identity.spec.ts`, 2 passed. `settings-index.spec.ts`, 1 passed. `agentControl.spec.ts`: 8 passed and 1 failed. The failure is "reconciles a lost acknowledgement", which picks `workshop` where it expects `docs`, and it fails the same way on `origin/main` at d1c9d77a.
 
+Later the same day main merged #253, Sotto's own palettes, which holds ADR-0024; this branch's host ADR was already 0025. After that merge, a full `design:capture` changed only the 18 Settings captures that show the Hosts entry, and those were regenerated on the new palettes. `npm run design:verify` passed 10 tests and verified 144 tuples.
+
+Gates on the merged tree, run the same way:
+- typecheck and lint clean.
+- `npm test -- --maxWorkers=2`: 371 files passed and 18 skipped, 4,789 tests passed and 41 skipped, in 482.3 seconds.
+- `npm run notices:verify`: 174 components.
+- Playwright: `settings-index`, `hosts` and `host-identity`, 3 passed. `agentControl.spec.ts`: 8 passed and 1 failed, the same failure as on main.
+
 Still owed: the hand test against a real sshd (#237).
