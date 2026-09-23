@@ -33,14 +33,14 @@ function theme(name: string, appearance: 'light' | 'dark', extra: Record<string,
   return canonicalizeTheme(parseThemeFile({ version: 1, name, appearance, colors: createVividThemeColors(appearance, appearance === 'dark' ? '#101820' : '#fbf8f2', '#e0a040'), ...extra }))
 }
 
-const empty: LibraryState = { lightTheme: 'ocean', darkTheme: 'ocean', customThemes: [] }
+const empty: LibraryState = { lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [] }
 const both = { light: createVividThemeColors('light', '#fbf8f2', '#3060c0'), dark: createVividThemeColors('dark', '#101820', '#3060c0') }
 
 describe('theme library changes', () => {
   it('takes only the half a one-appearance theme can paint, and both for a full theme', () => {
     expect(useThemePatch(theme('Paper', 'light'))).toEqual({ lightTheme: 'paper' })
     expect(useThemePatch(theme('Night', 'dark'))).toEqual({ darkTheme: 'night' })
-    expect(useThemePatch(BUILT_IN_THEMES.find(entry => entry.id === 'iris')!)).toEqual({ lightTheme: 'iris', darkTheme: 'iris' })
+    expect(useThemePatch(BUILT_IN_THEMES.find(entry => entry.id === 'citrine')!)).toEqual({ lightTheme: 'citrine', darkTheme: 'citrine' })
   })
 
   it('installs without shadowing a built-in, duplicating an id or passing capacity', () => {
@@ -48,14 +48,14 @@ describe('theme library changes', () => {
     expect(installThemesPatch(empty, [night]).customThemes!.map(entry => entry.id)).toEqual(['night'])
     const withNight = { ...empty, customThemes: [night] }
     expect(() => installThemesPatch(withNight, [night])).toThrow(ThemeLibraryError)
-    expect(() => installThemesPatch(empty, [{ ...night, id: 'ocean' }])).toThrow(/reserved/u)
+    expect(() => installThemesPatch(empty, [{ ...night, id: 'nocturne' }])).toThrow(/reserved/u)
     const full = { ...empty, customThemes: Array.from({ length: MAX_CUSTOM_THEMES }, (_, index) => ({ ...night, id: `t-${index}` })) }
     expect(() => installThemesPatch(full, [night])).toThrow(/up to 64/u)
   })
 
   it('duplicates as a numbered copy and removes with the selected half falling back to Sotto', () => {
     const night = theme('Night', 'dark')
-    const state: LibraryState = { lightTheme: 'iris', darkTheme: 'night', customThemes: [night] }
+    const state: LibraryState = { lightTheme: 'citrine', darkTheme: 'night', customThemes: [night] }
     const copy = versionedCopy(night, state)
     expect(copy).toMatchObject({ id: 'night-1', label: 'Night (1)', appearance: 'dark' })
     expect(versionedCopy(night, { ...state, customThemes: [night, copy] }).label).toBe('Night (2)')
@@ -63,7 +63,7 @@ describe('theme library changes', () => {
 
     expect(removeThemesPatch(state, ['night'])).toEqual({ customThemes: [], darkTheme: 't3-code' })
     // Removing a theme no half uses leaves both halves alone.
-    expect(removeThemesPatch({ ...state, darkTheme: 'grove', customThemes: [night, copy] }, ['night-1'])).toEqual({ customThemes: [night] })
+    expect(removeThemesPatch({ ...state, darkTheme: 'linen', customThemes: [night, copy] }, ['night-1'])).toEqual({ customThemes: [night] })
   })
 
   it('replaces an updated collection in place and releases halves on variants it no longer ships', () => {
@@ -101,18 +101,18 @@ describe('theme editor saves', () => {
 
   it('keeps an edited theme id, and reports a theme removed while it was being edited', () => {
     const aurora = theme('Aurora', 'dark')
-    const state: LibraryState = { lightTheme: 'ocean', darkTheme: 'aurora', customThemes: [aurora] }
+    const state: LibraryState = { lightTheme: 'nocturne', darkTheme: 'aurora', customThemes: [aurora] }
     const saved = editorSavePatch(state, { name: 'Aurora Deep', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })
     expect(saved.theme).toMatchObject({ id: 'aurora', label: 'Aurora Deep' })
     expect(saved.patch.customThemes).toHaveLength(1)
     expect(() => editorSavePatch(empty, { name: 'Aurora', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/removed while you were editing/u)
     expect(() => editorSavePatch(empty, { name: '  ', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/Name your theme/u)
-    expect(() => editorSavePatch(empty, { name: 'Ocean', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/reserved/u)
+    expect(() => editorSavePatch(empty, { name: 'Default', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/reserved/u)
     // A built-in's own name is taken too, whatever its id; a custom theme that already carries one keeps it.
-    expect(() => editorSavePatch(empty, { name: 'tide', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow('“Tide” is a built-in theme. Pick another name.')
-    expect(() => editorSavePatch({ ...empty, customThemes: [aurora] }, { name: 'Dusk', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/built-in theme/u)
-    const rose = theme('Rose', 'dark')
-    expect(editorSavePatch({ ...empty, customThemes: [rose] }, { name: 'Rose', editingTheme: rose, activeAppearance: 'dark', colorsByAppearance: both, advanced: true }).theme).toMatchObject({ id: 'rose', label: 'Rose' })
+    expect(() => editorSavePatch(empty, { name: 'linen', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow('“Linen” is a built-in theme. Pick another name.')
+    expect(() => editorSavePatch({ ...empty, customThemes: [aurora] }, { name: 'Citrine', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/built-in theme/u)
+    const sotto = theme('Sotto', 'dark')
+    expect(editorSavePatch({ ...empty, customThemes: [sotto] }, { name: 'Sotto', editingTheme: sotto, activeAppearance: 'dark', colorsByAppearance: both, advanced: true }).theme).toMatchObject({ id: 'sotto', label: 'Sotto' })
   })
 })
 
@@ -140,10 +140,10 @@ describe('theme library writer', () => {
   })
 
   it('reports a failed save and leaves the saved library in force', async () => {
-    const settings: AppSettings = { ...DEFAULT_SETTINGS, darkTheme: 'grove' }
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, darkTheme: 'linen' }
     const writer = new ThemeLibraryWriter(async () => { throw new Error('disk full') }, () => settings)
-    await expect(writer.run(() => ({ patch: { darkTheme: 'iris' } }))).resolves.toMatchObject({ saved: false })
-    expect(writer.current().darkTheme).toBe('grove')
+    await expect(writer.run(() => ({ patch: { darkTheme: 'citrine' } }))).resolves.toMatchObject({ saved: false })
+    expect(writer.current().darkTheme).toBe('linen')
   })
 })
 
@@ -179,7 +179,7 @@ describe('theme editor panel', () => {
   it('paints a draft while open, and Cancel discards it without saving', async () => {
     const user = userEvent.setup()
     const { save } = host(async () => true)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'ocean', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
     expect(await screen.findByRole('dialog', { name: 'Create theme' })).toHaveAttribute('data-covers-native-view')
     await user.type(screen.getByLabelText('Theme name'), 'Aurora')
     fireEvent.change(screen.getByLabelText('Background hex value'), { target: { value: '#203040' } })
@@ -190,13 +190,13 @@ describe('theme editor panel', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(appearancePreview.draft).toBeNull()
     expect(save).not.toHaveBeenCalled()
-    expect(drafted).not.toBe(BUILT_IN_THEMES.find(entry => entry.id === 'ocean')!.colors.canvas)
+    expect(drafted).not.toBe(BUILT_IN_THEMES.find(entry => entry.id === 'nocturne')!.colors.canvas)
   })
 
   it('saves the draft as a new theme and closes', async () => {
     const user = userEvent.setup()
     const { save } = host(async () => true)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'ocean', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
     await user.type(await screen.findByLabelText('Theme name'), 'Aurora')
     await user.click(screen.getByRole('button', { name: 'Create theme' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -209,7 +209,7 @@ describe('theme editor panel', () => {
   it('keeps the editor open with an alert when the save fails', async () => {
     const user = userEvent.setup()
     host(async () => false)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'ocean', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
     await user.type(await screen.findByLabelText('Theme name'), 'Aurora')
     await user.click(screen.getByRole('button', { name: 'Create theme' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be saved')
@@ -228,6 +228,56 @@ describe('appearance settings', () => {
     return { save }
   }
 
+  it('chooses each half in its own column, and says which column paints the window now', async () => {
+    const user = userEvent.setup()
+    const { save } = renderSettings({ appearance: 'dark' })
+    const light = screen.getByRole('radiogroup', { name: 'Light theme' })
+    const dark = screen.getByRole('radiogroup', { name: 'Dark theme' })
+    const names = ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']
+    expect(within(light).getAllByRole('radio').map(option => option.textContent)).toEqual(names)
+    expect(within(dark).getAllByRole('radio').map(option => option.textContent)).toEqual(names)
+    expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
+    expect(dark).toHaveAccessibleDescription('Painting the window now.')
+    expect(light).toHaveAccessibleDescription('Used when you switch to Light.')
+
+    await user.click(within(light).getByRole('radio', { name: 'Hush' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ lightTheme: 'hush' }, expect.anything()))
+    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ darkTheme: expect.anything() }), expect.anything())
+  })
+
+  it('lists a one-appearance theme only under the half it can paint, and manages it under Your themes', () => {
+    const night = theme('Night', 'dark')
+    renderSettings({ customThemes: [night] })
+    expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Night' })).toBeInTheDocument()
+    expect(within(screen.getByRole('radiogroup', { name: 'Light theme' })).queryByRole('radio', { name: 'Night' })).not.toBeInTheDocument()
+    const own = screen.getByRole('list', { name: 'Your themes' })
+    expect(within(own).getByText('Dark only')).toBeInTheDocument()
+    for (const action of ['Edit', 'Duplicate', 'Export', 'Remove']) expect(within(own).getByRole('button', { name: `${action} Night` })).toBeInTheDocument()
+  })
+
+  it('walks the scheme and each column with the arrow keys, choosing as it goes, with one stop per group on Tab', async () => {
+    const user = userEvent.setup()
+    const { save } = renderSettings({ appearance: 'light' })
+    const scheme = screen.getByRole('radiogroup', { name: 'Color scheme' })
+    expect(within(scheme).getAllByRole('radio').map(stop => stop.textContent)).toEqual(['Light', 'Match Windows', 'Dark'])
+    expect(within(scheme).getAllByRole('radio').map(stop => stop.tabIndex)).toEqual([0, -1, -1])
+    within(scheme).getByRole('radio', { name: 'Light' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(within(scheme).getByRole('radio', { name: 'Match Windows' })).toHaveFocus()
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ appearance: 'system' }, 'Color scheme saved.'))
+
+    const dark = screen.getByRole('radiogroup', { name: 'Dark theme' })
+    expect(within(dark).getAllByRole('radio').filter(option => option.tabIndex === 0).map(option => option.textContent)).toEqual(['Sotto'])
+    within(dark).getByRole('radio', { name: 'Sotto' }).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(within(dark).getByRole('radio', { name: 'Hush' })).toHaveFocus()
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'hush' }, expect.anything()))
+    await user.keyboard('{End}')
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'citrine' }, expect.anything()))
+    await user.keyboard('{ArrowDown}')
+    expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveFocus()
+  })
+
   it('asks before removing a theme, and the half it owned falls back to Sotto', async () => {
     const user = userEvent.setup()
     const night = theme('Night', 'dark')
@@ -243,12 +293,19 @@ describe('appearance settings', () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith({ customThemes: [], darkTheme: 't3-code' }, expect.anything()))
   })
 
-  it('duplicates a built-in into the editor under a copy name', async () => {
+  it('creates a theme from the one painting the window, and duplicates a theme of your own under a copy name', async () => {
     const user = userEvent.setup()
-    renderSettings({})
-    render(<ThemeEditorHost settings={DEFAULT_SETTINGS} onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
-    await user.click(screen.getByRole('button', { name: 'Duplicate Fern' }))
-    expect(await screen.findByLabelText('Theme name')).toHaveValue('Fern copy')
+    const night = theme('Night', 'dark')
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', darkTheme: 'linen', customThemes: [night] }
+    renderSettings(settings)
+    render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
+    // Built-ins have no duplicate of their own: Create theme starts from whichever one is in use.
+    await user.click(screen.getByRole('button', { name: 'Create theme' }))
+    await waitFor(() => expect(appearancePreview.draft?.colors.canvas).toBe(BUILT_IN_THEMES.find(entry => entry.id === 'linen')!.variants!.dark!.canvas))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate Night' }))
+    expect(await screen.findByLabelText('Theme name')).toHaveValue('Night copy')
   })
 
   it('returns keyboard focus to the button that opened the editor, however it closes', async () => {
@@ -270,7 +327,7 @@ describe('appearance settings', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     await waitFor(() => expect(create).toHaveFocus())
 
-    const duplicate = await openWithKeyboard('Duplicate Fern')
+    const duplicate = await openWithKeyboard('Duplicate Night')
     screen.getByRole('button', { name: 'Close the theme editor' }).focus()
     await user.keyboard('{Enter}')
     await waitFor(() => expect(duplicate).toHaveFocus())
@@ -283,17 +340,18 @@ describe('appearance settings', () => {
 
   it('leaves a replacing editor its focus, and restores nothing once the opener is gone', async () => {
     const user = userEvent.setup()
-    const page = render(<AppearanceSettings settings={DEFAULT_SETTINGS} platform="win32" onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
-    render(<ThemeEditorHost settings={DEFAULT_SETTINGS} onSave={async () => true} getSettings={() => DEFAULT_SETTINGS} />)
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, customThemes: [theme('Night', 'dark')] }
+    const page = render(<AppearanceSettings settings={settings} platform="win32" onSave={async () => true} getSettings={() => settings} />)
+    render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
     screen.getByRole('button', { name: 'Create theme' }).focus()
     await user.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByLabelText('Theme name')).toHaveFocus())
 
     // The gallery stays usable beside the non-modal editor; opening another session replaces this one.
-    const duplicate = screen.getByRole('button', { name: 'Duplicate Fern' })
+    const duplicate = screen.getByRole('button', { name: 'Duplicate Night' })
     duplicate.focus()
     await user.keyboard('{Enter}')
-    const name = await screen.findByDisplayValue('Fern copy')
+    const name = await screen.findByDisplayValue('Night copy')
     await act(async () => { await Promise.resolve() })
     expect(name).toHaveFocus()
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { widgetSnapshotSchema } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import {
+  APP_ICON_BRAND,
   DEFAULT_WIDGET_PALETTE,
   MARK_GLYPH_CONTRAST,
   WIDGET_THEME_ROLES,
@@ -34,20 +35,32 @@ function aurora(): ThemeDefinition {
 describe('widget palette projection', () => {
   it('carries only the painted roles of the theme that owns each half, built-in or custom', () => {
     const custom = aurora()
-    const palette = widgetPaletteFor({ lightTheme: 'iris', darkTheme: custom.id, customThemes: [custom] })
-    const iris = BUILT_IN_THEMES.find(theme => theme.id === 'iris')!
+    const palette = widgetPaletteFor({ lightTheme: 'citrine', darkTheme: custom.id, customThemes: [custom] })
+    const citrine = BUILT_IN_THEMES.find(theme => theme.id === 'citrine')!
 
-    expect(Object.keys(palette).sort()).toEqual(['dark', 'light'])
+    expect(Object.keys(palette).sort()).toEqual(['appIcon', 'dark', 'light'])
     expect(Object.keys(palette.light)).toEqual([...WIDGET_THEME_ROLES])
     for (const role of WIDGET_THEME_ROLES) {
-      expect(palette.light[role]).toBe(getThemeColorsForMode(iris, 'light')![role])
+      expect(palette.light[role]).toBe(getThemeColorsForMode(citrine, 'light')![role])
       expect(palette.dark[role]).toBe(custom.colors[role])
     }
     // No ids, labels or library ride along to the widget renderer.
     const serialized = JSON.stringify(palette)
-    expect(serialized).not.toContain('iris')
+    expect(serialized).not.toContain('citrine')
     expect(serialized).not.toContain('Aurora')
     expect(widgetPaletteSchema.parse(palette)).toEqual(palette)
+  })
+
+  it('says per half whether the default theme paints it, so the widget knows when to wear the app icon', () => {
+    const custom = aurora()
+    expect(DEFAULT_WIDGET_PALETTE.appIcon).toEqual({ light: true, dark: true })
+    expect(widgetPaletteFor({ lightTheme: DEFAULT_THEME_ID, darkTheme: custom.id, customThemes: [custom] }).appIcon)
+      .toEqual({ light: true, dark: false })
+    expect(widgetPaletteFor({ lightTheme: 'hush', darkTheme: 'nocturne', customThemes: [] }).appIcon)
+      .toEqual({ light: false, dark: false })
+    // A half whose theme is gone lands on the default, so the app icon comes back with it.
+    expect(widgetPaletteFor({ lightTheme: 'deleted-theme', darkTheme: 'hush', customThemes: [] }).appIcon)
+      .toEqual({ light: true, dark: false })
   })
 
   it('lands a half on the default theme when its theme is gone, exactly as the main window does', () => {
@@ -55,7 +68,7 @@ describe('widget palette projection', () => {
   })
 
   it('projects presentation from settings without leaking unrelated fields', () => {
-    const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'ember', llmApiKey: 'secret' }
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'tropic', llmApiKey: 'secret' }
     const presentation = widgetPresentationFor(settings)
     expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme', 'voiceCoordinator'])
     expect(presentation.theme).toBe('light')
@@ -68,9 +81,12 @@ describe('widget palette projection', () => {
     expect(widgetPresentationFor({ ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true }).voiceCoordinator).toBe(true)
   })
 
-  it('rejects palettes with extra roles, missing halves, or colours that are not canonical literals', () => {
+  it('rejects palettes with extra roles, missing halves or app icon flags, or colours that are not canonical literals', () => {
     const light = DEFAULT_WIDGET_PALETTE.light
     expect(() => widgetPaletteSchema.parse({ light })).toThrow()
+    expect(() => widgetPaletteSchema.parse({ light, dark: DEFAULT_WIDGET_PALETTE.dark })).toThrow()
+    expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, appIcon: { light: true } })).toThrow()
+    expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, appIcon: { light: 'yes', dark: false } })).toThrow()
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, extra: light })).toThrow()
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, light: { ...light, sidebar: light.canvas } })).toThrow()
     expect(() => widgetPaletteSchema.parse({ ...DEFAULT_WIDGET_PALETTE, light: { ...light, accent: 'var(--x)' } })).toThrow()
@@ -107,15 +123,26 @@ describe('theme brand', () => {
     },
   )
 
+  it('wears the app icon’s own tile and glyph when the half asks for it, whatever the accent', () => {
+    for (const accent of ['oklch(0.7 0.18 30)', 'oklch(0.55 0.2 300)', 'oklch(0.6 0 0)']) {
+      const brand = themeBrand({ canvas: 'oklch(0.2 0 0)', accent, accentForeground: 'oklch(0.99 0 0)' }, 'dark', { appIcon: true })
+      expect(brand.tile, accent).toBe(APP_ICON_BRAND.tile)
+      expect(brand.glyph, accent).toBe(APP_ICON_BRAND.glyph)
+    }
+    // The orb follows the tile, so the icon's teal reaches it too.
+    const sotto = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === DEFAULT_THEME_ID)!, 'dark')!
+    expect(themeBrand(sotto, 'dark', { appIcon: true }).orb).toEqual(themeBrand({ ...sotto, accent: APP_ICON_BRAND.tile }, 'dark').orb)
+  })
+
   it('distinguishes contrasting themes', () => {
-    const ocean = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'ocean')!, 'dark')!, 'dark')
-    const ember = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'ember')!, 'dark')!, 'dark')
-    expect(ocean.tile).not.toBe(ember.tile)
-    expect(ocean.orb).not.toEqual(ember.orb)
+    const nocturne = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, 'dark')!, 'dark')
+    const tropic = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'tropic')!, 'dark')!, 'dark')
+    expect(nocturne.tile).not.toBe(tropic.tile)
+    expect(nocturne.orb).not.toEqual(tropic.orb)
   })
 
   it('runs a pale tint into a deep tone on dark, and ink into a softer tone on light', () => {
-    const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'iris')!, 'dark')!
+    const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'citrine')!, 'dark')!
     const dark = themeBrand(colors, 'dark').orb.map(hex => rgbToOklch(parseThemeRgb(hex, BLACK)).L)
     const light = themeBrand(colors, 'light').orb.map(hex => rgbToOklch(parseThemeRgb(hex, BLACK)).L)
     expect(dark[0]!).toBeGreaterThan(dark[1]!)

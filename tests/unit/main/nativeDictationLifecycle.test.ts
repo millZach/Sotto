@@ -155,11 +155,11 @@ describe('NativeDictationLifecycle idle reporting', () => {
 })
 
 describe('NativeDictationLifecycle theme presentation', () => {
-  const ember = widgetPaletteFor({ lightTheme: 'ember', darkTheme: 'ember', customThemes: [] })
-  const iris = widgetPaletteFor({ lightTheme: 'iris', darkTheme: 'iris', customThemes: [] })
+  const tropic = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'tropic', customThemes: [] })
+  const citrine = widgetPaletteFor({ lightTheme: 'citrine', darkTheme: 'citrine', customThemes: [] })
 
   function presentedHarness() {
-    let presentation = { theme: 'system' as const, palette: ember, reducedMotion: 'system' as const }
+    let presentation = { theme: 'system' as const, palette: tropic, reducedMotion: 'system' as const }
     const sendToWidget = vi.fn(async () => true)
     const lifecycle = new NativeDictationLifecycle({
       delivery: { sendToWidget },
@@ -173,7 +173,7 @@ describe('NativeDictationLifecycle theme presentation', () => {
     return {
       lifecycle,
       sendToWidget,
-      choose(palette: typeof ember) { presentation = { ...presentation, palette } },
+      choose(palette: typeof tropic) { presentation = { ...presentation, palette } },
       delivered: () => sendToWidget.mock.calls.map(call => (call as unknown[])[1] as WidgetSnapshot),
     }
   }
@@ -181,19 +181,19 @@ describe('NativeDictationLifecycle theme presentation', () => {
   it('stamps main’s current palette over a renderer publication built from older settings', async () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
-    expect(harness.delivered().at(-1)?.palette).toEqual(ember)
+    expect(harness.delivered().at(-1)?.palette).toEqual(tropic)
     expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', level: 0.5 })
   })
 
   it('repaints an active session live when the theme changes, without a new renderer publication', async () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
-    harness.choose(iris)
+    harness.choose(citrine)
 
     await expect(harness.lifecycle.repaint()).resolves.toBe(true)
 
     expect(harness.sendToWidget).toHaveBeenCalledTimes(2)
-    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', sessionId: 's', palette: iris })
+    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', sessionId: 's', palette: citrine })
   })
 
   it('leaves idle repainting to the idle publication', async () => {
@@ -207,8 +207,8 @@ describe('NativeDictationLifecycle theme presentation', () => {
   it('keeps the current palette on the idle snapshot after the main renderer disappears', async () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
-    harness.choose(iris)
+    harness.choose(citrine)
     harness.lifecycle.rendererProcessGone('main')
-    await vi.waitFor(() => expect(harness.delivered().at(-1)).toMatchObject({ status: 'idle', palette: iris }))
+    await vi.waitFor(() => expect(harness.delivered().at(-1)).toMatchObject({ status: 'idle', palette: citrine }))
   })
 })

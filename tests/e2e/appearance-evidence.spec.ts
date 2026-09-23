@@ -92,7 +92,7 @@ test.describe('appearance rendered evidence', () => {
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       // Time from activating Light to the root attribute and the painted canvas changing.
       const elapsed = await page.evaluate(() => new Promise<{ attribute: number; painted: number }>((done) => {
-        const light = document.querySelector<HTMLButtonElement>('#settings-appearance button[aria-label="Use light mode"]')!
+        const light = [...document.querySelectorAll<HTMLButtonElement>('#settings-appearance .theme-scheme-track__stop')].find(stop => stop.textContent?.trim() === 'Light')!
         const darkCanvas = getComputedStyle(document.body).backgroundColor
         const start = performance.now()
         let attribute = -1
@@ -110,15 +110,15 @@ test.describe('appearance rendered evidence', () => {
       expect(elapsed.attribute).toBeLessThan(50)
       expect(elapsed.painted).toBeGreaterThanOrEqual(0)
       await writeFile(resolve(evidenceRoot, 'switch-timing.json'), `${JSON.stringify(elapsed, null, 2)}\n`, 'utf8')
-      const iris = page.getByRole('button', { name: /^Use Dusk theme/u })
-      await iris.focus()
+      const citrine = page.getByRole('radiogroup', { name: 'Light theme', exact: true }).getByRole('radio', { name: 'Citrine', exact: true })
+      await citrine.focus()
       await page.keyboard.press('Enter')
-      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'iris')
-      await expect(iris).toBeFocused()
+      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'citrine')
+      await expect(citrine).toBeFocused()
       await shot(page, 'keyboard-theme-focus-light')
       await page.reload()
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'iris')
+      await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'citrine')
     })
   })
 
@@ -148,7 +148,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('the floating widget keeps following the system scheme whatever the room is', async () => {
-    await withProfile({ appearance: 'light', lightTheme: 'ember', darkTheme: 'ember' }, async (launched) => {
+    await withProfile({ appearance: 'light', lightTheme: 'tropic', darkTheme: 'tropic' }, async (launched) => {
       await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'light')
       await expect.poll(() => launched.app.windows().some(candidate => candidate.url().endsWith('/widget.html'))).toBe(true)
       const widget = launched.app.windows().find(candidate => candidate.url().endsWith('/widget.html'))!
@@ -197,7 +197,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('the minimum width with 150 percent page zoom in the light room', async () => {
-    await withProfile({ appearance: 'light', lightTheme: 'iris' }, async (launched) => {
+    await withProfile({ appearance: 'light', lightTheme: 'citrine' }, async (launched) => {
       const { page } = launched
       // Page zoom shrinks the CSS viewport to about 507px, so the narrow layout
       // rules apply; display scaling at 760 keeps a 760px CSS viewport instead,

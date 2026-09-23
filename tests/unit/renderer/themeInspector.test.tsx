@@ -66,7 +66,7 @@ describe('theme editor inspector and resizing', () => {
         <ThemeEditorHost settings={settings} onSave={vi.fn(async () => true)} getSettings={() => settings} />
       </>,
     )
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'ocean', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
     return screen.getByRole('dialog', { name: 'Create theme' })
   }
 
@@ -202,7 +202,7 @@ describe('the spotlight and colour readers do not wake each other', () => {
         <ThemeEditorHost settings={settings} onSave={vi.fn(async () => true)} getSettings={() => settings} />
       </>,
     )
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'ocean', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
     await user.click(screen.getByRole('button', { name: 'Show where Background is used' }))
 
     let probes = 0

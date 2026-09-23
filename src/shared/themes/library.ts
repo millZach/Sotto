@@ -14,14 +14,14 @@ import { z } from 'zod'
 import { isCanonicalThemeColor, toCanonicalThemeColor } from './color'
 import { getDefaultThemeColors } from './engine'
 import {
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
+  CITRINE_THEME,
+  HUSH_THEME,
+  LINEN_THEME,
+  NOCTURNE_THEME,
   SOTTO_DARK_THEME_COLORS,
   SOTTO_LIGHT_THEME_COLORS,
-  T3_CHAT_THEME,
   THEME_COLOR_ROLES,
+  TROPIC_THEME,
   type ThemeAppearance,
   type ThemeCollection,
   type ThemeColorRole,
@@ -68,17 +68,17 @@ export const T3_CODE_THEME: ThemeDefinition = {
 }
 
 /**
- * Sotto names its built-ins itself; the palettes and ids stay T3's, so saved
- * selections and T3 theme files keep resolving. By id: t3-code Sotto, t3-chat
- * Rose, grove Fern, ocean Tide, ember Copper, iris Dusk.
+ * Sotto's six palettes, in the order the picker lists them (ADR-0024). They
+ * replaced T3 Code's five, whose ids no longer resolve: a half saved on one of
+ * them falls back to Sotto when settings are read.
  */
 export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
   T3_CODE_THEME,
-  T3_CHAT_THEME,
-  GROVE_THEME,
-  OCEAN_THEME,
-  EMBER_THEME,
-  IRIS_THEME,
+  HUSH_THEME,
+  LINEN_THEME,
+  NOCTURNE_THEME,
+  TROPIC_THEME,
+  CITRINE_THEME,
 ]
 
 /**
