@@ -7,6 +7,7 @@ import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode, type ThemeDefinition } from '../../src/shared/themes/library'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // The four findings of the Phase 3 final visual review, in the complete app: custom theme names in the picker, the
@@ -253,13 +254,17 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
   const launched = await launchSotto('success', profile)
   const { app, page } = launched
   try {
-    const folder = await page.evaluate(async () => {
-      const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
-      const state = await agents.command({ type: 'connect' })
-      const thread = state.host.threads.find(item => item.id === 'workshop')!
-      return state.host.projects.find(project => project.id === thread.projectId)!.path
+    await page.evaluate(async () => {
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
     })
+    // The renderer's state keys threads and projects by the host that owns them.
+    const key = await hostKeys(page)
+    const folder = await page.evaluate(async workshop => {
+      const state = await window.sotto!.agents!.get()
+      const thread = state.host.threads.find(item => item.id === workshop)!
+      return state.host.projects.find(project => project.id === thread.projectId)!.path
+    }, key('workshop'))
     await mkdir(folder, { recursive: true })
     const editor = page.getByRole('dialog', { name: 'Create theme' })
     // The Threads page owns the whole window now, so there is no footer to dock into: the minimized bar rests at the
@@ -397,10 +402,12 @@ test('the composer beside a pending permission says to allow or deny once, throu
   try {
     const { page } = launched
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
+    // Panes are keyed by the host that owns their thread; test events still take the bare ID.
+    const key = await hostKeys(page)
     await size(launched, 1600, 1000)
     await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
-    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
+    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
       await sidebar.getByRole('button', { name: title, exact: true }).hover()

@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 test('the full workspace inserts provider-native skills and retains selections without submitting work', async () => {
@@ -18,11 +19,13 @@ test('the full workspace inserts provider-native skills and retains selections w
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' })
     })
+    // Panes and drafts are keyed by the host that owns their thread; select-thread still takes the bare ID.
+    const key = await hostKeys(page)
     await openThreads(page)
     const before = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => [thread.id, thread.messages.length]))
     for (const [threadId, token] of [['grok-previews', '/review'], ['release-notes', '$review'], ['benchmark', '/review']] as const) {
       await page.evaluate(async threadId => window.sotto!.agents!.command({ type: 'select-thread', threadId }), threadId)
-      const pane = page.locator(`section.thread-pane[data-thread-id="${threadId}"]`)
+      const pane = page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
       const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
       await prompt.fill('$rev')
       const skills = pane.getByRole('listbox', { name: 'Skills' })
@@ -34,10 +37,10 @@ test('the full workspace inserts provider-native skills and retains selections w
       await expect.poll(() => page.evaluate(async threadId => {
         const state = await window.sotto!.agents!.get()
         return state.threadDrafts?.find(draft => draft.threadId === threadId)?.skills?.map(skill => skill.name)
-      }, threadId)).toEqual(['review'])
+      }, key(threadId))).toEqual(['review'])
     }
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' }))
-    const prompt = page.locator('section.thread-pane[data-thread-id="grok-previews"]').getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = page.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })
     await expect(prompt).toHaveValue('/review ')
     await prompt.fill('/review $plan')
     const plan = page.getByRole('listbox', { name: 'Skills' }).getByRole('option')

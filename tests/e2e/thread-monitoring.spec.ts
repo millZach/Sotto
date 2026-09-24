@@ -3,13 +3,16 @@ import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { hostKeys } from './support/hostKeys'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
 const evidence = resolve('artifacts/process-creature')
 const longTask = { id: '295a79c7-ae96-4126-b926-f724eb24483b', label: 'Watching the pull request checks while the build and integration suites finish. '.repeat(4).slice(0, 240).trimEnd() }
 const secondTask = { id: '9460a2b0-2368-4cc0-8fe8-91a0144d6b87', label: 'Watching the deployment result' }
 const monitorTask = { id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watching the build checks' }
-const pane = (page: Page): Locator => page.locator('section.thread-pane[data-thread-id="workshop"]')
+// Panes are keyed by the host that owns their thread; `start` reads the key once the host is connected.
+let key = (id: string): string => id
+const pane = (page: Page): Locator => page.locator(`section.thread-pane[data-thread-id="${key('workshop')}"]`)
 const indicator = (page: Page): Locator => pane(page).locator('.thread-monitor')
 
 async function event(page: Page, value: HostEvent): Promise<void> {
@@ -27,6 +30,7 @@ async function start(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await launched.page.reload()
+  key = await hostKeys(launched.page)
   await openThreads(launched.page)
   await launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Workshop', exact: true }).click()
   await expect(pane(launched.page)).toBeVisible()
@@ -237,8 +241,8 @@ test('managed completion notice keeps the live process perch, draft, and send ac
     await expect(prompt).toHaveValue('Continue after the build checks.')
     const creature = await indicator(page).locator('.thread-monitor__creature').elementHandle()
     await event(page, { type: 'ready', threadId: 'workshop', text: 'The implementation is ready; I am still watching the build checks.', status: 'idle' })
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).queue
-      .filter(item => item.threadId === 'workshop').map(item => item.kind))).toContain('ready')
+    await expect.poll(() => page.evaluate(async workshop => (await window.sotto!.agents!.get()).queue
+      .filter(item => item.threadId === workshop).map(item => item.kind), key('workshop'))).toContain('ready')
     await expect(indicator(page)).toBeVisible()
     expect(await creature!.evaluate(element => element === document.querySelector('.thread-monitor__creature'))).toBe(true)
     await expect(prompt).toHaveValue('Continue after the build checks.')

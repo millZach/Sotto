@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentCommand, AgentRequest, AgentState } from '../../src/shared/agents'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 
 // #52 in the complete app: AppShell, Threads page, main controller, IPC and preload are real. Only the provider
@@ -47,6 +48,10 @@ const networkPermission: AgentRequest = {
   context: { toolName: 'item/permissions/requestApproval', details: '{"permissions":{"network":{"enabled":true}}}' },
 }
 
+// Threads are keyed by the host that owns them in the renderer and in the commands it sends to main; `prepare` reads the
+// key once the host is connected. Test events still take the bare ID.
+let key = (id: string): string => id
+
 async function prepare(launched: LaunchedSotto): Promise<void> {
   const { page } = launched
   await page.evaluate(async () => {
@@ -55,6 +60,7 @@ async function prepare(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
+  key = await hostKeys(page)
   await openThreads(page)
   // Observe (and optionally hold) answer commands as they cross into main; the real handler still answers them.
   await launched.app.evaluate(({ ipcMain }, channel) => {
@@ -80,7 +86,7 @@ const hold = (app: ElectronApplication): Promise<void> => app.evaluate(() => {
 })
 const release = (app: ElectronApplication): Promise<void> => app.evaluate(() => { globalThis.requestJourney!.release?.() })
 const state = (page: Page): Promise<AgentState> => page.evaluate(() => window.sotto!.agents!.get())
-const pending = async (page: Page, threadId: string): Promise<string[]> => (await state(page)).host.threads.find(thread => thread.id === threadId)!.requests.map(request => request.id)
+const pending = async (page: Page, threadId: string): Promise<string[]> => (await state(page)).host.threads.find(thread => thread.id === key(threadId))!.requests.map(request => request.id)
 
 async function emit(page: Page, threadId: string, request: AgentRequest): Promise<void> {
   await page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
@@ -226,7 +232,7 @@ test('answers every native question in the thread that asked, keeping simultaneo
     await page.keyboard.press('Enter')
     await expect(card(page)).toHaveCount(0)
 
-    expect(await answers(app)).toEqual([{ type: 'answer', threadId: 'workshop', requestId: 'layout-form', answer: '', questionAnswers: {
+    expect(await answers(app)).toEqual([{ type: 'answer', threadId: key('workshop'), requestId: 'layout-form', answer: '', questionAnswers: {
       layout: { optionIds: ['sidebar'] }, checks: { optionIds: ['unit', 'types'] }, branch: { optionIds: [], text: 'settings-layout' },
     } }])
     const after = await state(page)
@@ -308,8 +314,8 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     await expect(card(page)).toHaveCount(0)
 
     expect(await answers(app)).toEqual([
-      { type: 'answer', threadId: 'workshop', requestId: 'run-tests', answer: 'Allow for this session', approved: true, permissionChoice: 'acceptForSession' },
-      { type: 'answer', threadId: 'workshop', requestId: 'run-tests', answer: 'Allow once', approved: true, permissionChoice: 'once' },
+      { type: 'answer', threadId: key('workshop'), requestId: 'run-tests', answer: 'Allow for this session', approved: true, permissionChoice: 'acceptForSession' },
+      { type: 'answer', threadId: key('workshop'), requestId: 'run-tests', answer: 'Allow once', approved: true, permissionChoice: 'once' },
     ])
     expect(await pending(page, 'workshop')).toEqual([])
     expect(await pending(page, 'docs')).toEqual(['network-profile'])
@@ -417,7 +423,7 @@ test('keeps model choices above the message bar until an explicit answer, preser
     // Sending a recommendation retains the provider's exact ID, including its suffix.
     await send.press('Enter')
     await expect(panel).toHaveCount(0)
-    expect(await answers(app)).toEqual([{ type: 'answer', threadId: 'workshop', requestId: request.id, answer: '',
+    expect(await answers(app)).toEqual([{ type: 'answer', threadId: key('workshop'), requestId: request.id, answer: '',
       questionAnswers: { layout: { optionIds: ['sidebar (Recommended)'] } } }])
     await expect(prompt).toHaveValue('Keep keyboard navigation consistent with the rest of the app.')
     expect(await pending(page, 'workshop')).toEqual([])
@@ -440,7 +446,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     }
     const panes = page.getByRole('group', { name: 'Thread panes' })
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(3)
-    const pane = panes.locator('section.thread-pane[data-thread-id="footer-links"]')
+    const pane = panes.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
     const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('Keep this independent follow-up draft.')
     await emit(page, 'footer-links', { id: 'short-question', kind: 'question', text: 'Choose the next step.', options: [], questions: [{
@@ -506,7 +512,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
       await sidebar.getByRole('button', { name: title, exact: true }).hover()
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
-    const pane = page.locator('section.thread-pane[data-thread-id="footer-links"]')
+    const pane = page.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
     const prompt = pane.getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt.fill('Keep this follow-up separate from both decisions.')
     await emit(page, 'footer-links', { id: 'mixed-question', kind: 'question', text: 'Which links should be checked?', options: [], questions: [{
@@ -554,8 +560,8 @@ test('keeps simultaneous question and permission controls reachable in a short s
     await expect(transcript).toBeVisible()
     await expect(prompt).toHaveValue('Keep this follow-up separate from both decisions.')
     expect(await answers(app)).toEqual([
-      { type: 'answer', threadId: 'footer-links', requestId: testPermission.id, answer: 'Deny', approved: false, permissionChoice: 'reject' },
-      { type: 'answer', threadId: 'footer-links', requestId: 'mixed-question', answer: '', questionAnswers: { links: { optionIds: ['all'] } } },
+      { type: 'answer', threadId: key('footer-links'), requestId: testPermission.id, answer: 'Deny', approved: false, permissionChoice: 'reject' },
+      { type: 'answer', threadId: key('footer-links'), requestId: 'mixed-question', answer: '', questionAnswers: { links: { optionIds: ['all'] } } },
     ])
   } finally { await closeSotto(launched) }
 })

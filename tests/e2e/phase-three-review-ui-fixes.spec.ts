@@ -6,6 +6,7 @@ import { claudePending } from '../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Two Spec review fixes in the complete app: the arrangement switch in a compact pane view, and a structured form's
@@ -86,10 +87,12 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
   try {
     const { page } = launched
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
+    // Panes are keyed by the host that owns their thread.
+    const key = await hostKeys(page)
     await size(launched, 1280, 800)
     await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
-    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
+    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
       await sidebar.getByRole('button', { name: title, exact: true }).hover()
@@ -218,8 +221,8 @@ test('threaded and personal structured forms show the native explanation and too
     await emit('docs', claudeQuestions())
     await size(threaded, 820, 560)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    const transcript = page.getByLabel('Thread transcript', { exact: true })
-    const form = transcript.locator('.agent-request')
+    // Questions are answered above the message bar, not in the transcript.
+    const form = page.locator('.thread-questions .agent-request')
     await expectExplained(form)
     await shoot(page, 'form-threaded-codex-820', () => form.evaluate(element => element.scrollIntoView({ block: 'start' })))
     await expectSendReachable(page, form)
@@ -227,7 +230,7 @@ test('threaded and personal structured forms show the native explanation and too
 
     // A provider that fills the text from its own prompts gets no second copy.
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
-    const questions = transcript.locator('.agent-request')
+    const questions = page.locator('.thread-questions .agent-request')
     await expect(questions.getByRole('group')).toHaveCount(2)
     await expect(questions.locator('.agent-request__text')).toHaveCount(0)
     await expect(questions.locator('.agent-request__head')).toHaveText('2 questionsAskUserQuestion')
