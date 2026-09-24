@@ -246,8 +246,13 @@ describe('review comments in Changes', () => {
     await user.click(line)
     expect(line).toHaveAttribute('aria-selected', 'true')
     const pill = within(other).getByRole('button', { name: 'Comment on other.ts L1' })
-    expect(pill).toBeDisabled()
-    expect(pill).toHaveAttribute('title', 'Finish or cancel your comment on app.ts L6 first.')
+    // It stays reachable, says why it waits, and takes the user to the draft rather than replacing it.
+    expect(pill).toHaveAttribute('aria-disabled', 'true')
+    expect(pill).not.toBeDisabled()
+    expect(pill).toHaveAccessibleDescription('Finish or cancel your comment on app.ts L6 first.')
+    pill.focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveFocus())
     // The draft keeps its words and its lines stay marked.
     expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveValue('Half written')
     expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
@@ -255,7 +260,7 @@ describe('review comments in Changes', () => {
     await user.click(row('[data-new-line="3"]'))
     expect(row('[data-new-line="3"]')).toHaveAttribute('aria-selected', 'true')
     expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'Comment on app.ts L3' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Comment on app.ts L3' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('keeps a worded draft reachable when its file leaves the comparison, so Comment is never stuck', async () => {
@@ -317,6 +322,19 @@ describe('review comments in Changes', () => {
     comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'c', oldLine: null, newLine: 3 }], text: 'Third' })
     await user.click(await screen.findByRole('button', { name: 'Delete comment on src/gone.ts L3' }))
     expect(screen.getByRole('button', { name: 'Refresh diff' })).toHaveFocus()
+  })
+
+  it('keeps a full message’s Comment reachable with its reason, and opens nothing', async () => {
+    const user = userEvent.setup()
+    const { comments } = setup()
+    await screen.findByText('export const ready = true')
+    for (let index = 0; index < 20; index++) comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'x', oldLine: null, newLine: index + 1 }], text: 'Note' })
+    await user.click(row('[data-kind="add"]'))
+    const pill = screen.getByRole('button', { name: 'Comment on app.ts L4' })
+    expect(pill).toHaveAttribute('aria-disabled', 'true')
+    expect(pill).toHaveAccessibleDescription('A message carries at most 20 comments. Send it or delete one first.')
+    await user.click(pill)
+    expect(comments.draft(THREAD)).toBeNull()
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {

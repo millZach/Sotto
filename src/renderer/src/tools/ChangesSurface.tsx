@@ -1,4 +1,4 @@
-import React, { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import React, { Fragment, memo, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, GitPullRequestArrow, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
@@ -572,10 +572,14 @@ function CommentPill({ label, full, waiting, onPress }: {
 }): ReactNode {
   const why = waiting !== null ? `Finish or cancel your comment on ${waiting} first.`
     : full ? `A message carries at most ${MAX_REVIEW_COMMENTS} comments. Send it or delete one first.` : undefined
+  const reason = useId()
+  // Unavailable, it stays in the Tab order with its reason read out; pressed while a draft waits, it goes to that draft.
   return <div className="changes-comment-pill" role="row"><div role="gridcell">
     <button type="button" className="changes-comment-pill__button tt-focusable" aria-label={`Comment on ${label}`}
-      title={why} disabled={why !== undefined} onClick={onPress}>
+      title={why} aria-disabled={why !== undefined || undefined} aria-describedby={why !== undefined ? reason : undefined}
+      onClick={() => { if (waiting !== null || !full) onPress() }}>
       <MessageSquare size={14} aria-hidden="true" />Comment</button>
+    {why !== undefined ? <span id={reason} className="tt-visually-hidden">{why}</span> : null}
   </div></div>
 }
 
