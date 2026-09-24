@@ -40,7 +40,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
   return {
     style: drafting ? style : `${style} Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup.`,
     templates: settings.followPullRequestTemplates
-      ? 'When a Git action drafts a pull request, the thread\'s own model follows the repository\'s template, if it has exactly one.'
+      ? 'When a Git action drafts a pull request, the thread\'s own model follows the repository\'s pull request template, if Sotto finds one.'
       : 'When a Git action drafts a pull request, it skips the template and uses Sotto\'s own sections.',
     merge: settings.defaultMergeMethod === 'last'
       ? 'The merge in the pull request checklist starts on the method you used last, Merge the first time.'

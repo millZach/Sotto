@@ -418,7 +418,7 @@ describe('SettingsView', () => {
     expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription(/it skips the template and uses Sotto's own sections/u)
     expect(fetch).toHaveAccessibleDescription(/Sotto asks origin every minute/u)
     rendered.rerender(<SettingsView {...props} />)
-    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription("When a Git action drafts a pull request, the thread's own model follows the repository's template, if it has exactly one.")
+    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription("When a Git action drafts a pull request, the thread's own model follows the repository's pull request template, if Sotto finds one.")
   })
 
   it('resynchronizes numeric drafts from authoritative settings', async () => {

@@ -329,7 +329,10 @@ export class GitActions {
     return { status: 'created', head: branch, base, title: created?.title ?? title, ...(created ? { url: created.url, number: created.number } : {}) }
   }
 
-  /** The repository's one pull request template at the base, where exactly one exists (T3's rule). */
+  /**
+   * The repository's pull request template at the base (T3's rule): the first single template file in GitHub's usual
+   * places, or else the one file in a PULL_REQUEST_TEMPLATE folder when that folder holds only one.
+   */
   private async pullRequestTemplate(cwd: string, ref: string): Promise<string | null> {
     const single = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'docs/PULL_REQUEST_TEMPLATE.md']
     const listing = (await this.git(cwd, ['ls-tree', '-r', '-z', '--full-tree', ref, '--', ...single, '.github/PULL_REQUEST_TEMPLATE', 'PULL_REQUEST_TEMPLATE', 'docs/PULL_REQUEST_TEMPLATE']).catch(() => '')).split('\0').filter(Boolean)
