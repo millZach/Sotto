@@ -65,6 +65,24 @@ The window splices the detail it holds back into each arriving shell, so consume
 `AgentState`. What is left is a thread it is looking at whose history has not arrived yet, which it draws
 as `historyStatus: 'loading'`.
 
+### An unchanged model catalog
+
+The shell still carried a host's whole model catalog on every publish even when nothing in it had
+changed — on the owner's 608-model catalog, most of the shell's weight and about 4 ms of the window's read.
+ADR-0027 has the coalesced broadcast omit a catalog a window was already sent, tagged with a revision so
+the window can tell an omission from an empty list and recover with `agents.get()` if it is missing what a
+broadcast names. `AGENT_GET` and a command's own answer are unaffected: both still return the catalog in
+full, because they are that recovery path. Measured on the same owner catalog (`node:v8`'s `serialize`, which
+approximates what Electron's structured clone puts on the wire): an unchanged repeat fell from 649 KB to
+1.1 KB, and detecting "unchanged" costs about 0.5 ms per publish across both windows.
+
+Putting the catalog back together happens in the page (`wrapAgentBridge`,
+`src/renderer/src/agents/agentStateCatalogs.ts`), not in the preload that first receives the broadcast:
+`contextBridge` clones every argument a main-world listener is called with on its way back across the
+isolated-world boundary, so reassembling on the preload side would clone the whole catalog a second time
+crossing back to the page, which is most of what omitting it was for. Only the small
+`{ revision, omitted: true }` marker needs to make that crossing when nothing changed.
+
 Measured on the same folder (5 threads, 48 messages, 283 activity records), medians of 20, three runs:
 
 | | full state | shell alone |

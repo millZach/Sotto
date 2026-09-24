@@ -272,10 +272,14 @@ export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted ch
 /** What main answers when reclaiming a worktree would discard uncommitted work; the pane opens its confirmation on this exact sentence. */
 export const RECLAIM_WORKTREE_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. Removing it loses them, so confirm it first.'
 
+/** One connected host's catalog, as the desktop keeps it apart from the others when it combines threads. */
+export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
+  capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional() })
+export type AgentClientHost = z.infer<typeof agentClientHostSchema>
+
 export const agentHostSnapshotSchema = z.object({
   /** Desktop projection only: catalogs stay with their host when a window combines threads. */
-  clientHosts: z.array(z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
-    capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional() })).optional(),
+  clientHosts: z.array(agentClientHostSchema).optional(),
   hostId: z.uuid().optional(),
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
@@ -471,6 +475,31 @@ export const agentStateSchema = z.object({
   stale: z.boolean().optional(),
 })
 export type AgentState = z.infer<typeof agentStateSchema>
+
+/**
+ * A model catalog as it may cross the `AGENT_STATE` broadcast on `sotto:agents:state` (issue #286): the
+ * full array, tagged with the revision it represents, or that revision alone when the window it is going
+ * to was already sent it. `AGENT_GET` and a command's own answer are read on demand, once, so they always
+ * carry the array in full; only the coalesced broadcast in `src/main/index.ts` ever omits one, and only
+ * after a send it knows reached that window. The revision is what keeps an omission from ever being read
+ * as an empty catalog: a window missing the one it names — fresh, reloaded, or a message it never saw —
+ * asks `AGENT_GET` for the whole state instead of showing no models. Nothing parses this shape: the
+ * preload forwards it to the page unparsed (contextBridge would otherwise copy a catalog it just put
+ * back together a second time crossing back), and the page's own reassembly reads it structurally, the
+ * same way `trustedState` does for the rest of this channel. See ADR-0027 and
+ * `src/renderer/src/agents/agentStateCatalogs.ts`.
+ */
+export type AgentModelCatalogBroadcast =
+  | { revision: number; models: AgentModel[] }
+  | { revision: number; omitted: true }
+export type AgentClientHostBroadcast = Omit<AgentClientHost, 'models'> & { models: AgentModelCatalogBroadcast }
+export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts'> & {
+  models: AgentModelCatalogBroadcast
+  clientHosts?: AgentClientHostBroadcast[]
+}
+/** What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`. */
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
+
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
  * activity beside them. Activity is the larger half by far — a working thread reports hundreds of

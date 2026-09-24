@@ -766,6 +766,9 @@ describe('durable project/thread organization', () => {
     expect(published.some(entry => entry === 'running:Committing...:checking')).toBe(true)
     expect(source.invalidate).toHaveBeenCalled()
     expect(source.read).toHaveBeenCalledWith(project.path, { remote: true })
+    // The record is Sotto's: a provider snapshot that follows keeps it.
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(record_()?.gitAction).toMatchObject({ actionId: 'action-1', status: 'done' }))
     // A refusal from the service becomes the record's error, not a thrown exception.
     actions.runStackedAction.mockRejectedValueOnce(new Error('Commit local changes before creating a PR.'))
     await f.host.runGitAction({ threadId: 'local', actionId: 'action-2', action: 'create_pr' })
