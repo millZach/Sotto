@@ -95,7 +95,8 @@ export interface GatedWriterShape<Input, Output> {
   readonly enabled: (settings: AppSettings) => boolean
   /** Input with nothing to describe is not sent; absent, every input is. */
   readonly worthAsking?: (input: Input) => boolean
-  readonly request: (input: Input) => ShortTextRequest
+  /** The request, which may read the settings of the moment (the writing style of commit and pull request text). */
+  readonly request: (input: Input, settings: AppSettings) => ShortTextRequest
   /** Turns the written text into what the caller keeps; absent, the text itself. */
   readonly shape?: (written: string | null) => Output
 }
@@ -116,7 +117,7 @@ export function settingsGatedWriter<Input, Output = string | null>(
     try { settings = await getSettings() }
     catch { return null }
     if (!job.enabled(settings) || job.worthAsking?.(input) === false) return null
-    const written = await writer.write(threadId, job.request(input))
+    const written = await writer.write(threadId, job.request(input, settings))
     return job.shape ? job.shape(written) : (written as Output)
   }
 }

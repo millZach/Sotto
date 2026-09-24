@@ -36,6 +36,8 @@ export interface GitActionsDependencies {
   /** The thread's own provider writes the message (ADR-0026); null leaves the commit with a stand-in subject. */
   readonly writeCommitMessage: (threadId: string, material: CommitMaterial) => Promise<string | null>
   readonly writePullRequestText: (threadId: string, material: PullRequestMaterial) => Promise<PullRequestText | null>
+  /** The Follow pull request templates setting, read for each pull request; absent, the template is followed. */
+  readonly followPullRequestTemplates?: () => boolean | Promise<boolean>
   readonly now?: () => number
 }
 
@@ -306,7 +308,9 @@ export class GitActions {
     const subjects = (await this.git(cwd, ['log', '--oneline', '--no-merges', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_LOG_MAX).split('\n').map(line => line.replace(/^\S+\s+/u, '').trim()).filter(Boolean).reverse()
     const stat = (await this.git(cwd, ['diff', '--stat', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_STAT_MAX)
     const patch = (await this.git(cwd, ['diff', '--no-ext-diff', '--patch', '--minimal', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_PATCH_MAX)
-    const template = await this.pullRequestTemplate(cwd, range)
+    // Follow pull request templates off: the template is not read at all, and the body is Sotto's own sections.
+    const follow = await (async () => this.dependencies.followPullRequestTemplates?.() ?? true)().catch(() => true)
+    const template = follow ? await this.pullRequestTemplate(cwd, range) : null
     const written = await this.dependencies.writePullRequestText(threadId, { subjects, diff: diffExcerpt(patch, RANGE_PATCH_MAX).text, stat, template })
     const title = written?.title ?? subjects.at(-1) ?? STAND_IN_SUBJECT
     const body = written?.body ?? (template ?? subjects.map(subject => `- ${subject}`).join('\n'))

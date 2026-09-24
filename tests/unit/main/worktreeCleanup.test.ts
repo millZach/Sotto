@@ -116,3 +116,60 @@ describe('worktree cleanup rules', () => {
     cleanup.dispose()
   })
 })
+
+describe('auto-settle merged threads', () => {
+  const own = (branch: string, extra: Partial<AgentWorktree> = {}): AgentWorktree => ({ mode: 'independent', status: 'ready', path: `/w/${branch}`, repositoryRoot: '/repo', branch, sentBranch: branch, ...extra })
+  /** Records only: settling touches no folder, so no repository is needed. */
+  function settlingHost(threads: AgentThread[]) {
+    const settled: string[] = [], reclaimed: string[] = []
+    return {
+      settled, reclaimed,
+      workspaceSnapshot: (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, projects: [{ id: 'project', providerId: 'codex', title: 'Project', path: '/repo' }], threads }),
+      subscribe: () => () => undefined,
+      async reclaimThreadWorktree(threadId: string) { reclaimed.push(threadId) },
+      async setWorkspaceSettled(_kind: 'thread', id: string) { settled.push(id); threads.find(item => item.id === id)!.workspaceSettledAt = new Date().toISOString() },
+    }
+  }
+  it('settles an idle thread whose branch merged, once, and leaves the rest where they are', async () => {
+    const threads = [
+      thread('merged', own('feature/merged')),
+      thread('open', own('feature/open')),
+      thread('running', own('feature/merged-too'), { status: 'running' }),
+      thread('shared-sent', { mode: 'shared', status: 'ready', path: '/repo', repositoryRoot: '/repo', branch: 'main', sentBranch: 'feature/shared' }),
+      thread('shared-main', { mode: 'shared', status: 'ready', path: '/repo', repositoryRoot: '/repo', branch: 'main', sentBranch: 'main' }),
+      thread('draft', own('sotto/draft'), { nativeSessionStarted: false }),
+      thread('reclaimed', own('feature/reclaimed', { reclaimedAt: '2026-09-20T00:00:00.000Z' })),
+    ]
+    const host = settlingHost(threads)
+    const pullRequestMerged = vi.fn(async (_root: string, branch: string) => branch !== 'feature/open')
+    const log: string[] = []
+    let on = true
+    const cleanup = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => on, pullRequestMerged, log: code => log.push(code) })
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['merged', 'shared-sent', 'reclaimed'])
+    // Settling removed nothing: no cleanup rule is on.
+    expect(host.reclaimed).toEqual([])
+    expect(pullRequestMerged).not.toHaveBeenCalledWith('/repo', 'main')
+    expect(log).toEqual(['thread-auto-settled', 'thread-auto-settled', 'thread-auto-settled'])
+    // A thread the user restores stays restored for the rest of the run.
+    threads[0]!.workspaceSettledAt = null
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['merged', 'shared-sent', 'reclaimed'])
+    // Off, nothing is asked at all.
+    on = false
+    pullRequestMerged.mockClear()
+    await cleanup.sweep()
+    expect(pullRequestMerged).not.toHaveBeenCalled()
+  })
+  it('asks GitHub once per branch when the merged rule wants the same answer, and never without gh', async () => {
+    const threads = [thread('merged', own('feature/merged'))]
+    const host = settlingHost(threads)
+    const pullRequestMerged = vi.fn(async () => true)
+    await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, merged: true }), autoSettleMerged: () => true, pullRequestMerged }).sweep()
+    expect(pullRequestMerged).toHaveBeenCalledTimes(1)
+    expect(host.settled).toEqual(['merged'])
+    const without = settlingHost([thread('merged', own('feature/merged'))])
+    await new WorktreeCleanup({ host: without, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true }).sweep()
+    expect(without.settled).toEqual([])
+  })
+})

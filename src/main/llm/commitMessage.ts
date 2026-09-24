@@ -1,5 +1,6 @@
 import type { AppSettings } from '../../shared/settings'
 import type { DiffExcerpt } from './diffExcerpt'
+import { gitWritingStyleInstruction, type GitWritingStyleSettings } from './gitWritingStyle'
 import { settingsGatedWriter, trimToLine, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
 
 /** The subject line every reader of `git log --oneline` sees whole. */
@@ -43,15 +44,17 @@ export type CommitMaterial = DiffExcerpt & { readonly conventions?: CommitConven
  * conventions when given, so no part of the thread transcript is sent again
  * through a commit message.
  */
-export function commitMessageRequest(material: CommitMaterial): ShortTextRequest {
+export function commitMessageRequest(material: CommitMaterial, style?: GitWritingStyleSettings): ShortTextRequest {
   const parts = [`Staged diff:\n${material.text}`]
   const conventions = material.conventions
   if (conventions?.nameStatus) parts.unshift(`Staged files (status and path):\n${conventions.nameStatus}`)
   if (conventions?.subjects.length) parts.push(`Recent commit subjects in this repository, newest first, to match in style:\n${conventions.subjects.map(subject => `- ${subject}`).join('\n')}`)
   if (conventions?.agentsFile) parts.push(`The repository's AGENTS.md, for any rule it gives about commit messages:\n${conventions.agentsFile}`)
+  // The writing style chosen in Settings: nothing for the repository's own, else one more instruction.
+  const styled = gitWritingStyleInstruction(style, 'commit')
   return {
     purpose: 'commit-message',
-    instruction: INSTRUCTION,
+    instruction: styled ? `${INSTRUCTION}\n\n${styled}` : INSTRUCTION,
     material: parts.join('\n\n'),
     maxCharacters: COMMIT_MESSAGE_MAX_CHARACTERS,
     shape: 'text',

@@ -192,3 +192,37 @@ describe('the commit message a staged diff earns', () => {
     expect(unavailable.failures).toEqual(['commit-message:unavailable'])
   })
 })
+
+describe('the writing style of commit and pull request text', () => {
+  const branch = { subjects: ['Draft the form'], diff: 'diff --git a/x b/x\n+x', template: '## Checklist\n- [ ] Tested' }
+  it('adds nothing for the repository\'s own conventions, and the Conventional Commits form when chosen', async () => {
+    const repository = createWriter(async () => 'Raise the contrast')
+    await commitMessageWriter(repository.writer, () => SETTINGS)('thread-a', excerpt)
+    expect(sent(repository.side).instruction).not.toMatch(/Conventional Commits|own instructions/u)
+    const conventional = createWriter(async () => 'fix(theme): raise the contrast')
+    await expect(commitMessageWriter(conventional.writer, () => ({ ...SETTINGS, gitWritingStyle: 'conventional' }))('thread-a', excerpt)).resolves.toBe('fix(theme): raise the contrast')
+    expect(sent(conventional.side).instruction).toMatch(/Conventional Commits form, "type\(scope\): summary"/u)
+    const pullRequest = createWriter(async () => 'feat: draft the form\n\nBody')
+    await pullRequestTextWriter(pullRequest.writer, () => ({ ...SETTINGS, gitWritingStyle: 'conventional' }))('thread-a', branch)
+    expect(sent(pullRequest.side).instruction).toMatch(/title in the Conventional Commits form/u)
+  })
+  it('sends the user\'s own instructions in the instruction, never the material, and nothing when none were written', async () => {
+    const custom = createWriter(async () => 'Raised the contrast')
+    await commitMessageWriter(custom.writer, () => ({ ...SETTINGS, gitWritingStyle: 'custom', gitWritingInstructions: '  Subjects in the past tense.  ' }))('thread-a', excerpt)
+    expect(sent(custom.side).instruction).toMatch(/instructions for commit messages follow[\s\S]*\nSubjects in the past tense\.$/u)
+    expect(sent(custom.side).material).not.toContain('past tense')
+    const blank = createWriter(async () => 'Raise the contrast')
+    await commitMessageWriter(blank.writer, () => ({ ...SETTINGS, gitWritingStyle: 'custom', gitWritingInstructions: '   ' }))('thread-a', excerpt)
+    expect(sent(blank.side).instruction).toBe(sent(custom.side).instruction.split('\n\n')[0])
+  })
+  it('fills the repository\'s template only while Follow pull request templates is on', async () => {
+    const following = createWriter(async () => 'Draft the form\n\nBody')
+    await pullRequestTextWriter(following.writer, () => SETTINGS)('thread-a', branch)
+    expect(sent(following.side).material).toContain('## Checklist')
+    expect(sent(following.side).instruction).toMatch(/fills in the pull request template/u)
+    const ignoring = createWriter(async () => 'Draft the form\n\nBody')
+    await pullRequestTextWriter(ignoring.writer, () => ({ ...SETTINGS, followPullRequestTemplates: false }))('thread-a', branch)
+    expect(sent(ignoring.side).material).not.toContain('## Checklist')
+    expect(sent(ignoring.side).instruction).toMatch(/opens with a "## What changed" section/u)
+  })
+})
