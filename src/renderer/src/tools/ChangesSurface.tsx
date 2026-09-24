@@ -309,12 +309,27 @@ function ElsewhereComments({ threadId, files, store }: { readonly threadId: stri
   const shown = new Set(files.filter(file => file.content.kind === 'text').map(file => file.path))
   const elsewhere = comments.filter(comment => !shown.has(comment.path))
   const strayDraft = draft !== null && !shown.has(draft.path) ? draft : null
+  const section = useRef<HTMLElement>(null)
   if (elsewhere.length === 0 && strayDraft === null) return null
-  return <section className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
+  /**
+   * What leaves the list hands focus on: to the next comment's Delete, the one before it, and when the list is
+   * about to empty, to the last file's head or to Refresh diff, so focus never drops to the page.
+   */
+  const handOff = (from: HTMLElement | null): void => {
+    const deletes = [...section.current?.querySelectorAll<HTMLElement>('.changes-comment__delete') ?? []].filter(button => button !== from)
+    const index = from === null ? 0 : [...section.current?.querySelectorAll<HTMLElement>('.changes-comment__delete') ?? []].indexOf(from)
+    const next = deletes[Math.min(Math.max(index, 0), deletes.length - 1)]
+    if (next) { next.focus(); return }
+    const surface = section.current?.closest('.changes-surface')
+    const heads = surface?.querySelectorAll<HTMLElement>('.changes-file__toggle')
+    ;(heads?.[heads.length - 1] ?? surface?.querySelector<HTMLElement>('button[aria-label="Refresh diff"]'))?.focus()
+  }
+  return <section ref={section} className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
     <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on files not in this comparison</h3>
     {strayDraft ? <CommentDraft draft={strayDraft} full={store.full(threadId)} focus={NO_FOCUS} standalone
-      onText={text => store.editDraft(threadId, text)} onCancel={() => store.closeDraft(threadId)} onAdd={() => { store.addDraft(threadId) }} /> : null}
-    {elsewhere.map(comment => <CommentMarker key={comment.id} comment={comment} full note={null} onDelete={() => store.remove(threadId, comment.id)} />)}
+      onText={text => store.editDraft(threadId, text)} onCancel={() => { handOff(null); store.closeDraft(threadId) }}
+      onAdd={() => { if (store.addDraft(threadId)) requestAnimationFrame(() => [...section.current?.querySelectorAll<HTMLElement>('.changes-comment__delete') ?? []].at(-1)?.focus()) }} /> : null}
+    {elsewhere.map(comment => <CommentMarker key={comment.id} comment={comment} full note={null} onDelete={button => { handOff(button); store.remove(threadId, comment.id) }} />)}
   </section>
 }
 
@@ -609,14 +624,14 @@ const MARKER_NOTE: Record<MarkerPlace, string | null> = {
 function CommentMarker({ comment, note, full = false, onDelete }: {
   readonly comment: ReviewComment; readonly note: string | null
   /** Outside its file's lines the marker names the whole path and is not a row of a grid. */
-  readonly full?: boolean; readonly onDelete: () => void
+  readonly full?: boolean; readonly onDelete: (button: HTMLElement) => void
 }): ReactNode {
   const label = reviewLabel(comment, full)
   return <div className="changes-comment changes-comment--marker" role={full ? undefined : 'row'}><div className="changes-comment__cell" role={full ? undefined : 'gridcell'}>
     <div className="changes-comment__head">
       <MessageSquare size={14} aria-hidden="true" className="changes-comment__icon" />
       <span className="changes-comment__label">{label}</span>
-      <Button variant="ghost" className="changes-comment__delete" aria-label={`Delete comment on ${label}`} onClick={onDelete}>Delete comment</Button>
+      <Button variant="ghost" className="changes-comment__delete" aria-label={`Delete comment on ${label}`} onClick={event => onDelete(event.currentTarget)}>Delete comment</Button>
     </div>
     <p className="changes-comment__text">{comment.text}</p>
     {note ? <p className="changes-comment__note">{note}</p> : null}

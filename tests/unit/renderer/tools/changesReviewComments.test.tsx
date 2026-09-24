@@ -297,6 +297,28 @@ describe('review comments in Changes', () => {
     expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveValue('Unfinished')
   })
 
+  it('hands focus on when a comment is deleted from the list after the files, never to the page', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
+    const { comments } = setup(git)
+    await screen.findByText('export const ready = true')
+    comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'a', oldLine: null, newLine: 1 }], text: 'First' })
+    comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'b', oldLine: null, newLine: 2 }], text: 'Second' })
+    const list = await screen.findByRole('region', { name: 'Comments on files not in this comparison' })
+    await user.click(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L1' }))
+    expect(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L2' })).toHaveFocus()
+    // The last one empties the list: focus goes to the last file's head.
+    await user.click(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L2' }))
+    expect(screen.queryByRole('region', { name: 'Comments on files not in this comparison' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Collapse src/other.ts' })).toHaveFocus()
+    // With no files to compare, it goes to Refresh diff.
+    git.change(null, [])
+    await screen.findByText('The working copy matches HEAD.')
+    comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'c', oldLine: null, newLine: 3 }], text: 'Third' })
+    await user.click(await screen.findByRole('button', { name: 'Delete comment on src/gone.ts L3' }))
+    expect(screen.getByRole('button', { name: 'Refresh diff' })).toHaveFocus()
+  })
+
   it('picks split rows too, a pair quoting both of its lines', async () => {
     const user = userEvent.setup()
     const { store, comments } = setup()
