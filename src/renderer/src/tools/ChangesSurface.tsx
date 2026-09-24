@@ -2,7 +2,7 @@ import React, { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, GitPullRequestArrow, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
-import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
+import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
 import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
@@ -273,7 +273,7 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
   const full = comments.length >= MAX_REVIEW_COMMENTS
   const reviews = useRef(new Map<string, FileReview>())
   const reviewOf = (path: string): FileReview => {
-    const next: FileReview = { selection: selection?.path === path ? selection : null, draft: draft?.path === path ? draft : null, drafting: draft !== null,
+    const next: FileReview = { selection: selection?.path === path ? selection : null, draft: draft?.path === path ? draft : null, drafting: draft ? reviewLabel(draft) : null,
       comments: byPath.get(path) ?? NO_COMMENTS, full, actions, focusDraft }
     const previous = reviews.current.get(path)
     if (previous && (Object.keys(next) as (keyof FileReview)[]).every(name => previous[name] === next[name])) return previous
@@ -307,12 +307,17 @@ function ElsewhereComments({ threadId, files, store }: { readonly threadId: stri
   </section>
 }
 
+/** Whether two quotes are the same lines. */
+function sameLines(a: readonly ReviewLine[], b: readonly ReviewLine[]): boolean {
+  return a.length === b.length && a.every((line, index) => sameReviewLine(line, b[index]!))
+}
+
 /** One file's share of the review comments. */
 interface FileReview {
   readonly selection: LineSelection | null
   readonly draft: ReviewDraft | null
-  /** Whether a draft is open anywhere in this thread's Changes, which hides Comment until it closes. */
-  readonly drafting: boolean
+  /** The name of the draft open anywhere in this thread's Changes; a new pick's Comment waits until it closes. */
+  readonly drafting: string | null
   readonly comments: readonly ReviewComment[]
   readonly full: boolean
   readonly actions: ReviewActions
@@ -462,6 +467,8 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
     if (event.shiftKey) pick(selection?.anchor ?? position, target)
   }
   // A closed draft or deleted comment takes focus with it; hand it back to the lines, unless something has had it since.
+  // Comment is hidden only for the pick the open draft was written on; any other pick shows it, waiting on the draft.
+  const pickIsDraft = selection !== null && draft !== null && sameLines(quotedLines(shown, selectable, from, to), draft.lines)
   const done = (position: number): void => {
     requestAnimationFrame(() => { if (document.activeElement === null || document.activeElement === document.body) focusRow(position) })
   }
@@ -472,11 +479,12 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
     <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} role="grid" aria-multiselectable="true" aria-label={`Lines of ${file.path}`}
       onMouseDown={event => { if (event.shiftKey && rowOf(event.target)) event.preventDefault() }} onClick={onClick} onKeyDown={onKeyDown}>
       {rows.map(row => {
-        const selected = row.position !== null && (draft ? draftRows.has(row.key) : row.position >= from && row.position <= to)
+        // The draft's own lines stay marked while it is open, and a new pick shows beside them.
+        const selected = row.position !== null && (row.position >= from && row.position <= to || draft !== null && draftRows.has(row.key))
         return <Fragment key={row.key}>
           <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} />
-          {selection && !review.drafting && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
-            onPress={() => commentOn(to)} /> : null}
+          {selection && !pickIsDraft && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
+            waiting={review.drafting} onPress={() => commentOn(to)} /> : null}
           {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place]}
             onDelete={() => { actions.remove(comment.id); done(row.position ?? current) }} />)}
           {draft && draftAnchor === row.key ? <CommentDraft draft={draft} full={review.full} focus={review.focusDraft}
@@ -528,10 +536,16 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
 })
 
 /** Comment, floating at the end of the picked lines. */
-function CommentPill({ label, full, onPress }: { readonly label: string; readonly full: boolean; readonly onPress: () => void }): ReactNode {
+function CommentPill({ label, full, waiting, onPress }: {
+  readonly label: string; readonly full: boolean
+  /** The draft still open elsewhere, whose words would otherwise be replaced. */
+  readonly waiting: string | null; readonly onPress: () => void
+}): ReactNode {
+  const why = waiting !== null ? `Finish or cancel your comment on ${waiting} first.`
+    : full ? `A message carries at most ${MAX_REVIEW_COMMENTS} comments. Send it or delete one first.` : undefined
   return <div className="changes-comment-pill" role="row"><div role="gridcell">
     <button type="button" className="changes-comment-pill__button tt-focusable" aria-label={`Comment on ${label}`}
-      title={full ? `A message carries at most ${MAX_REVIEW_COMMENTS} comments. Send it or delete one first.` : undefined} disabled={full} onClick={onPress}>
+      title={why} disabled={why !== undefined} onClick={onPress}>
       <MessageSquare size={14} aria-hidden="true" />Comment</button>
   </div></div>
 }

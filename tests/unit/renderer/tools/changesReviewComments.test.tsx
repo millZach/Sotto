@@ -233,6 +233,31 @@ describe('review comments in Changes', () => {
     expect(screen.queryByRole('region', { name: 'Comments on files not in this comparison' })).toBeNull()
   })
 
+  it('shows a new pick while a worded draft is open, its Comment waiting on that draft', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit([file(PATCH), file(OTHER, 'src/other.ts')]))
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Half written')
+    // The draft's own pick shows no Comment: the draft is under it.
+    expect(screen.queryByRole('button', { name: 'Comment on app.ts L6' })).toBeNull()
+    const other = screen.getByRole('grid', { name: 'Lines of src/other.ts' })
+    const line = other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!
+    await user.click(line)
+    expect(line).toHaveAttribute('aria-selected', 'true')
+    const pill = within(other).getByRole('button', { name: 'Comment on other.ts L1' })
+    expect(pill).toBeDisabled()
+    expect(pill).toHaveAttribute('title', 'Finish or cancel your comment on app.ts L6 first.')
+    // The draft keeps its words and its lines stay marked.
+    expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveValue('Half written')
+    expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
+    // In the draft's own file a new pick shows too, beside the draft's lines.
+    await user.click(row('[data-new-line="3"]'))
+    expect(row('[data-new-line="3"]')).toHaveAttribute('aria-selected', 'true')
+    expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Comment on app.ts L3' })).toBeDisabled()
+  })
+
   it('picks split rows too, a pair quoting both of its lines', async () => {
     const user = userEvent.setup()
     const { store, comments } = setup()
