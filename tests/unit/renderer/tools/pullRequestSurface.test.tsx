@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
@@ -8,6 +8,7 @@ import {
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
+import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
 import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -214,6 +215,21 @@ describe('the Pull request surface', () => {
     mount({ detail: detail({ mergeMethods: ['merge', 'squash'] }) })
     await opened()
     expect(screen.getByRole('button', { name: 'Merge method: Merge' })).toBeInTheDocument()
+  })
+  it('holds a pick until the setting\'s method changes, then starts on the setting again', () => {
+    withSettings({ defaultMergeMethod: 'merge' })
+    const hook = renderHook(() => usePullRequestMergeMethod())
+    expect(hook.result.current[0]).toBe('merge')
+    act(() => hook.result.current[1]('squash'))
+    expect(hook.result.current[0]).toBe('squash')
+    hook.rerender()
+    expect(hook.result.current[0]).toBe('squash')
+    // The Merge method setting changes while the surface is open: the setting wins over the earlier pick.
+    withSettings({ defaultMergeMethod: 'rebase' })
+    hook.rerender()
+    expect(hook.result.current[0]).toBe('rebase')
+    act(() => hook.result.current[1]('merge'))
+    expect(hook.result.current[0]).toBe('merge')
   })
   it('closes the method menu and the confirmation with Escape, sending nothing', async () => {
     const { command } = mount()
