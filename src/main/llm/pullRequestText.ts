@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../shared/settings'
+import { gitWritingStyleInstruction, type GitWritingStyleSettings } from './gitWritingStyle'
 import { settingsGatedWriter, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
 
 /** A pull request title is read in a list of them, so it stays one short line. */
@@ -56,11 +57,14 @@ const TEMPLATE_INSTRUCTION = [
  * are the whole material, so nothing else in the working copy is sent through
  * this form.
  */
-export function pullRequestTextRequest(material: PullRequestMaterial): ShortTextRequest {
+export function pullRequestTextRequest(material: PullRequestMaterial, settings?: GitWritingStyleSettings): ShortTextRequest {
+  // Follow pull request templates is decided where the template is read (GitActions); a template given here is filled.
   const template = material.template?.trim()
+  const styled = gitWritingStyleInstruction(settings, 'pull-request')
+  const instruction = template ? TEMPLATE_INSTRUCTION : INSTRUCTION
   return {
     purpose: 'pull-request-text',
-    instruction: template ? TEMPLATE_INSTRUCTION : INSTRUCTION,
+    instruction: styled ? `${instruction}\n\n${styled}` : instruction,
     material: [
       `Commit subjects:\n${material.subjects.slice(0, MAX_SUBJECTS).map(subject => `- ${subject}`).join('\n')}`,
       ...(material.stat?.trim() ? [`Files changed (git diff --stat):\n${material.stat.trim()}`] : []),

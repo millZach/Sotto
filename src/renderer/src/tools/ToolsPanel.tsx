@@ -20,6 +20,7 @@ import { ChangesSurface } from './ChangesSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
+import { useProactiveChanges } from './proactivePanels'
 import type { PathAction } from './filesBrowser'
 import { TerminalSurface } from './TerminalSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -293,12 +294,15 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   useEffect(() => {
     if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(bridge, threadId)
   }, [open, threadId, onFiles, bridge, store])
-  // Changes watches the working copy only while it is the visible surface.
+  // Changes watches the working copy only while it is the visible surface. In the app it waits for settings, so its
+  // first read already follows Hide whitespace changes rather than reading once each way on a cold start. Outside
+  // the app (a panel rendered on its own) there are no settings to wait for.
+  const diffSettingsKnown = app === null || app.settings !== null
   useEffect(() => {
-    if (!open || threadId === undefined || chrome.surface !== 'changes') return
+    if (!open || threadId === undefined || chrome.surface !== 'changes' || !diffSettingsKnown) return
     store.changes.activate(changesBridge, threadId)
     return () => store.changes.deactivate(changesBridge)
-  }, [open, threadId, chrome.surface, changesBridge, store])
+  }, [open, threadId, chrome.surface, changesBridge, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
     if (open && threadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, threadId)
@@ -308,11 +312,13 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   }, [open, threadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the rail's open surface, so keyboard users land where the toggle pointed.
+  // An open nobody pressed for (Proactive panels) leaves focus where the user is typing.
   const wasOpen = useRef(open)
   useEffect(() => {
-    if (open && !wasOpen.current) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
+    if (open && !wasOpen.current && !store.takeQuietOpen()) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
     wasOpen.current = open
-  }, [open, chrome.surface])
+  }, [open, chrome.surface, store])
+  useProactiveChanges(state, focusedThreadId, store)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')

@@ -12,10 +12,18 @@ import { baseChoices } from '../../../../src/renderer/src/tools/ChangesBasePicke
 import { inWorkingCopy } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { changesChord } from '../../../../src/renderer/src/tools/changesShortcut'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
+import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import { threadsStateFixture } from '../liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+// Outside the app provider the diff settings are their defaults; a test that needs another says so.
+vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(() => null),
+}))
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null) })
 
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
@@ -117,6 +125,52 @@ describe('Changes as T3’s diff', () => {
     expect(store.getSnapshot().surface).toBe('files')
     await waitFor(() => expect(files.preview).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', path: 'src/app.ts' })))
     expect(await within(panel()).findByText('export const ready = true')).toBeInTheDocument()
+  })
+
+  it('starts where the diff settings say, keeps what the controls choose, and follows a setting that changes', async () => {
+    const user = userEvent.setup()
+    const settings = { ...DEFAULT_SETTINGS, diffLayout: 'split' as const, diffHideWhitespace: true, diffFileState: 'collapsed' as const }
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings } as unknown as AppContextValue))
+    const { git, store } = setup()
+    // Hidden whitespace is asked of Git on the first read, not after it.
+    await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
+    expect(git.bridge.review).toHaveBeenNthCalledWith(1, expect.objectContaining({ ignoreWhitespace: true }))
+    await waitFor(() => expect(panel().querySelectorAll('.changes-file[data-collapsed]')).toHaveLength(3))
+    expect(within(panel()).getByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(panel()).getByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    // A file the user opens stays open, and a layout they choose outlasts a return to Changes.
+    await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Expand src/app.ts' }))
+    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    act(() => { store.setSurface('files') })
+    act(() => { store.setSurface('changes') })
+    expect(await within(panel()).findByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(block('src/app.ts')).not.toHaveAttribute('data-collapsed'))
+    // A setting changed in Settings is followed: here whitespace is shown again, and the layout goes back to Split.
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: { ...settings, diffHideWhitespace: false } } as unknown as AppContextValue))
+    act(() => { store.setSurface('files') })
+    act(() => { store.setSurface('changes') })
+    expect(await within(panel()).findByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(panel()).getByRole('button', { name: 'Hide whitespace changes' })).toBeInTheDocument()
+  })
+
+  it('waits for settings on a cold start, so the first read already hides whitespace and there is no second', async () => {
+    let current: AppContextValue['settings'] = null
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: current } as unknown as AppContextValue))
+    const git = fakeGit()
+    const store = new ToolsPanelStore()
+    store.setOpen(true)
+    store.setSurface('changes')
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: {} } })
+    const view = render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} gitChanges={git.bridge} store={store} />)
+    // Settings have not arrived: Changes reads nothing yet, rather than reading once with whitespace shown.
+    await act(async () => { await Promise.resolve() })
+    expect(git.bridge.list).not.toHaveBeenCalled()
+    expect(git.bridge.review).not.toHaveBeenCalled()
+    current = { ...DEFAULT_SETTINGS, diffHideWhitespace: true }
+    view.rerender(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} gitChanges={git.bridge} store={store} />)
+    await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
+    await within(panel()).findAllByRole('button', { name: /^Expand /u })
+    expect(git.bridge.review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ignoreWhitespace: true }))
   })
 
   it('draws stacked or split, wraps or not, hides whitespace through Git, and shows a file tree', async () => {

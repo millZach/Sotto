@@ -256,6 +256,10 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
       await panel.getByRole('combobox', { name: 'Diff scope' }).selectOption(scope)
       if (scope === 'working') await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('export const version = 2')
       else {
+        // Each comparison starts collapsed the first time it is read (Default diff file state); open it once.
+        await expect(panel.getByRole('group', { name: 'src/trail.ts' })).toBeVisible()
+        const expand = panel.getByRole('button', { name: 'Expand all files', exact: true })
+        if (await expand.isVisible()) await expand.click()
         await expect(panel.getByRole('group', { name: 'src/trail.ts' })).toContainText('Start somewhere close.')
         await expect(panel.getByRole('button', { name: 'Change the base. Comparing feature/warmer with main, chosen automatically', exact: true })).toBeVisible()
       }
@@ -285,6 +289,10 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await expect(panel.locator('.files-preview__text')).toContainText('export const version = 2')
     await expect(panel.locator('.files-preview__meta')).toContainText('Read only')
     await select('Changes')
+    // Default diff file state starts Collapsed (T3's default, #271): every file opens folded to its head.
+    await expect(panel.locator('.changes-file')).toHaveCount(3)
+    await expect(panel.locator('.changes-file[data-collapsed]')).toHaveCount(3)
+    await panel.getByRole('button', { name: 'Expand all files', exact: true }).click()
     await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('return `Hello, ${name}!`')
     await expect(tab('Changes')).toHaveAttribute('aria-description', '3 changed files')
     // The file tree stays open through the matrix, so its place beside or above the files is measured too.
@@ -517,7 +525,8 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
   test.setTimeout(600_000)
   await mkdir(SHOTS, { recursive: true })
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-changes-scopes-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
+  // Files start expanded here so every scope's text can be read; the rail test covers the collapsed default.
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', diffFileState: 'expanded' }))
   const repo = join(profile, 'scopes-repo')
   await mkdir(join(repo, 'src'), { recursive: true })
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, windowsHide: true })

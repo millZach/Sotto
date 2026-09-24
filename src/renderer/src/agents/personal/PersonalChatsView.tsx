@@ -26,7 +26,6 @@ import '../composer.css'
 import './personalChats.css'
 import { PersonalVoice } from './PersonalVoice'
 import { ChatPromptEditor } from './ChatPromptEditor'
-import { ThreadUsage } from '../ThreadUsage'
 
 const PERSONAL_PROMPT_ID = 'personal-chat-prompt'
 const providerLabel = (provider: string): string => ({ codex: 'Codex', claude: 'Claude', grok: 'Grok' })[provider] ?? provider
@@ -530,7 +529,6 @@ export function PersonalChatsView({ bridge = bridgePersonalChats(), store = pers
         <div className="thread-workspace__compose">
           <PersonalComposer key={selected.id} bridge={bridge} state={state} chat={selected} store={store} onSent={() => setFollowSignal(value => value + 1)} />
           <PersonalVoice key={`voice-${selected.id}`} bridge={bridge} chat={selected} state={state} store={store} />
-          <ThreadUsage usage={selected.usage} modelId={selected.modelId} />
         </div>
       </> : <>
         {actionError || state.error ? <p className="agent-error thread-workspace__error" role="alert">{actionError ?? state.error}</p> : null}
