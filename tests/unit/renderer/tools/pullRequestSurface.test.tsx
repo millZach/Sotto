@@ -11,7 +11,7 @@ const check = (name: string, status: GitPullRequestCheck['status'], url: string 
 function detail(change: Partial<GitPullRequestDetail> = {}): GitPullRequestDetail {
   return { number: 74, url: URL, title: 'Make the greeting friendlier', body: 'Says hello.\n\n- One change', state: 'open', draft: false, baseBranch: 'main', headBranch: 'feat/greeting',
     crossRepository: false, reviewDecision: 'approved', mergeable: 'mergeable', checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1')], mergeMethods: ['merge', 'squash', 'rebase'],
-    autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: true, ...change }
+    autoMergeAllowed: true, autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: true, ...change }
 }
 function thread(change: Partial<AgentThread> = {}): AgentThread {
   return { id: 'thread-1', projectId: 'project', title: 'Task', modelId: 'codex:model', status: 'idle', messages: [], requests: [],
@@ -50,6 +50,8 @@ describe('pull request surface logic, T3\'s rules', () => {
     expect(primaryControl({ ...base, checks: [check('a', 'failure')] })).toBe('enable-auto-merge')
     expect(primaryControl({ ...base, checks: [check('a', 'pending')] })).toBe('enable-auto-merge')
     expect(primaryControl({ ...base, checks: [] })).toBe('merge')
+    // A repository without auto-merge is offered the merge itself while checks run.
+    expect(primaryControl({ ...base, checks: [check('a', 'pending')], autoMergeAllowed: false })).toBe('merge')
     expect(primaryControl({ ...base, mergeMethods: [] })).toBeNull()
   })
   it('sums the checks in T3\'s words and picks the method chosen, then remembered, then allowed', () => {
@@ -116,6 +118,21 @@ describe('the Pull request surface', () => {
     await menu('Merge now')
     expect(screen.getByRole('dialog', { name: 'Merge pull request?' })).toBeInTheDocument()
   })
+  it('leaves Enable auto-merge out where the repository does not allow it', async () => {
+    mount({ detail: detail({ autoMergeAllowed: false, checks: [check('build', 'pending')] }) })
+    expect(await screen.findByRole('button', { name: 'Merge' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Enable auto-merge' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Merge now' })).toBeNull()
+  })
+  it('reads once on opening, and not again when a link only brings its title up to date', async () => {
+    const linked = (title: string) => thread({ pullRequests: [{ number: 74, url: URL, title, state: 'open', draft: false, source: 'created', linkedAt: '2026-09-23T00:00:00.000Z' }] })
+    const { gitPullRequest, rerender } = mount({ thread: linked('Old title') })
+    await screen.findByRole('heading', { name: 'Make the greeting friendlier' })
+    rerender(<PullRequestSurface thread={linked('Make the greeting friendlier')} command={vi.fn()} onStatus={vi.fn()} />)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(gitPullRequest).toHaveBeenCalledTimes(1)
+  })
   it('turns an armed auto-merge off, marks a draft ready, and reopens a closed one, each without a confirmation', async () => {
     const armed = mount({ detail: detail({ autoMerge: { method: 'squash' } }) })
     expect(await screen.findByText(/Auto-merge is on \(squash and merge\)/u)).toBeInTheDocument()
@@ -134,7 +151,12 @@ describe('the Pull request surface', () => {
   it('offers Update branch and Update with rebase while the branch is behind its base', async () => {
     const { command } = mount({ detail: detail({ behindBy: 3 }) })
     expect(await screen.findByText(/This branch is 3 commits behind/u)).toBeInTheDocument()
+    // Update with rebase rewrites the branch on GitHub, so it asks first and says what that does to a local copy.
     fireEvent.click(screen.getByRole('button', { name: 'Update with rebase' }))
+    const rebase = screen.getByRole('dialog', { name: 'Update with rebase?' })
+    expect(rebase).toHaveTextContent('This rebases the branch of #74 onto main on GitHub, rewriting its commits. A local copy of the branch will no longer match it')
+    expect(command).not.toHaveBeenCalled()
+    fireEvent.click(within(rebase).getByRole('button', { name: 'Update with rebase' }))
     await waitFor(() => expect(sent(command)).toEqual([expect.objectContaining({ action: 'update-branch', method: 'rebase' })]))
     fireEvent.click(screen.getByRole('button', { name: 'Update branch' }))
     await waitFor(() => expect(sent(command)[1]).toEqual({ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'update-branch' }))

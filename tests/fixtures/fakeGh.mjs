@@ -63,7 +63,11 @@ if (args[0] === 'pr' && args[1] === 'list') {
   else if (args[1] === 'merge') {
     if (pull.state !== 'OPEN') fail('GraphQL: Pull request is not mergeable (mergePullRequest)')
     Object.assign(pull, { state: 'MERGED', mergedAt: '2026-09-23T00:00:00Z', mergedWith: method })
-  } else if (args[1] === 'ready') pull.isDraft = args.includes('--undo')
+  } else if (args[1] === 'ready') {
+    // GitHub refuses to change a closed pull request's draft state.
+    if (pull.state !== 'OPEN') fail(`GraphQL: Pull request is closed (${args.includes('--undo') ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview'})`)
+    pull.isDraft = args.includes('--undo')
+  }
   else if (args[1] === 'close') pull.state = 'CLOSED'
   else if (args[1] === 'reopen') pull.state = 'OPEN'
   else pull.behindBy = 0

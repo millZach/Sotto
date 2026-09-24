@@ -245,7 +245,7 @@ describe('BranchToolbar', () => {
   })
   it('offers Checkout pull request for a pull request reference, and checks it out Local or into a Worktree', async () => {
     const detail = { number: 42, url: 'https://github.com/o/r/pull/42', title: 'Fix the greeting', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'fix/greeting', crossRepository: false,
-      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
+      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMergeAllowed: true, autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
     const gitPullRequest = vi.fn(async () => detail)
     const done = { ...state([thread()]), notice: 'Checked out PR #42 on fix/greeting.' } as AgentState
     const { command } = mount(thread(), { command: async () => done })
@@ -257,6 +257,7 @@ describe('BranchToolbar', () => {
     fireEvent.click(option)
     const dialog = await screen.findByRole('dialog', { name: 'Checkout pull request' })
     expect(within(dialog).getByRole('textbox', { name: 'Pull request' })).toHaveValue('42')
+    expect(dialog).not.toHaveTextContent('this thread will work in the project checkout') // it already does
     await within(dialog).findByText('Fix the greeting', {}, { timeout: 3_000 })
     expect(gitPullRequest).toHaveBeenCalledWith({ threadId: 'thread-1', reference: '42' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Local' }))
@@ -264,9 +265,18 @@ describe('BranchToolbar', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('status')).toHaveTextContent('Checked out PR #42 on fix/greeting.')
   })
+  it('says Local moves a draft set to a new worktree into the project checkout', async () => {
+    mount(thread({ worktree: { mode: 'independent', status: 'pending' } }))
+    vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest: vi.fn(async () => null) } })
+    await openPicker()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search refs' }), { target: { value: '#42' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Checkout pull request/u }))
+    const dialog = await screen.findByRole('dialog', { name: 'Checkout pull request' })
+    expect(dialog).toHaveAccessibleDescription(/Local: this thread will work in the project checkout\./u)
+  })
   it('keeps Worktree for a thread that has not started, and says why otherwise', async () => {
     const detail = { number: 42, url: 'https://github.com/o/r/pull/42', title: 'Fix', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'fix', crossRepository: false,
-      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
+      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMergeAllowed: true, autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
     mount(thread({ nativeSessionStarted: true }))
     vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest: vi.fn(async () => detail) } })
     await openPicker()

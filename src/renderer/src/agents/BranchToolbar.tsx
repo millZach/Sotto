@@ -22,7 +22,8 @@ function refsBridge(): ((request: { threadId: string; query?: string; cursor?: n
   return window.sotto?.agents?.gitRefs
 }
 
-const PR_ICONS: Record<GitPullRequestSummary['state'], typeof GitPullRequest> = { open: GitPullRequest, closed: GitPullRequestClosed, merged: GitMerge }
+/** A pull request's state as a glyph, here and on the Pull request surface; a draft takes `GitPullRequestDraft`. */
+export const PR_ICONS: Record<GitPullRequestSummary['state'], typeof GitPullRequest> = { open: GitPullRequest, closed: GitPullRequestClosed, merged: GitMerge }
 
 /**
  * T3's branch toolbar, under the composer of a thread whose folder is a Git repository. Run on and Workspace
@@ -135,7 +136,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
       onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     {notice ? <p className="branch-toolbar__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
-    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked}
+    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }

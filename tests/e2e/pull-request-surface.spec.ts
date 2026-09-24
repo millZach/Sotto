@@ -45,6 +45,10 @@ test('a pull request is checked out from the branch picker, opened from its badg
   git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Owned baseline')
   git(directory, 'init', '--bare', '-q', '-b', 'main', remote); git(repository, 'remote', 'add', 'origin', remote)
   git(repository, 'push', '-q', '-u', 'origin', 'main'); git(repository, 'remote', 'set-head', 'origin', 'main')
+  // Origin is written as the pull request's GitHub repository, and Git rewrites it to the owned remote, so a checkout
+  // takes the pull request from the repository it belongs to without leaving this machine.
+  git(repository, 'config', `url.${remote}.insteadOf`, 'https://github.com/sotto-fixture/owned')
+  git(repository, 'remote', 'set-url', 'origin', 'https://github.com/sotto-fixture/owned')
   // Someone else's pull request: a branch on the remote the project folder has never had.
   git(directory, 'clone', '-q', '-b', 'main', remote, author)
   git(author, 'checkout', '-q', '-b', 'feat/greeting')
@@ -99,12 +103,23 @@ test('a pull request is checked out from the branch picker, opened from its badg
     const badge = pane(page).getByRole('button', { name: 'Open PR #74 - Open: Greet the reviewer in Tools' })
     await badge.click({ timeout: 30_000 })
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
-    await expect(panel.getByRole('tab', { name: 'PR', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel.getByRole('tab', { name: 'Pull request', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(panel.getByRole('heading', { name: 'Greet the reviewer' })).toBeVisible({ timeout: 30_000 })
     await expect(panel.getByText('Says hello to whoever reviews this.', { exact: false })).toBeVisible()
     await expect(panel.getByRole('list', { name: 'Checks' })).toContainText('CI / Owned build')
     await expect(panel.getByText('Draft', { exact: true })).toBeVisible()
     await capture(page, 'draft-1280-dark')
+
+    // Someone closes it on GitHub while the surface still shows it open: GitHub's refusal reaches the surface in the
+    // host's words, the surface reads it again, and Reopen puts it back.
+    const closedElsewhere = JSON.parse(await readFile(ghState, 'utf8')) as GhState
+    closedElsewhere.pulls[0]!.state = 'CLOSED'
+    await writeFile(ghState, JSON.stringify(closedElsewhere))
+    await panel.getByRole('button', { name: 'Ready for review', exact: true }).click()
+    await expect(panel.getByRole('alert')).toHaveText('Could not mark this ready for review. GraphQL: Pull request is closed (markPullRequestReadyForReview)', { timeout: 30_000 })
+    await expect(panel.getByText('Closed without merging.', { exact: true })).toBeVisible()
+    await panel.getByRole('button', { name: 'Reopen pull request', exact: true }).click()
+    await expect(panel.getByText('Pull request reopened.', { exact: true })).toBeVisible({ timeout: 30_000 })
 
     // Ready for review needs no confirmation; the merge does, in the method chosen, which is remembered.
     await panel.getByRole('button', { name: 'Ready for review', exact: true }).click()

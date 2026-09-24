@@ -171,7 +171,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const branch = git(working, 'branch', '--show-current')
     expect(git(repository, '--git-dir', remote, 'rev-parse', `refs/heads/${branch}`)).toBe(committed)
     await pane(first).getByRole('button', { name: /^Open PR #74 - Open: .* in Tools$/u }).click({ timeout: 30_000 })
-    await expect(panel.getByRole('tab', { name: 'PR', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel.getByRole('tab', { name: 'Pull request', exact: true })).toHaveAttribute('aria-selected', 'true')
     const created = (JSON.parse(await readFile(ghState, 'utf8')) as { pulls: Array<{ title: string }> }).pulls[0]!
     await expect(panel.getByRole('heading', { name: created.title, exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(panel.getByRole('list', { name: 'Checks' })).toContainText('CI / Owned build')

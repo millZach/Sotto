@@ -1,8 +1,8 @@
 /* The Pull request surface in Tools (ADR-0027): the pull request's head, T3's one primary control, the base it is
    behind, each check, then the description; the list of the thread's linked pull requests is the same surface. */
 .pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
-.pr-surface__count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--tt-selected); color: var(--tt-text); font-size: 11.5px; line-height: 18px; text-align: center; }
-.tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: 7px; }
+.pr-surface__count { min-width: 18px; padding: 0 5px; border-radius: var(--tt-radius-pill); background: var(--tt-selected); color: var(--tt-text); font-size: 11.5px; line-height: 18px; text-align: center; }
+.tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: var(--tt-radius-sm); }
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
 .pr-surface__body { display: flex; flex: 1; flex-direction: column; gap: 18px; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
@@ -19,7 +19,7 @@
 .pr-surface__merge p, .pr-surface__stale p { flex: 1 1 100%; margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .pr-surface__merge .tt-button, .pr-surface__stale .tt-button { min-height: 34px; padding: 0 14px; font-size: 14px; }
 .pr-surface__method { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
-.pr-surface__method select { min-width: 0; max-width: 100%; height: 32px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-code-bg); color: var(--tt-text); font: inherit; font-size: 13px; }
+.pr-surface__method select { min-width: 0; max-width: 100%; height: 32px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-text); font: inherit; font-size: 13px; }
 .pr-surface__row { display: flex; flex-wrap: wrap; gap: 8px; }
 .pr-surface__stale { padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); }
 .pr-surface h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 8px; color: var(--tt-text); font-size: 13px; font-weight: 600; }
@@ -43,7 +43,7 @@ button.pr-surface__check-name:hover { text-decoration-color: currentColor; }
 .pr-surface__link { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--tt-hairline); }
 .pr-surface__link:first-child { border-top: 0; }
 .pr-surface__links + .pr-surface__links { border-top: 1px solid var(--tt-hairline); }
-.pr-surface__link-open { display: grid; flex: 1; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.pr-surface__link-open { display: grid; flex: 1; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
 .pr-surface__link-open:hover { background: var(--tt-hover); }
 .pr-surface__link-open > svg { grid-area: icon; }
 .pr-surface__link-number { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -61,6 +61,7 @@ button.pr-surface__check-name:hover { text-decoration-color: currentColor; }
 .pull-request-dialog__resolved strong { color: var(--tt-text); font-weight: 550; }
 .pull-request-dialog__meta { color: var(--tt-text-muted); font-size: 12.5px; }
 .pull-request-dialog__meta bdi { font-family: var(--tt-font-mono); }
+.pull-request-dialog__note { margin: 8px 0 0; color: var(--tt-text); }
 .pull-request-dialog__meta span[data-state] { margin-left: 6px; color: var(--tt-text-2); }
 
 /* A narrow panel keeps the list's icon alone (toolsRail.css); its count then sits on the icon's corner. */

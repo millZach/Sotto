@@ -124,6 +124,8 @@ describe('shared tools panel', () => {
     const tabs = within(rail).getAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
     expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'terminal', 'files', 'changes', 'pull-request', 'agents'])
+    // The tile's word is short; its name is the surface's own.
+    expect(within(rail).getByRole('tab', { name: 'Pull request' })).toHaveTextContent('PR')
     expect(within(panel()).getByRole('tab', { name: 'Files' })).toHaveFocus()
     expect(within(panel()).getByRole('tabpanel')).toBeInTheDocument()
     expect(await findPath('D:\\work\\workshop')).toBeInTheDocument()

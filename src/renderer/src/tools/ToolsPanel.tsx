@@ -164,6 +164,7 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
   return <div className="tools-rail__tabs" role="tablist" aria-label="Tools" aria-orientation="vertical">
     {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable"
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
+      aria-label={SURFACE_NAMES[surface.id]}
       aria-description={live[surface.id]} title={live[surface.id] ? `${SURFACE_NAMES[surface.id] ?? surface.label}: ${live[surface.id]}` : SURFACE_NAMES[surface.id] ?? surface.label}
       onClick={() => onChange(surface.id)} onKeyDown={event => {
         const step = RAIL_STEP[event.key]

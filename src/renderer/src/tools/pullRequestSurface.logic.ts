@@ -6,7 +6,7 @@ import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, gitPullRequestMergeMethodSchema, 
  * auto-merge, Auto-merge while checks have not passed, and otherwise the merge in the chosen method.
  */
 export type PrimaryControl = 'merged' | 'closed' | 'resolve' | 'ready' | 'auto-merge-armed' | 'enable-auto-merge' | 'merge' | null
-export function primaryControl(detail: Pick<GitPullRequestDetail, 'state' | 'draft' | 'mergeable' | 'checks' | 'autoMerge' | 'mergeMethods'>): PrimaryControl {
+export function primaryControl(detail: Pick<GitPullRequestDetail, 'state' | 'draft' | 'mergeable' | 'checks' | 'autoMerge' | 'mergeMethods' | 'autoMergeAllowed'>): PrimaryControl {
   if (detail.state === 'merged') return 'merged'
   if (detail.state === 'closed') return 'closed'
   if (detail.mergeable === 'conflicting') return 'resolve'
@@ -14,7 +14,8 @@ export function primaryControl(detail: Pick<GitPullRequestDetail, 'state' | 'dra
   if (detail.autoMerge) return 'auto-merge-armed'
   if (detail.mergeMethods.length === 0) return null
   const checks = checksState(detail.checks)
-  if (checks !== null && checks !== 'passing') return 'enable-auto-merge'
+  // A repository that does not allow auto-merge is offered the merge itself, as T3 does.
+  if (checks !== null && checks !== 'passing' && detail.autoMergeAllowed) return 'enable-auto-merge'
   return 'merge'
 }
 
@@ -73,11 +74,15 @@ export function stateLabel(detail: Pick<GitPullRequestDetail, 'state' | 'draft'>
 }
 export const LINK_SOURCE: Record<GitPullRequestLinkSource, string> = { created: 'Created from this thread', linked: 'Linked by you', checkout: 'Checked out from the branch picker' }
 
-/** The presses that ask first, in T3's words: the merge, turning on auto-merge, and closing. */
-export type ConfirmedAction = Extract<GitPullRequestAction, 'merge' | 'enable-auto-merge' | 'close'>
-export function confirmationFor(action: ConfirmedAction, number: number, method: GitPullRequestMergeMethod): { title: string; description: string; confirm: string; danger: boolean } {
+/**
+ * The presses that ask first, in T3's words: the merge, turning on auto-merge, closing, and Update with rebase,
+ * which rewrites the branch's commits on GitHub so a local copy of it no longer matches.
+ */
+export type ConfirmedAction = Extract<GitPullRequestAction, 'merge' | 'enable-auto-merge' | 'close'> | 'update-with-rebase'
+export function confirmationFor(action: ConfirmedAction, number: number, method: GitPullRequestMergeMethod, baseBranch = 'its base'): { title: string; description: string; confirm: string; danger: boolean } {
   const label = mergeLabel(method)
   switch (action) {
+    case 'update-with-rebase': return { title: 'Update with rebase?', description: `This rebases the branch of #${number} onto ${baseBranch} on GitHub, rewriting its commits. A local copy of the branch will no longer match it: pull, or check it out again, before pushing to it.`, confirm: 'Update with rebase', danger: false }
     case 'merge': return { title: 'Merge pull request?', description: `This merges #${number} using ${label.toLowerCase()}.`, confirm: label, danger: false }
     case 'enable-auto-merge': return { title: 'Enable auto-merge?', description: `This merges #${number} using ${label.toLowerCase()} as soon as GitHub considers it ready, which may be immediately.`, confirm: 'Enable auto-merge', danger: false }
     case 'close': return { title: 'Close pull request?', description: `This closes #${number} without merging it.`, confirm: 'Close pull request', danger: true }

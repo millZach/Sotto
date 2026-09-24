@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, Check, CircleDashed, CircleX, Copy, ExternalLink, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Link2, List, LoaderCircle, RotateCw, Unlink, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, Check, CircleDashed, CircleX, Copy, ExternalLink, GitPullRequest, GitPullRequestDraft, Link2, List, LoaderCircle, RotateCw, Unlink, type LucideIcon } from 'lucide-react'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
-import type { GitPullRequestAction, GitPullRequestCheck, GitPullRequestDetail, GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { branchPullRequestUrl, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { PR_ICONS } from '../agents/BranchToolbar'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
-import { LinkPullRequestDialog, pullRequestBridge } from './PullRequestDialogs'
+import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import { ToolsChrome } from './ToolsChrome'
 import {
   CHECK_STATUS, confirmationFor, isStale, LINK_SOURCE, mergeLabel, primaryControl, rememberedMergeMethod, rememberMergeMethod,
@@ -18,7 +19,7 @@ type Notice = { readonly text: string; readonly tone: 'status' | 'error' }
 const CHECK_ICONS: Record<GitPullRequestCheck['status'], LucideIcon> = {
   success: Check, failure: CircleX, cancelled: CircleX, pending: LoaderCircle, 'action-required': CircleDashed, skipped: CircleDashed, neutral: CircleDashed,
 }
-const stateIcon = (detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): LucideIcon => detail.state === 'merged' ? GitMerge : detail.state === 'closed' ? GitPullRequestClosed : detail.draft ? GitPullRequestDraft : GitPullRequest
+const stateIcon = (detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): LucideIcon => detail.draft && detail.state === 'open' ? GitPullRequestDraft : PR_ICONS[detail.state]
 const stateKey = (detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): string => detail.draft && detail.state === 'open' ? 'draft' : detail.state
 
 /**
@@ -48,9 +49,10 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const returning = useRef(false)
   useEffect(() => { if (view === 'detail' && returning.current) { returning.current = false; linkedButton.current?.focus() } }, [view])
   const showDetail = (url: string | null | undefined): void => { if (url !== undefined) setChosen(url); returning.current = true; setView('detail') }
-  const branchUrl = thread.worktree?.git?.pullRequest?.url ?? null
+  const branchUrl = branchPullRequestUrl(thread) ?? null
   const links = thread.pullRequests ?? []
-  const linkKey = links.map(link => `${link.url}:${link.state}:${link.draft}`).join('|')
+  // Which pull requests are linked, not what they last said: a read that brings a link's title up to date must not read again.
+  const linkKey = links.map(link => link.url).join('|')
 
   const load = useCallback(async (): Promise<void> => {
     const turn = ++generation.current
@@ -73,13 +75,10 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const send = async (request: AgentCommand, pending: GitPullRequestAction | 'unlink', fallback: string): Promise<boolean> => {
     if (!command || busy) return false
     setBusy(pending); setNotice(null)
-    try {
-      const result = await command(request)
-      if (!result || result.error) { setNotice({ text: result?.error ?? fallback, tone: 'error' }); return false }
-      setNotice({ text: result.notice ?? 'Done.', tone: 'status' })
-      return true
-    } catch { setNotice({ text: fallback, tone: 'error' }); return false }
-    finally { setBusy(null) }
+    const result = await sendCommand(command, request, fallback)
+    setBusy(null)
+    setNotice(result.error ? { text: result.error, tone: 'error' } : { text: result.notice ?? 'Done.', tone: 'status' })
+    return result.error === null
   }
   const act = async (action: GitPullRequestAction, withMethod?: GitPullRequestMergeMethod): Promise<void> => {
     if (!detail) return
@@ -111,7 +110,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
       ? { id: 'ready', label: 'Ready for review', disabled: running, run: () => void act('ready') }
       : { id: 'draft', label: 'Convert to draft', disabled: running, run: () => void act('draft') }] : []),
     ...(control === 'enable-auto-merge' ? [{ id: 'merge-now', label: 'Merge now', disabled: running, run: () => setConfirming('merge') }] : []),
-    ...(detail.state === 'open' && !detail.draft && !detail.autoMerge && control !== 'enable-auto-merge' && allowed.length > 0
+    ...(detail.state === 'open' && !detail.draft && !detail.autoMerge && detail.autoMergeAllowed && control !== 'enable-auto-merge' && allowed.length > 0
       ? [{ id: 'auto', label: 'Enable auto-merge', disabled: running, run: () => setConfirming('enable-auto-merge') }] : []),
     ...(detail.autoMerge ? [{ id: 'no-auto', label: 'Disable auto-merge', disabled: running, run: () => void act('disable-auto-merge') }] : []),
     ...(detail.state === 'open' ? [{ id: 'close', label: 'Close pull request', disabled: running, run: () => setConfirming('close') }] : []),
@@ -119,7 +118,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     ...(detail.linked ? [{ id: 'unlink', label: 'Unlink from thread', icon: <Unlink size={15} aria-hidden="true" />, disabled: running, run: () => void unlink(detail.url) }] : []),
   ] : []
   const StateIcon = detail ? stateIcon(detail) : GitPullRequest
-  const confirmation = confirming && detail ? confirmationFor(confirming, detail.number, selected) : null
+  const confirmation = confirming && detail ? confirmationFor(confirming, detail.number, selected, detail.baseBranch) : null
 
   return <div className="pr-surface" aria-busy={loading || running}>
     <ToolsChrome title={detail ? `PR #${detail.number}` : 'Pull request'} detail={detail ? stateLabel(detail) : null}>
@@ -157,7 +156,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
           <p>This branch is {detail.behindBy} {detail.behindBy === 1 ? 'commit' : 'commits'} behind <bdi>{detail.baseBranch}</bdi>.</p>
           {detail.canUpdateBranch ? <div className="pr-surface__row">
             <Button variant="secondary" disabled={running} onClick={() => void act('update-branch')}>{busy === 'update-branch' ? 'Updating...' : 'Update branch'}</Button>
-            <Button variant="secondary" disabled={running} onClick={() => void act('update-branch', 'rebase')}>Update with rebase</Button>
+            <Button variant="secondary" disabled={running} onClick={() => setConfirming('update-with-rebase')}>Update with rebase</Button>
           </div> : <p className="pr-surface__quiet">GitHub does not let this account update the branch.</p>}
         </section> : null}
         <section className="pr-surface__checks" aria-labelledby={`pr-checks-${detail.number}`}>
@@ -186,7 +185,12 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     {linking && command ? <LinkPullRequestDialog threadId={thread.id} command={command} onClose={() => setLinking(false)} onLinked={text => { setLinking(false); setNotice({ text, tone: 'status' }) }} /> : null}
     {confirmation && confirming ? <ConfirmationDialog title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirm} cancelLabel="Cancel" danger={confirmation.danger}
       fallbackFocusRef={primary} onCancel={() => setConfirming(null)}
-      onConfirm={async () => { const action = confirming; setConfirming(null); void act(action, action === 'close' ? undefined : selected) }} /> : null}
+      onConfirm={async () => {
+        const action = confirming
+        setConfirming(null)
+        if (action === 'update-with-rebase') void act('update-branch', 'rebase')
+        else void act(action, action === 'close' ? undefined : selected)
+      }} /> : null}
   </div>
 }
 

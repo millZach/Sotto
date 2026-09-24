@@ -19,8 +19,8 @@ function referenceProblem(reference: string): string | null {
   return parsePullRequestReference(reference) ? null : 'Use a pull request URL, 123, or #123.'
 }
 
-/** Sends one command and answers with the refusal in the host's words, or null when it went through. */
-async function sendCommand(command: Command, request: AgentCommand, fallback: string): Promise<{ error: string | null; notice: string | null }> {
+/** Sends one pull request command and answers with the refusal in the host's words, or the host's notice when it went through. */
+export async function sendCommand(command: Command, request: AgentCommand, fallback: string): Promise<{ error: string | null; notice: string | null }> {
   try {
     const result = await command(request)
     if (!result) return { error: fallback, notice: null }
@@ -78,12 +78,14 @@ export function LinkPullRequestDialog({ threadId, command, onClose, onLinked }: 
  * typed, and the pull request is checked out Local, in the thread's folder (the project's own checkout for a
  * draft), or into a Worktree of its own, which only a thread that has not started can take.
  */
-export function CheckoutPullRequestDialog({ threadId, initialReference, command, worktreeAllowed, onClose, onDone }: {
+export function CheckoutPullRequestDialog({ threadId, initialReference, command, worktreeAllowed, localMovesToCheckout, onClose, onDone }: {
   readonly threadId: string
   readonly initialReference: string
   readonly command: Command
   /** False once the thread has a folder of its own; Worktree then says why it is unavailable. */
   readonly worktreeAllowed: boolean
+  /** True for a draft set to a worktree: Local works in the project checkout instead, and the dialog says so first. */
+  readonly localMovesToCheckout: boolean
   readonly onClose: () => void
   readonly onDone: (notice: string) => void
 }): ReactNode {
@@ -127,7 +129,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog pull-request-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={preparing !== null || undefined}>
       <h2 id={titleId}>Checkout pull request</h2>
-      <div id={descriptionId} className="tt-dialog__description">Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.</div>
+      <div id={descriptionId} className="tt-dialog__description">Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.{localMovesToCheckout ? <p className="pull-request-dialog__note">Local: this thread will work in the project checkout.</p> : null}</div>
       <label htmlFor={fieldId}>Pull request</label>
       <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder="PR URL, checkout command, or #42" maxLength={2_048} autoComplete="off" spellCheck={false}
         aria-invalid={problem ? true : undefined}
