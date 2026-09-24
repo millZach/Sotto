@@ -121,7 +121,9 @@ describe('Proactive panels on the Tools panel store', () => {
 })
 
 describe('the settings hooks other surfaces read', () => {
-  it('gives Changes its starting layout, whitespace and file state, defaults outside the app', () => {
+  it('gives Changes its starting layout, whitespace and file state, and nothing before settings arrive', () => {
+    expect(renderHook(() => useDiffPreferences()).result.current).toBeNull()
+    withSettings({})
     expect(renderHook(() => useDiffPreferences()).result.current).toEqual({ layout: 'stacked', hideWhitespace: true, fileState: 'collapsed' })
     withSettings({ diffLayout: 'split', diffHideWhitespace: false, diffFileState: 'expanded' })
     expect(renderHook(() => useDiffPreferences()).result.current).toEqual({ layout: 'split', hideWhitespace: false, fileState: 'expanded' })

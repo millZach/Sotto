@@ -127,6 +127,32 @@ describe('Changes as T3’s diff', () => {
     expect(await within(panel()).findByText('export const ready = true')).toBeInTheDocument()
   })
 
+  it('starts where the diff settings say, keeps what the controls choose, and follows a setting that changes', async () => {
+    const user = userEvent.setup()
+    const settings = { ...DEFAULT_SETTINGS, diffLayout: 'split' as const, diffHideWhitespace: true, diffFileState: 'collapsed' as const }
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings } as unknown as AppContextValue))
+    const { git, store } = setup()
+    // Hidden whitespace is asked of Git on the first read, not after it.
+    await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
+    expect(git.bridge.review).toHaveBeenNthCalledWith(1, expect.objectContaining({ ignoreWhitespace: true }))
+    await waitFor(() => expect(panel().querySelectorAll('.changes-file[data-collapsed]')).toHaveLength(3))
+    expect(within(panel()).getByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(panel()).getByRole('button', { name: 'Show whitespace changes' })).toBeInTheDocument()
+    // A file the user opens stays open, and a layout they choose outlasts a return to Changes.
+    await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Expand src/app.ts' }))
+    await user.click(within(panel()).getByRole('button', { name: 'Stacked diff view' }))
+    act(() => { store.setSurface('files') })
+    act(() => { store.setSurface('changes') })
+    expect(await within(panel()).findByRole('button', { name: 'Stacked diff view' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(block('src/app.ts')).not.toHaveAttribute('data-collapsed'))
+    // A setting changed in Settings is followed: here whitespace is shown again, and the layout goes back to Split.
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: { ...settings, diffHideWhitespace: false } } as unknown as AppContextValue))
+    act(() => { store.setSurface('files') })
+    act(() => { store.setSurface('changes') })
+    expect(await within(panel()).findByRole('button', { name: 'Split diff view' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(panel()).getByRole('button', { name: 'Hide whitespace changes' })).toBeInTheDocument()
+  })
+
   it('draws stacked or split, wraps or not, hides whitespace through Git, and shows a file tree', async () => {
     const user = userEvent.setup()
     const patch = 'diff --git a/src/old.ts b/src/app.ts\nold mode 100644\nnew mode 100755\nsimilarity index 75%\nrename from src/old.ts\nrename to src/app.ts\nindex abc123..def456 100755\n--- a/src/old.ts\n+++ b/src/app.ts\n@@ -10,4 +20,5 @@\n keep\n-old one\n-old two\n+new one\n+new two\n+new three\n tail\n@@ -30 +40 @@\n-old end\n\\ No newline at end of file\n+new end\n'

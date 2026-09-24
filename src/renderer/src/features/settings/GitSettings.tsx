@@ -78,8 +78,8 @@ export function GitBehaviourSettings({ settings, onSave }: GitSettingsProps): Re
     <Field label="Diff layout" description="How Changes shows a file's diff when it opens.">
       <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
     </Field>
-    <Toggle label="Hide whitespace changes" checked={settings.diffHideWhitespace} onCheckedChange={checked => void onSave({ diffHideWhitespace: checked })} description="Whether Changes should hide edits that only change spacing when it opens." />
-    <Field label="Default diff file state" description="Whether files in Changes should start expanded or collapsed.">
+    <Toggle label="Hide whitespace changes" checked={settings.diffHideWhitespace} onCheckedChange={checked => void onSave({ diffHideWhitespace: checked })} description="Whether Changes hides edits that only change spacing when it opens." />
+    <Field label="Default diff file state" description="Whether files in Changes start expanded or collapsed.">
       <SegmentedControl label="Default diff file state" value={settings.diffFileState} onChange={value => void onSave({ diffFileState: value as DiffFileState })} options={[{ value: 'expanded', label: 'Expanded' }, { value: 'collapsed', label: 'Collapsed' }]} />
     </Field>
     <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description="Settle a thread once its branch's pull request is merged. Asks GitHub through gh once an hour, the way the merged worktree rule does. Settling removes no folder unless a worktree rule above says so." />

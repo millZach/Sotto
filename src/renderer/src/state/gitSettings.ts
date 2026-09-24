@@ -13,12 +13,12 @@ export interface DiffPreferences {
 }
 
 /**
- * The diff settings as Changes should start from them. Before settings arrive, and outside the app
- * (a surface rendered on its own in a test), the defaults answer.
+ * The diff settings Changes starts from. Null until settings arrive, and outside the app (a surface rendered
+ * on its own in a test), so a starting view is never taken from defaults and then replaced by the real choice.
  */
-export function useDiffPreferences(): DiffPreferences {
-  const settings = useOptionalApp()?.settings ?? DEFAULT_SETTINGS
-  return { layout: settings.diffLayout, hideWhitespace: settings.diffHideWhitespace, fileState: settings.diffFileState }
+export function useDiffPreferences(): DiffPreferences | null {
+  const settings = useOptionalApp()?.settings
+  return settings ? { layout: settings.diffLayout, hideWhitespace: settings.diffHideWhitespace, fileState: settings.diffFileState } : null
 }
 
 /**
