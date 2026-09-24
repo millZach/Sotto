@@ -70,6 +70,8 @@ test('a review comment goes from Changes to the composer and out with the next p
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
+    // Files start collapsed to their heads by default (Settings > Git); the comment starts from opening one.
+    await panel.getByRole('button', { name: 'Expand src/voice.ts', exact: true }).click()
     const lines = panel.getByRole('grid', { name: 'Lines of src/voice.ts' })
     await expect(lines).toContainText('setTimeout(stop, 2000)')
 

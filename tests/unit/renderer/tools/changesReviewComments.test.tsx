@@ -34,8 +34,9 @@ function fakeGit(initial: GitReviewFile[] = [file(PATCH)]) {
   }
 }
 
-function setup(git = fakeGit()) {
+function setup(git = fakeGit(), startCollapsed = false) {
   const store = new ChangesStore()
+  if (startCollapsed) store.applyStartingView({ layout: 'stacked', ignoreWhitespace: false, collapsed: true })
   const comments = new ReviewCommentStore()
   store.activate(git.bridge, THREAD)
   const view = render(<ChangesSurface threadId={THREAD} store={store} bridge={git.bridge} onStatus={vi.fn()} comments={comments} />)
@@ -361,6 +362,21 @@ describe('review comments in Changes', () => {
     await user.click(within(still).getByRole('button', { name: 'Delete comment on src/app.ts L4' }))
     expect(comments.list(THREAD)).toEqual([])
     expect(screen.getByRole('button', { name: 'Refresh diff' })).toHaveFocus()
+  })
+
+  it('keeps a comment on a file that starts collapsed out of the list, and marks it when the file is opened', async () => {
+    const user = userEvent.setup()
+    const { comments } = setup(fakeGit([file(PATCH), file(OTHER, 'src/other.ts')]), true)
+    await screen.findByRole('button', { name: 'Expand src/app.ts' })
+    comments.add(THREAD, { path: 'src/app.ts', lines: [{ kind: 'add', text: 'export const ready = true', oldLine: null, newLine: 4 }], text: 'On a folded file' })
+    // Collapsed is not missing: the file is in the comparison, so the list after the files stays away.
+    await waitFor(() => expect(comments.list(THREAD)).toHaveLength(1))
+    expect(screen.queryByRole('region', { name: 'Comments on lines this comparison does not show' })).toBeNull()
+    expect(screen.queryByText('On a folded file')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Expand src/app.ts' }))
+    const marker = (await screen.findByText('On a folded file')).closest('.changes-comment--marker')!
+    expect(marker.previousElementSibling).toHaveAttribute('data-kind', 'add')
+    expect(marker).not.toHaveTextContent('changed since')
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {
