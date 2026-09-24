@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 test('steers a queued message from the keyboard without consuming the newer draft', async () => {
@@ -11,15 +12,16 @@ test('steers a queued message from the keyboard without consuming the newer draf
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
+    const docs = (await hostKeys(page))('docs')
     await openThreads(page)
     await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Docs', exact: true }).click()
-    const pane = page.locator('section.thread-pane[data-thread-id="docs"]')
+    const pane = page.locator(`section.thread-pane[data-thread-id="${docs}"]`)
     const prompt = pane.locator('form.thread-prompt textarea')
     await prompt.fill('Start the work')
     await prompt.press('Enter')
     await expect(pane.getByLabel('Thread transcript')).toContainText('Start the work')
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === 'docs')?.lastTurn?.status)).toBe('running')
-    const turn = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === 'docs')!.lastTurn!.id)
+    await expect.poll(() => page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)?.lastTurn?.status, docs)).toBe('running')
+    const turn = await page.evaluate(async docs => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === docs)!.lastTurn!.id, docs)
     for (const text of ['Keep this queued', 'Use the simpler approach']) {
       await prompt.fill(text)
       await prompt.press('Enter')
@@ -52,7 +54,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await expect(prompt).toHaveValue('Keep this newer draft')
     await expect(queue.getByRole('button', { name: /^Queued/ })).toBeFocused()
     const state = await page.evaluate(() => window.sotto!.agents!.get())
-    const thread = state.host.threads.find(t => t.id === 'docs')!
+    const thread = state.host.threads.find(t => t.id === docs)!
     expect(thread.lastTurn?.id).toBe(turn)
     expect(await userMessageTexts(page, 'docs')).toEqual(['Start the work', 'Use the simpler approach'])
     await expect(queue.getByRole('button', { name: 'Steer now' })).toBeEnabled()

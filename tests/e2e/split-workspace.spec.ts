@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 async function size(launched: LaunchedSotto, width: number, height = 1000): Promise<void> {
@@ -41,12 +42,14 @@ test('two threads split the workspace and stay independent through resize, narro
   const { page } = launched
   try {
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
+    // The renderer keys threads by their host; commands, test events and thread details still take the bare ID.
+    const key = await hostKeys(page)
     await size(launched, 1600)
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     const panes = page.getByRole('group', { name: 'Thread panes' })
     // Panes are regions side by side and tab panels in narrow focus, so select them by thread.
-    const previews = panes.locator('section.thread-pane[data-thread-id="grok-previews"]')
+    const previews = panes.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`)
     await expect(previews.getByRole('heading', { name: 'Grok voice previews' })).toBeVisible()
 
     // Drag a thread from another project onto the right half of the workspace.
@@ -60,11 +63,11 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.screenshot({ path: 'artifacts/crossing/split-drop-target-dark.png', animations: 'disabled' })
     await page.mouse.up()
 
-    const footer = panes.locator('section.thread-pane[data-thread-id="footer-links"]')
+    const footer = panes.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
     await expect(panes.getByRole('region', { name: 'Footer links', exact: true })).toBeVisible()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(2)
     await expect(footer).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe('footer-links')
+    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('footer-links'))
     const divider = page.getByRole('separator', { name: 'Resize panes' })
     await expect(divider).toHaveAttribute('aria-valuenow', '50')
     const [left, right] = [(await previews.boundingBox())!, (await footer.boundingBox())!]
@@ -90,7 +93,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
     expect(afterSend.assignments).toHaveLength(0)
-    await expect.poll(() => threadStatus(page, 'footer-links')).toBe('running')
+    await expect.poll(() => threadStatus(page, key('footer-links'))).toBe('running')
     await footerPrompt.fill('Next: compare the mobile footer.')
     await capture(page, 'two-panes')
 
@@ -104,7 +107,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.keyboard.press('F6')
     await expect(previewsPrompt).toBeFocused()
     await expect(previews).toHaveAttribute('data-focused')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe('grok-previews')
+    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
 
     // The shipped minimum width shows one pane at a time and keeps the arrangement for later.
     await size(launched, 820, 800)
@@ -112,7 +115,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(tabs).toBeVisible()
     await expect(divider).toHaveCount(0)
     await expect(tabs.getByRole('tab', { name: 'Grok voice previews' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.locator('#thread-pane-footer-links')).toHaveAttribute('inert')
+    await expect(page.locator(`[id="thread-pane-${key('footer-links')}"]`)).toHaveAttribute('inert')
     await capture(page, 'narrow-focus')
     await tabs.getByRole('tab', { name: 'Footer links' }).click()
     await expect(footerPrompt).toBeVisible()
@@ -128,8 +131,8 @@ test('two threads split the workspace and stay independent through resize, narro
     await footer.getByRole('button', { name: 'Close Footer links pane' }).click()
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(1)
     await expect(divider).toHaveCount(0)
-    expect(await threadStatus(page, 'footer-links')).toBe('running')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe('grok-previews')
+    expect(await threadStatus(page, key('footer-links'))).toBe('running')
+    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).activeThreadId).toBe(key('grok-previews'))
     await expect(sidebar.getByRole('button', { name: 'Footer links', exact: true })).toBeVisible()
     await sidebar.getByRole('button', { name: 'Footer links', exact: true }).hover()
     await sidebar.getByRole('button', { name: 'Open Footer links beside', exact: true }).click()

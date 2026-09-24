@@ -1,0 +1,17 @@
+/* Review comments on the thread composer (#270): one chip per comment written in Changes, above the prompt, until
+   the prompt is sent or the chip is removed. The chip names its lines; hovering it shows the comment. */
+
+.review-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 0 0 8px; padding: 0; list-style: none; }
+.review-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 26px; padding: 0 3px 0 9px;
+  border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); background: var(--tt-accent-wash); color: var(--tt-text);
+  font-size: 12.5px; white-space: nowrap;
+}
+.review-chip__icon { flex: none; color: var(--tt-text-muted); }
+.review-chip__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.review-chip__remove {
+  display: grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--tt-text-muted); cursor: pointer;
+}
+.review-chip__remove:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+.review-chips__note { margin: -2px 0 8px; color: var(--tt-text-muted); font-size: 12.5px; }
