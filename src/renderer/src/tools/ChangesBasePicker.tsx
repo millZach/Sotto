@@ -1,12 +1,12 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, Cloud } from 'lucide-react'
-import type { GitRef, GitRefsPage } from '../../../shared/gitRefs'
+import type { GitRef, GitRefsPage, GitRefsRequest } from '../../../shared/gitRefs'
 
 /** How the picker reads a thread's branches: the branch picker's own host operation (ADR-0027, `git-refs`). */
-export type RefsReader = (request: { threadId: string; includeMatchingRemoteRefs?: boolean; limit?: number; refresh?: boolean }) => Promise<GitRefsPage>
+export type RefsReader = (request: GitRefsRequest) => Promise<GitRefsPage>
 
 function bridgeRefs(): RefsReader | undefined {
-  return (window.sotto as { agents?: { gitRefs?: RefsReader } } | undefined)?.agents?.gitRefs
+  return window.sotto?.agents?.gitRefs
 }
 
 /** One row of the picker: a branch name, with its local branch and the primary remote's copy when each exists. */

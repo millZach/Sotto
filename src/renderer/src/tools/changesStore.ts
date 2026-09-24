@@ -73,6 +73,11 @@ export function turnNumber(turns: readonly Checkpoint[], checkpointId: string): 
   return index < 0 ? 0 : turns.length - index
 }
 
+/** Whether two readings of a thread's turns list the same checkpoints in the same states. */
+function sameTurns(a: readonly Checkpoint[], b: readonly Checkpoint[]): boolean {
+  return a.length === b.length && a.every((turn, index) => turn.id === b[index]!.id && turn.status === b[index]!.status)
+}
+
 /** The files collapsed in the comparison on screen. */
 export function collapsedIn(changes: ThreadChanges): ReadonlySet<string> {
   return changes.collapsed.get(scopeKey(changes.scope)) ?? NO_FILES
@@ -219,7 +224,7 @@ export class ChangesStore {
     const latest = this.threads.get(threadId)
     if (!latest || latest.workspace?.workspaceId !== workspaceId || !result.ok) return false
     const turns = result.value.checkpoints
-    const changed = JSON.stringify(turns.map(turn => [turn.id, turn.status])) !== JSON.stringify(latest.turns.map(turn => [turn.id, turn.status]))
+    const changed = !sameTurns(turns, latest.turns)
     if (changed) this.set({ ...latest, turns })
     return changed
   }
@@ -257,7 +262,7 @@ export class ChangesStore {
     if (!listing.ok) return { status: 'error', error: listing.error }
     const turns = listing.value.checkpoints
     const latest = this.threads.get(target.threadId)
-    if (latest && JSON.stringify(turns.map(turn => [turn.id, turn.status])) !== JSON.stringify(latest.turns.map(turn => [turn.id, turn.status]))) this.set({ ...latest, turns })
+    if (latest && !sameTurns(turns, latest.turns)) this.set({ ...latest, turns })
     const checkpoint = checkpointId === null ? turns[0] : turns.find(turn => turn.id === checkpointId)
     if (!checkpoint) return { status: 'ready', review: { key, files: [], truncated: false, notice: checkpointId === null ? 'No completed turns yet.' : 'This turn is no longer listed.' } }
     const number = turnNumber(turns, checkpoint.id)

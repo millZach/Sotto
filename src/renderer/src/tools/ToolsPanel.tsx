@@ -10,6 +10,7 @@ import { AgentsSurface } from './AgentsSurface'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
+import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserTaskPreview } from './BrowserTaskPreview'
@@ -222,7 +223,6 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const terminalBridge = terminal ?? bridgeTerminal()
   const browserBridge = browser ?? bridgeBrowser()
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
-  const platform = bridgePlatform()
   const showBrowserPreviews = useOptionalAgents()?.showBrowserPreviews !== false
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
@@ -237,15 +237,16 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const [status, showStatus] = useTransientStatus()
   const open = chrome.open
   const app = useOptionalApp()
-  const appPlatform = app?.platform ?? 'win32'
-  const chord = changesChord(app?.settings?.hotkey, appPlatform)
+  // One platform for the whole panel: the app's, or the preload's where there is no app context, so a Mac never reads mod as Ctrl.
+  const platform: SottoPlatform = app?.platform ?? (bridgePlatform() as SottoPlatform | undefined) ?? 'win32'
+  const chord = changesChord(app?.settings?.hotkey, platform)
 
   // The Changes shortcut, T3's `mod+d` unless the dictation hotkey has it: it opens the panel on Changes, and closes
   // the panel when Changes is what it shows. A terminal keeps its own Ctrl+D, and an open dialog keeps its keys.
   useEffect(() => {
     if (chord === null) return
     const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat || !chordMatches(event, chord, appPlatform) || chordBelongsElsewhere(event.target)) return
+      if (event.defaultPrevented || event.repeat || !chordMatches(event, chord, platform) || chordBelongsElsewhere(event.target)) return
       if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return
       event.preventDefault()
       const current = store.getSnapshot()
@@ -261,7 +262,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [chord, appPlatform, store])
+  }, [chord, platform, store])
 
   useLayoutEffect(() => {
     const parent = workspaceArea(aside.current)
