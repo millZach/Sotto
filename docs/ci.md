@@ -93,7 +93,8 @@ nothing: the 2 MB rollout read in `tests/unit/main/codexTargetLog.test.ts` and t
 comparison in `tests/unit/renderer/streamingMarkdown.test.tsx`, and the 1005-file directory enumeration
 in `tests/unit/main/files.test.ts` each allow 60 s.
 
-`vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s. Waiting
+`vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s. `tests/setup.ts`
+gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
 is not the assertion: a runner takes several times longer over a provider round trip or a child process
 start than a developer machine, and a deadline that expires there describes the machine. Something that
 is genuinely wrong still fails, a few seconds later.
