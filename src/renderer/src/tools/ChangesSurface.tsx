@@ -1,7 +1,10 @@
-import React, { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, GitPullRequestArrow, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
+import React, { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, GitPullRequestArrow, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
+import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
+import { Button } from '../components/Button'
+import { diffRows, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
@@ -43,6 +46,8 @@ export interface ChangesSurfaceProps {
   readonly onOpenFile?: ((path: string) => void) | undefined
   /** Reads the branches Branch changes can compare against; tests pass their own. */
   readonly refs?: RefsReader | undefined
+  /** Where review comments wait for the thread's next message; the window's own unless a test passes one. */
+  readonly comments?: ReviewCommentStore
 }
 
 /**
@@ -50,7 +55,7 @@ export interface ChangesSurfaceProps {
  * files of that comparison as collapsible blocks with their counts, and a file tree beside them. Review only:
  * committing is the Git action's, and there is no staging, discarding or reverting here (ADR-0027).
  */
-export function ChangesSurface({ threadId, store, bridge, platform, onStatus, drafts = true, onOpenFile, refs }: ChangesSurfaceProps): ReactNode {
+export function ChangesSurface({ threadId, store, bridge, platform, onStatus, drafts = true, onOpenFile, refs, comments = reviewCommentStore }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
   const view = useChangesView(store)
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
@@ -130,7 +135,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
             : <>
               {review.truncated ? <p className="changes-note">Git reported more files than Sotto lists.</p> : null}
               <div className="changes-review" data-tree={tree || undefined}>
-                <ChangesFiles key={`${threadId}\n${scopeKey(changes.scope)}`} changes={changes} review={review} view={view} store={store}
+                <ChangesFiles key={`${threadId}\n${scopeKey(changes.scope)}`} changes={changes} review={review} view={view} store={store} comments={comments}
                   onCopy={copy} onReveal={reveal} onOpenFile={onOpenFile} platform={platform} />
                 {tree ? <ChangesTree files={files} onPick={path => showFile(changes, store, path)} /> : null}
               </div>
@@ -206,29 +211,92 @@ export function inWorkingCopy(file: GitReviewFile, changes: ThreadChanges): bool
   return file.status !== 'deleted' || now === 'added' || now === 'untracked'
 }
 
-function ChangesFiles({ changes, review, view, store, onCopy, onReveal, onOpenFile, platform }: {
-  readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore
+/** The lines picked in one file's diff, by row position, for the patch and layout they were picked in. */
+interface LineSelection {
+  readonly path: string
+  readonly patch: string
+  readonly split: boolean
+  readonly anchor: number
+  readonly focus: number
+}
+
+/** What a file's rows ask of the review comments. Stable for the life of the list, so rows can stay memoised. */
+interface ReviewActions {
+  readonly select: (selection: LineSelection | null) => void
+  readonly comment: (path: string, lines: readonly ReviewLine[]) => void
+  readonly editDraft: (text: string) => void
+  readonly cancelDraft: () => void
+  readonly addDraft: () => void
+  readonly remove: (id: string) => void
+}
+
+const NO_COMMENTS: readonly ReviewComment[] = []
+
+function ChangesFiles({ changes, review, view, store, comments: commentStore, onCopy, onReveal, onOpenFile, platform }: {
+  readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore; readonly comments: ReviewCommentStore
   readonly onCopy: (path: string) => void; readonly onReveal: (path: string) => void; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
 }): ReactNode {
   const body = useRef<HTMLDivElement>(null)
+  const { threadId } = changes
   const key = scopeKey(changes.scope)
   // The saved position is restored once; refreshed content then keeps whatever the reader has scrolled to.
-  const initialTop = useRef(store.scrollOf(changes.threadId, key))
+  const initialTop = useRef(store.scrollOf(threadId, key))
   useLayoutEffect(() => { if (body.current) body.current.scrollTop = initialTop.current }, [])
+  const comments = useReviewComments(commentStore, threadId)
+  const draft = useReviewDraft(commentStore, threadId)
+  const [selection, setSelection] = useState<LineSelection | null>(null)
+  // A draft takes focus when the user opens it, never when Changes mounts with one already written.
+  const focusDraft = useRef(false)
+  const actions = useMemo<ReviewActions>(() => ({
+    select: next => { setSelection(next); commentStore.closeEmptyDraft(threadId) },
+    comment: (path, lines) => { focusDraft.current = true; commentStore.openDraft(threadId, path, lines) },
+    editDraft: text => commentStore.editDraft(threadId, text),
+    cancelDraft: () => commentStore.closeDraft(threadId),
+    addDraft: () => { if (commentStore.addDraft(threadId) !== null) setSelection(null) },
+    remove: id => commentStore.remove(threadId, id),
+  }), [commentStore, threadId])
+  const byPath = useMemo(() => {
+    const map = new Map<string, ReviewComment[]>()
+    for (const comment of comments) map.set(comment.path, [...map.get(comment.path) ?? [], comment])
+    return map
+  }, [comments])
+  const full = comments.length >= MAX_REVIEW_COMMENTS
+  const reviews = useRef(new Map<string, FileReview>())
+  const reviewOf = (path: string): FileReview => {
+    const next: FileReview = { selection: selection?.path === path ? selection : null, draft: draft?.path === path ? draft : null, drafting: draft !== null,
+      comments: byPath.get(path) ?? NO_COMMENTS, full, actions, focusDraft }
+    const previous = reviews.current.get(path)
+    if (previous && (Object.keys(next) as (keyof FileReview)[]).every(name => previous[name] === next[name])) return previous
+    reviews.current.set(path, next)
+    return next
+  }
   const collapsed = collapsedIn(changes)
   const labels = changes.scope.kind === 'working' ? ['HEAD', 'Working tree'] : changes.scope.kind === 'branch' ? [review.branch?.base ?? 'Base', review.branch?.head ?? 'Branch'] : ['Before the turn', 'After the turn']
   return <div ref={body} className="changes-files" data-wrap={view.wrap || undefined} data-layout={view.layout} aria-label="Changed files"
-    role="region" onScroll={event => store.setScroll(changes.threadId, key, event.currentTarget.scrollTop)}>
+    role="region" onScroll={event => store.setScroll(threadId, key, event.currentTarget.scrollTop)}>
     {review.files.map(file => <FileBlock key={file.path} file={file} collapsed={collapsed.has(file.path)} split={view.layout === 'split'} labels={labels}
-      onToggle={() => store.toggleCollapsed(changes.threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
-      onOpen={onOpenFile && inWorkingCopy(file, changes) ? onOpenFile : undefined} platform={platform} />)}
+      onToggle={() => store.toggleCollapsed(threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
+      onOpen={onOpenFile && inWorkingCopy(file, changes) ? onOpenFile : undefined} platform={platform}
+      review={reviewOf(file.path)} />)}
   </div>
 }
 
-const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onToggle, onCopy, onReveal, onOpen, platform }: {
+/** One file's share of the review comments. */
+interface FileReview {
+  readonly selection: LineSelection | null
+  readonly draft: ReviewDraft | null
+  /** Whether a draft is open anywhere in this thread's Changes, which hides Comment until it closes. */
+  readonly drafting: boolean
+  readonly comments: readonly ReviewComment[]
+  readonly full: boolean
+  readonly actions: ReviewActions
+  readonly focusDraft: { current: boolean }
+}
+
+const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onToggle, onCopy, onReveal, onOpen, platform, review }: {
   readonly file: GitReviewFile; readonly collapsed: boolean; readonly split: boolean; readonly labels: readonly string[]
   readonly onToggle: () => void; readonly onCopy: (path: string) => void; readonly onReveal: (path: string) => void
-  readonly onOpen?: ((path: string) => void) | undefined; readonly platform?: string | undefined
+  readonly onOpen?: ((path: string) => void) | undefined; readonly platform?: string | undefined; readonly review: FileReview
 }): ReactNode {
   const { folder, name } = splitPath(file.path)
   const status = CHANGE_STATUS[file.status]
@@ -250,28 +318,145 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
     </div>
     {!collapsed ? <>
       {file.originalPath ? <p className="changes-note">Renamed from <code>{file.originalPath}</code></p> : null}
-      <FileBody file={file} split={split} labels={labels} onReveal={() => onReveal(file.path)} platform={platform} />
+      <FileBody file={file} split={split} labels={labels} onReveal={() => onReveal(file.path)} platform={platform} review={review} />
     </> : null}
   </section>
 })
 
-function FileBody({ file, split, labels, onReveal, platform }: { readonly file: GitReviewFile; readonly split: boolean; readonly labels: readonly string[]; readonly onReveal: () => void; readonly platform?: string | undefined }): ReactNode {
+/** The file's meaningful lines: Git's substantive metadata (mode, rename, similarity) stays; raw patch paths go. */
+function fileLines(patch: string): DiffLine[] {
+  return parseUnifiedDiff(patch).filter(line => line.kind !== 'meta'
+    || !/^(?:diff --git |index [\da-f]+\.\.[\da-f]+(?: \d+)?$|--- |\+\+\+ |(?:new|deleted) file mode \d+$|rename (?:from|to) |similarity index )/u.test(line.text))
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set()
+
+/**
+ * A file's lines as one grid the keyboard walks: Tab lands on the line last visited, the arrows move, Shift extends,
+ * Space picks a line, Enter opens a comment on what is picked and Escape lets go. The mouse picks with a click,
+ * extends with Shift and comments straight from a line number. Comments sit under their last line.
+ */
+function FileBody({ file, split, labels, onReveal, platform, review }: {
+  readonly file: GitReviewFile; readonly split: boolean; readonly labels: readonly string[]; readonly onReveal: () => void; readonly platform?: string | undefined
+  readonly review: FileReview
+}): ReactNode {
   const [all, setAll] = useState(false)
+  const [active, setActive] = useState(0)
+  const grid = useRef<HTMLDivElement>(null)
   const patch = file.content.kind === 'text' ? file.content.patch : ''
-  // The file is already named by its head. Keep substantive Git metadata (mode, rename, similarity), but let the
-  // first hunk lead instead of repeating raw patch paths.
-  const lines = useMemo(() => parseUnifiedDiff(patch).filter(line => line.kind !== 'meta'
-    || !/^(?:diff --git |index [\da-f]+\.\.[\da-f]+(?: \d+)?$|--- |\+\+\+ |(?:new|deleted) file mode \d+$|rename (?:from|to) |similarity index )/u.test(line.text)), [patch])
+  const lines = useMemo(() => fileLines(patch), [patch])
+  const shown = useMemo(() => all ? lines : lines.slice(0, DIFF_ROW_LIMIT), [all, lines])
+  const rows = useMemo(() => diffRows(shown, split), [shown, split])
+  const selectable = useMemo(() => selectableRows(rows), [rows])
+  const { selection: picked, draft, comments, actions } = review
+  const draftRows = useMemo(() => draft ? rowsShowing(shown, rows, draft.lines) : NO_KEYS, [draft, rows, shown])
+  const notedRows = useMemo(() => comments.length ? rowsShowing(shown, rows, comments.flatMap(comment => comment.lines)) : NO_KEYS, [comments, rows, shown])
+  // Each comment sits under the row that shows its last line now. One whose lines have changed since stays on the
+  // diff too, at the end of the file, saying so: it still goes with the message until it is sent or deleted.
+  const markers = useMemo(() => {
+    const map = new Map<string, { readonly comment: ReviewComment; readonly moved: boolean }[]>()
+    const end = rows.at(-1)?.key
+    for (const comment of comments) {
+      const key = rowShowing(shown, rows, comment.lines.at(-1))?.key
+      const at = key ?? end
+      if (at !== undefined) map.set(at, [...map.get(at) ?? [], { comment, moved: key === undefined }])
+    }
+    return map
+  }, [comments, rows, shown])
+  // An open draft whose lines have moved on keeps its words at the end of the file rather than vanishing.
+  const draftAnchor = draft ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
+
   if (file.content.kind !== 'text') {
     const title = file.content.kind === 'binary' ? 'Binary file: no text diff.' : file.content.kind === 'too-large' ? 'Too large to show as a diff.' : 'No diff is available for this file.'
     return <div className="changes-file__problem" role="note"><strong>{title}</strong>{file.content.message && file.content.message !== title ? <p>{file.content.message}</p> : null}
       {file.status !== 'deleted' ? <button type="button" className="files-link tt-focusable" onClick={onReveal}>{revealLabel(platform)}</button> : null}</div>
   }
   if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>No line changes.</strong><p>Only the file’s mode or name changed.</p></div>
-  const shown = all ? lines : lines.slice(0, DIFF_ROW_LIMIT)
+
+  const selection = picked && picked.patch === patch && picked.split === split ? picked : null
+  const from = selection ? Math.min(selection.anchor, selection.focus) : -1
+  const to = selection ? Math.max(selection.anchor, selection.focus) : -1
+  const current = Math.max(0, Math.min(active, selectable.length - 1))
+  const pick = (anchor: number, focus: number): void => actions.select({ path: file.path, patch, split, anchor, focus })
+  const focusRow = (position: number): void => {
+    const row = grid.current?.querySelector<HTMLElement>(`[data-position="${position}"]`)
+    row?.focus({ preventScroll: true })
+    row?.scrollIntoView({ block: 'nearest' })
+  }
+  /** Open a draft on the picked lines when this line is one of them, or on this line alone. */
+  const commentOn = (position: number): void => {
+    const inside = selection !== null && position >= from && position <= to
+    if (!inside) pick(position, position)
+    actions.comment(file.path, quotedLines(shown, selectable, inside ? from : position, inside ? to : position))
+  }
+  const rowOf = (target: EventTarget | null): HTMLElement | null => target instanceof Element ? target.closest<HTMLElement>('[data-position]') : null
+  const onClick = (event: MouseEvent<HTMLDivElement>): void => {
+    const row = rowOf(event.target)
+    if (!row) return
+    const position = Number(row.dataset.position)
+    setActive(position)
+    if ((event.target as Element).closest('.changes-line__number')) { commentOn(position); return }
+    // A drag that selected text is the reader copying code, not picking lines.
+    const text = window.getSelection()
+    if (text && !text.isCollapsed && grid.current?.contains(text.anchorNode)) return
+    if (event.shiftKey && selection) pick(selection.anchor, position)
+    else if (selection && from === position && to === position) actions.select(null)
+    else pick(position, position)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'Escape') {
+      // Letting go of picked lines is this Escape's whole job; with nothing picked it belongs to the panel.
+      if (!selection) return
+      event.preventDefault(); event.stopPropagation()
+      const back = rowOf(event.target) ? null : to
+      actions.select(null)
+      if (back !== null) focusRow(back)
+      return
+    }
+    const row = rowOf(event.target)
+    if (!row || row !== event.target || event.altKey || event.ctrlKey || event.metaKey) return
+    const position = Number(row.dataset.position)
+    if (event.key === 'Enter') { event.preventDefault(); commentOn(position); return }
+    if (event.key === ' ') {
+      event.preventDefault()
+      if (event.shiftKey && selection) pick(selection.anchor, position)
+      else if (selection && from === position && to === position) actions.select(null)
+      else pick(position, position)
+      return
+    }
+    const last = selectable.length - 1
+    const next = event.key === 'ArrowDown' ? position + 1 : event.key === 'ArrowUp' ? position - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? last : null
+    if (next === null) return
+    event.preventDefault()
+    const target = Math.max(0, Math.min(last, next))
+    setActive(target)
+    focusRow(target)
+    if (event.shiftKey) pick(selection?.anchor ?? position, target)
+  }
+  // A closed draft or deleted comment takes focus with it; hand it back to the lines, unless something has had it since.
+  const done = (position: number): void => {
+    requestAnimationFrame(() => { if (document.activeElement === null || document.activeElement === document.body) focusRow(position) })
+  }
+  const lastPosition = (keys: ReadonlySet<string>): number => rows.reduce((found, row) => row.position !== null && keys.has(row.key) ? row.position : found, current)
+
   return <div className="changes-diff__body">
     {split ? <div className="changes-split__head" aria-hidden="true"><span>{labels[0]}</span><span>{labels[1]}</span></div> : null}
-    <div className="changes-diff__rows" data-layout={split ? 'split' : 'unified'}>{split ? <SplitDiffRows lines={shown} path={file.path} /> : <DiffRows lines={shown} path={file.path} />}</div>
+    <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} role="grid" aria-multiselectable="true" aria-label={`Lines of ${file.path}`}
+      onMouseDown={event => { if (event.shiftKey && rowOf(event.target)) event.preventDefault() }} onClick={onClick} onKeyDown={onKeyDown}>
+      {rows.map(row => {
+        const selected = row.position !== null && (draft ? draftRows.has(row.key) : row.position >= from && row.position <= to)
+        return <Fragment key={row.key}>
+          <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} />
+          {selection && !review.drafting && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
+            onPress={() => commentOn(to)} /> : null}
+          {markers.get(row.key)?.map(({ comment, moved }) => <CommentMarker key={comment.id} comment={comment} moved={moved}
+            onDelete={() => { actions.remove(comment.id); done(row.position ?? current) }} />)}
+          {draft && draftAnchor === row.key ? <CommentDraft draft={draft} full={review.full} focus={review.focusDraft}
+            onText={actions.editDraft} onCancel={() => { const back = lastPosition(draftRows); actions.cancelDraft(); done(back) }}
+            onAdd={() => { const back = lastPosition(draftRows); actions.addDraft(); done(back) }} /> : null}
+        </Fragment>
+      })}
+    </div>
     {shown.length < lines.length ? <div className="changes-diff__more"><span>Showing {shown.length.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
       <button type="button" className="files-link tt-focusable" onClick={() => setAll(true)}>Show all</button></div> : null}
   </div>
@@ -279,53 +464,94 @@ function FileBody({ file, split, labels, onReveal, platform }: { readonly file: 
 
 const sign = (line: DiffLine | undefined): string => line?.kind === 'add' ? '+' : line?.kind === 'remove' ? '−' : ''
 const spoken = (line: DiffLine | undefined): ReactNode => line?.kind === 'add' ? <span className="tt-visually-hidden">Added: </span> : line?.kind === 'remove' ? <span className="tt-visually-hidden">Removed: </span> : null
+const commentTitle = (number: number | null | undefined): string | undefined => number == null ? undefined : `Comment on line ${number}`
 
-/** Rows carry the file and both line numbers as data, so a later selection on this diff can name exactly what it covers. */
-const DiffRows = memo(function DiffRows({ lines, path }: { readonly lines: readonly DiffLine[]; readonly path: string }): ReactNode {
-  return <>{lines.map((line, index) => <div key={index} className="changes-line" data-kind={line.kind} data-path={path}
-    data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined}>
-    <span className="changes-line__number" aria-hidden="true">{line.oldLine ?? ''}</span>
-    <span className="changes-line__number" aria-hidden="true">{line.newLine ?? ''}</span>
-    <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-    <span className="changes-line__text">{spoken(line)}{line.text || ' '}</span>
-  </div>)}</>
-})
-
-/** Align each contiguous edit block while leaving hunk boundaries and no-newline notes in their original order. */
-const SplitDiffRows = memo(function SplitDiffRows({ lines, path }: { readonly lines: readonly DiffLine[]; readonly path: string }): ReactNode {
-  const rows: ReactNode[] = []
+/**
+ * One row. Rows carry the file and both line numbers as data; a row a comment can cover is also a grid row the
+ * keyboard reaches, with its place among them and what a screen reader hears for it.
+ */
+const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted }: {
+  readonly row: DiffRow; readonly path: string; readonly selected: boolean; readonly current: boolean; readonly noted: boolean
+}): ReactNode {
+  const pickable = row.position !== null ? {
+    'data-position': row.position, tabIndex: current ? 0 : -1, 'aria-selected': selected, 'aria-label': rowLabel(row), 'data-noted': noted || undefined,
+  } : {}
+  if (row.line) {
+    const { line } = row
+    const number = line.newLine ?? line.oldLine
+    return <div className="changes-line" role="row" data-kind={line.kind} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} {...pickable}>
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.oldLine ?? number) : undefined}>{line.oldLine ?? ''}</span>
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number) : undefined}>{line.newLine ?? ''}</span>
+      <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
+      <span className="changes-line__text" role="gridcell">{spoken(line)}{line.text || ' '}</span>
+    </div>
+  }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {
     const number = side === 'old' ? line?.oldLine : line?.newLine
-    return <div className="changes-split__cell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
-      <span className="changes-line__number" aria-hidden="true">{number ?? ''}</span>
+    return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
+      <span className="changes-line__number" aria-hidden="true" title={commentTitle(number)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
       <span className="changes-line__text">{spoken(line)}{line?.text || ' '}</span>
     </div>
   }
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index]!
-    if (line.kind === 'remove' || line.kind === 'add') {
-      const start = index
-      const before: DiffLine[] = []
-      const after: DiffLine[] = []
-      while (index < lines.length && (lines[index]!.kind === 'remove' || lines[index]!.kind === 'add')) {
-        const edit = lines[index++]!
-        if (edit.kind === 'remove') before.push(edit)
-        else after.push(edit)
-      }
-      for (let offset = 0; offset < Math.max(before.length, after.length); offset++) {
-        const old = before[offset], next = after[offset]
-        rows.push(<div key={`${start}-${offset}`} className="changes-split__row" data-path={path} data-old-line={old?.oldLine ?? undefined} data-new-line={next?.newLine ?? undefined}>{cell(old, 'old')}{cell(next, 'new')}</div>)
-      }
-    } else {
-      rows.push(line.kind === 'context'
-        ? <div key={index} className="changes-split__row" data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined}>{cell(line, 'old')}{cell(line, 'new')}</div>
-        : <DiffRows key={index} lines={[line]} path={path} />)
-      index++
-    }
-  }
-  return <>{rows}</>
+  return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>
+    {cell(row.old, 'old')}{cell(row.next, 'new')}
+  </div>
 })
+
+/** Comment, floating at the end of the picked lines. */
+function CommentPill({ label, full, onPress }: { readonly label: string; readonly full: boolean; readonly onPress: () => void }): ReactNode {
+  return <div className="changes-comment-pill" role="row"><div role="gridcell">
+    <button type="button" className="changes-comment-pill__button tt-focusable" aria-label={`Comment on ${label}`}
+      title={full ? `A message carries at most ${MAX_REVIEW_COMMENTS} comments. Send it or delete one first.` : undefined} disabled={full} onClick={onPress}>
+      <MessageSquare size={14} aria-hidden="true" />Comment</button>
+  </div></div>
+}
+
+/** The draft under its lines: Comment (or Ctrl+Enter) puts it on the composer, Cancel or Escape drops it. */
+function CommentDraft({ draft, full, focus, onText, onCancel, onAdd }: {
+  readonly draft: ReviewDraft; readonly full: boolean; readonly focus: { current: boolean }
+  readonly onText: (text: string) => void; readonly onCancel: () => void; readonly onAdd: () => void
+}): ReactNode {
+  const field = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    if (!focus.current || !field.current) return
+    focus.current = false
+    field.current.focus({ preventScroll: true })
+    field.current.closest('.changes-comment')?.scrollIntoView({ block: 'nearest' })
+  })
+  const label = reviewLabel(draft)
+  const ready = draft.text.trim() !== '' && !full
+  return <div className="changes-comment changes-comment--draft" role="row"><div className="changes-comment__cell" role="gridcell">
+    <div className="changes-comment__label">{label}</div>
+    <textarea ref={field} className="changes-comment__field" rows={2} aria-label={`Comment on ${label}`} placeholder="Add a comment…" value={draft.text}
+      onChange={event => onText(event.target.value)}
+      onKeyDown={event => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
+        else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (ready) onAdd() }
+      }} />
+    {full ? <p className="changes-comment__note">A message carries at most {MAX_REVIEW_COMMENTS} comments. Send it or delete one first.</p> : null}
+    <div className="changes-comment__actions">
+      <span className="changes-comment__hint" aria-hidden="true">Esc cancels</span>
+      <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+      <Button variant="primary" disabled={!ready} onClick={onAdd}>Comment</Button>
+    </div>
+  </div></div>
+}
+
+/** A comment waiting on the composer, under its last line, until the message goes or it is deleted. */
+function CommentMarker({ comment, moved, onDelete }: { readonly comment: ReviewComment; readonly moved: boolean; readonly onDelete: () => void }): ReactNode {
+  const label = reviewLabel(comment)
+  return <div className="changes-comment changes-comment--marker" role="row"><div className="changes-comment__cell" role="gridcell">
+    <div className="changes-comment__head">
+      <MessageSquare size={14} aria-hidden="true" className="changes-comment__icon" />
+      <span className="changes-comment__label">{label}</span>
+      <Button variant="ghost" className="changes-comment__delete" aria-label={`Delete comment on ${label}`} onClick={onDelete}>Delete comment</Button>
+    </div>
+    <p className="changes-comment__text">{comment.text}</p>
+    {moved ? <p className="changes-comment__note">These lines have changed since. The comment still sends them as they were.</p> : null}
+  </div></div>
+}
 
 /**
  * The file tree aside: the comparison's files under their folders, one list the arrow keys walk. Picking a file

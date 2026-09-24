@@ -21,6 +21,7 @@ export default tseslint.config(
       'artifacts/question-choices/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
+      'artifacts/review-comments-run/**',
       'artifacts/agent-control-smoke/**',
       'artifacts/activity-performance/**',
       'artifacts/process-creature/**',

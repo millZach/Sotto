@@ -51,6 +51,23 @@ The **Git action** sits at the end of the pane header (ADR-0027). Its label foll
 
 **Changes** in Tools is T3's diff panel (ADR-0027). Its scope menu offers **Working tree** (the working copy against HEAD, untracked files included, read through a copy of the index so the real one is never touched), **Branch changes** (`base...HEAD`; the base picker starts at **Automatic** and lists each branch once, in **Branch** and **Remote** columns, with **Use remote version** where both copies exist and a **Remote only** mark where only the remote one does), **Latest turn** and **Turn N**, read from Sotto's checkpoints rather than Git. A turn whose checkpoint is unavailable says so with the reason. The line of chrome shows the comparison's `+adds −dels` and **Refresh diff**; the bar under it holds **Expand all files** / **Collapse all files**, **Stacked diff view** and **Split diff view**, line wrapping, **Hide whitespace changes** and the file tree, which stands beside the files in a wide panel and above them in a narrow one. Each file is a block with its status, counts and **Copy path**; its name opens it in Files. These choices last the session; settings that keep them come with #271. There is no staging: **Stage file**, **Unstage file** and the staged and unstaged comparisons are gone, and the commit dialog's file list is the choice. `mod+d` toggles Changes, or `mod+shift+d` when the dictation hotkey holds `mod+d`; focus inside a terminal keeps its own Ctrl+D.
 
+A **review comment** (#270) is T3's way of saying something about lines of Changes. Click a line, Shift+click to take more, and press **Comment**, or press a line number to comment on that line; the draft opens under the lines (**Add a comment…**, **Cancel**, **Comment**; Escape cancels, Ctrl+Enter adds). The comment becomes a chip on that thread's composer, named `file L12 to L20` from the new file's numbers or `file L4 to L5 (before)` when every line was removed, and a marker under its last line with **Delete comment**. A file's lines are one stop in the Tab order, followed by the Comment button and each comment's controls where they are drawn: the arrow keys, Home and End move, Shift extends, Space picks a line, Enter opens a draft on what is picked, and Escape lets go. The next prompt, queued follow-up or steer carries every comment as text after the user's message, so every provider reads the same thing:
+
+````text
+Tighten this before we merge.
+
+Comment on `src/main/voice.ts L12 to L13`:
+
+Say why it returns early.
+
+```diff
++  if (!key) return { ok: false }
++  const clip = await speak(v, SAMPLE, 2)
+```
+````
+
+A comment keeps its lines as they read when it was written. If the diff moves on, the comment still goes with those lines; its marker moves to the end of the file and says the lines have changed since, until the comment is sent or deleted. An answer to a question does not carry comments; the composer says they wait for the next prompt. A message carries at most 20. Comments live in the window's memory for its thread until sent or deleted, are never saved with the draft, and never reach a log.
+
 The first prompt can give a new worktree's short temporary branch a descriptive name, written by the thread's own provider in a side call that never enters the thread (ADR-0026). Generated thread titles and Keep local history must both be on, and a Devin thread keeps its temporary name. The request runs in the background, never renames a branch the agent or user already changed, and leaves the turn running if naming fails.
 
 The branch label is re-read after relevant work, when you start typing and when the window regains focus. Only a thread using the shared project folder shows **Branch changed** when its current named branch differs from its last send. The notice waits for a draft; sending continues on the current branch, **Restore branch** switches back after confirmation if changes are uncommitted, and **Dismiss** lasts for that branch pair through pane switches in the current app session. Worktree-backed threads do not show this notice. A missing Sotto-created working folder is put back on its recorded branch when possible before the next send; an occupied branch or invalid folder binding is reported without resetting or removing work.

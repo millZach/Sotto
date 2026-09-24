@@ -122,7 +122,7 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--tt-warning); }
 
 /* The lines. Wrapped, the text breaks inside its column; unwrapped, each file scrolls sideways on its own. */
-.changes-diff__body { overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-diff__body { container-type: inline-size; overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.7; }
 .changes-files:not([data-wrap]) .changes-diff__rows { width: max-content; min-width: 100%; }
 .changes-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; color: var(--tt-code-text); }
@@ -147,7 +147,8 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-diff__rows[data-layout='split'] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .changes-files:not([data-wrap]) .changes-diff__rows[data-layout='split'] { grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr); }
 .changes-diff__rows[data-layout='split'] > .changes-line { grid-column: 1 / -1; }
-.changes-split__row { display: contents; }
+/* A split row is a real box on the file's grid, so it can take focus and a selection while its cells stay aligned. */
+.changes-split__row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
 .changes-split__cell { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
 .changes-files:not([data-wrap]) .changes-split__cell { grid-template-columns: 4ch 1ch max-content; }
 .changes-split__row > .changes-split__cell:first-child { border-right: 1px solid var(--tt-hairline); }
@@ -155,6 +156,47 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
   .changes-split__cell { grid-template-columns: 3ch 1ch minmax(0, 1fr); column-gap: 3px; }
   .changes-files:not([data-wrap]) .changes-split__cell { grid-template-columns: 3ch 1ch max-content; }
 }
+
+/* Review comments (#270): lines are picked like T3's, a comment is written under them and stays marked there until
+   the message goes. Picked lines take an accent wash over their own add or remove wash, with the accent's edge. */
+.changes-diff__rows { --changes-picked: color-mix(in srgb, var(--tt-accent) 22%, transparent); }
+.changes-line[data-position], .changes-split__row[data-position] { cursor: pointer; scroll-margin-top: 40px; scroll-margin-bottom: 8px; }
+.changes-line[data-position]:hover, .changes-split__row[data-position]:hover > .changes-split__cell { background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); }
+.changes-line[aria-selected='true'], .changes-split__row[aria-selected='true'] > .changes-split__cell { background-image: linear-gradient(var(--changes-picked), var(--changes-picked)); }
+.changes-line[aria-selected='true'], .changes-line[data-noted],
+.changes-split__row[aria-selected='true'] > .changes-split__cell:first-child, .changes-split__row[data-noted] > .changes-split__cell:first-child { box-shadow: inset 3px 0 0 var(--tt-accent); }
+.changes-line[data-position]:focus-visible, .changes-split__row[data-position]:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.changes-line[data-position] .changes-line__number:not(:empty):hover, .changes-split__row[data-position] .changes-line__number:not(:empty):hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+
+/* What sits between the lines stays in view when unwrapped lines scroll sideways: as wide as the file's view, pinned left. */
+.changes-comment, .changes-comment-pill { position: sticky; left: 0; grid-column: 1 / -1; width: 100cqw; box-sizing: border-box; cursor: default; }
+.changes-comment-pill { height: 0; }
+.changes-comment-pill__button {
+  position: absolute; top: -11px; right: 10px; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px;
+  border: 0; border-radius: var(--tt-radius-pill); background: var(--tt-pill); color: var(--tt-pill-ink); box-shadow: var(--tt-shadow-sm);
+  font: 500 12.5px var(--tt-font-ui); cursor: pointer; transform: translateY(-50%);
+}
+.changes-comment-pill__button:hover:not(:disabled) { filter: brightness(1.12); }
+.changes-comment-pill__button:disabled { cursor: not-allowed; opacity: 0.6; }
+.changes-comment { padding: 4px 10px 8px 12px; font: 13px/1.45 var(--tt-font-ui); white-space: normal; }
+.changes-comment__cell { padding: 10px; border: 1px solid var(--tt-panel-border); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); }
+.changes-comment--marker .changes-comment__cell { padding: 8px 10px; border-color: var(--tt-hairline); border-left: 3px solid var(--tt-accent); box-shadow: none; }
+.changes-comment__label { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.changes-comment__head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.changes-comment__icon { flex: none; color: var(--tt-text-muted); }
+.changes-comment__head .changes-comment__delete { flex: none; margin-left: auto; }
+.changes-comment .tt-button { min-height: 28px; padding: 0 10px; font-size: 13px; }
+.changes-comment .tt-button--ghost { color: var(--tt-text-muted); }
+.changes-comment__text { margin: 4px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.changes-comment__field {
+  display: block; width: 100%; min-height: 56px; margin-top: 6px; padding: 7px 9px; box-sizing: border-box; resize: vertical;
+  border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; line-height: 1.45;
+}
+.changes-comment__field::placeholder { color: var(--tt-text-muted); }
+.changes-comment__field:focus { border-color: var(--tt-field-border-focus); outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.changes-comment__note { margin: 6px 0 0; color: var(--tt-warning-text); font-size: 12px; }
+.changes-comment__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.changes-comment__hint { margin-right: auto; color: var(--tt-text-muted); font-size: 12px; }
 
 /* The file tree: the comparison's files under their folders. */
 .changes-tree__list { display: flex; flex-direction: column; gap: 1px; }

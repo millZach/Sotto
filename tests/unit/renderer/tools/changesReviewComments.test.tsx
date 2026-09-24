@@ -1,0 +1,183 @@
+import React from 'react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { GitChangesBridge, GitReviewFile } from '../../../../src/shared/gitChanges'
+import { ReviewCommentStore } from '../../../../src/renderer/src/agents/reviewComments'
+import { ChangesSurface } from '../../../../src/renderer/src/tools/ChangesSurface'
+import { ChangesStore } from '../../../../src/renderer/src/tools/changesStore'
+import { TOKEN_A } from './fakeFilesBridge'
+
+const THREAD = 'visual-gate'
+const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,4 +3,4 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n end\n'
+const workspace = { threadId: THREAD, projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
+const file = (patch: string): GitReviewFile => ({ path: 'src/app.ts', status: 'modified', additions: 1, deletions: 1, content: { kind: 'text', patch } })
+
+function fakeGit() {
+  let files = [file(PATCH)]
+  let revision = 'r1'
+  const listeners = new Set<(event: { threadId: string; workspaceId: string; revision: string }) => void>()
+  const bridge = {
+    list: vi.fn(async () => ({ ok: true as const, value: { workspace, branch: 'main', revision, files: files.map(item => ({ path: item.path, status: item.status })), truncated: false } })),
+    review: vi.fn(async () => ({ ok: true as const, value: { workspace, revision, scope: { kind: 'working' as const }, files, truncated: false } })),
+    copyPath: vi.fn(), reveal: vi.fn(),
+    watch: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    onChanged: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
+  } as unknown as GitChangesBridge
+  return {
+    bridge,
+    change(patch: string) {
+      files = [file(patch)]; revision = `${revision}+`
+      for (const listener of [...listeners]) listener({ threadId: THREAD, workspaceId: TOKEN_A, revision })
+    },
+  }
+}
+
+function setup() {
+  const git = fakeGit()
+  const store = new ChangesStore()
+  const comments = new ReviewCommentStore()
+  store.activate(git.bridge, THREAD)
+  const view = render(<ChangesSurface threadId={THREAD} store={store} bridge={git.bridge} onStatus={vi.fn()} comments={comments} />)
+  return { git, store, comments, view }
+}
+
+const grid = () => screen.getByRole('grid', { name: 'Lines of src/app.ts' })
+const row = (line: string) => grid().querySelector<HTMLElement>(`[data-position]${line}`)!
+
+beforeEach(() => { Element.prototype.scrollIntoView = function scrollIntoView() { /* jsdom has no layout */ } })
+afterEach(() => { cleanup(); delete (Element.prototype as Partial<Element>).scrollIntoView })
+
+describe('review comments in Changes', () => {
+  it('picks a line with a click and more with Shift, writes a comment under them and marks it until deleted', async () => {
+    const user = userEvent.setup()
+    const { comments } = setup()
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="4"]'))
+    expect(row('[data-new-line="4"]')).toHaveAttribute('aria-selected', 'true')
+    await user.click(row('[data-new-line="5"]'))
+    // A plain click moves the pick; Shift extends it from where it started.
+    expect(row('[data-new-line="4"]')).toHaveAttribute('aria-selected', 'false')
+    await user.click(row('[data-old-line="4"]'))
+    await user.keyboard('{Shift>}')
+    await user.click(row('[data-new-line="5"][data-kind="context"]'))
+    await user.keyboard('{/Shift}')
+    expect([...grid().querySelectorAll('[aria-selected="true"]')].map(item => item.getAttribute('data-kind'))).toEqual(['remove', 'add', 'context'])
+
+    await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4 to L5' }))
+    const draft = screen.getByRole('textbox', { name: 'Comment on app.ts L4 to L5' })
+    expect(draft).toHaveFocus()
+    expect(draft).toHaveAttribute('placeholder', 'Add a comment…')
+    expect(screen.getByRole('button', { name: 'Comment' })).toBeDisabled()
+    await user.type(draft, 'Say why it is ready now.')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+
+    expect(comments.list(THREAD)).toEqual([expect.objectContaining({ path: 'src/app.ts', text: 'Say why it is ready now.', lines: [
+      { kind: 'remove', text: 'export const ready = false', oldLine: 4, newLine: null },
+      { kind: 'add', text: 'export const ready = true', oldLine: null, newLine: 4 },
+      { kind: 'context', text: 'tail', oldLine: 5, newLine: 5 },
+    ] })])
+    expect(screen.queryByRole('textbox', { name: /Comment on/u })).toBeNull()
+    expect(screen.getByText('Say why it is ready now.').closest('.changes-comment--marker')).not.toBeNull()
+    expect(row('[data-kind="remove"]')).toHaveAttribute('data-noted')
+    await user.click(screen.getByRole('button', { name: 'Delete comment on app.ts L4 to L5' }))
+    expect(comments.list(THREAD)).toEqual([])
+    expect(screen.queryByText('Say why it is ready now.')).toBeNull()
+  })
+
+  it('opens a draft straight from a line number, and Escape drops it without adding anything', async () => {
+    const user = userEvent.setup()
+    const { comments } = setup()
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
+    const draft = screen.getByRole('textbox', { name: 'Comment on app.ts L6' })
+    await user.type(draft, 'Why keep this?{Escape}')
+    expect(screen.queryByRole('textbox', { name: 'Comment on app.ts L6' })).toBeNull()
+    expect(comments.list(THREAD)).toEqual([])
+    // Only removed lines are named by the old file's numbers.
+    await user.click(row('[data-kind="remove"]').querySelector('.changes-line__number')!)
+    expect(screen.getByRole('textbox', { name: 'Comment on app.ts L4 (before)' })).toHaveFocus()
+  })
+
+  it('walks, picks and comments from the keyboard alone, one tab stop per file', async () => {
+    const user = userEvent.setup()
+    const { comments } = setup()
+    await screen.findByText('export const ready = true')
+    const tabbable = grid().querySelectorAll('[data-position][tabindex="0"]')
+    expect(tabbable).toHaveLength(1)
+    ;(tabbable[0] as HTMLElement).focus()
+    expect(row('[data-new-line="3"]')).toHaveFocus()
+    expect(row('[data-new-line="3"]')).toHaveAccessibleName('Line 3: keep')
+    await user.keyboard('{ArrowDown}')
+    expect(row('[data-kind="remove"]')).toHaveFocus()
+    await user.keyboard('{Shift>}{ArrowDown}{/Shift}')
+    expect(row('[data-kind="add"]')).toHaveFocus()
+    expect(grid().querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+    // Enter opens the draft on what is picked; Escape there returns to the line with the pick kept.
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('textbox', { name: 'Comment on app.ts L4' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(row('[data-kind="add"]')).toHaveFocus())
+    expect(grid().querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+    await user.keyboard('{Enter}')
+    await user.keyboard('Flip it back{Control>}{Enter}{/Control}')
+    expect(comments.list(THREAD).map(comment => comment.text)).toEqual(['Flip it back'])
+    await waitFor(() => expect(row('[data-kind="add"]')).toHaveFocus())
+    // Space picks one line, Escape lets go of it, End jumps to the last.
+    await user.keyboard('{End} ')
+    expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
+    const escape = fireEvent.keyDown(row('[data-new-line="6"]'), { key: 'Escape' })
+    expect(escape).toBe(false)
+    expect(grid().querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
+    // With nothing picked, Escape is left for the panel.
+    expect(fireEvent.keyDown(row('[data-new-line="6"]'), { key: 'Escape' })).toBe(true)
+  })
+
+  it('keeps a comment on the diff when its lines change, at the file’s end and saying so, and back under them when they return', async () => {
+    const user = userEvent.setup()
+    const { comments, git } = setup()
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-kind="add"]'))
+    await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Check this')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    expect(screen.getByText('Check this')).toBeInTheDocument()
+    git.change(PATCH.replace('+export const ready = true', '+export const ready = maybe'))
+    await screen.findByText('export const ready = maybe')
+    const moved = screen.getByText('Check this').closest('.changes-comment--marker')!
+    expect(moved).toHaveTextContent('These lines have changed since. The comment still sends them as they were.')
+    // It sits after the file's last line, which is where the reader finds the rest of the file's comments.
+    expect(moved.previousElementSibling).toHaveAttribute('data-new-line', '6')
+    expect(comments.list(THREAD)).toHaveLength(1)
+    git.change(PATCH)
+    await waitFor(() => expect(screen.getByText('Check this').closest('.changes-comment--marker')!.previousElementSibling).toHaveAttribute('data-kind', 'add'))
+    expect(screen.queryByText(/These lines have changed since/u)).toBeNull()
+  })
+
+  it('lets go of picked lines on Escape from the Comment button, and leaves that Escape to nobody else', async () => {
+    const user = userEvent.setup()
+    setup()
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-kind="add"]'))
+    const pill = screen.getByRole('button', { name: 'Comment on app.ts L4' })
+    pill.focus()
+    expect(fireEvent.keyDown(pill, { key: 'Escape' })).toBe(false)
+    expect(grid().querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
+    await waitFor(() => expect(row('[data-kind="add"]')).toHaveFocus())
+  })
+
+  it('picks split rows too, a pair quoting both of its lines', async () => {
+    const user = userEvent.setup()
+    const { store, comments } = setup()
+    await screen.findByText('export const ready = true')
+    store.setView({ layout: 'split' })
+    await waitFor(() => expect(grid().querySelector('.changes-split__row')).not.toBeNull())
+    const pair = grid().querySelector<HTMLElement>('.changes-split__row[data-old-line="4"]')!
+    expect(pair).toHaveAccessibleName('Removed line 4: export const ready = false; Added line 4: export const ready = true')
+    await user.click(pair)
+    await user.click(within(grid()).getByRole('button', { name: 'Comment on app.ts L4' }))
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Both sides')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    expect(comments.list(THREAD)[0]!.lines.map(line => line.kind)).toEqual(['remove', 'add'])
+  })
+})

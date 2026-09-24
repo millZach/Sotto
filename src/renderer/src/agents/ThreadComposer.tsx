@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, Laptop, ListPlus, Server, Square } from 'lucide-react'
+import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
@@ -10,6 +10,7 @@ import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './
 import { insertSkill, retainSkillReferences, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
+import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -20,6 +21,7 @@ import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { toolbarApplies } from './branchToolbar.logic'
 import './composer.css'
+import './reviewComments.css'
 
 type Command = AgentConnection['command']
 
@@ -111,7 +113,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament, focused = true, onExplainedError }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -128,9 +130,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly focused?: boolean
   /** The branch toolbar's refusal, so the pane can leave its own error line out for it. */
   readonly onExplainedError?: ((error: string | null) => void) | undefined
+  /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
+  readonly reviewComments?: ReviewCommentStore
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError } = useThreadComposer(store, threadId)
+  const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
   const [readingImages, setReadingImages] = useState(false)
   const [answerState, setAnswerState] = useState<{ readonly sending: boolean; readonly error: string | null }>({ sending: false, error: null })
@@ -159,7 +164,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
   const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${row.provider} is working. Write a follow-up to queue it.`) : 'What would you like to do next?'
-  const content = hasDraftContent(draft)
+  // Review comments ride with the next prompt, not with an answer to a question.
+  const carried = answering ? [] : comments
+  const content = hasDraftContent(draft) || carried.length > 0
   const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
@@ -217,8 +224,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           () => failed('Sotto could not confirm this answer.'))
       return
     }
+    // The comments become part of the prompt's own text, so every provider reads the same message, the transcript
+    // shows what was sent, and a refused prompt comes back to the composer with them written out.
+    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(draft.text, carried) })
     onSend()
     void sendThreadRevision(store, row, command, submittedAt, mode)
+    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+  }
+  /** A removed chip hands focus to the next one, or back to the prompt after the last. */
+  const removeComment = (comment: ReviewComment, button: HTMLElement): void => {
+    const buttons = [...(button.closest('.review-chips')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
+    const next = buttons[buttons.indexOf(button) + 1] ?? buttons[buttons.indexOf(button) - 1]
+    reviewComments.remove(threadId, comment.id)
+    if (next) next.focus(); else textarea.current?.focus()
   }
   const selectSkill = (index: number): void => {
     const skill = picker.options[index]
@@ -264,6 +282,18 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
       <FilePicker model={files} listId={fileListId} selected={draft.files} onSelect={(entry: FileEntry) => selectFile(files.options.indexOf(entry))} />
+      {comments.length > 0 ? <ul className="review-chips" aria-label="Review comments">
+        {comments.map(comment => {
+          const label = reviewLabel(comment)
+          return <li key={comment.id} className="review-chip" title={comment.text}>
+            <MessageSquare size={13} aria-hidden="true" className="review-chip__icon" />
+            <span className="review-chip__label">{label}</span><span className="tt-visually-hidden">: {comment.text}</span>
+            <button type="button" className="review-chip__remove tt-focusable" aria-label={`Remove comment on ${label}`} title="Remove comment"
+              onClick={event => removeComment(comment, event.currentTarget)}><X size={13} aria-hidden="true" /></button>
+          </li>
+        })}
+      </ul> : null}
+      {comments.length > 0 && answering ? <p className="review-chips__note">These comments go with your next prompt, not this answer.</p> : null}
       <label className="tt-visually-hidden" htmlFor={composerId}>{answering ? 'Your answer' : 'Prompt'}</label>
       <ScreenshotInput key={threadId} attachments={[...draft.attachments]} disabled={!editable} supported={row.model?.supportsImages === true && !answering && !permission}
         onReadingChange={setReadingImages} onChange={attachments => edit({ attachments })}>
