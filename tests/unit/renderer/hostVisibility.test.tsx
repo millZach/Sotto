@@ -133,4 +133,23 @@ describe('New thread chooses the host first', () => {
     expect(select).toHaveBeenCalledWith({ type: 'select', hostId: LOCAL })
     expect(select.mock.invocationCallOrder[0]!).toBeLessThan(command.mock.invocationCallOrder[0]!)
   })
+
+  it('offers the chosen host\'s models for a new folder, not those of the host selected for new work', async () => {
+    const state = twoHosts()
+    state.hostId = FORGE
+    const [localModel, forgeModel] = [state.host.models.find(model => model.ready)!, { ...state.host.models.find(model => model.ready)!, id: 'forge-only-model', name: 'Forge only' }]
+    state.host.models = [forgeModel]
+    state.host.clientHosts = [
+      { hostId: LOCAL, connected: true, models: [localModel], capabilities: state.host.capabilities, ...(state.host.providers ? { providers: state.host.providers } : {}) },
+      { hostId: FORGE, connected: true, models: [forgeModel], capabilities: state.host.capabilities, ...(state.host.providers ? { providers: state.host.providers } : {}) },
+    ]
+    const created = { ...state, host: { ...state.host, projects: [...state.host.projects, { id: 'new-folder', hostId: LOCAL, title: 'New folder', path: 'C:/New folder' }] } }
+    const command = vi.fn(async (request: AgentCommand) => (request.type === 'create-project' ? created : state) as AgentState | null)
+    dialog(state, command)
+    const user = userEvent.setup()
+    await user.click(within(screen.getByRole('group', { name: 'Host' })).getByRole('button', { name: 'This computer' }))
+    await user.click(screen.getByRole('button', { name: /Local folder/ }))
+    await user.click(await screen.findByRole('button', { name: /Create thread/ }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', modelId: localModel.id })))
+  })
 })

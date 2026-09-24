@@ -63,7 +63,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const hosts = listedHosts(state)
   const [hostId, setHostId] = useState<string | undefined>(() => hosts.length ? hostIdOf(project ?? undefined) ?? state.hostId ?? hosts[0]?.hostId : undefined)
   const chosenHost = hosts.find(item => item.hostId === (hostIdOf(project ?? undefined) ?? hostId ?? state.hostId))
-  const projectHost = hostForThread(state.host, { hostId: project?.hostId ?? parseHostEntityKey(project?.id ?? '')?.hostId ?? state.hostId })
+  // A new folder takes the chosen host's models, since it becomes a project there, not on the host selected for new work.
+  const projectHost = hostForThread(state.host, { hostId: project?.hostId ?? parseHostEntityKey(project?.id ?? '')?.hostId ?? chosenHost?.hostId ?? state.hostId })
   const localHostId = state.connections ? state.connections.find(host => host.kind === 'local')?.hostId : state.hostId
   const defaultKey = (id: string): string => { const key = parseHostEntityKey(id); return key && key.hostId === localHostId ? key.id : id }
   const [title, setTitle] = useState(initialChoices?.title ?? '')
