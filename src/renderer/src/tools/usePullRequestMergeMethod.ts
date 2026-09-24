@@ -1,26 +1,17 @@
-import { useCallback, useSyncExternalStore } from 'react'
-import { gitPullRequestMergeMethodSchema, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
-
-const KEY = 'sotto.pullRequestMergeMethod'
-const listeners = new Set<() => void>()
-function storage(): Storage | null { try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null } }
-function read(): GitPullRequestMergeMethod | null {
-  const parsed = gitPullRequestMergeMethodSchema.safeParse(storage()?.getItem(KEY))
-  return parsed.success ? parsed.data : null
-}
-function subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } }
+import { useCallback, useState } from 'react'
+import type { GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { useMergeMethod } from '../state/gitSettings'
 
 /**
- * The merge method the Pull request surface offers first, and the way to change it: the one last chosen on this
- * computer, as T3 remembers it, or null before any choice. The surface falls back to the first method a
- * repository allows. This hook is the one place that knows where the choice is kept, so the Default merge method
- * setting (#271) replaces what is inside it and nothing else.
+ * The merge method the merge checklist offers first, and the way to change it. It starts where the Merge method
+ * setting says (Settings → Git, #271): the method chosen there, or under Last selected the one picked last. A pick
+ * beside Merge holds for this surface, and under Last selected it is saved as the one to start on next time, in
+ * every window and after a restart; under a fixed default nothing is saved. The surface falls back to the first
+ * method a repository allows when this one is not.
  */
-export function usePullRequestMergeMethod(): readonly [GitPullRequestMergeMethod | null, (method: GitPullRequestMergeMethod) => void] {
-  const method = useSyncExternalStore(subscribe, read, read)
-  const choose = useCallback((next: GitPullRequestMergeMethod): void => {
-    try { storage()?.setItem(KEY, next) } catch { /* Storage refused (private mode): the first allowed method stays the one offered. */ }
-    for (const listener of listeners) listener()
-  }, [])
-  return [method, choose] as const
+export function usePullRequestMergeMethod(): readonly [GitPullRequestMergeMethod, (method: GitPullRequestMergeMethod) => void] {
+  const { method, remember } = useMergeMethod()
+  const [picked, setPicked] = useState<GitPullRequestMergeMethod | null>(null)
+  const choose = useCallback((next: GitPullRequestMergeMethod): void => { setPicked(next); remember(next) }, [remember])
+  return [picked ?? method, choose] as const
 }

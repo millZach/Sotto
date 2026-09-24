@@ -1,12 +1,25 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
+import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
+import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+
+vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(() => null),
+}))
+/** The app's settings as the Merge method setting sees them, and the save a pick beside Merge makes. */
+function withSettings(settings: Partial<AppSettings>) {
+  const updateSettings = vi.fn(async () => true)
+  vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, ...settings }, actions: { updateSettings } } as unknown as AppContextValue)
+  return updateSettings
+}
 
 const URL = 'https://github.com/o/r/pull/74'
 const check = (name: string, status: GitPullRequestCheck['status'], url: string | null = null, description: string | null = null): GitPullRequestCheck => ({ name, status, url, description })
@@ -43,8 +56,7 @@ async function menu(label: string) {
   fireEvent.click(await screen.findByRole('menuitem', { name: label }))
 }
 
-beforeEach(() => { localStorage.clear() })
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReset().mockReturnValue(null) })
 
 describe('the merge checklist, read from the pull request', () => {
   const read = (change: Partial<GitPullRequestDetail>) => checklist(detail(change)).map(line => [line.label, line.tone, line.why, line.fix?.kind ?? null])
@@ -156,7 +168,8 @@ describe('the Pull request surface', () => {
     expect(screen.getByText(/Says hello\./u)).toBeInTheDocument()
     expect(command).not.toHaveBeenCalled()
   })
-  it('merges only after its confirmation, in the method chosen beside it, and remembers the method', async () => {
+  it('merges only after its confirmation, in the method chosen beside it, and saves it as the last selected', async () => {
+    const save = withSettings({ defaultMergeMethod: 'last', lastMergeMethod: 'merge' })
     const { command, gitPullRequest } = mount()
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'Merge method: Merge' }))
@@ -169,7 +182,8 @@ describe('the Pull request surface', () => {
     fireEvent.click(within(methods).getByRole('menuitemradio', { name: 'Squash and merge' }))
     expect(screen.queryByRole('menu', { name: 'Merge method' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Merge method: Squash and merge' })).toHaveFocus()
-    expect(localStorage.getItem('sotto.pullRequestMergeMethod')).toBe('squash')
+    expect(save).toHaveBeenCalledExactlyOnceWith({ lastMergeMethod: 'squash' })
+    expect(localStorage.getItem('sotto.pullRequestMergeMethod')).toBeNull()
     expect(screen.getByText('One commit on main.')).toBeInTheDocument()
     fireEvent.click(mergeButton())
     const dialog = screen.getByRole('dialog', { name: 'Merge pull request?' })
@@ -180,6 +194,26 @@ describe('the Pull request surface', () => {
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'merge', method: 'squash' }]))
     expect(await screen.findByText('Pull request merged.')).toHaveAttribute('role', 'status')
     await waitFor(() => expect(gitPullRequest).toHaveBeenCalledTimes(2)) // read again after the press
+  })
+  it('starts on the Merge method setting, and under a fixed default holds a pick without saving it', async () => {
+    const save = withSettings({ defaultMergeMethod: 'rebase', lastMergeMethod: 'squash' })
+    mount()
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'Merge method: Rebase and merge' }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Merge method' })).getByRole('menuitemradio', { name: 'Squash and merge' }))
+    expect(screen.getByRole('button', { name: 'Merge method: Squash and merge' })).toBeInTheDocument()
+    expect(save).not.toHaveBeenCalled()
+    cleanup()
+    withSettings({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' })
+    mount()
+    await opened()
+    expect(screen.getByRole('button', { name: 'Merge method: Squash and merge' })).toBeInTheDocument()
+    // A method this repository does not allow falls back to the first it does.
+    cleanup()
+    withSettings({ defaultMergeMethod: 'rebase' })
+    mount({ detail: detail({ mergeMethods: ['merge', 'squash'] }) })
+    await opened()
+    expect(screen.getByRole('button', { name: 'Merge method: Merge' })).toBeInTheDocument()
   })
   it('closes the method menu and the confirmation with Escape, sending nothing', async () => {
     const { command } = mount()
