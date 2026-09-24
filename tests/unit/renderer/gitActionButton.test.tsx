@@ -262,7 +262,8 @@ describe('the Git action in the pane header', () => {
     const view = mount(busy, { command: async () => state(busy, { error: 'Git action in progress.' }), explained })
     fireEvent.click(view.container.querySelector('.git-action__quick')!)
     expect(await screen.findByRole('alert')).toHaveTextContent('Action failed Git action in progress.')
-    expect(explained).toHaveBeenLastCalledWith('Git action in progress.')
+    // The pane hears from an effect, which can run after the alert is already in the DOM.
+    await waitFor(() => expect(explained).toHaveBeenLastCalledWith('Git action in progress.'))
   })
   it('publishes to GitHub from the dialog after checking the name', async () => {
     const current = thread(status({ hasRemote: false, upstream: null }))
