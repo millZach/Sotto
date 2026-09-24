@@ -50,6 +50,14 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Git fetch interval.** The setting under Application that says how often, while the window is in front, the host fetches a project's origin so its threads' Git status knows ahead and behind. Off stops every background fetch; a refresh still reads the remote, at most once in 15 seconds.
 
+**Automatically pull.** The setting under Application, off until turned on, under which the host fast-forwards a thread's folder when a read of the remote finds it on the default branch, clean, tracking an upstream and only behind, and no thread is working or waiting in that folder. It is the Git action's Pull, run at the moment the status is read; nothing is merged or rebased. Avoid: "auto-sync".
+
+**Default merge method.** The setting that says which method a pull request's merge starts on: Last selected (the method used last, which Sotto remembers only while this is the choice), Merge, Squash and merge, or Rebase and merge.
+
+**Writing style (of commit and pull request text).** The setting under Cleanup that shapes the commit messages and pull request text a thread's own provider writes: Repository conventions (the recent subjects and `AGENTS.md` the request already carries), Conventional Commits, or Custom instructions in the user's words, sent with each of those requests. Beside it, Follow pull request templates says whether the repository's template is read and filled. Avoid: "commit format", "prompt".
+
+**Proactive panels.** The setting under Application, off until turned on, under which Changes opens on its own after a turn that changed at least 3 files or 50 lines (T3 Code's measure), only on a closed Tools panel not pinned to another thread, and without moving keyboard focus. It is the one exception to "nothing announces itself unasked", and it exists only because the user asks for it (ADR-0027).
+
 **Reclaim (a worktree).** Removing a thread's own worktree folder while keeping its branch and the thread; the next send puts the folder back on that branch. It happens on the user's word (**Remove worktree** in the Working copy panel, or the question Settle asks) or under a cleanup rule the user turned on, never for a folder with uncommitted work without their answer (ADR-0019). Each host reclaims only its own worktrees, under the rules in its own settings. Avoid: "delete the worktree", "clean up the thread".
 
 **Thread pane.** A view of one thread within the Threads page, with its own reading position and input. Closing a pane leaves the thread and its running work intact.
@@ -73,7 +81,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 **Browser feedback.** A screenshot and optional selected-element or region context added to a thread's draft by the user. It is unsent draft content until the user sends it.
 
 
-**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled.
+**Settled.** A reversible workspace grouping for a thread or project whose work the user has put aside. It preserves history and running work; restoring a project preserves the individual threads the user had already settled. Creating a new thread in a settled project returns the folder to the active sidebar with only the new thread; older threads stay in Settled. Under **Auto-settle merged threads** (off until turned on) the host settles a thread at rest once GitHub reports the pull request of the branch it last sent on merged, checked on the worktree cleanup's hourly sweep, once per thread and branch while Sotto runs; it removes no folder unless a cleanup rule says so.
 
 **Terminal mode.** The Threads sidebar showing terminals instead of threads, switched with the Threads | Terminal control in the sidebar's top row. Terminals open in the same pane grid as thread panes, so turning the control to Terminal from another page leads to the Threads page. A project's folder head in Terminal mode offers Settle project, the same as in the thread list; a settled project leaves the list once its terminals close. Avoid: "terminal tab", "terminal page".
 

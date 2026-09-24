@@ -26,3 +26,14 @@ Sotto builds T3's Git model piece for piece, in the order the plan's tickets giv
 `gitFetchIntervalSeconds` is a new setting on the IPC patch allow-list, with a control under Settings → Application. `AgentWorktree` gains `git`, a `GitStatus` from `src/shared/gitStatus.ts`. The README's privacy section names the fetch and the pull request lookups. `ThreadWorktrees` still switches nothing on its own; the status reader reads and fetches and changes no ref of the user's.
 
 The later tickets amend this record where they decide something rather than follow it: the Changes rebuild (#268) when staging goes, the actions (#265) when the remote command list grows, the settings (#271) when Proactive panels land.
+
+## Amendment: the settings (#271)
+
+T3's Git and diff settings land as `gitAutoPull`, `defaultMergeMethod` and `lastMergeMethod`, `diffLayout`, `diffHideWhitespace`, `diffFileState`, `gitWritingStyle` and `gitWritingInstructions`, `followPullRequestTemplates`, `autoSettleMergedThreads` and `proactivePanels`, each on the IPC patch allow-list. What Sotto decided rather than followed:
+
+1. **Everything that acts on its own starts off**: Automatically pull, Auto-settle merged threads (on in T3) and Proactive panels. The rest start where T3 does: Last selected starting from Merge, stacked, whitespace hidden, files collapsed, the repository's conventions, templates followed.
+2. **Automatically pull is T3's rule on the host**: at a remote status read, a folder on the default branch, clean, tracking an upstream and only behind is pulled with the Pull action's `--ff-only`, and a folder any thread is working, waiting, setting up or running a Git action in is left for the next read. The desktop reads the setting live; a headless host reads it at start.
+3. **Auto-settle merged threads rides the worktree cleanup's hourly sweep** and its `gh` question rather than the status stream's pull request, so it asks GitHub no more often than the merged rule already did, and once per branch when both want the answer. It settles a thread at rest by the branch it last sent on (a worktree's own branch before its first send), never the default branch, and once per thread and branch while Sotto runs, so a restored thread stays restored; after a restart one that is still on its merged branch may be settled again. Settling removes nothing; the on-settle cleanup rule decides about the folder as it does for any settle.
+4. **Proactive panels opens only a closed panel** that is not pinned to another thread, for the focused thread, after a turn whose Git counts grew by at least 3 files or 50 lines (T3's measure) between the turn's start and the host's first read after it ends, and it does not move keyboard focus. It lives on the Tools panel store, not in Changes.
+5. **The last merge method is remembered only while the default is Last selected**, in settings, so it survives a restart and a second window.
+
