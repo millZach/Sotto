@@ -54,7 +54,7 @@ const SHOTS = resolve(process.cwd(), 'artifacts/git-interface-run')
 async function captureMatrix(launched: LaunchedSotto, name: string, ready?: () => Promise<void>): Promise<void> {
   const { page } = launched
   await mkdir(SHOTS, { recursive: true })
-  for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
     await resize(launched, width, height)
     for (const appearance of ['dark', 'light'] as const) {
       await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)

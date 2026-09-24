@@ -128,14 +128,12 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hostName = listed?.name ?? (thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer')
   const draftWorktree = newWorktreeDraft(thread)
   return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
-    {/* The key words stay in the text for the screen reader and the tests; the eye gets the glyph and the value. */}
-    <span className="branch-toolbar__static" title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'}>
-      {thread.remoteHost ? <Server size={13} aria-hidden="true" /> : <Laptop size={13} aria-hidden="true" />}<span className="tt-visually-hidden">Run on </span><strong>{hostName}</strong></span>
+    <LabelPill icon={thread.remoteHost ? Server : Laptop} label="Run on" value={hostName}
+      title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'} />
     {locked
-      ? <span className="branch-toolbar__static" title={`Workspace: ${workspaceLabel(thread)}`}><Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">Workspace </span><strong>{workspaceLabel(thread)}</strong></span>
+      ? <LabelPill icon={Folder} label="Workspace" value={workspaceLabel(thread)} title={`Workspace: ${workspaceLabel(thread)}`} />
       : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspaceLabel(thread)} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
-    <span className="branch-toolbar__spacer" />
     {/* The badge and the picker wrap as one onto the next line at the 820px minimum, still at the right. */}
     <span className="branch-toolbar__end">
       {pullRequest ? <PullRequestBadge pullRequest={pullRequest} onOpen={() => toolsPanelStore.showPullRequest(thread.id)} /> : null}
@@ -147,6 +145,14 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
     {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
+}
+
+/**
+ * A label that wears the row's pill without being a control: Run on, and Workspace once it has locked. The key word
+ * stays in the text for the screen reader and the tests; the eye gets the glyph and the value.
+ */
+function LabelPill({ icon: Icon, label, value, title }: { readonly icon: typeof Laptop; readonly label: string; readonly value: string; readonly title: string }): ReactNode {
+  return <span className="branch-toolbar__static" title={title}><Icon size={13} aria-hidden="true" /><span className="tt-visually-hidden">{label} </span><span>{value}</span></span>
 }
 
 /** The badge: the pull request's state as an icon and its number, its title in the tooltip, and a press that opens the Pull request surface in Tools. */
@@ -185,7 +191,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpenChange(false) }}>
     <button ref={triggerRef} type="button" className="branch-toolbar__chip tt-focusable" role="combobox" aria-label="Choose workspace" title={`Workspace: ${label}`} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} disabled={disabled} onClick={() => onOpenChange(!open)}>
-      <Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">Workspace</span><span>{label}</span><ChevronDown size={12} aria-hidden="true" />
+      <Folder size={13} aria-hidden="true" /><span>{label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open ? <div ref={list} id={listId} role="listbox" aria-label="Workspace" className="branch-toolbar__list" onKeyDown={event => moveListboxFocus(event, list.current)}>
       {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value}

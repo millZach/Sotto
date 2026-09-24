@@ -3,13 +3,12 @@
    docs/prototypes/branch-toolbar-prototype.html): each control wears the option chips' pill a size smaller, on the hairline,
    and the picker's popover rises above the row like the chips' lists. */
 .branch-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 8px 2px 0; color: var(--tt-text-muted); font-size: 12.5px; }
-.branch-toolbar__spacer { flex: 1 1 8px; }
 .branch-toolbar__end { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; }
 /* The pills: every control the same 30px hairline pill. The two labels (Run on, a locked Workspace) wear it too, quieter and
    without a chevron, so the row reads as one line of buttons; they are not pressable and say so by staying muted. */
-.branch-toolbar__static, .branch-toolbar__chip, .branch-toolbar__branch, .branch-toolbar__pr { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 30px; min-height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; }
+.branch-toolbar__static, .branch-toolbar__chip, .branch-toolbar__branch, .branch-toolbar__pr { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 30px; min-height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; }
 .branch-toolbar__static { padding-left: 9px; color: var(--tt-text-muted); }
-.branch-toolbar__static > strong { overflow: hidden; color: var(--tt-text-muted); font-weight: 400; text-overflow: ellipsis; }
+.branch-toolbar__static > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .branch-toolbar__static > svg { flex: none; color: var(--tt-text-faint); }
 
 .branch-toolbar__chip, .branch-toolbar__branch { max-width: 260px; cursor: pointer; }
@@ -23,7 +22,7 @@
 .branch-toolbar__branch[data-busy] { cursor: progress; }
 
 /* The pull request badge: the state icon in its colour and the number, the title in the tooltip. */
-.branch-toolbar__pr { gap: 4px; padding: 0 9px; font-size: 12px; cursor: pointer; }
+.branch-toolbar__pr { gap: 4px; font-size: 12px; cursor: pointer; }
 .branch-toolbar__pr:disabled { cursor: default; }
 .branch-toolbar__pr[data-state='open'] > svg { color: var(--tt-success); }
 .branch-toolbar__pr[data-state='draft'] > svg { color: var(--tt-text-muted); }
