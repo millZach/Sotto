@@ -147,6 +147,67 @@ describe('Git status the way T3 reads it', () => {
   })
 })
 
+describe('branches the way T3 lists them', () => {
+  it('lists locals then remotes with the current and default branches first, hiding a remote ref a local branch stands for', async () => {
+    const f = await fixture()
+    git(f.repo, 'switch', '-q', '-c', 'feature'); await writeFile(join(f.repo, 'work.txt'), 'feature\n'); commit(f.repo, 'Feature')
+    git(f.repo, 'push', '-q', '-u', 'origin', 'feature')
+    git(f.repo, 'branch', '-q', 'local-only')
+    git(f.other, 'switch', '-q', '-c', 'elsewhere'); await writeFile(join(f.other, 'other.txt'), 'other\n'); commit(f.other, 'Elsewhere'); git(f.other, 'push', '-q', '-u', 'origin', 'elsewhere')
+    git(f.repo, 'fetch', '-q', 'origin')
+    const page = await f.reader.listRefs(f.repo)
+    expect(page).toMatchObject({ isRepository: true, hasRemote: true, nextCursor: null, total: 4 })
+    expect(page.refs.map(ref => ref.name)).toEqual(['feature', 'main', 'local-only', 'origin/elsewhere'])
+    expect(page.refs[0]).toEqual({ name: 'feature', current: true, isDefault: false, worktreePath: null })
+    expect(page.refs[1]).toEqual({ name: 'main', current: false, isDefault: true, worktreePath: null })
+    expect(page.refs[3]).toEqual({ name: 'origin/elsewhere', remote: 'origin', current: false, isDefault: false, worktreePath: null })
+    // Asked for, the remote refs the locals stand for come back too, origin's default marked as such.
+    const all = await f.reader.listRefs(f.repo, { includeMatchingRemoteRefs: true })
+    expect(all.refs.map(ref => ref.name)).toEqual(['feature', 'main', 'origin/main', 'local-only', 'origin/elsewhere', 'origin/feature'])
+    expect(all.refs.find(ref => ref.name === 'origin/main')).toMatchObject({ remote: 'origin', isDefault: true })
+  }, 30000)
+  it('says where a branch is checked out in another worktree, and calls a plain folder no repository', async () => {
+    const f = await fixture({ remote: false })
+    const side = join(f.root, 'side-worktree')
+    git(f.repo, 'worktree', 'add', '-q', '-b', 'side', side)
+    const fromRepo = await f.reader.listRefs(f.repo)
+    expect(fromRepo.refs.find(ref => ref.name === 'side')?.worktreePath?.replaceAll('\\', '/')).toBe(side.replaceAll('\\', '/'))
+    expect(fromRepo.refs.find(ref => ref.name === 'main')).toMatchObject({ current: true, isDefault: true, worktreePath: null })
+    // From inside the worktree the same branch is simply current; main is the one checked out elsewhere.
+    const fromSide = await f.reader.listRefs(side)
+    expect(fromSide.refs.find(ref => ref.name === 'side')).toMatchObject({ current: true, worktreePath: null })
+    expect(fromSide.refs.find(ref => ref.name === 'main')?.worktreePath?.replaceAll('\\', '/')).toBe(f.repo.replaceAll('\\', '/'))
+    expect(fromSide.hasRemote).toBe(false)
+    const plain = join(f.root, 'plain'); await mkdir(plain)
+    expect(await f.reader.listRefs(plain)).toEqual({ refs: [], isRepository: false, hasRemote: false, nextCursor: null, total: 0 })
+  }, 30000)
+  it('answers a substring query and a cursor over the whole, and reads the repository again after two minutes or on request', async () => {
+    const f = await fixture({ remote: false })
+    for (const name of ['topic/one', 'topic/two', 'other']) git(f.repo, 'branch', '-q', name)
+    const topic = await f.reader.listRefs(f.repo, { query: 'TOPIC' })
+    expect(topic.refs.map(ref => ref.name)).toEqual(['topic/one', 'topic/two']); expect(topic.total).toBe(2)
+    const first = await f.reader.listRefs(f.repo, { limit: 2 })
+    expect(first.refs.map(ref => ref.name)).toEqual(['main', 'other']); expect(first.nextCursor).toBe(2); expect(first.total).toBe(4)
+    const second = await f.reader.listRefs(f.repo, { cursor: first.nextCursor!, limit: 2 })
+    expect(second.refs.map(ref => ref.name)).toEqual(['topic/one', 'topic/two']); expect(second.nextCursor).toBeNull()
+    // The snapshot is kept: a branch made afterwards shows only after the window, a refresh or an action.
+    const listings = () => f.calls.filter(call => call[1] === 'for-each-ref').length
+    const before = listings()
+    git(f.repo, 'branch', '-q', 'late')
+    expect((await f.reader.listRefs(f.repo)).total).toBe(4); expect(listings()).toBe(before)
+    expect((await f.reader.listRefs(f.repo, { refresh: true })).total).toBe(5); expect(listings()).toBe(before + 1)
+    git(f.repo, 'branch', '-q', 'later')
+    f.advance(120_001)
+    expect((await f.reader.listRefs(f.repo)).total).toBe(6)
+    git(f.repo, 'branch', '-q', 'latest')
+    f.reader.invalidate()
+    expect((await f.reader.listRefs(f.repo)).total).toBe(7)
+    // The current branch is read per request, not from the snapshot.
+    git(f.repo, 'switch', '-q', 'other')
+    expect((await f.reader.listRefs(f.repo)).refs[0]).toMatchObject({ name: 'other', current: true })
+  }, 30000)
+})
+
 describe('porcelain v2 parsing', () => {
   it('reads the branch headers and counts records, a rename once', () => {
     const output = ['# branch.oid abc', '# branch.head main', '# branch.upstream origin/main', '# branch.ab +2 -1',

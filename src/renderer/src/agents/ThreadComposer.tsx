@@ -16,6 +16,7 @@ import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queu
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
+import { BranchToolbar } from './BranchToolbar'
 import './composer.css'
 
 type Command = AgentConnection['command']
@@ -108,7 +109,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, handingOff = false, ornament, focused = true, onExplainedError }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -121,6 +122,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly handingOff?: boolean
   /** Live observation drawn on the top edge without changing composer interaction. */
   readonly ornament?: ReactNode
+  /** Whether this pane has the user's attention; the branch toolbar's shortcuts answer only for the one that does. */
+  readonly focused?: boolean
+  /** The branch toolbar's refusal, so the pane can leave its own error line out for it. */
+  readonly onExplainedError?: ((error: string | null) => void) | undefined
 }): ReactNode {
   const threadId = row.thread.id
   const { draft, save, saveError } = useThreadComposer(store, threadId)
@@ -299,6 +304,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
         </div>
       </div>
+      {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027). */}
+      <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />
     </form>
   </>
 }

@@ -131,6 +131,12 @@ describe('socket client isolation and reconnect', () => {
     await client.command({ type: 'refresh-thread-worktree', threadId })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git?.branch).toBe('main')
     expect(client.shell().host.threads.find(thread => thread.id === threadId)?.worktree?.git).toMatchObject({ isRepository: true, hasRemote: false, dirty: false, ahead: 0, behind: 0, pullRequest: null })
+    // The branch picker asks the host for a page of refs over the same socket.
+    git('branch', '-q', 'topic')
+    const page = await client.gitRefs({ threadId, query: 'top' })
+    expect(page).toEqual({ refs: [{ name: 'topic', current: false, isDefault: false, worktreePath: null }], isRepository: true, hasRemote: false, nextCursor: null, total: 1 })
+    expect((await client.gitRefs({ threadId })).refs.map(ref => ref.name)).toEqual(['main', 'topic'])
+    await expect(client.gitRefs({ threadId: 'no-such-thread' })).rejects.toThrow()
   })
   it('resyncs after a dropped connection without sending the old command again', async () => {
     const { client } = await pair()
@@ -413,7 +419,7 @@ describe('thread detail over the socket', () => {
       // A client from before the freeze says nothing about deltas in its hello, and keeps getting whole threads.
       const legacy = await rawPeer(server.descriptor.port, session())
       try {
-        expect(await legacy.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['detail-delta'] } })
+        expect(await legacy.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] } })
         await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
         stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
         stream.emit(delta(2, 3, '!'))
@@ -488,11 +494,11 @@ describe('thread detail over the socket', () => {
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['detail-delta'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] })
     const listener = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['detail-delta'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['detail-delta', 'git-refs'], capabilities: { mayAnswer: false } })
   })
 
   it('keeps the version sentence for an unreadable push from a host of another version when a thread once too large arrives', async () => {

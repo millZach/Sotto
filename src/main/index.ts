@@ -616,6 +616,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
+    gitRefs: request => agentControl.gitRefs(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
@@ -1000,6 +1001,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change))
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
+      agentHost.setMutationGuard(checkpointIntegration.canMutate)
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),

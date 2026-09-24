@@ -1,11 +1,17 @@
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
+import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 
 export interface GitCommandOptions {
   readonly timeoutMs?: number
   readonly env?: Readonly<Record<string, string>>
+  /** Each line the command prints as it prints it, for a commit whose hooks are worth watching. */
+  readonly onLine?: (text: string, stream: 'stdout' | 'stderr') => void
+  /** Text handed to the command on its standard input, so a message never appears in an argument list or a file. */
+  readonly stdin?: string
 }
+const OUTPUT_MAX_BYTES = 8_000_000
 /** Runs `git` or `gh` in a folder and resolves with stdout; rejects with stderr as the message. */
 export type RunGitCommand = (cwd: string, command: 'git' | 'gh', args: readonly string[], options?: GitCommandOptions) => Promise<string>
 
@@ -26,11 +32,39 @@ export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options =
   // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
   // reaches the remote the way the user's own Git does.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
-  execFile(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], {
-    cwd, windowsHide: true, shell: false, timeout: options.timeoutMs ?? 30_000, maxBuffer: 8_000_000, env, encoding: 'utf8',
-  }, (error, stdout, stderr) => {
-    if (error) reject(error.code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : Object.assign(new Error(stderr.trim() || error.message), { code: error.code }))
-    else accept(stdout)
+  const child = spawn(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], { cwd, windowsHide: true, shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+  if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
+  let stdout = '', stderr = '', timedOut = false, settled = false
+  const partial = { stdout: '', stderr: '' }
+  const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
+    if (stream === 'stdout') { if (stdout.length < OUTPUT_MAX_BYTES) stdout += chunk } else if (stderr.length < OUTPUT_MAX_BYTES) stderr += chunk
+    if (!options.onLine) return
+    partial[stream] += chunk
+    const lines = partial[stream].split(/\r?\n/u)
+    partial[stream] = lines.pop() ?? ''
+    for (const line of lines) options.onLine(line, stream)
+  }
+  // Both are piped above, whatever stdin is.
+  const out = child.stdout!, err = child.stderr!
+  out.setEncoding('utf8').on('data', (chunk: string) => feed('stdout', chunk))
+  err.setEncoding('utf8').on('data', (chunk: string) => feed('stderr', chunk))
+  const finish = (error: Error | null): void => {
+    if (settled) return
+    settled = true; clearTimeout(timer)
+    if (error) reject(error); else accept(stdout)
+  }
+  // A hook or an ssh the command started can hold the pipes open after the command itself is gone, so a
+  // timeout settles on its own grace rather than waiting for a close that a grandchild may never allow.
+  const timer = setTimeout(() => {
+    timedOut = true; child.kill()
+    setTimeout(() => { out.destroy(); err.destroy(); finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' })) }, 2_000).unref?.()
+  }, options.timeoutMs ?? 30_000)
+  child.on('error', error => finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
+  child.on('close', code => {
+    if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)
+    if (timedOut) finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' }))
+    else if (code !== 0) finish(Object.assign(new Error(stderr.trim() || `${command} exited with ${code ?? 'a signal'}.`), { code }))
+    else finish(null)
   })
 })
 
@@ -46,6 +80,8 @@ export interface GitStatusSource {
   read(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus>
   /** A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches. */
   invalidate(): void
+  /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
+  listRefs?(cwd: string, request: Omit<GitRefsRequest, 'threadId'>): Promise<GitRefsPage>
 }
 
 const FETCH_TIMEOUT_MS = 5_000
@@ -57,6 +93,9 @@ const PULL_REQUEST_FRESH_MS = 60_000
 const PULL_REQUEST_BACKOFF_MS = 20_000
 const BACKOFF_CAP_MS = 15 * 60_000
 const DEFAULT_BRANCH_FRESH_MS = 5 * 60_000
+/** A branch list is kept this long; any Git action drops it (T3's figure). */
+const REFS_FRESH_MS = 2 * 60_000
+interface RefsSnapshot { at: number; locals: Array<{ name: string; date: number; worktreePath: string | null }>; remotes: Array<{ name: string; remote: string; date: number }>; defaultBranch: string | null; hasRemote: boolean }
 const backoff = (base: number, failures: number): number => Math.min(base * 2 ** Math.max(0, failures - 1), BACKOFF_CAP_MS)
 
 const rawPullRequestSchema = z.array(z.object({
@@ -83,6 +122,7 @@ export class GitStatusReader implements GitStatusSource {
   private readonly pullRequests = new Map<string, PullRequestRecord>()
   private readonly defaults = new Map<string, { at: number; value: string | null }>()
   private readonly reads = new Map<string, Promise<GitStatus>>()
+  private readonly refs = new Map<string, RefsSnapshot>()
   private epoch = 0
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
@@ -94,6 +134,66 @@ export class GitStatusReader implements GitStatusSource {
     this.epoch++
     for (const record of this.fetches.values()) record.nextAt = 0
     this.defaults.clear()
+    this.refs.clear()
+  }
+
+  /**
+   * The branches a picker offers, T3's `listRefs`: locals then remotes, each newest first, the current
+   * branch and the default branch at the top, a remote ref hidden when a local branch of the same name
+   * stands for it, a substring query, and a cursor over the whole. The snapshot is kept two minutes per
+   * repository; the current branch and the query are read per request.
+   */
+  async listRefs(cwd: string, request: Omit<GitRefsRequest, 'threadId'> = {}): Promise<GitRefsPage> {
+    let common: string
+    try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim() }
+    catch (error) { if (error instanceof GitUnavailableError) throw error; return { refs: [], isRepository: false, hasRemote: false, nextCursor: null, total: 0 } }
+    const snapshot = await this.refsSnapshot(cwd, common, request.refresh === true)
+    const current = (await this.git(cwd, ['branch', '--show-current']).catch(() => '')).trim() || null
+    const here = (await this.git(cwd, ['rev-parse', '--show-toplevel']).catch(() => '')).trim()
+    const localNames = new Set(snapshot.locals.map(local => local.name))
+    const query = request.query?.trim().toLowerCase() ?? ''
+    const locals: GitRef[] = snapshot.locals.map(local => ({ name: local.name, current: local.name === current, isDefault: local.name === snapshot.defaultBranch,
+      worktreePath: local.worktreePath && !samePath(local.worktreePath, here) ? local.worktreePath : null }))
+    const remotes: GitRef[] = snapshot.remotes
+      .filter(remote => request.includeMatchingRemoteRefs === true || remote.remote !== 'origin' || !localNames.has(remote.name.slice(remote.remote.length + 1)))
+      .map(remote => ({ name: remote.name, remote: remote.remote, current: false, isDefault: remote.remote === 'origin' && remote.name.slice(remote.remote.length + 1) === snapshot.defaultBranch, worktreePath: null }))
+    const rank = (ref: GitRef): number => ref.current ? 0 : ref.isDefault ? 1 : 2
+    const all = [...locals, ...remotes].filter(ref => !query || ref.name.toLowerCase().includes(query))
+    all.sort((a, b) => rank(a) - rank(b) || (a.remote === undefined ? 0 : 1) - (b.remote === undefined ? 0 : 1))
+    const cursor = request.cursor ?? 0, limit = Math.min(request.limit ?? 100, GIT_REFS_MAX_LIMIT)
+    const page = all.slice(cursor, cursor + limit)
+    return { refs: page, isRepository: true, hasRemote: snapshot.hasRemote, nextCursor: cursor + page.length < all.length ? cursor + page.length : null, total: all.length }
+  }
+
+  private async refsSnapshot(cwd: string, common: string, refresh: boolean): Promise<RefsSnapshot> {
+    const cached = this.refs.get(common)
+    if (cached && !refresh && this.now() - cached.at < REFS_FRESH_MS) return cached
+    const listing = await this.git(cwd, ['for-each-ref', '--format=%(refname)%09%(committerdate:unix)%09%(symref)', 'refs/heads', 'refs/remotes']).catch(() => '')
+    const remotesList = (await this.git(cwd, ['remote']).catch(() => '')).split('\n').map(line => line.trim()).filter(Boolean)
+    const head = (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']).catch(() => '')).trim()
+    let defaultBranch: string | null = head.startsWith('origin/') ? head.slice('origin/'.length) : null
+    const worktrees = new Map<string, string>()
+    for (const record of (await this.git(cwd, ['worktree', 'list', '--porcelain', '-z']).catch(() => '')).split('\0\0')) {
+      const fields = record.split('\0')
+      const path = fields.find(field => field.startsWith('worktree '))?.slice(9), branch = fields.find(field => field.startsWith('branch refs/heads/'))?.slice('branch refs/heads/'.length)
+      if (path && branch && !fields.some(field => field === 'prunable' || field.startsWith('prunable '))) worktrees.set(branch, path)
+    }
+    const locals: RefsSnapshot['locals'] = [], remotes: RefsSnapshot['remotes'] = []
+    for (const line of listing.split('\n')) {
+      const [refname, date, symref] = line.split('\t')
+      if (!refname || symref) continue
+      if (refname.startsWith('refs/heads/')) { const name = refname.slice('refs/heads/'.length); locals.push({ name, date: Number(date) || 0, worktreePath: worktrees.get(name) ?? null }) }
+      else if (refname.startsWith('refs/remotes/')) {
+        const full = refname.slice('refs/remotes/'.length)
+        const remote = remotesList.filter(candidate => full.startsWith(`${candidate}/`)).sort((a, b) => b.length - a.length)[0]
+        if (remote) remotes.push({ name: full, remote, date: Number(date) || 0 })
+      }
+    }
+    if (!defaultBranch) defaultBranch = ['main', 'master'].find(name => locals.some(local => local.name === name)) ?? null
+    locals.sort((a, b) => b.date - a.date || a.name.localeCompare(b.name)); remotes.sort((a, b) => b.date - a.date || a.name.localeCompare(b.name))
+    const snapshot: RefsSnapshot = { at: this.now(), locals, remotes, defaultBranch, hasRemote: remotesList.includes('origin') }
+    this.refs.set(common, snapshot)
+    return snapshot
   }
 
   /** One read per folder at a time: two threads sharing a checkout share the answer. */
@@ -213,6 +313,8 @@ export class GitStatusReader implements GitStatusSource {
     }
   }
 }
+
+const samePath = (a: string, b: string): boolean => { const normalise = (path: string) => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/'); return process.platform === 'win32' ? normalise(a).toLowerCase() === normalise(b).toLowerCase() : normalise(a) === normalise(b) }
 
 interface Porcelain { branch: string | null; upstream: string | null; ahead: number; behind: number; changedFiles: number; unborn: boolean }
 /** `status --porcelain=v2 --branch -z`: headers first, then one NUL-terminated record per changed path (two for a rename). */
