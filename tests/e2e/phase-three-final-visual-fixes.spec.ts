@@ -404,6 +404,10 @@ test('the composer beside a pending permission says to allow or deny once, throu
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
     // Panes are keyed by the host that owns their thread; test events still take the bare ID.
     const key = await hostKeys(page)
+    // A working thread with nothing to send shows Stop in Send's place, and the prompt is off while a permission is
+    // pending, so the draft is written before the pane opens: with something to send, Send (here Queue) comes back.
+    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'save-thread-draft', composer: 'manual', threadId: 'visual-gate',
+      draftId: crypto.randomUUID(), text: 'Check the flaky capture once the request is answered.', attachments: [], requestId: null }))
     await size(launched, 1600, 1000)
     await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
@@ -417,7 +421,8 @@ test('the composer beside a pending permission says to allow or deny once, throu
     const gate = pane('visual-gate')
     const prompt = gate.getByRole('textbox', { name: 'Prompt', exact: true })
     await expect(prompt).toHaveAttribute('placeholder', INSTRUCTION)
-    // The Send button still says why it is off.
+    // The Send button still says why it is off, and the held draft stays in the prompt.
+    await expect(prompt).toHaveValue('Check the flaky capture once the request is answered.')
     await expect(gate.getByRole('button', { name: /^(Send|Queue) prompt$/u })).toHaveAttribute('title', INSTRUCTION)
 
     for (const [width, height, name] of [[1600, 1000, '1600'], [1280, 800, '1280x800']] as const) {
