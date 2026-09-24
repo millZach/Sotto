@@ -16,6 +16,7 @@ import { ChangesSurface } from './ChangesSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
+import { useProactiveChanges } from './proactivePanels'
 import type { PathAction } from './filesBrowser'
 import { TerminalSurface } from './TerminalSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -278,11 +279,13 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   }, [open, threadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the rail's open surface, so keyboard users land where the toggle pointed.
+  // An open nobody pressed for (Proactive panels) leaves focus where the user is typing.
   const wasOpen = useRef(open)
   useEffect(() => {
-    if (open && !wasOpen.current) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
+    if (open && !wasOpen.current && !store.takeQuietOpen()) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
     wasOpen.current = open
-  }, [open, chrome.surface])
+  }, [open, chrome.surface, store])
+  useProactiveChanges(state, focusedThreadId, store)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')

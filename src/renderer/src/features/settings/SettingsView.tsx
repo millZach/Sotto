@@ -37,6 +37,7 @@ import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
+import { GitBehaviourSettings, GitWritingSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
@@ -554,8 +555,9 @@ export function SettingsView({
 
                   </div>
                   <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Ask a thread's own model to name the thread from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
-                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Ask the thread's own model to draft a commit message from the staged diff when the commit form opens. Only the staged diff is sent, and nothing is committed until you press Commit." />
-                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to draft a pull request title and body when the form opens. Only the branch's commit subjects and a capped diff against the base are sent, and nothing is created until you press Create." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="Ask the thread's own model to draft a commit message from the staged diff when the commit form opens. Only the staged diff, the repository's recent commit subjects and AGENTS.md, and any custom instructions are sent, and nothing is committed until you press Commit." />
+                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to draft a pull request title and body when the form opens. Only the branch's commit subjects, a capped diff against the base, the pull request template and any custom instructions are sent, and nothing is created until you press Create." />
+                  <GitWritingSettings settings={settings} onSave={save} />
 
                 </div>
               </Card>
@@ -592,6 +594,7 @@ export function SettingsView({
                   <Toggle label="Remove a worktree once its commits are in the default branch" checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, unchanged: checked } })} description="Checked against the local copy of the repository's default branch, once an hour." />
                   <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, merged: checked } })} description="Asks GitHub through gh, the way the Changes panel does, once an hour." />
                   <Field label="Git fetch interval" description="How often Sotto fetches a project's origin remote to learn whether a thread's branch is ahead or behind, while this window is in front. Off stops every background fetch; the branch's pull request is then read only when you refresh."><Select value={String(settings.gitFetchIntervalSeconds)} onChange={event => void save({ gitFetchIntervalSeconds: Number(event.currentTarget.value) as GitFetchIntervalSeconds })}>{GIT_FETCH_INTERVAL_SECONDS.map(seconds => <option key={seconds} value={String(seconds)}>{seconds === 0 ? 'Off' : seconds < 60 ? `${seconds} seconds` : seconds === 60 ? '1 minute' : `${seconds / 60} minutes`}</option>)}</Select></Field>
+                  <GitBehaviourSettings settings={settings} onSave={save} />
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
