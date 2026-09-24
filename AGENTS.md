@@ -15,7 +15,7 @@ Sotto is an Electron desktop app: a dictation tool that is becoming a voice deve
 
 - `CONTEXT.md` is the glossary and the nearest thing to a description of how Sotto thinks. Write in its terms. When the work gives Sotto an idea it has no word for, coin one and add the entry in the same PR; reusing a word that already means something else is the failure this rule exists to prevent.
 - `docs/adr/` records decisions. Read the ones that touch your area before changing it. When a change contradicts one, say so in the PR and amend or supersede the ADR. `docs/agents/domain.md` has the rules.
-- For anything a user sees, `README.md`. For threads and the coordinator, `docs/agent-control.md`.
+- For anything a user sees, `README.md` for the overview and `docs/guide.md` for the detail. For threads and the coordinator, `docs/agent-control.md`.
 
 ## Where things are
 
@@ -66,7 +66,7 @@ npm run notices:verify
 
 Then the Playwright specs that touch the changed surface (`npm run build && npx playwright test tests/e2e/<spec>`), and a two-axis review of the diff: once for standards against this file, once for spec against the issue. The `/code-review` skill does both where it is available. Fix every finding you can and name the ones you could not.
 
-These documents are how Sotto remembers itself, so a change that makes one wrong fixes it in the same PR: `CONTEXT.md` when a term is new or has moved, an ADR when you decided something rather than followed something, `README.md` for anything a user sees, `docs/ci.md` for a gate, and a note in `docs/verification/` with its screenshots in `artifacts/<slug>/` when you proved the work in the running app.
+These documents are how Sotto remembers itself, so a change that makes one wrong fixes it in the same PR: `CONTEXT.md` when a term is new or has moved, an ADR when you decided something rather than followed something, `README.md` and `docs/guide.md` for anything a user sees, `docs/ci.md` for a gate, and a note in `docs/verification/` with its screenshots in `artifacts/<slug>/` when you proved the work in the running app.
 
 ## Commits
 
