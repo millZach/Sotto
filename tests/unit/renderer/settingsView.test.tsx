@@ -289,6 +289,26 @@ describe('SettingsView', () => {
     expect(screen.getByRole('combobox', { name: 'Commit and pull request style' })).toHaveAccessibleDescription(/Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup/u)
   })
 
+  it('tries a failed save of custom instructions again when the field is next left', async () => {
+    const user = userEvent.setup()
+    let accept = false
+    const update = vi.fn(async (patch: object) => !('gitWritingInstructions' in patch) || accept)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })} />)
+    await selectCategory('Git')
+    const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
+    await user.type(instructions, 'Name the issue.')
+    await user.tab()
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Name the issue.' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be saved')
+    // The failed text is waiting again: leaving the field once more saves it.
+    accept = true
+    await user.click(instructions)
+    await user.tab()
+    await waitFor(() => expect(update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object))).toHaveLength(2))
+    expect(update).toHaveBeenLastCalledWith({ gitWritingInstructions: 'Name the issue.' })
+    expect(instructions).toHaveValue('Name the issue.')
+  })
+
   it('keeps custom instructions typed just before the style changes away from Custom instructions', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)

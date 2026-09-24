@@ -122,7 +122,12 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
     if (timer.current) { clearTimeout(timer.current); timer.current = null }
     const value = pending.current
     pending.current = null
-    if (value !== null && value !== latest.current.saved) void latest.current.onSave({ gitWritingInstructions: value }, 'Instructions saved.')
+    if (value === null || value === latest.current.saved) return
+    // A failed save puts the text back as waiting, so the next pause, blur or change of style tries again,
+    // unless something newer has been typed meanwhile.
+    void latest.current.onSave({ gitWritingInstructions: value }, 'Instructions saved.').then(saved => {
+      if (!saved && pending.current === null) pending.current = value
+    })
   }, [])
   // A saved value from elsewhere shows only while nothing typed here is waiting to be saved.
   useEffect(() => { if (pending.current === null) setText(saved) }, [saved])
