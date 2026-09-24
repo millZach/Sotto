@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
-  type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail,
+  type AgentBridge, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail,
   type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks() })
@@ -15,6 +15,8 @@ const message = (id: string, role: AgentMessage['role'], text: string): AgentMes
 function thread(id: string, messages: AgentMessage[]): AgentThread {
   return { id, title: id, projectId: 'project', modelId: 'claude:test', status: 'idle', messages, requests: [] }
 }
+
+const model = (id: string): AgentModel => ({ id, provider: 'Claude Code', providerId: 'claude', name: id, ready: true })
 
 function fullState(threads: AgentThread[], activeThreadId: string | null = null): AgentState {
   return {
@@ -177,6 +179,59 @@ describe('the startup shell cache', () => {
     await waitFor(() => expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull())
     expect(readShellCache()).toBeNull()
   })
+
+  it('trims a large catalog to the models its threads reference, so the cache stays under the cap', () => {
+    const kept = model('claude:kept')
+    const catalog = [kept, ...Array.from({ length: 700 }, (_, index) => model(`catalog:unused-${index}`))]
+    const live = { ...fullState([{ ...thread('workshop', []), modelId: kept.id }]) }
+    live.host = { ...live.host, models: catalog }
+    writeShellCache(live)
+    const raw = localStorage.getItem(SHELL_CACHE_KEY)
+    expect(raw).not.toBeNull()
+    expect(raw!.length).toBeLessThan(20_000)
+    const restored = readShellCache()
+    expect(restored!.host.models).toEqual([kept])
+  })
+
+  it('restores each host\'s own catalog, trimmed to what its threads reference, including a remote host\'s own', () => {
+    const ownModel = model('local:kept'), ownUnused = model('local:unused')
+    const remoteModel = model('remote:kept'), remoteUnused = model('remote:unused')
+    const ownCatalog = [ownModel, ownUnused]
+    const remoteCatalog = [remoteModel, remoteUnused]
+    const live = fullState([
+      { ...thread('local-thread', []), hostId: 'local-host', modelId: ownModel.id },
+      { ...thread('remote-thread', []), hostId: 'remote-host', modelId: remoteModel.id },
+    ])
+    live.host = {
+      ...live.host, models: ownCatalog,
+      clientHosts: [
+        // The selected host's own entry is the very array `host.models` holds, as the desktop router produces.
+        { hostId: 'local-host', connected: true, models: ownCatalog, capabilities: live.host.capabilities },
+        { hostId: 'remote-host', connected: true, models: remoteCatalog, capabilities: live.host.capabilities },
+      ],
+    }
+    writeShellCache(live)
+    const restored = readShellCache()!
+    expect(restored.host.models).toEqual([ownModel])
+    expect(restored.host.clientHosts!.find(entry => entry.hostId === 'local-host')!.models).toEqual([ownModel])
+    expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
+  })
+
+  it('keeps a remote thread\'s model in the host\'s own catalog, where the Agents room looks it up', () => {
+    // Model IDs are not host-keyed, so the same model can sit in both catalogs.
+    const shared = model('native:claude:model:sonnet')
+    const live = fullState([
+      { ...thread('local-thread', []), hostId: 'local-host', modelId: 'claude:local' },
+      { ...thread('remote-thread', []), hostId: 'remote-host', modelId: shared.id },
+    ])
+    const ownCatalog = [model('claude:local'), shared, model('claude:unused')]
+    live.host = { ...live.host, models: ownCatalog, clientHosts: [
+      { hostId: 'local-host', connected: true, models: ownCatalog, capabilities: live.host.capabilities },
+      { hostId: 'remote-host', connected: true, models: [shared], capabilities: live.host.capabilities },
+    ] }
+    writeShellCache(live)
+    expect(readShellCache()!.host.models.map(entry => entry.id)).toEqual(['claude:local', shared.id])
+  })
 })
 
 describe('a shell held for its frame', () => {
@@ -253,6 +308,33 @@ describe('shell updates while the main window is hidden', () => {
     unmount()
     expect(cancel).toHaveBeenCalledWith(7)
     expect(remove).toHaveBeenCalledWith('visibilitychange', listener)
+  })
+})
+
+describe('a sync command reply racing a low-priority broadcast', () => {
+  it('is not overtaken once its transition finally catches up', async () => {
+    // Hidden, a broadcast commits directly as a transition (no frame holds it). Publishing it here does
+    // not await React's own scheduling of that low-priority work, so it is still unsettled — exactly
+    // like the real Scheduler, which runs it on its own macrotask — when the command below replies.
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const initial = fullState([thread('workshop', [])], 'workshop')
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    let resolveCommand!: (state: AgentState) => void
+    vi.mocked(wire.bridge.command).mockImplementationOnce(() => new Promise(resolve => { resolveCommand = resolve }))
+    wire.publish({ ...initial, notice: 'from the broadcast' })
+    // `refresh` is a provider operation and runs at once rather than waiting behind the command lane,
+    // so `bridge.command` (and `resolveCommand`) is called synchronously here.
+    const sending = result.current.command({ type: 'refresh' })
+    resolveCommand({ ...initial, notice: 'from the command' })
+    // The command's reply is urgent: it lands as soon as its own promise settles.
+    await act(async () => { await sending })
+    expect(result.current.state?.notice).toBe('from the command')
+    // Give the older broadcast's transition every chance to run its own render; React replays the
+    // whole update queue in call order whenever it does, so the later, urgent call still wins.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(result.current.state?.notice).toBe('from the command')
   })
 })
 

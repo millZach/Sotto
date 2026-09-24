@@ -986,7 +986,8 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
       const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
       await dialog.getByRole('button', { name: 'sotto-site C:/sotto-site', exact: true }).click()
-      await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeChecked()
+      // The working copy is chosen under the composer now (ADR-0027); the dialog says where it starts and where to change it.
+      await expect(dialog.getByText('Starts in the project folder. Change it under the composer.', { exact: true })).toBeVisible()
       await capturePage(page, `threads-working-copy-choice-${appearance}.png`, { theme: appearance, category: 'threads', state: 'working-copy-choice' })
     })
   })
