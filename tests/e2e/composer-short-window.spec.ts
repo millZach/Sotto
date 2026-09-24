@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
-// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through usage, Write here and a
+// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through Write here and a
 // refused Manage. Holds and refusals are injected at main's IPC handler in-process; no product code is changed for it.
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
@@ -53,7 +53,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
     const action = [...card.querySelectorAll('button')].find(button => new RegExp(source, 'u').test(button.getAttribute('aria-label') ?? button.textContent ?? ''))
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
-      limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), usage: bottom(element.querySelector('.thread-usage')),
+      limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), meta: bottom(element.querySelector('.thread-pane__meta')),
       promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
       controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
@@ -66,7 +66,9 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
   expect(facts.action!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.paneScroll, context).toBeLessThanOrEqual(1)
   expect(facts.transcript, context).toBeGreaterThanOrEqual(90)
-  expect(facts.usage!, context).toBeLessThanOrEqual(facts.limit)
+  // The row under the composer, where compaction's result is said, fits inside the window as well.
+  expect(facts.meta, context).not.toBeNull()
+  expect(facts.meta!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.promptFont).toBe('15px')
   for (const control of facts.controls) { expect(Math.round(control.height)).toBeGreaterThanOrEqual(34); expect(control.font).toBe('14px') }
   const name = await page.evaluate(() => `${innerWidth}x${innerHeight}`)
@@ -153,7 +155,7 @@ async function armProbe(page: Page): Promise<void> {
 }
 const bodyFrames = (page: Page) => page.evaluate(() => { const probe = (window as unknown as { __probe: { bodyFrames: number; stop: boolean } }).__probe; probe.stop = true; return probe.bodyFrames })
 
-test('keyboard focus stays put through usage details, Write here, and a refused Manage', async () => {
+test('keyboard focus stays put through Write here and a refused Manage', async () => {
   test.setTimeout(180_000)
   const launched = await launchSottoWithVoice()
   const { page } = launched
@@ -173,8 +175,8 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     await workshopPrompt.click()
     await expect(workshop).toHaveAttribute('data-focused')
 
-    // The usage line is plain text now, so Shift+Tab from the divider lands on the docs pane's own last control and
-    // stays there rather than dropping focus to the body.
+    // Nothing under the composer takes focus, so Shift+Tab from the divider lands on the docs pane's own last control
+    // and stays there rather than dropping focus to the body.
     const messages = (await userMessageTexts(page, 'docs')).length
     await page.getByRole('separator', { name: 'Resize panes' }).focus()
     await armProbe(page)
