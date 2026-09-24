@@ -274,10 +274,10 @@ describe('SettingsView', () => {
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitWritingStyle: 'custom' }} />)
     expect(style).toHaveAccessibleDescription(/they take precedence over the repository's style/u)
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
-    expect(instructions).toHaveAccessibleDescription('· up to 2,000 characters')
+    expect(instructions).toHaveAccessibleDescription('up to 2,000 characters')
     expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent(/Nothing written yet/u)
     await user.type(instructions, 'Subjects in the past tense.')
-    // The example follows the text as typed, and says it does not guess at the model's answer.
+    // The example follows the text as typed, and says the thread's own model applies the instructions.
     expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent(/An example before your instructions/u)
     // No leaving the field needed: the pause saves it.
     await waitFor(() => expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Subjects in the past tense.' }))

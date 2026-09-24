@@ -23,7 +23,7 @@ Sotto builds T3's Git model piece for piece, in the order the plan's tickets giv
 
 ## Consequences
 
-`gitFetchIntervalSeconds` is a new setting on the IPC patch allow-list, with a control under Settings → Application. `AgentWorktree` gains `git`, a `GitStatus` from `src/shared/gitStatus.ts`. The README's privacy section names the fetch and the pull request lookups. `ThreadWorktrees` still switches nothing on its own; the status reader reads and fetches and changes no ref of the user's.
+`gitFetchIntervalSeconds` is a new setting on the IPC patch allow-list, with a control under Settings → Application (since moved to Settings → Git, decision 7 of the #271 amendment). `AgentWorktree` gains `git`, a `GitStatus` from `src/shared/gitStatus.ts`. The README's privacy section names the fetch and the pull request lookups. `ThreadWorktrees` still switches nothing on its own; the status reader reads and fetches and changes no ref of the user's.
 
 The later tickets amend this record where they decide something rather than follow it: the Changes rebuild (#268) when staging goes, the actions (#265) when the remote command list grows, the settings (#271) when Proactive panels land.
 

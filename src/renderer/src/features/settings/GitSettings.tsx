@@ -91,7 +91,7 @@ export function writingExample(style: GitWritingStyle, instructions: string): Wr
   const note = style === 'repository'
     ? 'An example. Each repository\'s recent commits and AGENTS.md set the real style.'
     : instructions.trim()
-      ? 'An example before your instructions. The thread\'s own model applies them when it drafts; Sotto does not guess at its answer here.'
+      ? 'An example before your instructions. The thread\'s own model applies them when it drafts.'
       : 'Nothing written yet, so drafts follow Repository conventions, like this example.'
   return { commit: PLAIN_EXAMPLE, pullRequest: PLAIN_EXAMPLE, note }
 }
@@ -138,7 +138,7 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
       </Select>
     </Field>
     {!custom ? null : <div className="git-settings__custom">
-      <p className="git-settings__custom-label"><label htmlFor={fieldId}>Custom instructions</label> <span id={limitId}>· up to {MAX_CHARACTERS} characters</span></p>
+      <p className="git-settings__custom-label"><label htmlFor={fieldId}>Custom instructions</label> · <span id={limitId}>up to {MAX_CHARACTERS} characters</span></p>
       <textarea id={fieldId} className="tt-input tt-focusable" rows={4} maxLength={GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS} value={text} aria-describedby={limitId}
         placeholder="Start the subject with the area in square brackets..."
         onChange={event => {
