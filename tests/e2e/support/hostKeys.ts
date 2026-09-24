@@ -12,3 +12,20 @@ export async function hostKeys(page: Page): Promise<(id: string) => string> {
   if (hostId === undefined) throw new Error('No host is selected, so thread IDs cannot be keyed. Connect before reading host keys.')
   return id => hostEntityKey(hostId, id)
 }
+
+/**
+ * Host keys for a spec whose pane helpers live at module level and whose `start` reads the keys once connected.
+ * `key` throws until `read` has run in the current test, so a test that skips `start` fails where it first names a
+ * thread, not later on a locator that matches nothing. Call `reset` before each test.
+ */
+export function hostKeysPerTest(): { readonly key: (id: string) => string; readonly read: (page: Page) => Promise<void>; readonly reset: () => void } {
+  let keyed: ((id: string) => string) | undefined
+  return {
+    key: id => {
+      if (keyed === undefined) throw new Error(`Host keys were not read in this test, so "${id}" cannot be keyed. Run the spec's start before naming threads.`)
+      return keyed(id)
+    },
+    read: async page => { keyed = await hostKeys(page) },
+    reset: () => { keyed = undefined },
+  }
+}

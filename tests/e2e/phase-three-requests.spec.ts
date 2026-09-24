@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentCommand, AgentRequest, AgentState } from '../../src/shared/agents'
-import { hostKeys } from './support/hostKeys'
+import { hostKeysPerTest } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 
 // #52 in the complete app: AppShell, Threads page, main controller, IPC and preload are real. Only the provider
@@ -50,7 +50,9 @@ const networkPermission: AgentRequest = {
 
 // Threads are keyed by the host that owns them in the renderer and in the commands it sends to main; `prepare` reads the
 // key once the host is connected. Test events still take the bare ID.
-let key = (id: string): string => id
+const hostKeys = hostKeysPerTest()
+const key = hostKeys.key
+test.beforeEach(() => { hostKeys.reset() })
 
 async function prepare(launched: LaunchedSotto): Promise<void> {
   const { page } = launched
@@ -60,7 +62,7 @@ async function prepare(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
-  key = await hostKeys(page)
+  await hostKeys.read(page)
   await openThreads(page)
   // Observe (and optionally hold) answer commands as they cross into main; the real handler still answers them.
   await launched.app.evaluate(({ ipcMain }, channel) => {
