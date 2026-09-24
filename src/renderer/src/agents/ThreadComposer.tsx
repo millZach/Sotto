@@ -341,8 +341,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
         </div>
       </div>
-      {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027). */}
-      <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />
     </form>
+    {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027).
+        Its own row of buttons under the card, not a strip inside it (#325). */}
+    <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />
   </>
 }

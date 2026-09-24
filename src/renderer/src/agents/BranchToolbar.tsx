@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Search } from 'lucide-react'
+import { Check, ChevronDown, Folder, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Laptop, Search, Server } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
 import type { GitRef, GitRefsPage } from '../../../shared/gitRefs'
@@ -128,16 +128,21 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hostName = listed?.name ?? (thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer')
   const draftWorktree = newWorktreeDraft(thread)
   return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
-    <span className="branch-toolbar__static" title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'}>Run on <strong>{hostName}</strong></span>
+    {/* The key words stay in the text for the screen reader and the tests; the eye gets the glyph and the value. */}
+    <span className="branch-toolbar__static" title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'}>
+      {thread.remoteHost ? <Server size={13} aria-hidden="true" /> : <Laptop size={13} aria-hidden="true" />}<span className="tt-visually-hidden">Run on </span><strong>{hostName}</strong></span>
     {locked
-      ? <span className="branch-toolbar__static">Workspace <strong>{workspaceLabel(thread)}</strong></span>
+      ? <span className="branch-toolbar__static" title={`Workspace: ${workspaceLabel(thread)}`}><Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">Workspace </span><strong>{workspaceLabel(thread)}</strong></span>
       : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspaceLabel(thread)} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
     <span className="branch-toolbar__spacer" />
-    {pullRequest ? <PullRequestBadge pullRequest={pullRequest} onOpen={() => toolsPanelStore.showPullRequest(thread.id)} /> : null}
-    <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
-      draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
-      onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
+    {/* The badge and the picker wrap as one onto the next line at the 820px minimum, still at the right. */}
+    <span className="branch-toolbar__end">
+      {pullRequest ? <PullRequestBadge pullRequest={pullRequest} onOpen={() => toolsPanelStore.showPullRequest(thread.id)} /> : null}
+      <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
+        draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
+        onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
+    </span>
     {notice ? <p className="branch-toolbar__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
     {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
@@ -180,7 +185,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpenChange(false) }}>
     <button ref={triggerRef} type="button" className="branch-toolbar__chip tt-focusable" role="combobox" aria-label="Choose workspace" title={`Workspace: ${label}`} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} disabled={disabled} onClick={() => onOpenChange(!open)}>
-      <span className="branch-toolbar__chip-key">Workspace</span><span>{label}</span><ChevronDown size={12} aria-hidden="true" />
+      <Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">Workspace</span><span>{label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open ? <div ref={list} id={listId} role="listbox" aria-label="Workspace" className="branch-toolbar__list" onKeyDown={event => moveListboxFocus(event, list.current)}>
       {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value}
