@@ -41,7 +41,7 @@ export const gitPullRequestCheckSchema = z.object({
   status: z.enum(['success', 'failure', 'cancelled', 'pending', 'action-required', 'skipped', 'neutral']),
   url: z.string().max(2_048).nullable(),
   description: line.nullable(),
-}).strict()
+})
 export type GitPullRequestCheck = z.infer<typeof gitPullRequestCheckSchema>
 
 /**
@@ -52,8 +52,14 @@ export const gitPullRequestReviewSchema = z.object({
   author: z.string().max(100),
   state: z.enum(['approved', 'changes_requested']),
   url: gitHubUrlSchema.nullable(),
-}).strict()
+})
 export type GitPullRequestReview = z.infer<typeof gitPullRequestReviewSchema>
+
+/*
+ * The check, the review and the detail below are only ever read, from a host's answer, and they drop keys they do
+ * not know rather than refuse them: a later host may add optional fields (hostProtocol.ts), and a client on this
+ * build still reads its pull request. What a client sends and what the record keeps stay strict.
+ */
 
 /**
  * What the Pull request surface's merge checklist is read from, through `gh` when the surface opens or is
@@ -84,7 +90,7 @@ export const gitPullRequestDetailSchema = z.object({
   /** Whether the repository allows auto-merge; true when GitHub did not say, and a press is left to GitHub to refuse. */
   autoMergeAllowed: z.boolean(),
   /** An armed auto-merge and the method it will use, or null when none is armed. */
-  autoMerge: z.object({ method: gitPullRequestMergeMethodSchema.nullable() }).strict().nullable(),
+  autoMerge: z.object({ method: gitPullRequestMergeMethodSchema.nullable() }).nullable(),
   /** When it merged, as GitHub records it; null until it has. */
   mergedAt: z.string().max(64).nullable().default(null),
   /** Commits the base has that the head lacks; null when GitHub could not compare them. */
@@ -95,7 +101,7 @@ export const gitPullRequestDetailSchema = z.object({
   linked: z.enum(['created', 'linked', 'checkout']).nullable(),
   /** Whether this is the pull request of the branch the thread's folder is on. */
   branch: z.boolean(),
-}).strict()
+})
 export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
 
 /**
