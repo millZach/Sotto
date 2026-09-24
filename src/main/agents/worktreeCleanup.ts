@@ -188,7 +188,7 @@ export class WorktreeCleanup {
   }
 }
 
-/** Asks GitHub through `gh`, the way the Changes panel already does, whether this branch's pull request is merged. */
+/** Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request is merged. */
 export function githubPullRequestMerged(cwd: string, branch: string): Promise<boolean> {
   return new Promise((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }

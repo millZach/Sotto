@@ -2,6 +2,8 @@
 
 The Tools panel rebuilt around direction A, "the rail", which the owner picked in #235. `docs/plans/2026-09-22-tools-rail.md` records the pick, the mock-up it came from and the decisions the pick left open. This supersedes `docs/verification/tools-sidecar.md`.
 
+Amended September 24, 2026: the Git controls this note describes on Changes are gone. The Git actions and Pull request toggles have left its line of chrome, and Stage file has left the file's head. Commits are the pane header's Git action, the pull request is its own surface on the rail (its tile reads PR), and Changes only reads (ADR-0027). Checkpoints keeps its toggle on the line. The rail, the chrome, the footer and the keyboard order are as recorded here. The Git interface as it stands is in `docs/verification/2026-09-24-git-interface.md`.
+
 ## What the panel is now
 
 - **The rail.** A 58-pixel strip on the panel's outer edge. Its tiles start under the window's own controls: Browser, Terminal, Files, Changes and Agents, each an icon over a short word. The open surface sits on a raised tile (the sidebar's selected tone) with a 2-pixel accent mark on its outer side; in forced colours it takes a system outline instead. A small accent dot marks a surface that is not open and has something live: a browser task working or waiting for an answer, changed files, or agents working. The surface's description in the rail says which in words ("2 agents are working", "3 changed files"), on the open surface too. Pin, expand and close sit at the rail's foot under a short rule; a pressed Pin or Restore takes the tiles' selected tone.
