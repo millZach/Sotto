@@ -1,6 +1,6 @@
 # Phase 4 usage (#66)
 
-Amended September 23, 2026: the context and cost figures this note verified are no longer shown. The owner removed them from under the composer on Threads and on Chats while choosing the workspace and branch layout for #127 (`docs/prototypes/git-interface-surfaces/VERDICT.md` on `prototype/git-interface-surfaces`). Sotto still records and prices usage as described below, and compaction's recommendation still reads it; nothing on screen shows the figures.
+Amended September 23, 2026: the context and cost figures this note verified are no longer shown. The owner removed them from under the composer on Threads and on Chats while choosing the workspace and branch layout for #127; the pick is recorded in a comment on that issue. Sotto still records and prices usage as described below, and compaction's recommendation still reads it; nothing on screen shows the figures.
 
 Target: existing Windows desktop Electron workspace, 1280/1600 wide and minimum 820×560, light/dark, pointer and keyboard. Preserve branding.
 
