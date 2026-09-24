@@ -47,6 +47,7 @@ function checksLine(checks: readonly GitPullRequestCheck[]): ChecklistLine {
 
 function reviewLine(detail: Detail): ChecklistLine {
   const line = { id: 'review', label: 'Review approved' } as const
+  // GitHub lists the reviews oldest first (the connection's own order), so the later of two is the one that stands.
   const latest = (state: 'approved' | 'changes_requested') => [...detail.reviews].reverse().find(review => review.state === state)
   const approved = latest('approved'), changes = latest('changes_requested')
   const askedForChanges = (): ChecklistLine => ({ ...line, tone: 'failed', why: changes ? `${changes.author} asked for changes` : 'Changes were asked for',
@@ -109,8 +110,9 @@ export function mergeReady(detail: Pick<GitPullRequestDetail, 'state' | 'autoMer
 export function canAutoMerge(detail: Pick<GitPullRequestDetail, 'state' | 'draft' | 'autoMerge' | 'autoMergeAllowed' | 'mergeMethods'>): boolean {
   return detail.state === 'open' && !detail.draft && detail.autoMerge === null && detail.autoMergeAllowed && detail.mergeMethods.length > 0
 }
-export function checklistHeading(detail: Pick<GitPullRequestDetail, 'state'>, ready: boolean): string {
-  return detail.state !== 'open' ? 'Merge checklist' : ready ? 'Ready to merge' : 'Before merging'
+/** The checklist's heading: settled for a merged or closed pull request, else whether any line still holds the merge back. */
+export function checklistHeading(detail: Pick<GitPullRequestDetail, 'state'>, clear: boolean): string {
+  return detail.state !== 'open' ? 'Merge checklist' : clear ? 'Ready to merge' : 'Before merging'
 }
 export function linesLeft(lines: readonly ChecklistLine[]): string {
   const left = lines.filter(holdsBack).length

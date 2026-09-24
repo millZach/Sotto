@@ -6,7 +6,7 @@ import {
   canAutoMerge, checklist, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
-import type { GitPullRequestCheck, GitPullRequestDetail, GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 const URL = 'https://github.com/o/r/pull/74'
 const check = (name: string, status: GitPullRequestCheck['status'], url: string | null = null, description: string | null = null): GitPullRequestCheck => ({ name, status, url, description })
@@ -321,5 +321,31 @@ describe('the Pull request surface', () => {
     expect(await screen.findByRole('heading', { name: '#70 Older work' })).toBeInTheDocument()
     expect(gitPullRequest).toHaveBeenLastCalledWith({ threadId: 'thread-1', reference: 'https://github.com/o/r/pull/70' })
     await waitFor(() => expect(screen.getByRole('heading', { name: '#70 Older work' })).toHaveFocus())
+  })
+  it('says a failed Refresh over the checklist it keeps, rather than showing it as fresh', async () => {
+    let fail = false
+    const { gitPullRequest } = mount({ detail: () => { if (fail) throw new Error('offline'); return detail() } })
+    await opened()
+    fail = true
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not read the pull request from GitHub. Check your gh sign-in and connection, then refresh. What shows below is from the last read.')
+    expect(gitPullRequest).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('list', { name: 'Merge checklist' })).toBeInTheDocument()
+  })
+  it('puts focus back on the pull request when a press settles its line and takes its button away', async () => {
+    let ready = false
+    const { command } = mount({ detail: () => detail({ draft: !ready }) })
+    command.mockImplementation(async () => { ready = true; return { notice: 'Marked ready for review.', error: null } as unknown as AgentState })
+    await opened()
+    const press = within(lines()[4]!).getByRole('button', { name: 'Ready for review' })
+    press.focus()
+    fireEvent.click(press)
+    await waitFor(() => expect(within(lines()[4]!).queryByRole('button')).toBeNull())
+    await waitFor(() => expect(screen.getByRole('heading', { name: '#74 Make the greeting friendlier' })).toHaveFocus())
+  })
+  it('reads a paired host on an earlier build, which names no reviewer and no merge time', () => {
+    const earlier: Record<string, unknown> = { ...detail() }
+    delete earlier.reviews; delete earlier.mergedAt
+    expect(gitPullRequestDetailSchema.parse(earlier)).toMatchObject({ reviews: [], mergedAt: null })
   })
 })

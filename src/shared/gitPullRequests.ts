@@ -75,7 +75,8 @@ export const gitPullRequestDetailSchema = z.object({
   /** GitHub's decision; null where the repository does not require a review. */
   reviewDecision: z.enum(['approved', 'changes_requested', 'review_required']).nullable(),
   /** Each reviewer's latest approving or changes-requested review, oldest first; empty when GitHub did not say. */
-  reviews: z.array(gitPullRequestReviewSchema).max(50),
+  // A paired host on an earlier build answers without these two; its read still stands, naming no reviewer and no merge time.
+  reviews: z.array(gitPullRequestReviewSchema).max(50).default([]),
   mergeable: z.enum(['mergeable', 'conflicting', 'unknown']),
   checks: z.array(gitPullRequestCheckSchema).max(200),
   /** The methods this repository allows; all three when GitHub did not say, and a press is left to GitHub to refuse. */
@@ -85,7 +86,7 @@ export const gitPullRequestDetailSchema = z.object({
   /** An armed auto-merge and the method it will use, or null when none is armed. */
   autoMerge: z.object({ method: gitPullRequestMergeMethodSchema.nullable() }).strict().nullable(),
   /** When it merged, as GitHub records it; null until it has. */
-  mergedAt: z.string().max(64).nullable(),
+  mergedAt: z.string().max(64).nullable().default(null),
   /** Commits the base has that the head lacks; null when GitHub could not compare them. */
   behindBy: z.number().int().nonnegative().nullable(),
   /** Whether this viewer may update the branch from its base. */

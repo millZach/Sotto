@@ -12,7 +12,7 @@ import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import {
-  canAutoMerge, checklist, checklistHeading, confirmationFor, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistHeading, confirmationFor, holdsBack, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
   resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -52,7 +52,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const [linksOpen, setLinksOpen] = useState(false)
   const [preferred, choosePreferred] = usePullRequestMergeMethod()
   const generation = useRef(0)
-  const merge = useRef<HTMLButtonElement>(null)
+  const surface = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)
   const hintId = useId()
   const branchUrl = branchPullRequestUrl(thread) ?? null
@@ -90,6 +90,8 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     if (!detail) return
     await send({ type: 'git-pull-request-action', threadId: thread.id, url: detail.url, action, ...(withMethod ? { method: withMethod } : {}) }, action, 'Sotto could not confirm this. Refresh to see what GitHub has.')
     await load()
+    // A press that settled its line takes its own button away; focus comes back to the pull request rather than the page.
+    requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) top.current?.focus() })
   }
   const unlink = async (url: string): Promise<void> => {
     if (await send({ type: 'git-unlink-pull-request', threadId: thread.id, url }, 'unlink', 'Could not unlink the pull request.') && chosen === url) setChosen(null)
@@ -102,12 +104,16 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const show = (url: string): void => { setChosen(url); setDescriptionOpen(false); requestAnimationFrame(() => top.current?.focus()) }
   const linkDialog = linking && command ? <LinkPullRequestDialog threadId={thread.id} command={command} onClose={() => setLinking(false)}
     onLinked={text => { setLinking(false); setNotice({ text, tone: 'status' }) }} /> : null
-  const noticeLine = notice ? <p className="pr-surface__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null
+  const noticeLine = <>
+    {notice ? <p className="pr-surface__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
+    {/* A read that failed under a checklist already shown: the checklist is the last one GitHub gave, and says so. */}
+    {failure && detail ? <p className="pr-surface__notice" data-tone="error" role="alert">{failure} What shows below is from the last read.</p> : null}
+  </>
   const linked = <LinkedFold thread={thread} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label="Refresh pull request" title="Refresh pull request" data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
 
   if (!detail) {
-    return <div className="pr-surface" aria-busy={loading || busy !== null}>
+    return <div ref={surface} className="pr-surface" aria-busy={loading || busy !== null}>
       <div className="tools-chrome pr-surface__top">
         <span className="pr-surface__lead"><GitPullRequest size={16} aria-hidden="true" data-state="none" /><h2 ref={top} tabIndex={-1} className="pr-surface__name">{loading ? 'Pull request' : 'No pull request'}</h2></span>
         <div className="tools-chrome__actions">{refresh}</div>
@@ -133,6 +139,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const autoMerge = canAutoMerge(detail)
   const behind = (detail.behindBy ?? 0) > 0
   const done = lines.filter(line => line.tone === 'done').length
+  const clear = !lines.some(holdsBack)
   const StateIcon = stateIcon(detail)
   const confirmation = confirming ? confirmationFor(confirming, detail.number, selected, detail.baseBranch) : null
   const menu: PaneMenuItem[][] = [[
@@ -141,7 +148,6 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     ...(open && behind && detail.canUpdateBranch ? [{ id: 'rebase', label: 'Update with rebase', disabled: running, run: () => setConfirming('update-with-rebase') }] : []),
     ...(autoMerge ? [{ id: 'auto', label: 'Merge when ready (auto-merge)', disabled: running, run: () => setConfirming('enable-auto-merge') }] : []),
     ...(detail.autoMerge ? [{ id: 'no-auto', label: 'Disable auto-merge', disabled: running, run: () => void act('disable-auto-merge') }] : []),
-  ], [
     { id: 'copy', label: 'Copy link', icon: <Copy size={15} aria-hidden="true" />, run: () => void copyLink(detail.url) },
     ...(command ? [{ id: 'link', label: 'Link pull request', icon: <Link2 size={15} aria-hidden="true" />, run: () => setLinking(true) }] : []),
     ...(detail.linked ? [{ id: 'unlink', label: 'Unlink from thread', icon: <Unlink size={15} aria-hidden="true" />, disabled: running, run: () => void unlink(detail.url) }] : []),
@@ -161,7 +167,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   }
   const when = mergedWhen(detail.mergedAt)
 
-  return <div className="pr-surface" aria-busy={loading || running}>
+  return <div ref={surface} className="pr-surface" aria-busy={loading || running}>
     <div className="tools-chrome pr-surface__top">
       <span className="pr-surface__lead">
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
@@ -176,7 +182,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     </div>
     {noticeLine}
     <div className="pr-surface__body">
-      <h3 className="pr-surface__heading">{checklistHeading(detail, ready)}{' '}<small data-tone={ready ? 'done' : undefined}>{done} of {lines.length} done</small></h3>
+      <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={done === lines.length ? 'done' : undefined}>{done} of {lines.length} done</small></h3>
       <ol className="pr-surface__lines" aria-label="Merge checklist">{lines.map(line => {
         const Icon = LINE_ICONS[line.tone]
         return <li key={line.id} className="pr-surface__line" data-tone={line.tone}>
@@ -196,12 +202,12 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
               <Button variant="secondary" aria-label="Turn off auto-merge" disabled={running} onClick={() => void act('disable-auto-merge')}>{busy === 'disable-auto-merge' ? BUSY_LABEL['disable-auto-merge'] : 'Turn off'}</Button></div>
               : <>
                 <div className="pr-surface__merge">
-                  <Button ref={merge} variant="primary" className="pr-surface__merge-go" aria-disabled={!ready || running || undefined} aria-describedby={hintId}
+                  <Button variant="primary" className="pr-surface__merge-go" aria-disabled={!ready || running || undefined} aria-describedby={hintId}
                     onClick={() => { if (ready && !running) setConfirming('merge') }}>
                     <GitMerge size={17} aria-hidden="true" />{busy === 'merge' ? BUSY_LABEL.merge : `Merge #${detail.number}`}</Button>
                   {allowed.length > 1 ? <MergeMethodMenu allowed={allowed} selected={selected} base={detail.baseBranch} disabled={running} onChoose={choosePreferred} /> : null}
                 </div>
-                <p id={hintId} className="pr-surface__hint">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : <>{linesLeft(lines)}{autoMerge
+                <p id={hintId} className="pr-surface__hint">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? 'This repository allows no merge method. Change that on GitHub.' : <>{linesLeft(lines)}{autoMerge
                   ? <> <button type="button" className="pr-surface__textlink tt-focusable" disabled={running} onClick={() => setConfirming('enable-auto-merge')}>Merge when ready</button></> : null}</>}</p>
               </>}
       </div>
@@ -212,7 +218,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     </div>
     {linkDialog}
     {confirmation && confirming ? <ConfirmationDialog title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirm} cancelLabel="Cancel" danger={confirmation.danger}
-      fallbackFocusRef={merge} onCancel={() => setConfirming(null)}
+      fallbackFocusRef={top} onCancel={() => setConfirming(null)}
       onConfirm={async () => {
         const action = confirming
         setConfirming(null)
