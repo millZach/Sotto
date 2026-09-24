@@ -417,7 +417,7 @@ export class WorkspaceHost implements AgentHost {
     if (busy || !this.gitActions || !this.gitStatus) return null
     try {
       if (this.mutationGuard && !await this.mutationGuard(threadId)) return null
-      const result = await this.gitActions.pull(folder)
+      const result = await this.gitActions.pull(folder, { automatic: true })
       if (result.status !== 'pulled') return null
       return await this.gitStatus.read(folder, { remote: false })
     } catch { return null }

@@ -76,8 +76,8 @@ export function featureBranchName(fragment: string): string {
 export class GitActions {
   private readonly run: RunGitCommand
   private readonly now: () => number
-  /** One action per folder at a time, whichever thread asked. */
-  private readonly busy = new Set<string>()
+  /** One action per folder at a time, whichever thread asked, and whether it is Automatically pull's. */
+  private readonly busy = new Map<string, 'action' | 'automatic-pull'>()
   constructor(private readonly dependencies: GitActionsDependencies) {
     this.run = dependencies.run ?? runGitStatusCommand
     this.now = dependencies.now ?? (() => Date.now())
@@ -86,9 +86,12 @@ export class GitActions {
   private gh(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'gh', args, options) }
   private status(cwd: string): Promise<GitStatus> { return this.dependencies.status.read(cwd, { remote: true }) }
 
-  private async exclusive<T>(cwd: string, work: () => Promise<T>): Promise<T> {
-    if (this.busy.has(cwd)) throw new GitActionRefusal('Git action in progress.')
-    this.busy.add(cwd)
+  private async exclusive<T>(cwd: string, work: () => Promise<T>, holder: 'action' | 'automatic-pull' = 'action'): Promise<T> {
+    const held = this.busy.get(cwd)
+    // An automatic pull runs with nothing on screen, so its refusal says what is holding the folder.
+    if (held === 'automatic-pull') throw new GitActionRefusal('Sotto is pulling this folder. Try again in a moment.')
+    if (held) throw new GitActionRefusal('Git action in progress.')
+    this.busy.set(cwd, holder)
     try { return await work() } finally { this.busy.delete(cwd); this.dependencies.status.invalidate() }
   }
 
@@ -360,8 +363,11 @@ export class GitActions {
     return { title: 'Done', cta: { kind: 'none' } }
   }
 
-  /** `git pull --ff-only`: a diverged branch is refused in T3's words and nothing is merged or rebased by Sotto. */
-  pull(cwd: string): Promise<GitPullResult> {
+  /**
+   * `git pull --ff-only`: a diverged branch is refused in T3's words and nothing is merged or rebased by Sotto.
+   * `automatic` marks Automatically pull's own pull, so an action pressed meanwhile is told what holds the folder.
+   */
+  pull(cwd: string, options: { automatic?: boolean } = {}): Promise<GitPullResult> {
     return this.exclusive(cwd, async () => {
       const status = await this.status(cwd)
       if (!status.isRepository) throw new GitActionRefusal('This folder is not a Git repository.')
@@ -376,7 +382,7 @@ export class GitActions {
       }
       const after = (await this.git(cwd, ['rev-parse', 'HEAD'])).trim()
       return { status: before === after ? 'skipped_up_to_date' : 'pulled', branch: status.branch, upstream: status.upstream }
-    })
+    }, options.automatic ? 'automatic-pull' : 'action')
   }
 
   /**

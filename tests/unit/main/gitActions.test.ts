@@ -282,8 +282,19 @@ describe('the stacked Git action, the way T3 runs it', () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'work.txt'), 'second\n')
     const first = f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Second' })
-    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'commit', commitMessage: 'Third' })).rejects.toBeInstanceOf(GitActionRefusal)
+    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'commit', commitMessage: 'Third' })).rejects.toThrow('Git action in progress.')
     await first
+  }, 30000)
+  it('says what holds the folder when an action is pressed during Automatically pull\'s own pull', async () => {
+    const f = await fixture()
+    const automatic = f.actions.pull(f.repo, { automatic: true })
+    // Nothing on screen shows an automatic pull, so the refusal names it rather than an action in progress.
+    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'push' })).rejects.toThrow('Sotto is pulling this folder. Try again in a moment.')
+    await automatic
+    // Once it is done the folder is free again, and a pressed pull holds it the ordinary way.
+    const pressed = f.actions.pull(f.repo)
+    await expect(f.actions.pull(f.repo, { automatic: true })).rejects.toThrow('Git action in progress.')
+    await pressed
   }, 30000)
 })
 

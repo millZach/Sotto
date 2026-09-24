@@ -623,7 +623,7 @@ describe('durable project/thread organization', () => {
     // On and clean: fast-forwarded, and the record shows the status read after the pull.
     dirty = false
     await f.host.updateThreadWorktree('local', false)
-    expect(pull).toHaveBeenCalledExactlyOnceWith(project.path)
+    expect(pull).toHaveBeenCalledExactlyOnceWith(project.path, { automatic: true })
     expect(git()?.behind).toBe(0)
   })
 
@@ -658,9 +658,10 @@ describe('durable project/thread organization', () => {
     await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.filter(thread => ['local', 'second'].includes(thread.id)).every(thread => thread.status === 'idle')).toBe(true))
     const refresh = f.host.updateThreadWorktree('local', false)
     await started.promise
-    // Mid-pull, the other thread in the same folder presses Commit & push: refused, not run beside the pull.
+    // Mid-pull, the other thread in the same folder presses Commit & push: refused, not run beside the pull, and told
+    // what holds the folder, since the automatic pull shows nothing on screen.
     await f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })
-    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toMatchObject({ status: 'failed', error: 'Git action in progress.' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toMatchObject({ status: 'failed', error: 'Sotto is pulling this folder. Try again in a moment.' })
     expect(run.mock.calls.filter(call => call[2][0] === 'commit')).toHaveLength(0)
     pulling.release()
     await refresh
