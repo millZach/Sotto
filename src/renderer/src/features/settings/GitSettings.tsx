@@ -117,15 +117,18 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latest = useRef({ saved, onSave })
   latest.current = { saved, onSave }
+  /** Counts the saves sent, so an answer to an older one never outranks a newer one. */
+  const sent = useRef(0)
   const flush = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null }
     const value = pending.current
     pending.current = null
     if (value === null || value === latest.current.saved) return
-    // A failed save puts the text back as waiting, so the next pause, blur or change of style tries again,
-    // unless something newer has been typed meanwhile.
+    const sequence = ++sent.current
+    // A failed save puts the text back as waiting, so the next pause, blur or change of style tries again, but
+    // only while it is still the latest text sent and nothing newer is waiting: a later save supersedes it.
     void latest.current.onSave({ gitWritingInstructions: value }, 'Instructions saved.').then(saved => {
-      if (!saved && pending.current === null) pending.current = value
+      if (!saved && sequence === sent.current && pending.current === null) pending.current = value
     })
   }, [])
   // A saved value from elsewhere shows only while nothing typed here is waiting to be saved.

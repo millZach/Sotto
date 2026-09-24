@@ -309,6 +309,31 @@ describe('SettingsView', () => {
     expect(instructions).toHaveValue('Name the issue.')
   })
 
+  it('never brings back older custom instructions whose save failed after a newer save was sent', async () => {
+    const user = userEvent.setup()
+    const answers: Array<(saved: boolean) => void> = []
+    const update = vi.fn((patch: object) => 'gitWritingInstructions' in patch ? new Promise<boolean>(resolve => { answers.push(resolve) }) : Promise.resolve(true))
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })} />)
+    await selectCategory('Git')
+    const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
+    const saves = () => update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object)).map(([patch]) => (patch as { gitWritingInstructions: string }).gitWritingInstructions)
+    // "abc" is sent and still in flight when "abcd" is sent.
+    await user.type(instructions, 'abc')
+    await user.tab()
+    await user.click(instructions)
+    await user.type(instructions, 'd')
+    await user.tab()
+    expect(saves()).toEqual(['abc', 'abcd'])
+    // The older save fails after the newer one was sent, and the newer one succeeds.
+    await act(async () => { answers[0]!(false) })
+    await act(async () => { answers[1]!(true) })
+    // Leaving the field again sends nothing: "abc" was superseded, not left waiting.
+    await user.click(instructions)
+    await user.tab()
+    expect(saves()).toEqual(['abc', 'abcd'])
+    expect(instructions).toHaveValue('abcd')
+  })
+
   it('keeps custom instructions typed just before the style changes away from Custom instructions', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
