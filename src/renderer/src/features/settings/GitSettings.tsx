@@ -27,8 +27,7 @@ type GitSettingDescriptions = Record<'style' | 'templates' | 'merge' | 'settle' 
 
 /**
  * What each Git setting will do with the value it holds, one sentence or two each, so a description changes
- * as its value does. Nothing here promises a control the app does not have yet: the merge method is saved
- * for a merge that no surface offers so far.
+ * as its value does. The merge method's describes the merge in the pull request checklist (#294), which reads it.
  */
 export function gitSettingDescriptions(settings: AppSettings): GitSettingDescriptions {
   const style = {
@@ -41,25 +40,25 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
   return {
     style: drafting ? style : `${style} Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup.`,
     templates: settings.followPullRequestTemplates
-      ? 'Sotto fills in the repository\'s pull request template when it has exactly one.'
-      : 'Sotto skips the template and drafts with its own sections.',
+      ? 'When a Git action drafts a pull request, the thread\'s own model follows the repository\'s template, if it has exactly one.'
+      : 'When a Git action drafts a pull request, it skips the template and uses Sotto\'s own sections.',
     merge: settings.defaultMergeMethod === 'last'
-      ? 'A merge starts on the method you used last, Merge the first time.'
-      : `A merge starts on ${GIT_MERGE_METHOD_LABELS[settings.defaultMergeMethod]}.`,
+      ? 'The merge in the pull request checklist starts on the method you used last, Merge the first time.'
+      : `The merge in the pull request checklist starts on ${GIT_MERGE_METHOD_LABELS[settings.defaultMergeMethod]}.`,
     settle: settings.autoSettleMergedThreads
       ? 'Once a thread\'s pull request is merged, Sotto settles the thread. It asks GitHub through gh once an hour and removes no folder unless a worktree rule under Application says so.'
       : 'A thread stays where it is after its pull request merges, until you settle it.',
     layout: settings.diffLayout === 'stacked'
-      ? 'Changes opens each diff stacked, removed lines above added ones.'
-      : 'Changes opens each diff split, old on the left and new on the right.',
+      ? 'Changes starts with each diff stacked, removed lines above added ones.'
+      : 'Changes starts with each diff split, old on the left and new on the right.',
     whitespace: settings.diffHideWhitespace
-      ? 'Changes hides edits that only change spacing when it opens.'
-      : 'Changes shows every edit, spacing included.',
+      ? 'Changes starts with edits that only change spacing hidden.'
+      : 'Changes starts showing every edit, spacing included.',
     fileState: settings.diffFileState === 'collapsed'
-      ? 'Files in Changes open collapsed to their headers; press one to read it.'
-      : 'Every file in Changes opens expanded.',
+      ? 'Files in Changes start collapsed to their headers. Press one to read it.'
+      : 'Files in Changes start expanded.',
     proactive: settings.proactivePanels
-      ? 'After a turn that changed at least 3 files or 50 lines, Changes opens on its own if Tools is closed.'
+      ? 'Changes opens on its own if Tools is closed and a turn leaves its folder with at least 3 more changed files or 50 more changed lines. It counts only while the Threads page is open.'
       : 'Changes opens only when you open it.',
     fetch: settings.gitFetchIntervalSeconds === 0
       ? 'Sotto never fetches on its own. Ahead, behind and the pull request update when you refresh.'
@@ -161,10 +160,12 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
 
 type GroupIcon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
 
-function Group({ title, icon: Icon, children }: { readonly title: string; readonly icon: GroupIcon; readonly children: ReactNode }): ReactNode {
+function Group({ title, icon: Icon, note, children }: { readonly title: string; readonly icon: GroupIcon; readonly note?: string; readonly children: ReactNode }): ReactNode {
   const id = useId()
-  return <section className="git-settings__group" aria-labelledby={id}>
+  const noteId = useId()
+  return <section className="git-settings__group" aria-labelledby={id} {...(note ? { 'aria-describedby': noteId } : {})}>
     <h3 id={id}><Icon size={16} strokeWidth={1.7} aria-hidden="true" />{title}</h3>
+    {note ? <p className="git-settings__group-note" id={noteId}>{note}</p> : null}
     <div className="settings-rows">{children}</div>
   </section>
 }
@@ -188,7 +189,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
     </Group>
-    <Group title="When you read Changes" icon={FileDiff}>
+    <Group title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until the setting changes or Sotto restarts.">
       <Field label="Diff layout" description={says.layout}>
         <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
       </Field>

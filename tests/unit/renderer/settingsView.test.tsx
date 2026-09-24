@@ -360,7 +360,7 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ gitAutoPull: true })
     const merge = screen.getByRole('combobox', { name: 'Default merge method' })
     expect(within(merge).getAllByRole('option').map(option => option.textContent)).toEqual(['Last selected', 'Merge', 'Squash and merge', 'Rebase and merge'])
-    expect(merge).toHaveAccessibleDescription('A merge starts on the method you used last, Merge the first time.')
+    expect(merge).toHaveAccessibleDescription('The merge in the pull request checklist starts on the method you used last, Merge the first time.')
     await user.selectOptions(merge, 'squash')
     expect(update).toHaveBeenCalledWith({ defaultMergeMethod: 'squash' })
     await user.click(within(screen.getByRole('radiogroup', { name: 'Diff layout' })).getByRole('radio', { name: 'Split' }))
@@ -382,14 +382,18 @@ describe('SettingsView', () => {
     // Each description follows the value it describes.
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitAutoPull: true, defaultMergeMethod: 'squash', diffLayout: 'split', diffHideWhitespace: false, diffFileState: 'expanded', autoSettleMergedThreads: true, proactivePanels: true, followPullRequestTemplates: false, gitFetchIntervalSeconds: 60 }} />)
     expect(screen.getByRole('switch', { name: 'Automatically pull' })).toHaveAccessibleDescription(/Fast-forward only/u)
-    expect(merge).toHaveAccessibleDescription('A merge starts on Squash and merge.')
+    expect(merge).toHaveAccessibleDescription('The merge in the pull request checklist starts on Squash and merge.')
     expect(screen.getByRole('radiogroup', { name: 'Diff layout' }).closest('.tt-field')).toHaveTextContent(/old on the left and new on the right/u)
-    expect(screen.getByRole('switch', { name: 'Hide whitespace changes' })).toHaveAccessibleDescription('Changes shows every edit, spacing included.')
-    expect(screen.getByRole('radiogroup', { name: 'Default diff file state' }).closest('.tt-field')).toHaveTextContent('Every file in Changes opens expanded.')
+    // The Changes group says once that these are only where Changes starts.
+    expect(screen.getByRole('region', { name: 'When you read Changes' })).toHaveAccessibleDescription('These set where Changes starts. A choice made in Changes holds until the setting changes or Sotto restarts.')
+    expect(screen.getByRole('switch', { name: 'Hide whitespace changes' })).toHaveAccessibleDescription('Changes starts showing every edit, spacing included.')
+    expect(screen.getByRole('radiogroup', { name: 'Default diff file state' }).closest('.tt-field')).toHaveTextContent('Files in Changes start expanded.')
     expect(screen.getByRole('switch', { name: 'Auto-settle merged threads' })).toHaveAccessibleDescription(/asks GitHub through gh once an hour/u)
-    expect(screen.getByRole('switch', { name: 'Proactive panels' })).toHaveAccessibleDescription(/at least 3 files or 50 lines/u)
-    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription(/skips the template/u)
+    expect(screen.getByRole('switch', { name: 'Proactive panels' })).toHaveAccessibleDescription(/at least 3 more changed files or 50 more changed lines\. It counts only while the Threads page is open\./u)
+    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription(/it skips the template and uses Sotto's own sections/u)
     expect(fetch).toHaveAccessibleDescription(/Sotto asks origin every minute/u)
+    rendered.rerender(<SettingsView {...props} />)
+    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription("When a Git action drafts a pull request, the thread's own model follows the repository's template, if it has exactly one.")
   })
 
   it('resynchronizes numeric drafts from authoritative settings', async () => {

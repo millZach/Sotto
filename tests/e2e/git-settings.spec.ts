@@ -63,7 +63,7 @@ function exampleContrast(page: Page) {
     }
     const example = document.querySelector('.git-settings__example')!
     const surface = background(example)
-    return [...example.querySelectorAll('dt, dd, p'), ...document.querySelectorAll('.git-settings__group > h3')].map(element => {
+    return [...example.querySelectorAll('dt, dd, p'), ...document.querySelectorAll('.git-settings__group > h3, .git-settings__group-note')].map(element => {
       const text = parse(getComputedStyle(element).color)
       const blended = text.map((channel, index) => index === 3 ? 1 : channel * text[3]! + surface[index]! * (1 - text[3]!))
       const [light, dark] = [luminance(blended), luminance(element.closest('.git-settings__example') ? surface : background(element))].sort((a, b) => b - a)
@@ -142,7 +142,7 @@ test('Settings → Git groups every Git setting by moment, fits every size in bo
     await page.keyboard.press('ArrowRight')
     await expect(layout.getByRole('radio', { name: 'Split', exact: true })).toBeFocused()
     await expect.poll(async () => (await settings()).diffLayout).toBe('split')
-    await expect(panel.getByText('Changes opens each diff split, old on the left and new on the right.')).toBeVisible()
+    await expect(panel.getByText('Changes starts with each diff split, old on the left and new on the right.')).toBeVisible()
     await page.keyboard.press('ArrowLeft')
     await expect.poll(async () => (await settings()).diffLayout).toBe('stacked')
 

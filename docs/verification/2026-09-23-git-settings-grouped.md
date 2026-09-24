@@ -1,6 +1,6 @@
 # Settings → Git, grouped by moment (#271), 2026-09-23
 
-Proof that the Git settings now live in one Settings section, grouped under when each one acts, as the owner picked (variant B of `docs/prototypes/git-interface-surfaces/settings.html`), and that the section fits, reads and saves in the built app. Screenshots are in `artifacts/git-settings/`.
+Proof that the Git settings now live in one Settings section, grouped under when each one acts, as the owner picked (variant B of `docs/prototypes/git-interface-surfaces/settings.html` on the branch `prototype/git-interface-surfaces`; the verdict is in `VERDICT.md` beside it), and that the section fits, reads and saves in the built app. Screenshots are in `artifacts/git-settings/`.
 
 ## What changed on screen
 
