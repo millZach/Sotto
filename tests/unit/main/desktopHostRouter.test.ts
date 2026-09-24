@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { serialize } from 'node:v8'
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
@@ -80,4 +81,22 @@ it('reads each owning host catalog and capabilities when model IDs collide', () 
   expect(hostForThread(state.host, remoteThread!).models[0]!.name).toBe('Forge model')
   expect(capabilitiesForThread(state.host, localThread!).interrupt).toBe(false)
   expect(capabilitiesForThread(state.host, remoteThread!).interrupt).toBe(true)
+})
+
+it('sends each host catalog across IPC once, not again in the host entry', () => {
+  // A window receives the shell through Electron's structured clone, which writes an array it meets twice once.
+  const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+  const catalog = (host: string) => Array.from({ length: 600 }, (_, index) => ({ id: `model-${index}`, provider: 'Native', name: `${host} model ${index}`, ready: true,
+    description: 'A model description long enough to weigh what a real catalog weighs on the wire.' }))
+  local.state.host.models = catalog('Local'); remote.state.host.models = catalog('Forge')
+  // The rest of the shell is small beside a catalog, so the bound allows each catalog once and a fifth for everything else.
+  const catalogBytes = serialize(local.state.host.models).length
+  router.add(local.connection)
+  const alone = router.shell()
+  expect(alone.host.clientHosts![0]!.models).toBe(alone.host.models)
+  expect(serialize(alone).length).toBeLessThan(catalogBytes * 1.2)
+  router.add(remote.connection); router.select(LOCAL)
+  const both = router.shell()
+  expect(serialize(both).length).toBeLessThan(catalogBytes * 2 * 1.2)
+  expect(hostForThread(both.host, both.host.threads[1]!).models[0]!.name).toBe('Forge model 0')
 })

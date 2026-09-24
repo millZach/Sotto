@@ -145,6 +145,7 @@ import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
+import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
 import { GrokSubscriptionClient } from './agents/subscriptionGrok'
@@ -678,11 +679,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
   // nothing more. Only the threads the main window has declared viewed receive their messages.
+  const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     personalChats.configurationChanged()
-    windows.sendToMain(AGENT_STATE, state)
-    windows.sendToWidget(AGENT_STATE, state)
+    // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
+    agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
+    agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
   const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail))

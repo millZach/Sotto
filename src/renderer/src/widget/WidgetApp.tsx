@@ -47,6 +47,7 @@ import { SottoMark } from '../components/SottoMark'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { useWidgetDragGesture } from './useWidgetDragGesture'
 import { useAgentConnection, type AgentConnection } from '../agents/AgentContext'
+import { wrapAgentBridge } from '../agents/agentStateCatalogs'
 import { WidgetThreads } from './WidgetThreads'
 
 const IDLE_HOVER_SETTLE_MS = 220
@@ -645,7 +646,8 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
   // The widget draws nothing from the agent state while the voice coordinator is gated off, so it holds
   // no connection either: no shell per streaming frame, no reconciliation, no cache write. Turning the
   // setting on hands the hook a bridge again, which opens a fresh session and fetches the state whole.
-  const agents = useAgentConnection(preview === null && liveSnapshot?.voiceCoordinator === true ? bridge?.agents : undefined)
+  const widgetAgentsBridge = preview === null && liveSnapshot?.voiceCoordinator === true ? bridge?.agents : undefined
+  const agents = useAgentConnection(widgetAgentsBridge && wrapAgentBridge(widgetAgentsBridge))
   const snapshot = preview ?? liveSnapshot
   const [now, setNow] = useState(() => (preview === null ? Date.now() : PREVIEW_NOW))
   const [dragCancellationVersion, setDragCancellationVersion] = useState(0)

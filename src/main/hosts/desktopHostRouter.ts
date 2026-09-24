@@ -71,9 +71,11 @@ export class DesktopHostRouter {
       connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
         projects: entries.flatMap(item => item.state.host.projects), threads,
-        clientHosts: entries.map(({ connection, original }) => ({ hostId: connection.hostId,
+        // The selected host's catalog is the same array as `host.models`, which structured clone sends once:
+        // a copy here would put every model on the wire twice with each publish.
+        clientHosts: entries.map(({ connection, original, state }) => ({ hostId: connection.hostId,
           connected: connection.available?.() !== false && original.host.connected,
-          models: original.host.models, capabilities: original.host.capabilities,
+          models: state.host.models, capabilities: original.host.capabilities,
           ...(original.host.providers ? { providers: original.host.providers } : {}),
         })),
       },
