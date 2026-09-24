@@ -79,6 +79,20 @@ describe('the host is visible where work happens', () => {
     expect(chip.textContent).toBe('Runs on forge')
     expect(chip.closest('button')).toBeNull()
   })
+
+  it('names the host once, in the branch toolbar, for a thread in a Git repository', () => {
+    const state = twoHosts()
+    const index = state.host.threads.findIndex(item => item.hostId === FORGE)
+    const thread = state.host.threads[index]!
+    const path = state.host.projects[0]!.path
+    state.host.threads[index] = { ...thread, hostLabel: undefined, worktree: { mode: 'shared', status: 'ready', path, repositoryRoot: path, branch: 'main',
+      git: { isRepository: true, branch: 'main', upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' } } }
+    state.activeThreadId = thread.id
+    vi.stubGlobal('sotto', { agents: { gitRefs: vi.fn(async () => ({ refs: [], isRepository: true, hasRemote: false, nextCursor: null, total: 0 })) } })
+    mount(state)
+    expect(document.querySelector('.thread-host-chip')).toBeNull()
+    expect(screen.getByRole('group', { name: 'Branch toolbar' })).toHaveTextContent('Run on forge')
+  })
 })
 
 describe('New thread chooses the host first', () => {

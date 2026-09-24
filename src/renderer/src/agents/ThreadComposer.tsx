@@ -18,6 +18,7 @@ import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
+import { toolbarApplies } from './branchToolbar.logic'
 import './composer.css'
 
 type Command = AgentConnection['command']
@@ -249,7 +250,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
-  const threadHost = listedHosts(state).find(item => item.hostId === row.thread.hostId)
+  // The branch toolbar says Run on for a thread in a Git repository, so the chip speaks only where the toolbar does not.
+  const threadHost = toolbarApplies(row.thread) ? undefined : listedHosts(state).find(item => item.hostId === row.thread.hostId)
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
