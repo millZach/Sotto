@@ -65,6 +65,8 @@ export const gitPullRequestDetailSchema = z.object({
   checks: z.array(gitPullRequestCheckSchema).max(200),
   /** The methods this repository allows; all three when GitHub did not say, and a press is left to GitHub to refuse. */
   mergeMethods: z.array(gitPullRequestMergeMethodSchema).max(3),
+  /** Whether the repository allows auto-merge; true when GitHub did not say, and a press is left to GitHub to refuse. */
+  autoMergeAllowed: z.boolean(),
   /** An armed auto-merge and the method it will use, or null when none is armed. */
   autoMerge: z.object({ method: gitPullRequestMergeMethodSchema.nullable() }).strict().nullable(),
   /** Commits the base has that the head lacks; null when GitHub could not compare them. */
@@ -88,6 +90,11 @@ export const gitPullRequestRequestSchema = z.object({ threadId: id, reference: z
 export type GitPullRequestRequest = z.infer<typeof gitPullRequestRequestSchema>
 export const gitPullRequestResultSchema = gitPullRequestDetailSchema.nullable()
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'
+
+/** The URL of the pull request on the branch a thread's folder is on, as the host last read it. */
+export function branchPullRequestUrl(thread: { readonly worktree?: { readonly git?: { readonly pullRequest?: { readonly url: string } | null } | undefined } | undefined }): string | undefined {
+  return thread.worktree?.git?.pullRequest?.url
+}
 
 /**
  * A pull request reference as T3 reads one (`parsePullRequestReference`): a `gh pr checkout` line, a GitHub

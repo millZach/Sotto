@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GitPullRequestRefusal, GitPullRequests, pullRequestKey } from '../../../src/main/agents/gitPullRequests'
+import { githubRepositoryOf, GitPullRequestRefusal, GitPullRequests, pullRequestKey } from '../../../src/main/agents/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
 
@@ -24,8 +24,8 @@ function viewJson(change: Record<string, unknown> = {}): string {
     ...change,
   })
 }
-const comparisonJson = (change: { behindBy?: number; squash?: boolean; canUpdate?: boolean } = {}) => JSON.stringify({ data: { repository: {
-  mergeCommitAllowed: true, squashMergeAllowed: change.squash ?? true, rebaseMergeAllowed: false,
+const comparisonJson = (change: { behindBy?: number; squash?: boolean; canUpdate?: boolean; autoMerge?: boolean } = {}) => JSON.stringify({ data: { repository: {
+  autoMergeAllowed: change.autoMerge ?? false, mergeCommitAllowed: true, squashMergeAllowed: change.squash ?? true, rebaseMergeAllowed: false,
   pullRequest: { viewerCanUpdateBranch: change.canUpdate ?? true, baseRef: { compare: { behindBy: change.behindBy ?? 2 } } },
 } } })
 
@@ -33,6 +33,8 @@ const comparisonJson = (change: { behindBy?: number; squash?: boolean; canUpdate
 function scripted(handler: (args: readonly string[]) => string | Error) {
   const calls: string[][] = []
   const run: RunGitCommand = async (_cwd, command, args) => {
+    // The one Git read a checkout makes: the project's origin, the repository the pull requests are in.
+    if (command === 'git' && args.join(' ') === 'config --get remote.origin.url') return 'git@github.com:sotto-fixture/owned.git\n'
     if (command !== 'gh') throw new Error('git is not scripted here')
     calls.push([...args])
     const answer = handler(args)
@@ -53,7 +55,7 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const view = await service.view('C:/repo', '#74')
     expect(view).toMatchObject({ number: 74, url: URL_74, title: 'Make the greeting friendlier', body: 'Says hello.\n\n- One change', state: 'open', draft: false,
       baseBranch: 'main', headBranch: 'feat/greeting', crossRepository: false, reviewDecision: 'review_required', mergeable: 'mergeable',
-      mergeMethods: ['merge', 'squash'], autoMerge: null, behindBy: 2, canUpdateBranch: true })
+      mergeMethods: ['merge', 'squash'], autoMergeAllowed: false, autoMerge: null, behindBy: 2, canUpdateBranch: true })
     expect(view.checks).toEqual([
       { name: 'CI / build', status: 'success', url: 'https://github.com/sotto-fixture/owned/actions/runs/1', description: null },
       { name: 'CI / lint', status: 'failure', url: 'https://github.com/sotto-fixture/owned/actions/runs/2', description: null },
@@ -67,7 +69,7 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
   it('reads a merged, a draft, an armed and a conflicting one, and leaves every method offered when GitHub will not compare', async () => {
     const { service } = scripted(args => reads(() => viewJson({ state: 'CLOSED', mergedAt: '2026-09-23T00:00:00Z', isDraft: true, mergeable: 'CONFLICTING', reviewDecision: 'CHANGES_REQUESTED', autoMergeRequest: { mergeMethod: 'SQUASH' }, isCrossRepository: true, headRepositoryOwner: { login: 'fork' } }), () => new Error('HTTP 403') as never)(args) ?? new Error('HTTP 403'))
     const view = await service.view('C:/repo', URL_74)
-    expect(view).toMatchObject({ state: 'merged', draft: true, mergeable: 'conflicting', reviewDecision: 'changes_requested', autoMerge: { method: 'squash' }, crossRepository: true, headOwner: 'fork',
+    expect(view).toMatchObject({ state: 'merged', draft: true, mergeable: 'conflicting', reviewDecision: 'changes_requested', autoMerge: { method: 'squash' }, crossRepository: true, autoMergeAllowed: true,
       mergeMethods: ['merge', 'squash', 'rebase'], behindBy: null, canUpdateBranch: false })
   })
   it('says what went wrong when gh cannot read it, and refuses a reference that is not a pull request', async () => {
@@ -163,6 +165,9 @@ async function repository() {
   git(author, 'push', '-q', 'origin', 'feat/greeting', 'HEAD:refs/pull/74/head')
   const head = git(author, 'rev-parse', 'HEAD')
   git(root, 'clone', '-q', remote, repo)
+  // The clone's origin is written as GitHub's URL, and Git rewrites it to the owned remote, so the pull requests match it.
+  git(repo, 'config', `url.${remote}.insteadOf`, 'https://github.com/sotto-fixture/owned')
+  git(repo, 'remote', 'set-url', 'origin', 'https://github.com/sotto-fixture/owned')
   return { root, repo, head }
 }
 const gitOnly: RunGitCommand = (cwd, command, args, options) => command === 'git' ? runGitStatusCommand(cwd, command, args, options) : Promise.reject(new Error('gh is not used here'))
@@ -171,15 +176,15 @@ describe('Checkout pull request into a worktree', () => {
   it('makes the head branch of a pull request from this repository, tracking it, and uses it as it stands the next time', async () => {
     const f = await repository()
     const service = new GitPullRequests({ run: gitOnly })
-    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, headBranch: 'feat/greeting', crossRepository: false })).resolves.toEqual({ branch: 'feat/greeting', worktreePath: null })
+    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, url: URL_74, headBranch: 'feat/greeting', crossRepository: false })).resolves.toEqual({ branch: 'feat/greeting', worktreePath: null })
     expect(git(f.repo, 'rev-parse', 'refs/heads/feat/greeting')).toBe(f.head)
     expect(git(f.repo, 'rev-parse', '--abbrev-ref', 'feat/greeting@{upstream}')).toBe('origin/feat/greeting')
-    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, headBranch: 'feat/greeting', crossRepository: false })).resolves.toEqual({ branch: 'feat/greeting', worktreePath: null })
+    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, url: URL_74, headBranch: 'feat/greeting', crossRepository: false })).resolves.toEqual({ branch: 'feat/greeting', worktreePath: null })
   }, 30_000)
   it('takes a fork\'s head from GitHub\'s pull request ref under its own name', async () => {
     const f = await repository()
     const service = new GitPullRequests({ run: gitOnly })
-    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, headBranch: 'Main', crossRepository: true })).resolves.toEqual({ branch: 'sotto/pr-74/main', worktreePath: null })
+    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, url: URL_74, headBranch: 'Main', crossRepository: true })).resolves.toEqual({ branch: 'sotto/pr-74/main', worktreePath: null })
     expect(git(f.repo, 'rev-parse', 'refs/heads/sotto/pr-74/main')).toBe(f.head)
   }, 30_000)
   it('answers with the worktree that has the branch, and refuses the branch the project folder has', async () => {
@@ -187,27 +192,47 @@ describe('Checkout pull request into a worktree', () => {
     const service = new GitPullRequests({ run: gitOnly })
     const other = join(f.root, 'other')
     git(f.repo, 'worktree', 'add', '-q', '-b', 'feat/greeting', other, 'origin/feat/greeting')
-    const answered = await service.prepareWorktreeBranch(f.repo, { number: 74, headBranch: 'feat/greeting', crossRepository: false })
+    const answered = await service.prepareWorktreeBranch(f.repo, { number: 74, url: URL_74, headBranch: 'feat/greeting', crossRepository: false })
     expect(answered.branch).toBe('feat/greeting')
     expect(answered.worktreePath?.replace(/\\/gu, '/').toLowerCase()).toBe(other.replace(/\\/gu, '/').toLowerCase())
     git(f.repo, 'worktree', 'remove', other)
     git(f.repo, 'checkout', '-q', 'feat/greeting')
-    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, headBranch: 'feat/greeting', crossRepository: false })).rejects.toThrow('already checked out in the project folder. Use Local')
+    await expect(service.prepareWorktreeBranch(f.repo, { number: 74, url: URL_74, headBranch: 'feat/greeting', crossRepository: false })).rejects.toThrow('already checked out in the project folder. Use Local')
   }, 30_000)
   it('says so when the pull request cannot be fetched', async () => {
     const f = await repository()
     const service = new GitPullRequests({ run: gitOnly })
-    await expect(service.prepareWorktreeBranch(f.repo, { number: 99, headBranch: 'gone', crossRepository: false })).rejects.toThrow('Could not fetch the pull request\'s branch.')
+    await expect(service.prepareWorktreeBranch(f.repo, { number: 99, url: 'https://github.com/sotto-fixture/owned/pull/99', headBranch: 'gone', crossRepository: false })).rejects.toThrow('Could not fetch the pull request\'s branch.')
   }, 30_000)
+})
+
+describe('a checkout from another repository', () => {
+  it('is refused before anything is fetched, Worktree and Local alike', async () => {
+    const f = await repository()
+    const calls: string[] = []
+    const service = new GitPullRequests({ run: (cwd, command, args, options) => { calls.push(`${command} ${args.join(' ')}`); return gitOnly(cwd, command, args, options) } })
+    const other = { number: 74, url: 'https://github.com/someone/else/pull/74', headBranch: 'feat/greeting', crossRepository: false }
+    await expect(service.prepareWorktreeBranch(f.repo, other)).rejects.toThrow('This pull request is in another repository. Check it out from a clone of that repository.')
+    await expect(service.checkoutLocal(f.repo, other.url)).rejects.toThrow('This pull request is in another repository.')
+    expect(calls.some(call => call.includes('fetch') || call.startsWith('gh'))).toBe(false)
+    expect(git(f.repo, 'show-ref', '--heads').includes('feat/greeting')).toBe(false)
+  }, 30_000)
+  it('reads the repository of a GitHub remote in each of its spellings', () => {
+    expect(githubRepositoryOf('https://github.com/Owner/Repo.git')).toBe('owner/repo')
+    expect(githubRepositoryOf('git@github.com:owner/repo.git')).toBe('owner/repo')
+    expect(githubRepositoryOf('ssh://git@github.com/owner/repo')).toBe('owner/repo')
+    expect(githubRepositoryOf('https://git.example.com/owner/repo.git')).toBeNull()
+    expect(githubRepositoryOf('C:/remotes/owned.git')).toBeNull()
+  })
 })
 
 describe('Checkout pull request, Local', () => {
   it('runs gh pr checkout without forcing, and says why when it cannot', async () => {
     const ok = scripted(() => '')
-    await ok.service.checkoutLocal('C:/repo', 'gh pr checkout 74')
-    expect(ok.calls).toEqual([['pr', 'checkout', '74']])
+    await ok.service.checkoutLocal('C:/repo', URL_74)
+    expect(ok.calls).toEqual([['pr', 'checkout', URL_74]])
     const refused = scripted(() => new Error('error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt'))
-    await expect(refused.service.checkoutLocal('C:/repo', '#74')).rejects.toThrow('Could not check out the pull request. error: Your local changes to the following files would be overwritten by checkout: a.txt')
-    await expect(refused.service.checkoutLocal('C:/repo', 'nope')).rejects.toThrow('Use a pull request URL, 123, or #123.')
+    await expect(refused.service.checkoutLocal('C:/repo', URL_74)).rejects.toThrow('Could not check out the pull request. error: Your local changes to the following files would be overwritten by checkout: a.txt')
+    await expect(refused.service.checkoutLocal('C:/repo', 'nope')).rejects.toThrow('Sotto checks out pull requests from GitHub only.')
   })
 })

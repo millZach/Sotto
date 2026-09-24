@@ -24,7 +24,7 @@ import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitAct
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
@@ -376,7 +376,7 @@ export class WorkspaceHost implements AgentHost {
   private knowsPullRequest(thread: AgentThread, url: string): boolean {
     const key = pullRequestKey(url)
     if (!key) return false
-    const branch = thread.worktree?.git?.pullRequest?.url
+    const branch = branchPullRequestUrl(thread)
     return (branch !== undefined && pullRequestKey(branch) === key) || (thread.pullRequests ?? []).some(link => pullRequestKey(link.url) === key)
   }
   /**
@@ -419,7 +419,7 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const service = this.pullRequestsOrRefuse()
     const thread = this.thread(request.threadId)
-    const reference = request.reference ?? thread.worktree?.git?.pullRequest?.url ?? thread.pullRequests?.at(-1)?.url
+    const reference = request.reference ?? branchPullRequestUrl(thread) ?? thread.pullRequests?.at(-1)?.url
     if (!reference) return null
     const view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference)
     const current = this.thread(request.threadId)
@@ -428,13 +428,11 @@ export class WorkspaceHost implements AgentHost {
     if (link && (link.title !== view.title || link.state !== view.state || link.draft !== view.draft)) {
       void this.onLane(request.threadId, async () => { if (this.linkPullRequestRecord(request.threadId, view, link.source)) await this.saveLinks() }).catch(() => undefined)
     }
-    const branch = current.worktree?.git?.pullRequest?.url
+    const branch = branchPullRequestUrl(current)
     return this.detailOf(view, link?.source ?? null, branch !== undefined && pullRequestKey(branch) === key)
   }
   private detailOf(view: GitPullRequestView, linked: GitPullRequestLinkSource | null, branch: boolean): GitPullRequestDetail {
-    // The head's owner is the host's own business (it names a fork's branch); the detail the surface reads has no place for it.
-    const detail = Object.fromEntries(Object.entries(view).filter(([key]) => key !== 'headOwner')) as Omit<GitPullRequestView, 'headOwner'>
-    return { ...detail, linked, branch }
+    return { ...view, linked, branch }
   }
   /** A press on the Pull request surface, for a pull request the thread knows. GitHub moved, so the badge and the Git action read it again. */
   runPullRequestAction(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {

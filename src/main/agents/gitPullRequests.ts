@@ -9,7 +9,7 @@ import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 export class GitPullRequestRefusal extends Error {}
 
 /** A pull request as GitHub describes it, before the host says how it stands to the thread. */
-export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'> & { readonly headOwner: string | null }
+export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'>
 
 const DETAIL_FIELDS = 'number,title,url,body,state,isDraft,mergeable,reviewDecision,statusCheckRollup,baseRefName,headRefName,isCrossRepository,headRepositoryOwner,autoMergeRequest,mergedAt'
 /**
@@ -19,7 +19,7 @@ const DETAIL_FIELDS = 'number,title,url,body,state,isDraft,mergeable,reviewDecis
  */
 const COMPARISON_QUERY = `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
-    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
+    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed
     pullRequest(number: $number) { viewerCanUpdateBranch baseRef { compare(headRef: $headRef) { behindBy } } }
   }
 }`
@@ -38,7 +38,7 @@ const rawViewSchema = z.object({
   autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })), mergedAt: loose(z.string()),
 })
 const rawComparisonSchema = z.object({ data: z.object({ repository: z.object({
-  mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()),
+  mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
   pullRequest: loose(z.object({ viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })) })),
 }).nullable() }) })
 
@@ -114,6 +114,12 @@ export function pullRequestKey(url: string): string | null {
   return address ? `${address.owner}/${address.name}#${address.number}`.toLowerCase() : null
 }
 
+/** `owner/name` of a GitHub remote URL (HTTPS, `git@github.com:` or `ssh://`), lowercased; null for any other remote. */
+export function githubRepositoryOf(remote: string): string | null {
+  const match = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/iu.exec(remote.trim())
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null
+}
+
 /** T3's fragment for a branch name taken from another repository's head: lowercase, anything odd a dash. */
 function branchFragment(head: string): string {
   return head.toLowerCase().replace(/[^a-z0-9/_-]+/gu, '-').replace(/-{2,}/gu, '-').replace(/^[-/]+|[-/]+$/gu, '').slice(0, 48).replace(/[-/]+$/u, '') || 'head'
@@ -154,19 +160,19 @@ export class GitPullRequests {
     const comparison = await this.comparison(cwd, address, crossRepository && headOwner ? `${headOwner}:${headBranch}` : headBranch)
     return {
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
-      baseBranch: raw.baseRefName ?? '', headBranch, crossRepository, headOwner,
+      baseBranch: raw.baseRefName ?? '', headBranch, crossRepository,
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,
       mergeable: mergeable === 'MERGEABLE' ? 'mergeable' : mergeable === 'CONFLICTING' ? 'conflicting' : 'unknown',
       checks: (raw.statusCheckRollup ?? []).slice(0, 200).map(checkOf),
-      mergeMethods: comparison.mergeMethods,
+      mergeMethods: comparison.mergeMethods, autoMergeAllowed: comparison.autoMergeAllowed,
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,
       behindBy: comparison.behindBy, canUpdateBranch: comparison.canUpdateBranch,
     }
   }
 
   /** The GraphQL half of the read; a repository GitHub will not compare leaves every method offered and the distance unknown. */
-  private async comparison(cwd: string, address: { owner: string; name: string; number: number }, headRef: string): Promise<{ mergeMethods: GitPullRequestMergeMethod[]; behindBy: number | null; canUpdateBranch: boolean }> {
-    const unknown = { mergeMethods: ['merge', 'squash', 'rebase'] as GitPullRequestMergeMethod[], behindBy: null, canUpdateBranch: false }
+  private async comparison(cwd: string, address: { owner: string; name: string; number: number }, headRef: string): Promise<{ mergeMethods: GitPullRequestMergeMethod[]; autoMergeAllowed: boolean; behindBy: number | null; canUpdateBranch: boolean }> {
+    const unknown = { mergeMethods: ['merge', 'squash', 'rebase'] as GitPullRequestMergeMethod[], autoMergeAllowed: true, behindBy: null, canUpdateBranch: false }
     if (!headRef) return unknown
     try {
       const raw = rawComparisonSchema.parse(JSON.parse(await this.gh(cwd, ['api', 'graphql', '-f', `query=${COMPARISON_QUERY}`, '-f', `owner=${address.owner}`, '-f', `name=${address.name}`, '-F', `number=${address.number}`, '-f', `headRef=${headRef}`])))
@@ -176,7 +182,7 @@ export class GitPullRequests {
       if (repository.mergeCommitAllowed !== false) allowed.push('merge')
       if (repository.squashMergeAllowed !== false) allowed.push('squash')
       if (repository.rebaseMergeAllowed !== false) allowed.push('rebase')
-      return { mergeMethods: allowed, behindBy: repository.pullRequest?.baseRef?.compare?.behindBy ?? null, canUpdateBranch: repository.pullRequest?.viewerCanUpdateBranch === true }
+      return { mergeMethods: allowed, autoMergeAllowed: repository.autoMergeAllowed !== false, behindBy: repository.pullRequest?.baseRef?.compare?.behindBy ?? null, canUpdateBranch: repository.pullRequest?.viewerCanUpdateBranch === true }
     } catch { return unknown }
   }
 
@@ -211,9 +217,24 @@ export class GitPullRequests {
     throw new GitPullRequestRefusal(`${ACTION_FAILED[action]} ${reasonOf(failure) || hint}`.trim())
   }
 
+  /**
+   * Both checkouts take the pull request from the project's `origin`, by its number, so a pull request of
+   * another repository is refused rather than answered with this repository's pull request of the same number.
+   * `origin` is read as configured, before any `insteadOf` rewrite, the way the user wrote it.
+   */
+  private async assertSameRepository(cwd: string, url: string): Promise<void> {
+    const address = pullRequestAddress(url)
+    const origin = (await this.git(cwd, ['config', '--get', 'remote.origin.url']).catch(() => '')).trim()
+    const repository = githubRepositoryOf(origin)
+    if (!address) throw new GitPullRequestRefusal('Sotto checks out pull requests from GitHub only.')
+    if (!origin) throw new GitPullRequestRefusal('This project has no origin remote to check the pull request out from.')
+    if (!repository || repository !== `${address.owner}/${address.name}`.toLowerCase()) throw new GitPullRequestRefusal('This pull request is in another repository. Check it out from a clone of that repository.')
+  }
+
   /** T3's Local: `gh pr checkout` in the thread's folder. Without `--force`, so Git refuses rather than lose a local branch's commits. */
-  async checkoutLocal(cwd: string, reference: string): Promise<void> {
-    const selector = parsePullRequestReference(reference)
+  async checkoutLocal(cwd: string, url: string): Promise<void> {
+    await this.assertSameRepository(cwd, url)
+    const selector = parsePullRequestReference(url)
     if (!selector) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
     try { await this.gh(cwd, ['pr', 'checkout', selector], FETCH_TIMEOUT_MS) }
     catch (error) { throw new GitPullRequestRefusal(`Could not check out the pull request. ${reasonOf(error)}`.trim()) }
@@ -226,7 +247,8 @@ export class GitPullRequests {
    * is used as it stands, a branch another worktree has is answered with that worktree, and a branch the
    * project's own checkout has is refused, since two folders cannot hold one branch.
    */
-  async prepareWorktreeBranch(cwd: string, pullRequest: Pick<GitPullRequestView, 'number' | 'headBranch' | 'crossRepository'>): Promise<{ branch: string; worktreePath: string | null }> {
+  async prepareWorktreeBranch(cwd: string, pullRequest: Pick<GitPullRequestView, 'number' | 'url' | 'headBranch' | 'crossRepository'>): Promise<{ branch: string; worktreePath: string | null }> {
+    await this.assertSameRepository(cwd, pullRequest.url)
     const branch = pullRequest.crossRepository || !pullRequest.headBranch ? `sotto/pr-${pullRequest.number}/${branchFragment(pullRequest.headBranch)}` : pullRequest.headBranch
     await this.git(cwd, ['check-ref-format', '--branch', branch]).catch(() => { throw new GitPullRequestRefusal(`The pull request's branch name ${branch} is not one Git accepts.`) })
     const checkouts = await this.checkouts(cwd)
