@@ -8,6 +8,7 @@ import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { branchLabel, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
 import type { ThreadRow } from './threadFacts'
+import { listedHosts } from './HostBadge'
 import './branchToolbar.css'
 
 type Command = AgentConnection['command']
@@ -116,7 +117,9 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
 
   if (!toolbarApplies(thread)) return null
   const pullRequest = thread.worktree?.git?.pullRequest ?? null
-  const hostName = thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer'
+  // Named as the host list names it, so a remote host alone is still called by its name, not by a stand-in.
+  const listed = listedHosts(state).find(item => item.hostId === row.thread.hostId)
+  const hostName = listed?.name ?? (thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer')
   const draftWorktree = newWorktreeDraft(thread)
   return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
     <span className="branch-toolbar__static" title={thread.remoteHost ? 'The thread runs on this host; it was chosen when the thread was made.' : 'The thread runs on this computer.'}>Run on <strong>{hostName}</strong></span>

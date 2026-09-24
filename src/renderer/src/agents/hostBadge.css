@@ -1,0 +1,15 @@
+/* The host a project or thread is on, shown only when threads from more than one host are listed. */
+.host-badge { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 4px; min-width: 0; max-width: 96px; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); padding: 0 7px; color: var(--tt-text-muted); font-size: 11px; font-weight: 500; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.host-badge > svg { flex: none; }
+.host-badge[data-kind='remote'] > svg { color: var(--tt-accent-text); }
+
+/* The composer's host chip: where a thread runs, fixed once the thread exists. */
+.thread-host-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-pill); padding: 0 10px; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-host-chip > svg { flex: none; }
+
+/* New thread's Host row: one button per host, the chosen one pressed. */
+.new-thread-hosts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.new-thread-hosts button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 100%; overflow: hidden; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-sm); background: var(--tt-surface); padding: 5px 12px; color: var(--tt-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.new-thread-hosts button:hover { background: var(--tt-hover); }
+.new-thread-hosts button[aria-pressed='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+.new-thread-hosts button > svg { flex: none; }

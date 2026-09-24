@@ -17,6 +17,9 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     await expect(runtime.hostService.command({ type: 'connect' }, desktopWindowClient())).rejects.toThrow('local host is off')
     expect(() => runtime.agentHost.workingCopyOptions('project')).toThrow('local host is off')
     expect(() => { runtime.worktreeCleanup.start(); runtime.worktreeCleanup.settingsChanged() }).not.toThrow()
+    // Main wires Git actions to the local host at start, so these two must not refuse, or Sotto quits on launch.
+    expect(() => runtime.agentHost.setMutationGuard(() => true)).not.toThrow()
+    await expect(runtime.agentHost.gitActionFinished('thread')).resolves.toBeUndefined()
     await expect(runtime.worktreeCleanup.close()).resolves.toBeUndefined()
     await runtime.close()
     expect(await readFile(join(directory, 'workspace.json'), 'utf8')).toBe(saved)
