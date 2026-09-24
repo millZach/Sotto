@@ -56,6 +56,7 @@ export class WorktreeCleanup {
   /** Thread and branch pairs Auto-settle merged threads already settled while Sotto runs, so a restore sticks. */
   private readonly autoSettled = new Set<string>()
   private mergedAnswers = new Map<string, Promise<boolean>>()
+  private defaults = new Map<string, string | null>()
   private disposed = false
   private readonly git: RunGit
   private readonly now: () => number
@@ -116,16 +117,22 @@ export class WorktreeCleanup {
       if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
       if (thread.status === 'running' || thread.requests.length) continue
       const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
-      if (!branch || branch === worktree.git?.defaultBranch || branch === 'main' || branch === 'master') continue
+      if (!branch) continue
       const key = `${thread.id}\0${branch}`
       if (this.autoSettled.has(key)) continue
       try {
+        if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
         if (!await this.merged(worktree.repositoryRoot, branch)) continue
         await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true)
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
       } catch { this.dependencies.log?.('thread-auto-settle-skipped') }
     }
+  }
+  /** The repository's default branch, looked up once per repository in a sweep. */
+  private async defaultBranchOf(repositoryRoot: string): Promise<string | null> {
+    if (!this.defaults.has(repositoryRoot)) this.defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))
+    return this.defaults.get(repositoryRoot) ?? null
   }
   private settledThreads(snapshot: AgentHostSnapshot): Set<string> {
     return new Set(snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))).map(thread => thread.id))
@@ -136,10 +143,11 @@ export class WorktreeCleanup {
     if (!rulesOn(rules) && !settle) return
     // GitHub is asked once per branch in a sweep, whichever of the two wants the answer.
     this.mergedAnswers = new Map()
+    this.defaults = new Map()
     if (settle) await this.settleMerged()
     if (!rulesOn(rules) || this.disposed) return
     const snapshot = this.dependencies.host.workspaceSnapshot()
-    const defaults = new Map<string, string | null>()
+    const defaults = this.defaults
     for (const thread of snapshot.threads) {
       if (this.disposed) return
       const worktree = thread.worktree
