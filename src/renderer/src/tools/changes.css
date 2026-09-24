@@ -197,6 +197,11 @@ button.changes-file__name:hover .changes-file__base { text-decoration: underline
 .changes-comment__note { margin: 6px 0 0; color: var(--tt-warning-text); font-size: 12px; }
 .changes-comment__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .changes-comment__hint { margin-right: auto; color: var(--tt-text-muted); font-size: 12px; }
+/* Comments on files this comparison does not show: listed after the files, in the panel's own flow. */
+.changes-elsewhere { padding: 8px 0 12px; border-top: 1px solid var(--tt-hairline); }
+.changes-elsewhere .changes-comment { position: static; width: auto; }
+.changes-surface > .changes-elsewhere { flex: 0 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-elsewhere__title { margin: 0; padding: 4px 12px 2px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; }
 
 /* The file tree: the comparison's files under their folders. */
 .changes-tree__list { display: flex; flex-direction: column; gap: 1px; }

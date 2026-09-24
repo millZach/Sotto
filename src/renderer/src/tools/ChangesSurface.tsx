@@ -130,8 +130,8 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
       ? <div className="files-problem" role="status"><strong>{reviewState.error.message || 'This comparison could not be read.'}</strong>
         <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button></div>
       : !review ? <p className="files-preview__loading" role="status">{SCOPE_LOADING[changes.scope.kind]}</p>
-        : review.notice ? <div className="files-problem" role="status"><strong>{review.notice}</strong></div>
-          : files.length === 0 ? <div className="files-problem" role="status"><strong>{emptyWords(changes.scope, review, view)}</strong></div>
+        : review.notice ? <><div className="files-problem" role="status"><strong>{review.notice}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
+          : files.length === 0 ? <><div className="files-problem" role="status"><strong>{emptyWords(changes.scope, review, view)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
             : <>
               {review.truncated ? <p className="changes-note">Git reported more files than Sotto lists.</p> : null}
               <div className="changes-review" data-tree={tree || undefined}>
@@ -288,7 +288,23 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
       onToggle={() => store.toggleCollapsed(threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
       onOpen={onOpenFile && inWorkingCopy(file, changes) ? onOpenFile : undefined} platform={platform}
       review={reviewOf(file.path)} />)}
+    <ElsewhereComments threadId={threadId} files={review.files} store={commentStore} />
   </div>
+}
+
+/**
+ * Comments on files this comparison does not show as text: a file committed since, a turn that did not touch it,
+ * another scope. They still go with the next message, so they stay in sight here, with Delete comment, until then.
+ */
+function ElsewhereComments({ threadId, files, store }: { readonly threadId: string; readonly files: readonly GitReviewFile[]; readonly store: ReviewCommentStore }): ReactNode {
+  const comments = useReviewComments(store, threadId)
+  const shown = new Set(files.filter(file => file.content.kind === 'text').map(file => file.path))
+  const elsewhere = comments.filter(comment => !shown.has(comment.path))
+  if (elsewhere.length === 0) return null
+  return <section className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
+    <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on files not in this comparison</h3>
+    {elsewhere.map(comment => <CommentMarker key={comment.id} comment={comment} full note={null} onDelete={() => store.remove(threadId, comment.id)} />)}
+  </section>
 }
 
 /** One file's share of the review comments. */
@@ -560,9 +576,13 @@ const MARKER_NOTE: Record<MarkerPlace, string | null> = {
 }
 
 /** A comment waiting on the composer, under its last line, until the message goes or it is deleted. */
-function CommentMarker({ comment, note, onDelete }: { readonly comment: ReviewComment; readonly note: string | null; readonly onDelete: () => void }): ReactNode {
-  const label = reviewLabel(comment)
-  return <div className="changes-comment changes-comment--marker" role="row"><div className="changes-comment__cell" role="gridcell">
+function CommentMarker({ comment, note, full = false, onDelete }: {
+  readonly comment: ReviewComment; readonly note: string | null
+  /** Outside its file's lines the marker names the whole path and is not a row of a grid. */
+  readonly full?: boolean; readonly onDelete: () => void
+}): ReactNode {
+  const label = reviewLabel(comment, full)
+  return <div className="changes-comment changes-comment--marker" role={full ? undefined : 'row'}><div className="changes-comment__cell" role={full ? undefined : 'gridcell'}>
     <div className="changes-comment__head">
       <MessageSquare size={14} aria-hidden="true" className="changes-comment__icon" />
       <span className="changes-comment__label">{label}</span>

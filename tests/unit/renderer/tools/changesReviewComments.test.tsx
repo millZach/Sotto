@@ -27,8 +27,8 @@ function fakeGit(initial: GitReviewFile[] = [file(PATCH)]) {
   } as unknown as GitChangesBridge
   return {
     bridge,
-    change(patch: string, extra: GitReviewFile[] = files.slice(1)) {
-      files = [file(patch), ...extra]; revision = `${revision}+`
+    change(patch: string | null, extra: GitReviewFile[] = files.slice(1)) {
+      files = [...patch === null ? [] : [file(patch)], ...extra]; revision = `${revision}+`
       for (const listener of [...listeners]) listener({ threadId: THREAD, workspaceId: TOKEN_A, revision })
     },
   }
@@ -208,6 +208,29 @@ describe('review comments in Changes', () => {
     expect(marker).toHaveTextContent('Its lines are further down. Show all to see them.')
     expect(marker).not.toHaveTextContent('changed since')
     expect(comments.list(THREAD)).toHaveLength(1)
+  })
+
+  it('keeps a comment in sight, with Delete comment, when its file leaves the comparison', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
+    const { comments } = setup(git)
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-kind="add"]'))
+    await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Still wanted')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    // src/app.ts is committed; only the other file is left.
+    git.change(null, [file(OTHER, 'src/other.ts')])
+    const elsewhere = await screen.findByRole('region', { name: 'Comments on files not in this comparison' })
+    expect(within(elsewhere).getByText('Still wanted')).toBeInTheDocument()
+    expect(within(elsewhere).getByText('src/app.ts L4')).toBeInTheDocument()
+    // Nothing left to compare: the list still shows under the empty comparison.
+    git.change(null, [])
+    await screen.findByText('The working copy matches HEAD.')
+    const still = screen.getByRole('region', { name: 'Comments on files not in this comparison' })
+    await user.click(within(still).getByRole('button', { name: 'Delete comment on src/app.ts L4' }))
+    expect(comments.list(THREAD)).toEqual([])
+    expect(screen.queryByRole('region', { name: 'Comments on files not in this comparison' })).toBeNull()
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {
