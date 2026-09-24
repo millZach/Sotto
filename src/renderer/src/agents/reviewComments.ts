@@ -94,7 +94,8 @@ const NONE: readonly ReviewComment[] = []
 /**
  * Each thread's review comments for this session, and the one comment being written. Changes writes and deletes
  * them; the thread's composer shows them as chips and takes them into the message on the press. They live in this
- * window's memory only: never written to disk, never logged.
+ * window's memory only and are never logged. Once written into a prompt they are part of its text, which is saved
+ * and sent as any prompt is.
  */
 export class ReviewCommentStore {
   private readonly threads = new Map<string, readonly ReviewComment[]>()
