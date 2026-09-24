@@ -97,8 +97,18 @@ describe('the merge checklist, read from the pull request', () => {
     expect(checklistCount(noted)).toBe('4 of 5 done, 1 does not block')
     expect(checklistCount(checklist(detail()))).toBe('5 of 5 done')
     expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
-    // Where no review is required, a request for changes still holds it back.
-    expect(checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))[1]).toMatchObject({ tone: 'failed', why: 'ola asked for changes' })
+    // Where no review is required, a request for changes still standing is said and linked, in whichever order it came,
+    // and holds the merge back no more than GitHub does.
+    const openAfter = checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))
+    const openBefore = checklist(detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested'), review('mira', 'approved')] }))
+    for (const lines of [openAfter, openBefore]) {
+      expect(lines[1]).toEqual({ id: 'review', label: 'Review approved', tone: 'open', why: 'Approved by mira. ola\'s request for changes is still open',
+        fix: { kind: 'open-review', author: 'ola', url: `${URL}#pullrequestreview-ola` } })
+      expect(mergeReady(detail(), lines)).toBe(true)
+      expect(checklistCount(lines)).toBe('4 of 5 done, 1 does not block')
+    }
+    expect(checklist(detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested'), review('sam', 'changes_requested')] }))[1])
+      .toMatchObject({ tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
   })
   it('reads a merged or closed pull request as settled, and offers auto-merge only where it can be armed', () => {
     const merged = detail({ state: 'merged', behindBy: 3, mergeable: 'unknown' })

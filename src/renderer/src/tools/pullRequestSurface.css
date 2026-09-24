@@ -31,7 +31,7 @@
 .pr-surface__line > svg { color: var(--tt-text-muted); }
 .pr-surface__line[data-tone='done'] > svg { color: var(--tt-success); }
 .pr-surface__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
-.pr-surface__line[data-tone='running'] > svg { color: var(--tt-warning-text); }
+.pr-surface__line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
 .pr-surface__line-text { min-width: 0; }
 .pr-surface__line strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .pr-surface__line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }

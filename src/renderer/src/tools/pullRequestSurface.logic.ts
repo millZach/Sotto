@@ -4,10 +4,11 @@ type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'reviewD
 
 /**
  * How a line of the merge checklist stands: done, failed (something must change), running (GitHub is still
- * working it out), to do (a step someone has to take), or unknown (GitHub could not say, which does not hold
- * the merge back, since nothing here could fix it).
+ * working it out), to do (a step someone has to take), unknown (GitHub could not say, which does not hold the
+ * merge back, since nothing here could fix it), or open (something worth seeing that GitHub does not require,
+ * such as a request for changes where the repository asks for no review, which does not hold it back either).
  */
-export type LineTone = 'done' | 'failed' | 'running' | 'todo' | 'unknown'
+export type LineTone = 'done' | 'failed' | 'running' | 'todo' | 'unknown' | 'open'
 /** The one press that fixes a line: a link to the failing check or the review on GitHub, or the step itself. */
 export type LineFix =
   | { readonly kind: 'open-check'; readonly name: string; readonly url: string }
@@ -57,11 +58,20 @@ function reviewLine(detail: Detail): ChecklistLine {
     case 'changes_requested': return askedForChanges()
     case 'review_required': return { ...line, tone: 'todo', fix: null,
       why: detail.draft ? 'Reviewers wait until it is ready' : detail.reviews.length === 0 ? 'Nobody has reviewed it yet' : 'It still needs an approving review' }
-    default:
-      // The repository requires no review: a request for changes still holds it back; otherwise there is nothing to wait for.
-      if (changes && (!approved || detail.reviews.lastIndexOf(changes) > detail.reviews.lastIndexOf(approved))) return askedForChanges()
+    default: {
+      // The repository requires no review, so GitHub merges whatever the reviews say. A request for changes a reviewer
+      // has not taken back is still said, with its review a press away, in whatever order it came; it does not hold
+      // the merge back, since GitHub does not.
+      if (changes) {
+        const others = detail.reviews.filter(review => review.state === 'changes_requested').length - 1
+        const who = others > 0 ? `${changes.author} and ${others} more` : changes.author
+        return { ...line, tone: 'open', fix: { kind: 'open-review', author: changes.author, url: changes.url ?? detail.url },
+          why: approved ? `Approved by ${approved.author}. ${others > 0 ? `Requests for changes from ${who} are` : `${changes.author}'s request for changes is`} still open`
+            : `${who} asked for changes. This repository does not require a review` }
+      }
       return approved ? { ...line, tone: 'done', why: `Approved by ${approved.author}`, fix: null }
         : { ...line, label: 'No review required', tone: 'done', why: 'This repository merges without one', fix: null }
+    }
   }
 }
 

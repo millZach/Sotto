@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
-  Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
+  Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX, Copy, ExternalLink, GitMerge,
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
 } from 'lucide-react'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
@@ -21,9 +21,9 @@ import './pullRequestSurface.css'
 type Command = (command: AgentCommand) => Promise<AgentState | null>
 type Notice = { readonly text: string; readonly tone: 'status' | 'error' }
 type Busy = GitPullRequestAction | 'unlink' | 'create-pr'
-const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: CircleDashed, todo: Circle, unknown: CircleHelp }
+const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: CircleDashed, todo: Circle, unknown: CircleHelp, open: CircleAlert }
 /** Said before a line's words, since its colour and icon are not read. */
-const LINE_STATE: Record<LineTone, string> = { done: 'Done', failed: 'Failing', running: 'Waiting', todo: 'To do', unknown: 'Unknown' }
+const LINE_STATE: Record<LineTone, string> = { done: 'Done', failed: 'Failing', running: 'Waiting', todo: 'To do', unknown: 'Unknown', open: 'Does not block' }
 const BUSY_LABEL: Partial<Record<Busy, string>> = { merge: 'Merging...', ready: 'Marking ready...', 'update-branch': 'Updating...', reopen: 'Reopening...', 'disable-auto-merge': 'Turning off...', 'create-pr': 'Creating PR...' }
 const stateIcon = (detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): LucideIcon => detail.draft && detail.state === 'open' ? GitPullRequestDraft : PR_ICONS[detail.state]
 const stateKey = (detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): string => detail.draft && detail.state === 'open' ? 'draft' : detail.state
