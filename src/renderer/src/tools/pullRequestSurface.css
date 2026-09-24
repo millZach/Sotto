@@ -1,0 +1,73 @@
+/* The Pull request surface in Tools (ADR-0027): the pull request's head, T3's one primary control, the base it is
+   behind, each check, then the description; the list of the thread's linked pull requests is the same surface. */
+.pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
+.pr-surface__count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--tt-selected); color: var(--tt-text); font-size: 11.5px; line-height: 18px; text-align: center; }
+.tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: 7px; }
+.pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
+.pr-surface__body { display: flex; flex: 1; flex-direction: column; gap: 18px; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pr-surface__head { display: grid; gap: 6px; }
+.pr-surface__title { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--tt-text); font-size: 16px; font-weight: 550; line-height: 1.35; overflow-wrap: anywhere; }
+.pr-surface__title > svg { flex: none; margin-top: 2px; }
+.pr-surface :is(svg[data-state='open']) { color: var(--tt-success); }
+.pr-surface :is(svg[data-state='merged']) { color: var(--tt-activity); }
+.pr-surface :is(svg[data-state='closed'], svg[data-state='draft']) { color: var(--tt-text-muted); }
+.pr-surface__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.pr-surface__meta bdi { font-family: var(--tt-font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.pr-surface__sep { color: var(--tt-text-muted); }
+.pr-surface__merge, .pr-surface__stale { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.pr-surface__merge p, .pr-surface__stale p { flex: 1 1 100%; margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.pr-surface__merge .tt-button, .pr-surface__stale .tt-button { min-height: 34px; padding: 0 14px; font-size: 14px; }
+.pr-surface__method { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.pr-surface__method select { min-width: 0; max-width: 100%; height: 32px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-code-bg); color: var(--tt-text); font: inherit; font-size: 13px; }
+.pr-surface__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pr-surface__stale { padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); }
+.pr-surface h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 8px; color: var(--tt-text); font-size: 13px; font-weight: 600; }
+.pr-surface__quiet { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+.pr-surface p.pr-surface__quiet { margin: 0; }
+.pr-surface__checks ul, .pr-surface__links { margin: 0; padding: 0; list-style: none; }
+.pr-surface__checks li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--tt-hairline); font-size: 13.5px; }
+.pr-surface__checks li > svg { color: var(--tt-text-muted); }
+.pr-surface__checks li[data-status='success'] > svg { color: var(--tt-success); }
+.pr-surface__checks li:is([data-status='failure'], [data-status='cancelled']) > svg { color: var(--tt-error-text); }
+.pr-surface__checks li:is([data-status='pending'], [data-status='action-required']) > svg { color: var(--tt-warning-text); }
+.pr-surface__check-name { min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+button.pr-surface__check-name { padding: 0; border: 0; background: transparent; font: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--tt-hairline); text-underline-offset: 3px; cursor: pointer; }
+button.pr-surface__check-name:hover { text-decoration-color: currentColor; }
+.pr-surface__check-status { color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.pr-surface__check-description { grid-column: 2 / -1; color: var(--tt-text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.pr-surface__body-text { color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pr-surface__empty { align-items: flex-start; gap: 10px; text-align: left; }
+.pr-surface__empty p { margin: 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
+.pr-surface__empty .files-link { display: inline-flex; align-items: center; gap: 6px; }
+.pr-surface__link { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--tt-hairline); }
+.pr-surface__link:first-child { border-top: 0; }
+.pr-surface__links + .pr-surface__links { border-top: 1px solid var(--tt-hairline); }
+.pr-surface__link-open { display: grid; flex: 1; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.pr-surface__link-open:hover { background: var(--tt-hover); }
+.pr-surface__link-open > svg { grid-area: icon; }
+.pr-surface__link-number { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pr-surface__link-title { grid-area: title; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__link-source { grid-area: source; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* Link pull request and Checkout pull request. */
+.pull-request-dialog { width: min(520px, 100%); display: grid; gap: 10px; }
+.pull-request-dialog h2 { margin: 0; }
+.pull-request-dialog form { display: grid; gap: 10px; }
+.pull-request-dialog label { color: var(--tt-text-2); font-size: 13px; }
+.pull-request-dialog input { width: 100%; box-sizing: border-box; height: 36px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-text); font: inherit; font-size: 14px; }
+.pull-request-dialog__resolved { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); }
+.pull-request-dialog__resolved p { margin: 0; overflow-wrap: anywhere; }
+.pull-request-dialog__resolved strong { color: var(--tt-text); font-weight: 550; }
+.pull-request-dialog__meta { color: var(--tt-text-muted); font-size: 12.5px; }
+.pull-request-dialog__meta bdi { font-family: var(--tt-font-mono); }
+.pull-request-dialog__meta span[data-state] { margin-left: 6px; color: var(--tt-text-2); }
+
+/* A narrow panel keeps the list's icon alone (toolsRail.css); its count then sits on the icon's corner. */
+@container tools-body (max-width: 639px) {
+  .tools-panel .pr-surface__linked { position: relative; }
+  .tools-panel .pr-surface__linked .pr-surface__count { position: absolute; top: 0; right: 0; min-width: 14px; padding: 0 3px; font-size: 10.5px; line-height: 14px; }
+}
+@container tools-body (max-width: 439px) {
+  .pr-surface__body { padding-inline: 12px; }
+}

@@ -7,6 +7,7 @@ import type { ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import type { GitRef, GitRefsPage } from '../../../src/shared/gitRefs'
 import type { GitStatus } from '../../../src/shared/gitStatus'
+import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
 
 const project = { id: 'project', title: 'App', path: 'C:/Users/zache/Projects/app' }
 const git: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
@@ -67,6 +68,7 @@ describe('branch toolbar logic', () => {
     expect(branchLabel(thread())).toBe('main')
     expect(branchLabel(thread({ worktree: { mode: 'shared', status: 'ready', path: project.path, git: { ...git, branch: null } } }))).toBe('Select ref')
     expect(branchLabel(thread({ worktree: { mode: 'independent', status: 'pending', baseBranch: 'develop' } }))).toBe('From origin/develop')
+    expect(branchLabel(thread({ worktree: { mode: 'independent', status: 'pending', branch: 'fix/greeting', checkoutBranch: true } }))).toBe('fix/greeting') // a pull request checked out into a worktree
     expect(branchLabel(thread({ worktree: { mode: 'independent', status: 'pending', baseBranch: 'develop', startFromOrigin: false } }))).toBe('From develop')
     expect(branchLabel(thread({ worktree: { mode: 'independent', status: 'pending', git: { ...git, branch: 'main' } } }))).toBe('From origin/main')
   })
@@ -231,14 +233,52 @@ describe('BranchToolbar', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('later'))
     expect(await screen.findByRole('status')).toHaveTextContent('Copied later.')
   })
-  it('shows the pull request badge with its title and opens it through the bridge', () => {
-    const openExternalLink = vi.fn(async () => ({ ok: true }))
-    mount(thread({ worktree: { mode: 'shared', status: 'ready', path: project.path, branch: 'feat/x', git: { ...git, branch: 'feat/x', pullRequest: { number: 12, title: 'Ship it', url: 'https://github.com/o/r/pull/12', state: 'open', draft: false } } } }), { openExternalLink })
-    const badge = screen.getByRole('button', { name: 'Open PR #12 - Open: Ship it' })
+  it('shows the pull request badge with its title and opens the Pull request surface in Tools', () => {
+    toolsPanelStore.setOpen(false)
+    mount(thread({ worktree: { mode: 'shared', status: 'ready', path: project.path, branch: 'feat/x', git: { ...git, branch: 'feat/x', pullRequest: { number: 12, title: 'Ship it', url: 'https://github.com/o/r/pull/12', state: 'open', draft: false } } } }))
+    const badge = screen.getByRole('button', { name: 'Open PR #12 - Open: Ship it in Tools' })
     expect(badge).toHaveTextContent('#12')
     expect(badge).toHaveAttribute('title', 'PR #12 - Open: Ship it')
     fireEvent.click(badge)
-    expect(openExternalLink).toHaveBeenCalledWith('https://github.com/o/r/pull/12')
+    expect(toolsPanelStore.getSnapshot()).toMatchObject({ open: true, surface: 'pull-request' })
+    toolsPanelStore.setOpen(false)
+  })
+  it('offers Checkout pull request for a pull request reference, and checks it out Local or into a Worktree', async () => {
+    const detail = { number: 42, url: 'https://github.com/o/r/pull/42', title: 'Fix the greeting', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'fix/greeting', crossRepository: false,
+      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
+    const gitPullRequest = vi.fn(async () => detail)
+    const done = { ...state([thread()]), notice: 'Checked out PR #42 on fix/greeting.' } as AgentState
+    const { command } = mount(thread(), { command: async () => done })
+    vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest } })
+    await openPicker()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search refs' }), { target: { value: '#42' } })
+    const option = await screen.findByRole('option', { name: /Checkout pull request/u })
+    expect(option).toHaveTextContent('42')
+    fireEvent.click(option)
+    const dialog = await screen.findByRole('dialog', { name: 'Checkout pull request' })
+    expect(within(dialog).getByRole('textbox', { name: 'Pull request' })).toHaveValue('42')
+    await within(dialog).findByText('Fix the greeting', {}, { timeout: 3_000 })
+    expect(gitPullRequest).toHaveBeenCalledWith({ threadId: 'thread-1', reference: '42' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Local' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'git-checkout-pull-request', threadId: 'thread-1', reference: 'https://github.com/o/r/pull/42', mode: 'local' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('status')).toHaveTextContent('Checked out PR #42 on fix/greeting.')
+  })
+  it('keeps Worktree for a thread that has not started, and says why otherwise', async () => {
+    const detail = { number: 42, url: 'https://github.com/o/r/pull/42', title: 'Fix', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'fix', crossRepository: false,
+      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
+    mount(thread({ nativeSessionStarted: true }))
+    vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest: vi.fn(async () => detail) } })
+    await openPicker()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search refs' }), { target: { value: 'gh pr checkout 42' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Search refs' }), { key: 'Enter' })
+    const dialog = await screen.findByRole('dialog', { name: 'Checkout pull request' })
+    await within(dialog).findByText('Fix', {}, { timeout: 3_000 })
+    expect(within(dialog).getByRole('button', { name: 'Worktree' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Local' })).toBeEnabled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveFocus()
   })
   it('answers its shortcuts only for the focused pane', async () => {
     const other = thread({ id: 'other', nativeSessionStarted: true, worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/other', branch: 'feat/other' } })

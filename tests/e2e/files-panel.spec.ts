@@ -108,7 +108,7 @@ test('browses real working folders in the shared tools panel, following focus or
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(page.getByRole('tab', { name: 'Files' })).toBeFocused()
-    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'Agents'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', workshop)
     const tree = panel.getByRole('tree')
     await expect(tree.getByRole('treeitem')).toHaveText(['assets', 'docs', 'src', 'build.log', 'data.bin', 'notes.txt', 'README.md'])
