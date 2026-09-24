@@ -52,51 +52,6 @@
 :is(.tools-panel, .terminal-pane) .files-problem p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 :is(.tools-panel, .terminal-pane) .files-problem--root { padding-top: 28px; }
 
-/* Changes: the changed files, and the selected file's diff beneath them (beside them once the panel is wide). */
-.changes-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.changes-surface > * { flex: none; }
-.changes-surface > .changes-list { flex: 1; }
-.changes-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
-.changes-summary__branch { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 12px; }
-.changes-list { min-height: 0; margin: 0; overflow: auto; padding: 6px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.changes-surface[data-diff] > .changes-list { flex: none; max-height: clamp(96px, 30%, 280px); border-bottom: 1px solid var(--tt-hairline); }
-/* In a short window the open diff is the work: the list keeps one row, the selected file, and scrolls for the rest. */
-@media (max-height: 640px) { .changes-surface[data-diff] > .changes-list { max-height: 31px; padding-block: 0; } }
-.changes-list__item { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; padding: 0 10px 0 8px; border: 1px solid transparent; border-radius: 7px; color: var(--tt-text-2); font-size: 14px; cursor: pointer; user-select: none; }
-.changes-list__item:hover { background: var(--tools-hover); color: var(--tt-text); }
-.changes-list__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
-.changes-list__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
-.changes-list__name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The folder and staging beside the name, as one muted run. The folder gives way first and keeps its end, where
-   the nearest folder name is. */
-.changes-list__meta { display: flex; flex: 0 1 auto; align-items: baseline; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
-.changes-list__sep, .changes-list__staging { flex: none; }
-.changes-list__folder { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1px solid var(--tt-border-faint); border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12px; font-weight: 600; line-height: 1; }
-.changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { border-color: color-mix(in srgb, var(--tt-success) 45%, transparent); color: var(--tt-success); }
-.changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { border-color: color-mix(in srgb, var(--tt-error) 45%, transparent); color: var(--tt-error-text); }
-.changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { border-color: color-mix(in srgb, var(--tt-warning) 40%, transparent); color: var(--tt-warning); }
-.changes-note { margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
-.changes-note code { font-family: var(--tt-font-mono); overflow-wrap: anywhere; }
-.changes-surface > .changes-diff { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
-.changes-diff .files-preview__title { align-items: center; }
-.changes-diff__body { flex: 1; min-height: 0; overflow: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.changes-diff__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
-.changes-diff__rows { min-width: max-content; padding: 6px 0 20px; font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.55; }
-.changes-line { display: grid; grid-template-columns: 4ch 4ch 2ch auto; column-gap: 8px; padding-right: 16px; color: var(--tt-code-text); }
-.changes-line__number { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
-.changes-line__number:first-child { padding-left: 8px; box-sizing: content-box; }
-.changes-line__sign { color: var(--tt-text-muted); user-select: none; }
-.changes-line__text { white-space: pre; tab-size: 4; }
-.changes-line[data-kind='add'] { background: color-mix(in srgb, var(--tt-success) 12%, transparent); }
-.changes-line[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
-.changes-line[data-kind='remove'] { background: color-mix(in srgb, var(--tt-error) 12%, transparent); }
-.changes-line[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
-.changes-line[data-kind='hunk'] { margin-top: 6px; background: var(--tt-accent-wash); color: var(--tt-text-2); }
-.changes-line[data-kind='hunk']:first-child { margin-top: 0; }
-.changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
-.changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 10px 16px 20px; color: var(--tt-text-muted); font-size: 13px; }
-
 /* Terminal: the thread's shells as tabs, one screen at a time. The screen takes the panel field so the
    xterm canvas and its padding read as one surface. */
 .terminal-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
@@ -175,14 +130,11 @@
 .tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
 
 .git-actions { grid-area: actions; border-bottom: 1px solid var(--tt-hairline); min-height: 0; max-height: 50%; overflow: auto; color: var(--tt-text-2); font-size: 14px; }
-.changes-surface[data-diff] .git-actions { max-height: 240px; }
-@media (max-height: 640px) { .changes-surface[data-diff] .git-actions { max-height: 150px; } }
 .git-actions__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 7px 16px; }
 .git-actions__drawer { display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 16px; }
 .git-actions__drawer p { margin: 0; overflow-wrap: anywhere; }
 .git-actions__drawer button { align-self: flex-start; text-align: left; }
 .git-actions__status { margin: 0; padding: 6px 16px; font-size: 14px; overflow-wrap: anywhere; }
-.changes-list__staging { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
 .checkpoint-list { display: flex; flex-direction: column; gap: 8px; padding: 0; margin: 0; list-style: none; }
 .checkpoint-file { border-bottom: 1px solid var(--tt-hairline); padding: 8px 0; }
 .checkpoint-file summary { cursor: pointer; overflow-wrap: anywhere; }
@@ -190,8 +142,6 @@
 .checkpoint-versions pre { max-height: 180px; overflow: auto; background: var(--tt-code-bg); font: 12px/1.5 var(--tt-font-mono); }
 .checkpoint-confirm { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0; }
 .checkpoint-confirm input { margin: 4px 0; }
-.changes-diff__scope { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 16px; color: var(--tt-text-2); font-size: 14px; border-bottom: 1px solid var(--tt-hairline); }
-.changes-diff__scope select { min-width: 0; max-width: 100%; padding: 4px; background: var(--tt-code-bg); color: var(--tt-text); border: 1px solid var(--tt-hairline); border-radius: 4px; font: inherit; }
 
 /* A publication review gets the available panel height; the form scrolls between its controls. */
 .git-pr { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); font-size: 14px; }

@@ -1187,6 +1187,8 @@ export class WorkspaceHost implements AgentHost {
         // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
+        // The Git action is Sotto's record, not the provider's: a provider update mid-action keeps its progress and its lock.
+        ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,

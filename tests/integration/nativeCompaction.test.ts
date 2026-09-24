@@ -75,6 +75,9 @@ it('Claude uses an advertised native slash command, requires a boundary, exclude
   await f.action('thread', { type: 'complete', text: '' })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.status).toBe('idle')
   await f.host.execute({ type: 'compact-thread', commandId: 'fail', threadId: 'thread' })
+  // As with the first compaction, the native answer comes after the child has the command: a real Claude
+  // cannot report on a /compact it has not received, and scripting it sooner races the adapter's write.
+  await expect.poll(async () => (await f.driver.requests()).filter(row => row.method === 'user' && (row.params?.frame as { message?: { content?: unknown } } | undefined)?.message?.content === '/compact').length).toBe(2)
   await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'status', status: null, compact_result: 'failed', compact_error: 'Not enough messages to compact.' } })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toMatchObject({ status: 'failed', error: 'Not enough messages to compact.' })
 })

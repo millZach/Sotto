@@ -27,6 +27,16 @@ Sotto builds T3's Git model piece for piece, in the order the plan's tickets giv
 
 The later tickets amend this record where they decide something rather than follow it: the Changes rebuild (#268) when staging goes, the actions (#265) when the remote command list grows, the settings (#271) when Proactive panels land.
 
+## Amendment: the Changes rebuild (#268)
+
+Staging has left the UI as decision 4 said: Stage file, Unstage file and the staged and unstaged comparisons are gone with their tests, and so are the Electron-side `commit`, `checkout` and `create-branch` actions, the branch list and the commit message draft that only the old drawers reached. Changes now reads only; its main-process side is the change list, one `review` read per comparison, Copy path and reveal. What #268 decided beyond T3:
+
+- **Working tree** diffs HEAD through a copy of the index with untracked files marked intent-to-add, as T3 does, so the user's index is never written. Untracked files larger than 512 KiB, or that are not regular files inside the folder, are listed without their text.
+- **Automatic** is T3's base order (the branch's `gh-merge-base`, the remote's default branch, `main`, `master`, the primary remote's copy preferred). With no base found, Branch changes says so and asks for one rather than guessing.
+- **Turns** are diffed in the renderer from the before and after text the checkpoint already hands to the Checkpoints drawer, with a line diff of Sotto's own (no new dependency). A turn's number is its place among the thread's checkpoints in that working copy, oldest first, because a checkpoint records no turn number of its own.
+- **The shortcut.** Bend 9 left the fallback chord open: it is `mod+shift+d`, taken only when the dictation hotkey holds `mod+d`, and dropped when it holds both. Focus inside a terminal keeps Ctrl+D for the shell.
+- Layout, wrapping, whitespace, the file tree and collapsed files are session state until #271 adds their settings.
+- Changes still reads Git from Electron main, so it reads only local threads; its base picker already uses the host-capable `git-refs` read. A remote thread's Changes stays unavailable until Changes itself moves to the host, which decision 8 leaves for later.
 ## Amendment: the settings (#271)
 
 T3's Git and diff settings land as `gitAutoPull`, `defaultMergeMethod` and `lastMergeMethod`, `diffLayout`, `diffHideWhitespace`, `diffFileState`, `gitWritingStyle` and `gitWritingInstructions`, `followPullRequestTemplates`, `autoSettleMergedThreads` and `proactivePanels`, each on the IPC patch allow-list. What Sotto decided rather than followed:
