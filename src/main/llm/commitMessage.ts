@@ -75,7 +75,7 @@ export function shapeCommitMessage(message: string | null): string | null {
   return body.length === 0 ? subject : `${subject}\n\n${body}`
 }
 
-/** What the Changes panel calls to draft a commit message, asking the thread's own provider; see `settingsGatedWriter` for the off switch. */
+/** What the Git action calls to draft a commit message the commit dialog left empty, asking the thread's own provider; see `settingsGatedWriter` for the off switch. */
 export function commitMessageWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,

@@ -2,6 +2,8 @@
 
 Status: requirements and final behavior defaults approved by Zach on 2026-09-12. The interview is complete. The approved [implementation plan](plans/2026-09-12-threads-workspace.md) has been published as 31 GitHub tickets in six dependency phases under the [Threads workspace milestone](https://github.com/millZach/Sotto/milestone/1). Publication and native dependencies are verified. Implementation has not begun as part of ticket publication.
 
+Amended September 24, 2026: the live token, cost and context figures near the composer asked for below were built and then removed. The owner took them out from under the composer on Threads and Chats while picking the Git layout for #127 (PR #301). Usage is still recorded, and the compaction recommendation still reads it.
+
 ## Confirmed direction
 
 - The target is a custom T3-like daily workspace, with Sotto branding, voice, memory and an independent coordinator. Existing provider/coordinator separation remains.

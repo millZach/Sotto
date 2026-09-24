@@ -47,6 +47,27 @@ const quick = (page: Page) => pane(page).locator('.git-action__quick')
 /** The visible label alone; the button's text also carries the reason it is disabled, for screen readers. */
 const label = (page: Page) => pane(page).locator('.git-action__label')
 const notice = (page: Page) => pane(page).locator('.git-action-notice')
+// The captures for the Git interface's verification note (#272). The run writes every one here, uncommitted; the note
+// copies the ones it cites to artifacts/git-interface/.
+const SHOTS = resolve(process.cwd(), 'artifacts/git-interface-run')
+/** One state at 1280x800 and the 820x560 minimum, dark and light: nothing scrolls sideways, and each is captured. */
+async function captureMatrix(launched: LaunchedSotto, name: string, ready?: () => Promise<void>): Promise<void> {
+  const { page } = launched
+  await mkdir(SHOTS, { recursive: true })
+  for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+    await resize(launched, width, height)
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      if (ready) await ready()
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.screenshot({ path: join(SHOTS, `${name}-${width}x${height}-${appearance}.png`), animations: 'disabled' })
+    }
+  }
+  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await resize(launched, 1280, 800)
+}
 async function createThread(page: Page, project: string, title: string): Promise<void> {
   await page.getByRole('button', { name: 'New thread', exact: true }).first().focus()
   await page.keyboard.press('Enter')
@@ -78,7 +99,7 @@ async function launch(folders: readonly (readonly [string, string])[]): Promise<
 }
 
 test('the Git action commits and pushes from the header, asks before the default branch, opens a pull request through gh, pulls, and initializes Git', async () => {
-  test.setTimeout(240_000)
+  test.setTimeout(420_000)
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-git-actions-'))
   const repository = join(directory, 'project'), remote = join(directory, 'owned-remote.git'), other = join(directory, 'other'), plain = join(directory, 'plain')
   const ghState = join(directory, 'gh-state.json')
@@ -126,9 +147,12 @@ test('the Git action commits and pushes from the header, asks before the default
     await expect(commitDialog.getByRole('list', { name: 'Changed files' })).toContainText('+1 −1')
     await expect(commitDialog.getByRole('textbox', { name: 'Commit message (optional)' })).toBeFocused()
     await page.keyboard.type('Make the greeting friendlier')
+    await captureMatrix(launched, 'commit-dialog', () => expect(commitDialog.getByRole('button', { name: 'Commit & push' })).toBeInViewport())
     await commitDialog.getByRole('button', { name: 'Commit & push' }).click()
     // Pushing from main asks first.
     const question = page.getByRole('dialog', { name: 'Push to default ref?' })
+    await expect(question.getByRole('button', { name: 'Abort' })).toBeFocused()
+    await captureMatrix(launched, 'default-branch-question', () => expect(question.getByRole('button', { name: 'Check out feature branch & continue' })).toBeInViewport())
     await expect(question.getByRole('button', { name: 'Abort' })).toBeFocused()
     await question.getByRole('button', { name: 'Push to main' }).click()
     await expect(notice(page)).toContainText(/Pushed [0-9a-f]{7} to origin\/main/u, { timeout: 60_000 })
@@ -136,6 +160,7 @@ test('the Git action commits and pushes from the header, asks before the default
     expect(git(repository, 'log', '-1', '--pretty=%s')).toBe('Make the greeting friendlier')
     expect(git(repository, '--git-dir', remote, 'rev-parse', 'refs/heads/main')).toBe(pushed)
     await expect(notice(page).getByRole('button', { name: 'Dismiss the Git notice' })).toBeVisible()
+    await captureMatrix(launched, 'pushed-notice', () => expect(notice(page)).toBeInViewport())
     await notice(page).getByRole('button', { name: 'Dismiss the Git notice' }).click()
     await expect(notice(page)).toHaveCount(0)
     await expect(pane(page).locator('.thread-workspace__error')).toHaveCount(0)
@@ -163,6 +188,23 @@ test('the Git action commits and pushes from the header, asks before the default
     // The branch's pull request reaches the toolbar's badge from the same gh, and View PR becomes the quick action.
     await expect(pane(page).getByRole('link', { name: /Open PR #74/u }).or(pane(page).getByRole('button', { name: /Open PR #74/u }))).toBeVisible({ timeout: 30_000 })
     await expect(label(page)).toHaveText('View PR')
+    await captureMatrix(launched, 'pull-request-created', () => expect(notice(page).getByRole('button', { name: 'View PR' })).toBeInViewport())
+    // The branch picker on the toolbar, open on the topic branch: locals then remotes, with their badges.
+    const search = page.getByLabel('Search refs')
+    const openPicker = async (): Promise<void> => {
+      if (!(await search.isVisible())) {
+        await quick(page).focus()
+        await page.keyboard.press('Control+Shift+G')
+      }
+      await expect(search).toBeFocused()
+      await expect(page.getByRole('listbox', { name: 'Refs', exact: true }).getByRole('option').first()).toBeVisible()
+      const bounds = await page.getByRole('group', { name: 'Branches', exact: true }).boundingBox()
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(await page.evaluate(() => innerWidth))
+    }
+    await captureMatrix(launched, 'branch-picker', openPicker)
+    await openPicker()
+    await page.keyboard.press('Escape')
+    await expect(search).toHaveCount(0)
 
     // The remote moves ahead of main: Pull, fast-forward only.
     git(other, 'pull', '-q', '--ff-only', 'origin', 'main')
