@@ -96,8 +96,6 @@
 .tools-chrome__button:disabled { opacity: .5; cursor: default; }
 .tools-chrome__button:disabled:hover { background: transparent; color: var(--tt-text-2); }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
-/* Checkpoints draws its toggle into the Changes line and the file's staging into the file head. */
-.tools-panel :is(.changes-summary__git, .changes-diff__stage) { display: contents; }
 .tools-panel .git-pr__toolbar.tools-chrome { flex-wrap: wrap; gap: 6px 8px; padding-block: 7px; }
 .tools-panel .git-pr__toolbar .tools-chrome__actions { flex-wrap: wrap; gap: 8px; }
 
@@ -171,45 +169,14 @@
 .tools-panel .files-preview__body { background: var(--tt-code-bg); }
 .tools-panel .files-preview__text { width: auto; min-width: 0; padding: 14px 16px 20px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tools-panel .files-preview__text[data-wrap='false'] { width: max-content; min-width: 100%; white-space: pre; overflow-wrap: normal; }
-.tools-panel .changes-summary__branch { color: var(--tt-text-muted); }
-.tools-panel .changes-list { padding: 6px 8px; }
-.tools-panel .changes-list__item { min-height: 30px; border-radius: 6px; }
-.tools-panel .changes-list__item[data-selected] { border-color: transparent; }
-/* A short list must hold the panel's 30px row plus its bottom border in full. */
-@media (max-height: 640px) {
-  .tools-panel .changes-surface[data-diff] > .changes-list { max-height: 31px; padding-block: 0; }
-}
-.tools-panel .changes-badge { border-color: transparent; background: transparent; }
-.tools-panel .changes-diff__rows { min-width: 0; line-height: 1.7; }
-.tools-panel .changes-line { grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; }
-.tools-panel .changes-line__text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tools-panel .changes-split__head { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
-.tools-panel .changes-split__head > span { padding: 5px 12px; }
-.tools-panel .changes-split__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.tools-panel .changes-split__cell { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
-.tools-panel .changes-split__cell:first-child { border-right: 1px solid var(--tt-hairline); }
-.tools-panel .changes-split__cell[data-kind='remove'] { background: color-mix(in srgb, var(--tt-error) 12%, transparent); }
-.tools-panel .changes-split__cell[data-kind='add'] { background: color-mix(in srgb, var(--tt-success) 12%, transparent); }
-.tools-panel .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
-.tools-panel .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
 
-/* Below the wide panel, Files and Changes stack the list above the detail so the code keeps the whole width.
+/* Below the wide panel, Files stacks the tree above the preview so the code keeps the whole width.
    A wide panel puts them side by side; the list takes a share, so filling the window widens the code. */
 @container tools-body (min-width: 640px) {
   .tools-panel .files-surface[data-preview] { display: grid; grid-template: 'notice notice' auto 'tree preview' minmax(0, 1fr) / clamp(180px, 30%, 240px) minmax(0, 1fr); }
   .tools-panel .files-surface[data-preview] > .files-notice { grid-area: notice; margin: 8px; }
   .tools-panel .files-surface[data-preview] > .files-tree { grid-area: tree; width: auto; max-height: none; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
   .tools-panel .files-surface[data-preview] > .files-preview { grid-area: preview; }
-  .tools-panel .changes-surface[data-diff] { display: grid; grid-template: 'summary summary' auto 'actions actions' auto 'list note' auto 'list diff' minmax(0, 1fr) / clamp(180px, 30%, 240px) minmax(0, 1fr); }
-  .tools-panel .changes-surface[data-diff] > .changes-summary { grid-area: summary; }
-  .tools-panel .changes-surface[data-diff] > .changes-list { grid-area: list; max-height: none; padding-block: 8px; border-right: 1px solid var(--tt-hairline); border-bottom: 0; }
-  .tools-panel .changes-surface[data-diff] > .changes-note { grid-area: note; }
-  .tools-panel .changes-surface[data-diff] > .changes-diff { grid-area: diff; }
-  /* Beside the diff a row is the name over one muted line: the folder, then staging. */
-  .tools-panel .changes-surface[data-diff] .changes-list__item { display: grid; grid-template-columns: minmax(0, 1fr) 20px; gap: 2px 4px; min-height: 40px; padding: 4px 8px; }
-  .tools-panel .changes-surface[data-diff] .changes-list__name { grid-area: 1 / 1; max-width: none; }
-  .tools-panel .changes-surface[data-diff] .changes-list__meta { grid-area: 2 / 1; }
-  .tools-panel .changes-surface[data-diff] .changes-list__item > .changes-badge { grid-area: 1 / 2 / span 2; }
 }
 @container tools-body (max-width: 639px) {
   .tools-panel .tools-chrome__button:has(.tools-chrome__button-label) { width: 30px; padding: 0; }
@@ -220,6 +187,5 @@
   .tools-panel .files-preview__head { flex-wrap: wrap; gap: 4px; padding-block: 5px; }
   .tools-panel .files-preview__actions { margin-left: auto; }
   .tools-panel .terminal-view { padding: 12px 6px 6px 12px; }
-  .tools-panel .changes-split__cell { grid-template-columns: 3ch 1ch minmax(0, 1fr); column-gap: 3px; }
   .tools-panel .tools-chrome { padding-left: 12px; }
 }

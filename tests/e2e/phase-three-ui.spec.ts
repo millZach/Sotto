@@ -131,14 +131,13 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await page.keyboard.press('ArrowRight')
     await expect(panel.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true')
 
-    const files = panel.getByRole('listbox', { name: 'Changed files' })
-    await expect(files.getByRole('option')).toHaveCount(3)
-    await expect(files).toContainText('app.ts')
-    await expect(files).toContainText('CHANGELOG.md')
-    await expect(files).toContainText('old.txt')
-    await files.getByRole('option', { name: /^app\.ts/u }).focus()
-    await page.keyboard.press('Enter')
-    const diff = panel.getByRole('region', { name: 'Changes in src/app.ts' })
+    // Changes is T3's diff: every changed file is a block of the working tree against HEAD.
+    const files = panel.locator('.changes-file')
+    await expect(files).toHaveCount(3)
+    await expect(panel.locator('.changes-files')).toContainText('app.ts')
+    await expect(panel.locator('.changes-files')).toContainText('CHANGELOG.md')
+    await expect(panel.locator('.changes-files')).toContainText('old.txt')
+    const diff = panel.getByRole('group', { name: 'src/app.ts' })
     await expect(diff).toContainText('return `Hello, ${name}!`')
     await expect(diff).toContainText("return 'Hello ' + name")
     await expectContained(page, ['.tools-panel', '.thread-workspace__compose'])
@@ -147,30 +146,31 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await shoot(page, 'changes-diff-1600', ['dark'])
     await resize(launched, 820, 560)
     await expect(diff).toBeVisible()
-    // In the short window the diff, not the file list, takes the panel; the selected file stays in view above it.
-    const heights = await panel.evaluate(element => ({ list: element.querySelector('.changes-list')!.getBoundingClientRect().height, diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height }))
-    expect(heights.diff).toBeGreaterThan(heights.list * 2)
-    const selectionContained = () => files.evaluate(list => {
-      const box = list.getBoundingClientRect()
-      const row = list.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
-      return row.top >= box.top - 1 && row.bottom <= box.bottom + 1
-    })
-    expect(await selectionContained()).toBe(true)
-    // Other rows remain reachable by keyboard in the one-row strip, without clipping their selection.
-    await files.getByRole('option', { name: /^app\.ts/u }).focus()
-    for (const key of ['Home', 'End'] as const) {
-      await page.keyboard.press(key)
-      await page.keyboard.press('Enter')
-      await expect.poll(selectionContained).toBe(true)
-    }
-    await files.getByRole('option', { name: /^app\.ts/u }).focus()
+    // In the short window the files, not the chrome above them, take the panel.
+    const heights = await panel.evaluate(element => ({ bar: element.querySelector('.changes-bar')!.getBoundingClientRect().height, diff: element.querySelector('.changes-files')!.getBoundingClientRect().height }))
+    expect(heights.diff).toBeGreaterThan(heights.bar * 2)
+    // The file tree walks the files from the keyboard, and picking one brings its block to the top of the list.
+    await panel.getByRole('button', { name: 'Show file tree' }).click()
+    const tree = panel.getByRole('listbox', { name: 'Files in this comparison' })
+    await expect(tree.getByRole('option')).toHaveCount(3)
+    const blockAtTop = (path: string) => panel.evaluate((element, path) => {
+      const box = element.querySelector('.changes-files')!.getBoundingClientRect()
+      const block = element.querySelector(`.changes-file[data-file-path="${path}"]`)!.getBoundingClientRect()
+      return Math.abs(block.top - box.top) <= 2 || box.bottom - block.bottom < 2
+    }, path)
+    await tree.getByRole('option').first().focus()
+    await page.keyboard.press('End')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => blockAtTop('src/app.ts')).toBe(true)
+    await expect(diff.getByRole('button', { name: 'Collapse src/app.ts' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(diff.getByRole('button', { name: 'Expand src/app.ts' })).toBeFocused()
+    await expect(diff).not.toContainText('return `Hello, ${name}!`')
     await page.keyboard.press('Enter')
     await expect(diff).toContainText('return `Hello, ${name}!`')
-    await expect.poll(selectionContained).toBe(true)
     await expectContained(page, ['.tools-panel'])
     await shoot(page, 'changes-diff-820x560')
-    await panel.getByRole('button', { name: 'Close diff' }).click()
-    await expect(files.getByRole('option', { name: /^app\.ts/u })).toBeFocused()
+    await panel.getByRole('button', { name: 'Hide file tree' }).click()
     await resize(launched, 1280, 860)
 
     // Terminal: a real shell in the working copy, typed into by keyboard.

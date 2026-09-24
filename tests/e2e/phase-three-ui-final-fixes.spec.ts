@@ -79,8 +79,7 @@ test('keeps working-folder actions accessible in the footer while an open diff h
     ].join('\n'))
 
     await panel.getByRole('tab', { name: 'Changes' }).click()
-    await panel.getByRole('listbox', { name: 'Changed files' }).getByRole('option', { name: /^app\.ts/u }).click()
-    const diff = panel.getByRole('region', { name: 'Changes in src/app.ts' })
+    const diff = panel.getByRole('group', { name: 'src/app.ts' })
     await expect(diff).toContainText('return `Goodbye, ${name}.`')
     const path = panel.locator('.tools-panel__path-text')
     const copy = panel.getByRole('button', { name: 'Copy working folder path' })
@@ -103,15 +102,15 @@ test('keeps working-folder actions accessible in the footer while an open diff h
     await expectFolderActions()
     const heights = await panel.evaluate(element => ({
       header: element.querySelector('.tools-chrome')!.getBoundingClientRect().height,
-      diff: element.querySelector('.changes-diff__body')!.getBoundingClientRect().height,
+      diff: element.querySelector('.changes-files')!.getBoundingClientRect().height,
       line: Number.parseFloat(getComputedStyle(element.querySelector('.changes-diff__rows')!).lineHeight),
-      list: element.querySelector('.changes-list')!.getBoundingClientRect().height,
+      bar: element.querySelector('.changes-bar')!.getBoundingClientRect().height,
     }))
     expect(heights.header).toBeLessThanOrEqual(46)
-    // The comparison selector and the file's head share this height. Keep six readable code rows
-    // and substantially more reading space than the selected-file strip.
+    // The line of chrome and the view bar share this height. Keep six readable code rows
+    // and substantially more reading space than the bar.
     expect(heights.diff).toBeGreaterThanOrEqual(heights.line * 6)
-    expect(heights.diff).toBeGreaterThan(heights.list * 2)
+    expect(heights.diff).toBeGreaterThan(heights.bar * 2)
     await shoot(page, 'tools-path-diff-820x560')
 
     await copy.focus()

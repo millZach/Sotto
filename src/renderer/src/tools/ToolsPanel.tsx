@@ -8,6 +8,9 @@ import type { TerminalBridge } from '../../../shared/terminal'
 import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
+import { chordMatches } from '../agents/branchToolbar.logic'
+import { useOptionalApp } from '../state/AppContext'
+import { changesChord, chordBelongsElsewhere } from './changesShortcut'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserTaskPreview } from './BrowserTaskPreview'
 import { BrowserSurface } from './BrowserSurface'
@@ -233,6 +236,32 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const [available, setAvailable] = useState<number | null>(null)
   const [status, showStatus] = useTransientStatus()
   const open = chrome.open
+  const app = useOptionalApp()
+  const appPlatform = app?.platform ?? 'win32'
+  const chord = changesChord(app?.settings?.hotkey, appPlatform)
+
+  // The Changes shortcut, T3's `mod+d` unless the dictation hotkey has it: it opens the panel on Changes, and closes
+  // the panel when Changes is what it shows. A terminal keeps its own Ctrl+D, and an open dialog keeps its keys.
+  useEffect(() => {
+    if (chord === null) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (event.defaultPrevented || event.repeat || !chordMatches(event, chord, appPlatform) || chordBelongsElsewhere(event.target)) return
+      if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return
+      event.preventDefault()
+      const current = store.getSnapshot()
+      if (current.open && current.surface === 'changes') {
+        if (aside.current?.contains(document.activeElement)) focusToggle()
+        store.requestToggleFocus()
+        store.setOpen(false)
+        return
+      }
+      store.setSurface('changes')
+      store.setOpen(true)
+      requestAnimationFrame(() => document.getElementById('tools-tab-changes')?.focus())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [chord, appPlatform, store])
 
   useLayoutEffect(() => {
     const parent = workspaceArea(aside.current)
@@ -343,7 +372,8 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
-  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} drafts={providerWritesShortText(thread.providerId)} />
+  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} drafts={providerWritesShortText(thread.providerId)}
+    onOpenFile={path => { store.files.showFile(bridge, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
