@@ -202,14 +202,16 @@ describe('the writing style of commit and pull request text', () => {
     const conventional = createWriter(async () => 'fix(theme): raise the contrast')
     await expect(commitMessageWriter(conventional.writer, () => ({ ...SETTINGS, gitWritingStyle: 'conventional' }))('thread-a', excerpt)).resolves.toBe('fix(theme): raise the contrast')
     expect(sent(conventional.side).instruction).toMatch(/Conventional Commits form, "type\(scope\): summary"/u)
+    // One rule, not two: the chosen style outranks the example, the recent subjects and AGENTS.md on style.
+    expect(sent(conventional.side).instruction).toMatch(/takes precedence over the example subject above, the recent commit subjects and anything the repository's AGENTS\.md says about commit message style/u)
     const pullRequest = createWriter(async () => 'feat: draft the form\n\nBody')
     await pullRequestTextWriter(pullRequest.writer, () => ({ ...SETTINGS, gitWritingStyle: 'conventional' }))('thread-a', branch)
-    expect(sent(pullRequest.side).instruction).toMatch(/title in the Conventional Commits form/u)
+    expect(sent(pullRequest.side).instruction).toMatch(/title in the Conventional Commits form[\s\S]*AGENTS\.md says about pull request style/u)
   })
   it('sends the user\'s own instructions in the instruction, never the material, and nothing when none were written', async () => {
     const custom = createWriter(async () => 'Raised the contrast')
     await commitMessageWriter(custom.writer, () => ({ ...SETTINGS, gitWritingStyle: 'custom', gitWritingInstructions: '  Subjects in the past tense.  ' }))('thread-a', excerpt)
-    expect(sent(custom.side).instruction).toMatch(/instructions for commit messages follow[\s\S]*\nSubjects in the past tense\.$/u)
+    expect(sent(custom.side).instruction).toMatch(/instructions for commit messages follow\. This takes precedence over[\s\S]*AGENTS\.md[\s\S]*\nSubjects in the past tense\.$/u)
     expect(sent(custom.side).material).not.toContain('past tense')
     const blank = createWriter(async () => 'Raise the contrast')
     await commitMessageWriter(blank.writer, () => ({ ...SETTINGS, gitWritingStyle: 'custom', gitWritingInstructions: '   ' }))('thread-a', excerpt)
