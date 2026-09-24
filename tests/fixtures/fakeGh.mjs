@@ -22,7 +22,8 @@ const find = selector => {
 const fail = message => { save(data); process.stderr.write(`${message}\n`); process.exit(1) }
 const view = pull => ({
   number: pull.number, title: pull.title, url: pull.url, body: pull.body ?? '', state: pull.state, isDraft: pull.isDraft ?? false, mergeable: pull.mergeable ?? 'MERGEABLE',
-  reviewDecision: pull.reviewDecision ?? 'REVIEW_REQUIRED', baseRefName: pull.baseRefName, headRefName: pull.headRefName, isCrossRepository: false,
+  // GitHub answers an empty decision where the repository requires no review.
+  reviewDecision: pull.reviewDecision ?? '', baseRefName: pull.baseRefName, headRefName: pull.headRefName, isCrossRepository: false,
   headRepositoryOwner: { login: 'sotto-fixture' }, autoMergeRequest: pull.autoMergeRequest ?? null, mergedAt: pull.mergedAt ?? null,
   statusCheckRollup: pull.checks ?? [{ __typename: 'CheckRun', name: 'Owned build', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: `${repository}/actions/runs/1` }],
 })
@@ -42,7 +43,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
   const pull = data.pulls.find(item => item.number === number)
   save(data)
   process.stdout.write(JSON.stringify({ data: { repository: { mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true,
-    pullRequest: pull ? { viewerCanUpdateBranch: true, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } } } : null } } }) + '\n')
+    pullRequest: pull ? { viewerCanUpdateBranch: true, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } }, latestOpinionatedReviews: { nodes: pull.reviews ?? [] } } : null } } }) + '\n')
 } else if (args[0] === 'repo' && args[1] === 'view') {
   save(data)
   process.stdout.write(JSON.stringify({ defaultBranchRef: { name: 'main' } }) + '\n')

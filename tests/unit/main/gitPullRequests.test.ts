@@ -24,9 +24,9 @@ function viewJson(change: Record<string, unknown> = {}): string {
     ...change,
   })
 }
-const comparisonJson = (change: { behindBy?: number; squash?: boolean; canUpdate?: boolean; autoMerge?: boolean } = {}) => JSON.stringify({ data: { repository: {
+const comparisonJson = (change: { behindBy?: number; squash?: boolean; canUpdate?: boolean; autoMerge?: boolean; reviews?: unknown[] } = {}) => JSON.stringify({ data: { repository: {
   autoMergeAllowed: change.autoMerge ?? false, mergeCommitAllowed: true, squashMergeAllowed: change.squash ?? true, rebaseMergeAllowed: false,
-  pullRequest: { viewerCanUpdateBranch: change.canUpdate ?? true, baseRef: { compare: { behindBy: change.behindBy ?? 2 } } },
+  pullRequest: { viewerCanUpdateBranch: change.canUpdate ?? true, baseRef: { compare: { behindBy: change.behindBy ?? 2 } }, latestOpinionatedReviews: { nodes: change.reviews ?? [] } },
 } } })
 
 /** A scripted gh: each call is recorded, and answered by the handler or refused the way gh refuses. */
@@ -55,7 +55,7 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const view = await service.view('C:/repo', '#74')
     expect(view).toMatchObject({ number: 74, url: URL_74, title: 'Make the greeting friendlier', body: 'Says hello.\n\n- One change', state: 'open', draft: false,
       baseBranch: 'main', headBranch: 'feat/greeting', crossRepository: false, reviewDecision: 'review_required', mergeable: 'mergeable',
-      mergeMethods: ['merge', 'squash'], autoMergeAllowed: false, autoMerge: null, behindBy: 2, canUpdateBranch: true })
+      mergeMethods: ['merge', 'squash'], autoMergeAllowed: false, autoMerge: null, behindBy: 2, canUpdateBranch: true, reviews: [], mergedAt: null })
     expect(view.checks).toEqual([
       { name: 'CI / build', status: 'success', url: 'https://github.com/sotto-fixture/owned/actions/runs/1', description: null },
       { name: 'CI / lint', status: 'failure', url: 'https://github.com/sotto-fixture/owned/actions/runs/2', description: null },
@@ -70,7 +70,22 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const { service } = scripted(args => reads(() => viewJson({ state: 'CLOSED', mergedAt: '2026-09-23T00:00:00Z', isDraft: true, mergeable: 'CONFLICTING', reviewDecision: 'CHANGES_REQUESTED', autoMergeRequest: { mergeMethod: 'SQUASH' }, isCrossRepository: true, headRepositoryOwner: { login: 'fork' } }), () => new Error('HTTP 403') as never)(args) ?? new Error('HTTP 403'))
     const view = await service.view('C:/repo', URL_74)
     expect(view).toMatchObject({ state: 'merged', draft: true, mergeable: 'conflicting', reviewDecision: 'changes_requested', autoMerge: { method: 'squash' }, crossRepository: true, autoMergeAllowed: true,
-      mergeMethods: ['merge', 'squash', 'rebase'], behindBy: null, canUpdateBranch: false })
+      mergeMethods: ['merge', 'squash', 'rebase'], behindBy: null, canUpdateBranch: false, reviews: [], mergedAt: '2026-09-23T00:00:00Z' })
+  })
+  it('names who approved or asked for changes, with GitHub links only, and leaves out comments and reviewers GitHub no longer names', async () => {
+    const reviews = [
+      { state: 'APPROVED', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-1', author: { login: 'mira' } },
+      { state: 'COMMENTED', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-2', author: { login: 'sam' } },
+      { state: 'CHANGES_REQUESTED', url: 'https://elsewhere.example/review', author: { login: 'ola' } },
+      { state: 'APPROVED', url: null, author: null },
+    ]
+    const { service, calls } = scripted(args => reads(() => viewJson(), () => comparisonJson({ reviews }))(args) ?? new Error('unexpected'))
+    const view = await service.view('C:/repo', '#74')
+    expect(view.reviews).toEqual([
+      { author: 'mira', state: 'approved', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-1' },
+      { author: 'ola', state: 'changes_requested', url: null },
+    ])
+    expect(calls[1]!.find(arg => arg.startsWith('query='))).toContain('latestOpinionatedReviews')
   })
   it('says what went wrong when gh cannot read it, and refuses a reference that is not a pull request', async () => {
     const { service } = scripted(() => new Error('To get started with GitHub CLI, please run:  gh auth login'))

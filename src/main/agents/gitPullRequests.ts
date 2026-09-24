@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   GITHUB_PULL_REQUEST_URL, parsePullRequestReference,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod,
+  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
@@ -13,14 +13,18 @@ export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'>
 
 const DETAIL_FIELDS = 'number,title,url,body,state,isDraft,mergeable,reviewDecision,statusCheckRollup,baseRefName,headRefName,isCrossRepository,headRepositoryOwner,autoMergeRequest,mergedAt'
 /**
- * The repository's merge methods and how far the head is behind its base, in one GraphQL read, the way T3
- * asks: `mergeStateStatus` says BEHIND only where the repository requires up-to-date branches, so the commits
- * are counted instead, the same number GitHub's own out-of-date banner shows.
+ * The repository's merge methods, how far the head is behind its base and each reviewer's latest review that
+ * took a side, in one GraphQL read, the way T3 asks: `mergeStateStatus` says BEHIND only where the repository
+ * requires up-to-date branches, so the commits are counted instead, the same number GitHub's own out-of-date
+ * banner shows. The reviews name who approved or asked for changes, and link to the review itself.
  */
 const COMPARISON_QUERY = `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed
-    pullRequest(number: $number) { viewerCanUpdateBranch baseRef { compare(headRef: $headRef) { behindBy } } }
+    pullRequest(number: $number) {
+      viewerCanUpdateBranch baseRef { compare(headRef: $headRef) { behindBy } }
+      latestOpinionatedReviews(last: 50) { nodes { state url author { login } } }
+    }
   }
 }`
 
@@ -39,7 +43,10 @@ const rawViewSchema = z.object({
 })
 const rawComparisonSchema = z.object({ data: z.object({ repository: z.object({
   mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
-  pullRequest: loose(z.object({ viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })) })),
+  pullRequest: loose(z.object({
+    viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
+    latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
+  })),
 }).nullable() }) })
 
 /** What each press did, said the way T3 says it once it has happened. */
@@ -97,6 +104,15 @@ function checkOf(raw: z.infer<typeof rawCheckSchema>): GitPullRequestCheck {
   const name = !isStatus && raw.workflowName?.trim() && raw.workflowName.trim() !== own ? `${raw.workflowName.trim()} / ${own}` : own
   const url = (isStatus ? raw.targetUrl : raw.detailsUrl) ?? null
   return { name: cut(name, 500), status, url: url && /^https:\/\//iu.test(url) ? cut(url, 2_048) : null, description: raw.description ? cut(raw.description, 2_000) : null }
+}
+/** The reviews that took a side, with a GitHub link only; a reviewer GitHub no longer names (a deleted account) is left out. */
+function reviewsOf(nodes: ReadonlyArray<{ state?: string | null | undefined; url?: string | null | undefined; author?: { login?: string | null | undefined } | null | undefined } | null | undefined>): GitPullRequestReview[] {
+  return nodes.flatMap((node): GitPullRequestReview[] => {
+    const state = node?.state?.toUpperCase(), author = node?.author?.login?.trim()
+    if (!author || (state !== 'APPROVED' && state !== 'CHANGES_REQUESTED')) return []
+    const url = node?.url && /^https:\/\/github\.com\//iu.test(node.url) ? cut(node.url, 2_048) : null
+    return [{ author: cut(author, 100), state: state === 'APPROVED' ? 'approved' : 'changes_requested', url }]
+  }).slice(-50)
 }
 const methodOf = (value: string | null | undefined): GitPullRequestMergeMethod | null => {
   const upper = value?.trim().toUpperCase()
@@ -164,15 +180,17 @@ export class GitPullRequests {
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,
       mergeable: mergeable === 'MERGEABLE' ? 'mergeable' : mergeable === 'CONFLICTING' ? 'conflicting' : 'unknown',
       checks: (raw.statusCheckRollup ?? []).slice(0, 200).map(checkOf),
+      reviews: comparison.reviews,
       mergeMethods: comparison.mergeMethods, autoMergeAllowed: comparison.autoMergeAllowed,
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,
+      mergedAt: raw.mergedAt ? cut(raw.mergedAt, 64) : null,
       behindBy: comparison.behindBy, canUpdateBranch: comparison.canUpdateBranch,
     }
   }
 
-  /** The GraphQL half of the read; a repository GitHub will not compare leaves every method offered and the distance unknown. */
-  private async comparison(cwd: string, address: { owner: string; name: string; number: number }, headRef: string): Promise<{ mergeMethods: GitPullRequestMergeMethod[]; autoMergeAllowed: boolean; behindBy: number | null; canUpdateBranch: boolean }> {
-    const unknown = { mergeMethods: ['merge', 'squash', 'rebase'] as GitPullRequestMergeMethod[], autoMergeAllowed: true, behindBy: null, canUpdateBranch: false }
+  /** The GraphQL half of the read; a repository GitHub will not compare leaves every method offered, the distance unknown and no reviews named. */
+  private async comparison(cwd: string, address: { owner: string; name: string; number: number }, headRef: string): Promise<{ mergeMethods: GitPullRequestMergeMethod[]; autoMergeAllowed: boolean; behindBy: number | null; canUpdateBranch: boolean; reviews: GitPullRequestReview[] }> {
+    const unknown = { mergeMethods: ['merge', 'squash', 'rebase'] as GitPullRequestMergeMethod[], autoMergeAllowed: true, behindBy: null, canUpdateBranch: false, reviews: [] }
     if (!headRef) return unknown
     try {
       const raw = rawComparisonSchema.parse(JSON.parse(await this.gh(cwd, ['api', 'graphql', '-f', `query=${COMPARISON_QUERY}`, '-f', `owner=${address.owner}`, '-f', `name=${address.name}`, '-F', `number=${address.number}`, '-f', `headRef=${headRef}`])))
@@ -182,7 +200,8 @@ export class GitPullRequests {
       if (repository.mergeCommitAllowed !== false) allowed.push('merge')
       if (repository.squashMergeAllowed !== false) allowed.push('squash')
       if (repository.rebaseMergeAllowed !== false) allowed.push('rebase')
-      return { mergeMethods: allowed, autoMergeAllowed: repository.autoMergeAllowed !== false, behindBy: repository.pullRequest?.baseRef?.compare?.behindBy ?? null, canUpdateBranch: repository.pullRequest?.viewerCanUpdateBranch === true }
+      return { mergeMethods: allowed, autoMergeAllowed: repository.autoMergeAllowed !== false, behindBy: repository.pullRequest?.baseRef?.compare?.behindBy ?? null,
+        canUpdateBranch: repository.pullRequest?.viewerCanUpdateBranch === true, reviews: reviewsOf(repository.pullRequest?.latestOpinionatedReviews?.nodes ?? []) }
     } catch { return unknown }
   }
 

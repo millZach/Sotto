@@ -15,6 +15,7 @@ export type GitPullRequestAction = z.infer<typeof gitPullRequestActionSchema>
 /** A GitHub pull request URL, the only kind Sotto links or acts on (ADR-0027: GitHub only). */
 export const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/\s?#]+)\/([^/\s?#]+)\/pull\/(\d+)(?:[/?#][^\s]*)?$/iu
 export const gitPullRequestUrlSchema = z.string().max(2_048).regex(GITHUB_PULL_REQUEST_URL, 'Use a GitHub pull request URL.')
+const gitHubUrlSchema = z.string().max(2_048).regex(/^https:\/\/github\.com\//iu)
 
 /**
  * A pull request linked to a thread, kept on the thread's record so every client lists the same ones: the
@@ -44,10 +45,21 @@ export const gitPullRequestCheckSchema = z.object({
 export type GitPullRequestCheck = z.infer<typeof gitPullRequestCheckSchema>
 
 /**
- * What the Pull request surface shows, read from GitHub through `gh` when the surface opens or is refreshed:
- * the description, each check, the review decision, whether it merges cleanly, the merge methods the
- * repository allows, an armed auto-merge, and how far the branch is behind its base. Never pushed with the
- * state; the record carries only the link.
+ * A reviewer's latest review that took a side, approving or asking for changes, as GitHub keeps one per
+ * reviewer: who, which side, and where the review is on GitHub. Comments that took no side are not listed.
+ */
+export const gitPullRequestReviewSchema = z.object({
+  author: z.string().max(100),
+  state: z.enum(['approved', 'changes_requested']),
+  url: gitHubUrlSchema.nullable(),
+}).strict()
+export type GitPullRequestReview = z.infer<typeof gitPullRequestReviewSchema>
+
+/**
+ * What the Pull request surface's merge checklist is read from, through `gh` when the surface opens or is
+ * refreshed: each check, the review decision and the reviews behind it, whether it merges cleanly, how far the
+ * branch is behind its base, the merge methods the repository allows, an armed auto-merge, and the
+ * description. Never pushed with the state; the record carries only the link.
  */
 export const gitPullRequestDetailSchema = z.object({
   number: z.number().int().positive(),
@@ -60,7 +72,10 @@ export const gitPullRequestDetailSchema = z.object({
   headBranch: z.string().max(512),
   /** The pull request comes from another repository (a fork). */
   crossRepository: z.boolean(),
+  /** GitHub's decision; null where the repository does not require a review. */
   reviewDecision: z.enum(['approved', 'changes_requested', 'review_required']).nullable(),
+  /** Each reviewer's latest approving or changes-requested review, oldest first; empty when GitHub did not say. */
+  reviews: z.array(gitPullRequestReviewSchema).max(50),
   mergeable: z.enum(['mergeable', 'conflicting', 'unknown']),
   checks: z.array(gitPullRequestCheckSchema).max(200),
   /** The methods this repository allows; all three when GitHub did not say, and a press is left to GitHub to refuse. */
@@ -69,6 +84,8 @@ export const gitPullRequestDetailSchema = z.object({
   autoMergeAllowed: z.boolean(),
   /** An armed auto-merge and the method it will use, or null when none is armed. */
   autoMerge: z.object({ method: gitPullRequestMergeMethodSchema.nullable() }).strict().nullable(),
+  /** When it merged, as GitHub records it; null until it has. */
+  mergedAt: z.string().max(64).nullable(),
   /** Commits the base has that the head lacks; null when GitHub could not compare them. */
   behindBy: z.number().int().nonnegative().nullable(),
   /** Whether this viewer may update the branch from its base. */
