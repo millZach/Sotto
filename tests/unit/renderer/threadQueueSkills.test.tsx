@@ -92,6 +92,29 @@ describe('follow-up queue in the Threads composer', () => {
     expect(prompt()).toHaveValue('Keep this newer draft')
   })
 
+  it('returns focus to the prompt when the last queued message is steered and the queue empties after main’s reply', async () => {
+    const { live, prompt } = mount(manualState({ running: true, capabilities: { steer: true } }))
+    type(prompt(), 'Use the simpler approach')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.state.followups).toHaveLength(1))
+    type(prompt(), 'Keep this newer draft')
+    // Main confirms the steer before the window draws the emptied queue, as when a state published while the
+    // command ran lands after its reply.
+    const answer = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'steer-followup' ? { ...live.state, followups: [] } : answer(request))
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    const steer = within(queue).getByRole('button', { name: 'Steer now' })
+    steer.focus()
+    fireEvent.click(steer)
+    await waitFor(() => expect(requests(live, 'steer-followup')).toHaveLength(1))
+    await act(async () => { await Promise.resolve() })
+    expect(queue).toBeInTheDocument()
+    act(() => { live.publish({ followups: [] }) })
+    expect(screen.queryByRole('region', { name: 'Queued messages' })).not.toBeInTheDocument()
+    expect(prompt()).toHaveFocus()
+    expect(prompt()).toHaveValue('Keep this newer draft')
+  })
+
   it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
     const { live, prompt } = mount(manualState({ running: true }), { holdQueue: true })
     type(prompt(), 'Then run the visual gate')

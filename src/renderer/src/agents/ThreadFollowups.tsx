@@ -17,6 +17,9 @@ export function followupsFor(state: AgentState, threadId: string): AgentFollowup
   return state.followups?.filter(item => item.threadId === threadId) ?? []
 }
 
+/** A focus move that follows a change made in this window alone, with no reply from main to wait for. */
+const shownNow = (): boolean => true
+
 /** Only an item Sotto has not started sending may change; a dispatching or unconfirmed one might already be with the provider. */
 function followupEditable(item: AgentFollowup): boolean {
   return item.status === 'queued' || item.status === 'paused' || item.status === 'failed'
@@ -164,8 +167,13 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
-  /** Where keyboard focus goes once the queue re-renders after a change that removed the focused control. */
-  const refocus = useRef<(() => HTMLElement | null | undefined) | null>(null)
+  /**
+   * Where keyboard focus goes once the queue re-renders after a change that removed the focused control, and the
+   * change it waits to see. Main's reply can confirm a change before this window draws it (a state published while
+   * the command ran lands after the reply): focus placed on the queue as it was would be dropped to the page when
+   * the queue that follows unmounts it.
+   */
+  const refocus = useRef<{ readonly target: () => HTMLElement | null | undefined; readonly shown: (state: AgentState) => boolean } | null>(null)
   /** Items already shown once; only a newly queued one plays the arrival, not rows revealed by opening the list. */
   const shown = useRef<Set<string> | null>(null)
   /** The message the user just queued, named for a moment so a new row is never confirmed by a count alone. */
@@ -195,10 +203,10 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   }, [arrival])
   useLayoutEffect(() => {
     if (section.current?.parentElement) host.current = section.current.parentElement
-    const target = refocus.current
-    if (target === null) return
+    const pending = refocus.current
+    if (pending === null || !pending.shown(state)) return
     refocus.current = null
-    const element = target() ?? host.current?.querySelector<HTMLElement>('textarea:not(:disabled)')
+    const element = pending.target() ?? host.current?.querySelector<HTMLElement>('textarea:not(:disabled)')
     element?.focus()
   })
   // A dispatched follow-up already in the history is told by the transcript.
@@ -223,12 +231,13 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')
 
-  const run = (itemId: string, request: Parameters<Command>[0], shows: (state: AgentState) => boolean, fallback: string, after?: () => void): void => {
+  /** `after` runs once main confirms the change, and is handed the check that tells when the queue on screen shows it. */
+  const run = (itemId: string, request: Parameters<Command>[0], shows: (state: AgentState) => boolean, fallback: string, after?: (shown: (state: AgentState) => boolean) => void): void => {
     setBusy({ itemId, error: null })
     void command(request).then(result => {
       const error = confirmation(result, shows, fallback)
       setBusy(error === null ? null : { itemId, error })
-      if (error === null) after?.()
+      if (error === null) after?.(shows)
     }, () => setBusy({ itemId, error: fallback }))
   }
   const move = (item: AgentFollowup, offset: -1 | 1): void => {
@@ -240,22 +249,22 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     run(item.id, { type: 'reorder-followups', threadId, itemIds: order },
       next => followupsFor(next, threadId).map(candidate => candidate.id).join(' ') === order.join(' '), 'Sotto could not confirm the new order. Check the queue before changing it again.',
       // At the end of the list the pressed arrow has nowhere to go; the other one keeps the item in hand.
-      () => { refocus.current = () => to === 0 || to === order.length - 1 ? tool(item.id, offset < 0 ? 'down' : 'up') : tool(item.id, offset < 0 ? 'up' : 'down') })
+      shown => { refocus.current = { target: () => to === 0 || to === order.length - 1 ? tool(item.id, offset < 0 ? 'down' : 'up') : tool(item.id, offset < 0 ? 'up' : 'down'), shown } })
   }
   const remove = (item: AgentFollowup): void => {
     const index = visible.indexOf(item)
     run(item.id, { type: 'remove-followup', threadId, itemId: item.id },
       next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id), 'Sotto could not confirm this was removed. Check the queue before trying again.',
-      () => {
+      shown => {
         const rest = visible.filter(candidate => candidate.id !== item.id && followupEditable(candidate))
         const neighbour = rest.find(candidate => visible.indexOf(candidate) > index) ?? rest.at(-1)
-        refocus.current = () => (neighbour ? tool(neighbour.id, 'remove') : null) ?? toggle()
+        refocus.current = { target: () => (neighbour ? tool(neighbour.id, 'remove') : null) ?? toggle(), shown }
       })
   }
-  const closeEditor = (): void => {
+  const closeEditor = (shown: (state: AgentState) => boolean = shownNow): void => {
     const itemId = editing?.id
     setEditing(null); setBusy(null)
-    refocus.current = () => (itemId ? tool(itemId, 'edit') : null) ?? toggle()
+    refocus.current = { target: () => (itemId ? tool(itemId, 'edit') : null) ?? toggle(), shown }
   }
 
   // Collapsed, the queue still lists what needs the user: an unconfirmed or refused item, or an admission that did not go through.
@@ -285,10 +294,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       {resumable ? <Button variant="secondary" disabled={!row.connected} onClick={() => {
         setQueueError(null)
         const failed = 'Sotto could not confirm the queue resumed.'
+        const resumed = (next: AgentState): boolean => !followupsFor(next, threadId).some(candidate => candidate.status === 'paused' || candidate.status === 'failed')
         void command({ type: 'resume-followups', threadId }).then(result => {
-          const error = confirmation(result, next => !followupsFor(next, threadId).some(candidate => candidate.status === 'paused' || candidate.status === 'failed'), failed)
+          const error = confirmation(result, resumed, failed)
           setQueueError(error)
-          if (error === null) refocus.current = toggle
+          if (error === null) refocus.current = { target: toggle, shown: resumed }
         }, () => setQueueError(failed))
       }}>Resume queue</Button> : null}
     </header>
@@ -315,7 +325,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
               run(item.id, { type: 'steer-followup', threadId, itemId: item.id },
                 next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id),
                 'Sotto could not confirm this steer. Check the message before trying again.',
-                () => { refocus.current = toggle })
+                shown => { refocus.current = { target: toggle, shown } })
             }}>Steer now</Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
               <Button variant="ghost" iconOnly data-tool="up" aria-label={`Move queued message ${index + 1} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
@@ -332,10 +342,10 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       })}
       {listedAdmissions.map(submission => <AdmissionRow key={submission.draftId} submission={submission} state={state} restored={draft.draftId === submission.restoredAs} replaces={hasDraftContent(draft)}
         onRetry={() => onRetryAdmission(submission.draftId)} onRestore={() => store.restore(threadId, submission.draftId)}
-        onDismiss={() => { store.dismiss(threadId, submission.draftId); refocus.current = toggle }} />)}
+        onDismiss={() => { store.dismiss(threadId, submission.draftId); refocus.current = { target: toggle, shown: shownNow } }} />)}
     </ol> : null}
     {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)}
-      saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={closeEditor}
+      saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={() => closeEditor()}
       onSave={text => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: retainSkillReferences(text, editing.skills ?? [], skillSigils(row.providerId)), ...(editing.files?.length ? { files: retainFileReferences(text, editing.files) } : {}) },
         next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), 'Sotto could not confirm this edit. Check the queue before editing again.', closeEditor)} />
       : null}
