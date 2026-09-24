@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
@@ -93,6 +93,10 @@ describe('the merge checklist, read from the pull request', () => {
     ])
     // A comparison GitHub could not make does not hold the merge back: nothing here could fix it, and GitHub decides on the press.
     expect(mergeReady(detail(), noted)).toBe(true)
+    // The count says so beside "Ready to merge", rather than seeming to disagree with it.
+    expect(checklistCount(noted)).toBe('4 of 5 done, 1 does not block')
+    expect(checklistCount(checklist(detail()))).toBe('5 of 5 done')
+    expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
     // Where no review is required, a request for changes still holds it back.
     expect(checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))[1]).toMatchObject({ tone: 'failed', why: 'ola asked for changes' })
   })
@@ -360,6 +364,13 @@ describe('the Pull request surface', () => {
     answer!(detail())
     await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
     expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
+  })
+  it('shows the count in the done colour beside Ready to merge, a line that does not block included', async () => {
+    mount({ detail: detail({ behindBy: null }) })
+    await opened()
+    const heading = screen.getByRole('heading', { name: 'Ready to merge 4 of 5 done, 1 does not block' })
+    expect(heading.querySelector('small')).toHaveAttribute('data-tone', 'done')
+    expect(mergeButton()).not.toHaveAttribute('aria-disabled')
   })
   it('reads a paired host on an earlier build, which names no reviewer and no merge time', () => {
     const earlier: Record<string, unknown> = { ...detail() }

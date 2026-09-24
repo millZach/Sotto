@@ -12,7 +12,7 @@ import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import {
-  canAutoMerge, checklist, checklistHeading, confirmationFor, holdsBack, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
   resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -144,7 +144,6 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const open = detail.state === 'open'
   const autoMerge = canAutoMerge(detail)
   const behind = (detail.behindBy ?? 0) > 0
-  const done = lines.filter(line => line.tone === 'done').length
   const clear = !lines.some(holdsBack)
   const StateIcon = stateIcon(detail)
   const confirmation = confirming ? confirmationFor(confirming, detail.number, selected, detail.baseBranch) : null
@@ -188,7 +187,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     </div>
     {noticeLine}
     <div className="pr-surface__body">
-      <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={done === lines.length ? 'done' : undefined}>{done} of {lines.length} done</small></h3>
+      <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={clear ? 'done' : undefined}>{checklistCount(lines)}</small></h3>
       <ol className="pr-surface__lines" aria-label="Merge checklist">{lines.map(line => {
         const Icon = LINE_ICONS[line.tone]
         return <li key={line.id} className="pr-surface__line" data-tone={line.tone}>

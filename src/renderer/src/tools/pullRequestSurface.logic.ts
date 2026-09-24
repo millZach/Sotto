@@ -114,6 +114,15 @@ export function canAutoMerge(detail: Pick<GitPullRequestDetail, 'state' | 'draft
 export function checklistHeading(detail: Pick<GitPullRequestDetail, 'state'>, clear: boolean): string {
   return detail.state !== 'open' ? 'Merge checklist' : clear ? 'Ready to merge' : 'Before merging'
 }
+/**
+ * The count beside the heading, agreeing with it: the lines done, and any that are not done but do not hold the
+ * merge back (a base GitHub could not compare), so "Ready to merge" never sits beside a count that seems to disagree.
+ */
+export function checklistCount(lines: readonly ChecklistLine[]): string {
+  const done = lines.filter(line => line.tone === 'done').length
+  const aside = lines.filter(line => line.tone !== 'done' && !holdsBack(line)).length
+  return `${done} of ${lines.length} done${aside > 0 ? `, ${aside} ${plural(aside, 'does', 'do')} not block` : ''}`
+}
 export function linesLeft(lines: readonly ChecklistLine[]): string {
   const left = lines.filter(holdsBack).length
   return `${left} ${plural(left, 'line', 'lines')} left before this can merge.`
