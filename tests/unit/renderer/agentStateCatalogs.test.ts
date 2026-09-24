@@ -78,22 +78,23 @@ describe('wrapAgentBridge', () => {
     expect(get).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the newest broadcast that arrives during recovery and replays it once recovery succeeds', async () => {
+  it('never delivers a broadcast kept during a successful recovery after the newer answer, but keeps its catalog', async () => {
     let resolveGet: (value: AgentState) => void = () => undefined
     const { bridge, emit, get } = fakeBridge(() => new Promise<AgentState>(resolve => { resolveGet = resolve }))
     const delivered: AgentState[] = []
     wrapAgentBridge(bridge).onState(state => delivered.push(state))
     emit(broadcast({ revision: 3, omitted: true }))
-    // A second, newer broadcast arrives while the recovery is still in flight.
-    emit(broadcast({ revision: 3, omitted: true }))
+    // Sent before main answered get(), so older than the answer; it carries a changed catalog in full.
+    emit(broadcast({ revision: 4, models: [model('gpt-5.1')] }))
     expect(delivered).toHaveLength(0)
-    expect(get).toHaveBeenCalledTimes(1)
-    resolveGet(fullState([model('gpt-5')]))
-    // The recovery's own answer lands first, then the kept broadcast gets its turn, resolved from the
-    // cache the recovery just seeded, so nothing further is fetched for it.
-    await vi.waitFor(() => expect(delivered).toHaveLength(2))
-    expect(delivered[0]!.host.models).toEqual([model('gpt-5')])
-    expect(delivered[1]!.host.models).toEqual([model('gpt-5')])
+    resolveGet(fullState([model('gpt-5.1')]))
+    await vi.waitFor(() => expect(delivered).toHaveLength(1))
+    await Promise.resolve()
+    expect(delivered).toHaveLength(1)
+    // Its catalog was kept: the next repeat of revision 4 resolves without another fetch.
+    emit(broadcast({ revision: 4, omitted: true }))
+    expect(delivered).toHaveLength(2)
+    expect(delivered[1]!.host.models).toEqual([model('gpt-5.1')])
     expect(get).toHaveBeenCalledTimes(1)
   })
 

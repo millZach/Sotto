@@ -37,11 +37,11 @@ of what omitting it was for. Reassembly now lives in the page: `wrapAgentBridge`
 where `AgentContext` and the widget obtain them, and the preload forwards the broadcast unparsed. Only the
 small `{ revision, omitted: true }` marker crosses `contextBridge` when nothing changed.
 
-A broadcast that arrives while a recovery (`bridge.get()`) is in flight is now kept, not dropped: the
-newest one replaces any earlier one waiting, and once the recovery settles — win or lose — the kept
-broadcast gets the same chance to resolve that any other broadcast gets, from the cache the recovery just
-seeded or a recovery of its own. Nothing but a fresh broadcast ever starts a recovery, so a persistently
-failing fetch is retried at most once per broadcast.
+A broadcast that arrives while a recovery (`bridge.get()`) is in flight is kept, the newest replacing
+any earlier one. Main answers the fetch in order with its broadcasts, so a kept broadcast is older than
+the answer: after a successful recovery it is not delivered, and only lends the cache a catalog it carried
+in full. After a failed recovery it gets its own attempt. Nothing but a broadcast ever starts a recovery,
+so a persistently failing fetch is retried at most once per broadcast.
 
 `host.models` and the selected host's own `clientHosts[]` entry are keyed apart in both the broadcaster and
 the page's cache — a `host:`/`client:` prefix rather than the host ID alone — so a future divergence
@@ -50,7 +50,7 @@ omitted on every publish.
 
 `tests/unit/main/agentStateBroadcast.test.ts` and `tests/unit/renderer/agentStateCatalogs.test.ts` cover the
 omission, the recovery when a window is missing the revision a broadcast names (including a broadcast kept
-and replayed during recovery, on both a successful and a failed fetch), and both `host.models` and
+during recovery, never delivered after a successful fetch and retried after a failed one), and both `host.models` and
 `host.clientHosts[].models` apart from each other. `tests/unit/preload/agentStateForwarding.test.ts` covers
 the preload forwarding a broadcast unparsed.
 

@@ -50,12 +50,11 @@ export function wrapAgentBridge(bridge: AgentBridge): AgentBridge {
  * the whole state instead of showing no models, and seeds the cache with what comes back so an immediate
  * repeat of that same omission needs no second fetch.
  *
- * A broadcast that arrives while a recovery is already in flight is kept, not dropped: the newest one
- * replaces any earlier one waiting, and once that recovery settles — whether it resolved the state or
- * failed — the kept broadcast gets the same chance to resolve that any other broadcast gets: from the
- * cache the recovery just seeded, or a recovery of its own. Nothing but a fresh broadcast ever starts a
- * recovery, so a `get()` that keeps failing is retried at most once per broadcast, never on a timer of
- * its own.
+ * A broadcast that arrives while a recovery is in flight is kept, the newest replacing any earlier one.
+ * When the recovery succeeds, its answer is newer than anything kept, so the kept broadcast only lends
+ * the cache any catalog it carried in full. When the recovery fails, the kept broadcast gets its own
+ * attempt: from the cache, or a recovery of its own. Nothing but a broadcast ever starts a recovery, so
+ * a `get()` that keeps failing is retried at most once per broadcast, never on a timer.
  */
 function createReassembler(bridge: Pick<AgentBridge, 'get'>, listener: (state: AgentState) => void): (raw: unknown) => void {
   const catalogs = new Map<string, CachedCatalog>()
@@ -89,6 +88,14 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, listener: (state: A
   const resolveClientHost = (client: AgentClientHost): { client: AgentClientHost; models: AgentModel[] | undefined } =>
     ({ client, models: resolve(clientCatalogKey(client.hostId), client.models) })
 
+  /** Caches whatever catalogs a broadcast carried in full, without delivering it. */
+  const seed = (raw: unknown): void => {
+    if (typeof raw !== 'object' || raw === null || !('host' in raw)) return
+    const state = raw as AgentState
+    resolve(hostCatalogKey(state.host.hostId), state.host.models)
+    state.host.clientHosts?.forEach(resolveClientHost)
+  }
+
   const process = (raw: unknown): void => {
     if (typeof raw !== 'object' || raw === null || !('host' in raw)) return
     const state = raw as AgentState
@@ -119,6 +126,10 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, listener: (state: A
         if (client) catalogs.set(clientCatalogKey(hostId), { revision, models: client.models })
       }
       listener(full)
+      // Main answers `get()` in order with its broadcasts, so one kept while this was in flight was sent
+      // before the answer and is older than it. Delivering it now would put an older state on screen after
+      // a newer one; only a catalog it carried in full is worth keeping.
+      if (pending !== null) { seed(pending); pending = null }
     }).catch(() => undefined).finally(() => {
       recovering = false
       if (pending !== null) { const next = pending; pending = null; process(next) }
