@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DEFAULT_MERGE_METHODS, GIT_MERGE_METHOD_LABELS, GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, GIT_WRITING_STYLES,
   type AppSettings, type DefaultMergeMethod, type DiffFileState, type DiffLayout, type GitWritingStyle, type SettingsPatch,
@@ -16,23 +16,52 @@ interface GitSettingsProps {
 const WRITING_STYLE_LABELS: Record<GitWritingStyle, string> = { repository: 'Repository conventions', conventional: 'Conventional Commits', custom: 'Custom instructions' }
 const mergeMethodLabel = (method: DefaultMergeMethod): string => method === 'last' ? 'Last selected' : GIT_MERGE_METHOD_LABELS[method]
 
+/** How long typing pauses before Custom instructions saves on its own. */
+export const CUSTOM_INSTRUCTIONS_SAVE_DELAY_MS = 600
+
+/**
+ * The Custom instructions field. What is typed saves once typing pauses, on leaving the field, and when the field
+ * goes away (the style changed, or Settings closed), so nothing typed is lost to a change of style mid-sentence.
+ */
+function CustomInstructionsField({ saved, onSave }: { readonly saved: string; readonly onSave: GitSettingsProps['onSave'] }): ReactNode {
+  const [text, setText] = useState(saved)
+  const pending = useRef<string | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latest = useRef({ saved, onSave })
+  latest.current = { saved, onSave }
+  const flush = useCallback(() => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    const value = pending.current
+    pending.current = null
+    if (value !== null && value !== latest.current.saved) void latest.current.onSave({ gitWritingInstructions: value }, 'Instructions saved.')
+  }, [])
+  // A saved value from elsewhere shows only while nothing typed here is waiting to be saved.
+  useEffect(() => { if (pending.current === null) setText(saved) }, [saved])
+  useEffect(() => flush, [flush])
+  return <div className="settings-input-action">
+    <Field label="Custom instructions" description={`Sent to the thread's own model with every commit message and pull request draft, with the repository's usual context; these take precedence over its style. Up to ${GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS.toLocaleString('en-US')} characters.`}>
+      <textarea className="tt-input" rows={4} maxLength={GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS} value={text}
+        onChange={event => {
+          const value = event.currentTarget.value
+          setText(value)
+          pending.current = value
+          if (timer.current) clearTimeout(timer.current)
+          timer.current = setTimeout(flush, CUSTOM_INSTRUCTIONS_SAVE_DELAY_MS)
+        }}
+        onBlur={flush} />
+    </Field>
+  </div>
+}
+
 /** How commit messages and pull request text are written, under Cleanup beside the switches that turn them on. */
 export function GitWritingSettings({ settings, onSave }: GitSettingsProps): ReactNode {
-  const [instructions, setInstructions] = useState(settings.gitWritingInstructions)
-  useEffect(() => { setInstructions(settings.gitWritingInstructions) }, [settings.gitWritingInstructions])
   return <>
     <Field label="Commit and pull request style" description="How generated commit messages and pull request text are written. Repository conventions follows the repository's recent commits and its AGENTS.md.">
       <Select value={settings.gitWritingStyle} onChange={event => void onSave({ gitWritingStyle: event.currentTarget.value as GitWritingStyle })}>
         {GIT_WRITING_STYLES.map(style => <option key={style} value={style}>{WRITING_STYLE_LABELS[style]}</option>)}
       </Select>
     </Field>
-    {settings.gitWritingStyle !== 'custom' ? null : <div className="settings-input-action">
-      <Field label="Custom instructions" description={`Sent to the thread's own model with every commit message and pull request draft, in place of the repository's style. Up to ${GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS.toLocaleString('en-US')} characters.`}>
-        <textarea className="tt-input" rows={4} maxLength={GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS} value={instructions}
-          onChange={event => setInstructions(event.currentTarget.value)}
-          onBlur={() => { if (instructions !== settings.gitWritingInstructions) void onSave({ gitWritingInstructions: instructions }, 'Instructions saved.') }} />
-      </Field>
-    </div>}
+    {settings.gitWritingStyle !== 'custom' ? null : <CustomInstructionsField saved={settings.gitWritingInstructions} onSave={onSave} />}
     <Toggle label="Follow pull request templates" checked={settings.followPullRequestTemplates} onCheckedChange={checked => void onSave({ followPullRequestTemplates: checked })} description="Fill in the repository's pull request template when it has one. Off, the template is not read and the draft uses Sotto's own sections." />
   </>
 }

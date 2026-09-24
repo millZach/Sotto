@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -254,7 +254,7 @@ describe('SettingsView', () => {
     expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ writingModel: expect.anything() }))
   })
 
-  it('chooses the writing style of commit and pull request text, with custom instructions saved on leaving the field', async () => {
+  it('chooses the writing style of commit and pull request text, with custom instructions saved as typing pauses', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update })
@@ -268,14 +268,31 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ gitWritingStyle: 'conventional' })
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitWritingStyle: 'custom' }} />)
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
+    expect(instructions).toHaveAccessibleDescription(/with the repository's usual context; these take precedence over its style/u)
     await user.type(instructions, 'Subjects in the past tense.')
-    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ gitWritingInstructions: expect.anything() }))
-    await user.tab()
-    expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Subjects in the past tense.' })
+    // No leaving the field needed: the pause saves it.
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Subjects in the past tense.' }))
     const templates = screen.getByRole('switch', { name: 'Follow pull request templates' })
     expect(templates).toBeChecked()
     await user.click(templates)
     expect(update).toHaveBeenCalledWith({ followPullRequestTemplates: false })
+  })
+
+  it('keeps custom instructions typed just before the style changes away from Custom instructions', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    const props = baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })
+    const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Cleanup')
+    const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
+    // Typed and, before the pause, the style switched away: the field goes, and its text is saved as it goes.
+    fireEvent.change(instructions, { target: { value: 'Mention the issue number.' } })
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ gitWritingInstructions: expect.anything() }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Commit and pull request style' }), 'conventional')
+    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitWritingStyle: 'conventional' }} />)
+    expect(screen.queryByRole('textbox', { name: 'Custom instructions' })).toBeNull()
+    expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Mention the issue number.' })
+    expect(update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object))).toHaveLength(1)
   })
 
   it('saves each Git and diff choice under Application, with everything that acts on its own off to start', async () => {
