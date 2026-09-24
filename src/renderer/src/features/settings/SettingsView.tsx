@@ -1,6 +1,6 @@
 import { HostsSettings } from './HostsSettings'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Command, Mic, Palette, Server, Settings2, Sparkles, Workflow } from 'lucide-react'
+import { ArrowUpRight, AudioLines, ChevronRight, Command, GitBranch, Mic, Palette, Server, Settings2, Sparkles, Workflow } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -20,7 +20,7 @@ import type {
   SettingsPatch,
   WorktreeCleanupDays,
 } from '../../../../shared/settings'
-import { GIT_FETCH_INTERVAL_SECONDS, WORKTREE_CLEANUP_DAYS, type GitFetchIntervalSeconds } from '../../../../shared/settings'
+import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
@@ -37,6 +37,7 @@ import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
+import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
@@ -85,6 +86,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
   { id: 'settings-privacy', label: 'Application', icon: Settings2 },
+  { id: 'settings-git', label: 'Git', icon: GitBranch },
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
@@ -554,8 +556,8 @@ export function SettingsView({
 
                   </div>
                   <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Ask a thread's own model to name the thread from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
-                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="When the commit dialog's message is left empty, ask the thread's own model to write it. It is sent the staged diff, the staged file names, the repository's last twenty commit subjects and its AGENTS.md. Off, the commit takes the subject “Update project files”." />
-                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to write a pull request's title and body when a Git action creates one, and to draft them in the pull request form. It is sent the branch's commit subjects and a capped diff against the base; a Git action also sends the changed files and the repository's pull request template when it has exactly one." />
+                  <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="When the commit dialog's message is left empty, ask the thread's own model to write it in the Commit and pull request style chosen under Git. It is sent the staged diff, the staged file names, the repository's last twenty commit subjects, its AGENTS.md, and your custom instructions when that style is chosen. Off, the commit takes the subject “Update project files”." />
+                  <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to write a pull request's title and body when a Git action creates one, in the Commit and pull request style chosen under Git. It is sent the branch's commit subjects and a capped diff against the base, and your custom instructions when that style is chosen; a Git action also sends the changed files, and the repository's pull request template when Sotto finds one and Follow pull request templates is on." />
 
                 </div>
               </Card>
@@ -590,8 +592,7 @@ export function SettingsView({
                   <Field label="Remove idle worktrees after" description="A thread's own worktree folder goes when the thread has been idle this long. The branch stays and sending puts the folder back. Only a folder with no uncommitted changes and nothing but installed dependencies in its ignored files is removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void save({ worktreeCleanup: { ...settings.worktreeCleanup, afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
                   <Toggle label="Remove a worktree when its thread is settled" checked={settings.worktreeCleanup.onSettle} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, onSettle: checked } })} description="Settle removes a clean worktree folder without asking. A folder with uncommitted changes still asks." />
                   <Toggle label="Remove a worktree once its commits are in the default branch" checked={settings.worktreeCleanup.unchanged} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, unchanged: checked } })} description="Checked against the local copy of the repository's default branch, once an hour." />
-                  <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, merged: checked } })} description="Asks GitHub through gh, the way the Changes panel does, once an hour." />
-                  <Field label="Git fetch interval" description="How often Sotto fetches a project's origin remote to learn whether a thread's branch is ahead or behind, while this window is in front. Off stops every background fetch; the branch's pull request is then read only when you refresh."><Select value={String(settings.gitFetchIntervalSeconds)} onChange={event => void save({ gitFetchIntervalSeconds: Number(event.currentTarget.value) as GitFetchIntervalSeconds })}>{GIT_FETCH_INTERVAL_SECONDS.map(seconds => <option key={seconds} value={String(seconds)}>{seconds === 0 ? 'Off' : seconds < 60 ? `${seconds} seconds` : seconds === 60 ? '1 minute' : `${seconds / 60} minutes`}</option>)}</Select></Field>
+                  <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { ...settings.worktreeCleanup, merged: checked } })} description="Once an hour, asks GitHub through gh, on your own sign-in, whether the worktree's branch has a merged pull request." />
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
@@ -628,6 +629,11 @@ export function SettingsView({
                   <div><h3>Reset settings</h3><p>Restore defaults and reopen setup. Downloaded models and history remain in place.</p></div>
                   <Button variant="secondary" onClick={() => { setResetFailure(null); setResetOpen(true) }}>Reset settings</Button>
                 </div>
+              </Card>
+
+              <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
+                <div className="settings-section__heading"><h2>Git</h2><p>Commits, pull requests, Changes & fetching</p></div>
+                <GitSettings settings={settings} onSave={save} />
               </Card>
             </div>
           </div>

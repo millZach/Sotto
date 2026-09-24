@@ -53,6 +53,38 @@ export const DEFAULT_WORKTREE_CLEANUP: WorktreeCleanupRules = { afterDays: null,
 export type GitFetchIntervalSeconds = 0 | 15 | 30 | 60 | 300
 export const GIT_FETCH_INTERVAL_SECONDS = [0, 15, 30, 60, 300] as const satisfies readonly GitFetchIntervalSeconds[]
 
+/** How GitHub merges a pull request, in `gh pr merge`'s own terms. */
+export type GitMergeMethod = 'merge' | 'squash' | 'rebase'
+export const GIT_MERGE_METHODS = ['merge', 'squash', 'rebase'] as const satisfies readonly GitMergeMethod[]
+export const GIT_MERGE_METHOD_LABELS: Record<GitMergeMethod, string> = { merge: 'Merge', squash: 'Squash and merge', rebase: 'Rebase and merge' }
+/** The merge method a pull request's merge starts on; `last` reuses the one chosen last on this computer, as T3 Code does. */
+export type DefaultMergeMethod = 'last' | GitMergeMethod
+export const DEFAULT_MERGE_METHODS = ['last', ...GIT_MERGE_METHODS] as const satisfies readonly DefaultMergeMethod[]
+/** How Changes lays out a file's diff: one column, or before and after side by side. */
+export type DiffLayout = 'stacked' | 'split'
+/** Whether each file in Changes starts open or folded to its header. */
+export type DiffFileState = 'expanded' | 'collapsed'
+/**
+ * The style commit messages and pull request text are written in: the repository's own (its recent
+ * subjects and its `AGENTS.md`), Conventional Commits, or the user's own instructions, T3 Code's three.
+ */
+export type GitWritingStyle = 'repository' | 'conventional' | 'custom'
+export const GIT_WRITING_STYLES = ['repository', 'conventional', 'custom'] as const satisfies readonly GitWritingStyle[]
+export const GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS = 2_000
+
+/** The merge method a merge starts on: the chosen default, or the one used last when the default is Last selected. */
+export function initialMergeMethod(settings: Pick<AppSettings, 'defaultMergeMethod' | 'lastMergeMethod'>): GitMergeMethod {
+  return settings.defaultMergeMethod === 'last' ? settings.lastMergeMethod : settings.defaultMergeMethod
+}
+
+/**
+ * What to save when the user merges with `method`: it is remembered only while the default is Last
+ * selected, and only when it differs from the one already remembered. Null when there is nothing to save.
+ */
+export function mergeMethodChosenPatch(settings: Pick<AppSettings, 'defaultMergeMethod' | 'lastMergeMethod'>, method: GitMergeMethod): SettingsPatch | null {
+  return settings.defaultMergeMethod === 'last' && settings.lastMergeMethod !== method ? { lastMergeMethod: method } : null
+}
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -100,6 +132,34 @@ export interface AppSettings {
    * ahead or behind, the way T3 Code does. Only while the window is in front; zero turns it off.
    */
   gitFetchIntervalSeconds: GitFetchIntervalSeconds
+  /**
+   * Off by default. On, the host fast-forwards a thread's folder when it is on the default branch, clean,
+   * and behind with nothing of its own ahead, each time it reads the remote status (T3 Code's rule).
+   */
+  gitAutoPull: boolean
+  /** The merge method a pull request's merge starts on; `last` reuses `lastMergeMethod`. */
+  defaultMergeMethod: DefaultMergeMethod
+  /** The merge method chosen last, kept while `defaultMergeMethod` is `last`. */
+  lastMergeMethod: GitMergeMethod
+  /** How Changes lays out a diff until the user changes it there. */
+  diffLayout: DiffLayout
+  /** Whether Changes hides whitespace-only edits until the user changes it there. */
+  diffHideWhitespace: boolean
+  /** Whether each file in Changes starts expanded or collapsed. */
+  diffFileState: DiffFileState
+  /** The style commit messages and pull request text are written in (ADR-0026's side calls). */
+  gitWritingStyle: GitWritingStyle
+  /** The user's own instructions for that writing, used while the style is `custom`. */
+  gitWritingInstructions: string
+  /** Whether pull request text fills in the repository's pull request template when it has one. */
+  followPullRequestTemplates: boolean
+  /**
+   * Off by default. On, a thread whose branch's pull request GitHub reports merged is settled, checked on
+   * the worktree cleanup's hourly schedule. Settling removes no folder unless a cleanup rule says so.
+   */
+  autoSettleMergedThreads: boolean
+  /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
+  proactivePanels: boolean
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -220,6 +280,17 @@ const fieldSchemas = {
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
   gitFetchIntervalSeconds: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300)]),
+  gitAutoPull: z.boolean(),
+  defaultMergeMethod: z.enum(DEFAULT_MERGE_METHODS),
+  lastMergeMethod: z.enum(GIT_MERGE_METHODS),
+  diffLayout: z.enum(['stacked', 'split']),
+  diffHideWhitespace: z.boolean(),
+  diffFileState: z.enum(['expanded', 'collapsed']),
+  gitWritingStyle: z.enum(GIT_WRITING_STYLES),
+  gitWritingInstructions: z.string().max(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS),
+  followPullRequestTemplates: z.boolean(),
+  autoSettleMergedThreads: z.boolean(),
+  proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
@@ -281,9 +352,25 @@ export const DEFAULT_SETTINGS: AppSettings = {
   worktreeCleanup: DEFAULT_WORKTREE_CLEANUP,
   // T3's default. The fetch contacts only the project's own origin, with prompts off, and only while the window is in front.
   gitFetchIntervalSeconds: 30,
+  // Off: a pull changes the user's folder, so it happens on their word until they say otherwise.
+  gitAutoPull: false,
+  // T3's defaults: the method chosen last, starting from a plain merge.
+  defaultMergeMethod: 'last',
+  lastMergeMethod: 'merge',
+  // T3's diff defaults: stacked, whitespace-only edits hidden, files collapsed to their headers.
+  diffLayout: 'stacked',
+  diffHideWhitespace: true,
+  diffFileState: 'collapsed',
+  gitWritingStyle: 'repository',
+  gitWritingInstructions: '',
+  followPullRequestTemplates: true,
+  // Off: nothing moves in the sidebar on its own until the user asks for it.
+  autoSettleMergedThreads: false,
+  // Off: nothing opens on its own until the user asks for it (ADR-0027).
+  proactivePanels: false,
   pullRequestText: true,
-  // On by default for the same reason: a thread whose provider writes nothing
-  // simply opens the commit form empty.
+  // On by default: when a thread's provider writes nothing, the Git action commits
+  // under the stand-in subject "Update project files" rather than waiting.
   commitMessages: true,
   streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
@@ -374,6 +461,17 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
     gitFetchIntervalSeconds: parseField(persisted, 'gitFetchIntervalSeconds', defaults),
+    gitAutoPull: parseField(persisted, 'gitAutoPull', defaults),
+    defaultMergeMethod: parseField(persisted, 'defaultMergeMethod', defaults),
+    lastMergeMethod: parseField(persisted, 'lastMergeMethod', defaults),
+    diffLayout: parseField(persisted, 'diffLayout', defaults),
+    diffHideWhitespace: parseField(persisted, 'diffHideWhitespace', defaults),
+    diffFileState: parseField(persisted, 'diffFileState', defaults),
+    gitWritingStyle: parseField(persisted, 'gitWritingStyle', defaults),
+    gitWritingInstructions: parseField(persisted, 'gitWritingInstructions', defaults),
+    followPullRequestTemplates: parseField(persisted, 'followPullRequestTemplates', defaults),
+    autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
+    proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),

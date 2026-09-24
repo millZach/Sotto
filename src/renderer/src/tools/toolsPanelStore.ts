@@ -7,7 +7,8 @@ import { TerminalStore } from './terminalStore'
 import { SubagentsStore } from './subagentsStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
-export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'agents', label: 'Agents' }] as const
+/** Pull request's word on the rail is T3's short one, the one its Git action says (Create PR, View PR); the tile is too narrow for two words. */
+export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'pull-request', label: 'PR' }, { id: 'agents', label: 'Agents' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 const TOOLS_PANEL_DEFAULT_WIDTH = 600
@@ -43,6 +44,7 @@ export class ToolsPanelStore {
   private chrome: ToolsPanelChrome = { open: false, surface: 'files', pinnedThreadId: null, width: TOOLS_PANEL_DEFAULT_WIDTH, resized: false, expanded: false }
   private readonly listeners = new Set<() => void>()
   private focusReturnUntil = 0
+  private quietOpen = false
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -50,7 +52,7 @@ export class ToolsPanelStore {
   }
   getSnapshot = (): ToolsPanelChrome => this.chrome
 
-  setOpen(open: boolean): void { this.update({ open, ...(!open ? { expanded: false } : {}) }) }
+  setOpen(open: boolean): void { if (!open) this.quietOpen = false; this.update({ open, ...(!open ? { expanded: false } : {}) }) }
   toggle(): void { this.setOpen(!this.chrome.open) }
   setSurface(surface: ToolSurfaceId): void { this.update({ surface }) }
   setExpanded(expanded: boolean): void { this.update({ expanded, open: true }) }
@@ -70,6 +72,21 @@ export class ToolsPanelStore {
     return true
   }
 
+  /**
+   * Proactive panels: opens Changes after a large turn of `threadId`. Only a closed panel opens, and only when it
+   * is not pinned to another thread; the open is quiet, so keyboard focus stays where the user left it. The answer
+   * says whether it opened.
+   */
+  showChangesProactively(threadId: string): boolean {
+    const pinned = this.chrome.pinnedThreadId
+    if (this.chrome.open || (pinned !== null && pinned !== threadId)) return false
+    this.quietOpen = true
+    this.update({ open: true, surface: 'changes' })
+    return true
+  }
+  /** Whether the open that just happened was a quiet one, which leaves focus alone; asking clears it. */
+  takeQuietOpen(): boolean { const quiet = this.quietOpen; this.quietOpen = false; return quiet }
+
   /** Clicking a task is an explicit request to inspect that thread's exact retained page. */
   async showBrowserTask(task: BrowserTask, bridge: BrowserBridge | undefined): Promise<boolean> {
     await this.browser.activate(bridge, task.threadId)
@@ -77,6 +94,15 @@ export class ToolsPanelStore {
     this.browser.select(task.threadId, task.pageId)
     this.update({ open: true, surface: 'browser', pinnedThreadId: task.threadId })
     return true
+  }
+
+  /**
+   * Opens the Pull request surface for a thread, as the pull request badge under its composer asks. A panel
+   * pinned to another thread is pinned to this one instead, since the press names this thread's pull request.
+   */
+  showPullRequest(threadId: string): void {
+    const pinned = this.chrome.pinnedThreadId
+    this.update({ open: true, surface: 'pull-request', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })
   }
 
   /** Closing moved focus to the toggle; a toggle mounted shortly after (the panes re-laid out) takes it if nothing else has. */

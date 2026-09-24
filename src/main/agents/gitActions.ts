@@ -36,6 +36,8 @@ export interface GitActionsDependencies {
   /** The thread's own provider writes the message (ADR-0026); null leaves the commit with a stand-in subject. */
   readonly writeCommitMessage: (threadId: string, material: CommitMaterial) => Promise<string | null>
   readonly writePullRequestText: (threadId: string, material: PullRequestMaterial) => Promise<PullRequestText | null>
+  /** The Follow pull request templates setting, read for each pull request; absent, the template is followed. */
+  readonly followPullRequestTemplates?: () => boolean | Promise<boolean>
   readonly now?: () => number
 }
 
@@ -74,8 +76,8 @@ export function featureBranchName(fragment: string): string {
 export class GitActions {
   private readonly run: RunGitCommand
   private readonly now: () => number
-  /** One action per folder at a time, whichever thread asked. */
-  private readonly busy = new Set<string>()
+  /** One action per folder at a time, whichever thread asked, and whether it is Automatically pull's. */
+  private readonly busy = new Map<string, 'action' | 'automatic-pull'>()
   constructor(private readonly dependencies: GitActionsDependencies) {
     this.run = dependencies.run ?? runGitStatusCommand
     this.now = dependencies.now ?? (() => Date.now())
@@ -84,9 +86,12 @@ export class GitActions {
   private gh(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'gh', args, options) }
   private status(cwd: string): Promise<GitStatus> { return this.dependencies.status.read(cwd, { remote: true }) }
 
-  private async exclusive<T>(cwd: string, work: () => Promise<T>): Promise<T> {
-    if (this.busy.has(cwd)) throw new GitActionRefusal('Git action in progress.')
-    this.busy.add(cwd)
+  private async exclusive<T>(cwd: string, work: () => Promise<T>, holder: 'action' | 'automatic-pull' = 'action'): Promise<T> {
+    const held = this.busy.get(cwd)
+    // An automatic pull runs with nothing on screen, so its refusal says what is holding the folder.
+    if (held === 'automatic-pull') throw new GitActionRefusal('Sotto is pulling this folder. Try again in a moment.')
+    if (held) throw new GitActionRefusal('Git action in progress.')
+    this.busy.set(cwd, holder)
     try { return await work() } finally { this.busy.delete(cwd); this.dependencies.status.invalidate() }
   }
 
@@ -306,7 +311,9 @@ export class GitActions {
     const subjects = (await this.git(cwd, ['log', '--oneline', '--no-merges', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_LOG_MAX).split('\n').map(line => line.replace(/^\S+\s+/u, '').trim()).filter(Boolean).reverse()
     const stat = (await this.git(cwd, ['diff', '--stat', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_STAT_MAX)
     const patch = (await this.git(cwd, ['diff', '--no-ext-diff', '--patch', '--minimal', `${range}..HEAD`]).catch(() => '')).slice(0, RANGE_PATCH_MAX)
-    const template = await this.pullRequestTemplate(cwd, range)
+    // Follow pull request templates off: the template is not read at all, and the body is Sotto's own sections.
+    const follow = await (async () => this.dependencies.followPullRequestTemplates?.() ?? true)().catch(() => true)
+    const template = follow ? await this.pullRequestTemplate(cwd, range) : null
     const written = await this.dependencies.writePullRequestText(threadId, { subjects, diff: diffExcerpt(patch, RANGE_PATCH_MAX).text, stat, template })
     const title = written?.title ?? subjects.at(-1) ?? STAND_IN_SUBJECT
     const body = written?.body ?? (template ?? subjects.map(subject => `- ${subject}`).join('\n'))
@@ -322,7 +329,10 @@ export class GitActions {
     return { status: 'created', head: branch, base, title: created?.title ?? title, ...(created ? { url: created.url, number: created.number } : {}) }
   }
 
-  /** The repository's one pull request template at the base, where exactly one exists (T3's rule). */
+  /**
+   * The repository's pull request template at the base (T3's rule): the first single template file in GitHub's usual
+   * places, or else the one file in a PULL_REQUEST_TEMPLATE folder when that folder holds only one.
+   */
   private async pullRequestTemplate(cwd: string, ref: string): Promise<string | null> {
     const single = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md', 'docs/PULL_REQUEST_TEMPLATE.md']
     const listing = (await this.git(cwd, ['ls-tree', '-r', '-z', '--full-tree', ref, '--', ...single, '.github/PULL_REQUEST_TEMPLATE', 'PULL_REQUEST_TEMPLATE', 'docs/PULL_REQUEST_TEMPLATE']).catch(() => '')).split('\0').filter(Boolean)
@@ -356,8 +366,11 @@ export class GitActions {
     return { title: 'Done', cta: { kind: 'none' } }
   }
 
-  /** `git pull --ff-only`: a diverged branch is refused in T3's words and nothing is merged or rebased by Sotto. */
-  pull(cwd: string): Promise<GitPullResult> {
+  /**
+   * `git pull --ff-only`: a diverged branch is refused in T3's words and nothing is merged or rebased by Sotto.
+   * `automatic` marks Automatically pull's own pull, so an action pressed meanwhile is told what holds the folder.
+   */
+  pull(cwd: string, options: { automatic?: boolean } = {}): Promise<GitPullResult> {
     return this.exclusive(cwd, async () => {
       const status = await this.status(cwd)
       if (!status.isRepository) throw new GitActionRefusal('This folder is not a Git repository.')
@@ -372,7 +385,7 @@ export class GitActions {
       }
       const after = (await this.git(cwd, ['rev-parse', 'HEAD'])).trim()
       return { status: before === after ? 'skipped_up_to_date' : 'pulled', branch: status.branch, upstream: status.upstream }
-    })
+    }, options.automatic ? 'automatic-pull' : 'action')
   }
 
   /**

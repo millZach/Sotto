@@ -40,6 +40,11 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'git-action': ['threadId', 'actionId', 'action', 'commitMessage', 'featureBranch', 'filePaths', 'allowDefaultBranch'],
   'git-pull': ['threadId'], 'git-switch-branch': ['threadId', 'ref', 'create'], 'git-init': ['threadId'],
   'git-publish': ['threadId', 'repository', 'visibility'],
+  // The pull request presses are the user's own, through gh on the host's sign-in, and none answers a permission: merging,
+  // closing and turning on auto-merge each take the surface's confirmation first, and a checkout never forces (ADR-0027).
+  'git-pull-request-action': ['threadId', 'url', 'action', 'method'],
+  'git-link-pull-request': ['threadId', 'reference'], 'git-unlink-pull-request': ['threadId', 'url'],
+  'git-checkout-pull-request': ['threadId', 'reference', 'mode'],
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
   'select-attention': ['itemId'],

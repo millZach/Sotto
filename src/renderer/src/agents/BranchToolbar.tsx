@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, Search } from 'lucide-react'
+import { Check, ChevronDown, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Search } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
 import type { GitRef, GitRefsPage } from '../../../shared/gitRefs'
+import { parsePullRequestReference } from '../../../shared/gitPullRequests'
+import { CheckoutPullRequestDialog } from '../tools/PullRequestDialogs'
+import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { useOptionalApp } from '../state/AppContext'
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
@@ -20,7 +23,8 @@ function refsBridge(): ((request: { threadId: string; query?: string; cursor?: n
   return window.sotto?.agents?.gitRefs
 }
 
-const PR_ICONS: Record<GitPullRequestSummary['state'], typeof GitPullRequest> = { open: GitPullRequest, closed: GitPullRequestClosed, merged: GitMerge }
+/** A pull request's state as a glyph, here and on the Pull request surface; a draft takes `GitPullRequestDraft`. */
+export const PR_ICONS: Record<GitPullRequestSummary['state'], typeof GitPullRequest> = { open: GitPullRequest, closed: GitPullRequestClosed, merged: GitMerge }
 
 /**
  * T3's branch toolbar, under the composer of a thread whose folder is a Git repository. Run on and Workspace
@@ -47,8 +51,10 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const branchTrigger = useRef<HTMLButtonElement>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [branchOpen, setBranchOpen] = useState(false)
+  /** The reference Checkout pull request opened with; null while its dialog is closed. */
+  const [checkout, setCheckout] = useState<string | null>(null)
   const inFlight = useRef(false)
-  useEffect(() => { setNotice(null); setWorkspaceOpen(false); setBranchOpen(false) }, [thread.id])
+  useEffect(() => { setNotice(null); setWorkspaceOpen(false); setBranchOpen(false); setCheckout(null) }, [thread.id])
   const explained = useRef(onExplainedError)
   explained.current = onExplainedError
   useEffect(() => { explained.current?.(notice?.tone === 'error' ? notice.text : null) }, [notice])
@@ -128,21 +134,22 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspaceLabel(thread)} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
     <span className="branch-toolbar__spacer" />
-    {pullRequest ? <PullRequestBadge pullRequest={pullRequest} /> : null}
+    {pullRequest ? <PullRequestBadge pullRequest={pullRequest} onOpen={() => toolsPanelStore.showPullRequest(thread.id)} /> : null}
     <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} busy={busy === 'branch'} disabled={busy !== null}
       draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
-      onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} />
+      onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     {notice ? <p className="branch-toolbar__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
+    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
+      onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }
 
-/** The badge: the pull request's state as an icon and its number, its title in the tooltip, and a press that opens it in the browser. */
-function PullRequestBadge({ pullRequest }: { readonly pullRequest: GitPullRequestSummary }): ReactNode {
+/** The badge: the pull request's state as an icon and its number, its title in the tooltip, and a press that opens the Pull request surface in Tools. */
+function PullRequestBadge({ pullRequest, onOpen }: { readonly pullRequest: GitPullRequestSummary; readonly onOpen: () => void }): ReactNode {
   const Icon = pullRequest.draft && pullRequest.state === 'open' ? GitPullRequestDraft : PR_ICONS[pullRequest.state]
   const title = pullRequestTitle(pullRequest)
-  const open = window.sotto?.openExternalLink
   return <button type="button" className="branch-toolbar__pr tt-focusable" data-state={pullRequest.draft && pullRequest.state === 'open' ? 'draft' : pullRequest.state}
-    title={title} aria-label={`Open ${title}`} disabled={!open} onClick={() => { void open?.(pullRequest.url) }}>
+    title={title} aria-label={`Open ${title} in Tools`} onClick={onOpen}>
     <Icon size={13} aria-hidden="true" /><span>#{pullRequest.number}</span>
   </button>
 }
@@ -188,7 +195,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
  * with T3's badges and pages them, offers Create new ref for a name nothing matches, and for a worktree not
  * made yet carries the Start from origin switch. Right-click on a ref copies its name.
  */
-function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin }: {
+function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest }: {
   readonly threadId: string
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
@@ -198,6 +205,8 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
   readonly onCreate: (name: string) => Promise<boolean>
   readonly onCopy: (name: string) => Promise<void>
   readonly onStartFromOrigin: (value: boolean) => void
+  /** A pull request URL, `#42` or a `gh pr checkout` line typed into the search opens Checkout pull request, as in T3. */
+  readonly onCheckoutPullRequest: (reference: string) => void
 }): ReactNode {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState<GitRefsPage | null>(null)
@@ -274,18 +283,22 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
   const close = (refocus: boolean): void => { onOpenChange(false); if (refocus) triggerRef.current?.focus() }
   const choose = async (ref: GitRef): Promise<void> => { close(true); await onPick(ref) }
   const createName = createRefName(query)
+  const pullRequestReference = parsePullRequestReference(query)
+  const checkoutPullRequest = (): void => { if (!pullRequestReference) return; close(false); onCheckoutPullRequest(pullRequestReference) }
   const answered = loadedQuery === query
   const canCreate = !draftWorktree && answered && offersCreate(query, refs)
   /** Enter's meaning: the first listed ref, or the create when nothing is listed. Only once the list answers the typed query. */
   const takeEnter = useCallback((): boolean => {
+    // A pull request reference stands first in the list, so Enter checks it out, the way T3 orders it.
+    if (pullRequestReference) { close(false); onCheckoutPullRequest(pullRequestReference); return true }
     if (loadedQuery !== query) return false
     const first = refs[0]
     if (first) { void choose(first); return true }
     if (!draftWorktree && offersCreate(query, refs)) { close(true); void onCreate(createRefName(query)); return true }
     return true
-  }, [loadedQuery, query, refs, draftWorktree])
+  }, [loadedQuery, query, refs, draftWorktree, pullRequestReference])
   useEffect(() => { if (enterPending.current && takeEnter()) enterPending.current = false }, [takeEnter])
-  const empty = !loading && answered && refs.length === 0 && !canCreate
+  const empty = !loading && answered && refs.length === 0 && !canCreate && !pullRequestReference
   const more = page?.nextCursor ?? null
   return <div className="branch-toolbar__picker"
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}
@@ -311,6 +324,8 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
       </div>
       <div ref={list} id={listId} role="listbox" aria-label="Refs" className="branch-toolbar__refs" onKeyDown={event => moveListboxFocus(event, list.current)}
         onScroll={event => { const element = event.currentTarget; if (more !== null && !loading && element.scrollTop + element.clientHeight >= element.scrollHeight - 24) void load(query, more, false) }}>
+        {pullRequestReference ? <button type="button" role="option" aria-selected={false} className="branch-toolbar__create branch-toolbar__checkout" onClick={checkoutPullRequest}>
+          <GitPullRequestArrow size={14} aria-hidden="true" /><span className="branch-toolbar__ref-name">Checkout pull request</span><small>{pullRequestReference}</small></button> : null}
         {refs.map(ref => <button type="button" role="option" key={ref.name} aria-selected={ref.current} title={ref.worktreePath ? `Checked out in ${ref.worktreePath}` : ref.name}
           onClick={() => void choose(ref)} onContextMenu={event => { event.preventDefault(); void onCopy(ref.name) }}>
           <span className="branch-toolbar__ref-name">{ref.name}</span>

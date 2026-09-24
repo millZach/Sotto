@@ -877,6 +877,7 @@ test.describe('authoritative design-review captures', () => {
         ['Output', 'output'],
         ['Appearance', 'appearance'],
         ['Application', 'application-privacy'],
+        ['Git', 'git'],
       ] as const
       for (const [heading, state] of settingsSections) {
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
@@ -1074,6 +1075,7 @@ test.describe('authoritative design-review captures', () => {
         ['Dictation', 'capture'],
         ['Appearance', 'appearance'],
         ['Application', 'application-privacy'],
+        ['Git', 'git'],
       ] as const) {
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })

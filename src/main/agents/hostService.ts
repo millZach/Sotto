@@ -4,6 +4,7 @@ import type { AgentCommand, AgentState, AgentThreadDetail, AgentThreadDetailUpda
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
+import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -42,6 +43,8 @@ export interface HostService {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   /** The changed files of a thread's folder, for the commit dialog (ADR-0027). */
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
+  /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
+  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
 }
 
 /** The part of the event store a client is allowed to read through the host. */
@@ -82,6 +85,8 @@ export interface LocalHostControl {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   /** The changed files of a thread's folder, for the commit dialog (ADR-0027). */
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
+  /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
+  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
 }
 
 /**
@@ -117,6 +122,10 @@ export class LocalHostService implements HostService {
   gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
     if (!this.control.gitChangedFiles) return Promise.reject(new Error('Changed files are unavailable on this host.'))
     return this.control.gitChangedFiles(request)
+  }
+  gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+    if (!this.control.gitPullRequest) return Promise.reject(new Error('Pull requests are unavailable on this host.'))
+    return this.control.gitPullRequest(request)
   }
   command(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
     if (command.type === 'observe-threads') {

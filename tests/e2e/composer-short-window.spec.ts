@@ -1,12 +1,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
-// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through usage, Write here and a
+// The thread composer at the shipped 820x560 minimum and in a short split, and keyboard focus through Write here and a
 // refused Manage. Holds and refusals are injected at main's IPC handler in-process; no product code is changed for it.
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5FoAAAAASUVORK5CYII=', 'base64')
 const DRAFT = 'My unsent draft:\n  keep  the  spacing, “quotes” and trailing space '
-const pane = (page: Page, id: string) => page.locator(`section.thread-pane[data-thread-id="${id}"]`)
+// Panes are keyed by the host that owns their thread; main's bridge still takes the bare thread ID.
+let hostId: string | undefined
+const pane = (page: Page, id: string) => page.locator(`section.thread-pane[data-thread-id="${hostEntityKey(hostId, id)}"]`)
 const agents = (page: Page) => page.evaluate(async () => window.sotto!.agents!.get())
 
 async function start(launched: LaunchedSotto): Promise<void> {
@@ -16,6 +19,7 @@ async function start(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await launched.page.reload()
+  hostId = await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
 }
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
@@ -49,7 +53,7 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
     const action = [...card.querySelectorAll('button')].find(button => new RegExp(source, 'u').test(button.getAttribute('aria-label') ?? button.textContent ?? ''))
     const bottom = (target: Element | null | undefined) => target ? Math.round(target.getBoundingClientRect().bottom) : null
     return {
-      limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), usage: bottom(element.querySelector('.thread-usage')),
+      limit: Math.round(limit), card: bottom(card), image: bottom(image), action: bottom(action), meta: bottom(element.querySelector('.thread-pane__meta')),
       promptFont: getComputedStyle(card.querySelector('textarea')!).fontSize,
       controls: [...element.querySelectorAll('.thread-workspace__actions .tt-button')].map(button => ({ height: button.getBoundingClientRect().height, font: getComputedStyle(button).fontSize })),
       paneScroll: element.scrollHeight - element.clientHeight, transcript: element.querySelector('[aria-label="Thread transcript"]')!.clientHeight,
@@ -62,8 +66,11 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
   expect(facts.action!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.paneScroll, context).toBeLessThanOrEqual(1)
   expect(facts.transcript, context).toBeGreaterThanOrEqual(90)
-  expect(facts.usage!, context).toBeLessThanOrEqual(facts.limit)
-  expect(facts.promptFont).toBe('16px')
+  // The row under the composer, where compaction's result is said, fits inside the window as well. It has height only
+  // side by side, where it holds one line open, or once compaction has something to say.
+  expect(facts.meta, context).not.toBeNull()
+  expect(facts.meta!, context).toBeLessThanOrEqual(facts.limit)
+  expect(facts.promptFont).toBe('15px')
   for (const control of facts.controls) { expect(Math.round(control.height)).toBeGreaterThanOrEqual(34); expect(control.font).toBe('14px') }
   const name = await page.evaluate(() => `${innerWidth}x${innerHeight}`)
   const mode = await pane(page, threadId).locator('.agent-composer').count() ? 'managed' : 'manual'
@@ -149,7 +156,7 @@ async function armProbe(page: Page): Promise<void> {
 }
 const bodyFrames = (page: Page) => page.evaluate(() => { const probe = (window as unknown as { __probe: { bodyFrames: number; stop: boolean } }).__probe; probe.stop = true; return probe.bodyFrames })
 
-test('keyboard focus stays put through usage details, Write here, and a refused Manage', async () => {
+test('keyboard focus stays put through Write here and a refused Manage', async () => {
   test.setTimeout(180_000)
   const launched = await launchSottoWithVoice()
   const { page } = launched
@@ -169,8 +176,8 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     await workshopPrompt.click()
     await expect(workshop).toHaveAttribute('data-focused')
 
-    // The usage line is plain text now, so Shift+Tab from the divider lands on the docs pane's own last control and
-    // stays there rather than dropping focus to the body.
+    // Nothing under the composer takes focus, so Shift+Tab from the divider lands on the docs pane's own last control
+    // and stays there rather than dropping focus to the body.
     const messages = (await userMessageTexts(page, 'docs')).length
     await page.getByRole('separator', { name: 'Resize panes' }).focus()
     await armProbe(page)
@@ -196,17 +203,18 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     // Keyboard Manage on Workshop while main holds the assign and then refuses it.
     await workshopPrompt.click()
     await workshopPrompt.fill('Workshop draft kept through a refusal.')
-    await launched.app.evaluate(({ ipcMain }) => {
+    // The renderer names the thread by its host key; main's router strips it after this handler.
+    await launched.app.evaluate(({ ipcMain }, workshopKey) => {
       const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, payload: { type?: string; threadId?: string }) => unknown> })._invokeHandlers
       const original = handlers.get('sotto:agents:command')!
       let release = (): void => undefined
       const gate = new Promise<void>(done => { release = done })
       ;(globalThis as unknown as { __releaseAssign: () => void }).__releaseAssign = release
       handlers.set('sotto:agents:command', async (event, payload) => {
-        if (payload?.type === 'assign' && payload.threadId === 'workshop') { await gate; throw new Error('REFUSED_FOR_TEST') }
+        if (payload?.type === 'assign' && payload.threadId === workshopKey) { await gate; throw new Error('REFUSED_FOR_TEST') }
         return original(event, payload)
       })
-    })
+    }, hostEntityKey(hostId, 'workshop'))
     // Manage lives in the header's More menu now: Enter on its row closes the menu, and the handoff moves focus from
     // the header to this pane's composer so it has somewhere to stay when the assign is refused.
     await workshop.getByRole('button', { name: 'More actions', exact: true }).click()
@@ -226,7 +234,9 @@ test('keyboard focus stays put through usage details, Write here, and a refused 
     await expect(workshopPrompt).toBeFocused()
     await expect(workshopPrompt).toHaveValue('Workshop draft kept through a refusal.')
     expect(await bodyFrames(page)).toBe(0)
-    expect((await agents(page)).assignments.map(item => item.threadId)).not.toContain('workshop')
+    const assigned = (await agents(page)).assignments.map(item => item.threadId)
+    expect(assigned).not.toContain(hostEntityKey(hostId, 'workshop'))
+    expect(assigned).not.toContain('workshop')
     expect((await userMessageTexts(page, 'workshop')).some(text => text.includes('kept through a refusal'))).toBe(false)
   } finally {
     await closeSotto(launched)

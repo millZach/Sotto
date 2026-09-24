@@ -108,6 +108,19 @@ describe('independent working-copy allocation', () => {
     await expect(f.service.allocate(f.project, 'independent', { baseBranch: 'missing' })).rejects.toThrow('base branch missing is unavailable')
     await expect(f.service.allocate(f.project, 'independent', { baseBranch: 'chosen-base', startFromOrigin: true })).rejects.toThrow('could not be fetched')
   })
+  it("checks a pull request's branch out as it stands in a new worktree, with no branch of its own", async () => {
+    const f = await fixture()
+    await git(f.project, ['branch', 'feat/pr'])
+    const allocated = await f.service.allocate(f.project, 'independent', { checkoutBranch: 'feat/pr' })
+    expect(allocated).toMatchObject({ status: 'pending', branch: 'feat/pr', checkoutBranch: true, temporaryBranch: false })
+    const checkout = await f.service.ensure(allocated)
+    expect(checkout).toMatchObject({ status: 'ready', branch: 'feat/pr' })
+    expect((await git(checkout.path!, ['branch', '--show-current'])).trim()).toBe('feat/pr')
+    expect((await git(f.project, ['branch', '--list', 'sotto/*'])).trim()).toBe('')
+    await expect(f.service.allocate(f.project, 'independent', { checkoutBranch: 'gone' })).rejects.toThrow('The branch gone is gone.')
+    // The branch is in that folder now, so a second worktree for it is refused rather than forced.
+    await expect(f.service.ensure(await f.service.allocate(f.project, 'independent', { checkoutBranch: 'feat/pr' }))).rejects.toThrow('already checked out in another folder')
+  })
   it('fetches the explicitly selected origin branch instead of silently using local HEAD', async () => {
     const f = await fixture()
     const remote = join(f.root, 'origin'); await mkdir(remote)

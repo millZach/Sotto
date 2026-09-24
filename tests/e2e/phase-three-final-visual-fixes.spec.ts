@@ -7,6 +7,7 @@ import { pendingRequest } from '../../src/main/agents/codexRequests'
 import { defaultAgentConfiguration, type AgentRequest } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode, type ThemeDefinition } from '../../src/shared/themes/library'
+import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // The four findings of the Phase 3 final visual review, in the complete app: custom theme names in the picker, the
@@ -253,13 +254,17 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
   const launched = await launchSotto('success', profile)
   const { app, page } = launched
   try {
-    const folder = await page.evaluate(async () => {
-      const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
-      const state = await agents.command({ type: 'connect' })
-      const thread = state.host.threads.find(item => item.id === 'workshop')!
-      return state.host.projects.find(project => project.id === thread.projectId)!.path
+    await page.evaluate(async () => {
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
     })
+    // The renderer's state keys threads and projects by the host that owns them.
+    const key = await hostKeys(page)
+    const folder = await page.evaluate(async workshop => {
+      const state = await window.sotto!.agents!.get()
+      const thread = state.host.threads.find(item => item.id === workshop)!
+      return state.host.projects.find(project => project.id === thread.projectId)!.path
+    }, key('workshop'))
     await mkdir(folder, { recursive: true })
     const editor = page.getByRole('dialog', { name: 'Create theme' })
     // The Threads page owns the whole window now, so there is no footer to dock into: the minimized bar rests at the
@@ -397,10 +402,16 @@ test('the composer beside a pending permission says to allow or deny once, throu
   try {
     const { page } = launched
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
+    // Panes are keyed by the host that owns their thread; test events still take the bare ID.
+    const key = await hostKeys(page)
+    // A working thread with nothing to send shows Stop in Send's place, and the prompt is off while a permission is
+    // pending, so the draft is written before the pane opens: with something to send, Send (here Queue) comes back.
+    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'save-thread-draft', composer: 'manual', threadId: 'visual-gate',
+      draftId: crypto.randomUUID(), text: 'Check the flaky capture once the request is answered.', attachments: [], requestId: null }))
     await size(launched, 1600, 1000)
     await openThreads(page)
     const panes = page.getByRole('group', { name: 'Thread panes' })
-    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${id}"]`)
+    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
       await sidebar.getByRole('button', { name: title, exact: true }).hover()
@@ -410,7 +421,8 @@ test('the composer beside a pending permission says to allow or deny once, throu
     const gate = pane('visual-gate')
     const prompt = gate.getByRole('textbox', { name: 'Prompt', exact: true })
     await expect(prompt).toHaveAttribute('placeholder', INSTRUCTION)
-    // The Send button still says why it is off.
+    // The Send button still says why it is off, and the held draft stays in the prompt.
+    await expect(prompt).toHaveValue('Check the flaky capture once the request is answered.')
     await expect(gate.getByRole('button', { name: /^(Send|Queue) prompt$/u })).toHaveAttribute('title', INSTRUCTION)
 
     for (const [width, height, name] of [[1600, 1000, '1600'], [1280, 800, '1280x800']] as const) {

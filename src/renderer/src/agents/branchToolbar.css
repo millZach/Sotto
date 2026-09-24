@@ -40,6 +40,10 @@
 .branch-toolbar__refs { display: grid; max-height: min(320px, calc(100vh - 260px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .branch-toolbar__ref-name { min-width: 0; overflow: hidden; font-family: var(--tt-font-mono); font-size: 12.5px; text-overflow: ellipsis; }
 .branch-toolbar__create .branch-toolbar__ref-name { font-family: inherit; font-size: 13px; }
+/* Checkout pull request, first in the list when the search is a pull request reference (T3's order). */
+.branch-toolbar__refs > .branch-toolbar__checkout { justify-content: flex-start; }
+.branch-toolbar__checkout > svg { flex: none; color: var(--tt-text-muted); }
+.branch-toolbar__checkout > small { min-width: 0; margin-left: auto; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; text-overflow: ellipsis; }
 .branch-toolbar__badges { display: inline-flex; flex: none; gap: 4px; }
 .branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
 .branch-toolbar__badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }

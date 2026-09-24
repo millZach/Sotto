@@ -1,0 +1,114 @@
+/* The Pull request surface in Tools (ADR-0027): the merge checklist. A top line names the pull request; five lines
+   each done or carrying the press that fixes it; one large Merge docked under them; the description and the linked
+   pull requests fold below. */
+.pr-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
+.pr-surface :is(svg[data-state='open']) { color: var(--tt-success); }
+.pr-surface :is(svg[data-state='merged']) { color: var(--tt-activity); }
+.pr-surface :is(svg[data-state='closed'], svg[data-state='draft'], svg[data-state='none']) { color: var(--tt-text-muted); }
+
+.pr-surface__top { gap: 6px; }
+.pr-surface__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.pr-surface__lead > svg { flex: none; }
+.pr-surface__name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__name:focus { outline: none; }
+.pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
+.pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.pr-surface__tag { flex: none; padding: 1px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
+.tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: var(--tt-radius-sm); }
+
+.pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.pr-surface__notice[data-tone='error'] { background: var(--tt-error-surface); color: var(--tt-error-text); }
+.pr-surface__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pr-surface__quiet { margin: 0; color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+
+/* The checklist. */
+.pr-surface__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: 16px; font-weight: 550; }
+.pr-surface__heading small { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+.pr-surface__heading small[data-tone='done'] { color: var(--tt-success); }
+.pr-surface__lines { margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); list-style: none; }
+.pr-surface__line { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
+.pr-surface__line:first-child { border-top: 0; }
+.pr-surface__line > svg { color: var(--tt-text-muted); }
+.pr-surface__line[data-tone='done'] > svg { color: var(--tt-success); }
+.pr-surface__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
+.pr-surface__line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
+.pr-surface__line-text { min-width: 0; }
+.pr-surface__line strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.pr-surface__line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
+.pr-surface__why { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.pr-surface__fix .tt-button { min-height: 28px; padding: 0 10px; font-size: 13px; }
+
+/* Merge stays in reach under the lines while the folds below scroll. */
+.pr-surface__dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tools-bg, var(--tt-sidebar)); }
+.pr-surface__merge { position: relative; display: flex; gap: 8px; }
+.pr-surface__merge .tt-button { min-height: 44px; font-size: 15px; }
+.pr-surface__merge-go { flex: 1; min-width: 0; }
+.pr-surface__merge-go[aria-disabled='true'] { border-color: var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); cursor: not-allowed; filter: none; }
+.pr-surface__merge-go[aria-disabled='true']:hover { border-color: var(--tt-field-border); color: var(--tt-text-muted); filter: none; }
+.pr-surface__method { position: relative; flex: none; }
+.pr-surface__method-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; width: 270px; max-width: calc(100cqw - 32px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pr-surface__method-item { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.pr-surface__method-item:hover, .pr-surface__method-item:focus-visible { background: var(--tt-hover); outline: none; }
+.pr-surface__method-item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.pr-surface__method-item small { display: block; color: var(--tt-text-muted); font-size: 12px; }
+.pr-surface__method-item > svg { color: var(--tt-accent-text); }
+.pr-surface__hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.pr-surface__textlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pr-surface__textlink:disabled { color: var(--tt-text-muted); cursor: default; }
+.pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+.pr-surface__finished > svg { flex: none; color: var(--tt-text-muted); }
+.pr-surface__finished[data-state='merged'] > svg { color: var(--tt-activity); }
+.pr-surface__finished > div { flex: 1; min-width: 12ch; }
+.pr-surface__finished strong { display: block; color: var(--tt-text); font-weight: 500; }
+.pr-surface__finished span { color: var(--tt-text-muted); font-size: 13px; }
+
+/* The folds: Description, Linked pull requests. */
+.pr-surface__fold { border-top: 1px solid var(--tt-hairline); }
+.pr-surface__dock + .pr-surface__fold { margin-top: 6px; }
+.pr-surface__fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
+.pr-surface__fold-body { display: grid; gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
+.pr-surface__description { color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pr-surface__links { justify-self: stretch; margin: 0; padding: 0; list-style: none; }
+.pr-surface__link { border-top: 1px solid var(--tt-hairline); }
+.pr-surface__link:first-child { border-top: 0; }
+.pr-surface__link-open { display: grid; width: 100%; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.pr-surface__link-open:hover { background: var(--tt-hover); }
+.pr-surface__link-open > svg { grid-area: icon; }
+.pr-surface__link-number { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pr-surface__link-title { grid-area: title; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.pr-surface__link-source { grid-area: source; color: var(--tt-text-muted); font-size: 12.5px; }
+.pr-surface__link-add.tt-button { min-height: 30px; padding: 0 8px; margin-left: -8px; }
+
+/* No pull request yet. */
+.pr-surface__none { margin-bottom: 14px; }
+.pr-surface__none p { margin: 0 0 14px; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.pr-surface__branch { font-family: var(--tt-font-mono); font-size: 13px; }
+.pr-surface__none-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pr-surface__none-actions .tt-button[aria-disabled='true'] { border-color: var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); cursor: not-allowed; filter: none; }
+.pr-surface__none-actions .tt-button[aria-disabled='true']:hover { border-color: var(--tt-field-border); color: var(--tt-text-muted); filter: none; }
+
+/* Link pull request and Checkout pull request. */
+.pull-request-dialog { width: min(520px, 100%); display: grid; gap: 10px; }
+.pull-request-dialog h2 { margin: 0; }
+.pull-request-dialog form { display: grid; gap: 10px; }
+.pull-request-dialog label { color: var(--tt-text-2); font-size: 13px; }
+.pull-request-dialog input { width: 100%; box-sizing: border-box; height: 36px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-text); font: inherit; font-size: 14px; }
+.pull-request-dialog__resolved { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); }
+.pull-request-dialog__resolved p { margin: 0; overflow-wrap: anywhere; }
+.pull-request-dialog__resolved strong { color: var(--tt-text); font-weight: 550; }
+.pull-request-dialog__meta { color: var(--tt-text-muted); font-size: 12.5px; }
+.pull-request-dialog__meta bdi { font-family: var(--tt-font-mono); }
+.pull-request-dialog__note { margin: 8px 0 0; color: var(--tt-text); }
+.pull-request-dialog__meta span[data-state] { margin-left: 6px; color: var(--tt-text-2); }
+
+/* A narrow panel puts a line's press under its words, and gives the body back some width. */
+@container tools-body (max-width: 479px) {
+  .pr-surface__line { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
+  .pr-surface__line > svg { margin-top: 1px; }
+  .pr-surface__fix { grid-column: 2; justify-self: start; margin-top: 8px; }
+}
+@container tools-body (max-width: 439px) {
+  .pr-surface__body { padding-inline: 12px; }
+  .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
+}

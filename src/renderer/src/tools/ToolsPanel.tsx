@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
-import { providerWritesShortText, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import type { GitChangesBridge } from '../../../shared/gitChanges'
@@ -17,9 +17,11 @@ import { BrowserTaskPreview } from './BrowserTaskPreview'
 import { BrowserSurface } from './BrowserSurface'
 import { useBrowserTasks } from './browserStore'
 import { ChangesSurface } from './ChangesSurface'
+import { PullRequestSurface } from './PullRequestSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
+import { useProactiveChanges } from './proactivePanels'
 import type { PathAction } from './filesBrowser'
 import { TerminalSurface } from './TerminalSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -143,11 +145,13 @@ function WorkingCopyLine({ thread, project, knownBranch }: { readonly thread: Ag
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, terminal: SquareTerminal, browser: Globe, agents: Users }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, agents: Users }
+/** A surface's name where its rail word is shortened. */
+const SURFACE_NAMES: Partial<Record<ToolSurfaceId, string>> = { 'pull-request': 'Pull request' }
 
 /** What the panel says when there is no thread to show, in the words of the surface that is open. */
 const NO_THREAD: Record<ToolSurfaceId, string> = {
-  files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.', terminal: 'Open a thread to use its terminal.',
+  files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.', 'pull-request': 'Open a thread to see its pull request.', terminal: 'Open a thread to use its terminal.',
   browser: 'Open a thread to browse its pages.',
   agents: 'Open a thread to see its agents.',
 }
@@ -165,7 +169,8 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
   return <div className="tools-rail__tabs" role="tablist" aria-label="Tools" aria-orientation="vertical">
     {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable"
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
-      aria-description={live[surface.id]} title={live[surface.id] ? `${surface.label}: ${live[surface.id]}` : surface.label}
+      aria-label={SURFACE_NAMES[surface.id]}
+      aria-description={live[surface.id]} title={live[surface.id] ? `${SURFACE_NAMES[surface.id] ?? surface.label}: ${live[surface.id]}` : SURFACE_NAMES[surface.id] ?? surface.label}
       onClick={() => onChange(surface.id)} onKeyDown={event => {
         const step = RAIL_STEP[event.key]
         const next = event.key === 'Home' ? TOOL_SURFACES[0] : event.key === 'End' ? TOOL_SURFACES[TOOL_SURFACES.length - 1]
@@ -215,7 +220,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
  * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
@@ -293,12 +298,15 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   useEffect(() => {
     if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(bridge, threadId)
   }, [open, threadId, onFiles, bridge, store])
-  // Changes watches the working copy only while it is the visible surface.
+  // Changes watches the working copy only while it is the visible surface. In the app it waits for settings, so its
+  // first read already follows Hide whitespace changes rather than reading once each way on a cold start. Outside
+  // the app (a panel rendered on its own) there are no settings to wait for.
+  const diffSettingsKnown = app === null || app.settings !== null
   useEffect(() => {
-    if (!open || threadId === undefined || chrome.surface !== 'changes') return
+    if (!open || threadId === undefined || chrome.surface !== 'changes' || !diffSettingsKnown) return
     store.changes.activate(changesBridge, threadId)
     return () => store.changes.deactivate(changesBridge)
-  }, [open, threadId, chrome.surface, changesBridge, store])
+  }, [open, threadId, chrome.surface, changesBridge, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
     if (open && threadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, threadId)
@@ -308,11 +316,13 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   }, [open, threadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the rail's open surface, so keyboard users land where the toggle pointed.
+  // An open nobody pressed for (Proactive panels) leaves focus where the user is typing.
   const wasOpen = useRef(open)
   useEffect(() => {
-    if (open && !wasOpen.current) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
+    if (open && !wasOpen.current && !store.takeQuietOpen()) document.getElementById(`tools-tab-${chrome.surface}`)?.focus()
     wasOpen.current = open
-  }, [open, chrome.surface])
+  }, [open, chrome.surface, store])
+  useProactiveChanges(state, focusedThreadId, store)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')
@@ -325,7 +335,7 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
   const pinned = chrome.surface !== 'agents' && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
-  const surfaceLabel = TOOL_SURFACES.find(surface => surface.id === chrome.surface)!.label
+  const surfaceLabel = SURFACE_NAMES[chrome.surface] ?? TOOL_SURFACES.find(surface => surface.id === chrome.surface)!.label
 
   // Focus moves before the panel unmounts, so closing never leaves keyboard focus on the page.
   const close = (): void => {
@@ -369,11 +379,13 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   if (target === null) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div></>
   else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{chrome.surface === 'agents' ? 'The selected thread is no longer listed.' : 'The pinned thread is no longer listed.'}</strong>
     {chrome.surface !== 'agents' ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
+  // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
+  else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus} />
   else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
-  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus} drafts={providerWritesShortText(thread.providerId)}
+  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus}
     onOpenFile={path => { store.files.showFile(bridge, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
   else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
 

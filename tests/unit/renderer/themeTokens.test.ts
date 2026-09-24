@@ -158,6 +158,7 @@ describe('main-window theme tokens', () => {
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
       'src/renderer/src/features/settings/hosts.css',
+      'src/renderer/src/features/settings/gitSettings.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/requests/requests.css',
       'src/renderer/src/styles/global.css',
@@ -177,12 +178,14 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/room.css',
       'src/renderer/src/agents/screenshots.css',
+      'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/history/history.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
       'src/renderer/src/tools/browserReview.css',
       'src/renderer/src/tools/changes.css',
+      'src/renderer/src/tools/pullRequestSurface.css',
       'src/renderer/src/tools/tools.css',
       'src/renderer/src/tools/toolsRail.css',
     ]

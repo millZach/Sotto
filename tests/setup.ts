@@ -1,12 +1,18 @@
 import { promises as fsPromises } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { afterEach } from 'vitest'
+import { configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 // jsdom keeps one web storage per test file, so whatever a test leaves behind is read by the next one.
 // The renderer paints the cached agent shell on its first frame, so a leftover shell makes the first
 // assertion after mounting a race between that stale paint and the bridge's first answer — a race a
 // loaded machine loses. Every test starts from empty storage instead.
+// Testing Library's findBy and waitFor give up after one second, the same machine-describing deadline that
+// `vitest.config.ts` raises for `expect.poll`. A render that waits on a resolved command can take longer than
+// that on a loaded runner, so they get the same five seconds; something genuinely missing still fails.
+configure({ asyncUtilTimeout: 5_000 })
+
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()
   if (typeof sessionStorage !== 'undefined') sessionStorage.clear()

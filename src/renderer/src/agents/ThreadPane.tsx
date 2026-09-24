@@ -21,7 +21,6 @@ import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
-import { ThreadUsage } from './ThreadUsage'
 import { ThreadMonitor, ThreadHeld, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
@@ -270,12 +269,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
             : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)} />}
-      {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
-          so panes side by side keep their composers at the same height whether or not one has been compacted. */}
+      {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
+          nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
-        <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
       </div>
     </div>
   </>

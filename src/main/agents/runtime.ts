@@ -21,6 +21,7 @@ import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
 import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitActions } from './gitActions'
+import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
@@ -57,8 +58,8 @@ export interface AgentRuntimeOptions {
   gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
     ghStandIn?: { executable: string; args: readonly string[] } }
-  /** What the worktree cleanup (ADR-0019) may reach beyond the workspace: GitHub for the merged rule, and a log of
-   * stable event names. Without `pullRequestMerged` the merged rule never fires; the other rules read only the repository. */
+  /** What the worktree cleanup (ADR-0019) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
+   * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
 }
 
@@ -92,7 +93,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const { fetchIntervalMs, foreground, ghStandIn } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
     gitStatus = new GitStatusReader({ fetchIntervalMs, ...(gitRun ? { run: gitRun } : {}) })
-    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
+    // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
+    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
@@ -104,7 +106,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
   if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
-    writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings) }))
+    writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
+    followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
+  // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
+  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests(gitRun ? { run: gitRun } : {}))
   const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,
     resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
@@ -131,7 +136,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Reclaims worktrees only under the rules the user turned on (ADR-0019); every rule starts off. The desktop's
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
   // checks are wired (the desktop's open terminals), and close drains it before anything it asks is closed.
-  const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup, ...options.worktreeCleanup })
+  // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
+  const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
+    autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {

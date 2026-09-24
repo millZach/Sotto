@@ -4,25 +4,31 @@ import type { WorktreeCleanupRules } from '../../shared/settings'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 
-/** The part of WorkspaceHost the sweep needs: what threads there are, a way to reclaim, and a way to hear a settle. */
+/**
+ * The part of WorkspaceHost the sweep needs: what threads there are, a way to reclaim, a way to hear a settle,
+ * and a way to settle a thread for Auto-settle merged threads.
+ */
 export interface WorktreeCleanupHost {
   workspaceSnapshot(): AgentHostSnapshot
   reclaimThreadWorktree(threadId: string, options: { automatic: true }): Promise<unknown>
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
+  setWorkspaceSettled?(kind: 'thread', id: string, settled: true): Promise<unknown>
 }
 export interface WorktreeCleanupDependencies {
   readonly host: WorktreeCleanupHost
   /** The rules as the user has them now; read at every sweep so a change applies without a restart. */
   readonly rules: () => WorktreeCleanupRules
+  /** The Auto-settle merged threads setting, read at every sweep; absent, no thread is settled on its own. */
+  readonly autoSettleMerged?: () => boolean
   readonly git?: RunGit
-  /** Whether GitHub reports this branch's pull request merged. Absent, the merged rule never fires. */
+  /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
   readonly pullRequestMerged?: (repositoryRoot: string, branch: string) => Promise<boolean>
   readonly now?: () => number
   readonly intervalMs?: number
   /** Stable event names only; never a path, a branch or a message. */
   readonly log?: (code: WorktreeCleanupEvent) => void
 }
-export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-cleanup-skipped'
+export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-cleanup-skipped' | 'thread-auto-settled' | 'thread-auto-settle-skipped'
 const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 const rulesOn = (rules: WorktreeCleanupRules): boolean => rules.afterDays !== null || rules.merged || rules.onSettle || rules.unchanged
@@ -38,7 +44,8 @@ function lastActivity(thread: AgentThread, now: number): number {
  * Reclaims worktrees under the rules the user turned on (ADR-0019): every hour, when the rules change,
  * and when a thread is settled. It only ever asks WorkspaceHost, whose own checks and the folder's own
  * state decide; a folder with uncommitted work or anything but dependencies in its ignored files is left
- * alone, and the branch is always kept.
+ * alone, and the branch is always kept. The same sweep settles threads whose pull request merged, when the
+ * user turned Auto-settle merged threads on.
  */
 export class WorktreeCleanup {
   private timer: ReturnType<typeof setInterval> | undefined
@@ -46,6 +53,10 @@ export class WorktreeCleanup {
   private running: Promise<void> = Promise.resolve()
   private queued = false
   private settled = new Set<string>()
+  /** Thread and branch pairs Auto-settle merged threads already settled while Sotto runs, so a restore sticks. */
+  private readonly autoSettled = new Set<string>()
+  private mergedAnswers = new Map<string, Promise<boolean>>()
+  private defaults = new Map<string, string | null>()
   private disposed = false
   private readonly git: RunGit
   private readonly now: () => number
@@ -78,14 +89,65 @@ export class WorktreeCleanup {
     this.running = this.running.then(async () => { this.queued = false; await this.sweep() }).catch(() => undefined)
     return this.running
   }
+  private autoSettleOn(): boolean {
+    try { return this.dependencies.autoSettleMerged?.() === true && Boolean(this.dependencies.pullRequestMerged && this.dependencies.host.setWorkspaceSettled) } catch { return false }
+  }
+  private merged(repositoryRoot: string, branch: string): Promise<boolean> {
+    const key = `${repositoryRoot}\0${branch}`
+    let answer = this.mergedAnswers.get(key)
+    if (!answer) {
+      answer = this.dependencies.pullRequestMerged ? this.dependencies.pullRequestMerged(repositoryRoot, branch).catch(() => false) : Promise.resolve(false)
+      this.mergedAnswers.set(key, answer)
+    }
+    return answer
+  }
+  /**
+   * Auto-settle merged threads: a thread at rest whose branch's pull request GitHub reports merged is settled,
+   * once per thread and branch while Sotto runs, so a thread the user restores stays restored. Settling removes
+   * nothing; the on-settle cleanup rule, when the user turned it on, then decides about the folder as it would
+   * for any settle. The branch is the one the thread last sent on (a worktree's own branch before its first
+   * send), never the repository's default branch.
+   */
+  private async settleMerged(): Promise<void> {
+    const snapshot = this.dependencies.host.workspaceSnapshot()
+    for (const thread of snapshot.threads) {
+      if (this.disposed || !this.autoSettleOn()) return
+      const worktree = thread.worktree
+      const project = snapshot.projects.find(item => item.id === thread.projectId)
+      if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
+      if (thread.status === 'running' || thread.requests.length) continue
+      const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
+      if (!branch) continue
+      const key = `${thread.id}\0${branch}`
+      if (this.autoSettled.has(key)) continue
+      try {
+        if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
+        if (!await this.merged(worktree.repositoryRoot, branch)) continue
+        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true)
+        this.autoSettled.add(key)
+        this.dependencies.log?.('thread-auto-settled')
+      } catch { this.dependencies.log?.('thread-auto-settle-skipped') }
+    }
+  }
+  /** The repository's default branch, looked up once per repository in a sweep. */
+  private async defaultBranchOf(repositoryRoot: string): Promise<string | null> {
+    if (!this.defaults.has(repositoryRoot)) this.defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))
+    return this.defaults.get(repositoryRoot) ?? null
+  }
   private settledThreads(snapshot: AgentHostSnapshot): Set<string> {
     return new Set(snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))).map(thread => thread.id))
   }
   async sweep(): Promise<void> {
     const rules = this.dependencies.rules()
-    if (!rulesOn(rules)) return
+    const settle = this.autoSettleOn()
+    if (!rulesOn(rules) && !settle) return
+    // GitHub is asked once per branch in a sweep, whichever of the two wants the answer.
+    this.mergedAnswers = new Map()
+    this.defaults = new Map()
+    if (settle) await this.settleMerged()
+    if (!rulesOn(rules) || this.disposed) return
     const snapshot = this.dependencies.host.workspaceSnapshot()
-    const defaults = new Map<string, string | null>()
+    const defaults = this.defaults
     for (const thread of snapshot.threads) {
       if (this.disposed) return
       const worktree = thread.worktree
@@ -113,7 +175,7 @@ export class WorktreeCleanup {
         if (integrated) return true
       }
     }
-    if (rules.merged && this.dependencies.pullRequestMerged && await this.dependencies.pullRequestMerged(worktree.repositoryRoot!, worktree.branch!).catch(() => false)) return true
+    if (rules.merged && this.dependencies.pullRequestMerged && await this.merged(worktree.repositoryRoot!, worktree.branch!)) return true
     return false
   }
   /** The repository's default branch as the local clone knows it: origin's HEAD when recorded, else main or master. */
@@ -126,7 +188,7 @@ export class WorktreeCleanup {
   }
 }
 
-/** Asks GitHub through `gh`, the way the Changes panel already does, whether this branch's pull request is merged. */
+/** Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request is merged. */
 export function githubPullRequestMerged(cwd: string, branch: string): Promise<boolean> {
   return new Promise((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }

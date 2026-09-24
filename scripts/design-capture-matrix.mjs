@@ -59,6 +59,7 @@ for (const [id, category, state] of [
   ['settings-transcription', 'settings', 'transcription'],
   ['settings-output', 'settings', 'output'],
   ['settings-application-privacy', 'settings', 'application-privacy'],
+  ['settings-git', 'settings', 'git'],
   ['settings-validation-error', 'settings', 'validation-error'],
   ['help', 'help', 'overview'],
   // Threads captures show clock times; the capture run pins America/Los_Angeles and en-US.
@@ -93,6 +94,7 @@ for (const [id, category, state] of [
   ['settings-providers-light', 'settings', 'providers'],
   ['settings-capture-light', 'settings', 'capture'],
   ['settings-application-privacy-light', 'settings', 'application-privacy'],
+  ['settings-git-light', 'settings', 'git'],
   ['settings-validation-error-light', 'settings', 'validation-error'],
   ['settings-appearance-light', 'settings', 'appearance'],
   ['help-light', 'help', 'overview'],

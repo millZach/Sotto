@@ -1,4 +1,4 @@
-import { hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../src/shared/clientIdentity'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -11,7 +11,7 @@ import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSo
 import { terminalOutput } from './support/terminal'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
-// Only the final GitHub PR responses are replaced, AFTER a real push to an owned local bare repository.
+// GitHub is a scripted gh (tests/fixtures/fakeGh.mjs), reached AFTER a real push to an owned local bare repository.
 const SHOTS = resolve('artifacts/issue-74-daily-workspace')
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim()
 async function size(launched: LaunchedSotto, width = 1600, height = 1000): Promise<void> {
@@ -63,6 +63,11 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Owned server has no address')
   const url = `http://127.0.0.1:${address.port}/`
+  const ghState = join(directory, 'gh-state.json')
+  const previousGh = { script: process.env.SOTTO_E2E_GH_SCRIPT, executable: process.env.SOTTO_E2E_GH_EXECUTABLE, state: process.env.FAKE_GH_STATE }
+  process.env.SOTTO_E2E_GH_SCRIPT = resolve('tests/fixtures/fakeGh.mjs')
+  process.env.SOTTO_E2E_GH_EXECUTABLE = process.execPath
+  process.env.FAKE_GH_STATE = ghState
   const launched = await launchSotto('phase3-workspace', directory)
   const { page, app } = launched
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
@@ -156,33 +161,35 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const committed = git(working, 'rev-parse', 'HEAD')
     expect(committed).not.toBe(original); expect(git(other, 'rev-parse', 'HEAD')).toBe(original)
     expect(git(repository, 'rev-parse', 'HEAD')).toBe(original)
-    await panel.getByRole('button', { name: 'Pull request', exact: true }).click()
-    await expect(panel.getByText('Pull requests require a GitHub remote. This branch can still be pushed.')).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Create pull request', exact: true })).toBeDisabled()
+    // The pull request is T3's (ADR-0027): Create PR in the pane header pushes to the owned remote and opens it through
+    // the scripted gh, the badge under the composer opens it in Tools, and it merges only after its confirmation.
     expect(git(repository, '--git-dir', remote, 'for-each-ref', '--format=%(refname)', 'refs/heads')).toBe('')
-    await panel.getByRole('button', { name: 'Push branch', exact: true }).click()
-    await expect(panel.getByText('Branch pushed.', { exact: true })).toBeVisible()
-    expect(git(repository, '--git-dir', remote, 'rev-parse', `refs/heads/${implementation!.worktree!.branch}`)).toBe(committed)
-    // Faithful GitHub UI fixture, explicitly separate from the real service/IPC/Git lane above.
-    const inspected = await page.evaluate(async threadId => window.sotto!.gitChanges!.reviewPullRequest!({ threadId }), first)
-    if (!inspected.ok) throw new Error(inspected.error.message)
-    const fixture = { ...mapHostReferences(inspected.value, id => parseHostEntityKey(id)?.id ?? id), repository: 'https://github.com/sotto-fixture/owned', remoteUrl: 'https://github.com/sotto-fixture/owned.git', base: 'main', error: null }
-    const pr = { number: 74, title: 'Make the daily greeting friendlier', url: 'https://github.com/sotto-fixture/owned/pull/74', state: 'OPEN', base: 'main', head: fixture.branch!, draft: false, review: 'REVIEW_REQUIRED', checks: [{ name: 'Owned build', status: 'SUCCESS', url: null }] }
-    await app.evaluate(({ ipcMain }, { fixture, pr }) => {
-      let creates = 0
-      ipcMain.removeHandler('sotto:git-changes:reviewPullRequest')
-      ipcMain.handle('sotto:git-changes:reviewPullRequest', () => ({ ok: true, value: { ...fixture, pullRequest: creates ? pr : null } }))
-      ipcMain.removeHandler('sotto:git-changes:actPullRequest')
-      ipcMain.handle('sotto:git-changes:actPullRequest', (_event, request) => {
-        if (++creates !== 1 || request.action !== 'create' || request.threadId !== fixture.workspace.threadId || request.workspaceId !== fixture.workspace.workspaceId || request.revision !== fixture.revision || request.base !== 'main' || request.title !== pr.title || request.body !== 'Verified against the owned local remote.') throw new Error('Incorrect or repeated fixture PR action')
-        return { ok: true, value: { message: 'Pull request created.', pullRequest: pr } }
-      })
-    }, { fixture, pr })
-    await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
-    await panel.getByRole('textbox', { name: 'Base branch', exact: true }).fill('main')
-    await panel.getByRole('textbox', { name: 'PR body', exact: true }).fill('Verified against the owned local remote.')
-    await panel.getByRole('button', { name: 'Create pull request', exact: true }).click()
-    await expect(panel.getByRole('region', { name: 'Pull request status' })).toContainText('#74')
+    await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Create PR', exact: true }).click()
+    await expect(pane(first).locator('.git-action-notice')).toContainText('Created PR #74', { timeout: 90_000 })
+    const branch = git(working, 'branch', '--show-current')
+    expect(git(repository, '--git-dir', remote, 'rev-parse', `refs/heads/${branch}`)).toBe(committed)
+    await pane(first).getByRole('button', { name: /^Open PR #74 - Open: .* in Tools$/u }).click({ timeout: 30_000 })
+    await expect(panel.getByRole('tab', { name: 'Pull request', exact: true })).toHaveAttribute('aria-selected', 'true')
+    const created = (JSON.parse(await readFile(ghState, 'utf8')) as { pulls: Array<{ title: string }> }).pulls[0]!
+    await expect(panel.getByRole('heading', { name: `#74 ${created.title}`, exact: true })).toBeVisible({ timeout: 30_000 })
+    // The merge checklist: the owned repository requires no review, the one check passed, and every line is done.
+    const checklist = panel.getByRole('list', { name: 'Merge checklist' })
+    await expect(checklist).toContainText('CI / Owned build passed')
+    await expect(checklist).toContainText('No review required')
+    await expect(panel.getByRole('heading', { name: /^Ready to merge/u })).toContainText('5 of 5 done')
+    await panel.getByRole('button', { name: 'Merge #74', exact: true }).click()
+    const confirmMerge = page.getByRole('dialog', { name: 'Merge pull request?' })
+    await expect(confirmMerge).toContainText('This merges #74 into main using merge.')
+    expect((JSON.parse(await readFile(ghState, 'utf8')) as { calls: string[] }).calls.some(call => call.startsWith('pr merge'))).toBe(false)
+    await confirmMerge.getByRole('button', { name: 'Merge', exact: true }).click()
+    await expect(panel.getByText('Pull request merged.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(panel.locator('.pr-surface__finished')).toContainText('Merged into main')
+    const merged = JSON.parse(await readFile(ghState, 'utf8')) as { pulls: Array<{ number: number; state: string; mergedWith?: string; headRefName: string }>; calls: string[] }
+    expect(merged.pulls).toEqual([expect.objectContaining({ number: 74, state: 'MERGED', mergedWith: 'merge', headRefName: branch })])
+    expect(merged.calls.filter(call => call.startsWith('pr merge'))).toHaveLength(1)
+    await panel.getByRole('button', { name: /^Linked pull requests/u }).click()
+    await expect(panel.getByRole('list', { name: 'Linked pull requests' })).toContainText('Created from this thread')
     await capture(page, 'owned-push-fixture-pr')
     await focusThread(page, second, 'Daily review')
     await expect(prompt(second)).toHaveValue('Keep this review draft private to this pane.')
@@ -193,10 +200,16 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
       expect(messages.filter(message => message === own)).toHaveLength(1)
       expect(messages.some(message => message === foreign)).toBe(false)
     }
-    await writeFile(join(SHOTS, 'daily-proof.json'), JSON.stringify({ lane: 'provider fixtures; real Electron services; GitHub status IPC fixture', original, committed, pushed: committed, first, second, working, other, realGitHubWrites: 0, errors }, null, 2))
+    await writeFile(join(SHOTS, 'daily-proof.json'), JSON.stringify({ lane: 'provider fixtures; real Electron services; scripted gh', original, committed, pushed: committed, first, second, working, other, realGitHubWrites: 0, errors }, null, 2))
     expect(errors).toEqual([])
   } catch (error) { await capture(page, 'failure').catch(() => undefined); throw error }
-  finally { await closeSotto(launched); await new Promise<void>(done => server.close(() => done())); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
+  finally {
+    await closeSotto(launched); await new Promise<void>(done => server.close(() => done()))
+    for (const [key, value] of [['SOTTO_E2E_GH_SCRIPT', previousGh.script], ['SOTTO_E2E_GH_EXECUTABLE', previousGh.executable], ['FAKE_GH_STATE', previousGh.state]] as const) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
+    }
+    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+  }
 })
 
 test('mixed pane drafts, queued work, settlement and preferences recover without automatic replay', async () => {
