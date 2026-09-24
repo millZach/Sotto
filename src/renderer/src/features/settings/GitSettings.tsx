@@ -61,7 +61,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
       ? 'Changes opens on its own if Tools is closed and a turn leaves its folder with at least 3 more changed files or 50 more changed lines. It counts only while the Threads page is open.'
       : 'Changes opens only when you open it.',
     fetch: settings.gitFetchIntervalSeconds === 0
-      ? 'Sotto never fetches on its own. Ahead, behind and the pull request update when you refresh.'
+      ? 'Sotto never fetches, not even on a refresh or before a Git action. Ahead and behind compare with the remote as it was last fetched, and the pull request updates when you refresh.'
       : `Sotto asks origin every ${every} whether a thread's branch is ahead or behind, while this window is in front.`,
     autoPull: settings.gitAutoPull
       ? 'Sotto pulls a thread\'s folder on the default branch when it is clean and only behind. Fast-forward only; nothing is merged or rebased.'
