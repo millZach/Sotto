@@ -35,6 +35,8 @@ The first live onboarding test on this Mac used the system default input, the bu
 
 Onboarding now lists detected inputs after the first capture (Chromium withholds labels until then). Choosing **C922 Pro Stream Webcam** and retesting produced a live meter (`aria-valuenow` non-zero, `data-speaking=true`). The same picker remains in Settings. Dictation already honored `microphoneId`; the onboarding and Settings tests now do too.
 
+The capture itself stayed open after Test (state `ready`, **Retest microphone**). The wave still dropped after ~300 ms of quiet because the dictation voice gate treats low RMS as silence. The onboarding and Settings tests now hold the wave on for the whole open stream; the widget and Dictate room still gate on voice.
+
 ## Still open on this machine
 
 - **Packaged Playwright smoke** (`verify-packaged-resources.mjs` → `verifyNormalPackagedLaunch`) launched Sotto, wrote `workspace.json` / `threads.sqlite`, then never returned from `application.firstWindow({ timeout: 45_000 })`. The 45s timeout did not fire. Killed after several minutes. This blocks `package:dir:mac` from completing its last step and therefore blocks `package:mac` until it is fixed or the wait is made to fail.

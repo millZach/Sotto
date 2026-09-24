@@ -32,13 +32,23 @@ function safeLevel(level: number): number {
  * The visualizer stays out of the accessibility tree: the live regions already
  * announce the listening state.
  */
-export function ListeningBars({ level }: { readonly level: number }): ReactNode {
+export function ListeningBars({
+  level,
+  holdSpeaking = false,
+}: {
+  readonly level: number
+  /**
+   * The microphone test keeps the stream open to show live input. Hold the
+   * wave on for that whole session; dictation still gates on voice.
+   */
+  readonly holdSpeaking?: boolean
+}): ReactNode {
   const bounded = safeLevel(level)
-  const [speaking, setSpeaking] = useState(() => bounded >= SPEAKING_ON_LEVEL)
+  const [speaking, setSpeaking] = useState(() => holdSpeaking || bounded >= SPEAKING_ON_LEVEL)
   const settleTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (bounded >= SPEAKING_ON_LEVEL) {
+    if (holdSpeaking || bounded >= SPEAKING_ON_LEVEL) {
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current)
         settleTimerRef.current = null
@@ -54,7 +64,7 @@ export function ListeningBars({ level }: { readonly level: number }): ReactNode 
       settleTimerRef.current = null
       setSpeaking(false)
     }, SPEAKING_HOLD_MS)
-  }, [bounded, speaking])
+  }, [bounded, holdSpeaking, speaking])
 
   useEffect(() => () => {
     if (settleTimerRef.current === null) return
