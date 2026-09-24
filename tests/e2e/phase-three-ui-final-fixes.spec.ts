@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import sharp from 'sharp'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
@@ -48,8 +49,11 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
     const agents = window.sotto!.agents!
     await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
     const state = await agents.command({ type: 'connect' })
-    const thread = state.host.threads.find(item => item.id === 'workshop')!
-    return state.host.projects.find(project => project.id === thread.projectId)!.path
+    return { threads: state.host.threads.map(({ id, projectId }) => ({ id, projectId })), projects: state.host.projects.map(({ id, path }) => ({ id, path })) }
+  }).then(({ threads, projects }) => {
+    // The window names threads by their host's key (`host:<host>:<id>`); the fixture's own ID is the last part.
+    const thread = threads.find(item => parseHostEntityKey(item.id)?.id === 'workshop')!
+    return projects.find(project => project.id === thread.projectId)!.path
   })
   expect(folder.startsWith(launched.userData)).toBe(true)
   await resize(launched, 1280, 860)
