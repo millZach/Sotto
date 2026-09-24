@@ -2,6 +2,14 @@
 
 Accepted September 22, 2026.
 
+Note, September 24, 2026: what the Git interface ([ADR-0027](0027-git-the-way-t3-code-does-it.md)) changed here.
+
+- **The rules stay under Settings → Application.** The other Git settings moved to Settings → Git, except the Generated switches, which stay under Cleanup; the owner's pick for that section left the worktree cleanup rules where they were.
+- **Auto-settle merged threads rides this sweep.** The setting, off until turned on, settles a thread at rest whose last-sent branch's pull request is merged. It asks GitHub on this sweep's hourly schedule and shares the `merged` rule's `gh` question, once per branch when both want the answer. An auto-settle is not the user's Settle press, so it asks "Remove its worktree too?" of no one. Only the `onSettle` rule, when it is on, then decides about the folder, under every guard below.
+- **The background fetch does not reopen the `unchanged` rule.** The considered option below refused a fetch because no periodic network action was documented; ADR-0027 now documents one under the **Git fetch interval**. The rule still compares with the local default branch (`refs/heads/<default>`) and fetches nothing itself. The background fetch moves only remote-tracking refs, so it does not change the rule's answer. **Automatically pull**, when it is on, fast-forwards a clean checkout of the default branch, and so moves forward what counts as already in it.
+- **Previous worktree and New worktree.** A thread that picks **Previous worktree** on the branch toolbar works in another thread's worktree as a reused folder, and `reclaim` refuses a reused folder, so only the thread that made it can give it back. That thread's own Remove worktree waits while another thread works in the checkout. A worktree made by **New worktree**, including one a pull request checkout made, is the thread's own and can be reclaimed like any other. **Remove worktree** stays in the Working copy panel of the pane header.
+- **Where `merged` asks.** The sentence below that says `merged` asks GitHub "the way the Changes panel already does" describes the panel of the time. Changes no longer reaches GitHub; the Git status reader and the Pull request surface ask through the same `gh`.
+
 ## Context
 
 Sotto took T3 Code's working-copy lifecycle in two halves and left out the third. A thread can be given its own Git worktree under `<userData>/thread-worktrees/<token>` (ADR-0014), and a worktree that goes missing is put back on its recorded branch before the next send. Nothing ever removed one. `ThreadWorktrees` said so in its own words, "never removes files or branches", and ADR-0014 hardened it into "settling a thread removes nothing".
