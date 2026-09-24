@@ -69,7 +69,7 @@ as `historyStatus: 'loading'`.
 
 The shell still carried a host's whole model catalog on every publish even when nothing in it had
 changed — on the owner's 608-model catalog, most of the shell's weight and about 4 ms of the window's read.
-ADR-0027 has the coalesced broadcast omit a catalog a window was already sent, tagged with a revision so
+ADR-0028 has the coalesced broadcast omit a catalog a window was already sent, tagged with a revision so
 the window can tell an omission from an empty list and recover with `agents.get()` if it is missing what a
 broadcast names. `AGENT_GET` and a command's own answer are unaffected: both still return the catalog in
 full, because they are that recovery path. Measured on the same owner catalog (`node:v8`'s `serialize`, which
