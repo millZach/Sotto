@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { hostKeysPerTest } from './support/hostKeys'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
 const evidence = resolve('artifacts/held-action')
@@ -11,7 +12,11 @@ const evidence = resolve('artifacts/held-action')
 const HELD_AFTER_MS = 20_000
 const command = 'npm test -- --maxWorkers=2'
 const watch = { id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watching the build checks' }
-const pane = (page: Page): Locator => page.locator('section.thread-pane[data-thread-id="workshop"]')
+// Panes are keyed by the host that owns their thread; `start` reads the key once the host is connected.
+const hostKeys = hostKeysPerTest()
+const key = hostKeys.key
+test.beforeEach(() => { hostKeys.reset() })
+const pane = (page: Page): Locator => page.locator(`section.thread-pane[data-thread-id="${key('workshop')}"]`)
 const ornament = (page: Page): Locator => pane(page).locator('.thread-monitor')
 const waiting = (page: Page): Locator => pane(page).locator('.thread-monitor[data-ornament="held"]')
 
@@ -47,6 +52,7 @@ async function start(launched: LaunchedSotto): Promise<void> {
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await launched.page.reload()
+  await hostKeys.read(launched.page)
   await openThreads(launched.page)
   await launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Workshop', exact: true }).click()
   await expect(pane(launched.page)).toBeVisible()
