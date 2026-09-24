@@ -7,10 +7,18 @@ import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
+import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import { threadsStateFixture } from '../liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+// Outside the app provider the diff settings are their defaults; a test that needs another says so.
+vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(() => null),
+}))
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReturnValue(null) })
 
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,3 +3,3 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n'
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
@@ -103,6 +111,18 @@ describe('unified diff rows', () => {
 })
 
 describe('Changes surface', () => {
+  it('opens a diff in the layout the Diff layout setting names, and the toggle still changes it', async () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, diffLayout: 'split' } } as unknown as AppContextValue)
+    setup(fakeGit())
+    await userEvent.click(await within(panel()).findByRole('option', { name: /^app\.ts/u }))
+    const diff = await within(panel()).findByRole('region', { name: 'Changes in src/app.ts' })
+    const toggle = within(diff).getByRole('button', { name: 'Split view' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(within(diff).getByText('Before')).toBeInTheDocument()
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('aligns unequal edits in split view without losing context, hunk numbers or no-newline notes', async () => {
     const patch = 'diff --git a/src/old.ts b/src/app.ts\nold mode 100644\nnew mode 100755\nsimilarity index 75%\nrename from src/old.ts\nrename to src/app.ts\nindex abc123..def456 100755\n--- a/src/old.ts\n+++ b/src/app.ts\n@@ -10,4 +20,5 @@\n keep\n-old one\n-old two\n+new one\n+new two\n+new three\n tail\n@@ -30 +40 @@\n-old end\n\\ No newline at end of file\n+new end\n'
     setup(fakeGit({ diffs: { 'src/app.ts': { kind: 'text', patch } } }))

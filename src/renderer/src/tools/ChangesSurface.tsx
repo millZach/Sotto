@@ -7,6 +7,7 @@ import { CHANGE_STATUS, parseUnifiedDiff, useThreadChanges, type ChangesStore, t
 import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
 import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
+import { useDiffPreferences } from '../state/gitSettings'
 
 /** A long patch shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -40,7 +41,9 @@ export interface ChangesSurfaceProps {
 /** The working copy's changes against HEAD: the file list beside its selected diff. Review only. */
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus, drafts = true }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
-  const [split, setSplit] = useState(false)
+  // The Diff layout setting is where the view starts; the toggle changes it from there, for this visit.
+  const initialLayout = useDiffPreferences().layout
+  const [split, setSplit] = useState(() => initialLayout === 'split')
   const [pullRequestOpen, setPullRequestOpen] = useState(false)
   // Checkpoints draws its toggle into the line of chrome and the file's staging into its head.
   const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
