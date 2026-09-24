@@ -1,0 +1,659 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three structures for reading what changed in a thread's working copy (#268), inside the
+  Threads page. A is what merged: T3's diff panel in Tools, every file of one scope stacked as collapsible blocks.
+  B reviews one file at a time from a queue with Viewed marks. C puts each turn's changes in the conversation and
+  the working tree behind a chip above the composer. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — reading changes</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  /* The shell's header crumb would run under the header buttons once a wide panel narrows the pane; clip it here. */
+  .pane-head__title, .pane-head__crumb { overflow: hidden; }
+
+  /* Shared: icon buttons, counts, status letters and the diff lines every variant draws. */
+  .ico { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 7px; color: var(--tt-text-muted); }
+  .ico:hover { background: var(--tt-hover); color: var(--tt-text); }
+  .ico[aria-pressed='true'], .ico[data-on] { background: var(--tt-selected); color: var(--tt-text); }
+  .ico:disabled { opacity: .45; }
+  .seg { display: inline-flex; gap: 1px; padding: 1px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+  .seg .ico { width: 26px; height: 26px; border-radius: 6px; }
+  .cnt { flex: none; color: var(--tt-text-muted); font: 12px var(--tt-font-mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cnt .a { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
+  .cnt .r { color: var(--tt-error-text); }
+  .st { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--tt-text-2); font: 600 12px/1 var(--tt-font-mono); }
+  .st[data-status='added'], .st[data-status='untracked'] { color: var(--tt-success); }
+  .st[data-status='deleted'] { color: var(--tt-error-text); }
+  .st[data-status='modified'] { color: var(--tt-warning-text); }
+  .path { display: flex; align-items: baseline; min-width: 0; white-space: nowrap; }
+  .path__folder { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); direction: rtl; text-align: left; text-overflow: ellipsis; }
+  .path__name { flex: none; max-width: 100%; overflow: hidden; font-weight: 500; text-overflow: ellipsis; }
+  .problem { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 18px; }
+  .problem strong { color: var(--tt-text); font-size: 14px; font-weight: 500; line-height: 1.5; }
+  .problem p { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+
+  .d-body { overflow-x: auto; background: var(--tt-code-bg); }
+  .d-split-head { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+  .d-split-head span { min-width: 0; overflow: hidden; padding: 4px 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .d-rows { padding: 4px 0 8px; font: 12.5px/1.65 var(--tt-font-mono); }
+  .d-rows:not([data-wrap]) { width: max-content; min-width: 100%; }
+  .d-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; color: var(--tt-code-text); }
+  .d-rows:not([data-wrap]) .d-line { grid-template-columns: 4ch 4ch 1ch max-content; }
+  .d-num { color: var(--tt-text-muted); font-size: 11.5px; text-align: right; user-select: none; }
+  .d-line > .d-num:first-child { padding-left: 6px; box-sizing: content-box; }
+  .d-sign { color: var(--tt-text-muted); user-select: none; }
+  .d-text { min-width: 0; white-space: pre; }
+  .d-rows[data-wrap] .d-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  [data-kind='add'] { background: color-mix(in srgb, var(--tt-success) 12%, transparent); }
+  [data-kind='add'] > .d-sign { color: var(--tt-success); }
+  [data-kind='remove'] { background: color-mix(in srgb, var(--tt-error) 12%, transparent); }
+  [data-kind='remove'] > .d-sign { color: var(--tt-error-text); }
+  .d-line[data-kind='hunk'] { margin-top: 4px; background: var(--tt-accent-wash); color: var(--tt-text-2); }
+  .d-line[data-kind='hunk']:first-child { margin-top: 0; }
+  .d-rows[data-split] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .d-rows[data-split]:not([data-wrap]) { grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr); }
+  .d-rows[data-split] > .d-line { grid-column: 1 / -1; }
+  .d-cell { display: grid; grid-template-columns: 3.5ch 1ch minmax(0, 1fr); column-gap: 4px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
+  .d-rows:not([data-wrap]) .d-cell { grid-template-columns: 3.5ch 1ch max-content; }
+  .d-cell:nth-child(odd of .d-cell) { border-right: 1px solid var(--tt-hairline); }
+
+  /* A file as a collapsible block: head stays in view while its lines scroll (A and C's sheet). */
+  .fb { border-bottom: 1px solid var(--tt-hairline); }
+  .fb__head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 36px; padding: 0 6px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); font-size: 13px; }
+  .fb[data-collapsed] > .fb__head { border-bottom: 0; }
+  .fb__name { display: flex; flex: 0 1 auto; min-width: 0; padding: 2px 4px; border-radius: 5px; text-align: left; }
+  button.fb__name:hover .path__name { text-decoration: underline; text-underline-offset: 2px; }
+  .fb__head .cnt { margin-left: auto; padding-left: 4px; }
+  .fb__head .fb__name + .ico { margin-left: auto; }
+
+  /* A — the Changes surface as merged. */
+  .ch { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: ch / inline-size; }
+  .ch > * { flex: none; }
+  .ch-chrome { display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 6px 0 6px; border-bottom: 1px solid var(--tt-hairline); }
+  .ch-scope { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+  .ch-scope select { field-sizing: content; appearance: none; min-width: 0; height: 30px; padding: 0 26px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text); font-size: 14px; font-weight: 500; cursor: pointer; }
+  .ch-scope select:hover { background: var(--tt-hover); }
+  .ch-scope select option, .ch-scope select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
+  .ch-scope > svg { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
+  .ch-actions { display: flex; gap: 2px; margin-left: auto; }
+  .ch-bar { position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; min-height: 38px; padding: 3px 6px 3px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+  .ch-fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .ch-view { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
+  .base { display: flex; flex: 1 1 auto; align-items: center; gap: 4px; min-width: 0; }
+  .base__head { min-width: 3ch; max-width: 45%; overflow: hidden; color: var(--tt-text-muted); font: 12px var(--tt-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+  .base__arrow { color: var(--tt-text-muted); }
+  .base__trigger { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; border-radius: 6px; font: 12px var(--tt-font-mono); color: var(--tt-text); }
+  .base__trigger:hover, .base__trigger[aria-expanded='true'] { background: var(--tt-hover); }
+  .base-pop { position: absolute; top: calc(100% + 4px); left: 8px; z-index: 5; display: flex; flex-direction: column; gap: 4px; width: min(19rem, calc(100% - 16px)); padding: 6px; border: 1px solid var(--tt-border-faint); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text-2); }
+  .base-pop__search { height: 30px; padding: 0 9px; display: flex; align-items: center; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text-muted); font-size: 13px; }
+  .base-pop__cols, .base-pop__row { display: grid; grid-template-columns: minmax(0, 1fr) 3rem; align-items: center; }
+  .base-pop__cols { padding: 4px 8px 4px 27px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+  .base-pop__cols span:last-child { text-align: right; }
+  .base-pop__ref { display: flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 8px; border-radius: 6px; font-size: 13px; text-align: left; }
+  .base-pop__ref:hover { background: var(--tt-hover); color: var(--tt-text); }
+  .base-pop__ref .i { visibility: hidden; color: var(--tt-accent-text); }
+  .base-pop__ref[aria-current] { color: var(--tt-text); }
+  .base-pop__ref[aria-current] .i { visibility: visible; }
+  .sw { position: relative; justify-self: end; width: 28px; height: 16px; margin-right: 8px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: var(--tt-field); }
+  .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--tt-text-muted); }
+  .sw[aria-checked='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent); }
+  .sw[aria-checked='true']::after { left: 14px; background: var(--tt-on-accent); }
+  .base-pop__remote { display: grid; justify-self: end; margin-right: 14px; color: var(--tt-text-muted); }
+  .ch-review { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+  .ch-files { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+  .ch-tree { order: -1; flex: none; max-height: clamp(84px, 26%, 200px); overflow: auto; padding: 6px 8px; border-bottom: 1px solid var(--tt-hairline); }
+  @container ch (min-width: 640px) {
+    .ch-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(160px, 28%, 256px); }
+    .ch-review[data-tree] > .ch-tree { order: 0; max-height: none; border-bottom: 0; border-left: 1px solid var(--tt-hairline); }
+  }
+  .ch-tree__folder { overflow: hidden; padding: 4px 8px 2px; color: var(--tt-text-muted); font-size: 12px; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .ch-tree__item { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 26px; padding: 0 8px 0 16px; border-radius: 6px; color: var(--tt-text-2); font-size: 13px; text-align: left; }
+  .ch-tree__item:hover { background: var(--tt-hover); color: var(--tt-text); }
+  .ch-tree__item span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast { position: absolute; left: 50%; bottom: 12px; z-index: 6; transform: translateX(-50%); padding: 6px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); font-size: 12.5px; white-space: nowrap; }
+
+  /* B — one file at a time, from a queue. The panel is wider so the queue and the file both fit. */
+  .tools:has(.rq) { width: min(56%, 600px); }
+  .app[data-size='820'] .tools:has(.rq) { width: 56%; }
+  .rq { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: rq / inline-size; }
+  .rq-top { position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-height: 42px; padding: 5px 6px; border-bottom: 1px solid var(--tt-hairline); }
+  .rq-scope { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 7px; font-size: 14px; font-weight: 500; }
+  .rq-scope:hover, .rq-scope[aria-expanded='true'] { background: var(--tt-hover); }
+  .rq-scope .i { color: var(--tt-text-muted); }
+  .rq-cmp { color: var(--tt-text-muted); font: 12px var(--tt-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .rq-tail { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .rq-progress { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+  .rq-meter { width: 56px; height: 4px; overflow: hidden; border-radius: var(--tt-radius-pill); background: color-mix(in srgb, var(--tt-text-muted) 28%, transparent); }
+  .rq-meter span { display: block; height: 100%; background: var(--tt-accent); }
+  .rq-menu { top: calc(100% - 2px); left: 6px; width: 230px; }
+  .rq-menu .menu-item .i:first-child { visibility: hidden; color: var(--tt-accent-text); }
+  .rq-menu .menu-item[aria-current] .i:first-child { visibility: visible; }
+  .rq-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--tt-hairline); }
+  .rq-main { display: grid; flex: 1; grid-template-columns: 184px minmax(0, 1fr); min-height: 0; }
+  .rq-queue { display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow: auto; padding: 6px; border-right: 1px solid var(--tt-hairline); }
+  .rq-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 8px; width: 100%; padding: 6px 8px; border-radius: 7px; text-align: left; font-size: 13px; color: var(--tt-text); }
+  .rq-item:hover { background: var(--tt-hover); }
+  .rq-item[aria-current] { background: var(--tt-selected); box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
+  .rq-item[data-viewed] .rq-item__name { color: var(--tt-text-muted); }
+  .rq-item__name { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .rq-item__name span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rq-item__sub { grid-column: 2; display: flex; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: 11.5px; }
+  .rq-item__sub span:first-child { min-width: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .rq-item__stale { grid-column: 2; color: var(--tt-warning-text); font-size: 11.5px; }
+  .ck { display: grid; place-items: center; width: 15px; height: 15px; border: 1.5px solid var(--tt-text-muted); border-radius: 4px; color: var(--tt-on-accent); }
+  .ck .i { width: 11px; height: 11px; stroke-width: 2.5; visibility: hidden; }
+  [aria-checked='true'] > .ck, .ck[data-on] { border-color: var(--tt-accent); background: var(--tt-accent); }
+  [aria-checked='true'] > .ck .i, .ck[data-on] .i { visibility: visible; }
+  .rq-file { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .rq-file__head { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-height: 42px; padding: 5px 8px; border-bottom: 1px solid var(--tt-hairline); font-size: 13px; }
+  .rq-file__head .path { flex: 0 1 auto; min-width: 0; }
+  .rq-viewed { display: inline-flex; align-items: center; gap: 7px; height: 28px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 7px; color: var(--tt-text-2); font-size: 12.5px; }
+  .rq-viewed:hover { background: var(--tt-hover); color: var(--tt-text); }
+  .rq-diff { flex: 1; min-height: 0; overflow: auto; background: var(--tt-code-bg); }
+  .rq-diff .d-body { overflow: visible; }
+  .rq-foot { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--tt-hairline); font-size: 12.5px; }
+  .rq-foot .btn { height: 30px; padding: 0 10px; font-size: 12.5px; }
+  .rq-foot__mid { flex: 1; text-align: center; color: var(--tt-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: 4px; color: var(--tt-text-muted); font: 11px var(--tt-font-mono); }
+  /* At the minimum the queue folds into a strip above the file. */
+  @container rq (max-width: 460px) {
+    .rq-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .rq-queue { flex-direction: row; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 5px 6px; border-right: 0; border-bottom: 1px solid var(--tt-hairline); }
+    .rq-item { flex: none; width: auto; grid-template-columns: auto auto; padding: 4px 8px; }
+    .rq-item__sub, .rq-item__stale { display: none; }
+    .rq-foot .btn__word { display: none; }
+    .rq-file__head { flex-wrap: wrap; }
+  }
+
+  /* C — changes in the conversation, and the working tree as a sheet over the pane. */
+  .turn-act { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
+  .turn-act:hover, .turn-act[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .turn-act > .i:last-child { transition: transform .15s; }
+  .turn-act[aria-expanded='true'] > .i:last-child { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) { .turn-act > .i:last-child { transition: none; } }
+  .tc { margin-top: 8px; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+  .tc__row { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 34px; padding: 0 10px 0 6px; border-top: 1px solid var(--tt-hairline); font-size: 13px; text-align: left; }
+  .tc__row:first-child { border-top: 0; }
+  .tc__row:hover { background: var(--tt-hover); }
+  .tc__row > .i:first-child { color: var(--tt-text-muted); }
+  .tc__row .cnt { margin-left: auto; padding-left: 8px; }
+  .tc .d-body { max-height: 260px; overflow: auto; border-top: 1px solid var(--tt-hairline); }
+  .tc .problem { padding: 12px 14px; }
+  .tc .problem strong { font-size: 13px; }
+  .wt-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; height: 28px; margin: 0 0 8px 4px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: var(--tt-surface); color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+  .wt-chip:hover, .wt-chip[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .wt-chip strong { color: var(--tt-text); font-weight: 500; }
+  .wt-chip[aria-disabled='true'], .wt-chip[aria-disabled='true']:hover { background: var(--tt-surface); color: var(--tt-text-muted); }
+  .sheet { position: absolute; top: 48px; left: 8px; right: 8px; bottom: 0; z-index: 20; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--tt-panel-border); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--tt-surface); box-shadow: var(--tt-shadow-lg); }
+  .sheet__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 46px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--tt-hairline); }
+  .tabs { display: inline-flex; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+  .tabs button { height: 28px; padding: 0 10px; border-radius: 7px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+  .tabs button[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); font-weight: 500; }
+  .sheet__fact { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font: 12px var(--tt-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+  .sheet__tail { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .sheet__files { flex: 1; min-height: 0; overflow: auto; }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const EXTRA = {
+  expand: '<path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>',
+  collapse: '<path d="m7 20 5-5 5 5M7 4l5 5 5-5"/>',
+  rows: '<rect x="4" y="4.5" width="16" height="15" rx="2"/><path d="M4 12h16"/>',
+  wrap: '<path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-4M4 18h5"/><path d="m15 16-2 2 2 2"/>',
+  pilcrow: '<path d="M13 4v16M17 4v16M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/>',
+  cloud: '<path d="M7 18.5h10a4 4 0 0 0 .6-8A6 6 0 0 0 6 9.5a4.5 4.5 0 0 0 1 9z"/>',
+  arrowRight: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  left: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+}
+const ic = (name, cls = 'sm') => EXTRA[name] ? `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${EXTRA[name]}</svg>` : I(name, cls)
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/* The files, as unified patches. */
+const PATCH = {
+  preview: { path: 'src/main/voice/preview.ts', lines: [
+    '@@ -1,5 +1,6 @@',
+    ' import { synthesize } from \'./xai\'',
+    ' import { player } from \'./player\'',
+    '+import { PREVIEW_SECONDS } from \'../../shared/voices\'',
+    ' import type { VoiceId } from \'../../shared/voices\'',
+    ' ',
+    ' const SAMPLE_TEXT = \'This is how I sound.\'',
+    '@@ -14,9 +15,14 @@ export async function previewVoice(voice: VoiceId): Promise<void> {',
+    '   const key = await credentials.read(\'xai-voice\')',
+    '   if (!key) throw new VoiceError(\'no-key\')',
+    '-  const audio = await synthesize(voice, SAMPLE_TEXT, key)',
+    '-  await player.play(audio)',
+    '+  const audio = await synthesize(voice, SAMPLE_TEXT, key, {',
+    '+    maxSeconds: PREVIEW_SECONDS,',
+    '+  })',
+    '+  const clip = audio.slice(0, PREVIEW_SECONDS * audio.sampleRate)',
+    '+  player.stop()',
+    '+  await player.play(clip)',
+    ' }',
+    ' ',
+    ' export function stopPreview(): void {',
+  ] },
+  css: { path: 'src/renderer/src/features/voice/voice.css', lines: [
+    '@@ -41,8 +41,14 @@ .voice-row {',
+    ' .voice-preview {',
+    '-  color: var(--tt-text-muted);',
+    '+  display: inline-flex;',
+    '+  align-items: center;',
+    '+  gap: 6px;',
+    '+  color: var(--tt-text-2);',
+    ' }',
+    ' ',
+    '+.voice-preview[data-playing] {',
+    '+  color: var(--tt-accent-text);',
+    '+}',
+    '+',
+    ' .voice-preview:disabled { opacity: .5; }',
+  ] },
+  doc: { path: 'docs/voice-preview.md', lines: [
+    '@@ -0,0 +1,7 @@',
+    '+# Voice preview',
+    '+',
+    '+Press Preview beside a voice to hear a two-second sample in it.',
+    '+The sample plays through the selected output device and stops',
+    '+when you press Preview again or pick another voice.',
+    '+',
+    '+The preview uses the xAI key in the credential store.',
+  ] },
+  legacy: { path: 'src/main/voice/legacyKeyStore.ts', lines: [
+    '@@ -1,8 +0,0 @@',
+    '-import { readFile } from \'node:fs/promises\'',
+    '-import { join } from \'node:path\'',
+    '-',
+    '-/** Reads the xAI key Sotto 0.3 kept beside settings.json. */',
+    '-export async function readLegacyKey(dir: string): Promise<string | null> {',
+    '-  const text = await readFile(join(dir, \'xai-key.txt\'), \'utf8\').catch(() => null)',
+    '-  return text?.trim() || null',
+    '-}',
+  ] },
+  settings: { path: 'src/shared/settings.ts', lines: [
+    '@@ -88,7 +88,6 @@ export const settingsSchema = z.object({',
+    '   voice: z.string().default(\'ara\'),',
+    '   voiceRate: z.number().min(0.5).max(2).default(1),',
+    '-  xaiKey: z.string().optional(),',
+    '   replyVoice: z.boolean().default(false),',
+    '   replyVoiceProvider: z.enum([\'xai\', \'system\']).default(\'system\'),',
+    ' })',
+  ] },
+}
+function parse(lines) {
+  const out = []; let o = 0, n = 0
+  for (const raw of lines) {
+    const c = raw[0], text = raw.slice(1)
+    if (c === '@') { const m = /-(\d+)(?:,\d+)? \+(\d+)/.exec(raw); o = +m[1]; n = +m[2]; out.push({ kind: 'hunk', text: raw }) }
+    else if (c === '+') out.push({ kind: 'add', newLine: n++, text })
+    else if (c === '-') out.push({ kind: 'remove', oldLine: o++, text })
+    else out.push({ kind: 'context', oldLine: o++, newLine: n++, text })
+  }
+  return out
+}
+for (const p of Object.values(PATCH)) {
+  p.rows = parse(p.lines)
+  p.adds = p.rows.filter(r => r.kind === 'add').length
+  p.dels = p.rows.filter(r => r.kind === 'remove').length
+  const i = p.path.lastIndexOf('/'); p.folder = p.path.slice(0, i + 1); p.name = p.path.slice(i + 1)
+}
+const STATUS = { modified: ['M', 'Modified'], added: ['A', 'Added'], deleted: ['D', 'Deleted'], untracked: ['U', 'Untracked'] }
+const SCOPE_FILES = {
+  working: [['preview', 'modified'], ['css', 'modified'], ['doc', 'untracked'], ['legacy', 'deleted']],
+  branch: [['doc', 'added'], ['preview', 'modified'], ['legacy', 'deleted'], ['settings', 'modified'], ['css', 'modified']],
+  turn1: [['settings', 'modified'], ['legacy', 'deleted']],
+  turn3: [['preview', 'modified'], ['css', 'modified'], ['doc', 'added']],
+}
+const TURN2_NOTICE = 'Turn 2’s checkpoint is unavailable, so its changes cannot be shown. This turn changed Git history or staging. Review and restore it with Git.'
+const HEAD = 'feat/voice-preview'
+const files = key => (SCOPE_FILES[key] ?? []).map(([k, status]) => ({ ...PATCH[k], status }))
+const sum = list => list.reduce((s, f) => ({ adds: s.adds + f.adds, dels: s.dels + f.dels }), { adds: 0, dels: 0 })
+/** What one scope shows: its files, or the plain words for why there are none. */
+function review(state, scope) {
+  if (state === 'empty') return { files: [], empty: scope === 'working' ? 'The working copy matches HEAD.' : scope === 'branch' ? `This branch has no changes against main.` : 'This turn changed no files.' }
+  if (scope === 'turn2') return { files: [], notice: TURN2_NOTICE }
+  return { files: files(scope === 'latest' ? 'turn3' : scope) }
+}
+const SCOPE_LABEL = { working: 'Working tree', branch: 'Branch changes', latest: 'Latest turn', turn1: 'Turn 1', turn2: 'Turn 2', turn3: 'Turn 3' }
+const scopeOptions = state => state === 'empty' ? ['working', 'branch', 'latest'] : ['working', 'branch', 'latest', 'turn1', 'turn2', 'turn3']
+const sideLabels = scope => scope === 'working' ? ['HEAD', 'Working tree'] : scope === 'branch' ? ['main', HEAD] : ['Before the turn', 'After the turn']
+const turnFact = scope => ({ latest: 'Started Sep 23, 7:41 AM', turn3: 'Started Sep 23, 7:41 AM', turn2: 'Started Sep 23, 7:18 AM', turn1: 'Started Sep 23, 7:05 AM' })[scope] ?? ''
+const INITIAL_SCOPE = { working: 'working', branch: 'branch', latest: 'latest', turn2: 'turn2', empty: 'working' }
+
+const counts = (adds, dels, cls = '') => `<span class="cnt ${cls}" title="${adds} lines added, ${dels} removed"><span class="a">+${adds}</span> <span class="r">−${dels}</span></span>`
+const badge = status => `<span class="st" data-status="${status}" role="img" aria-label="${STATUS[status][1]}" title="${STATUS[status][1]}">${STATUS[status][0]}</span>`
+const pathHtml = f => `<span class="path">${f.folder ? `<span class="path__folder"><bdi>${esc(f.folder)}</bdi></span>` : ''}<span class="path__name">${esc(f.name)}</span></span>`
+
+function diffHtml(f, { split = false, wrap = true, labels = [] } = {}) {
+  const sign = r => r?.kind === 'add' ? '+' : r?.kind === 'remove' ? '−' : ''
+  const line = r => `<div class="d-line" data-kind="${r.kind}"><span class="d-num">${r.oldLine ?? ''}</span><span class="d-num">${r.newLine ?? ''}</span><span class="d-sign">${sign(r)}</span><span class="d-text">${esc(r.text) || ' '}</span></div>`
+  let rows = ''
+  if (!split) rows = f.rows.map(line).join('')
+  else {
+    const cell = (r, side) => `<div class="d-cell" ${r ? `data-kind="${r.kind}"` : ''}><span class="d-num">${(side === 'old' ? r?.oldLine : r?.newLine) ?? ''}</span><span class="d-sign">${sign(r)}</span><span class="d-text">${r ? esc(r.text) || ' ' : ' '}</span></div>`
+    for (let i = 0; i < f.rows.length;) {
+      const r = f.rows[i]
+      if (r.kind === 'add' || r.kind === 'remove') {
+        const before = [], after = []
+        while (i < f.rows.length && (f.rows[i].kind === 'add' || f.rows[i].kind === 'remove')) { const e = f.rows[i++]; (e.kind === 'remove' ? before : after).push(e) }
+        for (let k = 0; k < Math.max(before.length, after.length); k++) rows += cell(before[k], 'old') + cell(after[k], 'new')
+      } else { rows += r.kind === 'hunk' ? line(r) : cell(r, 'old') + cell(r, 'new'); i++ }
+    }
+  }
+  return `<div class="d-body">${split ? `<div class="d-split-head" aria-hidden="true"><span>${esc(labels[0] ?? '')}</span><span>${esc(labels[1] ?? '')}</span></div>` : ''}
+    <div class="d-rows" ${split ? 'data-split' : ''} ${wrap ? 'data-wrap' : ''}>${rows}</div></div>`
+}
+function fileBlock(f, { collapsed, split, wrap, labels, openable = true }) {
+  const canOpen = openable && f.status !== 'deleted'
+  return `<section class="fb" data-path="${f.path}" ${collapsed ? 'data-collapsed' : ''} aria-label="${f.path}">
+    <div class="fb__head">
+      <button class="ico" data-act="toggle" data-path="${f.path}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${f.path}" title="${collapsed ? 'Expand diff' : 'Collapse diff'}">${I(collapsed ? 'chevronRight' : 'chevron', 'sm')}</button>
+      ${badge(f.status)}
+      ${canOpen ? `<button class="fb__name" data-act="open" data-path="${f.path}" title="Open ${f.path} in Files">${pathHtml(f)}</button>` : `<span class="fb__name" title="${f.path}">${pathHtml(f)}</span>`}
+      ${counts(f.adds, f.dels)}
+      <button class="ico" data-act="copy" data-path="${f.path}" aria-label="Copy path: ${f.path}" title="Copy path">${I('copy', 'sm')}</button>
+    </div>
+    ${collapsed ? '' : diffHtml(f, { split, wrap, labels })}
+  </section>`
+}
+
+/* The conversation all three variants sit beside. */
+const TURNS = [
+  { key: 'turn1', you: 'Move the xAI key out of settings.json and into the credential store.', youAt: '7:05 am', agent: 'Done. The key lives in the credential store now, and the file Sotto 0.3 kept it in is deleted.', at: '7:12 am' },
+  { key: 'turn2', you: 'Commit the settings change on its own.', youAt: '7:18 am', agent: 'Committed the settings change as “Keep the xAI key out of settings.json”. The deleted key file is still uncommitted.', at: '7:20 am', commands: 2 },
+  { key: 'turn3', you: 'Make the voice preview button play a two-second sample.', youAt: '7:41 am', agent: 'Done. Preview plays a two-second sample through the selected voice, and I wrote the behaviour up in docs/voice-preview.md.', at: '7:58 am' },
+]
+const activityWords = t => {
+  if (t.commands) return `Ran ${t.commands} commands`
+  const list = files(t.key), s = sum(list)
+  return `Edited ${list.length} file${list.length === 1 ? '' : 's'} · <span class="add">+${s.adds}</span> <span class="del">−${s.dels}</span>`
+}
+function transcript(state, row) {
+  if (state === 'empty') return `
+    <div class="msg-you"><div class="msg-meta"><span>You</span><span>9:12 am</span></div>Why does the preview stall on long voices?</div>
+    <div class="msg-agent"><div class="msg-meta"><span>Claude</span><span>9:14 am</span></div>
+      <p>The preview asks xAI for the whole sample before it plays anything, so a long voice waits for all of it. Streaming the first chunk would start it sooner. I have not changed anything yet.</p></div>`
+  return TURNS.map(t => `
+    <div class="msg-you"><div class="msg-meta"><span>You</span><span>${t.youAt}</span></div>${esc(t.you)}</div>
+    <div class="msg-agent" data-turn="${t.key}"><div class="msg-meta"><span>Claude</span><span>${t.at}</span></div><p>${esc(t.agent)}</p>${row(t)}</div>`).join('')
+}
+const plainRow = t => `<span class="activity">${I(t.commands ? 'computer' : 'file', 'sm')} ${activityWords(t)}</span>`
+
+/* Page plumbing: per-scenario reset, scroll kept across rerenders, one keyboard handler for the variant on show. */
+function sync(ctx, init) {
+  if (ctx.local.for !== ctx.state) { for (const k of Object.keys(ctx.local)) delete ctx.local[k]; Object.assign(ctx.local, init(ctx.state), { for: ctx.state }) }
+  return ctx.local
+}
+function keepScroll(app, local, selectors) {
+  local.scroll ??= {}
+  for (const sel of selectors) {
+    const el = app.querySelector(sel); if (!el) continue
+    el.scrollTop = local.scroll[sel] ?? 0
+    el.addEventListener('scroll', () => { local.scroll[sel] = el.scrollTop })
+  }
+}
+let keyHandler = null
+document.addEventListener('keydown', event => {
+  const t = event.target
+  if (t instanceof HTMLElement && t.matches('input, textarea, select, [contenteditable]')) return
+  keyHandler?.(event)
+})
+function toast(ctx, words) { ctx.local.toast = words; ctx.rerender(); clearTimeout(ctx.local.toastTimer); ctx.local.toastTimer = setTimeout(() => { ctx.local.toast = null; ctx.rerender() }, 1600) }
+
+Proto.page({
+  title: 'Reading changes',
+  question: 'How does a user read what changed in a thread’s working copy, on its branch and in each turn?',
+  states: [{ key: 'working', label: 'Working tree' }, { key: 'branch', label: 'Branch changes against main' }, { key: 'latest', label: 'Latest turn' }, { key: 'turn2', label: 'Turn 2 (checkpoint unavailable)' }, { key: 'empty', label: 'No changes' }],
+  variants: [
+    {
+      key: 'A', name: 'What merged: T3’s diff panel',
+      note: 'Changes in Tools: a scope select (Working tree, Branch changes, Latest turn, Turn N), a bar of view controls, a file tree, and every file of the scope stacked as a collapsible block. Try the scope, the base (Branch changes), a chevron, split, wrap, whitespace and the tree.',
+      render(ctx) {
+        const L = sync(ctx, state => ({ scope: INITIAL_SCOPE[state], collapsed: [], split: false, wrap: true, ws: false, tree: true, base: null, remoteMain: false, baseOpen: false }))
+        const r = review(ctx.state, L.scope), list = r.files, s = sum(list)
+        const allCollapsed = list.length > 0 && list.every(f => L.collapsed.includes(f.path))
+        const baseShown = L.base === null ? 'main' : L.base
+        const choices = [['main', 'main', 'origin/main'], ['release/0.4', 'release/0.4', 'origin/release/0.4'], ['feat/keychain', null, 'origin/feat/keychain']]
+        const basePop = L.baseOpen ? `<div class="base-pop" role="dialog" aria-label="Base to compare with">
+          <div class="base-pop__search">Search refs...</div>
+          <div class="base-pop__cols" aria-hidden="true"><span>Branch</span><span>Remote</span></div>
+          <div class="base-pop__row"><button class="base-pop__ref" data-act="base" data-base="" ${L.base === null ? 'aria-current="true"' : ''}>${I('check', 'sm')}Automatic</button></div>
+          ${choices.map(([label, local, remote]) => `<div class="base-pop__row"><button class="base-pop__ref" data-act="base" data-base="${local ?? remote}" ${L.base !== null && (L.base === local || L.base === remote) ? 'aria-current="true"' : ''}>${I('check', 'sm')}<bdi>${label}</bdi></button>
+            ${local && remote ? `<button class="sw" role="switch" data-act="remote" data-local="${local}" data-remote="${remote}" aria-checked="${L.base === remote}" aria-label="Use remote version of ${label}" title="Use ${remote}"></button>` : `<span class="base-pop__remote" role="img" aria-label="Remote only" title="Remote only">${ic('cloud')}</span>`}</div>`).join('')}
+        </div>` : ''
+        const tree = L.tree && list.length > 0
+        const groups = [...new Set(list.map(f => f.folder))].sort()
+        const body = r.notice ? `<div class="problem" role="status"><strong>${r.notice}</strong></div>`
+          : list.length === 0 ? `<div class="problem" role="status"><strong>${r.empty}${L.ws ? ' Whitespace changes are hidden.' : ''}</strong></div>`
+          : `<div class="ch-review" ${tree ? 'data-tree' : ''}>
+              <div class="ch-files" role="region" aria-label="Changed files">${list.map(f => fileBlock(f, { collapsed: L.collapsed.includes(f.path), split: L.split, wrap: L.wrap, labels: L.scope === 'branch' ? [baseShown, HEAD] : sideLabels(L.scope) })).join('')}</div>
+              ${tree ? `<nav class="ch-tree" aria-label="File tree">${groups.map(g => `${g ? `<div class="ch-tree__folder"><bdi>${esc(g)}</bdi></div>` : ''}${list.filter(f => f.folder === g).map(f => `<button class="ch-tree__item" data-act="show" data-path="${f.path}">${badge(f.status)}<span>${esc(f.name)}</span></button>`).join('')}`).join('')}</nav>` : ''}
+            </div>`
+        return {
+          transcript: transcript(ctx.state, plainRow),
+          tools: { active: 'changes', body: `<div class="ch">
+            <div class="ch-chrome">
+              <label class="ch-scope"><span class="vh">Diff scope</span><select data-act="scope">
+                ${scopeOptions(ctx.state).slice(0, 3).map(k => `<option value="${k}" ${k === L.scope ? 'selected' : ''}>${SCOPE_LABEL[k]}</option>`).join('')}
+                ${ctx.state !== 'empty' ? `<optgroup label="Turn">${['turn1', 'turn2', 'turn3'].map(k => `<option value="${k}" ${k === L.scope ? 'selected' : ''}>${SCOPE_LABEL[k]}${k === 'turn2' ? ' (unavailable)' : ''}</option>`).join('')}</optgroup>` : ''}
+              </select>${I('chevron', 'sm')}</label>
+              ${list.length ? counts(s.adds, s.dels) : ''}
+              <span class="ch-actions">
+                <button class="ico" aria-label="Checkpoints" title="Checkpoints">${I('history')}</button>
+                <button class="ico" aria-label="Pull request" title="Pull request">${I('pr')}</button>
+                <button class="ico" data-act="refresh" aria-label="Refresh diff" title="Refresh diff">${I('refresh')}</button>
+              </span>
+            </div>
+            <div class="ch-bar">
+              ${L.scope === 'branch' ? `<div class="base"><span class="base__head" title="${HEAD}">${HEAD}</span>${ic('arrowRight', 'sm base__arrow')}
+                  <button class="base__trigger" data-act="baseOpen" aria-expanded="${L.baseOpen}" aria-label="Change the base. Comparing ${HEAD} with ${baseShown}${L.base === null ? ', chosen automatically' : ''}">${esc(baseShown)}${I('chevron', 'sm')}</button></div>${basePop}`
+                : `<span class="ch-fact">${L.scope === 'working' ? 'Against HEAD' : turnFact(L.scope)}</span>`}
+              <div class="ch-view" role="group" aria-label="Diff view">
+                <button class="ico" data-act="all" ${list.length ? '' : 'disabled'} aria-label="${allCollapsed ? 'Expand all files' : 'Collapse all files'}" title="${allCollapsed ? 'Expand all files' : 'Collapse all files'}">${ic(allCollapsed ? 'expand' : 'collapse', '')}</button>
+                <span class="seg"><button class="ico" data-act="stacked" aria-pressed="${!L.split}" aria-label="Stacked diff view" title="Stacked diff view">${ic('rows', '')}</button><button class="ico" data-act="split" aria-pressed="${L.split}" aria-label="Split diff view" title="Split diff view">${I('split')}</button></span>
+                <button class="ico" data-act="wrap" ${L.wrap ? 'data-on' : ''} aria-label="${L.wrap ? 'Disable line wrapping' : 'Enable line wrapping'}" title="${L.wrap ? 'Disable line wrapping' : 'Enable line wrapping'}">${ic('wrap', '')}</button>
+                <button class="ico" data-act="ws" ${L.ws ? 'data-on' : ''} aria-label="${L.ws ? 'Show whitespace changes' : 'Hide whitespace changes'}" title="${L.ws ? 'Show whitespace changes' : 'Hide whitespace changes'}">${ic('pilcrow', '')}</button>
+                <button class="ico" data-act="tree" ${L.tree ? 'data-on' : ''} ${list.length ? '' : 'disabled'} aria-label="${L.tree ? 'Hide file tree' : 'Show file tree'}" title="${L.tree ? 'Hide file tree' : 'Show file tree'}">${I('tree')}</button>
+              </div>
+            </div>
+            ${body}
+            ${L.toast ? `<div class="toast" role="status">${esc(L.toast)}</div>` : ''}
+          </div>` },
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local, app = root.querySelector('.app')
+        keyHandler = e => { if (e.key === 'Escape' && L.baseOpen) { L.baseOpen = false; ctx.rerender() } }
+        keepScroll(app, L, ['.ch-files'])
+        app.querySelector('[data-act="scope"]')?.addEventListener('change', e => { L.scope = e.target.value; L.baseOpen = false; L.scroll = {}; ctx.rerender() })
+        app.addEventListener('click', e => {
+          const el = e.target.closest('[data-act]'); if (!el || el.tagName === 'SELECT') return
+          const act = el.dataset.act, path = el.dataset.path
+          const list = review(ctx.state, L.scope).files
+          if (act === 'toggle') L.collapsed = L.collapsed.includes(path) ? L.collapsed.filter(p => p !== path) : [...L.collapsed, path]
+          else if (act === 'all') L.collapsed = list.every(f => L.collapsed.includes(f.path)) ? [] : list.map(f => f.path)
+          else if (act === 'stacked') L.split = false
+          else if (act === 'split') L.split = true
+          else if (act === 'wrap') L.wrap = !L.wrap
+          else if (act === 'ws') L.ws = !L.ws
+          else if (act === 'tree') L.tree = !L.tree
+          else if (act === 'baseOpen') L.baseOpen = !L.baseOpen
+          else if (act === 'base') { L.base = el.dataset.base || null; L.baseOpen = false }
+          else if (act === 'remote') L.base = L.base === el.dataset.remote ? el.dataset.local : el.dataset.remote
+          else if (act === 'copy') return toast(ctx, 'Path copied')
+          else if (act === 'open') return toast(ctx, `Opening ${path} in Files`)
+          else if (act === 'refresh') return toast(ctx, 'Diff refreshed')
+          else if (act === 'show') {
+            L.collapsed = L.collapsed.filter(p => p !== path); ctx.rerender()
+            const block = root.querySelector(`.fb[data-path="${CSS.escape(path)}"]`), box = root.querySelector('.ch-files')
+            if (block && box) box.scrollTop = block.offsetTop - box.offsetTop
+            return
+          } else return
+          ctx.rerender()
+        })
+      },
+    },
+    {
+      key: 'B', name: 'One file at a time, from a review queue',
+      note: 'Tools opens wider. The queue on the left lists the scope’s files with a Viewed check each, as GitHub has; the file fills the rest. Marking a file Viewed moves on to the next one. Previous and Next, or k and j. The scope is a compact menu. At the minimum the queue folds into a strip.',
+      render(ctx) {
+        const VIEWED = { working: ['src/renderer/src/features/voice/voice.css'], branch: ['src/shared/settings.ts', 'src/main/voice/legacyKeyStore.ts'], latest: [], turn2: [], empty: [] }
+        const L = sync(ctx, state => { const viewed = [...VIEWED[state]]; const list = review(state, INITIAL_SCOPE[state]).files; const first = list.findIndex(f => !viewed.includes(f.path)); return { scope: INITIAL_SCOPE[state], viewed, idx: Math.max(0, first), split: false, menu: false } })
+        const r = review(ctx.state, L.scope), list = r.files
+        const idx = Math.min(L.idx, Math.max(0, list.length - 1)), f = list[idx]
+        const done = list.filter(x => L.viewed.includes(x.path)).length
+        const stale = ctx.state === 'working' && L.scope === 'working' ? 'src/main/voice/preview.ts' : null
+        const menu = L.menu ? `<div class="popover rq-menu" role="menu">${scopeOptions(ctx.state).map((k, i) => `${i === 3 ? '<hr>' : ''}<button class="menu-item" role="menuitemradio" data-act="scope" data-scope="${k}" ${k === L.scope ? 'aria-current="true"' : ''}>${I('check', 'sm')}${SCOPE_LABEL[k]}${k === 'turn2' ? ' <span class="muted">(unavailable)</span>' : ''}</button>`).join('')}</div>` : ''
+        const cmp = L.scope === 'working' ? 'against HEAD' : L.scope === 'branch' ? `${HEAD} → main` : turnFact(L.scope)
+        const main = r.notice || list.length === 0
+          ? `<div class="problem" role="status"><strong>${r.notice ?? r.empty}</strong>${r.notice ? '' : '<p>Nothing to review.</p>'}</div>`
+          : `<div class="rq-main">
+              <nav class="rq-queue" aria-label="Files to review">${list.map((x, i) => `<button class="rq-item" data-act="pick" data-i="${i}" ${i === idx ? 'aria-current="true"' : ''} ${L.viewed.includes(x.path) ? 'data-viewed' : ''} aria-label="${x.path}, ${STATUS[x.status][1]}${L.viewed.includes(x.path) ? ', viewed' : ''}">
+                  <span class="ck" ${L.viewed.includes(x.path) ? 'data-on' : ''}>${I('check', 'sm')}</span>
+                  <span class="rq-item__name">${badge(x.status)}<span>${esc(x.name)}</span></span>
+                  <span class="rq-item__sub"><span><bdi>${esc(x.folder || './')}</bdi></span>${counts(x.adds, x.dels)}</span>
+                  ${x.path === stale && !L.viewed.includes(x.path) ? '<span class="rq-item__stale">Changed since you viewed it</span>' : ''}
+                </button>`).join('')}</nav>
+              <section class="rq-file" aria-label="${f.path}">
+                <div class="rq-file__head">${badge(f.status)}${pathHtml(f)}${counts(f.adds, f.dels)}
+                  <button class="rq-viewed" data-act="viewed" role="checkbox" aria-checked="${L.viewed.includes(f.path)}"><span class="ck">${I('check', 'sm')}</span>Viewed</button>
+                  <button class="ico" aria-label="Copy path: ${f.path}" title="Copy path">${I('copy', 'sm')}</button>
+                  ${f.status !== 'deleted' ? `<button class="ico" aria-label="Open ${f.path} in Files" title="Open in Files">${I('external', 'sm')}</button>` : ''}</div>
+                <div class="rq-diff">${diffHtml(f, { split: L.split, wrap: true, labels: L.scope === 'branch' ? ['main', HEAD] : sideLabels(L.scope) })}</div>
+                <div class="rq-foot">
+                  <button class="btn btn--secondary" data-act="prev" ${idx === 0 ? 'disabled' : ''} aria-label="Previous file">${ic('left')}<span class="btn__word">Previous</span><span class="kbd">k</span></button>
+                  <span class="rq-foot__mid">${done === list.length ? 'All files viewed' : `File ${idx + 1} of ${list.length}`}</span>
+                  <button class="btn btn--secondary" data-act="next" ${idx === list.length - 1 ? 'disabled' : ''} aria-label="Next file"><span class="kbd">j</span><span class="btn__word">Next</span>${ic('arrowRight')}</button>
+                </div>
+              </section>
+            </div>`
+        return {
+          transcript: transcript(ctx.state, plainRow),
+          tools: { active: 'changes', body: `<div class="rq">
+            <div class="rq-top">
+              <button class="rq-scope" data-act="menu" aria-haspopup="menu" aria-expanded="${L.menu}" aria-label="Diff scope: ${SCOPE_LABEL[L.scope]}">${SCOPE_LABEL[L.scope]}${I('chevron', 'sm')}</button>
+              <span class="rq-cmp" title="${cmp}">${cmp}</span>
+              <span class="rq-tail">
+                ${list.length ? `<span class="rq-progress" role="status"><span>${done} of ${list.length} viewed</span><span class="rq-meter" aria-hidden="true"><span style="width:${Math.round(done / list.length * 100)}%"></span></span></span>` : ''}
+                <span class="seg"><button class="ico" data-act="stacked" aria-pressed="${!L.split}" aria-label="Stacked diff view" title="Stacked diff view">${ic('rows', '')}</button><button class="ico" data-act="split" aria-pressed="${L.split}" aria-label="Split diff view" title="Split diff view">${I('split')}</button></span>
+                <button class="ico" aria-label="Refresh diff" title="Refresh diff">${I('refresh')}</button>
+              </span>
+              ${menu}
+            </div>
+            ${main}
+          </div>` },
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local, app = root.querySelector('.app')
+        const list = () => review(ctx.state, L.scope).files
+        const go = d => { const n = Math.max(0, Math.min(list().length - 1, L.idx + d)); if (n !== L.idx) { L.idx = n; L.scroll = {}; ctx.rerender() } }
+        keyHandler = e => {
+          if (e.key === 'Escape' && L.menu) { L.menu = false; ctx.rerender() }
+          else if (e.key === 'j') go(1)
+          else if (e.key === 'k') go(-1)
+        }
+        keepScroll(app, L, ['.rq-diff', '.rq-queue'])
+        app.addEventListener('click', e => {
+          const el = e.target.closest('[data-act]'); if (!el) { if (L.menu && !e.target.closest('.rq-menu')) { L.menu = false; ctx.rerender() } return }
+          const act = el.dataset.act
+          if (act === 'menu') L.menu = !L.menu
+          else if (act === 'scope') { L.scope = el.dataset.scope; L.menu = false; L.idx = Math.max(0, list().findIndex(f => !L.viewed.includes(f.path))); L.scroll = {} }
+          else if (act === 'pick') { L.idx = +el.dataset.i; L.scroll = { '.rq-queue': L.scroll?.['.rq-queue'] ?? 0 } }
+          else if (act === 'prev') return go(-1)
+          else if (act === 'next') return go(1)
+          else if (act === 'stacked') L.split = false
+          else if (act === 'split') L.split = true
+          else if (act === 'viewed') {
+            const files = list(), path = files[L.idx].path
+            if (L.viewed.includes(path)) L.viewed = L.viewed.filter(p => p !== path)
+            else {
+              L.viewed = [...L.viewed, path]
+              const next = files.findIndex((f, i) => i > L.idx && !L.viewed.includes(f.path))
+              const any = files.findIndex(f => !L.viewed.includes(f.path))
+              if (next >= 0 || any >= 0) { L.idx = next >= 0 ? next : any; L.scroll = {} }
+            }
+          } else return
+          ctx.rerender()
+        })
+      },
+    },
+    {
+      key: 'C', name: 'Changes inside the conversation',
+      note: 'No Changes panel. Each reply’s activity row opens into that turn’s files, and each file opens into its lines. A chip above the composer sums up the working tree and opens it as a sheet over the pane, with Branch changes beside it. Escape closes the sheet.',
+      render(ctx) {
+        const L = sync(ctx, state => ({
+          sheet: state === 'working' || state === 'branch', sheetScope: state === 'branch' ? 'branch' : 'working',
+          turns: state === 'latest' ? ['turn3'] : state === 'turn2' ? ['turn2'] : [], rowsOpen: state === 'latest' ? ['turn3:src/main/voice/preview.ts'] : [],
+          collapsed: [], split: false, jump: state === 'latest' ? 'turn3' : state === 'turn2' ? 'turn2' : null,
+        }))
+        const row = t => {
+          const open = L.turns.includes(t.key)
+          const list = files(t.key)
+          const inner = !open ? '' : t.commands ? `<div class="tc"><div class="problem" role="status"><strong>${TURN2_NOTICE}</strong></div></div>`
+            : `<div class="tc">${list.map(f => { const k = `${t.key}:${f.path}`, fo = L.rowsOpen.includes(k); return `
+                <button class="tc__row" data-act="row" data-k="${k}" aria-expanded="${fo}">${I(fo ? 'chevron' : 'chevronRight', 'sm')}${badge(f.status)}${pathHtml(f)}${counts(f.adds, f.dels)}</button>
+                ${fo ? diffHtml(f, { wrap: true }) : ''}` }).join('')}</div>`
+          return `<button class="turn-act" data-act="turn" data-turn="${t.key}" aria-expanded="${open}">${I(t.commands ? 'computer' : 'file', 'sm')}<span>${activityWords(t)}${t.commands ? ' · <span class="muted">changes unavailable</span>' : ''}</span>${I('chevronRight', 'sm')}</button>${inner}`
+        }
+        const wt = review(ctx.state, 'working'), wtSum = sum(wt.files)
+        const chip = wt.files.length
+          ? `<button class="wt-chip" data-act="sheet" aria-expanded="${L.sheet}" aria-label="Working tree: ${wt.files.length} files changed, ${wtSum.adds} lines added, ${wtSum.dels} removed. Open">${I('commit', 'sm')}<strong>Working tree</strong><span>${wt.files.length} files</span>${counts(wtSum.adds, wtSum.dels)}${I('up', 'sm')}</button>`
+          : `<span class="wt-chip" aria-disabled="true">${I('commit', 'sm')}Working tree: no changes</span>`
+        const r = review(ctx.state, L.sheetScope), list = r.files, s = sum(list)
+        const allCollapsed = list.length > 0 && list.every(f => L.collapsed.includes(f.path))
+        const sheet = !L.sheet ? '' : `<section class="sheet" role="dialog" aria-label="Working tree changes">
+          <div class="sheet__head">
+            <span class="tabs" role="tablist"><button role="tab" data-act="sscope" data-scope="working" aria-selected="${L.sheetScope === 'working'}">Working tree</button><button role="tab" data-act="sscope" data-scope="branch" aria-selected="${L.sheetScope === 'branch'}">Branch changes</button></span>
+            <span class="sheet__fact">${L.sheetScope === 'working' ? 'against HEAD' : `${HEAD} → main`}</span>
+            ${list.length ? counts(s.adds, s.dels) : ''}
+            <span class="sheet__tail">
+              <button class="ico" data-act="all" ${list.length ? '' : 'disabled'} aria-label="${allCollapsed ? 'Expand all files' : 'Collapse all files'}" title="${allCollapsed ? 'Expand all files' : 'Collapse all files'}">${ic(allCollapsed ? 'expand' : 'collapse', '')}</button>
+              <span class="seg"><button class="ico" data-act="stacked" aria-pressed="${!L.split}" aria-label="Stacked diff view" title="Stacked diff view">${ic('rows', '')}</button><button class="ico" data-act="split" aria-pressed="${L.split}" aria-label="Split diff view" title="Split diff view">${I('split')}</button></span>
+              <button class="ico" data-act="close" aria-label="Close changes" title="Close (Esc)">${I('x')}</button>
+            </span>
+          </div>
+          <div class="sheet__files">${list.length ? list.map(f => fileBlock(f, { collapsed: L.collapsed.includes(f.path), split: L.split, wrap: true, labels: sideLabels(L.sheetScope) })).join('') : `<div class="problem" role="status"><strong>${r.empty}</strong></div>`}</div>
+        </section>`
+        return {
+          transcript: transcript(ctx.state, row),
+          aboveComposer: chip + sheet,
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local, app = root.querySelector('.app')
+        keyHandler = e => { if (e.key === 'Escape' && L.sheet) { L.sheet = false; ctx.rerender() } }
+        keepScroll(app, L, ['.transcript', '.sheet__files'])
+        if (L.jump) {
+          const box = app.querySelector('.transcript'), turn = app.querySelector(`[data-turn="${L.jump}"]`)
+          if (box && turn) { box.scrollTop = turn.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 90; L.scroll['.transcript'] = box.scrollTop }
+          L.jump = null
+        }
+        app.addEventListener('click', e => {
+          const el = e.target.closest('[data-act]'); if (!el) return
+          const act = el.dataset.act, flip = (arr, v) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+          if (act === 'turn') L.turns = flip(L.turns, el.dataset.turn)
+          else if (act === 'row') L.rowsOpen = flip(L.rowsOpen, el.dataset.k)
+          else if (act === 'sheet') L.sheet = !L.sheet
+          else if (act === 'close') L.sheet = false
+          else if (act === 'sscope') { L.sheetScope = el.dataset.scope; L.scroll['.sheet__files'] = 0 }
+          else if (act === 'toggle') L.collapsed = flip(L.collapsed, el.dataset.path)
+          else if (act === 'all') { const list = review(ctx.state, L.sheetScope).files; L.collapsed = list.every(f => L.collapsed.includes(f.path)) ? [] : list.map(f => f.path) }
+          else if (act === 'stacked') L.split = false
+          else if (act === 'split') L.split = true
+          else return
+          ctx.rerender()
+        })
+      },
+    },
+  ],
+})
+</script>
+</body>
+</html>

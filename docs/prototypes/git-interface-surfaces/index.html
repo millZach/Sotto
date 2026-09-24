@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. The index of the Git interface interaction prototypes (#127). Open this file in a
+  browser; nothing to run. Each page draws three structurally different variants of one interaction inside
+  the real Threads page, in the app's own light and dark: A is what ships (or is built) today, B and C are
+  alternatives. The floating bar switches variant (or the arrow keys), scenario, theme and window size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Git interface prototypes</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  body { display: grid; place-items: start center; padding: 48px 24px; background: var(--tt-canvas); }
+  main { width: min(760px, 100%); }
+  h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+  p { color: var(--tt-text-muted); margin: 0 0 24px; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  a.card { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); color: var(--tt-text); text-decoration: none; }
+  a.card:hover { background: var(--tt-hover); }
+  a.card small { grid-column: 1; color: var(--tt-text-muted); }
+  a.card span.tag { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Git interface: three versions of each interaction</h1>
+  <p>Each page shows the interaction inside the Threads page. A is what ships or is built today; B and C are alternatives. Use the bar at the bottom, or the arrow keys, to switch variants; switch the scenario, light or dark, and the 820 × 560 minimum there too. Tell me the one you want, or the parts you want from each.</p>
+  <ol>
+    <li><a class="card" href="./toolbar.html"><strong>1. Workspace and branch</strong><small>Where a thread runs, which checkout it uses, and picking or creating a branch.</small><span class="tag tag--ok">A merged</span></a></li>
+    <li><a class="card" href="./git-action.html"><strong>2. Commit, push and pull request</strong><small>The Git action, the commit dialog, the default-branch question and the progress notice.</small><span class="tag tag--ok">A merged</span></a></li>
+    <li><a class="card" href="./changes.html"><strong>3. Changes</strong><small>Reading what changed: working tree, branch changes and a turn, with the file list.</small><span class="tag tag--ok">A merged</span></a></li>
+    <li><a class="card" href="./pull-request.html"><strong>4. Pull request</strong><small>The branch's pull request: checks, review, merge and the other actions.</small><span class="tag">A built, not merged</span></a></li>
+    <li><a class="card" href="./settings.html"><strong>5. Git settings</strong><small>Automatically pull, merge method, diff defaults, writing style, auto-settle, Proactive panels.</small><span class="tag">A built, not merged</span></a></li>
+    <li><a class="card" href="./review-comments.html"><strong>6. Review comments</strong><small>Selecting lines in Changes, writing a comment, and sending it with the next message.</small><span class="tag tag--warn">Not built</span></a></li>
+  </ol>
+</main>
+<script>document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark'</script>
+</body>
+</html>

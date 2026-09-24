@@ -1,0 +1,435 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three ways to lay out the Git settings (#271) on the Settings page. A is what the
+  feat/git-settings branch builds: the rows spread through Application and Cleanup in the code's order and
+  words. B gathers them into one Git section grouped by when each one acts, with descriptions that say what
+  happens. C makes them a per-project table with an inherits dot and a side preview. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — Git settings</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  /* The Settings room every variant draws in. */
+  .st { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .st-strip { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; }
+  .st-strip strong { color: var(--tt-text); font-size: 15px; font-weight: 500; }
+  .st-strip .sep { color: var(--tt-text-faint); }
+  .st-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 172px minmax(0, 1fr); }
+  .app[data-size='820'] .st-main { grid-template-columns: minmax(0, 1fr); }
+  .st-nav { display: flex; flex-direction: column; gap: 2px; padding: 16px 10px; border-right: 1px solid var(--tt-hairline); overflow: auto; }
+  .app[data-size='820'] .st-nav { display: none; }
+  .st-nav button { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--tt-text-muted); font-size: 13.5px; text-align: left; }
+  .st-nav button:hover { background: var(--tt-hover); color: var(--tt-text); }
+  .st-nav button[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); }
+  .st-nav button[aria-selected='true'] svg:last-child { margin-left: auto; }
+  .st-nav hr { width: calc(100% - 16px); margin: 6px 8px; border: 0; border-top: 1px solid var(--tt-hairline); }
+  .st-nav .tag { margin-left: auto; height: 18px; font-size: 11px; }
+  .st-scroll { position: relative; min-height: 0; overflow: auto; padding: 22px 32px 40px; }
+  .app[data-size='820'] .st-scroll { padding: 16px 20px 32px; }
+  .st-h { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--tt-hairline); }
+  .st-h h2 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; }
+  .st-h p { margin: 4px 0 0; color: var(--tt-text-muted); font-size: 14.5px; }
+  .st-h__tabs { display: none; margin-left: auto; }
+  .app[data-size='820'] .st-h__tabs { display: inline-flex; }
+  .st-foot { margin-top: 14px; text-align: right; color: var(--tt-text-muted); font-size: 12.5px; }
+
+  /* A settings row: title and one line on the left, the control on the right. */
+  .row { display: flex; align-items: center; gap: 20px; padding: 16px 0; }
+  .row + .row, .rows > .row:first-child { border-top: 1px solid var(--tt-hairline); }
+  .st-h + .rows > .row:first-child { border-top: 0; }
+  .row__copy { flex: 1; min-width: 0; }
+  .row__copy strong { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
+  .row__copy p { margin: 2px 0 0; max-width: 62ch; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+  .row__ctl { flex: none; display: flex; justify-content: flex-end; width: 230px; }
+  .row__ctl--tight { width: auto; }
+  .app[data-size='820'] .row__ctl { width: 184px; }
+  .app[data-size='820'] .row__ctl--tight { width: auto; }
+  .row--tall { align-items: flex-start; }
+
+  .sel { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 36px; padding: 0 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); font-size: 14px; font-weight: 500; text-align: left; }
+  .sel span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sel:hover, .sel[aria-expanded='true'] { background: var(--tt-hover); }
+  .tg { position: relative; flex: none; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); background: var(--tt-surface-sunken); }
+  .tg span { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform 120ms ease, background-color 120ms ease; }
+  .tg[aria-checked='true'] { border-color: var(--tt-accent); background: var(--tt-accent); }
+  .tg[aria-checked='true'] span { background: var(--tt-on-accent); transform: translateX(16px); }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); }
+  .seg button { min-height: 28px; padding: 0 12px; border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 13.5px; white-space: nowrap; }
+  .seg button:hover { color: var(--tt-text); }
+  .seg button[aria-checked='true'] { background: var(--tt-pill); color: var(--tt-pill-ink); }
+  .app[data-size='820'] .seg button { padding: 0 9px; font-size: 13px; }
+  .ta { display: block; width: 100%; min-height: 104px; padding: 10px 12px; resize: vertical; border: 1px solid var(--tt-hairline); border-radius: 14px; background: transparent; color: var(--tt-text); font-size: 13px; line-height: 1.5; }
+  .ta:focus { outline: none; border-color: var(--tt-field-border-focus); }
+  .ta::placeholder { color: var(--tt-text-muted); }
+
+  .scrim { position: absolute; inset: 0; z-index: 30; }
+  .menu { z-index: 31; padding: 4px; }
+  .menu .menu-item { justify-content: space-between; }
+  .menu .menu-item[aria-selected='true'] { color: var(--tt-text); font-weight: 500; }
+  .menu .menu-item small { color: var(--tt-text-muted); font-weight: 400; }
+  .menu hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--tt-hairline); }
+
+  /* B — grouped by the moment a setting acts. */
+  .grp { margin-top: 26px; }
+  .grp:first-of-type { margin-top: 22px; }
+  .grp h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font-size: 14px; font-weight: 600; color: var(--tt-text-2); }
+  .grp h3 svg { color: var(--tt-text-muted); }
+  .grp .rows > .row:first-child { border-top: 1px solid var(--tt-hairline); }
+  .custom { padding: 0 0 16px; }
+  .custom label { display: block; margin-bottom: 6px; font-size: 13.5px; font-weight: 500; }
+  .custom label small { color: var(--tt-text-muted); font-weight: 400; }
+  .example { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-sunken); }
+  .example__label { color: var(--tt-text-muted); font-size: 12px; }
+  .example__line { margin: 2px 0 8px; font-size: 13px; color: var(--tt-text); overflow-wrap: anywhere; }
+  .example__line:last-of-type { margin-bottom: 6px; }
+  .example__hint { color: var(--tt-text-muted); font-size: 12px; }
+
+  /* C — one table, a column per project. */
+  .cg { display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 20px; align-items: start; margin-top: 16px; }
+  .app[data-size='820'] .cg { grid-template-columns: minmax(0, 1fr); }
+  .pt { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+  .pt th { padding: 0 6px 8px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pt th svg { vertical-align: -2px; margin-right: 4px; }
+  .pt td { height: 40px; padding: 3px; border-top: 1px solid var(--tt-hairline); }
+  .pt td:first-child { padding-left: 8px; line-height: 1.3; }
+  .pt tr[aria-selected='true'] td { background: var(--tt-accent-wash); }
+  .pt tr[aria-selected='true'] td:first-child { box-shadow: inset 2px 0 0 var(--tt-accent); }
+  .pt .name { width: 31%; }
+  .cell { display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 6px; border-radius: 7px; }
+  .cell:hover, .cell[aria-expanded='true'] { background: var(--tt-hover); }
+  .cell[data-current] { box-shadow: inset 0 0 0 1.5px var(--tt-accent-border); }
+  .cell .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell--inherit .v { color: var(--tt-text-muted); }
+  .dot { flex: none; width: 8px; height: 8px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; }
+  .dot--set { border-color: var(--tt-accent); background: var(--tt-accent); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--tt-text-muted); font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .pv { position: sticky; top: 0; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+  .pv h3 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
+  .pv > p { margin: 0 0 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+  .pv__scopes { display: grid; gap: 2px; margin: 0 0 12px; padding: 0; list-style: none; }
+  .pv__scopes li { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 6px; font-size: 13px; }
+  .pv__scopes li[data-current] { background: var(--tt-selected); }
+  .pv__scopes li .v { margin-left: auto; color: var(--tt-text-2); }
+  .pv__scopes li small { color: var(--tt-text-muted); }
+  .pv__hint { margin: 0 0 10px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
+  .pv .ta { min-height: 88px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const PROJECTS = ['workshop', 'sotto-site']
+
+// Defaults from origin/feat/git-settings:src/shared/settings.ts.
+const DEF = { fetch: '30', autoPull: false, merge: 'last', layout: 'stacked', ws: true, fileState: 'collapsed', style: 'repository', instr: '', templates: true, settle: false, proactive: false }
+const TYPED = 'Start the subject with the area in square brackets, like [threads].\nKeep subjects under 60 characters, with no trailing period.\nEnd the body with the issue number.'
+const SCEN = {
+  defaults: { global: {}, workshop: {}, 'sotto-site': {} },
+  custom: { global: { style: 'custom', instr: TYPED }, workshop: {}, 'sotto-site': { style: 'conventional' } },
+  autos: { global: { autoPull: true, settle: true }, workshop: { autoPull: false }, 'sotto-site': {} },
+}
+const OPTS = {
+  fetch: [['0', 'Off'], ['15', '15 seconds'], ['30', '30 seconds'], ['60', '1 minute'], ['300', '5 minutes']],
+  merge: [['last', 'Last selected'], ['merge', 'Merge'], ['squash', 'Squash and merge'], ['rebase', 'Rebase and merge']],
+  style: [['repository', 'Repository conventions'], ['conventional', 'Conventional Commits'], ['custom', 'Custom instructions']],
+  layout: [['stacked', 'Stacked'], ['split', 'Split']],
+  fileState: [['expanded', 'Expanded'], ['collapsed', 'Collapsed']],
+}
+const BOOL = new Set(['autoPull', 'ws', 'templates', 'settle', 'proactive'])
+const SHORT = { fetch: { 0: 'Off', 15: '15 s', 30: '30 s', 60: '1 min', 300: '5 min' }, merge: { last: 'Last used', merge: 'Merge', squash: 'Squash', rebase: 'Rebase' }, style: { repository: 'Repository', conventional: 'Conventional', custom: 'Custom' } }
+const label = (key, value) => BOOL.has(key) ? (value ? 'On' : 'Off') : (OPTS[key]?.find(([v]) => v === value)?.[1] ?? value)
+const short = (key, value) => SHORT[key]?.[value] ?? label(key, value)
+const parse = value => value === 'true' ? true : value === 'false' ? false : value
+
+// Labels and descriptions exactly as GitSettings.tsx and SettingsView.tsx word them.
+const CODE = {
+  fetch: ['Git fetch interval', 'How often Sotto fetches a project\'s origin remote to learn whether a thread\'s branch is ahead or behind, while this window is in front. Off stops every background fetch; the branch\'s pull request is then read only when you refresh.'],
+  autoPull: ['Automatically pull', 'When a thread\'s folder is on the default branch, has no changes and is only behind its remote, pull it each time Sotto checks the remote. The pull is fast-forward only; nothing is merged or rebased.'],
+  merge: ['Default merge method', 'The method a pull request\'s merge should start on. Last selected uses the one you chose last.'],
+  layout: ['Diff layout', 'How Changes shows a file\'s diff when it opens.'],
+  ws: ['Hide whitespace changes', 'Whether Changes should hide edits that only change spacing when it opens.'],
+  fileState: ['Default diff file state', 'Whether files in Changes should start expanded or collapsed.'],
+  settle: ['Auto-settle merged threads', 'Settle a thread once its branch\'s pull request is merged. Asks GitHub through gh once an hour, the way the merged worktree rule does. Settling removes no folder unless a worktree rule above says so.'],
+  proactive: ['Proactive panels', 'Open Changes on its own after a turn that changed at least 3 files or 50 lines, when the Tools panel is closed. A turn in another pane waits until you go to its thread.'],
+  style: ['Commit and pull request style', 'How generated commit messages and pull request text are written. Repository conventions follows the repository\'s recent commits and its AGENTS.md.'],
+  instr: ['Custom instructions', 'Sent to the thread\'s own model with every commit message and pull request draft, with the repository\'s usual context; these take precedence over its style. Up to 2,000 characters.'],
+  templates: ['Follow pull request templates', 'Fill in the repository\'s pull request template when it has one. Off, the template is not read and the draft uses Sotto\'s own sections.'],
+}
+
+// Scratch state, reset when the scenario changes.
+function S(ctx) {
+  if (ctx.local.stateKey !== ctx.state) {
+    const scen = SCEN[ctx.state]
+    ctx.local.stateKey = ctx.state
+    ctx.local.s = { global: { ...DEF, ...scen.global }, workshop: { ...scen.workshop }, 'sotto-site': { ...scen['sotto-site'] } }
+    ctx.local.open = null
+    ctx.local.scroll = {}
+    ctx.local.sel = undefined
+  }
+  return ctx.local.s
+}
+
+const toggle = (s, key) => `<button class="tg" role="switch" aria-checked="${!!s[key]}" aria-label="${CODE[key][0]}" data-toggle="${key}"><span></span></button>`
+const select = (ctx, s, key) => `<button class="sel" aria-haspopup="listbox" aria-expanded="${ctx.local.open?.key === key}" aria-label="${CODE[key][0]}: ${label(key, s[key])}" data-select="${key}"><span>${label(key, s[key])}</span>${I('chevron', 'sm')}</button>`
+const seg = (s, key) => `<div class="seg" role="radiogroup" aria-label="${CODE[key][0]}">${OPTS[key].map(([v, l]) => `<button role="radio" aria-checked="${s[key] === v}" data-set="${key}:${v}">${l}</button>`).join('')}</div>`
+const row = (title, desc, control, { tight = false, tall = false, id = '' } = {}) => `<div class="row${tall ? ' row--tall' : ''}" ${id ? `id="${id}"` : ''}><div class="row__copy"><strong>${title}</strong><p>${desc}</p></div><div class="row__ctl${tight ? ' row__ctl--tight' : ''}">${control}</div></div>`
+const nav = (current, extra = null) => {
+  const items = [['Dictation', 'comment'], ['Transcription', 'history'], ['Cleanup', 'sparkle'], null, ['Providers', 'link'], ['Hosts', 'computer'], ['Agents', 'tree'], ['Output', 'external'], null, ['Appearance', 'panel'], ['Application', 'gear']]
+  if (extra) items.push(extra)
+  return `<nav class="st-nav" role="tablist" aria-label="Settings sections">${items.map(item => item === null ? '<hr>' : `<button role="tab" data-section="${item[0]}" aria-selected="${item[0] === current}">${I(item[1], 'sm')}<span>${item[0]}</span>${item[2] ? `<span class="tag">${item[2]}</span>` : ''}${item[0] === current ? I('chevronRight', 'sm') : ''}</button>`).join('')}</nav>`
+}
+const room = (crumb, navHtml, body) => `<div class="st"><div class="st-strip"><strong>Settings</strong><span class="sep">/</span><span>${crumb}</span></div>
+  <div class="st-main">${navHtml}<div class="st-scroll" data-scroll>${body}<div class="st-foot">Changes save as you make them.</div></div></div></div>`
+
+// The open select, drawn over the window and placed beside its button in mount.
+function menuOverlay(ctx, s) {
+  const open = ctx.local.open
+  if (!open) return ''
+  const { key, col = 'global' } = open
+  const g = s.global
+  const current = col === 'global' ? g[key] : s[col][key]
+  const opts = BOOL.has(key) ? [['true', 'On'], ['false', 'Off']] : OPTS[key]
+  const inherit = col === 'global' ? '' : `<button class="menu-item" role="option" aria-selected="${current === undefined}" data-pick="__inherit"><span>Use the default <small>(${label(key, g[key])})</small></span>${current === undefined ? I('check', 'sm') : ''}</button><hr>`
+  return `<div class="scrim" data-close></div><div class="popover menu" role="listbox" aria-label="${CODE[key][0]}" data-menu style="visibility:hidden">${inherit}${opts.map(([v, l]) => {
+    const on = current !== undefined && String(current) === v
+    return `<button class="menu-item" role="option" aria-selected="${on}" data-pick="${v}"><span>${l}</span>${on ? I('check', 'sm') : ''}</button>`
+  }).join('')}</div>`
+}
+
+let current = null
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && current?.local.open) { current.local.open = null; current.rerender() }
+})
+
+// Wiring every variant shares: toggles, segmented controls, selects and their menus, typed text, scroll.
+function wire(root, ctx, { onText } = {}) {
+  current = ctx
+  const s = S(ctx)
+  const scope = () => ctx.local.open?.col ?? 'global'
+  root.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.toggle; s.global[k] = !s.global[k]; ctx.rerender() }))
+  root.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => { const [k, v] = b.dataset.set.split(':'); s.global[k] = v; ctx.rerender() }))
+  root.querySelectorAll('[data-select]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.select
+    ctx.local.open = ctx.local.open?.key === k ? null : { key: k, anchor: `[data-select="${k}"]` }
+    ctx.rerender()
+  }))
+  root.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+    const { key } = ctx.local.open
+    const col = scope()
+    if (b.dataset.pick === '__inherit') delete s[col][key]
+    else s[col][key] = parse(b.dataset.pick)
+    ctx.local.open = null
+    ctx.rerender()
+  }))
+  root.querySelector('[data-close]')?.addEventListener('click', () => { ctx.local.open = null; ctx.rerender() })
+  root.querySelectorAll('[data-text]').forEach(t => t.addEventListener('input', () => {
+    const col = t.dataset.text
+    s[col].instr = t.value
+    onText?.(t.value, col)
+  }))
+  // Keep the scroll position across rerenders; the first visit may start somewhere chosen.
+  const scroller = root.querySelector('[data-scroll]')
+  const scrollKey = ctx.local.section ?? 'main'
+  if (scroller) {
+    const saved = ctx.local.scroll[scrollKey]
+    if (saved !== undefined) scroller.scrollTop = saved
+    else { const start = scroller.querySelector('[data-start]'); if (start) scroller.scrollTop = Math.max(0, start.offsetTop - 12) }
+    ctx.local.scroll[scrollKey] = scroller.scrollTop
+    scroller.addEventListener('scroll', () => { ctx.local.scroll[scrollKey] = scroller.scrollTop })
+    // Scroll events land a frame late, so a click that rerenders at once saves the position itself first.
+    root.querySelector('.app').addEventListener('click', () => { ctx.local.scroll[scrollKey] = scroller.scrollTop }, true)
+  }
+  // Place the open menu against its button, flipping above when it would run off the window.
+  const menu = root.querySelector('[data-menu]')
+  const anchor = ctx.local.open && root.querySelector(ctx.local.open.anchor)
+  if (menu && anchor) {
+    const app = root.querySelector('.app').getBoundingClientRect()
+    const r = anchor.getBoundingClientRect()
+    menu.style.minWidth = Math.max(r.width, 200) + 'px'
+    const w = menu.offsetWidth, h = menu.offsetHeight
+    let top = r.bottom - app.top + 4
+    if (top + h > app.height - 8) top = Math.max(8, r.top - app.top - h - 4)
+    const left = Math.min(r.left - app.left, app.width - w - 8)
+    Object.assign(menu.style, { top: top + 'px', left: left + 'px', visibility: 'visible' })
+    const first = menu.querySelector('[aria-selected="true"]') ?? menu.querySelector('button')
+    first?.focus({ preventScroll: true })
+  }
+  root.querySelectorAll('[data-section]').forEach(b => b.addEventListener('click', () => { if (ctx.onSection) ctx.onSection(b.dataset.section) }))
+}
+
+// B's live example: what a subject would look like in the chosen style.
+function example(style, instr) {
+  const subject = 'Name a thread from its first exchange'
+  if (style === 'repository') return { commit: 'Let a thread name itself from its first exchange', pr: 'Let a thread name itself from its first exchange', hint: 'Follows this repository\'s recent commits and its AGENTS.md.' }
+  if (style === 'conventional') return { commit: 'feat(threads): name a thread from its first exchange', pr: 'feat(threads): name a thread from its first exchange', hint: 'A type and scope, then a lower-case summary.' }
+  if (!instr.trim()) return { commit: subject, pr: subject, hint: 'Type your instructions above to see them applied.' }
+  let line = subject
+  if (/lower ?case/i.test(instr)) line = line.toLowerCase()
+  if (/bracket/i.test(instr)) line = '[threads] ' + line
+  if (/ticket|jira/i.test(instr)) line = 'SOT-271 ' + line
+  if (/emoji/i.test(instr)) line = '✨ ' + line
+  if (/period/i.test(instr) && !/no (trailing )?period|without .*period/i.test(instr)) line += '.'
+  return { commit: line, pr: line, hint: 'An example only. The thread\'s own model writes the real one from your instructions.' }
+}
+const exampleHtml = (s) => { const e = example(s.style, s.instr); return `<div class="example" data-example>
+  <div class="example__label">Commit subject</div><div class="example__line mono" data-ex-commit>${e.commit}</div>
+  <div class="example__label">Pull request title</div><div class="example__line mono" data-ex-pr>${e.pr}</div>
+  <div class="example__hint" data-ex-hint>${e.hint}</div></div>` }
+
+Proto.page({
+  title: 'Git settings',
+  question: 'Where do the Git settings live on the Settings page, and how are they arranged?',
+  states: [{ key: 'defaults', label: 'Defaults' }, { key: 'custom', label: 'Custom instructions chosen' }, { key: 'autos', label: 'Automatically pull and Auto-settle on' }],
+  variants: [
+    {
+      key: 'A', name: 'What is built',
+      note: 'feat/git-settings as it stands: eight rows go to the end of Application, after the fetch interval and the worktree rules; style, custom instructions and templates go to the end of Cleanup. Rows tagged New are #271. Use the section list (or the Application / Cleanup switch at 820) to see both.',
+      render(ctx) {
+        const s = S(ctx).global
+        const section = ctx.local.section ??= 'Application'
+        ctx.onSection = name => { if (name === 'Application' || name === 'Cleanup') { ctx.local.section = name; ctx.local.open = null; ctx.rerender() } }
+        const tag = '<span class="tag">New</span>'
+        const t = (key) => CODE[key][0] + ' ' + tag
+        const tabs = `<div class="seg st-h__tabs" role="tablist" aria-label="Section">${['Application', 'Cleanup'].map(n => `<button role="tab" aria-checked="${n === section}" data-section="${n}">${n}</button>`).join('')}</div>`
+        const app = `<div class="st-h"><div><h2>Application</h2><p>Startup, privacy &amp; updates</p></div>${tabs}</div><div class="rows">
+          ${row('Reduced motion', 'Follow Windows or minimize non-essential motion.', '<span class="sel"><span>Follow system</span></span>')}
+          ${row('Web links in threads', 'Where a link in a thread opens when you click it.', '<span class="seg"><button aria-checked="true">System browser</button><button>Sotto browser</button></span>', { tight: true })}
+          ${row('New threads work in', 'Project defaults can override this. Existing threads keep their working folder.', '<span class="sel"><span>Project folder</span></span>')}
+          ${row('Remove idle worktrees after', 'A thread\'s own worktree folder goes when the thread has been idle this long. The branch stays and sending puts the folder back.', '<span class="sel"><span>Never</span></span>')}
+          ${row('Remove a worktree when its thread is settled', 'Settle removes a clean worktree folder without asking. A folder with uncommitted changes still asks.', '<span class="tg" aria-checked="false"><span></span></span>', { tight: true })}
+          ${row('Remove a worktree once its commits are in the default branch', 'Checked against the local copy of the repository\'s default branch, once an hour.', '<span class="tg" aria-checked="false"><span></span></span>', { tight: true })}
+          ${row('Remove a worktree when its pull request is merged', 'Asks GitHub through gh, the way the Changes panel does, once an hour.', '<span class="tg" aria-checked="false"><span></span></span>', { tight: true })}
+          <div class="row" data-start><div class="row__copy"><strong>${CODE.fetch[0]}</strong><p>${CODE.fetch[1]}</p></div><div class="row__ctl">${select(ctx, s, 'fetch')}</div></div>
+          ${row(t('autoPull'), CODE.autoPull[1], toggle(s, 'autoPull'), { tight: true })}
+          ${row(t('merge'), CODE.merge[1], select(ctx, s, 'merge'))}
+          ${row(t('layout'), CODE.layout[1], seg(s, 'layout'), { tight: true })}
+          ${row(t('ws'), CODE.ws[1], toggle(s, 'ws'), { tight: true })}
+          ${row(t('fileState'), CODE.fileState[1], seg(s, 'fileState'), { tight: true })}
+          ${row(t('settle'), CODE.settle[1], toggle(s, 'settle'), { tight: true })}
+          ${row(t('proactive'), CODE.proactive[1], toggle(s, 'proactive'), { tight: true })}
+        </div>`
+        const clean = `<div class="st-h"><div><h2>Cleanup</h2><p>Formatting, vocabulary &amp; writing</p></div>${tabs}</div><div class="rows">
+          ${row('AI formatting', 'Send transcript text to OpenRouter for cleanup. Falls back to the raw transcript if the network is slow or offline.', '<span class="tg" aria-checked="true"><span></span></span>', { tight: true })}
+          ${row('Formatting quality', 'Low is near-instant; higher tiers format better but add up to a couple seconds.', '<span class="sel"><span>Low — fastest (Mercury 2)</span></span>')}
+          ${row('Generated thread titles', 'Ask a thread\'s own model to name the thread from its first exchange. Names you choose are never replaced.', '<span class="tg" aria-checked="true"><span></span></span>', { tight: true })}
+          <div class="row" data-start><div class="row__copy"><strong>Generated commit messages</strong><p>Ask the thread's own model to draft a commit message from the staged diff when the commit form opens. Nothing is committed until you press Commit.</p></div><div class="row__ctl row__ctl--tight"><span class="tg" aria-checked="true"><span></span></span></div></div>
+          ${row('Generated pull request text', 'Ask the thread\'s own model to draft a pull request title and body when the form opens. Nothing is created until you press Create.', '<span class="tg" aria-checked="true"><span></span></span>', { tight: true })}
+          ${row(t('style'), CODE.style[1], select(ctx, s, 'style'))}
+          ${s.style === 'custom' ? row(t('instr'), CODE.instr[1], `<textarea class="ta" rows="4" maxlength="2000" aria-label="Custom instructions" data-text="global" placeholder="How should commit messages and pull requests read?">${s.instr}</textarea>`, { tall: true }) : ''}
+          ${row(t('templates'), CODE.templates[1], toggle(s, 'templates'), { tight: true })}
+        </div>`
+        return { room: room(section, nav(section), section === 'Application' ? app : clean), overlay: menuOverlay(ctx, S(ctx)) }
+      },
+      mount(root, ctx) { wire(root, ctx) },
+    },
+    {
+      key: 'B', name: 'Grouped by moment',
+      note: 'One Git section, grouped under when each setting acts. Each description is a sentence about what Sotto will do with the value shown, and changes as you flip it. The style row shows a live example subject; with Custom instructions the example follows what you type.',
+      render(ctx) {
+        const s = S(ctx).global
+        ctx.local.section = 'Git'
+        ctx.onSection = () => {}
+        const say = {
+          style: { repository: 'Sotto writes commit messages and pull request text the way this repository\'s recent commits and AGENTS.md do.', conventional: 'Sotto starts each commit subject with a type and scope, like feat(threads):.', custom: 'Sotto sends your instructions to the thread\'s own model with every commit message and pull request draft.' }[s.style],
+          templates: s.templates ? 'Sotto fills in the repository\'s pull request template when it has one.' : 'Sotto skips the template and drafts with its own sections.',
+          merge: s.merge === 'last' ? 'Merge starts on the method you used last, Merge the first time. You can pick another before you merge.' : `Merge starts on ${label('merge', s.merge)}. You can pick another before you merge.`,
+          settle: s.settle ? 'Once a thread\'s pull request is merged, Sotto settles the thread. It asks GitHub once an hour and removes no folder unless a worktree rule says so.' : 'A thread stays where it is after its pull request merges, until you settle it.',
+          layout: s.layout === 'stacked' ? 'Changes opens each diff stacked, old lines above new.' : 'Changes opens each diff split, old on the left and new on the right.',
+          ws: s.ws ? 'Changes hides edits that only change spacing when it opens.' : 'Changes shows every edit, spacing included.',
+          fileState: s.fileState === 'collapsed' ? 'Files in Changes open collapsed to their headers; press one to read it.' : 'Every file in Changes opens expanded.',
+          proactive: s.proactive ? 'After a turn that changed 3 files or 50 lines, Changes opens on its own while Tools is closed.' : 'Changes opens only when you open it.',
+          fetch: s.fetch === '0' ? 'Sotto never fetches on its own. Ahead, behind and the pull request update when you refresh.' : `Sotto asks origin every ${label('fetch', s.fetch)} whether a thread's branch is ahead or behind, while this window is in front.`,
+          autoPull: s.autoPull ? 'Sotto pulls the default branch when it is clean and behind. Fast-forward only; nothing is merged or rebased.' : 'Sotto shows when the default branch is behind and leaves the pull to you.',
+        }
+        const grp = (title, glyph, rows) => `<section class="grp"><h3>${I(glyph, 'sm')}${title}</h3><div class="rows">${rows}</div></section>`
+        const body = `<div class="st-h"><div><h2>Git</h2><p>Commits, pull requests, Changes &amp; fetching</p></div></div>
+          ${grp('When a thread commits', 'commit', `
+            ${row('Commit and pull request style', say.style, select(ctx, s, 'style'))}
+            ${s.style === 'custom' ? `<div class="custom"><label for="b-instr">Custom instructions <small>· up to 2,000 characters</small></label><textarea id="b-instr" class="ta" rows="4" maxlength="2000" data-text="global" placeholder="Start the subject with the area in square brackets...">${s.instr}</textarea></div>` : ''}
+            ${exampleHtml(s)}`)}
+          ${grp('When a pull request is made or merged', 'pr', `
+            ${row('Follow pull request templates', say.templates, toggle(s, 'templates'), { tight: true })}
+            ${row('Default merge method', say.merge, select(ctx, s, 'merge'))}
+            ${row('Auto-settle merged threads', say.settle, toggle(s, 'settle'), { tight: true })}`)}
+          ${grp('When you read Changes', 'file', `
+            ${row('Diff layout', say.layout, seg(s, 'layout'), { tight: true })}
+            ${row('Hide whitespace changes', say.ws, toggle(s, 'ws'), { tight: true })}
+            ${row('Default diff file state', say.fileState, seg(s, 'fileState'), { tight: true })}
+            ${row('Proactive panels', say.proactive, toggle(s, 'proactive'), { tight: true })}`)}
+          ${grp('In the background', 'refresh', `
+            ${row('Git fetch interval', say.fetch, select(ctx, s, 'fetch'))}
+            ${row('Automatically pull', say.autoPull, toggle(s, 'autoPull'), { tight: true })}`)}`
+        return { room: room('Git', nav('Git', ['Git', 'branch', 'New']), body), overlay: menuOverlay(ctx, S(ctx)) }
+      },
+      mount(root, ctx) {
+        wire(root, ctx, {
+          onText(text) {
+            const e = example('custom', text)
+            root.querySelector('[data-ex-commit]').textContent = e.commit
+            root.querySelector('[data-ex-pr]').textContent = e.pr
+            root.querySelector('[data-ex-hint]').textContent = e.hint
+          },
+        })
+      },
+    },
+    {
+      key: 'C', name: 'Per project',
+      note: 'One table: each setting a row, the global default and each project a column. A hollow dot means the project inherits the default; a filled dot means it is set for that project. Press a project cell to override it or go back to the default; the panel explains the selected row and holds that project\'s custom instructions.',
+      render(ctx) {
+        const all = S(ctx)
+        const g = all.global
+        ctx.local.section = 'Git'
+        ctx.onSection = () => {}
+        const sel = ctx.local.sel ??= { key: ctx.state === 'custom' ? 'style' : ctx.state === 'autos' ? 'autoPull' : 'merge', col: ctx.state === 'defaults' ? 'global' : ctx.state === 'custom' ? 'sotto-site' : 'workshop' }
+        const eff = (col, key) => col === 'global' ? g[key] : (all[col][key] ?? g[key])
+        const set = (col, key) => col !== 'global' && all[col][key] !== undefined
+        const ORDER = ['autoPull', 'merge', 'style', 'templates', 'settle', 'layout', 'ws', 'fileState', 'proactive', 'fetch']
+        const NAME = { style: 'Commit and pull request style', templates: 'Follow pull request templates' }
+        const open = ctx.local.open
+        const cell = (key, col) => {
+          const inherit = col !== 'global' && !set(col, key)
+          const isCur = sel.key === key && sel.col === col
+          const v = short(key, eff(col, key))
+          const aria = `${NAME[key] ?? CODE[key][0]} for ${col === 'global' ? 'all projects' : col}: ${label(key, eff(col, key))}${inherit ? ', inherits the default' : ''}`
+          return `<td><button class="cell${inherit ? ' cell--inherit' : ''}" data-cell="${key}:${col}" aria-label="${aria}" ${isCur ? 'data-current' : ''} aria-expanded="${open?.key === key && open?.col === col}">${col === 'global' ? '' : `<span class="dot${inherit ? '' : ' dot--set'}"></span>`}<span class="v">${v}</span></button></td>`
+        }
+        const table = `<table class="pt"><colgroup><col class="name"><col><col><col></colgroup>
+          <thead><tr><th>Setting</th><th>Default</th>${PROJECTS.map(p => `<th>${I('folder', 'sm')}${p}</th>`).join('')}</tr></thead>
+          <tbody>${ORDER.map(key => `<tr aria-selected="${sel.key === key}"><td>${NAME[key] ?? CODE[key][0]}</td>${cell(key, 'global')}${PROJECTS.map(p => cell(key, p)).join('')}</tr>`).join('')}</tbody></table>
+          <div class="legend"><span><span class="dot"></span>Inherits the default</span><span><span class="dot dot--set"></span>Set for this project</span></div>`
+        const scopes = [['global', 'Default'], ...PROJECTS.map(p => [p, p])].map(([col, name]) => `<li ${sel.col === col ? 'data-current' : ''}>${col === 'global' ? I('gear', 'sm') : `<span class="dot${set(col, sel.key) ? ' dot--set' : ''}"></span>`}${name}<span class="v">${label(sel.key, eff(col, sel.key))}${col !== 'global' ? ` <small>${set(col, sel.key) ? '· set here' : '· inherits'}</small>` : ''}</span></li>`).join('')
+        const where = sel.col === 'global' ? 'the default' : sel.col
+        const hint = sel.col === 'global'
+          ? `Every project without its own value follows this. ${PROJECTS.filter(p => set(p, sel.key)).length ? `${PROJECTS.filter(p => set(p, sel.key)).join(' and ')} keeps its own.` : 'No project overrides it.'}`
+          : set(sel.col, sel.key) ? `${sel.col} keeps its own value when the default changes.` : `${sel.col} follows the default. Pick a value in its column to set it for ${sel.col} only.`
+        const instrCol = sel.key === 'style' && eff(sel.col, 'style') === 'custom' ? sel.col : null
+        const instrText = instrCol ? (instrCol === 'global' ? g.instr : (all[instrCol].instr ?? g.instr)) : ''
+        const preview = `<aside class="pv" aria-label="About the selected setting"><h3>${NAME[sel.key] ?? CODE[sel.key][0]}</h3><p>${CODE[sel.key][1]}</p>
+          <ul class="pv__scopes">${scopes}</ul><p class="pv__hint">${hint}</p>
+          ${instrCol ? `<label class="pv__hint" for="c-instr" style="display:block;margin-bottom:4px;color:var(--tt-text)">Custom instructions for ${where}</label><textarea id="c-instr" class="ta" rows="4" maxlength="2000" data-text="${instrCol}">${instrText}</textarea>` : ''}
+          ${set(sel.col, sel.key) ? `<button class="btn btn--secondary" data-reset>Use the default for ${sel.col}</button>` : ''}</aside>`
+        const body = `<div class="st-h"><div><h2>Git</h2><p>Defaults, and what each project sets for itself</p></div></div><div class="cg"><div>${table}</div>${preview}</div>`
+        return { room: room('Git', nav('Git', ['Git', 'branch', 'New']), body), overlay: menuOverlay(ctx, all) }
+      },
+      mount(root, ctx) {
+        wire(root, ctx)
+        const all = S(ctx)
+        root.querySelectorAll('[data-cell]').forEach(b => b.addEventListener('click', () => {
+          const [key, col] = b.dataset.cell.split(':')
+          ctx.local.sel = { key, col }
+          if (col === 'global' && BOOL.has(key)) { all.global[key] = !all.global[key]; ctx.local.open = null }
+          else ctx.local.open = ctx.local.open?.key === key && ctx.local.open?.col === col ? null : { key, col, anchor: `[data-cell="${key}:${col}"]` }
+          ctx.rerender()
+        }))
+        root.querySelector('[data-reset]')?.addEventListener('click', () => { const { key, col } = ctx.local.sel; delete all[col][key]; ctx.rerender() })
+      },
+    },
+  ],
+})
+</script>
+</body>
+</html>

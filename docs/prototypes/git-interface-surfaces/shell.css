@@ -1,0 +1,124 @@
+/*
+  PROTOTYPE — throwaway. The shared Threads-page shell every Git interface prototype page draws its
+  variants inside, so each one is judged against the real room rather than on a blank page.
+  Colour comes only from the app's own --tt-* tokens (linked from src/renderer/src/styles/tokens.css),
+  so light and dark here are the app's light and dark.
+*/
+@import url('../../../src/renderer/src/styles/fonts.css');
+@import url('../../../src/renderer/src/styles/tokens.css');
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: color-mix(in srgb, var(--tt-canvas) 70%, var(--tt-text) 8%); color: var(--tt-text); font: 14px/1.45 var(--tt-font-ui); -webkit-font-smoothing: antialiased; overflow: auto; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { padding: 0; border: 0; background: none; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 13px; height: 13px; }
+svg.i.lg { width: 17px; height: 17px; }
+.mono { font-family: var(--tt-font-mono); }
+.muted { color: var(--tt-text-muted); }
+.faint { color: var(--tt-text-faint); }
+
+/* The stage: the app window drawn at an exact size, centred, so 820x560 is really 820x560. */
+.proto-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 100%; padding: 16px 24px 96px; }
+.app { position: relative; display: grid; grid-template-columns: 300px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-canvas); box-shadow: 0 30px 80px var(--tt-shadow-color); container: app / size; }
+.app[data-size='820'] { grid-template-columns: 236px minmax(0, 1fr); }
+
+/* Sidebar. */
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--tt-sidebar); color: var(--tt-sidebar-text); border-right: 1px solid var(--tt-sidebar-border); font-size: 13.5px; }
+.side__top { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px; font-weight: 600; }
+.side__logo { width: 18px; height: 18px; border-radius: 5px; background: var(--tt-accent); }
+.side__search { margin: 0 8px 8px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--tt-sidebar-border); border-radius: 8px; color: var(--tt-sidebar-text-muted); }
+.side__list { flex: 1; overflow: auto; padding: 0 6px; }
+.side__project { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; font-weight: 500; }
+.side__project span:last-child { margin-left: auto; color: var(--tt-sidebar-text-muted); font-size: 12px; font-weight: 400; }
+.side__row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 2px 0; padding: 7px 10px 7px 22px; border: 1px solid transparent; border-radius: 8px; }
+.side__row small { color: var(--tt-sidebar-text-muted); font-size: 12px; }
+.side__row small:last-child { text-align: right; }
+.side__row[aria-current] { background: var(--tt-sidebar-row-selected); border-color: var(--tt-selected-border); }
+.side__foot { display: flex; gap: 4px; padding: 8px; border-top: 1px solid var(--tt-sidebar-border); }
+.side__foot span { flex: 1; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--tt-sidebar-text-muted); }
+.side__foot span[aria-current] { background: var(--tt-sidebar-control); color: var(--tt-sidebar-text); }
+
+/* The room: one pane, and the Tools panel beside it when a page opens it. */
+.room { display: flex; min-width: 0; min-height: 0; }
+.pane { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; container: pane / inline-size; }
+.pane-head { display: flex; align-items: center; gap: 6px; flex: none; height: 44px; padding: 0 8px 0 18px; }
+.pane-head__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.pane-head h2 { margin: 0; font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane-head__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.pane-head__title { overflow: hidden; }
+.pane-head__crumb::before { content: '/'; }
+.wc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 13px; }
+.pane-head__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--tt-text-muted); }
+.pane-action:hover, .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.provider-mark { width: 16px; height: 16px; border-radius: 50%; background: var(--tt-provider-claude); flex: none; }
+
+.transcript { flex: 1; min-height: 0; overflow: auto; padding: 18px 24px 12px; display: flex; flex-direction: column; gap: 18px; }
+.msg-you { align-self: stretch; margin-left: 24px; padding: 14px 18px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-bubble); color: var(--tt-bubble-text); }
+.msg-meta { display: flex; gap: 10px; font-size: 12.5px; font-weight: 500; margin-bottom: 6px; }
+.msg-meta span:last-child { color: var(--tt-text-muted); font-weight: 400; }
+.msg-agent p { margin: 0 0 8px; }
+.activity { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
+
+.compose { flex: none; padding: 0 16px 10px; }
+.composer { border: 1px solid var(--tt-panel-border); border-radius: 14px; background: var(--tt-panel); padding: 12px 14px 10px; }
+.composer__text { min-height: 44px; color: var(--tt-text-faint); }
+.composer__row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.composer__pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); font-size: 13px; }
+.composer__send { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); display: grid; place-items: center; }
+.pane-meta { display: flex; justify-content: flex-end; gap: 14px; padding: 6px 4px 0; color: var(--tt-text-muted); font-size: 12px; }
+
+/* Tools panel: a rail of surfaces and the open one. */
+.tools { display: flex; flex-direction: column; flex: none; width: min(46%, 560px); min-width: 0; border-left: 1px solid var(--tt-hairline); background: var(--tt-surface); }
+.app[data-size='820'] .tools { width: 52%; }
+.tools__rail { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--tt-hairline); overflow: hidden; }
+.tools__tile { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.tools__tile[aria-current] { background: var(--tt-selected); color: var(--tt-text); }
+/* A narrow panel keeps the current tile's name and shows the others as icons, as the app's rail does. */
+@container app (max-width: 900px) { .tools__tile:not([aria-current]) { font-size: 0; gap: 0; padding: 0 8px; } }
+.tools__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+
+/* Shared bits a variant may use. */
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13.5px; white-space: nowrap; }
+.btn--primary { background: var(--tt-primary); color: var(--tt-primary-contrast); }
+.btn--primary:hover { background: var(--tt-primary-hover); }
+.btn--secondary { border: 1px solid var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-secondary-text); }
+.btn--ghost { color: var(--tt-text-2); }
+.btn--ghost:hover, .btn--secondary:hover { background: var(--tt-hover); }
+.btn--danger { background: var(--tt-error); color: var(--tt-error-contrast); }
+.btn[disabled], .btn[aria-disabled='true'] { opacity: .5; cursor: default; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 11.5px; }
+.tag--ok { color: var(--tt-success); border-color: color-mix(in srgb, var(--tt-success) 40%, transparent); }
+.tag--warn { color: var(--tt-warning-text); border-color: color-mix(in srgb, var(--tt-warning) 40%, transparent); }
+.tag--err { color: var(--tt-error-text); border-color: var(--tt-error-border); }
+.add { color: var(--tt-success); }
+.del { color: var(--tt-error-text); }
+.popover { position: absolute; z-index: 30; min-width: 220px; padding: 6px; border: 1px solid var(--tt-panel-border); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 0 10px; border-radius: 6px; font-size: 13px; text-align: left; }
+.menu-item:hover { background: var(--tt-hover); }
+.menu-item[disabled] { color: var(--tt-text-muted); }
+.backdrop { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: var(--tt-overlay); }
+.dialog { width: min(520px, 100%); max-height: 100%; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); padding: 22px; }
+.dialog h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.field { width: 100%; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); padding: 8px 10px; }
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 14px; }
+.notice strong { color: var(--tt-text); font-weight: 500; }
+.notice[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
+
+/* The floating prototype bar: obviously not part of the design being judged. */
+.proto-bar { position: fixed; left: 50%; bottom: 16px; z-index: 1000; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 999px; background: #111; color: #f4f4f4; box-shadow: 0 10px 30px rgb(0 0 0 / 45%); font: 13px/1.2 system-ui, sans-serif; }
+.proto-bar button, .proto-bar select, .proto-bar a { height: 30px; padding: 0 11px; white-space: nowrap; border: 0; border-radius: 999px; background: #262626; color: #f4f4f4; font: inherit; text-decoration: none; display: inline-flex; align-items: center; cursor: pointer; }
+.proto-bar button:hover, .proto-bar a:hover { background: #3a3a3a; }
+.proto-bar__label { padding: 0 8px; white-space: nowrap; font-weight: 600; }
+.proto-bar__label small { display: block; font-weight: 400; opacity: .7; max-width: 360px; white-space: normal; }
+.proto-bar button[aria-pressed='true'] { background: #f4f4f4; color: #111; }
+.proto-note { flex: none; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; background: #111; color: #f4f4f4; font: 12.5px/1.4 system-ui, sans-serif; box-shadow: 0 10px 30px rgb(0 0 0 / 45%); }
+.proto-note strong { display: block; margin-bottom: 4px; font-size: 13px; }
+.proto-note button { margin-top: 6px; padding: 2px 8px; border-radius: 6px; background: #333; color: #f4f4f4; font-size: 12px; }

@@ -1,0 +1,465 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three versions of commit, push and pull request from a thread (#267), inside the
+  Threads page. A is what merged: T3's split button in the pane header, the Commit changes dialog, the
+  "Push to default ref?" question and one notice above the composer. B is a ship strip above the composer
+  that expands in place. C is a status badge in the header that opens a panel of three steps. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — commit, push and pull request</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  /* Shared: the spinner, the file checklist and small type. */
+  .spin { flex: none; width: 14px; height: 14px; border: 2px solid var(--tt-hairline); border-top-color: var(--tt-primary); border-radius: 50%; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  .files { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; }
+  .files li { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 4px; border-radius: 6px; font-size: 13px; }
+  .files li[data-out] { color: var(--tt-text-muted); text-decoration: line-through; }
+  .files input { margin: 0; accent-color: var(--tt-accent); }
+  .files__badge { flex: none; width: 16px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; text-align: center; }
+  .files__path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--tt-font-mono); font-size: 12.5px; }
+  .files__counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 11.5px; }
+  textarea.field, input.field { font-size: 13.5px; resize: none; }
+  .field::placeholder { color: var(--tt-text-faint); }
+
+  /* A — the split button in the pane header, as merged. */
+  .ga { display: inline-flex; flex: none; align-items: center; height: 30px; margin-right: 4px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+  .ga__quick { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 9px; border-radius: 7px 0 0 7px; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+  .ga__quick:hover:not([aria-disabled='true']) { background: var(--tt-hover); color: var(--tt-text); }
+  .ga__quick[aria-disabled='true'] { color: var(--tt-text-muted); }
+  .ga[data-running] .ga__quick { cursor: progress; }
+  .ga__more { display: grid; place-items: center; width: 22px; height: 100%; border-left: 1px solid var(--tt-hairline); border-radius: 0 7px 7px 0; color: var(--tt-text-muted); }
+  .ga__more:hover, .ga__more[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  @container pane (max-width: 720px) { .ga__quick { padding: 0 7px; } .ga__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+  .ga-menu { top: 40px; right: 72px; width: 280px; }
+  .ga-menu .menu-item { flex-wrap: wrap; gap: 0 10px; padding: 5px 10px; }
+  .ga-menu .menu-item small { flex-basis: 100%; padding-left: 25px; color: var(--tt-text-faint); font-size: 11.5px; line-height: 1.35; }
+  .ga-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); }
+  .ga-notice[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
+  .ga-notice p { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 14px; }
+  .ga-notice strong { color: var(--tt-text); font-weight: 500; }
+  .ga-notice[data-tone='error'] strong { color: inherit; }
+  .x-btn { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 6px; color: inherit; }
+  .x-btn:hover { background: var(--tt-hover); }
+  .cd { width: min(560px, 100%); display: grid; gap: 12px; }
+  .cd h3 { margin: 0; }
+  .cd__branch { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: 13px; }
+  .cd__files { display: grid; gap: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); padding: 8px 10px; }
+  .cd__files-head { display: flex; align-items: center; justify-content: space-between; color: var(--tt-text-muted); font-size: 12.5px; }
+  .cd__edit { padding: 2px 8px; border-radius: 6px; color: var(--tt-text-2); font-size: 12.5px; }
+  .cd__edit:hover { background: var(--tt-hover); }
+  .cd label { color: var(--tt-text-2); font-size: 13px; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .dialog p.desc { margin: 0 0 16px; color: var(--tt-text-2); }
+
+  /* B — the ship strip above the composer. */
+  .ship { margin: 0 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13.5px; }
+  .ship[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
+  .ship[data-tone='warn'] { border-color: color-mix(in srgb, var(--tt-warning) 45%, transparent); background: var(--tt-warning-surface); }
+  .ship__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 46px; padding: 7px 8px 7px 12px; }
+  .ship__branch { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; }
+  .ship__text { flex: 1 1 200px; min-width: 0; }
+  .ship__text strong { color: var(--tt-text); font-weight: 500; }
+  .ship[data-tone='error'] .ship__text strong { color: inherit; }
+  .ship__trail { display: inline-flex; gap: 6px; align-items: center; color: var(--tt-text-faint); font-size: 12px; }
+  .ship__trail b { color: var(--tt-text); font-weight: 500; }
+  .ship__trail s { text-decoration: none; color: var(--tt-success); }
+  .ship__body { display: grid; gap: 8px; padding: 0 12px 10px; }
+  .ship__body .files { max-height: 110px; overflow: auto; border-top: 1px solid var(--tt-hairline); padding-top: 6px; }
+  .ship .btn { height: 30px; }
+
+  /* C — the header badge and the steps panel. */
+  .c-badge { display: inline-flex; align-items: center; gap: 7px; height: 28px; margin-right: 4px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+  .c-badge:hover, .c-badge[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--tt-accent); }
+  .dot[data-tone='ok'] { background: var(--tt-success); }
+  .dot[data-tone='warn'] { background: var(--tt-warning); }
+  .dot[data-tone='err'] { background: var(--tt-error); }
+  .c-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 30; width: 390px; display: flex; flex-direction: column; border-left: 1px solid var(--tt-panel-border); background: var(--tt-surface); box-shadow: var(--tt-shadow-lg); }
+  .app[data-size='820'] .c-panel { width: 340px; }
+  .c-panel__head { display: flex; align-items: center; gap: 8px; flex: none; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); }
+  .c-panel__head h3 { margin: 0; font-size: 14px; font-weight: 500; }
+  .c-panel__steps { flex: 1; min-height: 0; overflow: auto; padding: 6px 0; }
+  .c-panel__foot { flex: none; display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--tt-hairline); }
+  .c-panel__foot .btn--primary { flex: 1; }
+  .step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 10px; padding: 10px 14px 10px 14px; position: relative; }
+  .step + .step::before { content: ''; position: absolute; left: 24px; top: -10px; height: 18px; border-left: 1px solid var(--tt-hairline); }
+  .step__mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--tt-hairline); color: var(--tt-text-faint); font-size: 11.5px; font-weight: 600; background: var(--tt-surface); }
+  .step[data-state='next'] .step__mark { border-color: var(--tt-accent); color: var(--tt-accent-text); }
+  .step[data-state='done'] .step__mark { border-color: var(--tt-success); background: var(--tt-success); color: var(--tt-surface); }
+  .step[data-state='failed'] .step__mark { border-color: var(--tt-error); background: var(--tt-error); color: var(--tt-error-contrast); }
+  .step[data-state='running'] .step__mark { border: 0; }
+  .step__title { display: flex; align-items: center; gap: 8px; min-height: 22px; font-weight: 500; color: var(--tt-text); }
+  .step__title .btn { margin-left: auto; height: 26px; padding: 0 10px; font-size: 12.5px; }
+  .step__state { grid-column: 2; margin: 2px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+  .step[data-state='failed'] .step__state { color: var(--tt-error-text); }
+  .step__body { grid-column: 2; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+  .step__body .files { border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); padding: 4px; }
+  .step__ask { display: grid; gap: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--tt-warning) 45%, transparent); border-radius: var(--tt-radius-sm); background: var(--tt-warning-surface); color: var(--tt-text); font-size: 13px; }
+  .step__ask .actions { justify-content: flex-start; }
+  .step__ask .btn, .step__body .btn { height: 28px; font-size: 12.5px; }
+  .pr-body { margin: 0; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+  .small { font-size: 12px; }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const FILES = [
+  { s: 'M', label: 'Modified', path: 'src/renderer/src/features/voice/VoicePreview.tsx', add: 22, del: 9 },
+  { s: 'M', label: 'Modified', path: 'src/main/voice/xaiVoice.ts', add: 12, del: 2 },
+  { s: 'A', label: 'Added', path: 'tests/unit/voice/voicePreview.test.ts', add: 8, del: 0 },
+]
+const SUBJECT = 'Play a two-second voice preview'
+const SHA = '3f9c2ab'
+const FEATURE = 'feat/grok-voice-previews'
+const REFUSAL = 'Branch is behind upstream. Pull/rebase before pushing.'
+const FEAT = { branch: 'feat/voice-preview', def: false, dirty: false, ahead: 0, behind: 0, pr: null, run: null, fail: null }
+const SCEN = {
+  'dirty-feature': { ...FEAT, dirty: true },
+  'dirty-main': { ...FEAT, branch: 'main', def: true, dirty: true },
+  ahead: { ...FEAT, ahead: 2 },
+  behind: { ...FEAT, behind: 3 },
+  'open-pr': { ...FEAT, pr: 74 },
+  running: { ...FEAT, dirty: true, run: { stage: 'Committing...', hook: 'pre-commit', output: 'eslint .' } },
+  failed: { ...FEAT, ahead: 1, fail: REFUSAL },
+}
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** The folder as this variant sees it: the scenario plus whatever the prototype has done to it since. Resets on a scenario switch. */
+function statusOf(ctx) {
+  const L = ctx.local
+  if (L.for !== ctx.state) { for (const k of Object.keys(L)) delete L[k]; L.for = ctx.state; L.out = [] }
+  return { ...SCEN[ctx.state], ...(L.patch ?? {}) }
+}
+
+/** What one host action does to the folder, and the toast it ends with, in the host's words. */
+function simulate(s, action, opts = {}) {
+  if (action === 'pull') return { patch: { behind: 0, fail: null, run: null }, notice: { tone: 'success', title: 'Pulled', detail: `origin/${s.branch} is now in this checkout.` } }
+  const branch = opts.featureBranch ? FEATURE : s.branch
+  const def = opts.featureBranch ? false : s.def
+  const upstream = `origin/${branch}`
+  const committed = action === 'commit' && s.dirty
+  const patch = { branch, def, run: null, fail: null, behind: 0, dirty: committed ? false : s.dirty, ahead: action === 'commit' ? s.ahead + (committed ? 1 : 0) : 0 }
+  if (action === 'create_pr') return { patch: { ...patch, pr: 74 }, notice: { tone: 'success', title: 'Created PR #74', detail: SUBJECT, cta: { label: 'View PR' } } }
+  if (action === 'push') return { patch, notice: { tone: 'success', title: `Pushed ${SHA} to ${upstream}`, detail: SUBJECT, cta: def ? null : s.pr ? { label: 'View PR' } : { label: 'Create PR', run: ['create_pr'] } } }
+  return { patch, notice: { tone: 'success', title: `Committed ${SHA}`, detail: SUBJECT, cta: { label: 'Push', run: ['push'] } } }
+}
+const stageOf = (a, s) => a === 'commit' ? { title: 'Committing...', detail: 'pre-commit: eslint .' }
+  : a === 'push' ? { title: `Pushing to origin/${s.branch}...` } : a === 'create_pr' ? { title: 'Creating pull request...' } : { title: 'Pulling...' }
+
+/** Runs host actions one after another, a beat each, so progress is visible; the last one's toast is the result. */
+function run(ctx, actions, opts = {}) {
+  const L = ctx.local, token = L.for
+  const s0 = statusOf(ctx)
+  if (actions.some(a => a !== 'commit' && a !== 'pull') && s0.def && !opts.featureBranch && !opts.allow) { Object.assign(L, { ask: { actions, opts }, dialog: null, menu: false, expanded: false }); ctx.rerender(); return }
+  Object.assign(L, { ask: null, menu: false, dialog: null, expanded: false, notice: null, dismissed: false, prog: { actions, i: 0, opts } })
+  const step = () => {
+    if (L.for !== token || !L.prog) return
+    const s = { ...SCEN[token], ...(L.patch ?? {}) }
+    const r = simulate(s, actions[L.prog.i], opts)
+    L.patch = { ...(L.patch ?? {}), ...r.patch }
+    if (++L.prog.i >= actions.length) { L.prog = null; L.notice = r.notice }
+    ctx.rerender()
+    if (L.prog) setTimeout(step, 900)
+  }
+  ctx.rerender(); setTimeout(step, 900)
+}
+const openPr = ctx => { ctx.local.opened = true; ctx.rerender() }
+
+/** The progress line: the prototype's own run, or the scenario's frozen one. */
+function progressOf(ctx, s) {
+  const L = ctx.local
+  if (L.prog) return { ...stageOf(L.prog.actions[L.prog.i], s), actions: L.prog.actions, i: L.prog.i }
+  if (s.run) return { title: s.run.stage, detail: `${s.run.hook}: ${s.run.output}`, actions: ['commit', 'push', 'create_pr'], i: 0 }
+  return null
+}
+/** What is left to do, as one action: the label and the host actions it runs. */
+function rest(s) {
+  if (s.fail || s.behind > 0) return { label: 'Pull', icon: 'down', actions: ['pull'] }
+  if (s.dirty) return s.def || s.pr ? { label: 'Commit & push', icon: 'commit', actions: ['commit', 'push'] } : { label: 'Commit, push & create PR', icon: 'commit', actions: ['commit', 'push', 'create_pr'] }
+  if (s.ahead > 0) return s.def || s.pr ? { label: 'Push', icon: 'up', actions: ['push'] } : { label: 'Push & create PR', icon: 'up', actions: ['push', 'create_pr'] }
+  if (s.pr) return { label: 'View PR', icon: 'external', open: true }
+  if (s.def) return null
+  return { label: 'Create PR', icon: 'pr', actions: ['create_pr'] }
+}
+const fileList = (L, checkable) => `<ul class="files" aria-label="Changed files">${FILES.map((f, i) => {
+  const out = L.out.includes(i)
+  return `<li ${out ? 'data-out' : ''}>${checkable ? `<input type="checkbox" data-file="${i}" ${out ? '' : 'checked'} aria-label="Include ${f.path}">` : ''}<span class="files__badge" title="${f.label}">${f.s}</span><span class="files__path">${f.path}</span><span class="files__counts">+${f.add} −${f.del}</span></li>`
+}).join('')}</ul>`
+const included = L => FILES.length - L.out.length
+const PR_BODY = 'The voice preview plays a two-second sample through the selected voice.<br>The xAI key moves from settings.json to the system keychain.<br>Adds a unit test for the preview length.'
+
+// Wiring shared by every variant: data-run runs host actions, data-set flips a local flag, file boxes toggle.
+let current = null
+function wire(root, ctx, extra = {}) {
+  current = ctx
+  const L = ctx.local
+  root.querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', () => {
+    if (b.getAttribute('aria-disabled') === 'true') return
+    const opts = b.dataset.opts ? JSON.parse(b.dataset.opts) : (L.ask?.opts ?? {})
+    run(ctx, b.dataset.run.split(','), opts)
+  }))
+  root.querySelectorAll('[data-set]').forEach(b => b.addEventListener('click', () => {
+    const [key, value] = b.dataset.set.split('=')
+    L[key] = value === undefined ? !L[key] : value === 'null' ? null : value === 'false' ? false : value
+    ctx.rerender()
+  }))
+  root.querySelectorAll('[data-open-pr]').forEach(b => b.addEventListener('click', () => openPr(ctx)))
+  root.querySelectorAll('[data-file]').forEach(b => b.addEventListener('change', () => {
+    const i = Number(b.dataset.file)
+    L.out = L.out.includes(i) ? L.out.filter(x => x !== i) : [...L.out, i]
+    ctx.rerender()
+  }))
+  root.querySelectorAll('input.field, textarea.field').forEach(f => { f.addEventListener('input', () => { L.message = f.value }) })
+  for (const [sel, fn] of Object.entries(extra)) root.querySelectorAll(sel).forEach(b => b.addEventListener('click', () => fn(b)))
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !current) return
+  const L = current.local
+  Object.assign(L, { menu: false, dialog: null, ask: null, expanded: false, panel: L.dialog || L.ask ? L.panel : false })
+  current.rerender()
+})
+const opened = L => L.opened ? `<div class="popover" style="left:50%;top:14px;transform:translateX(-50%);min-width:0;padding:8px 12px;font-size:12.5px" role="status">Opens github.com/millZach/Sotto/pull/74 in the browser</div>` : ''
+
+/* ---------- A: the merged split button, dialog, question and notice ---------- */
+function quick(s) {
+  if (s.dirty) return s.pr || s.def ? { kind: 'commit_push', label: 'Commit & push', icon: 'commit' } : { kind: 'commit_push_pr', label: 'Commit, push & PR', icon: 'commit' }
+  if (s.behind > 0 && s.ahead > 0) return { kind: 'sync', label: 'Sync ref', icon: 'refresh', hint: 'Branch has diverged from upstream. Rebase/merge first.' }
+  if (s.behind > 0) return { kind: 'pull', label: 'Pull', icon: 'down' }
+  if (s.ahead > 0) return s.pr || s.def ? { kind: 'push', label: 'Push', icon: 'up' } : { kind: 'push_pr', label: 'Push & create PR', icon: 'up' }
+  if (s.pr) return { kind: 'view_pr', label: 'View PR', icon: 'pr' }
+  if (!s.def) return { kind: 'create_pr', label: 'Create PR', icon: 'pr' }
+  return { kind: 'commit', label: 'Commit', icon: 'commit', hint: 'Branch is up to date. No action needed.' }
+}
+function menuA(s) {
+  const push = s.behind > 0 && s.ahead > 0 ? { hint: 'Branch has diverged from upstream. Rebase/merge first.' } : s.ahead === 0 ? { hint: 'No local commits to push.' } : {}
+  const pr = s.pr ? { id: 'view_pr', label: 'View PR' }
+    : s.def ? { id: 'create_pr', label: 'Create PR', hint: 'Commit on a new branch first: this is the default branch.' }
+      : s.dirty ? { id: 'create_pr', label: 'Create PR', hint: 'Commit local changes before creating a PR.' } : { id: 'create_pr', label: 'Create PR' }
+  return [{ id: 'commit', label: 'Commit', icon: 'commit', ...(s.dirty ? {} : { hint: 'No changes to commit.' }) }, { id: 'push', label: 'Push', icon: 'up', ...push }, { ...pr, icon: 'pr' }]
+}
+const pressA = (ctx, kind) => {
+  const L = ctx.local
+  L.menu = false
+  if (kind === 'view_pr') return openPr(ctx)
+  if (kind === 'pull') return run(ctx, ['pull'])
+  const map = { commit: ['commit'], commit_push: ['commit', 'push'], commit_push_pr: ['commit', 'push', 'create_pr'], push: ['push'], push_pr: ['push', 'create_pr'], create_pr: ['create_pr'] }
+  if (kind.startsWith('commit')) { L.dialog = kind; L.editing = false; ctx.rerender(); return }
+  if (map[kind]) run(ctx, map[kind])
+}
+const commitLabel = k => k === 'commit_push' ? 'Commit & push' : k === 'commit_push_pr' ? 'Commit, push & PR' : 'Commit'
+const commitActions = k => ({ commit: ['commit'], commit_push: ['commit', 'push'], commit_push_pr: ['commit', 'push', 'create_pr'] })[k]
+
+/* ---------- C: steps ---------- */
+function stepsC(ctx, s) {
+  const L = ctx.local
+  const p = progressOf(ctx, s)
+  const cur = p ? p.actions[p.i] : null
+  const queued = p ? p.actions.slice(p.i + 1) : []
+  const upstream = `origin/${s.branch}`
+  const commit = cur === 'commit' ? { state: 'running', text: `${p.title} ${p.detail ?? ''}` }
+    : s.dirty ? { state: 'next', text: `${plural(included(L), 'file')} to commit${L.out.length ? ` of ${FILES.length}` : ''} · <span class="add">+42</span> <span class="del">−11</span>`, body: true }
+      : { state: 'done', text: s.ahead > 0 ? `${plural(s.ahead, 'commit')} made, not pushed yet.` : 'Nothing left to commit.' }
+  const push = cur === 'push' ? { state: 'running', text: p.title }
+    : queued.includes('push') ? { state: 'queued', text: 'Waits for the commit.' }
+      : L.ask ? { state: 'next', text: `${s.branch} is the default branch.`, ask: true }
+        : s.fail ? { state: 'failed', text: `Push refused: ${s.fail} Your commit stays on this computer.`, action: { label: 'Pull', run: 'pull' } }
+          : s.behind > 0 ? { state: 'blocked', text: `${plural(s.behind, 'commit')} behind ${upstream}. Pull first.`, action: { label: 'Pull', run: 'pull' } }
+            : s.dirty && s.ahead === 0 ? { state: 'blocked', text: s.def ? `Commit first. ${s.branch} is the default branch, so Sotto asks before pushing to it.` : 'Commit first.' }
+              : s.ahead > 0 ? { state: 'next', text: `${plural(s.ahead, 'commit')} to push to ${upstream}.`, action: { label: 'Push', run: 'push' } }
+                : { state: 'done', text: `Up to date with ${upstream}.` }
+  const pr = cur === 'create_pr' ? { state: 'running', text: p.title, preview: true }
+    : s.pr ? { state: 'done', text: 'PR #74 is open: Play a two-second voice preview.', action: { label: 'View PR', open: true } }
+      : queued.includes('create_pr') ? { state: 'queued', text: 'Waits for the push.', preview: true }
+        : s.def ? { state: 'blocked', text: 'Commit on a new branch first: this is the default branch.' }
+          : s.dirty || s.ahead > 0 || s.fail || s.behind > 0 ? { state: 'blocked', text: s.behind > 0 || s.fail ? 'After the pull and push.' : 'After the push.', preview: true }
+            : { state: 'next', text: `Into main from ${s.branch}.`, action: { label: 'Create PR', run: 'create_pr' }, preview: true }
+  return { commit, push, pr }
+}
+function markC(n, st) {
+  if (st.state === 'done') return `<span class="step__mark">${I('check', 'sm')}</span>`
+  if (st.state === 'failed') return `<span class="step__mark">${I('x', 'sm')}</span>`
+  if (st.state === 'running') return `<span class="step__mark"><span class="spin"></span></span>`
+  return `<span class="step__mark">${n}</span>`
+}
+function badgeC(ctx, s) {
+  const p = progressOf(ctx, s)
+  if (p) return `<span class="spin"></span>${p.title.replace('...', '…').replace(/ to origin\/.*/, '')}`
+  if (s.fail) return `<span class="dot" data-tone="err"></span>Push failed`
+  if (s.dirty) return `<span class="dot"></span>${FILES.length} changed`
+  if (s.behind) return `<span class="dot" data-tone="warn"></span>${s.behind} behind`
+  if (s.ahead) return `<span class="dot"></span>${s.ahead} to push`
+  if (s.pr) return `<span class="dot" data-tone="ok"></span>PR #74`
+  return `<span class="dot" data-tone="ok"></span>Up to date`
+}
+
+Proto.page({
+  title: 'Commit, push and pull request',
+  question: 'How does a thread commit its work, push it and open a pull request?',
+  states: [
+    { key: 'dirty-feature', label: 'Dirty on a feature branch' }, { key: 'dirty-main', label: 'Dirty on main' },
+    { key: 'ahead', label: 'Ahead, no pull request' }, { key: 'behind', label: 'Behind upstream' },
+    { key: 'open-pr', label: 'Open pull request' }, { key: 'running', label: 'Running (commit hook)' }, { key: 'failed', label: 'Failed (push rejected)' },
+  ],
+  variants: [
+    {
+      key: 'A', name: 'What merged',
+      note: 'T3\'s split button at the end of the pane header: the label follows the status, the chevron holds every action (disabled reasons shown inline here; the app puts them in the tooltip). Click the button for the Commit changes dialog (on main it then asks Push to default ref?), or the chevron; the result lands in one notice above the composer.',
+      render(ctx) {
+        const s = statusOf(ctx), L = ctx.local
+        const q = quick(s)
+        const p = progressOf(ctx, s)
+        const running = !!p
+        const notice = p ? { tone: 'progress', title: p.title, detail: p.detail }
+          : L.notice ?? (s.fail && !L.dismissed ? { tone: 'error', title: 'Action failed', detail: s.fail } : null)
+        const noticeHtml = notice ? `<div class="ga-notice" data-tone="${notice.tone}" role="${notice.tone === 'error' ? 'alert' : 'status'}">
+            ${notice.tone === 'progress' ? '<span class="spin" aria-hidden="true"></span>' : ''}
+            <p><strong>${notice.title}</strong>${notice.detail ? ` ${notice.detail}` : ''}</p>
+            ${notice.cta ? notice.cta.run ? `<button class="btn btn--secondary" data-run="${notice.cta.run.join(',')}" data-opts="{}">${notice.cta.label}</button>` : `<button class="btn btn--secondary" data-open-pr>${notice.cta.label}</button>` : ''}
+            ${notice.tone !== 'progress' ? `<button class="x-btn" aria-label="Dismiss the Git notice" data-a-dismiss>${I('x', 'sm')}</button>` : ''}</div>` : ''
+        const menu = L.menu ? `<div class="popover ga-menu" role="menu">${menuA(s).map(e => {
+          const off = running || !!e.hint
+          return `<button class="menu-item" role="menuitem" data-a-item="${e.id}" ${off ? 'disabled' : ''} title="${e.hint ?? ''}">${I(e.icon, 'sm')}${e.label}${e.hint ? `<small>${e.hint}</small>` : ''}</button>`
+        }).join('')}</div>` : ''
+        let dialog = ''
+        if (L.dialog) {
+          const n = included(L)
+          dialog = `<div class="backdrop"><section class="dialog cd" role="dialog" aria-modal="true" aria-label="Commit changes">
+            <h3>Commit changes</h3>
+            <p class="cd__branch">${I('branch', 'sm')}<span>${s.branch}</span>${s.def ? '<span class="tag">Default branch</span>' : ''}</p>
+            <div class="cd__files"><div class="cd__files-head"><span>${plural(n, 'file')}${L.out.length ? ` of ${FILES.length}` : ''}</span><button class="cd__edit" data-set="editing">${L.editing ? 'Done' : 'Edit'}</button></div>${fileList(L, L.editing)}</div>
+            <label for="a-msg">Commit message (optional)</label>
+            <textarea id="a-msg" class="field" rows="3" placeholder="Leave empty to auto-generate">${L.message ?? ''}</textarea>
+            <div class="actions"><button class="btn btn--secondary" data-set="dialog=null">Cancel</button>
+              <button class="btn btn--secondary" data-run="${commitActions(L.dialog)}" data-opts='{"featureBranch":true}'>Commit on new branch</button>
+              <button class="btn btn--primary" data-a-commit>${commitLabel(L.dialog)}</button></div>
+          </section></div>`
+        }
+        if (L.ask) dialog = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="Push to default ref?">
+            <h3>Push to default ref?</h3>
+            <p class="desc">This ${L.ask.actions.includes('create_pr') ? 'creates a pull request' : 'pushes'} from ${s.branch}, the default branch. Push there, or check out a feature branch and continue on it.</p>
+            <div class="actions"><button class="btn btn--secondary" data-set="ask=null">Abort</button>
+              <button class="btn btn--secondary" data-run="${L.ask.actions}" data-opts='{"featureBranch":true}'>Check out feature branch &amp; continue</button>
+              <button class="btn btn--primary" data-run="${L.ask.actions}" data-opts='{"allow":true}'>Push to ${s.branch}</button></div>
+          </section></div>`
+        return {
+          headerActions: `<div class="ga" ${running ? 'data-running' : ''}>
+            <button class="ga__quick" data-a-quick title="${q.hint ?? q.label}" ${running || q.hint ? 'aria-disabled="true"' : ''}>${I(q.icon)}<span class="ga__label">${q.label}</span></button>
+            <button class="ga__more" data-set="menu" aria-label="More Git actions" aria-expanded="${!!L.menu}">${I('chevron', 'sm')}</button></div>`,
+          aboveComposer: noticeHtml,
+          overlay: menu + dialog + opened(L),
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local, s = statusOf(ctx)
+        wire(root, ctx, {
+          '[data-a-quick]': b => { if (b.getAttribute('aria-disabled') !== 'true') pressA(ctx, quick(s).kind) },
+          '[data-a-item]': b => { if (!b.disabled) pressA(ctx, b.dataset.aItem) },
+          '[data-a-dismiss]': () => { L.notice = null; L.dismissed = true; ctx.rerender() },
+          '[data-a-commit]': () => run(ctx, commitActions(L.dialog)),
+        })
+      },
+    },
+    {
+      key: 'B', name: 'Ship strip above the composer',
+      note: 'No header button and no modal: one strip above the composer always says what the folder holds and offers the next step. Press Commit and the strip opens in place into the file checklist and a message; the default-branch question, progress and results all take the strip\'s place.',
+      render(ctx) {
+        const s = statusOf(ctx), L = ctx.local
+        const p = progressOf(ctx, s)
+        const next = rest(s)
+        const branch = `<span class="ship__branch">${I('branch', 'sm')}${s.branch}</span>`
+        const primary = n => !n ? '' : n.open ? `<button class="btn btn--primary" data-open-pr>${I(n.icon, 'sm')}${n.label}</button>`
+          : s.dirty ? `<button class="btn btn--primary" data-set="expanded" aria-expanded="false">${I('commit', 'sm')}Commit</button>`
+            : `<button class="btn btn--primary" data-run="${n.actions}" data-opts="{}">${I(n.icon, 'sm')}${n.label}</button>`
+        let strip
+        if (L.ask) {
+          strip = `<div class="ship" data-tone="warn" role="alertdialog" aria-label="Push to the default branch?"><div class="ship__row">${I('alert', '')}
+            <span class="ship__text"><strong>${s.branch} is the default branch.</strong> Push there, or move this work to a new branch and continue on it?</span><span style="flex:1 0 100%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px">
+            <button class="btn btn--ghost" data-set="ask=null">Abort</button>
+            <button class="btn btn--secondary" data-run="${L.ask.actions}" data-opts='{"featureBranch":true}'>New branch &amp; continue</button>
+            <button class="btn btn--primary" data-run="${L.ask.actions}" data-opts='{"allow":true}'>Push to ${s.branch}</button></span></div></div>`
+        } else if (p) {
+          const names = { commit: 'Commit', push: 'Push', create_pr: 'Pull request', pull: 'Pull' }
+          strip = `<div class="ship" role="status"><div class="ship__row"><span class="spin" aria-hidden="true"></span>
+            <span class="ship__text"><strong>${p.title}</strong>${p.detail ? ` <span class="mono small">${p.detail}</span>` : ''}</span>
+            <span class="ship__trail">${p.actions.map((a, i) => i < p.i ? `<s>${names[a]} ✓</s>` : i === p.i ? `<b>${names[a]}</b>` : names[a]).join(' › ')}</span></div></div>`
+        } else if (L.expanded && s.dirty) {
+          strip = `<div class="ship"><div class="ship__row">${branch}${s.def ? '<span class="tag">Default branch</span>' : ''}
+              <span class="ship__text"><strong>${plural(included(L), 'file')}</strong>${L.out.length ? ` of ${FILES.length}` : ''} to commit</span>
+              <button class="x-btn" data-set="expanded=false" aria-label="Close without committing">${I('x', 'sm')}</button></div>
+            <div class="ship__body">${fileList(L, true)}
+              <input class="field" aria-label="Commit message" placeholder="Commit message, or leave empty to auto-generate" value="${L.message ?? ''}">
+              <div class="actions"><button class="btn btn--ghost" data-set="expanded=false">Cancel</button>
+                <button class="btn btn--secondary" data-run="commit" data-opts="{}">Commit only</button>
+                <button class="btn btn--primary" data-run="${next.actions}" data-opts="{}">${next.label}</button></div></div></div>`
+        } else if (L.notice) {
+          const n = L.notice
+          strip = `<div class="ship" role="status"><div class="ship__row"><span class="add">${I('check')}</span>
+            <span class="ship__text"><strong>${n.title}</strong> ${n.detail ?? ''}</span>
+            ${n.cta ? n.cta.run ? `<button class="btn btn--primary" data-run="${n.cta.run}" data-opts="{}">${n.cta.label}</button>` : `<button class="btn btn--primary" data-open-pr>${I('external', 'sm')}${n.cta.label}</button>` : ''}
+            <button class="x-btn" data-set="notice=null" aria-label="Back to the folder's status">${I('x', 'sm')}</button></div></div>`
+        } else if (s.fail && !L.dismissed) {
+          strip = `<div class="ship" data-tone="error" role="alert"><div class="ship__row">${I('alert')}
+            <span class="ship__text"><strong>Push refused.</strong> ${s.fail} Commit ${SHA} is still on this computer.</span>
+            <button class="btn btn--primary" data-run="pull" data-opts="{}">${I('down', 'sm')}Pull</button>
+            <button class="x-btn" data-set="dismissed=true" aria-label="Dismiss">${I('x', 'sm')}</button></div></div>`
+        } else {
+          const parts = []
+          if (s.dirty) parts.push(`<strong>${plural(FILES.length, 'file')} changed</strong> <span class="add">+42</span> <span class="del">−11</span>`)
+          if (s.ahead) parts.push(`<strong>${plural(s.ahead, 'commit')}</strong> ahead of origin`)
+          if (s.behind) parts.push(`<strong>${plural(s.behind, 'commit')}</strong> behind origin`)
+          if (!s.dirty && !s.ahead && !s.behind) parts.push('Up to date with origin')
+          if (s.pr) parts.push('<span class="tag tag--ok">PR #74 open</span>')
+          else if (s.ahead && !s.def) parts.push('no pull request')
+          strip = `<div class="ship"><div class="ship__row">${branch}<span class="ship__text">${parts.join(' · ')}</span>${primary(next)}</div></div>`
+        }
+        return { aboveComposer: strip, overlay: opened(L) }
+      },
+      mount(root, ctx) { wire(root, ctx) },
+    },
+    {
+      key: 'C', name: 'Ship panel with steps',
+      note: 'The header keeps only a status badge (a dot and "3 changed"); press it to open a panel of three steps, Commit, Push and Pull request, each saying whether it is done, next or blocked and why. The footer runs what is left and the steps check off as it goes; on main, Push asks inside its own step.',
+      render(ctx) {
+        const s = statusOf(ctx), L = ctx.local
+        const st = stepsC(ctx, s)
+        const next = rest(s)
+        const busy = !!progressOf(ctx, s)
+        const act = a => !a ? '' : a.open ? `<button class="btn btn--secondary" data-open-pr>${a.label}</button>` : `<button class="btn btn--secondary" data-run="${a.run}" ${busy ? 'aria-disabled="true" disabled' : ''}>${a.label}</button>`
+        const step = (n, name, x, body = '') => `<section class="step" data-state="${x.state}" aria-label="${name}: ${x.state}">
+            ${markC(n, x)}<div class="step__title">${name}${act(x.action)}</div>
+            <p class="step__state">${x.text}</p>${body ? `<div class="step__body">${body}</div>` : ''}</section>`
+        const commitBody = st.commit.body ? `${fileList(L, true)}
+            <textarea class="field" rows="2" aria-label="Commit message" placeholder="Commit message, or leave empty to auto-generate">${L.message ?? ''}</textarea>
+            <div class="actions" style="justify-content:flex-start">${s.def ? `<button class="btn btn--secondary" data-run="commit" data-opts='{"featureBranch":true}'>Commit on new branch</button><button class="btn btn--secondary" data-run="commit" data-opts="{}">Commit to ${s.branch}</button>` : `<button class="btn btn--secondary" data-run="commit" data-opts="{}">Commit only</button>`}</div>` : ''
+        const pushBody = st.push.ask ? `<div class="step__ask" role="alertdialog" aria-label="Push to the default branch?"><span>Push this work to <strong>${s.branch}</strong>, or check out a feature branch and continue on it?</span>
+            <div class="actions"><button class="btn btn--ghost" data-set="ask=null">Abort</button>
+              <button class="btn btn--secondary" data-run="${L.ask.actions}" data-opts='{"featureBranch":true}'>Feature branch &amp; continue</button>
+              <button class="btn btn--primary" data-run="${L.ask.actions}" data-opts='{"allow":true}'>Push to ${s.branch}</button></div></div>` : ''
+        const prBody = st.pr.preview ? `<input class="field" aria-label="Pull request title" value="${SUBJECT}">
+            <p class="pr-body">${PR_BODY}</p><span class="faint small">Drafted by Claude from the commits. Edit before it is created.</span>` : ''
+        const panel = L.panel ? `<aside class="c-panel" aria-label="Commit, push and pull request">
+            <div class="c-panel__head">${I('branch', 'sm')}<h3 class="mono">${s.branch}</h3>${s.def ? '<span class="tag">Default branch</span>' : ''}
+              <button class="pane-action" style="margin-left:auto" data-set="panel=false" aria-label="Close">${I('x')}</button></div>
+            <div class="c-panel__steps">${step(1, 'Commit', st.commit, commitBody)}${step(2, 'Push', st.push, pushBody)}${step(3, 'Pull request', st.pr, prBody)}</div>
+            <div class="c-panel__foot">${L.ask ? `<span class="muted small">Answer the question under Push to go on.</span>` : busy ? `<span class="muted small">Working through the steps. The thread stays usable.</span>`
+              : next ? next.open ? `<button class="btn btn--primary" data-open-pr>${I('external', 'sm')}View PR</button>` : `<button class="btn btn--primary" data-run="${next.actions}">${next.label}</button>`
+                : '<span class="muted small">Nothing to do.</span>'}</div>
+          </aside>` : ''
+        return {
+          headerActions: `<button class="c-badge" data-set="panel" aria-expanded="${!!L.panel}" aria-label="Commit, push and pull request: ${badgeC(ctx, s).replace(/<[^>]+>/g, '')}">${badgeC(ctx, s)}</button>`,
+          overlay: panel + opened(L),
+        }
+      },
+      mount(root, ctx) { wire(root, ctx) },
+    },
+  ],
+})
+</script>
+</body>
+</html>

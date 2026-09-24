@@ -1,0 +1,423 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three structures for turning selected diff lines into a review comment that goes
+  with the next message (#270). A is T3's way: an inline draft under the lines and a chip per comment on the
+  composer. B keeps comments in a margin beside the diff and one counter chip on the composer. C quotes the
+  hunk into the composer itself and the comment is typed under it. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — review comments</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  .pane-head__crumb { overflow: hidden; }
+  .app[data-size='820'] .wc-chip { display: none; }
+  /* Shared: Changes, cut down to a scope line, a bar and two files. */
+  .rc-head { display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; }
+  .rc-scope { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; }
+  .rc-bar { display: flex; align-items: center; flex: none; height: 32px; padding: 0 12px; border-bottom: 1px solid var(--tt-hairline); font-size: 12.5px; }
+  .rc-file { border-bottom: 1px solid var(--tt-hairline); }
+  .rc-file__head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); font-size: 13px; white-space: nowrap; }
+  .rc-file__head .dir { color: var(--tt-text-muted); }
+  .rc-badge { color: var(--tt-warning-text); font: 600 12px var(--tt-font-mono); }
+  .rc-file__counts { display: flex; gap: 6px; margin-left: auto; font-size: 12.5px; }
+  .rc-rows { --rc-cols: 7.5ch 1ch minmax(0, 1fr); padding: 4px 0 8px; font: 12.5px/1.75 var(--tt-font-mono); }
+  .rc-line { position: relative; display: grid; grid-template-columns: var(--rc-cols); column-gap: 5px; padding-right: 10px; color: var(--tt-code-text); cursor: pointer; user-select: none; }
+  .rc-nums { display: flex; justify-content: flex-end; gap: .5ch; padding-left: 4px; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .rc-nums span { width: 3ch; text-align: right; }
+  .rc-sign { color: var(--tt-text-muted); }
+  .rc-code { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rc-line[data-kind='add'] { background-color: color-mix(in srgb, var(--tt-success) 12%, transparent); }
+  .rc-line[data-kind='add'] .rc-sign { color: var(--tt-success); }
+  .rc-line[data-kind='del'] { background-color: color-mix(in srgb, var(--tt-error) 12%, transparent); }
+  .rc-line[data-kind='del'] .rc-sign { color: var(--tt-error-text); }
+  .rc-line[data-kind='hunk'] { background-color: var(--tt-accent-wash); color: var(--tt-text-2); cursor: default; }
+  .rc-line[data-row]:hover { background-image: linear-gradient(var(--tt-hover), var(--tt-hover)); }
+  .rc-line[data-sel] { background-image: linear-gradient(color-mix(in srgb, var(--tt-accent) 24%, transparent), color-mix(in srgb, var(--tt-accent) 24%, transparent)); box-shadow: inset 3px 0 0 var(--tt-accent); }
+  .rc-line[data-noted] { box-shadow: inset 3px 0 0 var(--tt-accent); }
+  .rc-pill { position: absolute; right: 8px; top: 50%; z-index: 4; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: var(--tt-radius-pill); font: 12.5px var(--tt-font-ui); box-shadow: var(--tt-shadow-sm); }
+  .rc-input { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); line-height: 1.45; }
+  .rc-input::placeholder { color: var(--tt-text-faint); }
+  button.composer__send { cursor: pointer; }
+  .composer__row { flex-wrap: wrap; row-gap: 6px; }
+  .composer__pill { white-space: nowrap; }
+  /* The sent message: the comment and its hunk as a fenced block, as the agent reads it. */
+  .rc-sent { margin-top: 10px; }
+  .rc-sent__label { display: flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+  .rc-sent p { margin: 4px 0; }
+  .rc-fence { margin: 4px 0 0; padding: 6px 0; border: 1px solid var(--tt-code-border); border-radius: 8px; background: var(--tt-code-bg); color: var(--tt-code-text); font: 12px/1.6 var(--tt-font-mono); overflow: hidden; }
+  .rc-fence span, .c-quote__code span { display: block; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rc-fence .mark { color: var(--tt-text-muted); }
+  .q-add { background: color-mix(in srgb, var(--tt-success) 14%, transparent); }
+  .q-del { background: color-mix(in srgb, var(--tt-error) 14%, transparent); }
+
+  /* A — T3's way: the draft opens under the lines, a comment stays as a marker and rides as a chip. */
+  button.a-nums { border-radius: 0; cursor: pointer; }
+  button.a-nums:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+  .a-pill { background: var(--tt-primary); color: var(--tt-primary-contrast); }
+  .a-draft, .a-marker { margin: 4px 10px 8px 12px; border-radius: 10px; font: 13px/1.45 var(--tt-font-ui); cursor: default; user-select: text; }
+  .a-draft { padding: 10px; border: 1px solid var(--tt-panel-border); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); }
+  .a-draft__label, .a-marker__label { color: var(--tt-text-muted); font-size: 12px; }
+  .a-draft textarea { display: block; min-height: 56px; margin-top: 6px; resize: none; font-size: 13px; line-height: 1.45; }
+  .a-draft__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .a-draft__actions .faint { margin-right: auto; font-size: 12px; }
+  .a-draft .btn, .a-marker .btn { height: 28px; padding: 0 10px; font-size: 13px; }
+  .a-marker { padding: 8px 10px; border: 1px solid var(--tt-hairline); border-left: 3px solid var(--tt-accent); background: var(--tt-surface-elevated); }
+  .a-marker__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .a-marker__head .btn { margin-left: auto; }
+  .a-marker p { margin: 4px 0 0; color: var(--tt-text); }
+  .a-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .a-chip .mono { font-family: var(--tt-font-ui); }
+  .a-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 3px 0 9px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); background: var(--tt-accent-wash); color: var(--tt-text); font-size: 12.5px; white-space: nowrap; }
+  .a-chip button, .b-x, .c-quote__head button { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; color: var(--tt-text-muted); }
+  .a-chip button:hover, .b-x:hover, .c-quote__head button:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+
+  /* B — margin notes: a column right of the diff, a card level with its lines, one counter on the composer. */
+  .tools:has(.b-diff) { width: min(58%, 720px); }
+  .app[data-size='820'] .tools:has(.b-diff) { width: 54%; }
+  .b-diff .rc-rows { --rc-cols: 18px 7ch 1ch minmax(0, 1fr) var(--b-margin, 172px); padding: 0; }
+  .app[data-size='820'] .b-diff .rc-rows { --b-margin: 28px; }
+  .b-diff .rc-line { padding-right: 0; }
+  .b-gut { display: grid; justify-items: center; }
+  .b-plus { display: grid; place-items: center; width: 16px; height: 16px; margin-top: 4px; border-radius: 4px; background: var(--tt-primary); color: var(--tt-primary-contrast); opacity: 0; }
+  .b-plus svg.i.sm { width: 11px; height: 11px; stroke-width: 2.4; }
+  .rc-line:hover .b-plus, .rc-line[data-plus] .b-plus, .b-plus:focus-visible { opacity: 1; }
+  .b-margin { position: relative; min-height: 100%; border-left: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); cursor: default; }
+  .rc-line[data-noted] .b-margin, .rc-line[data-sel] .b-margin { border-left-color: var(--tt-accent); }
+  .b-note { position: absolute; top: 3px; left: 8px; right: 8px; z-index: 4; padding: 7px 8px 8px 9px; border: 1px solid var(--tt-panel-border); border-left: 3px solid var(--tt-accent); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); font: 12.5px/1.4 var(--tt-font-ui); user-select: text; }
+  .app[data-size='820'] .b-note { left: auto; right: 28px; width: 210px; box-shadow: var(--tt-shadow-lg); }
+  .b-note__head { display: flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 11.5px; }
+  .b-note__head .b-x { margin-left: auto; width: 20px; height: 20px; border-radius: 5px; }
+  .b-note p { margin: 3px 0 0; }
+  .b-note textarea { display: block; min-height: 52px; margin-top: 5px; padding: 6px 7px; resize: none; font-size: 12.5px; line-height: 1.4; }
+  .b-note__actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; }
+  .b-note__actions .btn { height: 26px; padding: 0 9px; font-size: 12.5px; }
+  .b-dot { display: grid; place-items: center; width: 20px; height: 20px; margin: 3px auto 0; border-radius: 6px; background: var(--tt-accent-wash); color: var(--tt-accent-text); }
+  .b-dot[aria-expanded='true'] { background: var(--tt-accent); color: var(--tt-on-accent); }
+  .b-count { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); background: var(--tt-accent-wash); color: var(--tt-text); font-size: 13px; white-space: nowrap; }
+  .b-count[aria-expanded='true'] { background: var(--tt-selected); }
+  .b-tray { bottom: calc(100% + 6px); left: 0; width: min(400px, 100%); }
+  .b-tray__title { padding: 4px 8px 6px; color: var(--tt-text-muted); font-size: 12px; }
+  .b-tray__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 2px 8px; padding: 7px 6px 7px 8px; border-radius: 6px; }
+  .b-tray__item:hover { background: var(--tt-hover); }
+  .b-tray__item .mono { color: var(--tt-text-muted); font-size: 12px; }
+  .b-tray__item p { grid-column: 1; margin: 0; font-size: 13px; }
+  .b-tray__item .b-x { grid-column: 2; grid-row: 1 / span 2; }
+
+  /* C — quoted in the composer: the hunk is a card in the message and the comment is the text under it. */
+  .c-pill { border: 1px solid var(--tt-panel-border); background: var(--tt-surface-elevated); color: var(--tt-text); }
+  .c-pill:hover { background: var(--tt-hover-strong); }
+  .rc-line[data-quoted] { background-image: linear-gradient(color-mix(in srgb, var(--tt-accent) 11%, transparent), color-mix(in srgb, var(--tt-accent) 11%, transparent)); }
+  .rc-line[data-quoted] { box-shadow: inset 3px 0 0 var(--tt-accent-border); }
+  .c-flow { max-height: 290px; overflow: auto; }
+  .app[data-size='820'] .c-flow { max-height: 168px; }
+  .c-quote { margin: 2px 0 4px; border: 1px solid var(--tt-code-border); border-left: 3px solid var(--tt-accent); border-radius: 8px; background: var(--tt-code-bg); overflow: hidden; }
+  .c-quote__head { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 3px 0 8px; border-bottom: 1px solid var(--tt-code-border); color: var(--tt-text-muted); font-size: 12px; }
+  .c-quote__head button { margin-left: auto; }
+  .c-quote__code { margin: 0; padding: 3px 0; color: var(--tt-code-text); font: 12px/1.6 var(--tt-font-mono); }
+  .c-flow .rc-input.c-after { min-height: 22px; margin: 2px 0 8px; }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const FENCE = '```'
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
+
+const FILES = [
+  { dir: 'src/main/', name: 'voice.ts', add: 4, del: 2, rows: [
+    { k: 'hunk', t: '@@ -10,7 +10,10 @@' },
+    { k: 'ctx', o: 10, n: 10, t: 'export async function preview(v) {' },
+    { k: 'ctx', o: 11, n: 11, t: "  const key = await readKey('xai')" },
+    { k: 'del', o: 12, t: '  const clip = await speak(v, SAMPLE)' },
+    { k: 'del', o: 13, t: '  await play(clip)' },
+    { k: 'add', n: 12, t: '  if (!key) return { ok: false }' },
+    { k: 'add', n: 13, t: '  const clip = await speak(v, SAMPLE, 2)' },
+    { k: 'add', n: 14, t: '  const stop = await play(clip)' },
+    { k: 'add', n: 15, t: '  setTimeout(stop, 2000)' },
+    { k: 'ctx', o: 14, n: 16, t: '  return { ok: true }' },
+    { k: 'ctx', o: 15, n: 17, t: '}' },
+  ] },
+  { dir: 'src/main/', name: 'keychain.ts', add: 1, del: 2, rows: [
+    { k: 'hunk', t: '@@ -3,5 +3,4 @@' },
+    { k: 'ctx', o: 3, n: 3, t: 'export function saveKey(k) {' },
+    { k: 'del', o: 4, t: '  const file = settingsPath()' },
+    { k: 'del', o: 5, t: '  writeJson(file, { xaiKey: k })' },
+    { k: 'add', n: 4, t: "  return keychain.set('xai', k)" },
+    { k: 'ctx', o: 6, n: 5, t: '}' },
+  ] },
+]
+const sign = r => r.k === 'add' ? '+' : r.k === 'del' ? '-' : ' '
+const inRange = (s, f, i) => !!s && s.f === f && i >= s.from && i <= s.to
+const picked = s => FILES[s.f].rows.slice(s.from, s.to + 1).filter(r => r.k !== 'hunk')
+/* The mention's name: new-file line numbers, or old ones marked (before) when every line was removed. */
+function label(s, full) {
+  const rows = picked(s)
+  const before = rows.every(r => r.k === 'del')
+  const nums = rows.map(r => before ? r.o : r.n).filter(n => n != null)
+  const a = Math.min(...nums), b = Math.max(...nums)
+  return `${full ? FILES[s.f].dir : ''}${FILES[s.f].name} L${a}${b !== a ? ` to L${b}` : ''}${before ? ' (before)' : ''}`
+}
+const codeLines = s => picked(s).map(r => `<span class="${r.k === 'add' ? 'q-add' : r.k === 'del' ? 'q-del' : ''}">${esc(sign(r) + r.t)}</span>`).join('')
+
+const C1 = { f: 0, from: 5, to: 6, text: 'Say why it returns early. Without a key the user hears nothing and gets no reason.' }
+const C2 = { f: 1, from: 2, to: 3, text: 'Does anything still read xaiKey from settings.json? Remove it there too.' }
+const MSG = 'Tighten these two before we merge.'
+const SEL = { f: 0, from: 5, to: 8, anchor: 5 }
+
+/* Each variant keeps its own scratch state, reset when the scenario changes. */
+function init(ctx, quoteDraft) {
+  const L = ctx.local
+  if (L.state === ctx.state) return L
+  Object.assign(L, { state: ctx.state, sel: null, draft: null, comments: [], sent: null, msg: '', nextId: 3, tray: false, open: null, focus: null, scroll: 0 })
+  if (ctx.state === 'lines') L.sel = { ...SEL }
+  if (ctx.state === 'draft') {
+    if (quoteDraft) L.comments = [{ id: 1, f: 0, from: 5, to: 8, text: '' }]
+    else { L.sel = { ...SEL }; L.draft = { text: '' } }
+  }
+  if (ctx.state === 'two') { L.comments = [{ id: 1, ...C1 }, { id: 2, ...C2 }]; L.msg = MSG }
+  if (ctx.state === 'sent') L.sent = { msg: MSG, comments: [{ id: 1, ...C1 }, { id: 2, ...C2 }] }
+  return L
+}
+
+function rowHTML(f, i, r, o = {}) {
+  const attrs = [`data-kind="${r.k}"`]
+  if (r.k !== 'hunk') attrs.push(`data-row="${f}:${i}"`)
+  if (o.sel) attrs.push('data-sel')
+  if (o.flag) attrs.push(o.flag)
+  if (o.plus) attrs.push('data-plus')
+  const nums = r.k === 'hunk' ? '' : `<span>${r.o ?? ''}</span><span>${r.n ?? ''}</span>`
+  const numsEl = o.gutterButton && r.k !== 'hunk'
+    ? `<button class="rc-nums a-nums" data-gutter="${f}:${i}" aria-label="Comment on line ${r.n ?? r.o}">${nums}</button>`
+    : `<span class="rc-nums">${nums}</span>`
+  return `<div class="rc-line" ${attrs.join(' ')}>${o.lead ?? ''}${numsEl}<span class="rc-sign">${r.k === 'hunk' ? '' : sign(r)}</span><span class="rc-code">${esc(r.t)}</span>${o.tail ?? ''}${o.float ?? ''}</div>`
+}
+
+function diffHTML(cls, rowFn, afterFn = () => '') {
+  return `<div class="rc-head"><span class="rc-scope">Working tree ${I('chevron', 'sm')}</span><span class="add">+5</span><span class="del">−4</span></div>
+    <div class="rc-bar muted">Against HEAD</div>
+    <div class="${cls}">${FILES.map((file, f) => `<section class="rc-file">
+      <div class="rc-file__head">${I('chevron', 'sm')}<span class="rc-badge">M</span><span><span class="dir">${file.dir}</span>${file.name}</span>
+        <span class="rc-file__counts"><span class="add">+${file.add}</span><span class="del">−${file.del}</span></span></div>
+      <div class="rc-rows">${file.rows.map((r, i) => rowFn(f, i, r) + afterFn(f, i)).join('')}</div></section>`).join('')}</div>`
+}
+
+const SAMPLE = `
+  <div class="msg-you"><div class="msg-meta"><span>You</span><span>7:05 am</span></div>Make the voice preview button play a two-second sample, and keep the key out of settings.json.</div>
+  <div class="msg-agent"><div class="msg-meta"><span>Claude</span><span>7:58 am</span></div>
+    <p>Done. The preview plays a two-second sample through the selected voice, and the key now lives in the system keychain.</p>
+    <span class="activity">${I('file', 'sm')} Edited 2 files · +5 −4</span></div>`
+
+/* What the agent receives: the comment and its hunk as a fenced block, in the text of the message. */
+function sentHTML(sent, quoteFirst) {
+  const block = c => `<div class="rc-sent"><div class="rc-sent__label">${I('comment', 'sm')}<span class="mono">${esc(label(c, true))}</span></div>
+    ${quoteFirst ? '' : `<p>${esc(c.text)}</p>`}
+    <pre class="rc-fence"><span class="mark">${FENCE}diff</span>${codeLines(c)}<span class="mark">${FENCE}</span></pre>
+    ${quoteFirst ? `<p>${esc(c.text)}</p>` : ''}</div>`
+  const msg = sent.msg ? `<div>${esc(sent.msg)}</div>` : ''
+  return SAMPLE + `<div class="msg-you"><div class="msg-meta"><span>You</span><span>8:14 am</span></div>
+    ${quoteFirst ? sent.comments.map(block).join('') + msg : msg + sent.comments.map(block).join('')}</div>`
+}
+
+const composerRow = (extra = '') => `<div class="composer__row"><span class="muted">${I('plus')}</span>${extra}<span class="composer__pill">Sonnet 4.5 ${I('chevron', 'sm')}</span><button class="composer__send" data-send aria-label="Send">${I('up', 'sm')}</button></div>`
+const msgInput = L => `<textarea class="rc-input" data-msg rows="2" aria-label="Message" placeholder="What would you like to do next?">${esc(L.msg)}</textarea>`
+
+/* Wiring every variant shares: click a row to select it, shift-click to extend, type, send. */
+function wire(root, ctx) {
+  const L = ctx.local
+  const body = root.querySelector('.tools__body')
+  if (body) {
+    body.scrollTop = L.scroll ?? 0
+    const rerender = ctx.rerender
+    ctx.rerender = () => { L.scroll = body.scrollTop; rerender() }
+  }
+  root.querySelectorAll('.rc-line[data-row]').forEach(el => {
+    el.addEventListener('mousedown', e => { if (e.shiftKey) e.preventDefault() })
+    el.addEventListener('click', e => {
+      if (e.target.closest('button, textarea, .b-margin')) return
+      const [f, i] = el.dataset.row.split(':').map(Number)
+      if (e.shiftKey && L.sel && L.sel.f === f) L.sel = { f, anchor: L.sel.anchor, from: Math.min(L.sel.anchor, i), to: Math.max(L.sel.anchor, i) }
+      else if (L.sel && L.sel.f === f && L.sel.from === i && L.sel.to === i) L.sel = null
+      else L.sel = { f, from: i, to: i, anchor: i }
+      L.draft = null
+      ctx.rerender()
+    })
+  })
+  const msg = root.querySelector('[data-msg]')
+  msg?.addEventListener('input', () => { L.msg = msg.value })
+  root.querySelector('[data-send]')?.addEventListener('click', () => {
+    if (!L.comments.length && !L.msg.trim()) return
+    L.sent = { msg: L.msg.trim(), comments: L.comments.map(c => ({ ...c })) }
+    Object.assign(L, { comments: [], msg: '', sel: null, draft: null, tray: false, open: null })
+    ctx.rerender()
+  })
+  root.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation()
+    L.comments = L.comments.filter(c => c.id !== Number(b.dataset.del))
+    if (!L.comments.length) L.tray = false
+    ctx.rerender()
+  }))
+  root.querySelectorAll('textarea').forEach(t => { if (t.scrollHeight > t.clientHeight) t.style.height = t.scrollHeight + 'px' })
+  if (L.sent) { const t = root.querySelector('.transcript'); t.scrollTop = t.scrollHeight }
+}
+
+/* A draft box (A inline, B in the margin): Escape cancels, Comment or Ctrl+Enter adds. */
+function wireDraft(root, ctx) {
+  const L = ctx.local
+  const box = root.querySelector('[data-draft]')
+  if (!box || !L.draft) return
+  const ok = root.querySelector('[data-comment]')
+  const cancel = () => { L.draft = null; ctx.rerender() }
+  const add = () => {
+    if (!L.draft.text.trim()) return
+    L.comments.push({ id: L.nextId++, f: L.sel.f, from: L.sel.from, to: L.sel.to, text: L.draft.text.trim() })
+    L.sel = null; L.draft = null; ctx.rerender()
+  }
+  box.addEventListener('input', () => { L.draft.text = box.value; ok.disabled = !box.value.trim() })
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); cancel() }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); add() }
+  })
+  root.querySelector('[data-cancel]').addEventListener('click', cancel)
+  ok.addEventListener('click', add)
+  box.closest('.a-draft, .b-note').scrollIntoView({ block: 'nearest' })
+  if (L.draft.focus) { L.draft.focus = false; box.focus({ preventScroll: true }) }
+}
+
+Proto.page({
+  title: 'Review comments',
+  question: 'How do selected diff lines become a comment that goes with the next message?',
+  states: [{ key: 'lines', label: 'Lines selected' }, { key: 'draft', label: 'Draft open' }, { key: 'two', label: 'Two comments waiting' }, { key: 'sent', label: 'Sent' }],
+  variants: [
+    {
+      key: 'A', name: 'T3\'s way',
+      note: 'Click a line, shift-click to extend, then Comment; or press a line number to comment on that line. The draft opens under the lines. A comment becomes a chip on the composer and a marker on the diff with Delete comment until the message goes.',
+      render(ctx) {
+        const L = init(ctx)
+        const noted = (f, i) => L.comments.some(c => inRange(c, f, i))
+        const body = diffHTML('a-diff',
+          (f, i, r) => rowHTML(f, i, r, {
+            sel: inRange(L.sel, f, i), flag: noted(f, i) ? 'data-noted' : '', gutterButton: true,
+            float: L.sel && !L.draft && L.sel.f === f && L.sel.to === i ? `<button class="rc-pill a-pill" data-open-draft>${I('comment', 'sm')}Comment</button>` : '',
+          }),
+          (f, i) => {
+            let out = ''
+            L.comments.filter(c => c.f === f && c.to === i).forEach(c => {
+              out += `<div class="a-marker"><div class="a-marker__head">${I('comment', 'sm')}<span class="a-marker__label mono">${esc(label(c))}</span>
+                <button class="btn btn--ghost" data-del="${c.id}">Delete comment</button></div><p>${esc(c.text)}</p></div>`
+            })
+            if (L.draft && L.sel && L.sel.f === f && L.sel.to === i) {
+              out += `<div class="a-draft"><div class="a-draft__label mono">${esc(label(L.sel))}</div>
+                <textarea class="field" data-draft rows="2" aria-label="Comment on ${esc(label(L.sel))}" placeholder="Add a comment…">${esc(L.draft.text)}</textarea>
+                <div class="a-draft__actions"><span class="faint">Esc cancels</span><button class="btn btn--ghost" data-cancel>Cancel</button><button class="btn btn--primary" data-comment ${L.draft.text.trim() ? '' : 'disabled'}>Comment</button></div></div>`
+            }
+            return out
+          })
+        const chips = L.comments.length ? `<div class="a-chips">${L.comments.map(c => `<span class="a-chip" title="${esc(c.text)}">${I('comment', 'sm')}<span class="mono">${esc(label(c))}</span><button data-del="${c.id}" aria-label="Remove comment on ${esc(label(c))}">${I('x', 'sm')}</button></span>`).join('')}</div>` : ''
+        return {
+          tools: { active: 'changes', body },
+          transcript: L.sent ? sentHTML(L.sent, false) : undefined,
+          composer: `<div class="composer">${chips}${msgInput(L)}${composerRow()}</div>`,
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local
+        root.querySelector('[data-open-draft]')?.addEventListener('click', () => { L.draft = { text: '', focus: true }; ctx.rerender() })
+        root.querySelectorAll('[data-gutter]').forEach(b => b.addEventListener('click', () => {
+          const [f, i] = b.dataset.gutter.split(':').map(Number)
+          if (!inRange(L.sel, f, i)) L.sel = { f, from: i, to: i, anchor: i }
+          L.draft = { text: '', focus: true }; ctx.rerender()
+        }))
+        wire(root, ctx); wireDraft(root, ctx)
+      },
+    },
+    {
+      key: 'B', name: 'Margin notes',
+      note: 'A + in the gutter on hover (or on a selection) opens a note in a margin right of the diff, level with its lines, like comments in a document. The composer shows one counter chip that opens a tray of them, each removable. At 820 the margin shrinks to markers that open on click.',
+      render(ctx) {
+        const L = init(ctx)
+        const narrow = ctx.size === '820'
+        const note = c => `<div class="b-note"><div class="b-note__head">${I('comment', 'sm')}<span class="mono">${esc(label(c).replace(/^\S+ /, ''))}</span>
+          <button class="b-x" data-del="${c.id}" aria-label="Delete comment" title="Delete comment">${I('x', 'sm')}</button></div><p>${esc(c.text)}</p></div>`
+        const margin = (f, i) => {
+          let out = ''
+          L.comments.filter(c => c.f === f && c.from === i).forEach(c => {
+            if (narrow) out += `<button class="b-dot" data-dot="${c.id}" aria-expanded="${L.open === c.id}" aria-label="Comment on ${esc(label(c))}">${I('comment', 'sm')}</button>${L.open === c.id ? note(c) : ''}`
+            else out += note(c)
+          })
+          if (L.draft && L.sel && L.sel.f === f && L.sel.from === i) {
+            out += `<div class="b-note"><div class="b-note__head">${I('comment', 'sm')}<span class="mono">${esc(label(L.sel).replace(/^\S+ /, ''))}</span></div>
+              <textarea class="field" data-draft rows="2" aria-label="Comment on ${esc(label(L.sel))}" placeholder="Add a comment…">${esc(L.draft.text)}</textarea>
+              <div class="b-note__actions"><button class="btn btn--ghost" data-cancel>Cancel</button><button class="btn btn--primary" data-comment ${L.draft.text.trim() ? '' : 'disabled'}>Comment</button></div></div>`
+          }
+          return `<span class="b-margin">${out}</span>`
+        }
+        const body = diffHTML('b-diff', (f, i, r) => rowHTML(f, i, r, {
+          sel: inRange(L.sel, f, i), flag: L.comments.some(c => inRange(c, f, i)) ? 'data-noted' : '',
+          plus: !L.draft && L.sel && L.sel.f === f && L.sel.from === i,
+          lead: `<span class="b-gut">${r.k === 'hunk' ? '' : `<button class="b-plus" data-note="${f}:${i}" aria-label="Comment on line ${r.n ?? r.o}">${I('plus', 'sm')}</button>`}</span>`,
+          tail: margin(f, i),
+        }))
+        const n = L.comments.length
+        const count = n ? `<button class="b-count" data-tray aria-expanded="${L.tray}">${I('comment', 'sm')}${n} review comment${n === 1 ? '' : 's'}${I('chevron', 'sm')}</button>` : ''
+        const tray = L.tray && n ? `<div class="popover b-tray"><div class="b-tray__title">Goes with your next message</div>${L.comments.map(c => `<div class="b-tray__item"><span class="mono">${esc(label(c))}</span>
+          <button class="b-x" data-del="${c.id}" aria-label="Remove comment on ${esc(label(c))}">${I('x', 'sm')}</button><p>${esc(c.text)}</p></div>`).join('')}</div>` : ''
+        return {
+          tools: { active: 'changes', body },
+          transcript: L.sent ? sentHTML(L.sent, false) : undefined,
+          composer: `<div class="composer" style="position:relative">${tray}${msgInput(L)}${composerRow(count)}</div>`,
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local
+        root.querySelectorAll('[data-note]').forEach(b => b.addEventListener('click', e => {
+          e.stopPropagation()
+          const [f, i] = b.dataset.note.split(':').map(Number)
+          if (!inRange(L.sel, f, i)) L.sel = { f, from: i, to: i, anchor: i }
+          L.draft = { text: '', focus: true }; ctx.rerender()
+        }))
+        root.querySelectorAll('[data-dot]').forEach(b => b.addEventListener('click', () => { const id = Number(b.dataset.dot); L.open = L.open === id ? null : id; ctx.rerender() }))
+        root.querySelector('[data-tray]')?.addEventListener('click', () => { L.tray = !L.tray; ctx.rerender() })
+        wire(root, ctx); wireDraft(root, ctx)
+      },
+    },
+    {
+      key: 'C', name: 'Quoted in the composer',
+      note: 'Selecting lines offers Quote in message. The hunk becomes a card inside the composer and the comment is typed under it, in the message itself; there is no separate draft box. The diff keeps a light highlight on quoted lines.',
+      render(ctx) {
+        const L = init(ctx, true)
+        const body = diffHTML('c-diff', (f, i, r) => rowHTML(f, i, r, {
+          sel: inRange(L.sel, f, i), flag: L.comments.some(c => inRange(c, f, i)) ? 'data-quoted' : '',
+          float: L.sel && L.sel.f === f && L.sel.to === i ? `<button class="rc-pill c-pill" data-quote>${I('comment', 'sm')}Quote in message</button>` : '',
+        }))
+        const quotes = L.comments.map(c => `<div class="c-quote"><div class="c-quote__head">${I('file', 'sm')}<span class="mono">${esc(label(c))}</span>
+            <button data-del="${c.id}" aria-label="Remove quote of ${esc(label(c))}">${I('x', 'sm')}</button></div><pre class="c-quote__code">${codeLines(c)}</pre></div>
+          <textarea class="rc-input c-after" data-qtext="${c.id}" rows="1" aria-label="Comment on ${esc(label(c))}" placeholder="Say what to change here…">${esc(c.text)}</textarea>`).join('')
+        return {
+          tools: { active: 'changes', body },
+          transcript: L.sent ? sentHTML(L.sent, true) : undefined,
+          composer: `<div class="composer"><div class="c-flow">${quotes}${msgInput(L)}</div>${composerRow()}</div>`,
+        }
+      },
+      mount(root, ctx) {
+        const L = ctx.local
+        root.querySelector('[data-quote]')?.addEventListener('click', () => {
+          const id = L.nextId++
+          L.comments.push({ id, f: L.sel.f, from: L.sel.from, to: L.sel.to, text: '' })
+          L.sel = null; L.focus = id; ctx.rerender()
+        })
+        root.querySelectorAll('[data-qtext]').forEach(t => {
+          const c = L.comments.find(x => x.id === Number(t.dataset.qtext))
+          t.addEventListener('input', () => { c.text = t.value; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px' })
+          if (L.focus === c.id) { L.focus = null; t.focus(); t.scrollIntoView({ block: 'nearest' }) }
+        })
+        wire(root, ctx)
+      },
+    },
+  ],
+})
+</script>
+</body>
+</html>

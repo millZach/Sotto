@@ -1,0 +1,148 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three versions of choosing a thread's workspace and branch (#266), inside the
+  Threads page. A is what merged: T3's branch toolbar under the composer. B moves the choice into the pane
+  header as one breadcrumb. C folds it into the composer's own control row. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — workspace and branch</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  /* A — the toolbar under the composer, as merged. */
+  .tb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 2px 0; font-size: 12.5px; color: var(--tt-text-muted); position: relative; }
+  .tb__static { display: inline-flex; gap: 4px; padding: 0 6px; }
+  .tb__static strong { color: var(--tt-text-2); font-weight: 500; }
+  .tb__chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 7px; color: var(--tt-text-2); }
+  .tb__chip:hover, .tb__chip[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .tb__spacer { flex: 1; }
+  .tb__pr { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 999px; color: var(--tt-success); border: 1px solid color-mix(in srgb, var(--tt-success) 35%, transparent); }
+  .picker { bottom: calc(100% + 6px); right: 0; width: 340px; padding: 0; }
+  .picker__search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+  .picker__list { max-height: 250px; overflow: auto; padding: 6px; }
+  .picker__group { padding: 6px 8px 2px; color: var(--tt-text-faint); font-size: 11.5px; }
+  .picker__ref { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border-radius: 6px; font-size: 13px; }
+  .picker__ref:hover, .picker__ref[data-active] { background: var(--tt-hover); }
+  .picker__ref .tag { margin-left: auto; }
+  .picker__foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-top: 1px solid var(--tt-hairline); font-size: 12.5px; }
+  .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--tt-accent); position: relative; }
+  .switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--tt-on-accent); }
+  .ws-menu { bottom: calc(100% + 6px); left: 0; width: 280px; }
+  /* B — the header breadcrumb. */
+  .crumb-ctl { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-2); font-size: 12.5px; }
+  .crumb-ctl:hover, .crumb-ctl[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .crumb-ctl .sep { color: var(--tt-text-faint); }
+  .b-pop { top: 44px; left: 360px; width: 460px; padding: 0; display: grid; grid-template-columns: 180px 1fr; }
+  .app[data-size='820'] .b-pop { left: 250px; width: 440px; grid-template-columns: 160px 1fr; }
+  .b-pop__ws { padding: 10px; border-right: 1px solid var(--tt-hairline); display: grid; gap: 2px; align-content: start; }
+  .b-pop__ws h4, .b-pop__refs h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 500; color: var(--tt-text-faint); text-transform: uppercase; letter-spacing: .04em; }
+  .radio { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border-radius: 6px; font-size: 13px; }
+  .radio::before { content: ''; width: 12px; height: 12px; border: 1.5px solid var(--tt-text-muted); border-radius: 50%; flex: none; }
+  .radio[aria-checked='true']::before { border-color: var(--tt-accent); background: radial-gradient(circle, var(--tt-accent) 45%, transparent 50%); }
+  .b-pop__refs { padding: 10px; }
+  .b-pr { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-success); font-size: 12.5px; }
+  /* C — inside the composer. */
+  .c-sheet { position: absolute; left: 16px; right: 16px; bottom: 150px; z-index: 30; border: 1px solid var(--tt-panel-border); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+  .c-sheet__head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--tt-hairline); }
+  .c-sheet__cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .c-sheet__col { padding: 10px; border-right: 1px solid var(--tt-hairline); }
+  .c-sheet__col:last-child { border-right: 0; }
+  .c-sheet__col h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 500; color: var(--tt-text-faint); text-transform: uppercase; letter-spacing: .04em; }
+  .c-ws { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--tt-hairline); align-items: center; font-size: 12.5px; color: var(--tt-text-muted); }
+  .c-ws .seg { display: inline-flex; border: 1px solid var(--tt-hairline); border-radius: 8px; overflow: hidden; }
+  .c-ws .seg span { padding: 4px 10px; }
+  .c-ws .seg span[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const SCEN = {
+  main: { branch: 'main', ws: 'Current checkout', locked: true, pr: null, draft: false },
+  feature: { branch: 'feat/voice-preview', ws: 'Current checkout', locked: true, pr: 'PR #212', draft: false },
+  draft: { branch: 'From origin/main', ws: 'New worktree', locked: false, pr: null, draft: true },
+  detached: { branch: 'Select ref', ws: 'Current checkout', locked: true, pr: null, draft: false },
+}
+const REFS = [['main', 'current default'], ['feat/voice-preview', ''], ['fix/wav-stall', 'worktree'], ['release/0.1.16', ''], ['origin/feat/keychain', 'remote']]
+const refRows = (active) => REFS.map(([name, badges], i) => `<div class="picker__ref" ${i === active ? 'data-active' : ''}>${I('branch', 'sm')}<span class="mono" style="font-size:12.5px">${name}</span>${badges.split(' ').filter(Boolean).map(b => `<span class="tag">${b}</span>`).join('')}</div>`).join('')
+
+Proto.page({
+  title: 'Workspace and branch',
+  question: 'Where does a thread show and change its checkout and branch?',
+  states: [{ key: 'main', label: 'On main' }, { key: 'feature', label: 'Feature branch with a PR' }, { key: 'draft', label: 'Draft, new worktree' }, { key: 'detached', label: 'Detached HEAD' }],
+  variants: [
+    {
+      key: 'A', name: 'Toolbar under the composer (merged)',
+      note: 'T3\'s row: Run on and Workspace on the left, the PR badge and the branch picker on the right. Workspace locks after the first message. Click Workspace or the branch.',
+      render(ctx) {
+        const s = SCEN[ctx.state]
+        const open = ctx.local.open
+        return {
+          belowComposer: `<div class="tb">
+            <span class="tb__static">Run on <strong>This computer</strong></span>
+            ${s.locked ? `<span class="tb__static">Workspace <strong>${s.ws}</strong></span>` : `<button class="tb__chip" data-open="ws" aria-expanded="${open === 'ws'}">${I('folder', 'sm')}${s.ws}${I('chevron', 'sm')}</button>`}
+            <span class="tb__spacer"></span>
+            ${s.pr ? `<span class="tb__pr">${I('pr', 'sm')}${s.pr}</span>` : ''}
+            <button class="tb__chip" data-open="branch" aria-expanded="${open === 'branch'}">${I('branch', 'sm')}<span class="mono">${s.branch}</span>${I('chevron', 'sm')}</button>
+            ${open === 'branch' ? `<div class="popover picker"><div class="picker__search">${I('search', 'sm')} Search refs...</div><div class="picker__list"><div class="picker__group">Branches</div>${refRows(0)}</div>
+              ${s.draft ? `<div class="picker__foot"><span>Start from origin</span><span class="switch"></span></div>` : `<div class="picker__foot"><span>${I('plus', 'sm')} Create new ref</span><span class="faint">Ctrl+Shift+G</span></div>`}</div>` : ''}
+            ${open === 'ws' ? `<div class="popover ws-menu"><button class="menu-item">${I('folder', 'sm')}Current checkout</button><button class="menu-item">${I('plus', 'sm')}New worktree ${I('check', 'sm')}</button><button class="menu-item">${I('branch', 'sm')}Previous worktree (fix/wav-stall)</button></div>` : ''}
+          </div>`,
+        }
+      },
+      mount(root, ctx) { root.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { ctx.local.open = ctx.local.open === b.dataset.open ? null : b.dataset.open; ctx.rerender() })) },
+    },
+    {
+      key: 'B', name: 'One breadcrumb in the pane header',
+      note: 'Nothing under the composer. The header reads workshop / Current checkout › feat/voice-preview; one popover sets both, workspace on the left and branches on the right. The PR sits beside it.',
+      render(ctx) {
+        const s = SCEN[ctx.state]
+        const open = ctx.local.open
+        return {
+          crumb: `<button class="crumb-ctl" data-open="b" aria-expanded="${!!open}">${I(s.draft ? 'plus' : 'folder', 'sm')}${s.ws}<span class="sep">›</span>${I('branch', 'sm')}<span class="mono">${s.branch}</span>${I('chevron', 'sm')}</button>${s.pr ? `<span class="b-pr">${I('pr', 'sm')}${s.pr}</span>` : ''}`,
+          overlay: open ? `<div class="popover b-pop">
+            <div class="b-pop__ws"><h4>Workspace</h4>
+              <div class="radio" aria-checked="${s.ws === 'Current checkout'}">Current checkout</div>
+              <div class="radio" aria-checked="${s.ws === 'New worktree'}">New worktree</div>
+              <div class="radio" aria-checked="false">fix/wav-stall worktree</div>
+              ${s.locked ? `<p class="faint" style="font-size:12px;margin:8px 0 0">Fixed after the first message.</p>` : ''}
+              <h4 style="margin-top:14px">Runs on</h4><div class="muted" style="font-size:13px;padding:0 8px">This computer</div></div>
+            <div class="b-pop__refs"><h4>${s.draft ? 'Start from' : 'Branch'}</h4><div class="picker__search" style="border:1px solid var(--tt-hairline);border-radius:8px;margin-bottom:6px">${I('search', 'sm')} Search refs...</div>${refRows(0)}
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12.5px" class="muted"><span>${I('plus', 'sm')} Create new ref</span>${s.draft ? '<span>Start from origin <span class="switch" style="display:inline-block;vertical-align:middle"></span></span>' : ''}</div></div>
+          </div>` : '',
+        }
+      },
+      mount(root, ctx) { root.querySelector('[data-open]')?.addEventListener('click', () => { ctx.local.open = !ctx.local.open; ctx.rerender() }) },
+    },
+    {
+      key: 'C', name: 'Inside the composer\'s control row',
+      note: 'Branch and workspace are pills beside the model, where you already set up a message. The picker opens as a sheet over the composer with Local, Remote and Worktrees in columns, and the workspace as a segmented control.',
+      render(ctx) {
+        const s = SCEN[ctx.state]
+        const open = ctx.local.open
+        return {
+          composer: `<div class="composer"><div class="composer__text">What would you like to do next?</div>
+            <div class="composer__row"><span class="muted">${I('plus')}</span><span class="composer__pill">Sonnet 4.5 ${I('chevron', 'sm')}</span>
+              <button class="composer__pill" data-open="c" aria-expanded="${!!open}">${I('branch', 'sm')}<span class="mono">${s.branch}</span>${s.pr ? ` · <span class="add">${s.pr}</span>` : ''}${I('chevron', 'sm')}</button>
+              <span class="composer__pill muted">${I(s.draft ? 'plus' : 'folder', 'sm')}${s.draft ? 'New worktree' : 'Checkout'}</span>
+              <span class="composer__send">${I('up', 'sm')}</span></div></div>`,
+          overlay: open ? `<div class="c-sheet">
+            <div class="c-sheet__head">${I('search', 'sm')}<span class="muted">Search refs...</span><span style="margin-left:auto" class="muted">${I('plus', 'sm')} Create new ref</span></div>
+            <div class="c-sheet__cols">
+              <div class="c-sheet__col"><h4>Local</h4>${['main', 'feat/voice-preview', 'release/0.1.16'].map((name, i) => `<div class="picker__ref" ${i === 0 ? 'data-active' : ''}>${I('branch', 'sm')}<span class="mono" style="font-size:12.5px">${name}</span></div>`).join('')}</div>
+              <div class="c-sheet__col"><h4>Remote</h4><div class="picker__ref">${I('branch', 'sm')}<span class="mono" style="font-size:12.5px">origin/feat/keychain</span></div><div class="picker__ref">${I('branch', 'sm')}<span class="mono" style="font-size:12.5px">origin/release</span></div></div>
+              <div class="c-sheet__col"><h4>Worktrees</h4><div class="picker__ref">${I('folder', 'sm')}<span style="font-size:12.5px">fix/wav-stall</span></div></div>
+            </div>
+            <div class="c-ws">Workspace <span class="seg"><span aria-pressed="${!s.draft}">Checkout</span><span aria-pressed="${s.draft}">New worktree</span><span>Existing</span></span><span style="margin-left:auto">Runs on This computer</span></div>
+          </div>` : '',
+        }
+      },
+      mount(root, ctx) { root.querySelector('[data-open]')?.addEventListener('click', () => { ctx.local.open = !ctx.local.open; ctx.rerender() }) },
+    },
+  ],
+})
+</script>
+</body>
+</html>

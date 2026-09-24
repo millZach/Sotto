@@ -1,0 +1,589 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three versions of seeing and acting on the branch's pull request (#269), inside the
+  Threads page. A is what is built on feat/pull-request-surface: the Pull request surface in Tools. B drops the
+  surface for a status bar under the pane header that expands into the detail. C makes a merge-readiness
+  checklist the whole surface. Open in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype — pull request</title>
+<link rel="stylesheet" href="./shell.css">
+<style>
+  /* Shared: state colours, dialogs, menus, icon buttons. */
+  .st-open { color: var(--tt-success); }
+  .st-merged { color: var(--tt-activity); }
+  .st-draft, .st-closed { color: var(--tt-text-muted); }
+  .ck-success { color: var(--tt-success); }
+  .ck-failure { color: var(--tt-error-text); }
+  .ck-pending { color: var(--tt-warning-text); }
+  /* The shared header's crumb would otherwise run under the header actions at 820 with Tools open. */
+  .pane-head__crumb { overflow: hidden; }
+  .app[data-size='820'] .room:has(.tools) .wc-chip { display: none; }
+  .quiet { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+  .icon-btn { position: relative; display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px; color: var(--tt-text-muted); }
+  .icon-btn:hover, .icon-btn[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+  .icon-btn svg.i { width: 16px; height: 16px; }
+  .menu-sep { height: 1px; margin: 4px 2px; background: var(--tt-hairline); }
+  .menu-head { padding: 6px 10px 2px; color: var(--tt-text-muted); font-size: 12px; }
+  .menu-item .tick { margin-left: auto; color: var(--tt-accent-text); }
+  .menu-item .blank { width: 13px; flex: none; }
+  .menu-item--danger { color: var(--tt-error-text); }
+  .dlg-p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+  .dlg-label { display: block; margin: 14px 0 6px; color: var(--tt-text-2); font-size: 13px; }
+  .dlg-err { margin-top: 8px; color: var(--tt-error-text); font-size: 13px; }
+  .dlg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .field[aria-invalid='true'] { border-color: var(--tt-error-border); }
+  .textlink { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-link); text-decoration: underline; text-underline-offset: 3px; }
+  .pr-notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+  .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin: 6px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+  .meta .mono { font-size: 12px; }
+  .desc { color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .sec h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 8px; color: var(--tt-text); font-size: 13px; font-weight: 600; }
+
+  /* A — the Pull request surface in Tools, as built. */
+  .a-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
+  .a-chrome { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); }
+  .a-chrome__title { color: var(--tt-text); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .a-chrome__detail { flex: 1; min-width: 0; margin-left: 8px; overflow: hidden; color: var(--tt-text-muted); font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .a-count { position: absolute; top: 0; right: 0; min-width: 14px; padding: 0 3px; border-radius: var(--tt-radius-pill); background: var(--tt-selected); color: var(--tt-text); font-size: 10.5px; line-height: 14px; text-align: center; }
+  .a-body { display: flex; flex: 1; flex-direction: column; gap: 18px; min-height: 0; overflow: auto; padding: 16px 16px 24px; }
+  .a-title { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--tt-text); font-size: 16px; font-weight: 550; line-height: 1.35; }
+  .a-title svg { margin-top: 2px; }
+  .a-merge, .a-stale { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+  .a-merge p, .a-stale p { flex: 1 1 100%; margin: 0; font-size: 14px; line-height: 1.5; }
+  .a-merge .btn, .a-stale .btn { height: 34px; padding: 0 14px; font-size: 14px; }
+  .a-method { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+  .a-method select { height: 32px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-text); font-size: 13px; }
+  .a-stale { padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); }
+  .a-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .a-checks { margin: 0; padding: 0; list-style: none; }
+  .a-checks li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--tt-hairline); font-size: 13.5px; }
+  .a-check-name { min-width: 0; overflow: hidden; color: var(--tt-text); text-align: left; text-decoration: underline; text-decoration-color: var(--tt-hairline); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; }
+  .a-check-status { color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+  .a-check-desc { grid-column: 2 / -1; color: var(--tt-text-muted); font-size: 12.5px; }
+  .a-empty { display: grid; gap: 10px; justify-items: start; padding: 8px 0; }
+  .a-empty strong { color: var(--tt-text); font-weight: 500; }
+  .a-empty p { margin: 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
+  .a-links { margin: 0; padding: 0; list-style: none; }
+  .a-link { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--tt-hairline); }
+  .a-link:first-child { border-top: 0; }
+  .a-link__open { display: grid; flex: 1; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border-radius: var(--tt-radius-sm); color: var(--tt-text); text-align: left; }
+  .a-link__open:hover { background: var(--tt-hover); }
+  .a-link__open svg { grid-area: icon; }
+  .a-link__num { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; }
+  .a-link__title { grid-area: title; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .a-link__source { grid-area: source; color: var(--tt-text-muted); font-size: 12.5px; }
+  .a-menu { top: 88px; right: 8px; width: 230px; }
+
+  /* B — the status bar under the pane header. */
+  .b-bar, .b-detail { position: absolute; left: 300px; right: 0; }
+  .app[data-size='820'] .b-bar, .app[data-size='820'] .b-detail { left: 236px; }
+  .b-bar { top: 44px; z-index: 21; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 8px 0 10px; border-top: 1px solid var(--tt-hairline); border-bottom: 1px solid var(--tt-hairline); background: var(--tt-canvas); }
+  .b-read { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 32px; padding: 0 8px; border-radius: 8px; text-align: left; white-space: nowrap; }
+  button.b-read:hover, .b-read[aria-expanded='true'] { background: var(--tt-hover); }
+  .b-read > .b-caret { margin-left: auto; color: var(--tt-text-muted); transform: rotate(0deg); }
+  .b-read[aria-expanded='true'] > .b-caret { transform: rotate(180deg); }
+  .b-num { color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+  .b-facts { display: flex; gap: 6px; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-size: 13px; text-overflow: ellipsis; }
+  .b-fact { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .b-fact:first-child { flex-shrink: 0; }
+  .b-fact svg.i { margin-right: 4px; vertical-align: -2px; }
+  .app[data-size='820'] .b-read .tag[data-plain] { display: none; }
+  .b-fact + .b-fact::before { content: '·'; margin-right: 6px; color: var(--tt-text-muted); }
+  .b-fact[data-tone='ok'] { color: var(--tt-success); }
+  .b-fact[data-tone='err'] { color: var(--tt-error-text); }
+  .b-fact[data-tone='warn'] { color: var(--tt-warning-text); }
+  .b-split { display: flex; flex: none; }
+  .b-split .btn { height: 30px; font-size: 13px; }
+  .b-split .b-go { border-radius: 8px 0 0 8px; }
+  .b-split .b-drop { padding: 0 8px; border-radius: 0 8px 8px 0; }
+  .b-split .btn--primary.b-drop { border-left: 1px solid color-mix(in srgb, var(--tt-primary-contrast) 30%, transparent); }
+  .b-split .btn--secondary.b-drop { border-left: 0; }
+  .b-spacer { flex: none; height: 30px; }
+  .b-detail { top: 86px; z-index: 20; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px 28px; align-content: start; max-height: calc(100% - 86px - 150px); overflow: auto; padding: 16px 24px 20px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+  .app[data-size='820'] .b-detail { grid-template-columns: minmax(0, 1fr); padding: 14px 18px 18px; }
+  .b-detail > header { grid-column: 1 / -1; }
+  /* One column at the minimum: checks and reviews before the description. */
+  .app[data-size='820'] .b-detail > header { order: -2; }
+  .app[data-size='820'] .b-detail > .b-col:last-child { order: -1; }
+  .b-col { display: grid; gap: 18px; align-content: start; }
+  .b-checks { margin: 0; padding: 0; list-style: none; }
+  .b-checks li { display: flex; align-items: center; gap: 8px; min-height: 32px; border-top: 1px solid var(--tt-hairline); font-size: 13.5px; }
+  .b-checks li > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+  .b-checks .icon-btn { width: 26px; height: 26px; }
+  .b-review { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; }
+  .b-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-size: 12px; font-weight: 600; }
+  .b-review strong { color: var(--tt-text); font-weight: 500; }
+  .b-review p { margin: 4px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+  .b-review .head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .b-linkrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .b-menu { top: 90px; right: 8px; width: 250px; max-height: calc(100% - 100px); overflow: auto; }
+
+  /* C — the merge checklist. */
+  .c-surface { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; color: var(--tt-text-2); }
+  .c-top { position: relative; display: flex; align-items: center; gap: 6px; flex: none; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; }
+  .c-top__t { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+  .c-top .tag { flex: none; }
+  .c-more { top: 40px; right: 8px; width: 230px; }
+  .c-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; }
+  .c-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: 16px; font-weight: 550; }
+  .c-h small { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+  .c-h small[data-tone='ok'] { color: var(--tt-success); }
+  .c-list { margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); list-style: none; }
+  .c-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
+  .c-row:first-child { border-top: 0; }
+  .c-row > svg.i { width: 18px; height: 18px; }
+  .c-row[data-tone='ok'] > svg { color: var(--tt-success); }
+  .c-row[data-tone='bad'] > svg { color: var(--tt-error-text); }
+  .c-row[data-tone='running'] > svg { color: var(--tt-warning-text); }
+  .c-row[data-tone='todo'] > svg { color: var(--tt-text-muted); }
+  .c-row strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; }
+  .c-row[data-tone='ok'] strong { color: var(--tt-text-2); font-weight: 400; }
+  .c-row .why { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+  .c-row .btn { height: 28px; padding: 0 10px; font-size: 13px; }
+  .app[data-size='820'] .c-row { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
+  .app[data-size='820'] .c-row > svg.i { margin-top: 2px; }
+  .app[data-size='820'] .c-row .btn { grid-column: 2; justify-self: start; margin-top: 8px; }
+  .c-dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tt-surface); }
+  .c-merge { position: relative; display: flex; gap: 8px; }
+  .c-merge .btn { height: 44px; border-radius: 10px; font-size: 15px; }
+  .c-merge__go { flex: 1; min-width: 0; font-weight: 500; }
+  .c-merge__go[aria-disabled='true'] { border: 1px solid var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); opacity: 1; }
+  .c-merge__method { flex: none; }
+  .c-method { right: 0; bottom: calc(100% + 6px); width: 270px; }
+  .c-method .menu-item { display: grid; grid-template-columns: 1fr 14px; align-items: center; padding: 7px 10px; }
+  .c-method .menu-item small { display: block; color: var(--tt-text-muted); font-size: 12px; }
+  .c-hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+  .c-finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+  .c-finished strong { display: block; color: var(--tt-text); font-weight: 500; }
+  .c-finished div { flex: 1; min-width: 0; }
+  .c-finished span { color: var(--tt-text-muted); font-size: 13px; }
+  .c-finished > svg { color: var(--tt-activity); }
+  .c-exp { margin-top: 6px; border-top: 1px solid var(--tt-hairline); }
+  .c-exp + .c-exp { margin-top: 0; }
+  .c-exp__head { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-align: left; }
+  .c-exp__body { padding: 0 0 14px 21px; }
+  .c-none p { margin: 0 0 14px; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+  .c-none__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body>
+<script src="./shell.js"></script>
+<script>
+const I = Proto.icon
+const svg = (paths, cls = 'sm') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`
+const G = {
+  list: svg('<path d="M9.5 6H20M9.5 12H20M9.5 18H20M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', ''),
+  back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>', ''),
+  unlink: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7L11.5 6.8M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5M4 4l16 16"/>'),
+  running: svg('<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.4 3"/>'),
+  ok: svg('<circle cx="12" cy="12" r="8.5"/><path d="m8.3 12.3 2.5 2.5 4.9-5.1"/>', 'lg'),
+  bad: svg('<circle cx="12" cy="12" r="8.5"/><path d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6"/>', 'lg'),
+  todo: svg('<circle cx="12" cy="12" r="8.5"/>', 'lg'),
+  wait: svg('<circle cx="12" cy="12" r="8.5" stroke-dasharray="2.6 3.2"/>', 'lg'),
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+/* The pull request, and how each scenario leaves it. */
+const PR = {
+  number: 301, title: 'Play a two-second voice preview', head: 'feat/voice-preview', base: 'main',
+  body: 'The preview button plays a two-second sample through the selected voice, so a voice can be judged before a thread uses it.\n\nThe xAI key moves out of settings.json into the system keychain. An existing key is read once and moved.\n\nCloses #212.',
+}
+const METHODS = { merge: ['Merge', 'Merge commit', 'Every commit, plus a merge commit'], squash: ['Squash and merge', 'Squash', 'One commit on main'], rebase: ['Rebase and merge', 'Rebase', 'Every commit, replayed onto main'] }
+const mLabel = m => METHODS[m][0]
+const makeChecks = kind => ['Gates (Windows)', 'Gates (macOS)', 'Design verify', 'Notices'].map((name, i) => ({
+  name,
+  status: kind === 'failing' && i === 0 ? 'failure' : kind === 'running' && i === 1 ? 'pending' : 'success',
+  description: kind === 'failing' && i === 0 ? '3 tests failed in tests/unit/main' : '',
+}))
+const REVIEW_CHANGES = { who: 'mira', decision: 'changes_requested', when: '9:12 am', note: 'Keep reading the old key for one release, so an update does not lose it.' }
+const REVIEW_OK = { who: 'mira', decision: 'approved', when: '9:40 am', note: 'Plays well on both voices.' }
+const SCEN = {
+  draft: { state: 'open', draft: true, checks: makeChecks('running'), review: 'review_required', reviews: [], behind: 0 },
+  failing: { state: 'open', draft: false, checks: makeChecks('failing'), review: 'changes_requested', reviews: [REVIEW_CHANGES], behind: 0 },
+  approved: { state: 'open', draft: false, checks: makeChecks(), review: 'approved', reviews: [REVIEW_OK], behind: 0 },
+  behind: { state: 'open', draft: false, checks: makeChecks(), review: 'approved', reviews: [REVIEW_OK], behind: 2 },
+  merged: { state: 'merged', draft: false, checks: makeChecks(), review: 'approved', reviews: [REVIEW_OK], behind: 0, mergedAt: '10:14 am', mergedWith: 'squash' },
+  none: null,
+}
+/* What presses in this prototype did to a scenario, kept per variant and per scenario. */
+const fx = ctx => ((ctx.local.fx ??= {})[ctx.state] ??= {})
+function detail(ctx) {
+  const s = SCEN[ctx.state]
+  if (!s) return null
+  const f = fx(ctx), d = { ...PR, ...s }
+  if (f.ready !== undefined) d.draft = !f.ready
+  if (f.updated) d.behind = 0
+  if (f.auto) d.auto = f.auto
+  if (f.closed) d.state = 'closed'
+  if (f.merged) { d.state = 'merged'; d.mergedAt = '10:32 am'; d.mergedWith = f.merged; d.auto = null }
+  return d
+}
+const method = ctx => ctx.local.method ?? 'squash'
+const notice = ctx => ctx.local.notice?.state === ctx.state ? ctx.local.notice.text : null
+const stateKey = d => d.state === 'open' && d.draft ? 'draft' : d.state
+const stateLabel = d => d.state === 'merged' ? 'Merged' : d.state === 'closed' ? 'Closed' : d.draft ? 'Draft' : 'Open'
+const stateIcon = (d, cls = '') => I(d.state === 'merged' ? 'merge' : 'pr', `${cls} st-${stateKey(d)}`)
+function links(ctx) {
+  const d = detail(ctx), gone = ctx.local.unlinked ?? []
+  const base = d ? [{ number: 301, title: PR.title, kind: stateKey(d), source: 'Created from this thread' }, { number: 288, title: 'Move the xAI key to the keychain', kind: 'merged', source: 'Linked by you' }] : []
+  return [...base, ...(ctx.local.added ?? [])].filter(link => !gone.includes(link.number))
+}
+function checksState(checks) {
+  if (!checks.length) return null
+  if (checks.some(c => c.status === 'failure')) return 'failing'
+  if (checks.some(c => c.status === 'pending')) return 'pending'
+  return 'passing'
+}
+function summarizeChecks(checks) {
+  const failed = checks.filter(c => c.status === 'failure').length, pending = checks.filter(c => c.status === 'pending').length
+  if (failed) return `${failed} of ${checks.length} failing`
+  if (pending) return `${pending} of ${checks.length} running`
+  return 'All checks passed'
+}
+const CHECK_STATUS = { success: 'Passed', failure: 'Failed', pending: 'Running' }
+const checkIcon = c => c.status === 'success' ? I('check', 'sm ck-success') : c.status === 'failure' ? I('x', 'sm ck-failure') : G.running.replace('class="i sm"', 'class="i sm ck-pending"')
+const reviewLabel = r => r === 'approved' ? 'Approved' : r === 'changes_requested' ? 'Changes requested' : 'Review required'
+/* T3's one primary control, as pullRequestSurface.logic.ts chooses it. */
+function primaryControl(d) {
+  if (d.state === 'merged') return 'merged'
+  if (d.state === 'closed') return 'closed'
+  if (d.draft) return 'ready'
+  if (d.auto) return 'auto-merge-armed'
+  const cs = checksState(d.checks)
+  if (cs !== null && cs !== 'passing') return 'enable-auto-merge'
+  return 'merge'
+}
+function confirmation(kind, d, m) {
+  const label = mLabel(m)
+  if (kind === 'merge') return { title: 'Merge pull request?', text: `This merges #${d.number} into ${d.base} using ${label.toLowerCase()}.`, confirm: label }
+  if (kind === 'auto') return { title: 'Enable auto-merge?', text: `This merges #${d.number} using ${label.toLowerCase()} as soon as GitHub considers it ready, which may be immediately.`, confirm: 'Enable auto-merge' }
+  if (kind === 'close') return { title: 'Close pull request?', text: `This closes #${d.number} without merging it.`, confirm: 'Close pull request', danger: true }
+  return { title: 'Update with rebase?', text: `This rebases the branch of #${d.number} onto ${d.base} on GitHub, rewriting its commits. A local copy of the branch will no longer match it: pull, or check it out again, before pushing to it.`, confirm: 'Update with rebase' }
+}
+
+/* Dialogs: the confirmation every merge goes through, and Link pull request. */
+function dialogs(ctx) {
+  const L = ctx.local, d = detail(ctx)
+  if (L.confirm && d) {
+    const c = confirmation(L.confirm, d, method(ctx))
+    return `<div class="backdrop" data-backdrop><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t" aria-describedby="dlg-d">
+      <h3 id="dlg-t">${c.title}</h3><p id="dlg-d" class="dlg-p">${c.text}</p>
+      <div class="dlg-actions"><button class="btn btn--secondary" data-act="cancel" data-autofocus>Cancel</button><button class="btn ${c.danger ? 'btn--danger' : 'btn--primary'}" data-act="confirm">${c.confirm}</button></div></section></div>`
+  }
+  if (L.linking) return `<div class="backdrop" data-backdrop><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t" aria-describedby="dlg-d">
+      <h3 id="dlg-t">Link pull request</h3><p id="dlg-d" class="dlg-p">Attach a pull request to this thread. A full GitHub URL can point at any repository your gh sign-in can read.</p>
+      <label class="dlg-label" for="pr-ref">Pull request</label>
+      <input id="pr-ref" class="field" value="${esc(L.ref ?? '')}" placeholder="Pull request URL or #42" autocomplete="off" spellcheck="false" ${L.linkErr ? 'aria-invalid="true"' : ''} data-autofocus>
+      ${L.linkErr ? `<div class="dlg-err" role="alert">${L.linkErr}</div>` : ''}
+      <div class="dlg-actions"><button class="btn btn--secondary" data-act="cancel">Cancel</button><button class="btn btn--primary" data-act="link-submit">Link</button></div></section></div>`
+  return ''
+}
+const menuItems = items => items.map(item => item === '-' ? '<div class="menu-sep" role="separator"></div>'
+  : item.head ? `<div class="menu-head">${item.head}</div>`
+  : `<button class="menu-item ${item.danger ? 'menu-item--danger' : ''}" role="menuitem${item.checked !== undefined ? 'radio' : ''}" ${item.checked !== undefined ? `aria-checked="${item.checked}"` : ''} data-act="${item.act}">${item.icon ?? '<span class="blank"></span>'}${item.label}${item.checked ? I('check', 'sm tick') : ''}</button>`).join('')
+
+/* One press: every clickable element names its act. */
+function act(ctx, name) {
+  const L = ctx.local, f = fx(ctx), i = name.indexOf(':')
+  const verb = i < 0 ? name : name.slice(0, i), arg = i < 0 ? '' : name.slice(i + 1)
+  const say = text => { L.notice = { state: ctx.state, text } }
+  const keepMenu = verb === 'menu'
+  if (!keepMenu) L.menu = null
+  switch (verb) {
+    case 'menu': L.menu = L.menu === arg ? null : arg; break
+    case 'toggle': L[arg] = !L[arg]; break
+    case 'ask': L.confirm = arg; break
+    case 'cancel': L.confirm = null; L.linking = false; break
+    case 'confirm': {
+      const kind = L.confirm
+      L.confirm = null
+      if (kind === 'merge') { f.merged = method(ctx); say('Pull request merged.') }
+      if (kind === 'auto') { f.auto = method(ctx); say('Auto-merge is on.') }
+      if (kind === 'close') { f.closed = true; say('Pull request closed.') }
+      if (kind === 'rebase') { f.updated = true; say('Branch updated with rebase.') }
+      break
+    }
+    case 'method': L.method = arg; break
+    case 'ready': f.ready = true; say('Marked ready for review.'); break
+    case 'draft': f.ready = false; say('Converted to draft.'); break
+    case 'update': f.updated = true; say('Branch updated.'); break
+    case 'noauto': f.auto = null; say('Auto-merge is off.'); break
+    case 'reopen': f.closed = false; say('Pull request reopened.'); break
+    case 'say': say(arg); break
+    case 'view': L.view = arg; break
+    case 'unlink': (L.unlinked ??= []).push(Number(arg)); say(`Unlinked PR #${arg}.`); break
+    case 'link': L.linking = true; L.ref = ''; L.linkErr = null; break
+    case 'link-submit': {
+      const ref = (L.ref ?? '').trim()
+      const match = ref.match(/^#?(\d+)$/) ?? ref.match(/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/)
+      if (!ref) { L.linkErr = 'Paste a pull request URL or enter 123 / #123.'; break }
+      if (!match) { L.linkErr = 'Use a pull request URL, 123, or #123.'; break }
+      (L.added ??= []).push({ number: Number(match[1]), title: 'Tidy the release notes', kind: 'open', source: 'Linked by you' })
+      L.linking = false; say(`Linked PR #${match[1]}.`)
+      break
+    }
+  }
+  ctx.rerender()
+}
+function wire(root, ctx) {
+  window.prCtx = ctx
+  root.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', event => { event.stopPropagation(); act(ctx, el.dataset.act) }))
+  root.querySelector('.app').addEventListener('click', () => { if (ctx.local.menu) { ctx.local.menu = null; ctx.rerender() } })
+  root.querySelector('[data-backdrop]')?.addEventListener('click', event => { if (event.target === event.currentTarget) act(ctx, 'cancel') })
+  root.querySelector('[data-method-select]')?.addEventListener('change', event => { ctx.local.method = event.target.value; ctx.rerender() })
+  const field = root.querySelector('#pr-ref')
+  field?.addEventListener('input', () => { ctx.local.ref = field.value })
+  field?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); act(ctx, 'link-submit') } })
+  const first = root.querySelector('[data-autofocus]')
+  if (first) { first.focus(); if (first === field) field.setSelectionRange(field.value.length, field.value.length) }
+}
+/* Escape closes the innermost open thing. */
+document.addEventListener('keydown', event => {
+  const ctx = window.prCtx
+  if (event.key !== 'Escape' || !ctx) return
+  const L = ctx.local
+  if (L.confirm || L.linking) { L.confirm = null; L.linking = false } else if (L.menu) L.menu = null
+  else if (L.expand) L.expand = false
+  else return
+  ctx.rerender()
+})
+
+const TRANSCRIPT = `
+  <div class="msg-you"><div class="msg-meta"><span>You</span><span>7:05 am</span></div>Make the voice preview button play a two-second sample, and keep the key out of settings.json.</div>
+  <div class="msg-agent"><div class="msg-meta"><span>Claude</span><span>7:58 am</span></div>
+    <p>Done. The preview plays a two-second sample through the selected voice, and the key now lives in the system keychain. I opened PR #301 for it.</p>
+    <span class="activity">${I('file', 'sm')} Edited 3 files · +42 −11</span>
+  </div>`
+
+Proto.page({
+  title: 'Pull request',
+  question: 'Where does a thread show its branch\'s pull request, and how does the user act on it?',
+  states: [
+    { key: 'draft', label: 'Draft' }, { key: 'failing', label: 'Open, checks failing' }, { key: 'approved', label: 'Approved, ready to merge' },
+    { key: 'behind', label: 'Behind main' }, { key: 'merged', label: 'Merged' }, { key: 'none', label: 'No pull request linked' },
+  ],
+  variants: [
+    {
+      key: 'A', name: 'What is built (Pull request surface in Tools)',
+      note: 'feat/pull-request-surface: T3\'s one primary control (Ready for review, Auto-merge, or the merge in the chosen method) with the method beside it, Update branch when behind, each check, the description; the rest in the ··· menu. The list icon opens Linked pull requests. Merge, auto-merge, close and rebase ask first.',
+      render(ctx) {
+        const L = ctx.local, d = detail(ctx), m = method(ctx), ls = links(ctx), n = notice(ctx)
+        const noticeHtml = n ? `<p class="pr-notice" role="status">${n}</p>` : ''
+        let body
+        if (L.view === 'linked') {
+          body = `<div class="a-surface">
+            <div class="a-chrome"><span class="a-chrome__title">Linked pull requests</span><span class="a-chrome__detail">${ls.length || ''}</span>
+              <button class="icon-btn" title="Back to the pull request" aria-label="Back" data-act="view:detail">${G.back}</button>
+              <button class="icon-btn" title="Link pull request" aria-label="Link pull request" data-act="link">${I('link', 'sm')}</button></div>
+            ${noticeHtml}
+            <div class="a-body">${ls.length ? `<ul class="a-links" aria-label="Linked pull requests">${ls.map(link => `<li class="a-link">
+                <button class="a-link__open" data-act="view:detail">${I(link.kind === 'merged' ? 'merge' : 'pr', `sm st-${link.kind}`)}<span class="a-link__num">#${link.number}</span><span class="a-link__title">${link.title}</span><span class="a-link__source">${link.source}</span></button>
+                <button class="icon-btn" aria-label="Unlink PR #${link.number} from this thread" title="Unlink from thread" data-act="unlink:${link.number}">${G.unlink}</button></li>`).join('')}</ul>`
+              : `<div class="a-empty"><strong>No pull requests are linked to this thread.</strong><p>A pull request the Git action creates is linked here, and so is one you link or check out from the branch picker.</p></div>`}</div></div>`
+        } else {
+          const control = d ? primaryControl(d) : null
+          const menu = d ? [
+            { act: 'menu:', icon: I('external', 'sm'), label: 'Open on GitHub' },
+            { act: 'say:Link copied.', icon: I('copy', 'sm'), label: 'Copy link' },
+            d.state === 'open' ? (d.draft ? { act: 'ready', label: 'Ready for review' } : { act: 'draft', label: 'Convert to draft' }) : null,
+            control === 'enable-auto-merge' ? { act: 'ask:merge', label: 'Merge now' } : null,
+            control === 'merge' ? { act: 'ask:auto', label: 'Enable auto-merge' } : null,
+            d.auto ? { act: 'noauto', label: 'Disable auto-merge' } : null,
+            d.state === 'open' ? { act: 'ask:close', label: 'Close pull request' } : null,
+            d.state === 'closed' ? { act: 'reopen', label: 'Reopen pull request' } : null,
+          ].filter(Boolean) : []
+          const select = `<label class="a-method">Merge method <select data-method-select>${Object.keys(METHODS).map(k => `<option value="${k}" ${k === m ? 'selected' : ''}>${mLabel(k)}</option>`).join('')}</select></label>`
+          const merge = {
+            merged: '<p>Merged.</p>',
+            closed: '<p>Closed without merging.</p><button class="btn btn--secondary" data-act="reopen">Reopen pull request</button>',
+            ready: '<button class="btn btn--primary" data-act="ready">Ready for review</button>',
+            'auto-merge-armed': `<p>Auto-merge is on (${d?.auto ? mLabel(d.auto).toLowerCase() : ''}). GitHub merges this when it is ready.</p><button class="btn btn--secondary" data-act="noauto">Disable auto-merge</button>`,
+            'enable-auto-merge': `<button class="btn btn--primary" data-act="ask:auto">Auto-merge (${mLabel(m).toLowerCase()})</button>${select}`,
+            merge: `<button class="btn btn--primary" data-act="ask:merge">${mLabel(m)}</button>${select}`,
+          }[control] ?? ''
+          body = `<div class="a-surface">
+            <div class="a-chrome"><span class="a-chrome__title">${d ? `PR #${d.number}` : 'Pull request'}</span><span class="a-chrome__detail">${d ? stateLabel(d) : ''}</span>
+              <button class="icon-btn" title="Linked pull requests: ${ls.length}" aria-label="Linked pull requests" data-act="view:linked">${G.list}${ls.length ? `<span class="a-count" aria-hidden="true">${ls.length}</span>` : ''}</button>
+              <button class="icon-btn" aria-label="Refresh pull request" title="Refresh pull request" data-act="menu:">${I('refresh', 'sm')}</button>
+              ${menu.length ? `<button class="icon-btn" aria-label="More pull request actions" aria-haspopup="menu" aria-expanded="${L.menu === 'a-more'}" data-act="menu:a-more">${I('more')}</button>` : ''}</div>
+            ${noticeHtml}
+            <div class="a-body">${d ? `
+              <header><h3 class="a-title">${stateIcon(d)}<span>${d.title}</span></h3>
+                <p class="meta"><span class="mono">${d.head}</span><span aria-hidden="true">→</span><span class="mono">${d.base}</span><span aria-hidden="true">·</span><span>${reviewLabel(d.review)}</span><span aria-hidden="true">·</span><span>This branch</span></p></header>
+              <section class="a-merge" aria-label="Merge">${merge}</section>
+              ${d.state === 'open' && d.behind ? `<section class="a-stale" aria-label="Base branch"><p>This branch is ${d.behind} commits behind <span class="mono">${d.base}</span>.</p>
+                <div class="a-row"><button class="btn btn--secondary" data-act="update">Update branch</button><button class="btn btn--secondary" data-act="ask:rebase">Update with rebase</button></div></section>` : ''}
+              <section class="sec"><h4>Checks <span class="quiet">${summarizeChecks(d.checks)}</span></h4>
+                <ul class="a-checks" aria-label="Checks">${d.checks.map(c => `<li>${checkIcon(c)}<button class="a-check-name" title="Open ${c.name} in the browser" data-act="menu:">${c.name}</button><span class="a-check-status">${CHECK_STATUS[c.status]}</span>${c.description ? `<span class="a-check-desc">${c.description}</span>` : ''}</li>`).join('')}</ul></section>
+              <section class="sec"><h4>Description</h4><div class="desc">${d.body}</div></section>`
+            : `<div class="a-empty"><strong>This branch has no pull request.</strong><p>Create one with the Git action in the pane header, or link one to this thread.</p>
+                <button class="textlink" data-act="link">${I('link', 'sm')} Link pull request</button></div>`}
+            </div></div>`
+          L.aMenu = menu
+        }
+        return {
+          prTileLabel: 'PR',
+          headerActions: `<button class="pane-action" aria-label="Git action" title="Commit, push and create a pull request">${I('pr')}</button>`,
+          tools: { active: 'pr', body },
+          overlay: (L.menu === 'a-more' && L.view !== 'linked' ? `<div class="popover a-menu" role="menu" aria-label="More pull request actions">${menuItems(L.aMenu ?? [])}</div>` : '') + dialogs(ctx),
+        }
+      },
+      mount: wire,
+    },
+    {
+      key: 'B', name: 'Status bar under the pane header',
+      note: 'No Tools surface. One bar reads the pull request at a glance and carries the one next action (Ready for review, Open failing check, Update branch, or the merge) with the rest in its dropdown, merge method included. Press the bar to drop the full detail over the transcript; Escape or the bar folds it.',
+      render(ctx) {
+        const L = ctx.local, d = detail(ctx), m = method(ctx), ls = links(ctx), n = notice(ctx)
+        let read, primary = null, items
+        if (!d) {
+          read = `<div class="b-read">${I('pr', 'sm muted')}<span class="b-facts"><span class="b-fact">No pull request for <span class="mono">${PR.head}</span></span></span></div>`
+          primary = { label: 'Create PR', act: 'menu:' }
+          items = [{ act: 'link', icon: I('link', 'sm'), label: 'Link pull request' }]
+        } else {
+          const cs = checksState(d.checks), total = d.checks.length
+          const passed = d.checks.filter(c => c.status === 'success').length, failing = d.checks.find(c => c.status === 'failure')
+          const facts = []
+          if (d.state === 'merged') facts.push(['', `Merged into ${d.base} at ${d.mergedAt}`])
+          else if (d.state === 'closed') facts.push(['', 'Closed without merging'])
+          else {
+            facts.push(cs === 'passing' ? ['ok', `${I('check', 'sm')}All ${total} checks passed`] : cs === 'failing' ? ['err', `${I('x', 'sm')}${passed} of ${total} checks passing`] : ['warn', `${G.running}${total - passed} of ${total} checks running`])
+            facts.push([d.review === 'approved' ? 'ok' : d.review === 'changes_requested' ? 'warn' : '', reviewLabel(d.review)])
+            if (d.behind) facts.push(['warn', `Behind ${d.base} by ${d.behind}`])
+            if (d.auto) facts.push(['', 'Auto-merge on'])
+          }
+          read = `<button class="b-read" aria-expanded="${!!L.expand}" aria-controls="b-detail" data-act="toggle:expand" title="${L.expand ? 'Hide' : 'Show'} pull request details">
+            ${stateIcon(d, 'sm')}<span class="b-num">#${d.number}</span><span class="tag" ${stateKey(d) === 'open' ? 'data-plain' : ''}>${stateLabel(d)}</span>
+            <span class="b-facts">${facts.map(([tone, text]) => `<span class="b-fact" data-tone="${tone}">${text}</span>`).join('')}</span>${I('chevron', 'sm b-caret')}</button>`
+          if (d.state === 'closed') primary = { label: 'Reopen', act: 'reopen' }
+          else if (d.state === 'open') {
+            primary = d.draft ? { label: 'Ready for review', act: 'ready' }
+              : cs === 'failing' ? { label: 'Open failing check', act: 'menu:', icon: I('external', 'sm') }
+              : d.behind ? { label: 'Update branch', act: 'update' }
+              : d.auto ? { label: 'Disable auto-merge', act: 'noauto' }
+              : cs !== 'passing' ? { label: 'Auto-merge', act: 'ask:auto' }
+              : { label: mLabel(m), act: 'ask:merge', icon: I('merge', 'sm') }
+          }
+          items = [
+            ...(d.state === 'open' && !d.draft ? [{ head: 'Merge method' }, ...Object.keys(METHODS).map(k => ({ act: `method:${k}`, label: mLabel(k), checked: k === m })), '-',
+              { act: 'ask:merge', icon: I('merge', 'sm'), label: `${mLabel(m)} now` }] : []),
+            ...(d.state === 'open' && d.behind ? [{ act: 'update', label: 'Update branch' }, { act: 'ask:rebase', label: 'Update with rebase' }] : []),
+            ...(d.state === 'open' ? [d.draft ? { act: 'ready', label: 'Ready for review' } : { act: 'draft', label: 'Convert to draft' }] : []),
+            ...(d.state === 'open' && !d.draft && !d.auto ? [{ act: 'ask:auto', label: 'Enable auto-merge' }] : []),
+            '-',
+            { act: 'menu:', icon: I('external', 'sm'), label: 'Open on GitHub' },
+            { act: 'say:Link copied.', icon: I('copy', 'sm'), label: 'Copy link' },
+            { act: 'menu:', icon: I('refresh', 'sm'), label: 'Refresh' },
+            { act: 'link', icon: I('link', 'sm'), label: 'Link pull request' },
+            ...(d.state === 'open' ? ['-', { act: 'ask:close', label: 'Close pull request', danger: true }] : []),
+          ].filter(item => item === '-' || item.head || item.act !== primary?.act || item.act === 'menu:')
+        }
+        const split = primary
+          ? `<div class="b-split"><button class="btn btn--primary b-go" data-act="${primary.act}">${primary.icon ?? ''}${primary.label}</button><button class="btn btn--primary b-drop" aria-label="More pull request actions" aria-haspopup="menu" aria-expanded="${L.menu === 'b'}" data-act="menu:b">${I('chevron', 'sm')}</button></div>`
+          : `<button class="icon-btn" aria-label="More pull request actions" aria-haspopup="menu" aria-expanded="${L.menu === 'b'}" data-act="menu:b">${I('more')}</button>`
+        const expanded = d && L.expand ? `<div class="b-detail" id="b-detail" role="region" aria-label="Pull request #${d.number}">
+            <header><h3 class="a-title">${stateIcon(d)}<span>${d.title}</span></h3>
+              <p class="meta"><span class="mono">${d.head}</span><span aria-hidden="true">→</span><span class="mono">${d.base}</span><span aria-hidden="true">·</span><span>Created from this thread</span></p></header>
+            <div class="b-col">
+              <section class="sec"><h4>Description</h4><div class="desc">${d.body}</div></section>
+              <section class="sec"><h4>Linked pull requests</h4><div class="b-linkrow">${ls.map(link => `<span class="chip">${I(link.kind === 'merged' ? 'merge' : 'pr', `sm st-${link.kind}`)}#${link.number}</span>`).join('')}
+                <button class="btn btn--ghost" data-act="link">${I('link', 'sm')} Link pull request</button></div></section>
+            </div>
+            <div class="b-col">
+              <section class="sec"><h4>Checks <span class="quiet">${summarizeChecks(d.checks)}</span></h4>
+                <ul class="b-checks">${d.checks.map(c => `<li>${checkIcon(c)}<span>${c.name}</span><span class="quiet">${CHECK_STATUS[c.status]}</span><button class="icon-btn" aria-label="Open ${c.name} on GitHub" data-act="menu:">${I('external', 'sm')}</button></li>`).join('')}</ul></section>
+              <section class="sec"><h4>Reviews</h4>${d.reviews.length ? d.reviews.map(r => `<div class="b-review"><span class="b-avatar" aria-hidden="true">${r.who[0].toUpperCase()}</span>
+                  <div><div class="head"><strong>${r.who}</strong><span class="tag ${r.decision === 'approved' ? 'tag--ok' : 'tag--warn'}">${reviewLabel(r.decision)}</span><span class="quiet">${r.when}</span></div><p>${r.note}</p></div></div>`).join('')
+                : `<p class="quiet" style="margin:0">${d.draft ? 'Nobody reviews a draft. Mark it ready for review to ask.' : 'No reviews yet.'}</p>`}</section>
+            </div></div>` : ''
+        return {
+          transcript: `<div class="b-spacer"></div>${d ? TRANSCRIPT : TRANSCRIPT.replace(' I opened PR #301 for it.', '')}`,
+          aboveComposer: n ? `<div class="notice" role="status">${n}</div>` : '',
+          overlay: `<div class="b-bar">${read}${split}</div>${expanded}${L.menu === 'b' ? `<div class="popover b-menu" role="menu" aria-label="More pull request actions">${menuItems(items)}</div>` : ''}${dialogs(ctx)}`,
+        }
+      },
+      mount: wire,
+    },
+    {
+      key: 'C', name: 'Checklist to merge',
+      note: 'The surface is the merge-readiness checklist: five lines, each done or carrying the one press that fixes it (a failing check links to GitHub; re-running is out of scope). One large Merge with the method beside it, enabled only when every line is done. Description and links fold below; Close and Convert to draft sit in ···.',
+      render(ctx) {
+        const L = ctx.local, d = detail(ctx), m = method(ctx), ls = links(ctx), n = notice(ctx)
+        const linksExp = `<div class="c-exp"><button class="c-exp__head" aria-expanded="${!!L.linksOpen}" data-act="toggle:linksOpen">${I(L.linksOpen ? 'chevron' : 'chevronRight', 'sm')}Linked pull requests <span class="quiet">${ls.length}</span></button>
+          ${L.linksOpen ? `<div class="c-exp__body">${ls.length ? `<ul class="a-links">${ls.map(link => `<li class="a-link"><span class="a-link__open">${I(link.kind === 'merged' ? 'merge' : 'pr', `sm st-${link.kind}`)}<span class="a-link__num">#${link.number}</span><span class="a-link__title">${link.title}</span><span class="a-link__source">${link.source}</span></span></li>`).join('')}</ul>` : '<p class="quiet" style="margin:0 0 8px">None yet.</p>'}
+            <button class="btn btn--ghost" data-act="link">${I('link', 'sm')} Link pull request</button></div>` : ''}</div>`
+        let body
+        if (!d) {
+          body = `<div class="c-surface"><div class="c-top">${I('pr', 'muted')}<span class="c-top__t">No pull request</span></div>${n ? `<p class="pr-notice" role="status">${n}</p>` : ''}
+            <div class="c-body"><div class="c-none"><h3 class="c-h">Nothing to merge yet</h3>
+              <p><span class="mono">${PR.head}</span> has no pull request. Once it has one, this lists what stands between it and ${PR.base}.</p>
+              <div class="c-none__actions"><button class="btn btn--primary" data-act="menu:">${I('pr', 'sm')} Create PR</button><button class="btn btn--secondary" data-act="link">${I('link', 'sm')} Link pull request</button></div></div>
+              ${ls.length ? linksExp : ''}</div></div>`
+        } else {
+          const cs = checksState(d.checks), failing = d.checks.find(c => c.status === 'failure'), running = d.checks.find(c => c.status === 'pending')
+          const settled = d.state !== 'open'
+          const review = d.reviews[0]
+          const rows = [
+            { label: 'Checks passing', tone: cs === 'passing' ? 'ok' : cs === 'failing' ? 'bad' : 'running',
+              why: cs === 'passing' ? `All ${d.checks.length} passed` : cs === 'failing' ? `${failing.name} failed: ${failing.description}` : `${running.name} is still running`,
+              action: cs === 'failing' ? `<button class="btn btn--secondary" aria-label="Open ${failing.name} on GitHub" data-act="menu:">${I('external', 'sm')} Open check</button>` : '' },
+            { label: 'Review approved', tone: d.review === 'approved' ? 'ok' : d.review === 'changes_requested' ? 'bad' : 'todo',
+              why: d.review === 'approved' ? `Approved by ${review.who}` : d.review === 'changes_requested' ? `${review.who} asked for changes` : d.draft ? 'Reviewers wait until it is ready' : 'Nobody has reviewed it yet',
+              action: d.review === 'changes_requested' ? `<button class="btn btn--secondary" aria-label="Open ${review.who}'s review on GitHub" data-act="menu:">${I('external', 'sm')} Open review</button>` : '' },
+            { label: `Up to date with ${d.base}`, tone: d.behind ? 'todo' : 'ok', why: d.behind ? `${d.behind} commits behind ${d.base}` : `Has every commit on ${d.base}`,
+              action: d.behind && !settled ? '<button class="btn btn--secondary" data-act="update">Update branch</button>' : '' },
+            { label: 'No conflicts', tone: 'ok', why: `Merges cleanly into ${d.base}` },
+            { label: 'Ready for review', tone: d.draft ? 'todo' : 'ok', why: d.draft ? 'Still a draft' : 'Not a draft',
+              action: d.draft && !settled ? '<button class="btn btn--secondary" data-act="ready">Ready for review</button>' : '' },
+          ]
+          const left = rows.filter(r => r.tone !== 'ok')
+          const ready = left.length === 0
+          const more = [
+            d.state === 'open' ? (d.draft ? { act: 'ready', label: 'Ready for review' } : { act: 'draft', label: 'Convert to draft' }) : null,
+            d.state === 'open' && d.behind ? { act: 'ask:rebase', label: 'Update with rebase' } : null,
+            d.state === 'open' && !d.draft && !d.auto ? { act: 'ask:auto', label: 'Merge when ready (auto-merge)' } : null,
+            d.auto ? { act: 'noauto', label: 'Disable auto-merge' } : null,
+            { act: 'say:Link copied.', icon: I('copy', 'sm'), label: 'Copy link' },
+            { act: 'link', icon: I('link', 'sm'), label: 'Link pull request' },
+            d.state === 'open' ? '-' : null,
+            d.state === 'open' ? { act: 'ask:close', label: 'Close pull request', danger: true } : null,
+            d.state === 'closed' ? { act: 'reopen', label: 'Reopen pull request' } : null,
+          ].filter(Boolean)
+          let block
+          if (d.state === 'merged') block = `<div class="c-finished">${G.ok}<div><strong>Merged into ${d.base}</strong><span>${d.mergedAt} · ${mLabel(d.mergedWith).toLowerCase()}</span></div></div>`
+          else if (d.state === 'closed') block = `<div class="c-finished">${G.todo}<div><strong>Closed without merging</strong></div><button class="btn btn--secondary" data-act="reopen">Reopen</button></div>`
+          else if (d.auto) block = `<div class="c-finished">${G.wait}<div><strong>Auto-merge is on</strong><span>GitHub merges this with ${mLabel(d.auto).toLowerCase()} when every line is done.</span></div><button class="btn btn--secondary" data-act="noauto">Turn off</button></div>`
+          else block = `<div class="c-merge">
+              <button class="btn btn--primary c-merge__go" ${ready ? 'data-act="ask:merge"' : 'aria-disabled="true"'}>${I('merge')} Merge #${d.number}</button>
+              <button class="btn btn--secondary c-merge__method" aria-label="Merge method: ${mLabel(m)}" aria-haspopup="menu" aria-expanded="${L.menu === 'c-method'}" data-act="menu:c-method">${METHODS[m][1]} ${I('chevron', 'sm')}</button>
+              ${L.menu === 'c-method' ? `<div class="popover c-method" role="menu" aria-label="Merge method">${Object.keys(METHODS).map(k => `<button class="menu-item" role="menuitemradio" aria-checked="${k === m}" data-act="method:${k}"><span>${mLabel(k)}<small>${METHODS[k][2]}</small></span>${k === m ? I('check', 'sm tick') : ''}</button>`).join('')}</div>` : ''}
+            </div>
+            <p class="c-hint">${ready ? `${METHODS[m][2]}.` : `${left.length} ${left.length === 1 ? 'line' : 'lines'} left before this can merge.${d.draft ? '' : ' <button class="textlink" data-act="ask:auto">Merge when ready</button>'}`}</p>`
+          body = `<div class="c-surface">
+            <div class="c-top">${stateIcon(d)}<span class="c-top__t"><span class="muted">#${d.number}</span> ${d.title}</span><span class="tag">${stateLabel(d)}</span>
+              <button class="icon-btn" aria-label="Open on GitHub" title="Open on GitHub" data-act="menu:">${I('external', 'sm')}</button>
+              <button class="icon-btn" aria-label="Refresh pull request" title="Refresh pull request" data-act="menu:">${I('refresh', 'sm')}</button>
+              <button class="icon-btn" aria-label="More pull request actions" aria-haspopup="menu" aria-expanded="${L.menu === 'c-more'}" data-act="menu:c-more">${I('more')}</button>
+              ${L.menu === 'c-more' ? `<div class="popover c-more" role="menu" aria-label="More pull request actions">${menuItems(more)}</div>` : ''}</div>
+            ${n ? `<p class="pr-notice" role="status">${n}</p>` : ''}
+            <div class="c-body">
+              <h3 class="c-h">${settled ? 'Merge checklist' : ready ? 'Ready to merge' : 'Before merging'}<small ${ready ? 'data-tone="ok"' : ''}>${rows.length - left.length} of ${rows.length} done</small></h3>
+              <ol class="c-list" aria-label="Merge checklist">${rows.map(r => `<li class="c-row" data-tone="${r.tone}">${r.tone === 'ok' ? G.ok : r.tone === 'bad' ? G.bad : r.tone === 'running' ? G.wait : G.todo}
+                <div><strong>${r.label}</strong><span class="why">${r.why}</span></div>${r.action ?? ''}</li>`).join('')}</ol>
+              <div class="c-dock">${block}</div>
+              <div class="c-exp"><button class="c-exp__head" aria-expanded="${!!L.desc}" data-act="toggle:desc">${I(L.desc ? 'chevron' : 'chevronRight', 'sm')}Description</button>${L.desc ? `<div class="c-exp__body desc">${d.body}</div>` : ''}</div>
+              ${linksExp}
+            </div></div>`
+        }
+        return { prTileLabel: 'PR', tools: { active: 'pr', body }, overlay: dialogs(ctx) }
+      },
+      mount: wire,
+    },
+  ],
+})
+</script>
+</body>
+</html>
