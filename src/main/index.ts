@@ -5,6 +5,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
+import { discoverSshHosts } from './hosts/sshSuggestions'
 import { DevinAcpHost } from './agents/devin'
 import { PersonalChatService } from './agents/personalChats'
 import { ChatPromptService } from './agents/chatPrompts'
@@ -1047,7 +1048,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
       }, () => windows.getTrustedRenderers())
       const cleanupMemory = registerMemoryIpc(ipcMain, memoryProfile, () => windows.getTrustedRenderers(), snapshot => windows.sendToMain(MEMORY_CHANGED, snapshot))
-      const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state))
+      // An end-to-end run reads a stand-in SSH folder inside its own profile, never the machine's ~/.ssh.
+      const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state),
+        () => discoverSshHosts(e2eConfiguration ? { home: join(userDataPath, 'e2e-home') } : {}))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),

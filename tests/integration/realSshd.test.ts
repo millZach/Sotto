@@ -130,19 +130,20 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     await manager.start()
     const answered = new Set<string>()
     manager.subscribe(state => {
-      const prompt = state.hosts[0]?.prompt
-      if (!prompt || answered.has(prompt.id)) return
+      // Add host asks its questions before the host is saved; a saved host asks them on its row.
+      const asking = state.adding ?? state.hosts[0]
+      const prompt = asking?.prompt
+      if (!asking || !prompt || answered.has(prompt.id)) return
       answered.add(prompt.id); prompts.push(prompt)
-      void manager!.command({ type: 'ssh-answer', id: state.hosts[0]!.id, promptId: prompt.id, answer: prompt.kind === 'host-key' ? 'yes' : PASSPHRASE })
+      void manager!.command({ type: 'ssh-answer', id: asking.id, promptId: prompt.id, answer: prompt.kind === 'host-key' ? 'yes' : PASSPHRASE })
     })
     const remote = { id: randomUUID(), name: 'Real sshd', target: `${userInfo().username}@localhost`, identityFile: join(root, 'client_key'), installPath: install, dataDirectory: data }
     const row = () => manager!.get().hosts.find(host => host.id === remote.id)
     const diagnostics = () => `\nhost row: ${JSON.stringify(row())}\nsshd:\n${sshdLog}`
-    await manager.command({ type: 'save', host: remote })
-
-    // Connect: the host key and the key's passphrase are asked once each, through the real askpass
-    // helper, although four ssh processes (-G, launch, forward, pairing code) run.
-    await manager.command({ type: 'connect', id: remote.id })
+    // Add host: the host key and the key's passphrase are asked once each, through the real askpass
+    // helper, although four ssh processes (-G, launch, forward, pairing code) run, and the host is saved
+    // once it answers and pairs.
+    await manager.command({ type: 'add', host: remote })
     expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase'])
     expect(prompts[0]!.text).toContain(fingerprint)
