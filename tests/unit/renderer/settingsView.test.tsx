@@ -82,7 +82,7 @@ describe('SettingsView', () => {
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
-    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application']
+    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application', 'Git']
     for (const name of categories) {
       await selectCategory(name)
       expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
@@ -91,7 +91,7 @@ describe('SettingsView', () => {
       expect(screen.getByRole('tab', { name, exact: true })).toHaveAttribute('aria-selected', 'true')
       // The sidebar foot's room switch is a tablist of its own, so the count is scoped to the sections.
       expect(within(screen.getByRole('tablist', { name: 'Settings sections' })).getAllByRole('tab', { selected: true })).toHaveLength(1)
-      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(9)
+      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(10)
     }
     screen.getByRole('tab', { name: 'Application', exact: true }).focus()
     await user.keyboard('{Home}')
@@ -112,9 +112,9 @@ describe('SettingsView', () => {
     expect(screen.queryByRole('textbox', { name: 'Global shortcut' })).not.toBeInTheDocument()
     screen.getByRole('tab', { name: 'Transcription', exact: true }).focus()
     await user.keyboard('{End}')
-    expect(screen.getByRole('tab', { name: 'Application', exact: true })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'Git', exact: true })).toHaveFocus()
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('tab', { name: 'Appearance', exact: true })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'Application', exact: true })).toHaveFocus()
   })
 
   it('preserves invalid numeric drafts and their validation when returning to a category', async () => {
@@ -259,23 +259,34 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update })
     const rendered = render(<SettingsView {...props} />)
-    await selectCategory('Cleanup')
+    await selectCategory('Git')
     const style = screen.getByRole('combobox', { name: 'Commit and pull request style' })
     expect(style).toHaveValue('repository')
+    expect(style).toHaveAccessibleDescription(/the way each repository's recent commits and AGENTS.md do/u)
+    expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent('Let a thread name itself from its first exchange')
     expect(within(style).getAllByRole('option').map(option => option.textContent)).toEqual(['Repository conventions', 'Conventional Commits', 'Custom instructions'])
     expect(screen.queryByRole('textbox', { name: 'Custom instructions' })).toBeNull()
     await user.selectOptions(style, 'conventional')
     expect(update).toHaveBeenCalledWith({ gitWritingStyle: 'conventional' })
+    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitWritingStyle: 'conventional' }} />)
+    expect(style).toHaveAccessibleDescription(/starts with a type and scope/u)
+    expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent('feat(threads): name a thread from its first exchange')
     rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitWritingStyle: 'custom' }} />)
+    expect(style).toHaveAccessibleDescription(/they take precedence over the repository's style/u)
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
-    expect(instructions).toHaveAccessibleDescription(/with the repository's usual context; these take precedence over its style/u)
+    expect(instructions).toHaveAccessibleDescription('· up to 2,000 characters')
+    expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent(/Nothing written yet/u)
     await user.type(instructions, 'Subjects in the past tense.')
+    // The example follows the text as typed, and says it does not guess at the model's answer.
+    expect(screen.getByRole('group', { name: 'Example' })).toHaveTextContent(/An example before your instructions/u)
     // No leaving the field needed: the pause saves it.
     await waitFor(() => expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Subjects in the past tense.' }))
-    const templates = screen.getByRole('switch', { name: 'Follow pull request templates' })
-    expect(templates).toBeChecked()
-    await user.click(templates)
-    expect(update).toHaveBeenCalledWith({ followPullRequestTemplates: false })
+  })
+
+  it('says under the style when nothing will be drafted, because both Generated switches under Cleanup are off', async () => {
+    render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, commitMessages: false, pullRequestText: false } })} />)
+    await selectCategory('Git')
+    expect(screen.getByRole('combobox', { name: 'Commit and pull request style' })).toHaveAccessibleDescription(/Nothing is drafted while Generated commit messages and Generated pull request text are off under Cleanup/u)
   })
 
   it('keeps custom instructions typed just before the style changes away from Custom instructions', async () => {
@@ -283,7 +294,7 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })
     const rendered = render(<SettingsView {...props} />)
-    await selectCategory('Cleanup')
+    await selectCategory('Git')
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
     // Typed and, before the pause, the style switched away: the field goes, and its text is saved as it goes.
     fireEvent.change(instructions, { target: { value: 'Mention the issue number.' } })
@@ -295,16 +306,41 @@ describe('SettingsView', () => {
     expect(update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object))).toHaveLength(1)
   })
 
-  it('saves each Git and diff choice under Application, with everything that acts on its own off to start', async () => {
+  it('groups every Git setting under the moment it acts, in one Git section', async () => {
+    render(<SettingsView {...baseProps()} />)
+    await selectCategory('Git')
+    const panel = screen.getByRole('tabpanel', { name: 'Git', exact: true })
+    const groups = within(panel).getAllByRole('region')
+    expect(groups.map(group => within(group).getByRole('heading', { level: 3 }).textContent)).toEqual(['When a thread commits', 'When a pull request is made or merged', 'When you read Changes', 'In the background'])
+    // The controls of each group in the order the eye meets them.
+    const names = (group: HTMLElement): string[] => [...group.querySelectorAll<HTMLElement>('select, [role="switch"], [role="radiogroup"]')]
+      .map(control => control.getAttribute('aria-label') ?? (control as HTMLSelectElement).labels?.[0]?.textContent ?? '')
+    expect(names(groups[0]!)).toEqual(['Commit and pull request style'])
+    expect(names(groups[1]!)).toEqual(['Follow pull request templates', 'Default merge method', 'Auto-settle merged threads'])
+    expect(names(groups[2]!)).toEqual(['Diff layout', 'Hide whitespace changes', 'Default diff file state', 'Proactive panels'])
+    expect(names(groups[3]!)).toEqual(['Git fetch interval', 'Automatically pull'])
+    // Moved, not copied: Application and Cleanup keep none of them.
+    for (const section of ['Application', 'Cleanup']) {
+      await selectCategory(section)
+      const other = screen.getByRole('tabpanel', { name: section, exact: true })
+      for (const name of ['Git fetch interval', 'Default merge method', 'Commit and pull request style']) expect(within(other).queryByRole('combobox', { name })).toBeNull()
+      for (const name of ['Automatically pull', 'Auto-settle merged threads', 'Proactive panels', 'Follow pull request templates', 'Hide whitespace changes']) expect(within(other).queryByRole('switch', { name })).toBeNull()
+    }
+  })
+
+  it('saves each Git choice, with everything that acts on its own off to start and each description saying what the value does', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    const props = baseProps({ onUpdateSettings: update })
+    const rendered = render(<SettingsView {...props} />)
+    await selectCategory('Git')
     for (const name of ['Automatically pull', 'Auto-settle merged threads', 'Proactive panels']) expect(screen.getByRole('switch', { name })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Automatically pull' })).toHaveAccessibleDescription(/leaves the pull to you/u)
     await user.click(screen.getByRole('switch', { name: 'Automatically pull' }))
     expect(update).toHaveBeenCalledWith({ gitAutoPull: true })
     const merge = screen.getByRole('combobox', { name: 'Default merge method' })
     expect(within(merge).getAllByRole('option').map(option => option.textContent)).toEqual(['Last selected', 'Merge', 'Squash and merge', 'Rebase and merge'])
+    expect(merge).toHaveAccessibleDescription('A merge starts on the method you used last, Merge the first time.')
     await user.selectOptions(merge, 'squash')
     expect(update).toHaveBeenCalledWith({ defaultMergeMethod: 'squash' })
     await user.click(within(screen.getByRole('radiogroup', { name: 'Diff layout' })).getByRole('radio', { name: 'Split' }))
@@ -315,9 +351,25 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ diffFileState: 'expanded' })
     await user.click(screen.getByRole('switch', { name: 'Auto-settle merged threads' }))
     expect(update).toHaveBeenCalledWith({ autoSettleMergedThreads: true })
-    expect(screen.getByRole('switch', { name: 'Auto-settle merged threads' })).toHaveAccessibleDescription(/gh once an hour/u)
     await user.click(screen.getByRole('switch', { name: 'Proactive panels' }))
     expect(update).toHaveBeenCalledWith({ proactivePanels: true })
+    await user.click(screen.getByRole('switch', { name: 'Follow pull request templates' }))
+    expect(update).toHaveBeenCalledWith({ followPullRequestTemplates: false })
+    const fetch = screen.getByRole('combobox', { name: 'Git fetch interval' })
+    expect(fetch).toHaveAccessibleDescription(/Sotto asks origin every 30 seconds/u)
+    await user.selectOptions(fetch, '0')
+    expect(update).toHaveBeenCalledWith({ gitFetchIntervalSeconds: 0 })
+    // Each description follows the value it describes.
+    rendered.rerender(<SettingsView {...props} settings={{ ...props.settings, gitAutoPull: true, defaultMergeMethod: 'squash', diffLayout: 'split', diffHideWhitespace: false, diffFileState: 'expanded', autoSettleMergedThreads: true, proactivePanels: true, followPullRequestTemplates: false, gitFetchIntervalSeconds: 60 }} />)
+    expect(screen.getByRole('switch', { name: 'Automatically pull' })).toHaveAccessibleDescription(/Fast-forward only/u)
+    expect(merge).toHaveAccessibleDescription('A merge starts on Squash and merge.')
+    expect(screen.getByRole('radiogroup', { name: 'Diff layout' }).closest('.tt-field')).toHaveTextContent(/old on the left and new on the right/u)
+    expect(screen.getByRole('switch', { name: 'Hide whitespace changes' })).toHaveAccessibleDescription('Changes shows every edit, spacing included.')
+    expect(screen.getByRole('radiogroup', { name: 'Default diff file state' }).closest('.tt-field')).toHaveTextContent('Every file in Changes opens expanded.')
+    expect(screen.getByRole('switch', { name: 'Auto-settle merged threads' })).toHaveAccessibleDescription(/asks GitHub through gh once an hour/u)
+    expect(screen.getByRole('switch', { name: 'Proactive panels' })).toHaveAccessibleDescription(/at least 3 files or 50 lines/u)
+    expect(screen.getByRole('switch', { name: 'Follow pull request templates' })).toHaveAccessibleDescription(/skips the template/u)
+    expect(fetch).toHaveAccessibleDescription(/Sotto asks origin every minute/u)
   })
 
   it('resynchronizes numeric drafts from authoritative settings', async () => {
@@ -884,7 +936,7 @@ describe('SettingsView', () => {
     await selectCategory('Agents')
     const nav = screen.getByRole('tablist', { name: 'Settings sections' })
     expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application',
+      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application', 'Git',
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()

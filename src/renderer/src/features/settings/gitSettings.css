@@ -1,0 +1,18 @@
+/* Settings → Git: the section's rows grouped under the moment each setting acts, with the writing example. */
+.settings-view .git-settings__group { margin-top: 26px; }
+.settings-view .git-settings__group:first-child { margin-top: 22px; }
+.settings-view .git-settings__group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.settings-view .git-settings__group > h3 > svg { flex: none; color: var(--tt-text-muted); }
+.settings-view .git-settings__group > .settings-rows { border-top: 1px solid var(--tt-hairline); }
+
+.settings-view .git-settings__custom { margin-top: 14px; }
+.settings-view .git-settings__custom-label { margin: 0 0 6px; color: var(--tt-text-muted); font-size: 13px; }
+.settings-view .git-settings__custom-label > label { color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.settings-view .git-settings__custom > textarea.tt-input { display: block; width: 100%; min-height: 104px; padding: 10px 12px; resize: vertical; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 14px; line-height: 1.5; }
+.settings-view .git-settings__custom > textarea.tt-input::placeholder { color: var(--tt-text-muted); opacity: 1; }
+
+.settings-view .git-settings__example { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-sunken); }
+.settings-view .git-settings__example dl { margin: 0; }
+.settings-view .git-settings__example dt { color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.settings-view .git-settings__example dd { margin: 2px 0 8px; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.settings-view .git-settings__example p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
