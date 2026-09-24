@@ -1150,8 +1150,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy.png",
       "width": 791,
-      "height": 2056,
-      "sha256": "b20664dcbde0edbb24dde00bc503cb43fdf31ccd4ecc1554abf58d7bca371378"
+      "height": 2075,
+      "sha256": "f7b980cb975c20684842b5420ccfd66006e1e53e2f61acc229f512ccc796cc01"
     },
     {
       "theme": "light",
@@ -1164,8 +1164,8 @@
       "state": "application-privacy",
       "relativePath": "artifacts/design/app-review/baseline/settings-application-privacy-light.png",
       "width": 791,
-      "height": 2056,
-      "sha256": "6d87108fd36cf5af650954de535a38cc038b93d78938749fe43a9864b0a004c7"
+      "height": 2075,
+      "sha256": "1b6f4c5f582f4ac50804fd92290659f8fe0be106c1f88af44f28a06ba1a86f08"
     },
     {
       "theme": "dark",
@@ -1206,8 +1206,8 @@
       "state": "cleanup",
       "relativePath": "artifacts/design/app-review/baseline/settings-cleanup.png",
       "width": 791,
-      "height": 1030,
-      "sha256": "78398a5ab171e876a27e77fe677a0918ae3ac22b54c77b303cad3f00f90a3108"
+      "height": 1011,
+      "sha256": "5b378a00b9783b9f48480512c89ebe8d3e28a8820235420a00a140112cf34e7b"
     },
     {
       "theme": "dark",

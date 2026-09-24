@@ -369,8 +369,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
   pullRequestText: true,
-  // On by default for the same reason: a thread whose provider writes nothing
-  // simply opens the commit form empty.
+  // On by default: when a thread's provider writes nothing, the Git action commits
+  // under the stand-in subject "Update project files" rather than waiting.
   commitMessages: true,
   streamingAsr: true,
   // On by default: an install that never opens Settings still learns about a
