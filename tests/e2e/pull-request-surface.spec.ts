@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
-// The Pull request surface (#269) against a real repository, an owned bare remote and a scripted gh
-// (tests/fixtures/fakeGh.mjs): Checkout pull request from the branch picker, the badge opening the surface in Tools,
-// Ready for review, the merge method remembered, the merge only after its confirmation, and the linked list.
+// The Pull request surface (#269), the merge checklist, against a real repository, an owned bare remote and a scripted
+// gh (tests/fixtures/fakeGh.mjs): nothing to merge yet, Checkout pull request from the branch picker, the badge opening
+// the checklist in Tools, Ready for review as a line's own press, an approval read on Refresh, the merge method chosen
+// from the keyboard, the merge only after its confirmation, and the linked pull requests folded below.
 const SHOTS = resolve('artifacts/pull-request-surface')
 const git = (cwd: string, ...args: string[]): string => {
   for (let attempt = 0; ; attempt += 1) {
@@ -31,9 +32,46 @@ async function capture(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled' })
 }
 const pane = (page: Page) => page.locator('section.thread-pane[data-focused]')
-interface GhState { pulls: Array<{ number: number; state: string; isDraft?: boolean; mergedWith?: string }>; calls: string[] }
+interface GhState { pulls: Array<{ number: number; state: string; isDraft?: boolean; mergedWith?: string; reviewDecision?: string; reviews?: unknown[] }>; calls: string[] }
+async function theme(page: Page, appearance: 'light' | 'dark'): Promise<void> {
+  await page.emulateMedia({ colorScheme: appearance })
+  await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+}
+/** The checklist's quieter text against the panel it sits on, and the disabled Merge against its own fill: each ratio, by what it is. */
+async function contrasts(page: Page): Promise<Record<string, number>> {
+  return page.locator('.pr-surface').evaluate(surface => {
+    const context = document.createElement('canvas').getContext('2d')!
+    const rgb = (color: string, under: string): number[] => {
+      context.clearRect(0, 0, 1, 1)
+      for (const fill of [under, color]) { context.fillStyle = fill; context.fillRect(0, 0, 1, 1) }
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+    }
+    const luminance = (channels: number[]): number => {
+      const [r, g, b] = channels.map(value => { const channel = value / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4 })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const panel = getComputedStyle(surface.querySelector('.pr-surface__dock')!).backgroundColor
+    const ratio = (text: string, under: string): number => {
+      const a = luminance(rgb(text, under)), b = luminance(rgb(under, panel))
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    }
+    const measured: Record<string, number> = {}
+    for (const [name, selector] of [['count', '.pr-surface__heading small'], ['reason', '.pr-surface__why'], ['hint', '.pr-surface__hint'], ['tag', '.pr-surface__tag'], ['line', '.pr-surface__line strong']] as const) {
+      const element = surface.querySelector(selector)
+      if (element) measured[name] = ratio(getComputedStyle(element).color, panel)
+    }
+    const merge = surface.querySelector('.pr-surface__merge-go')
+    if (merge) { const style = getComputedStyle(merge); measured.merge = ratio(style.color, style.backgroundColor) }
+    return measured
+  })
+}
+async function expectReadable(page: Page): Promise<void> {
+  const measured = await contrasts(page)
+  for (const [name, value] of Object.entries(measured)) expect(value, name).toBeGreaterThanOrEqual(4.5)
+}
 
-test('a pull request is checked out from the branch picker, opened from its badge, made ready and merged only after its confirmation', async () => {
+test('a pull request is checked out from the branch picker, opened from its badge, and merged from its checklist only after its confirmation', async () => {
   test.setTimeout(240_000)
   const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-pull-request-'))
   const repository = join(directory, 'project'), remote = join(directory, 'owned-remote.git'), author = join(directory, 'author')
@@ -83,9 +121,21 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await newThread.getByRole('button', { name: 'Create thread', exact: true }).click()
     await expect(newThread).toHaveCount(0)
 
-    // The branch picker: a pull request number offers Checkout pull request first, and Enter opens it.
+    // Before the checkout the thread is on main: nothing to merge yet, and Create PR says why it waits, as the Git action does.
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const picker = pane(page).getByRole('combobox', { name: 'Choose branch' })
     await expect(picker).toHaveText(/main/u, { timeout: 20_000 })
+    const toolsToggle = page.getByRole('button', { name: 'Tools', exact: true })
+    await toolsToggle.click()
+    await panel.getByRole('tab', { name: 'Pull request', exact: true }).click()
+    await expect(panel.getByRole('heading', { name: 'Nothing to merge yet' })).toBeVisible({ timeout: 30_000 })
+    await expect(panel.getByRole('button', { name: 'Create PR', exact: true })).toHaveAttribute('aria-disabled', 'true')
+    await expect(panel.getByRole('button', { name: 'Link pull request', exact: true })).toBeVisible()
+    await capture(page, 'none-1280-dark')
+    await toolsToggle.click()
+    await expect(panel).toHaveCount(0)
+
+    // The branch picker: a pull request number offers Checkout pull request first, and Enter opens it.
     await picker.click()
     await page.getByRole('textbox', { name: 'Search refs' }).fill('#74')
     await expect(page.getByRole('option', { name: /Checkout pull request/u })).toBeVisible()
@@ -99,67 +149,121 @@ test('a pull request is checked out from the branch picker, opened from its badg
     expect(git(repository, 'branch', '--show-current')).toBe('feat/greeting')
     await expect(picker).toBeFocused()
 
-    // The badge under the composer opens the surface in Tools.
+    // The badge under the composer opens the checklist in Tools.
     const badge = pane(page).getByRole('button', { name: 'Open PR #74 - Open: Greet the reviewer in Tools' })
     await badge.click({ timeout: 30_000 })
-    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await expect(panel.getByRole('tab', { name: 'Pull request', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await expect(panel.getByRole('heading', { name: 'Greet the reviewer' })).toBeVisible({ timeout: 30_000 })
-    await expect(panel.getByText('Says hello to whoever reviews this.', { exact: false })).toBeVisible()
-    await expect(panel.getByRole('list', { name: 'Checks' })).toContainText('CI / Owned build')
+    await expect(panel.getByRole('heading', { name: '#74 Greet the reviewer' })).toBeVisible({ timeout: 30_000 })
+    const checklist = panel.getByRole('list', { name: 'Merge checklist' })
+    const merge = panel.getByRole('button', { name: 'Merge #74', exact: true })
+    await expect(panel.getByRole('heading', { name: /^Before merging/u })).toContainText('3 of 5 done')
+    await expect(checklist).toContainText('CI / Owned build passed')
+    await expect(checklist).toContainText('Reviewers wait until it is ready')
+    await expect(checklist).toContainText('Still a draft')
     await expect(panel.getByText('Draft', { exact: true })).toBeVisible()
+    await expect(merge).toHaveAttribute('aria-disabled', 'true')
+    await panel.getByRole('button', { name: 'Description', exact: true }).click()
+    await expect(panel.getByText('Says hello to whoever reviews this.', { exact: false })).toBeVisible()
     await capture(page, 'draft-1280-dark')
+    // Text meets 4.5:1 on the panel in both themes, the disabled Merge included.
+    await expectReadable(page)
+    await theme(page, 'light')
+    await expectReadable(page)
+    await capture(page, 'draft-1280-light')
+    await theme(page, 'dark')
 
     // Someone closes it on GitHub while the surface still shows it open: GitHub's refusal reaches the surface in the
     // host's words, the surface reads it again, and Reopen puts it back.
     const closedElsewhere = JSON.parse(await readFile(ghState, 'utf8')) as GhState
     closedElsewhere.pulls[0]!.state = 'CLOSED'
     await writeFile(ghState, JSON.stringify(closedElsewhere))
-    await panel.getByRole('button', { name: 'Ready for review', exact: true }).click()
+    await checklist.getByRole('button', { name: 'Ready for review', exact: true }).click()
     await expect(panel.getByRole('alert')).toHaveText('Could not mark this ready for review. GraphQL: Pull request is closed (markPullRequestReadyForReview)', { timeout: 30_000 })
-    await expect(panel.getByText('Closed without merging.', { exact: true })).toBeVisible()
-    await panel.getByRole('button', { name: 'Reopen pull request', exact: true }).click()
+    await expect(panel.getByText('Closed without merging', { exact: true })).toBeVisible()
+    await panel.getByRole('button', { name: 'Reopen', exact: true }).click()
     await expect(panel.getByText('Pull request reopened.', { exact: true })).toBeVisible({ timeout: 30_000 })
 
-    // Ready for review needs no confirmation; the merge does, in the method chosen, which is remembered.
-    await panel.getByRole('button', { name: 'Ready for review', exact: true }).click()
+    // Ready for review is the draft line's own press and needs no confirmation. The review still holds the merge back.
+    await checklist.getByRole('button', { name: 'Ready for review', exact: true }).click()
     await expect(panel.getByText('Marked ready for review.', { exact: true })).toBeVisible({ timeout: 30_000 })
-    const method = panel.getByRole('combobox', { name: 'Merge method' })
-    await expect(method).toBeVisible()
-    await method.selectOption('squash')
-    await panel.getByRole('button', { name: 'Squash and merge', exact: true }).click()
+    await expect(checklist).toContainText('Nobody has reviewed it yet')
+    await expect(merge).toHaveAttribute('aria-disabled', 'true')
+    await expect(panel.getByText('1 line left before this can merge.', { exact: false })).toBeVisible()
+    await merge.click({ force: true })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // A reviewer approves on GitHub; Refresh reads it, and the last line is done.
+    const approved = JSON.parse(await readFile(ghState, 'utf8')) as GhState
+    Object.assign(approved.pulls[0]!, { reviewDecision: 'APPROVED', reviews: [{ state: 'APPROVED', url: `${url}#pullrequestreview-1`, author: { login: 'mira' } }] })
+    await writeFile(ghState, JSON.stringify(approved))
+    await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
+    await expect(checklist).toContainText('Approved by mira', { timeout: 30_000 })
+    await expect(panel.getByRole('heading', { name: /^Ready to merge/u })).toContainText('5 of 5 done')
+    await expect(merge).not.toHaveAttribute('aria-disabled', 'true')
+
+    // The method beside Merge, from the keyboard: the menu opens on the method in use, and the choice is remembered.
+    await panel.getByRole('button', { name: 'Merge method: Merge', exact: true }).click()
+    const methods = panel.getByRole('menu', { name: 'Merge method' })
+    await expect(methods.getByRole('menuitemradio', { name: 'Merge', exact: true })).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(methods).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Merge method: Squash and merge', exact: true })).toBeFocused()
+    await expect(panel.getByText('One commit on main.', { exact: true })).toBeVisible()
+
+    // The merge asks first, in the method chosen.
+    await merge.click()
     const confirm = page.getByRole('dialog', { name: 'Merge pull request?' })
-    await expect(confirm).toContainText('This merges #74 using squash and merge.')
+    await expect(confirm).toContainText('This merges #74 into main using squash and merge.')
     await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(confirm).toHaveCount(0)
     expect((JSON.parse(await readFile(ghState, 'utf8')) as GhState).calls.some(call => call.startsWith('pr merge'))).toBe(false)
-    await page.emulateMedia({ colorScheme: 'light' })
-    await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
+    await expectReadable(page)
+    await theme(page, 'light')
+    await expectReadable(page)
     await capture(page, 'ready-1280-light')
-    await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
-    await panel.getByRole('button', { name: 'Squash and merge', exact: true }).click()
+    await resize(launched, 1600, 1000)
+    await capture(page, 'ready-1600-light')
+    await theme(page, 'dark')
+    await capture(page, 'ready-1600-dark')
+
+    // The minimum window before the merge: the method menu opens inside the panel.
+    await resize(launched, 820, 560)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await panel.getByRole('button', { name: 'Merge method: Squash and merge', exact: true }).click()
+    const menuBox = await methods.boundingBox(), panelBox = await panel.boundingBox()
+    expect(menuBox && panelBox && menuBox.x >= panelBox.x && menuBox.x + menuBox.width <= panelBox.x + panelBox.width && menuBox.y >= 0).toBe(true)
+    await capture(page, 'method-820-dark')
+    await page.keyboard.press('Escape')
+    await expect(methods).toHaveCount(0)
+    await resize(launched, 1280, 800)
+
+    await merge.click()
     await confirm.getByRole('button', { name: 'Squash and merge', exact: true }).click()
     await expect(panel.getByText('Pull request merged.', { exact: true })).toBeVisible({ timeout: 30_000 })
-    await expect(panel.getByText('Merged.', { exact: true })).toBeVisible()
+    await expect(panel.locator('.pr-surface__finished')).toContainText('Merged into main')
+    await expect(panel.getByRole('heading', { name: /^Merge checklist/u })).toBeVisible()
     const after = JSON.parse(await readFile(ghState, 'utf8')) as GhState
     expect(after.pulls[0]).toMatchObject({ number: 74, state: 'MERGED', isDraft: false, mergedWith: 'squash' })
     expect(after.calls.filter(call => call.startsWith('pr merge'))).toEqual([`pr merge ${url} --squash`])
 
-    // Linked pull requests: checked out from the branch picker, and the way back.
-    await panel.getByRole('button', { name: /Linked pull requests/u }).click()
-    await expect(panel.getByRole('list', { name: 'Linked pull requests' })).toContainText('Checked out from the branch picker')
-    await expect(panel.getByRole('button', { name: 'Back', exact: true })).toBeFocused()
+    // Linked pull requests fold below, from the keyboard: the checkout linked it.
+    const linked = panel.getByRole('button', { name: /^Linked pull requests/u })
+    await linked.focus()
     await page.keyboard.press('Enter')
-    await expect(panel.getByRole('button', { name: /Linked pull requests/u })).toBeFocused()
+    await expect(linked).toHaveAttribute('aria-expanded', 'true')
+    await expect(panel.getByRole('list', { name: 'Linked pull requests' })).toContainText('Checked out from the branch picker')
 
     // The minimum window: nothing overflows, the surface keeps its controls.
     await resize(launched, 820, 560)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await expect(panel.getByRole('heading', { name: 'Greet the reviewer' })).toBeVisible()
+    await expect(panel.getByRole('heading', { name: '#74 Greet the reviewer' })).toBeVisible()
     expect(await panel.evaluate(element => [...element.querySelectorAll('.pr-surface button')]
       .filter(control => control.scrollWidth > control.clientWidth + 1).map(control => control.getAttribute('aria-label') ?? control.textContent))).toEqual([])
     await capture(page, 'merged-820-dark')
+    await theme(page, 'light')
+    await capture(page, 'merged-820-light')
     expect(errors).toEqual([])
   } finally {
     if (launched) await closeSotto(launched)
