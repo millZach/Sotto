@@ -1206,8 +1206,8 @@
       "state": "cleanup",
       "relativePath": "artifacts/design/app-review/baseline/settings-cleanup.png",
       "width": 791,
-      "height": 879,
-      "sha256": "1cc9740f5d676fb3e4427828e8ad83406e2af879b08545c3c44a0c8180e319b9"
+      "height": 954,
+      "sha256": "073beb890a12a2789df554e24c219c5c308a3623f6eb979f229dc8b88d12f6d9"
     },
     {
       "theme": "dark",
