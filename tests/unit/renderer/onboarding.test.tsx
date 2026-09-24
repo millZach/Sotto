@@ -95,6 +95,25 @@ describe('first-run onboarding', () => {
     expect(onUpdateSettings).toHaveBeenCalledWith({ microphoneId: 'mic-c922' })
   })
 
+  it('keeps the microphone test wave running while the stream is open, even in silence', async () => {
+    const user = userEvent.setup()
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="ready"
+        microphoneLevel={0}
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    expect(screen.getByRole('button', { name: /retest microphone/i })).toBeVisible()
+    expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
+  })
+
   it('requests microphone access, displays live level, and provides Windows recovery guidance', async () => {
     const user = userEvent.setup()
     const request = vi.fn()
