@@ -627,6 +627,48 @@ describe('durable project/thread organization', () => {
     expect(git()?.behind).toBe(0)
   })
 
+  it('refuses a Git action on the same folder while an automatic pull runs, rather than racing it', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'main', baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: 'main' }))
+    let behind = 1
+    const status = (): GitStatus => ({ isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' })
+    const source = { read: vi.fn(async () => status()), invalidate: vi.fn() }
+    // The real GitActions, whose one-action-per-folder rule is what keeps a press from racing the pull; only Git is scripted.
+    const pulling = deferred(), started = deferred()
+    let head = 'aaa'
+    const run = vi.fn(async (_cwd: string, _command: 'git' | 'gh', args: readonly string[]) => {
+      if (args[0] === 'rev-parse') return `${head}\n`
+      if (args[0] === 'pull') { started.release(); await pulling.promise; head = 'bbb'; behind = 0; return '' }
+      return ''
+    })
+    f.host.setGitStatus(source, { pollIntervalMs: () => 0, autoPull: () => true })
+    f.host.setGitActions(new GitActions({ status: source, run, writeCommitMessage: async () => null, writePullRequestText: async () => null }))
+    for (const id of ['local', 'second']) {
+      await f.host.execute({ type: 'create-thread', commandId: `create-${id}`, threadId: id, projectId: project.id, title: id, modelId: model.id })
+      await f.host.execute(send(id))
+    }
+    for (const session of f.adapters.codex.state.threads) session.status = 'idle'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.filter(thread => ['local', 'second'].includes(thread.id)).every(thread => thread.status === 'idle')).toBe(true))
+    const refresh = f.host.updateThreadWorktree('local', false)
+    await started.promise
+    // Mid-pull, the other thread in the same folder presses Commit & push: refused, not run beside the pull.
+    await f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toMatchObject({ status: 'failed', error: 'Git action in progress.' })
+    expect(run.mock.calls.filter(call => call[2][0] === 'commit')).toHaveLength(0)
+    pulling.release()
+    await refresh
+    // The pull shows only as the status changing.
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git?.behind).toBe(0)
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.gitAction).toBeUndefined()
+  })
+
   it('initializes Git in a plain project folder and leaves the record with the new repository\'s status', async () => {
     const f = await fixture()
     await local(f)
