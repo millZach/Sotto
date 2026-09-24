@@ -221,16 +221,16 @@ describe('review comments in Changes', () => {
     await user.click(screen.getByRole('button', { name: 'Comment' }))
     // src/app.ts is committed; only the other file is left.
     git.change(null, [file(OTHER, 'src/other.ts')])
-    const elsewhere = await screen.findByRole('region', { name: 'Comments on files not in this comparison' })
+    const elsewhere = await screen.findByRole('region', { name: 'Comments on lines this comparison does not show' })
     expect(within(elsewhere).getByText('Still wanted')).toBeInTheDocument()
     expect(within(elsewhere).getByText('src/app.ts L4')).toBeInTheDocument()
     // Nothing left to compare: the list still shows under the empty comparison.
     git.change(null, [])
     await screen.findByText('The working copy matches HEAD.')
-    const still = screen.getByRole('region', { name: 'Comments on files not in this comparison' })
+    const still = screen.getByRole('region', { name: 'Comments on lines this comparison does not show' })
     await user.click(within(still).getByRole('button', { name: 'Delete comment on src/app.ts L4' }))
     expect(comments.list(THREAD)).toEqual([])
-    expect(screen.queryByRole('region', { name: 'Comments on files not in this comparison' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Comments on lines this comparison does not show' })).toBeNull()
   })
 
   it('shows a new pick while a worded draft is open, its Comment waiting on that draft', async () => {
@@ -309,12 +309,12 @@ describe('review comments in Changes', () => {
     await screen.findByText('export const ready = true')
     comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'a', oldLine: null, newLine: 1 }], text: 'First' })
     comments.add(THREAD, { path: 'src/gone.ts', lines: [{ kind: 'add', text: 'b', oldLine: null, newLine: 2 }], text: 'Second' })
-    const list = await screen.findByRole('region', { name: 'Comments on files not in this comparison' })
+    const list = await screen.findByRole('region', { name: 'Comments on lines this comparison does not show' })
     await user.click(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L1' }))
     expect(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L2' })).toHaveFocus()
     // The last one empties the list: focus goes to the last file's head.
     await user.click(within(list).getByRole('button', { name: 'Delete comment on src/gone.ts L2' }))
-    expect(screen.queryByRole('region', { name: 'Comments on files not in this comparison' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Comments on lines this comparison does not show' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Collapse src/other.ts' })).toHaveFocus()
     // With no files to compare, it goes to Refresh diff.
     git.change(null, [])
@@ -335,6 +335,32 @@ describe('review comments in Changes', () => {
     expect(pill).toHaveAccessibleDescription('A message carries at most 20 comments. Send it or delete one first.')
     await user.click(pill)
     expect(comments.draft(THREAD)).toBeNull()
+  })
+
+  it('lists comments whose file shows no lines, and comments while the comparison cannot be read', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
+    const { comments } = setup(git)
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-kind="add"]'))
+    await user.click(screen.getByRole('button', { name: 'Comment on app.ts L4' }))
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L4' }), 'Mode only now')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    // src/app.ts is still in the comparison, but only its mode changed: no lines to sit under.
+    git.change('diff --git a/src/app.ts b/src/app.ts\nold mode 100644\nnew mode 100755\n')
+    const list = await screen.findByRole('region', { name: 'Comments on lines this comparison does not show' })
+    expect(within(list).getByText('Mode only now')).toBeInTheDocument()
+    // Only there: the file's own rows are its mode lines, with no marker under them.
+    expect(screen.getAllByText('Mode only now')).toHaveLength(1)
+    expect(screen.getByRole('group', { name: 'src/app.ts' })).toHaveTextContent('new mode 100755')
+    // The comparison fails to read: the comment is still in sight, with Delete comment.
+    vi.mocked(git.bridge.review).mockResolvedValue({ ok: false, error: { code: 'unavailable', message: 'Git could not compare.' } })
+    await user.click(screen.getByRole('button', { name: 'Refresh diff' }))
+    await screen.findByText('Git could not compare.')
+    const still = screen.getByRole('region', { name: 'Comments on lines this comparison does not show' })
+    await user.click(within(still).getByRole('button', { name: 'Delete comment on src/app.ts L4' }))
+    expect(comments.list(THREAD)).toEqual([])
+    expect(screen.getByRole('button', { name: 'Refresh diff' })).toHaveFocus()
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {

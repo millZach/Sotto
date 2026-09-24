@@ -4,7 +4,7 @@ import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges
 import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
 import { Button } from '../components/Button'
-import { diffRows, fileHasLine, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
+import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
@@ -127,8 +127,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
       </div>
     </div>
     {reviewState?.status === 'error'
-      ? <div className="files-problem" role="status"><strong>{reviewState.error.message || 'This comparison could not be read.'}</strong>
+      ? <><div className="files-problem" role="status"><strong>{reviewState.error.message || 'This comparison could not be read.'}</strong>
         <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button></div>
+        <ElsewhereComments threadId={threadId} files={NO_FILES} store={comments} /></>
       : !review ? <p className="files-preview__loading" role="status">{SCOPE_LOADING[changes.scope.kind]}</p>
         : review.notice ? <><div className="files-problem" role="status"><strong>{review.notice}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
           : files.length === 0 ? <><div className="files-problem" role="status"><strong>{emptyWords(changes.scope, review, view)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
@@ -298,15 +299,23 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
   </div>
 }
 
+const NO_FILES: readonly GitReviewFile[] = []
+
+/** Whether Changes draws lines of this file a comment can sit under: text with at least one added, removed or context line. */
+function drawsLines(file: GitReviewFile): boolean {
+  return file.content.kind === 'text' && fileLines(file.content.patch).some(line => reviewLine(line) !== null)
+}
+
 /**
- * Comments on files this comparison does not show as text: a file committed since, a turn that did not touch it,
- * another scope. They still go with the next message, so they stay in sight here, with Delete comment, until then.
- * A draft whose lines are not drawn is here too, with its words, so it can always be finished or cancelled.
+ * Comments on lines this comparison does not show: a file committed since, a turn that did not touch it, another
+ * scope, a file whose only change is its mode or name, or a comparison that could not be read. They still go with
+ * the next message, so they stay in sight here, with Delete comment, until then. A draft whose lines are not drawn
+ * is here too, with its words, so it can always be finished or cancelled.
  */
 function ElsewhereComments({ threadId, files, store }: { readonly threadId: string; readonly files: readonly GitReviewFile[]; readonly store: ReviewCommentStore }): ReactNode {
   const comments = useReviewComments(store, threadId)
   const draft = useReviewDraft(store, threadId)
-  const shown = new Set(files.filter(file => file.content.kind === 'text').map(file => file.path))
+  const shown = new Set(files.filter(drawsLines).map(file => file.path))
   const elsewhere = comments.filter(comment => !shown.has(comment.path))
   const strayDraft = draft !== null && !shown.has(draft.path) ? draft : null
   const section = useRef<HTMLElement>(null)
@@ -325,7 +334,7 @@ function ElsewhereComments({ threadId, files, store }: { readonly threadId: stri
     ;(heads?.[heads.length - 1] ?? surface?.querySelector<HTMLElement>('button[aria-label="Refresh diff"]'))?.focus()
   }
   return <section ref={section} className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
-    <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on files not in this comparison</h3>
+    <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on lines this comparison does not show</h3>
     {strayDraft ? <CommentDraft draft={strayDraft} full={store.full(threadId)} focus={NO_FOCUS} standalone
       onText={text => store.editDraft(threadId, text)} onCancel={() => { handOff(null); store.closeDraft(threadId) }}
       onAdd={() => { if (store.addDraft(threadId)) requestAnimationFrame(() => [...section.current?.querySelectorAll<HTMLElement>('.changes-comment__delete') ?? []].at(-1)?.focus()) }} /> : null}
@@ -416,6 +425,8 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   // until it is sent or deleted. Every line of the file counts, not only the ones drawn.
   const markers = useMemo(() => {
     const map = new Map<string, { readonly comment: ReviewComment; readonly place: MarkerPlace }[]>()
+    // A file with no line a comment can sit under (a mode change alone) leaves its comments to the list after the files.
+    if (selectable.length === 0) return map
     const end = rows.at(-1)?.key
     for (const comment of comments) {
       const key = rowShowing(shown, rows, comment.lines.at(-1))?.key
@@ -424,9 +435,9 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
       if (at !== undefined) map.set(at, [...map.get(at) ?? [], { comment, place }])
     }
     return map
-  }, [comments, lines, rows, shown])
+  }, [comments, lines, rows, selectable, shown])
   // An open draft whose lines have moved on keeps its words at the end of the file rather than vanishing.
-  const draftAnchor = draft ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
+  const draftAnchor = draft && selectable.length > 0 ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
 
   if (file.content.kind !== 'text') {
     const title = file.content.kind === 'binary' ? 'Binary file: no text diff.' : file.content.kind === 'too-large' ? 'Too large to show as a diff.' : 'No diff is available for this file.'
