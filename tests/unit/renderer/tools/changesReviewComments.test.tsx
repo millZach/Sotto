@@ -178,7 +178,7 @@ describe('review comments in Changes', () => {
     await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!)
     await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!.querySelectorAll('.changes-line__number')[1]!)
     const draft = screen.getByRole('textbox', { name: 'Comment on app.ts L6' })
-    expect(draft).toHaveFocus()
+    await waitFor(() => expect(draft).toHaveFocus())
     expect(draft).toHaveValue('Keep writing')
     // The user leaves for somewhere else; a diff poll re-renders the draft's file; focus stays where the user put it.
     const elsewhere = screen.getByRole('button', { name: 'Refresh diff' })
@@ -256,6 +256,45 @@ describe('review comments in Changes', () => {
     expect(row('[data-new-line="3"]')).toHaveAttribute('aria-selected', 'true')
     expect(row('[data-new-line="6"]')).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Comment on app.ts L3' })).toBeDisabled()
+  })
+
+  it('keeps a worded draft reachable when its file leaves the comparison, so Comment is never stuck', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
+    const { comments } = setup(git)
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Unfinished')
+    // src/app.ts is committed away; the draft is listed after the files with its words.
+    git.change(null, [file(OTHER, 'src/other.ts')])
+    const draft = await screen.findByRole('textbox', { name: 'Comment on src/app.ts L6' })
+    expect(draft).toHaveValue('Unfinished')
+    expect(draft.closest('.changes-elsewhere')).not.toBeNull()
+    // A line number in the other file takes the user to it rather than doing nothing.
+    const other = screen.getByRole('grid', { name: 'Lines of src/other.ts' })
+    await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!.querySelectorAll('.changes-line__number')[1]!)
+    await waitFor(() => expect(draft).toHaveFocus())
+    // Cancel there lets the other file's Comment work again.
+    await user.click(within(draft.closest('.changes-comment')! as HTMLElement).getByRole('button', { name: 'Cancel' }))
+    expect(comments.draft(THREAD)).toBeNull()
+    await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!.querySelectorAll('.changes-line__number')[1]!)
+    expect(screen.getByRole('textbox', { name: 'Comment on other.ts L1' })).toHaveFocus()
+  })
+
+  it('opens a collapsed file to take the user to its worded draft', async () => {
+    const user = userEvent.setup()
+    setup(fakeGit([file(PATCH), file(OTHER, 'src/other.ts')]))
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Unfinished')
+    await user.click(screen.getByRole('button', { name: 'Collapse src/app.ts' }))
+    expect(screen.queryByRole('textbox', { name: 'Comment on app.ts L6' })).toBeNull()
+    const other = screen.getByRole('grid', { name: 'Lines of src/other.ts' })
+    const line = other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!
+    line.focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveFocus())
+    expect(screen.getByRole('textbox', { name: 'Comment on app.ts L6' })).toHaveValue('Unfinished')
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {

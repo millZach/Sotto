@@ -255,16 +255,22 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
       const { opened } = commentStore.openDraft(threadId, path, lines)
       if (opened) { requestAnimationFrame(() => { focusDraft.current = false }); return }
       // A draft with words in it stays; the user is taken to it rather than left wondering where their press went.
+      // A collapsed file opens first; a draft whose lines are not drawn at all is in the list after the files.
       focusDraft.current = false
-      const field = body.current?.querySelector<HTMLTextAreaElement>('.changes-comment--draft textarea')
-      field?.focus({ preventScroll: true })
-      field?.closest('.changes-comment')?.scrollIntoView({ block: 'nearest' })
+      const kept = commentStore.draft(threadId)
+      const current = store.thread(threadId)
+      if (kept && current && collapsedIn(current).has(kept.path)) store.toggleCollapsed(threadId, kept.path)
+      requestAnimationFrame(() => {
+        const field = body.current?.querySelector<HTMLTextAreaElement>('.changes-comment--draft textarea')
+        field?.focus({ preventScroll: true })
+        field?.closest('.changes-comment')?.scrollIntoView({ block: 'nearest' })
+      })
     },
     editDraft: text => commentStore.editDraft(threadId, text),
     cancelDraft: () => commentStore.closeDraft(threadId),
     addDraft: () => { if (commentStore.addDraft(threadId) !== null) setSelection(null) },
     remove: id => commentStore.remove(threadId, id),
-  }), [commentStore, threadId])
+  }), [commentStore, store, threadId])
   const byPath = useMemo(() => {
     const map = new Map<string, ReviewComment[]>()
     for (const comment of comments) map.set(comment.path, [...map.get(comment.path) ?? [], comment])
@@ -295,17 +301,25 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
 /**
  * Comments on files this comparison does not show as text: a file committed since, a turn that did not touch it,
  * another scope. They still go with the next message, so they stay in sight here, with Delete comment, until then.
+ * A draft whose lines are not drawn is here too, with its words, so it can always be finished or cancelled.
  */
 function ElsewhereComments({ threadId, files, store }: { readonly threadId: string; readonly files: readonly GitReviewFile[]; readonly store: ReviewCommentStore }): ReactNode {
   const comments = useReviewComments(store, threadId)
+  const draft = useReviewDraft(store, threadId)
   const shown = new Set(files.filter(file => file.content.kind === 'text').map(file => file.path))
   const elsewhere = comments.filter(comment => !shown.has(comment.path))
-  if (elsewhere.length === 0) return null
+  const strayDraft = draft !== null && !shown.has(draft.path) ? draft : null
+  if (elsewhere.length === 0 && strayDraft === null) return null
   return <section className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
     <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on files not in this comparison</h3>
+    {strayDraft ? <CommentDraft draft={strayDraft} full={store.full(threadId)} focus={NO_FOCUS} standalone
+      onText={text => store.editDraft(threadId, text)} onCancel={() => store.closeDraft(threadId)} onAdd={() => { store.addDraft(threadId) }} /> : null}
     {elsewhere.map(comment => <CommentMarker key={comment.id} comment={comment} full note={null} onDelete={() => store.remove(threadId, comment.id)} />)}
   </section>
 }
+
+/** A draft outside its file's lines never takes focus on its own; the press that sends the user to it does. */
+const NO_FOCUS = { current: false }
 
 /** Whether two quotes are the same lines. */
 function sameLines(a: readonly ReviewLine[], b: readonly ReviewLine[]): boolean {
@@ -551,8 +565,10 @@ function CommentPill({ label, full, waiting, onPress }: {
 }
 
 /** The draft under its lines: Comment (or Ctrl+Enter) puts it on the composer, Cancel or Escape drops it. */
-function CommentDraft({ draft, full, focus, onText, onCancel, onAdd }: {
+function CommentDraft({ draft, full, focus, standalone = false, onText, onCancel, onAdd }: {
   readonly draft: ReviewDraft; readonly full: boolean; readonly focus: { current: boolean }
+  /** Outside its file's lines the draft names the whole path and is not a row of a grid. */
+  readonly standalone?: boolean
   readonly onText: (text: string) => void; readonly onCancel: () => void; readonly onAdd: () => void
 }): ReactNode {
   const field = useRef<HTMLTextAreaElement>(null)
@@ -562,9 +578,9 @@ function CommentDraft({ draft, full, focus, onText, onCancel, onAdd }: {
     field.current.focus({ preventScroll: true })
     field.current.closest('.changes-comment')?.scrollIntoView({ block: 'nearest' })
   })
-  const label = reviewLabel(draft)
+  const label = reviewLabel(draft, standalone)
   const ready = draft.text.trim() !== '' && !full
-  return <div className="changes-comment changes-comment--draft" role="row"><div className="changes-comment__cell" role="gridcell">
+  return <div className="changes-comment changes-comment--draft" role={standalone ? undefined : 'row'}><div className="changes-comment__cell" role={standalone ? undefined : 'gridcell'}>
     <div className="changes-comment__label">{label}</div>
     <textarea ref={field} className="changes-comment__field" rows={2} aria-label={`Comment on ${label}`} placeholder="Add a comment…" value={draft.text}
       onChange={event => onText(event.target.value)}
