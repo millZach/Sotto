@@ -9,6 +9,7 @@ import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitor
 import { gitStatusSchema } from './gitStatus'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -644,6 +645,8 @@ export interface AgentBridge {
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
   /** The branches a thread's folder offers, for the picker; the thread is the window's client-scoped one. */
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  /** The changed files of a thread's folder with their line counts, for the commit dialog. */
+  gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>

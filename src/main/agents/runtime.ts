@@ -19,7 +19,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
-import { GitStatusReader } from './gitStatus'
+import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitActions } from './gitActions'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
@@ -54,7 +54,9 @@ export interface AgentRuntimeOptions {
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
    */
-  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean }
+  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
+    /** A scripted `gh` for a journey in the running app; development only. */
+    ghStandIn?: { executable: string; args: readonly string[] } }
   /** What the worktree cleanup (ADR-0019) may reach beyond the workspace: GitHub for the merged rule, and a log of
    * stable event names. Without `pullRequestMerged` the merged rule never fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
@@ -84,9 +86,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
+  /** How Git and gh are run; only a journey's stand-in changes it. */
+  let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground } = options.gitStatus
-    gitStatus = new GitStatusReader({ fetchIntervalMs })
+    const { fetchIntervalMs, foreground, ghStandIn } = options.gitStatus
+    if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
+    gitStatus = new GitStatusReader({ fetchIntervalMs, ...(gitRun ? { run: gitRun } : {}) })
     agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, ...(foreground ? { foreground } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
@@ -97,7 +102,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
-  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus,
+  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings) }))
   const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,

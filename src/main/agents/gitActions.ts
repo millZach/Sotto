@@ -101,7 +101,7 @@ export class GitActions {
       const wantsPr = action === 'create_pr' || action === 'commit_push_pr'
       const wantsPush = action === 'push' || action === 'commit_push' || action === 'commit_push_pr' || (action === 'create_pr' && (!status.upstream || status.ahead > 0))
       const featureBranch = input.featureBranch === true
-      if (featureBranch && !wantsCommit) throw new GitActionRefusal('Feature-branch checkout is only supported for commit actions.')
+      if (featureBranch && !wantsCommit && !wantsPush) throw new GitActionRefusal('A feature branch is cut only for an action that commits or pushes.')
       if (input.filePaths !== undefined && input.filePaths.length === 0) throw new GitActionRefusal('Choose at least one file to commit.')
       if (action === 'create_pr' && status.dirty) throw new GitActionRefusal('Commit local changes before creating a PR.')
       if (!status.branch && wantsPush && !featureBranch) throw new GitActionRefusal('Cannot push from detached HEAD.')
@@ -112,6 +112,18 @@ export class GitActions {
       progress({ kind: 'action_started', phases, stages: gitActionStages({ action, hasMessage: Boolean(input.commitMessage?.trim()), hasChanges: status.dirty, ...(pushTarget ? { pushTarget } : {}), featureBranch, pushBeforePr: action === 'create_pr' && wantsPush }) })
       const result: GitActionResult = { action, branch: { status: 'skipped_not_requested' }, commit: { status: 'skipped_not_requested' }, push: { status: 'skipped_not_requested' }, pr: { status: 'skipped_not_requested' }, toast: { title: 'Done', cta: { kind: 'none' } } }
       let branch = status.branch
+      // "Check out feature branch & continue" on a push from the default branch: the branch is cut from HEAD and named
+      // after its last commit, since there is no new commit to name it after.
+      if (featureBranch && !wantsCommit) {
+        const subject = (await this.git(cwd, ['log', '-1', '--format=%s']).catch(() => '')).trim()
+        if (!subject) throw new GitActionRefusal('Cannot create a feature branch because there are no commits to push.')
+        progress({ kind: 'phase_started', phase: 'branch', stage: 'Preparing feature ref...' })
+        const name = await this.uniqueBranch(cwd, featureBranchName(subject))
+        await this.git(cwd, ['branch', name])
+        await this.git(cwd, ['checkout', name, '--'], { timeoutMs: 10_000 })
+        branch = name
+        result.branch = { status: 'created', name }
+      }
       if (wantsCommit) {
         // A merge, cherry-pick or rebase half done is the user's to finish: staging afresh here would drop its state.
         for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD']) {

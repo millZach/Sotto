@@ -124,6 +124,7 @@ export interface AgentMembership {
 
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
@@ -494,6 +495,11 @@ export class AgentControl {
   gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
     if (!this.dependencies.host.listThreadRefs) throw new Error('Branches are unavailable on this host.')
     return this.dependencies.host.listThreadRefs(request)
+  }
+  /** The changed files the commit dialog lists, read when it opens rather than pushed with every state. */
+  gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
+    if (!this.dependencies.host.listThreadChangedFiles) throw new Error('Changed files are unavailable on this host.')
+    return this.dependencies.host.listThreadChangedFiles(request)
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   attachmentPreview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult {

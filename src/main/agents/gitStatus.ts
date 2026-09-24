@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process'
+import { open } from 'node:fs/promises'
+import { join } from 'node:path'
 import { z } from 'zod'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
+import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
 
 export interface GitCommandOptions {
   readonly timeoutMs?: number
@@ -26,13 +29,27 @@ const REDIRECTING_GIT_VARIABLES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
 /** Thrown when Git itself is missing: no status is published then, rather than a folder called "not a repository". */
 export class GitUnavailableError extends Error {}
 
-export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options = {}) => new Promise((accept, reject) => {
+export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options = {}) =>
+  spawnCommand(cwd, command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], options)
+
+/**
+ * A test seam for the running app: `gh` answered by a scripted stand-in (an executable and the arguments
+ * that precede gh's own) while `git` stays real, so a Playwright journey pushes to an owned remote and
+ * "creates" its pull request without GitHub.
+ */
+export function runWithGhStandIn(standIn: { readonly executable: string; readonly args: readonly string[] }): RunGitCommand {
+  return (cwd, command, args, options) => command === 'gh'
+    ? spawnCommand(cwd, standIn.executable, [...standIn.args, ...args], options ?? {})
+    : runGitStatusCommand(cwd, command, args, options)
+}
+
+function spawnCommand(cwd: string, command: string, args: readonly string[], options: GitCommandOptions): Promise<string> { return new Promise((accept, reject) => {
   const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never', ...options.env }
   // Variables that would point Git at another repository or index are dropped; the ones that carry the
   // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
   // reaches the remote the way the user's own Git does.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
-  const child = spawn(command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], { cwd, windowsHide: true, shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+  const child = spawn(command, [...args], { cwd, windowsHide: true, shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
   if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
   let stdout = '', stderr = '', timedOut = false, settled = false
   const partial = { stdout: '', stderr: '' }
@@ -66,7 +83,7 @@ export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options =
     else if (code !== 0) finish(Object.assign(new Error(stderr.trim() || `${command} exited with ${code ?? 'a signal'}.`), { code }))
     else finish(null)
   })
-})
+}) }
 
 export interface GitStatusReaderOptions {
   readonly run?: RunGitCommand
@@ -82,6 +99,8 @@ export interface GitStatusSource {
   invalidate(): void
   /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
   listRefs?(cwd: string, request: Omit<GitRefsRequest, 'threadId'>): Promise<GitRefsPage>
+  /** The working copy's changed files with their line counts, for the commit dialog; absent on a source that has none to give. */
+  listChangedFiles?(cwd: string): Promise<GitChangedFiles>
 }
 
 const FETCH_TIMEOUT_MS = 5_000
@@ -194,6 +213,36 @@ export class GitStatusReader implements GitStatusSource {
     const snapshot: RefsSnapshot = { at: this.now(), locals, remotes, defaultBranch, hasRemote: remotesList.includes('origin') }
     this.refs.set(common, snapshot)
     return snapshot
+  }
+
+  /**
+   * The changed files of a working copy as the commit dialog lists them: every path `status` reports,
+   * with the line counts `diff --numstat HEAD` gives a tracked change. An untracked file's lines are
+   * counted from the file itself, up to a size and a number of files past which the count is left out
+   * rather than made slow. Read on request, never pushed with the status.
+   */
+  async listChangedFiles(cwd: string): Promise<GitChangedFiles> {
+    const inside = await this.git(cwd, ['rev-parse', '--is-inside-work-tree']).then(out => out.trim() === 'true', error => { if (error instanceof GitUnavailableError) throw error; return false })
+    if (!inside) return { isRepository: false, files: [], truncated: false }
+    const porcelain = await this.git(cwd, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z'])
+    const unborn = parsePorcelain(porcelain).unborn
+    const records = parseChangedRecords(porcelain)
+    const outputs = unborn
+      ? [await this.git(cwd, ['diff', '--numstat', '-z']).catch(() => ''), await this.git(cwd, ['diff', '--cached', '--numstat', '-z']).catch(() => '')]
+      : [await this.git(cwd, ['diff', '--numstat', '-z', 'HEAD', '--']).catch(() => '')]
+    const counts = parseNumstat(outputs)
+    const truncated = records.length > GIT_CHANGED_FILES_MAX
+    const listed = records.slice(0, GIT_CHANGED_FILES_MAX)
+    let untrackedRead = 0
+    const files: GitChangedFile[] = []
+    for (const record of listed) {
+      let count = counts.get(record.path) ?? (record.originalPath ? counts.get(record.originalPath) : undefined) ?? null
+      if (record.status === 'untracked' && count === null && untrackedRead < UNTRACKED_COUNT_MAX_FILES) { untrackedRead++; count = await countLines(join(cwd, record.path)) }
+      files.push({ path: record.path, ...(record.originalPath ? { originalPath: record.originalPath } : {}), status: record.status, insertions: count?.insertions ?? null, deletions: count?.deletions ?? null })
+    }
+    // Git lists tracked changes before untracked files; the dialog reads better by path.
+    files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+    return { isRepository: true, files, truncated }
   }
 
   /** One read per folder at a time: two threads sharing a checkout share the answer. */
@@ -315,6 +364,77 @@ export class GitStatusReader implements GitStatusSource {
 }
 
 const samePath = (a: string, b: string): boolean => { const normalise = (path: string) => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/'); return process.platform === 'win32' ? normalise(a).toLowerCase() === normalise(b).toLowerCase() : normalise(a) === normalise(b) }
+
+const UNTRACKED_COUNT_MAX_FILES = 200
+const UNTRACKED_COUNT_MAX_BYTES = 1_000_000
+/** Lines of a new file, counted the way `git diff` would count them once it is added; null for a binary or an oversized one. */
+async function countLines(path: string): Promise<{ insertions: number; deletions: number } | null> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(path, 'r')
+    const { size } = await handle.stat()
+    if (size > UNTRACKED_COUNT_MAX_BYTES) return null
+    const buffer = Buffer.alloc(size)
+    const { bytesRead } = await handle.read(buffer, 0, size, 0)
+    const bytes = buffer.subarray(0, bytesRead)
+    if (bytes.subarray(0, 8_000).includes(0)) return null
+    if (bytesRead === 0) return { insertions: 0, deletions: 0 }
+    let lines = 0
+    for (const byte of bytes) if (byte === 10) lines++
+    if (bytes[bytesRead - 1] !== 10) lines++
+    return { insertions: lines, deletions: 0 }
+  } catch { return null } finally { await handle?.close().catch(() => undefined) }
+}
+
+interface ChangedRecord { path: string; originalPath?: string; status: GitChangedFile['status'] }
+/** The per-path records of `status --porcelain=v2 -z`, with T3's reading of the two status letters. */
+export function parseChangedRecords(output: string): ChangedRecord[] {
+  const records = output.split('\0')
+  const result: ChangedRecord[] = []
+  const statusOf = (xy: string): GitChangedFile['status'] => {
+    if (xy.includes('D')) return 'deleted'
+    if (xy.includes('A')) return 'added'
+    if (xy.includes('T')) return 'type-changed'
+    return 'modified'
+  }
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index]!
+    if (!record || record.startsWith('# ')) continue
+    const kind = record[0]
+    if (kind === '?') { result.push({ path: record.slice(2), status: 'untracked' }); continue }
+    if (kind === '!') continue
+    const fields = record.split(' ')
+    if (kind === '1') { result.push({ path: fields.slice(8).join(' '), status: statusOf(fields[1] ?? '') }); continue }
+    if (kind === 'u') { result.push({ path: fields.slice(10).join(' '), status: 'conflicted' }); continue }
+    if (kind === '2') {
+      // The new path ends this record; the original follows as its own NUL-terminated record.
+      const path = fields.slice(9).join(' ')
+      const originalPath = records[++index] ?? ''
+      result.push({ path, ...(originalPath ? { originalPath } : {}), status: (fields[1] ?? '').includes('C') ? 'added' : 'renamed' })
+    }
+  }
+  return result
+}
+
+/** `diff --numstat -z`: `added\tremoved\tpath` per record, a rename's two paths as their own records, `-` for a binary. */
+export function parseNumstat(outputs: readonly string[]): Map<string, { insertions: number; deletions: number } | null> {
+  const counts = new Map<string, { insertions: number; deletions: number } | null>()
+  for (const output of outputs) {
+    const records = output.split('\0')
+    for (let index = 0; index < records.length; index++) {
+      const record = records[index]!
+      if (!record) continue
+      const [added, removed, inline] = record.split('\t')
+      let path = inline ?? ''
+      if (path === '') { index++; path = records[++index] ?? '' } // a rename: the old path, then the new
+      if (!path) continue
+      const value = added === '-' || removed === '-' ? null : { insertions: Number.parseInt(added ?? '', 10) || 0, deletions: Number.parseInt(removed ?? '', 10) || 0 }
+      const previous = counts.get(path)
+      counts.set(path, previous && value ? { insertions: previous.insertions + value.insertions, deletions: previous.deletions + value.deletions } : previous === null ? null : value)
+    }
+  }
+  return counts
+}
 
 interface Porcelain { branch: string | null; upstream: string | null; ahead: number; behind: number; changedFiles: number; unborn: boolean }
 /** `status --porcelain=v2 --branch -z`: headers first, then one NUL-terminated record per changed path (two for a rename). */

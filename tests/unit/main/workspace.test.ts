@@ -7,6 +7,8 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../../src/shared/th
 import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
+import { GitActions } from '../../../src/main/agents/gitActions'
+import { GitStatusReader } from '../../../src/main/agents/gitStatus'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -588,6 +590,35 @@ describe('durable project/thread organization', () => {
     expect(switchBranch).toHaveBeenCalledWith(project.path, 'topic', { create: true })
     expect(record_()?.worktree).toMatchObject({ branch: 'topic', sentBranch: 'topic' })
     expect(record_()?.worktree?.git?.branch).toBe('topic')
+  })
+
+  it('initializes Git in a plain project folder and leaves the record with the new repository\'s status', async () => {
+    const f = await fixture()
+    await local(f)
+    const reader = new GitStatusReader({ fetchIntervalMs: () => 30_000 })
+    f.host.setGitStatus(reader, { pollIntervalMs: () => 0 })
+    f.host.setGitActions(new GitActions({ status: reader, writeCommitMessage: async () => null, writePullRequestText: async () => null }))
+    const record_ = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')
+    const after = await f.host.initThreadRepository('local')
+    expect(after.threads.find(thread => thread.id === 'local')?.worktree?.git).toMatchObject({ isRepository: true, branch: expect.any(String), hasRemote: false, upstream: null }) // the branch is Git's own default
+    expect(record_()?.worktree?.git).toMatchObject({ isRepository: true })
+    await expect(f.host.initThreadRepository('local')).rejects.toThrow('This folder is already a Git repository.')
+  }, 30000)
+
+  it('lists the changed files of the folder a thread works in, for the commit dialog', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const listed = { isRepository: true, files: [{ path: 'a.txt', status: 'modified' as const, insertions: 1, deletions: 0 }], truncated: false }
+    const listChangedFiles = vi.fn(async () => listed)
+    f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('not read here') }), invalidate: vi.fn(), listChangedFiles }, { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await expect(f.host.listThreadChangedFiles({ threadId: 'local' })).resolves.toEqual(listed)
+    expect(listChangedFiles).toHaveBeenCalledWith(project.path)
+    await expect(f.host.listThreadChangedFiles({ threadId: 'missing' })).rejects.toThrow()
+    f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('not read here') }), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    await expect(f.host.listThreadChangedFiles({ threadId: 'local' })).rejects.toThrow('Changed files are unavailable on this host.')
   })
 
   it('lists the branches of the folder a thread works in, a draft reading its project folder', async () => {

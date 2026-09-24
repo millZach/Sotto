@@ -23,6 +23,7 @@ import type { GitStatusSource } from './gitStatus'
 import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitActions'
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
@@ -222,19 +223,28 @@ export class WorkspaceHost implements AgentHost {
   async listThreadRefs(request: GitRefsRequest): Promise<GitRefsPage> {
     await this.initialize()
     if (!this.gitStatus?.listRefs) throw new Error('Branches are unavailable on this host.')
-    const thread = this.thread(request.threadId)
-    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
-    let folder: string
-    if (thread.worktree?.status === 'ready' && !thread.worktree.reclaimedAt) folder = resolveThreadWorkingDirectory(thread, project)
-    else if (thread.worktree?.existingWorktreePath && !thread.worktree.path) folder = thread.worktree.existingWorktreePath
-    // A reclaimed worktree's folder is gone; the project folder is the same repository, so its branches are the answer.
-    else if (thread.worktree?.reclaimedAt && project?.path) folder = project.path
-    else if (thread.workingDirectory) folder = thread.workingDirectory
-    else if (project?.path) folder = project.path
-    else throw new Error('This thread has no working folder to read branches from.')
+    const folder = this.threadRepositoryFolder(request.threadId, 'branches')
     const options = { ...request } as Partial<GitRefsRequest>
     delete options.threadId
     return this.gitStatus.listRefs(folder, options)
+  }
+  /** The changed files of the folder a thread works in, for the commit dialog; a draft's folder answers too, as it does for branches. */
+  async listThreadChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
+    await this.initialize()
+    if (!this.gitStatus?.listChangedFiles) throw new Error('Changed files are unavailable on this host.')
+    return this.gitStatus.listChangedFiles(this.threadRepositoryFolder(request.threadId, 'changed files'))
+  }
+  /** The folder a thread's repository reads come from: its ready worktree, the worktree a draft points at, or its project's folder. */
+  private threadRepositoryFolder(threadId: string, what: string): string {
+    const thread = this.thread(threadId)
+    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+    if (thread.worktree?.status === 'ready' && !thread.worktree.reclaimedAt) return resolveThreadWorkingDirectory(thread, project)
+    if (thread.worktree?.existingWorktreePath && !thread.worktree.path) return thread.worktree.existingWorktreePath
+    // A reclaimed worktree's folder is gone; the project folder is the same repository, so its branches are the answer.
+    if (thread.worktree?.reclaimedAt && project?.path) return project.path
+    if (thread.workingDirectory) return thread.workingDirectory
+    if (project?.path) return project.path
+    throw new Error(`This thread has no working folder to read ${what} from.`)
   }
   private gitActionsOrRefuse(): GitActions {
     if (!this.gitActions) throw new Error('Git actions are unavailable on this host.')
@@ -302,7 +312,8 @@ export class WorkspaceHost implements AgentHost {
           // A switch made here is the user's own: the sent branch moves with it in the same publish, so the
           // branch notice never shows for it and stays for a checkout someone else moved (ADR-0014).
           const sentBranch = worktree.sentBranch === undefined ? undefined : options.followSentBranch && inspected.branch ? inspected.branch : worktree.sentBranch
-          current.worktree = { ...inspected, ...(sentBranch !== undefined ? { sentBranch } : {}) }
+          // The status it had stays on the record until the read below replaces it, so the controls never blank between the two.
+          current.worktree = { ...inspected, ...(worktree.git ? { git: worktree.git } : {}), ...(sentBranch !== undefined ? { sentBranch } : {}) }
           this.dirty = true
           if (sentBranch !== worktree.sentBranch) await this.flush().catch(() => undefined)
         }
@@ -329,10 +340,14 @@ export class WorkspaceHost implements AgentHost {
   initThreadRepository(threadId: string): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.gitActionsOrRefuse().init(await this.gitActionFolder(threadId))
-      // A folder that just became a repository is discovered again so its record says so.
+      // A folder that just became a repository is discovered again so its record says so; the record itself stays,
+      // with what the thread already chose on it, since a draft is not discovered afresh.
       const thread = this.thread(threadId)
-      if (thread.worktree?.mode === 'shared') { delete thread.worktree; this.dirty = true }
-      await this.discoverWorkingCopy(threadId).catch(() => undefined)
+      const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+      const directory = thread.workingDirectory ?? project?.path
+      if (thread.worktree?.mode === 'shared' && directory) {
+        try { thread.worktree = { ...thread.worktree, ...await this.worktrees.discover(directory, project?.path ?? directory) }; this.dirty = true } catch { /* The refresh below reads what it can. */ }
+      } else if (!thread.worktree) await this.discoverWorkingCopy(threadId).catch(() => undefined)
       await this.refreshAfterGitAction(threadId)
       return this.workspaceSnapshot()
     })

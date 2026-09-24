@@ -230,7 +230,7 @@ export class DesktopHosts {
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     this.options.router.add({ hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
-      gitRefs: request => socket.gitRefs(request),
+      gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
     })
     active.registeredHostId = hello.hostId
