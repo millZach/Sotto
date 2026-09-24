@@ -19,9 +19,13 @@ export interface DiffRow {
   readonly indices: readonly number[]
 }
 
+/**
+ * A line as a comment quotes it. A file with Windows line endings keeps its carriage return at the end of each diff
+ * line; it is dropped here, so the prompt carries the line's text alone and matching reads it the same way.
+ */
 export function reviewLine(line: DiffLine): ReviewLine | null {
   return line.kind === 'context' || line.kind === 'add' || line.kind === 'remove'
-    ? { kind: line.kind, text: line.text, oldLine: line.oldLine, newLine: line.newLine } : null
+    ? { kind: line.kind, text: line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text, oldLine: line.oldLine, newLine: line.newLine } : null
 }
 
 /** The rows for one layout. Split aligns each run of removals and additions pair by pair, as Git reads them. */

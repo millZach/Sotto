@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { composeReviewMessage } from '../../../../src/renderer/src/agents/reviewComments'
 import { parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
 import { diffRows, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows } from '../../../../src/renderer/src/tools/diffSelection'
 
@@ -24,6 +25,16 @@ describe('rows a comment can cover', () => {
     expect(quotedLines(lines, selectable, 1, 3).map(line => line.text)).toEqual(['old one', 'old two', 'new one', 'new two', 'new three'])
     expect(rowLabel(selectable[1]!)).toBe('Removed line 11: old one; Added line 11: new one')
     expect(rowLabel(selectable[0]!)).toBe('Line 10: keep')
+  })
+
+  it('quotes a file with Windows line endings without its carriage returns, and still finds the lines again', () => {
+    const crlf = parseUnifiedDiff('@@ -1,2 +1,2 @@\n keep\r\n-old\r\n+new\r\n')
+    const rows = diffRows(crlf, false)
+    const quoted = quotedLines(crlf, selectableRows(rows), 0, 2)
+    expect(quoted.map(line => line.text)).toEqual(['keep', 'old', 'new'])
+    expect(rowShowing(crlf, rows, quoted.at(-1))?.key).toBe('3')
+    expect([...rowsShowing(crlf, rows, quoted)]).toEqual(['1', '2', '3'])
+    expect(composeReviewMessage('', [{ path: 'win.txt', lines: quoted, text: 'Why?' }])).not.toContain('\r')
   })
 
   it('finds a comment’s lines in the diff drawn now, and nothing once they have changed', () => {
