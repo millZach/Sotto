@@ -14,7 +14,7 @@ Checked in the built app (`npm run build`, the `success` e2e scenario, Claude fa
 | 1280x800 | Side by side, Workshop showing "Context compacted" | 760.8, 760.8 | 23.3, 23.3 |
 | 820x560 | Tabs, one pane shown | 550, 550 | 0, 0 |
 
-The fake Claude threads do not offer Compact context, so the compacted rows were made by placing exactly what `ThreadCompaction` renders for a finished compaction (`<div class="thread-compaction"><p role="status">Context compacted</p></div>`) into Workshop's row. No `.thread-usage` element exists on either page. The change adds and removes no transition or animation, so reduced motion has nothing new to hold still. Chats was checked in light; the only thing removed there is text that read theme tokens, and the Threads captures cover dark.
+The fake Claude threads do not offer Compact context, so the compacted rows were made by placing exactly what `ThreadCompaction` renders for a finished compaction (`<div class="thread-compaction"><p role="status">Context compacted</p></div>`) into Workshop's row. No `.thread-usage` element exists on either page. The change adds and removes no transition or animation, so reduced motion has nothing new to hold still. Chats was checked in light and in dark at 1280x800 and 820x560: no figures, the composer ends at the window's bottom edge (800 and 560) and nothing scrolls sideways.
 
 Captures, in `artifacts/remove-usage-figures/`:
 
@@ -23,5 +23,6 @@ Captures, in `artifacts/remove-usage-figures/`:
 - `threads-split-1280x800-light.png`: the same in light.
 - `threads-split-820x560-dark.png`: the minimum window, tabbed, nothing under the composer.
 - `chats-1280x800-light.png` and `chats-820x560-light.png`: a Chats conversation with the voice row under the composer and no figures.
+- `chats-1280x800-dark.png` and `chats-820x560-dark.png`: the same conversation in dark.
 
 `tests/e2e/composer-short-window.spec.ts` now measures the row itself rather than the figures, and its panes are found by their host-keyed thread IDs.
