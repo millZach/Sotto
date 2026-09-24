@@ -410,7 +410,7 @@ describe('SettingsView', () => {
     expect(merge).toHaveAccessibleDescription('The merge in the pull request checklist starts on Squash and merge.')
     expect(screen.getByRole('radiogroup', { name: 'Diff layout' }).closest('.tt-field')).toHaveTextContent(/old on the left and new on the right/u)
     // The Changes group says once that these are only where Changes starts.
-    expect(screen.getByRole('region', { name: 'When you read Changes' })).toHaveAccessibleDescription('These set where Changes starts. A choice made in Changes holds until the setting changes or Sotto restarts.')
+    expect(screen.getByRole('region', { name: 'When you read Changes' })).toHaveAccessibleDescription('These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.')
     expect(screen.getByRole('switch', { name: 'Hide whitespace changes' })).toHaveAccessibleDescription('Changes starts showing every edit, spacing included.')
     expect(screen.getByRole('radiogroup', { name: 'Default diff file state' }).closest('.tt-field')).toHaveTextContent('Files in Changes start expanded.')
     expect(screen.getByRole('switch', { name: 'Auto-settle merged threads' })).toHaveAccessibleDescription(/asks GitHub through gh once an hour/u)

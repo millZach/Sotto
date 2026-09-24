@@ -192,7 +192,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
       </Field>
       <Toggle label="Auto-settle merged threads" checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
     </Group>
-    <Group title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until the setting changes or Sotto restarts.">
+    <Group title="When you read Changes" icon={FileDiff} note="These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.">
       <Field label="Diff layout" description={says.layout}>
         <SegmentedControl label="Diff layout" value={settings.diffLayout} onChange={value => void onSave({ diffLayout: value as DiffLayout })} options={[{ value: 'stacked', label: 'Stacked' }, { value: 'split', label: 'Split' }]} />
       </Field>
