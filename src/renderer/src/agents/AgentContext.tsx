@@ -79,7 +79,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const ask = useRef<(threadId: string) => void>(() => undefined)
   const resync = useRef<(threadId: string) => void>(() => undefined)
   // Arriving agent state is background news, about 1.4 times a second while a thread works, and the
-  // render it causes (host of 61 threads: ~11ms) must not sit in front of a keystroke. `startTransition`
+  // render it causes must not sit in front of a keystroke. `startTransition`
   // gives the commit low priority so a sync update — the composer's draft store — interrupts it, while
   // React still guarantees the transition itself lands, just later. `urgent` opts a caller out of that:
   // the initial connect (nothing is on screen yet to stay interruptible for) and a command's own reply
@@ -93,7 +93,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const assembled = assemble(next)
     // React's own update queue, not extra bookkeeping here, keeps this in order: a `useState` setter
     // called from a transition and one called urgently both enqueue on the same fiber, and whichever
-    // priority renders first, React replays the *whole* queue in the order the setters were called
+    // priority renders first, React replays the whole queue in the order the setters were called
     // once every lane has rendered — so a call made after another's can never be overwritten by it.
     const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
@@ -260,7 +260,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // says nothing about what is on disk now.
   useLayoutEffect(() => { if (state !== null && state.stale !== true) threadDrafts.receive(state) }, [state, threadDrafts])
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
-  // dev console at most once a second. Development only: the production bundle drops the whole effect body.
+  // dev console at most once a second — the figure now includes whatever time a transition spent waiting
+  // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
   useEffect(() => {
     if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
     const at = arrived.current
