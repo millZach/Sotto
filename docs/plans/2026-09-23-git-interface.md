@@ -102,7 +102,7 @@ Each of these is a deliberate difference or a decision the implementation ADR mu
 6. **Branch switch keeps the thread right.** T3 switches without asking; Git refuses when work would be lost. Sotto does the same, and after the switch sends `refresh-thread-worktree` so `sentBranch`, the label and the shared-folder notice follow (ADR-0014). Restore branch keeps its confirmation.
 7. **GitHub only, through `gh`.** T3 supports five hosting providers; Sotto's README names its hosts one by one. Publish, pull requests and merge are GitHub through `gh` on its own sign-in; another provider is an ADR.
 8. **Git runs on the host.** T3's server does all Git for a thread; Sotto's Changes runs in Electron and skips remote threads. The new status and action services are built Electron-free beside `ThreadWorktrees`, wired in `createAgentRuntime`, and carried over the host protocol, so a remote thread gets the same button. The remote command list grows by the Git actions; the ones that discard work (there are none; a checkout that Git refuses loses nothing) need no answer policy.
-9. **The shortcut checks the dictation hotkey.** `mod+d` is claimed only if it does not collide with the global hotkey; otherwise the Changes toggle takes the next free chord and the plan says which.
+9. **The shortcut checks the dictation hotkey.** `mod+d` is claimed only if it does not collide with the global hotkey; otherwise the Changes toggle takes `mod+shift+d`, and none when the hotkey holds both (#268, ADR-0027's amendment).
 10. **Sotto's checkpoints stay Sotto's.** Turn diffs come from the content-addressed blobs, not from `refs/t3/checkpoints`; a turn whose checkpoint is unavailable says so.
 
 ## The prototype

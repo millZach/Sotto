@@ -129,7 +129,9 @@ test('real Git diffs stay in their working copy and embedded pages cannot access
         if (!listing.ok) throw new Error(listing.error.message)
         const file = listing.value.files.find(file => file.path === 'proof.txt')
         if (!file) throw new Error('Changed file missing')
-        return window.sotto!.gitChanges!.diff({ threadId, workspaceId: listing.value.workspace.workspaceId, path: file.path })
+        const review = await window.sotto!.gitChanges!.review({ threadId, workspaceId: listing.value.workspace.workspaceId, scope: { kind: 'working' } })
+        if (!review.ok) return review
+        return { ok: true as const, value: review.value.files.find(item => item.path === file.path)! }
       }, threadId)
       expect(diff.ok).toBe(true)
       if (diff.ok) {

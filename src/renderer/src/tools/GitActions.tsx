@@ -3,19 +3,18 @@ import { createPortal } from 'react-dom'
 import { History } from 'lucide-react'
 import type { z } from 'zod'
 import type { Checkpoint, checkpointInspectionSchema, checkpointListingSchema } from '../../../shared/checkpoints'
-import type { GitChangesBridge, gitActionSchema } from '../../../shared/gitChanges'
+import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { ToolsResult } from '../../../shared/tools'
 import type { ChangesStore, ThreadChanges } from './changesStore'
 
 /**
- * The Checkpoints drawer and the selected file's staging. The drawer opens under the Changes line of chrome;
- * its toggle is drawn into that line (`toggleSlot`) and the staging into the file head (`stageSlot`), so no
- * bar of their own sits between the line and the work. Commit, branch and push left for the Git action in the
- * pane header (ADR-0027); staging leaves with the Changes rebuild.
+ * The Checkpoints drawer. It opens under the Changes line of chrome, and its toggle is drawn into that line
+ * (`toggleSlot`), so no bar of its own sits between the line and the work. Commit, branch and push are the Git
+ * action's in the pane header, and staging left the UI with it (ADR-0027); the commit dialog's file list is the choice.
  */
-export function GitActions({ threadId, changes, bridge, store, toggleSlot, stageSlot }: {
+export function GitActions({ threadId, changes, bridge, store, toggleSlot }: {
   threadId: string; changes: ThreadChanges; bridge: GitChangesBridge | undefined; store: ChangesStore
-  toggleSlot: HTMLElement | null; stageSlot: HTMLElement | null
+  toggleSlot: HTMLElement | null
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false), [status, setStatus] = useState('')
@@ -25,7 +24,7 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
   const generation = useRef(0)
   useEffect(() => { generation.current++; setOpen(false); setStatus(''); setCheckpoints(null); setInspection(null); setBusy(false) }, [threadId, changes.workspace?.workspaceId])
   if (!changes.workspace || changes.list.status !== 'ready' || !bridge) return null
-  const target = { threadId, workspaceId: changes.workspace.workspaceId }, listing = changes.list
+  const target = { threadId, workspaceId: changes.workspace.workspaceId }
   const run = async <T,>(operation: () => Promise<ToolsResult<T>>, success: (value: T) => void | Promise<void>): Promise<void> => {
     if (busy) return
     const token = generation.current
@@ -37,19 +36,11 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
     } catch { if (token === generation.current) setStatus('Sotto did not confirm this action. Refresh before trying again.') }
     finally { if (token === generation.current) setBusy(false) }
   }
-  const action = (action: Extract<z.infer<typeof gitActionSchema>['action'], 'stage' | 'unstage'>, path: string): void => {
-    if (!bridge.act) return
-    void run(() => bridge.act!({ ...target, revision: listing.revision, action, path }), async () => {
-      await store.refresh(bridge, threadId)
-      setStatus(action === 'stage' ? 'Change staged.' : 'Change unstaged.')
-    })
-  }
   const select = (checkpoint: Checkpoint): void => {
     if (!bridge.inspectCheckpoint) return
     setInspection(null); setConfirmed(false)
     void run(() => bridge.inspectCheckpoint!({ ...target, checkpointId: checkpoint.id }), setInspection)
   }
-  const selected = listing.files.find(file => file.path === changes.selectedPath)
   const toggle = (): void => {
     setOpen(!open); setStatus('')
     if (!open && bridge.checkpoints) void run(() => bridge.checkpoints!(target), setCheckpoints)
@@ -67,14 +58,9 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot, stage
   }
   const toggles = bridge.checkpoints ? <button type="button" className="tools-chrome__button tt-focusable" title="Checkpoints" aria-expanded={open} onClick={toggle}>
     <History size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Checkpoints</span></button> : null
-  const staging = selected && bridge.act ? <>
-    {selected.unstaged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('stage', selected.path)}>Stage file</button> : null}
-    {selected.staged ? <button className="tools-chrome__button tt-focusable" type="button" disabled={busy} onClick={() => action('unstage', selected.path)}>Unstage file</button> : null}
-  </> : null
   const drawer = open || busy || status !== ''
   return <>
     {toggleSlot && toggles ? createPortal(toggles, toggleSlot) : null}
-    {stageSlot && staging ? createPortal(staging, stageSlot) : null}
     {drawer ? <section className="git-actions" aria-label="Checkpoints">
     {open ? <div className="git-actions__drawer">
       {!checkpoints ? <p role="status">Reading checkpoints…</p> : <>

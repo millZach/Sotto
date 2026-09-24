@@ -1,0 +1,166 @@
+/* Changes as T3's diff panel (#268): the scope on the line of chrome, a quiet bar of view controls under it, then
+   the comparison's files as blocks whose heads stay in view while their lines scroll, and a file tree beside them.
+   Colour comes only from theme roles; additions and removals are washes of the success and error roles. */
+
+.changes-surface { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.changes-surface > * { flex: none; }
+
+/* The line of chrome: scope, counts, then the surface's own actions. */
+.changes-summary { gap: 6px; padding-left: 8px; }
+.tools-panel .changes-summary__git { display: contents; }
+/* The scope and its counts wrap inside a one-line box, so counts without room drop out whole instead of clipping.
+   The select is as wide as the scope it shows, not its longest option. */
+.changes-lead { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; height: 30px; overflow: hidden; }
+.changes-scope { position: relative; display: inline-flex; flex: none; align-items: center; max-width: 100%; }
+.changes-scope__select {
+  field-sizing: content; min-width: 0; max-width: 100%; height: 30px; padding: 0 26px 0 8px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; text-overflow: ellipsis; cursor: pointer; appearance: none;
+}
+.changes-scope__select:hover { background: var(--tools-hover); }
+.changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.changes-scope__chevron { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
+.changes-counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.changes-counts--bar { display: none; margin-right: 6px; }
+/* Beside the window's controls a narrow panel's line of chrome holds the scope and its actions only; the totals
+   move to the head of the view bar, which has the room. */
+@container tools-body (max-width: 559px) {
+  .changes-counts--chrome { display: none; }
+  .changes-counts--bar { display: inline; }
+}
+.changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
+.changes-counts__remove { color: var(--tt-error-text); }
+
+/* The bar under it: what is compared on the left, how it is drawn on the right. It wraps before anything clips. */
+.changes-bar {
+  position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px;
+  min-height: 38px; padding: 3px 6px 3px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px;
+}
+.changes-bar__fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.changes-bar__view { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
+.changes-bar__segment { display: inline-flex; gap: 1px; padding: 1px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+.changes-bar__segment .files-icon--small { width: 26px; height: 26px; border-radius: 6px; }
+.tools-panel .changes-bar .files-icon[aria-pressed='true'], .tools-panel .changes-bar .files-icon[data-on] { background: var(--tt-selected); color: var(--tt-text); }
+
+/* Branch changes: the branch, an arrow, and the base as the button that opens the list. */
+.changes-base { display: flex; flex: 1 1 auto; align-items: center; gap: 4px; min-width: 0; }
+.changes-base__head { min-width: 3ch; max-width: 40%; overflow: hidden; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.changes-base__arrow { flex: none; color: var(--tt-text-muted); }
+.changes-base__trigger {
+  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 4px; min-width: 0; height: 28px; padding: 0 6px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--tt-text); font: inherit; font-family: var(--tt-font-mono); font-size: 12px; cursor: pointer;
+}
+.changes-base__trigger:hover, .changes-base__trigger[aria-expanded='true'] { background: var(--tools-hover); }
+.changes-base__trigger > svg { flex: none; color: var(--tt-text-muted); }
+.changes-base__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-base__popover {
+  position: absolute; top: calc(100% + 4px); left: 8px; display: flex; flex-direction: column; gap: 4px; width: min(19rem, calc(100% - 16px)); max-height: min(340px, 60vh);
+  padding: 6px; border: 1px solid var(--tt-border-faint); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text-2);
+}
+.changes-base__search { flex: none; height: 30px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.changes-base__search::placeholder { color: var(--tt-text-muted); }
+.changes-base__columns { display: grid; flex: none; grid-template-columns: minmax(0, 1fr) 3rem; padding: 4px 8px 4px 27px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.changes-base__columns > span:last-child { text-align: right; }
+.changes-base__list { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-base__row { display: grid; grid-template-columns: minmax(0, 1fr) 3rem; align-items: center; }
+.changes-base__ref {
+  display: flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.changes-base__ref:hover { background: var(--tt-hover); color: var(--tt-text); }
+.changes-base__ref[aria-current] { color: var(--tt-text); }
+.changes-base__check { flex: none; visibility: hidden; color: var(--tt-accent-text); }
+.changes-base__check[data-shown] { visibility: visible; }
+.changes-base__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-base__switch {
+  position: relative; justify-self: end; width: 28px; height: 16px; margin-right: 8px; padding: 0; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill);
+  background: var(--tt-field); cursor: pointer;
+}
+.changes-base__thumb { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--tt-text-muted); }
+.changes-base__switch[aria-checked='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent); }
+.changes-base__switch[aria-checked='true'] .changes-base__thumb { left: 14px; background: var(--tt-on-accent); }
+.changes-base__remote-only { display: grid; justify-self: end; margin-right: 14px; color: var(--tt-text-muted); }
+.changes-base__note { margin: 0; padding: 6px 8px; color: var(--tt-text-muted); font-size: 12px; }
+
+.changes-note { margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.changes-note code { font-family: var(--tt-font-mono); overflow-wrap: anywhere; }
+
+/* The comparison: files, and the tree above them in a narrow panel or beside them in a wide one. */
+.changes-review { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.changes-files { flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-tree { order: -1; flex: none; max-height: clamp(96px, 30%, 220px); overflow: auto; padding: 6px 8px; border-bottom: 1px solid var(--tt-hairline); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@container tools-body (min-width: 640px) {
+  .changes-review[data-tree] { display: grid; grid-template-columns: minmax(0, 1fr) clamp(160px, 28%, 256px); }
+  .changes-review[data-tree] > .changes-tree { order: 0; max-height: none; border-bottom: 0; border-left: 1px solid var(--tt-hairline); }
+}
+@media (max-height: 640px) { .changes-tree { max-height: 96px; } }
+
+.changes-file { border-bottom: 1px solid var(--tt-hairline); }
+.changes-file__head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 36px; padding: 0 6px;
+  border-bottom: 1px solid var(--tt-hairline); background: var(--tools-bg, var(--tt-sidebar)); font-size: 13px;
+}
+.changes-file[data-collapsed] > .changes-file__head { border-bottom: 0; }
+.changes-file__name {
+  display: flex; flex: 0 1 auto; align-items: baseline; min-width: 0; padding: 2px 4px; border: 0; border-radius: 5px;
+  background: transparent; color: var(--tt-text); font: inherit; text-align: left; white-space: nowrap;
+}
+button.changes-file__name { cursor: pointer; }
+button.changes-file__name:hover .changes-file__base { text-decoration: underline; text-underline-offset: 2px; }
+.changes-file__folder { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); direction: rtl; text-align: left; text-overflow: ellipsis; }
+.changes-file__base { flex: none; max-width: 100%; overflow: hidden; font-weight: 500; text-overflow: ellipsis; }
+.changes-counts--file { margin-left: auto; padding-left: 4px; }
+.changes-file__head > .files-icon:last-child { margin-left: 2px; }
+.changes-file__head > .changes-counts--file + .files-icon { margin-left: 0; }
+.changes-file__head > .changes-file__name + .files-icon { margin-left: auto; }
+.changes-file__problem { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 16px 14px; }
+.changes-file__problem strong { color: var(--tt-text); font-size: 13px; font-weight: 500; }
+.changes-file__problem p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+
+.changes-badge { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12px; font-weight: 600; line-height: 1; }
+.changes-badge[data-status='added'], .changes-badge[data-status='untracked'] { color: var(--tt-success); }
+.changes-badge[data-status='deleted'], .changes-badge[data-status='conflicted'] { color: var(--tt-error-text); }
+.changes-badge[data-status='modified'], .changes-badge[data-status='renamed'], .changes-badge[data-status='type-changed'] { color: var(--tt-warning); }
+
+/* The lines. Wrapped, the text breaks inside its column; unwrapped, each file scrolls sideways on its own. */
+.changes-diff__body { overflow-x: auto; background: var(--tt-code-bg); scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-diff__rows { padding: 4px 0 8px; font-family: var(--tt-font-mono); font-size: 13px; line-height: 1.7; }
+.changes-files:not([data-wrap]) .changes-diff__rows { width: max-content; min-width: 100%; }
+.changes-line { display: grid; grid-template-columns: 4ch 4ch 1ch minmax(0, 1fr); column-gap: 5px; padding-right: 12px; color: var(--tt-code-text); }
+.changes-files:not([data-wrap]) .changes-line { grid-template-columns: 4ch 4ch 1ch max-content; }
+.changes-line__number { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; user-select: none; }
+.changes-line__number:first-child { padding-left: 8px; box-sizing: content-box; }
+.changes-line__sign { color: var(--tt-text-muted); user-select: none; }
+.changes-line__text { min-width: 0; white-space: pre; tab-size: 4; }
+.changes-files[data-wrap] .changes-line__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.changes-line[data-kind='add'], .changes-split__cell[data-kind='add'] { background: color-mix(in srgb, var(--tt-success) 12%, transparent); }
+.changes-line[data-kind='add'] .changes-line__sign, .changes-split__cell[data-kind='add'] .changes-line__sign { color: var(--tt-success); }
+.changes-line[data-kind='remove'], .changes-split__cell[data-kind='remove'] { background: color-mix(in srgb, var(--tt-error) 12%, transparent); }
+.changes-line[data-kind='remove'] .changes-line__sign, .changes-split__cell[data-kind='remove'] .changes-line__sign { color: var(--tt-error-text); }
+.changes-line[data-kind='hunk'] { margin-top: 4px; background: var(--tt-accent-wash); color: var(--tt-text-2); }
+.changes-line[data-kind='hunk']:first-child { margin-top: 0; }
+.changes-line[data-kind='meta'], .changes-line[data-kind='note'] { color: var(--tt-text-muted); }
+.changes-diff__more { display: flex; align-items: center; gap: 12px; padding: 8px 16px 14px; color: var(--tt-text-muted); font-size: 13px; }
+
+/* Split: one grid for the whole file, so the two sides line up from the first row to the last. Hunk lines span both. */
+.changes-split__head { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.changes-split__head > span { min-width: 0; overflow: hidden; padding: 4px 12px; text-overflow: ellipsis; white-space: nowrap; }
+.changes-diff__rows[data-layout='split'] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.changes-files:not([data-wrap]) .changes-diff__rows[data-layout='split'] { grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr); }
+.changes-diff__rows[data-layout='split'] > .changes-line { grid-column: 1 / -1; }
+.changes-split__row { display: contents; }
+.changes-split__cell { display: grid; grid-template-columns: 4ch 1ch minmax(0, 1fr); column-gap: 5px; min-width: 0; padding-right: 8px; color: var(--tt-code-text); }
+.changes-files:not([data-wrap]) .changes-split__cell { grid-template-columns: 4ch 1ch max-content; }
+.changes-split__row > .changes-split__cell:first-child { border-right: 1px solid var(--tt-hairline); }
+@container tools-body (max-width: 479px) {
+  .changes-split__cell { grid-template-columns: 3ch 1ch minmax(0, 1fr); column-gap: 3px; }
+  .changes-files:not([data-wrap]) .changes-split__cell { grid-template-columns: 3ch 1ch max-content; }
+}
+
+/* The file tree: the comparison's files under their folders. */
+.changes-tree__list { display: flex; flex-direction: column; gap: 1px; }
+.changes-tree__folder { overflow: hidden; padding: 6px 8px 2px; color: var(--tt-text-muted); font-size: 12px; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.changes-tree__item { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; padding: 0 8px; border-radius: 6px; color: var(--tt-text-2); font-size: 13px; cursor: pointer; user-select: none; }
+.changes-tree__item[data-nested] { padding-left: 16px; }
+.changes-tree__item:hover { background: var(--tools-hover); color: var(--tt-text); }
+.changes-tree__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.changes-tree__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
