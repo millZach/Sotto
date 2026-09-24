@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { useProactivePanelsEnabled } from '../state/gitSettings'
-import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
+import { toolsPanelStore, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 
 /** T3 Code's measure of a large change: a turn that changed at least this many files, or this many lines. */
 export const PROACTIVE_CHANGES_MIN_FILES = 3
@@ -53,19 +53,28 @@ export class ProactiveChangesWatch {
 }
 
 /**
- * Proactive panels (off unless turned on in Settings): after a turn of the thread the Tools panel would show
- * changed many files, Changes opens on its own, the way T3 Code opens its diff. Only a closed panel opens, and
- * only for that thread, so a panel the user has open on another surface or pinned elsewhere is never taken over;
- * keyboard focus stays where it was.
+ * Proactive panels (off unless turned on in Settings): after a turn that changed many files, Changes opens on its
+ * own for that thread, the way T3 Code opens its diff. A large turn waits with its thread until the thread is
+ * focused, so a turn in a pane the user is not looking at is shown when they get to it; it is let go once Changes
+ * is opened for the thread, or once the thread is focused, whether or not the panel could open then. Only a closed
+ * panel opens, so a panel the user has open on another surface or pinned elsewhere is never taken over; keyboard
+ * focus stays where it was.
  */
 export function useProactiveChanges(state: AgentState, focusedThreadId: string | null, store: ToolsPanelStore = toolsPanelStore): void {
   const enabled = useProactivePanelsEnabled()
+  const chrome = useToolsPanelChrome(store)
   const watch = useRef<ProactiveChangesWatch | null>(null)
   watch.current ??= new ProactiveChangesWatch()
+  /** Threads with a large turn not yet shown. */
+  const pending = useRef(new Set<string>())
   const threads = state.host.threads
   useEffect(() => {
-    if (!enabled) { watch.current!.reset(); return }
-    const due = watch.current!.observe(threads, Date.now())
-    if (focusedThreadId !== null && due.includes(focusedThreadId)) store.showChangesProactively(focusedThreadId)
-  }, [enabled, threads, focusedThreadId, store])
+    if (!enabled) { watch.current!.reset(); pending.current.clear(); return }
+    for (const id of watch.current!.observe(threads, Date.now())) pending.current.add(id)
+    for (const id of [...pending.current]) if (!threads.some(thread => thread.id === id)) pending.current.delete(id)
+    // Changes already showing a thread settles its large turn.
+    const showing = chrome.open && chrome.surface === 'changes' ? chrome.pinnedThreadId ?? focusedThreadId : null
+    if (showing !== null) pending.current.delete(showing)
+    if (focusedThreadId !== null && pending.current.delete(focusedThreadId)) store.showChangesProactively(focusedThreadId)
+  }, [enabled, threads, focusedThreadId, store, chrome.open, chrome.surface, chrome.pinnedThreadId])
 }

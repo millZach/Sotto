@@ -87,6 +87,28 @@ describe('Proactive panels on the Tools panel store', () => {
     hook.rerender({ current: state([thread('a', 'idle', git(9, 0, 't3')), thread('b', 'idle', git(9, 0, 't2'))]), focused: 'a' })
     expect(store.getSnapshot()).toMatchObject({ open: true, surface: 'changes' })
   })
+  it('keeps a large turn in a pane not in focus until that thread is focused, and lets it go once Changes has shown it', () => {
+    withSettings({ proactivePanels: true })
+    const state = (threads: AgentThread[]): AgentState => ({ ...threadsStateFixture(), host: { ...threadsStateFixture().host, threads } })
+    const store = new ToolsPanelStore()
+    const hook = renderHook(({ current, focused }: { current: AgentState; focused: string }) => useProactiveChanges(current, focused, store),
+      { initialProps: { current: state([thread('a', 'idle', git(0, 0, 't0')), thread('b', 'running', git(0, 0, 't0')), thread('c', 'running', git(0, 0, 't0'))]), focused: 'a' } })
+    const done = state([thread('a', 'idle', git(0, 0, 't0')), thread('b', 'idle', git(6, 0, 't1')), thread('c', 'idle', git(6, 0, 't1'))])
+    hook.rerender({ current: done, focused: 'a' })
+    expect(store.getSnapshot().open).toBe(false)
+    // Later the user gets to b: its large turn is shown then.
+    hook.rerender({ current: done, focused: 'b' })
+    expect(store.getSnapshot()).toMatchObject({ open: true, surface: 'changes' })
+    // c's turn is shown by the user opening Changes pinned to it; focusing c afterwards opens nothing more.
+    act(() => { store.setOpen(false); store.pin('c'); store.setSurface('changes'); store.setOpen(true) })
+    hook.rerender({ current: done, focused: 'b' })
+    act(() => { store.setOpen(false); store.unpin() })
+    hook.rerender({ current: done, focused: 'c' })
+    expect(store.getSnapshot().open).toBe(false)
+    // Shown once: focusing b again does not reopen it.
+    hook.rerender({ current: done, focused: 'b' })
+    expect(store.getSnapshot().open).toBe(false)
+  })
   it('leaves keyboard focus where it was when Changes opens on its own', () => {
     const store = new ToolsPanelStore()
     render(<div className="thread-workspace__body"><input aria-label="Prompt" /><ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={fakeFilesBridge({})} store={store} /></div>)
