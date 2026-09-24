@@ -9,7 +9,6 @@ import { gitPathRequestSchema, gitReviewRequestSchema, gitWatchRequestSchema, GI
 import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
-import { GitPullRequestsService, type PullRequestDraftWriter } from './gitPullRequests'
 import type { CheckpointService } from './checkpoints'
 import { parseNameStatusZ, parseNumstatZ, sectionIsBinary, sectionPath, splitPatch } from './gitReview'
 
@@ -21,8 +20,6 @@ interface GitDependencies {
   pollMs?: number
   canMutate?(threadId: string): Promise<boolean> | boolean
   checkpoints?: CheckpointService
-  /** Sotto's own writing of a pull request form; absent, the form drafts nothing. */
-  draftPullRequestText?: PullRequestDraftWriter
   /** A Git action changed this thread's folder, so the thread's Git status is read again without waiting for the timer. */
   acted?(threadId: string): void
 }
@@ -47,14 +44,7 @@ export class GitChangesService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
   private timer: ReturnType<typeof setInterval> | null = null
   private polling = false
-  private readonly pullRequests: GitPullRequestsService
-  constructor(private readonly dependencies: GitDependencies) {
-    super()
-    this.pullRequests = new GitPullRequestsService({ files: dependencies.files, mutations: this.mutations, ...(dependencies.canMutate ? { canMutate: dependencies.canMutate } : {}), ...(dependencies.draftPullRequestText ? { draftText: dependencies.draftPullRequestText } : {}), ...(dependencies.acted ? { acted: dependencies.acted } : {}) })
-  }
-  reviewPullRequest(payload: unknown) { return this.pullRequests.review(payload) }
-  draftPullRequestText(payload: unknown) { return this.pullRequests.draft(payload) }
-  actPullRequest(payload: unknown) { return this.pullRequests.act(payload) }
+  constructor(private readonly dependencies: GitDependencies) { super() }
   async isMutating(threadId: string): Promise<boolean> {
     if (this.mutations.size === 0) return false
     const owner = await workspace(this.dependencies.files, threadId)
@@ -289,7 +279,6 @@ export class GitChangesService extends ToolOperations {
   }
   dispose(): void {
     this.disposed = true
-    this.pullRequests.dispose()
     if (this.timer) clearInterval(this.timer)
     this.watches.clear()
     for (const child of this.children) child.kill()

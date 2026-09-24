@@ -24,6 +24,8 @@ import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitAct
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
@@ -153,6 +155,8 @@ export class WorkspaceHost implements AgentHost {
   private gitStatusPolling = false
   /** Runs the Git actions on a thread's folder the way T3 does; without one, the commands say so. */
   private gitActions: GitActions | undefined
+  /** Reads and acts on a thread's pull requests through gh (ADR-0027); without one, the surface says so. */
+  private gitPullRequests: GitPullRequests | undefined
   /** The desktop's own reason a folder may not change yet (a revert in flight); absent on a host, which has none. */
   private mutationGuard: ((threadId: string) => Promise<boolean> | boolean) | undefined
   /** A thread's own history: the log and the message projection every window reads (issue #119). */
@@ -220,6 +224,7 @@ export class WorkspaceHost implements AgentHost {
     this.gitStatusTimer.unref?.()
   }
   setGitActions(actions: GitActions): void { this.gitActions = actions }
+  setGitPullRequests(pullRequests: GitPullRequests): void { this.gitPullRequests = pullRequests }
   /** The branches of the folder a thread works in, or would work in: a draft reads its project's folder, or the worktree it points at. */
   async listThreadRefs(request: GitRefsRequest): Promise<GitRefsPage> {
     await this.initialize()
@@ -293,6 +298,10 @@ export class WorkspaceHost implements AgentHost {
       try {
         const result = await actions.runStackedAction({ threadId: command.threadId, cwd, action: command.action, commitMessage: command.commitMessage, featureBranch: command.featureBranch, filePaths: command.filePaths, allowDefaultBranch: command.allowDefaultBranch, onProgress })
         update({ status: 'done', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), result })
+        // The pull request the action created, or the open one it found, is linked to the thread the way T3 links it.
+        if ((result.pr.status === 'created' || result.pr.status === 'opened_existing') && result.pr.url && result.pr.number) {
+          this.linkPullRequestRecord(command.threadId, { number: result.pr.number, url: result.pr.url, title: result.pr.title ?? `Pull request #${result.pr.number}`, state: 'open', draft: false }, 'created')
+        }
       } catch (error) {
         update({ status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'The Git action failed.' })
       }
@@ -358,6 +367,166 @@ export class WorkspaceHost implements AgentHost {
       const { url } = await this.gitActionsOrRefuse().publish(await this.gitActionFolder(threadId), options)
       await this.refreshAfterGitAction(threadId)
       return { snapshot: this.workspaceSnapshot(), url }
+    })
+  }
+  private pullRequestsOrRefuse(): GitPullRequests {
+    if (!this.gitPullRequests) throw new Error('Pull requests are unavailable on this host.')
+    return this.gitPullRequests
+  }
+  /** Whether the thread knows this pull request: its branch's own, or one linked to it. Only those are acted on. */
+  private knowsPullRequest(thread: AgentThread, url: string): boolean {
+    const key = pullRequestKey(url)
+    if (!key) return false
+    const branch = branchPullRequestUrl(thread)
+    return (branch !== undefined && pullRequestKey(branch) === key) || (thread.pullRequests ?? []).some(link => pullRequestKey(link.url) === key)
+  }
+  /**
+   * Adds a pull request to the thread's links, or brings a link it has up to date with what GitHub said. A link
+   * keeps how it was first made. The oldest goes when the list is full. Callers hold the thread's lane, or run
+   * where nothing else changes the record; the caller saves.
+   */
+  private linkPullRequestRecord(threadId: string, pullRequest: Pick<GitPullRequestLink, 'number' | 'url' | 'title' | 'state' | 'draft'>, source: GitPullRequestLinkSource): GitPullRequestLink | null {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const key = pullRequestKey(pullRequest.url)
+    if (!thread || !key || !pullRequestAddress(pullRequest.url)) return null
+    const links = [...(thread.pullRequests ?? [])]
+    const index = links.findIndex(link => pullRequestKey(link.url) === key)
+    const snapshot = { number: pullRequest.number, url: pullRequest.url, title: pullRequest.title.slice(0, 500), state: pullRequest.state, draft: pullRequest.draft }
+    let link: GitPullRequestLink
+    if (index >= 0) {
+      const existing = links[index]!
+      link = { ...existing, ...snapshot }
+      if (isDeepStrictEqual(existing, link)) return existing
+      links[index] = link
+    } else {
+      link = { ...snapshot, source, linkedAt: new Date().toISOString() }
+      links.push(link)
+      while (links.length > GIT_PULL_REQUEST_LINKS_MAX) links.shift()
+    }
+    thread.pullRequests = links
+    this.dirty = true
+    this.publishSoon()
+    return link
+  }
+  private async saveLinks(): Promise<void> {
+    try { await this.flush() } catch { this.saveError = 'The pull request link could not be saved. It shows until Sotto restarts.' }
+  }
+  /**
+   * One pull request of the thread's, read through gh: the one named, else its branch's own, else the one
+   * linked last. A draft reads through its project's folder, as it does for branches. A linked pull request's
+   * title and state on the record follow what GitHub just said.
+   */
+  async readThreadPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+    await this.initialize()
+    const service = this.pullRequestsOrRefuse()
+    const thread = this.thread(request.threadId)
+    const reference = request.reference ?? branchPullRequestUrl(thread) ?? thread.pullRequests?.at(-1)?.url
+    if (!reference) return null
+    const view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference)
+    const current = this.thread(request.threadId)
+    const key = pullRequestKey(view.url)
+    const link = current.pullRequests?.find(item => pullRequestKey(item.url) === key)
+    if (link && (link.title !== view.title || link.state !== view.state || link.draft !== view.draft)) {
+      void this.onLane(request.threadId, async () => { if (this.linkPullRequestRecord(request.threadId, view, link.source)) await this.saveLinks() }).catch(() => undefined)
+    }
+    const branch = branchPullRequestUrl(current)
+    return this.detailOf(view, link?.source ?? null, branch !== undefined && pullRequestKey(branch) === key)
+  }
+  private detailOf(view: GitPullRequestView, linked: GitPullRequestLinkSource | null, branch: boolean): GitPullRequestDetail {
+    return { ...view, linked, branch }
+  }
+  /** A press on the Pull request surface, for a pull request the thread knows. GitHub moved, so the badge and the Git action read it again. */
+  runPullRequestAction(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
+    return this.onLane(command.threadId, async () => {
+      await this.initialize()
+      const service = this.pullRequestsOrRefuse()
+      if (!this.knowsPullRequest(this.thread(command.threadId), command.url)) throw new GitPullRequestRefusal('Link this pull request to the thread before acting on it.')
+      const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method)
+      const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
+      if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
+      this.gitStatus?.invalidate()
+      await this.readGitStatus(command.threadId, true)
+      this.publish()
+      return { snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }
+    })
+  }
+  /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
+  linkThreadPullRequest(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const service = this.pullRequestsOrRefuse()
+      if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
+      const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), reference)
+      const link = this.linkPullRequestRecord(threadId, view, 'linked')
+      if (!link) throw new GitPullRequestRefusal('Sotto links pull requests from GitHub only.')
+      await this.saveLinks()
+      this.publish()
+      return { snapshot: this.workspaceSnapshot(), link }
+    })
+  }
+  unlinkThreadPullRequest(threadId: string, url: string): Promise<AgentHostSnapshot> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const thread = this.thread(threadId)
+      const key = pullRequestKey(url)
+      const links = (thread.pullRequests ?? []).filter(link => pullRequestKey(link.url) !== key)
+      if (links.length !== (thread.pullRequests ?? []).length) {
+        if (links.length) thread.pullRequests = links; else delete thread.pullRequests
+        this.dirty = true
+        await this.saveLinks()
+        this.publish()
+      }
+      return this.workspaceSnapshot()
+    })
+  }
+  /**
+   * T3's Checkout pull request from the branch picker. Local runs `gh pr checkout` in the thread's folder, the
+   * project's own checkout for a draft, and the thread follows the branch the folder lands on (ADR-0014).
+   * Worktree is for a draft: the pull request's head becomes a branch, and the draft's new worktree checks that
+   * branch out on first send, or the draft points at the worktree that already has it. Either way the pull
+   * request is linked to the thread.
+   */
+  checkoutThreadPullRequest(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const service = this.pullRequestsOrRefuse()
+      if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
+      const thread = this.thread(threadId)
+      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const draft = thread.nativeSessionStarted === false && creation?.phase === 'unstarted' && !(thread.worktree?.mode === 'independent' && thread.worktree.path)
+      if (mode === 'worktree' && !draft) throw new GitPullRequestRefusal('This thread already has a working folder. Use Local, or start a new thread to check the pull request out in a worktree of its own.')
+      const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), reference)
+      if (mode === 'local') {
+        if (draft && thread.worktree?.mode !== 'shared') {
+          // Local is the project's own checkout, so a draft that was set for a worktree works there instead, as in T3.
+          const previous = { worktree: thread.worktree, workingDirectory: thread.workingDirectory }
+          const shared = await this.selectedWorkingCopy(thread.projectId, { workingCopy: 'shared' })
+          const current = this.thread(threadId)
+          current.worktree = shared; current.workingDirectory = shared.path
+          this.dirty = true
+          try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+        }
+        await service.checkoutLocal(await this.gitActionFolder(threadId), view.url)
+        this.linkPullRequestRecord(threadId, view, 'checkout')
+        await this.refreshAfterGitAction(threadId, { followSentBranch: true })
+        await this.saveLinks()
+        const after = this.thread(threadId).worktree
+        const branch = after?.git?.branch ?? after?.branch
+        return { snapshot: this.workspaceSnapshot(), notice: `Checked out PR #${view.number}${branch ? ` on ${branch}` : ''}.` }
+      }
+      const prepared = await service.prepareWorktreeBranch(this.threadRepositoryFolder(threadId, 'pull requests'), view)
+      const current = this.thread(threadId)
+      current.worktree = prepared.worktreePath
+        ? await this.selectedWorkingCopy(current.projectId, { workingCopy: 'independent', existingWorktreePath: prepared.worktreePath })
+        : { mode: 'independent', status: 'pending', branch: prepared.branch, checkoutBranch: true }
+      current.workingDirectory = undefined
+      this.linkPullRequestRecord(threadId, view, 'checkout')
+      this.dirty = true
+      await this.flush()
+      this.publish()
+      return { snapshot: this.workspaceSnapshot(), notice: prepared.worktreePath
+        ? `PR #${view.number} is checked out in another worktree already. This thread will work there.`
+        : `PR #${view.number} will be checked out on ${prepared.branch} in a new worktree when you send.` }
     })
   }
   /** A Git action changed this thread's folder: read it again, remote and all, without waiting for the timer. */
@@ -1187,8 +1356,9 @@ export class WorkspaceHost implements AgentHost {
         // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
-        // The Git action is Sotto's record, not the provider's: a provider update mid-action keeps its progress and its lock.
+        // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
+        ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
@@ -1438,7 +1608,8 @@ export class WorkspaceHost implements AgentHost {
       if (!metadata.path) {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
-        metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath })
+        metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
+          ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}) })
         current().worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.

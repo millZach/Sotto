@@ -75,7 +75,6 @@ import {
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
-import { pullRequestTextWriter } from './llm/pullRequestText'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { UpdateService } from './updates/updateService'
@@ -612,8 +611,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
   }) : await inactiveLocalHost(userDataPath)
-  const { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter } = localRuntime
-  const writingSettings = (): Promise<AppSettings> => settings.get()
+  const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   let browserService: BrowserService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService)
   agentHost.useBrowserTools(browserAgentServer)
@@ -624,7 +622,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
-    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request),
+    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
@@ -1013,7 +1011,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
-        draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({

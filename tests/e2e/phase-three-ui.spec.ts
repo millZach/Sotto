@@ -130,7 +130,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await toggle.focus()
     await page.keyboard.press('Enter')
     const panel = page.getByRole('complementary', { name: 'Tools' })
-    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'Agents'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
     await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
     await page.keyboard.press('ArrowRight')
     await expect(panel.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true')

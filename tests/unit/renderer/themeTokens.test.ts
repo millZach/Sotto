@@ -185,6 +185,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/tools/agentsSurface.css',
       'src/renderer/src/tools/browserReview.css',
       'src/renderer/src/tools/changes.css',
+      'src/renderer/src/tools/pullRequestSurface.css',
       'src/renderer/src/tools/tools.css',
       'src/renderer/src/tools/toolsRail.css',
     ]

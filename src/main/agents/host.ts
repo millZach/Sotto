@@ -7,6 +7,7 @@ import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmen
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
+import type { GitPullRequestAction, GitPullRequestDetail, GitPullRequestLink, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 export type AgentHostCommand =
@@ -121,6 +122,14 @@ export interface AgentHost {
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
+  /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
+  readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  /** A press on the Pull request surface; answers with what happened, in T3's words. */
+  runPullRequestAction?(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
+  linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>
+  unlinkThreadPullRequest?(threadId: string, url: string): Promise<AgentHostSnapshot>
+  /** T3's Checkout pull request, Local or Worktree. */
+  checkoutThreadPullRequest?(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
   privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>

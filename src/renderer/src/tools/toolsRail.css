@@ -96,8 +96,6 @@
 .tools-chrome__button:disabled { opacity: .5; cursor: default; }
 .tools-chrome__button:disabled:hover { background: transparent; color: var(--tt-text-2); }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
-.tools-panel .git-pr__toolbar.tools-chrome { flex-wrap: wrap; gap: 6px 8px; padding-block: 7px; }
-.tools-panel .git-pr__toolbar .tools-chrome__actions { flex-wrap: wrap; gap: 8px; }
 
 /* The working copy the panel reads, as one quiet line: project, then the branch in mono, then the folder's kind.
    The branch loses its end first, never the project. The folder's two actions sit at the line's end. */

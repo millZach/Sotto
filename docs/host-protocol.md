@@ -15,7 +15,7 @@ Nothing v1 carries is renamed, removed or given a new meaning. A change that nee
 Every host advertises two things beside `v`:
 
 - `sottoVersion`: the Sotto release the host runs, such as `0.1.16`. It says which build answered; it is not a compatibility rule by itself.
-- `features`: the host features it offers. This build offers three: `detail-delta`, `git-refs` for the branch picker's request, and `git-changed-files` for the commit dialog's.
+- `features`: the host features it offers. This build offers four: `detail-delta`, `git-refs` for the branch picker's request, `git-changed-files` for the commit dialog's, and `git-pull-request` for the Pull request surface's.
 
 A client reads `/v1/health` before it opens a session, and uses a feature only when the host lists it. It never finds out by sending a request and reading the refusal. Feature names it does not know are ignored.
 
@@ -61,6 +61,7 @@ Each request is `{ v: 1, id, session, op, ... }`: `id` is the client's own (at m
 | `preview` | `request` | One attachment preview, or `null`. |
 | `git-refs` | `request` | A page of one thread's Git refs for the branch picker: `{ refs, isRepository, hasRemote, nextCursor, total }`, each ref `{ name, remote?, current, isDefault, worktreePath }`. `request` is `{ threadId, query?, cursor?, limit?, includeMatchingRemoteRefs?, refresh? }`. Only on a host that lists the `git-refs` feature; a client sends it to no other. |
 | `git-changed-files` | `request` | One thread's changed files for the commit dialog: `{ isRepository, files, truncated }`, each file `{ path, originalPath?, status, insertions, deletions }` with counts against HEAD, or null for a binary or uncounted file. `request` is `{ threadId }`. Only on a host that lists the `git-changed-files` feature. |
+| `git-pull-request` | `request` | One of a thread's pull requests, read through the host's `gh`, for the Pull request surface and the Link and Checkout pull request dialogs: `{ number, url, title, body, state, draft, baseBranch, headBranch, crossRepository, reviewDecision, reviews, mergeable, checks, mergeMethods, autoMergeAllowed, autoMerge, mergedAt, behindBy, canUpdateBranch, linked, branch }`, each check `{ name, status, url, description }`, each review `{ author, state, url }` (a reviewer's latest approving or changes-requested review), or null when the thread has none to show. `request` is `{ threadId, reference? }`: a GitHub pull request URL, `42`, `#42` or a `gh pr checkout` line, or none for the branch's own pull request, else the one linked last. Only on a host that lists the `git-pull-request` feature. |
 
 A response is `{ v: 1, id, ok: true, result }` or `{ v: 1, id, ok: false, error: { code, message } }`. A request from this session that the host cannot read, such as one from a client of a newer Sotto version, is answered with `invalid_request` by its `id`; a message that is not JSON, or has no readable `v`, `id` and `session`, closes the socket.
 

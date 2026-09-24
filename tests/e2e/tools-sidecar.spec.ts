@@ -17,7 +17,7 @@ const run = promisify(execFile)
 const SHOTS = resolve(process.cwd(), 'artifacts/tools-rail-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const MODES = ['dark', 'light'] as const
-const TOOLS = ['Browser', 'Terminal', 'Files', 'Changes', 'Agents'] as const
+const TOOLS = ['Browser', 'Terminal', 'Files', 'Changes', 'Pull request', 'Agents'] as const
 /** Changes' Git scopes, each captured through the whole matrix. */
 const GIT_SCOPES = ['working', 'branch'] as const
 type Tool = typeof TOOLS[number]

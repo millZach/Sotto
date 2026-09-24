@@ -92,6 +92,8 @@ export function branchLabel(thread: ToolbarThread): string {
   const worktree = thread.worktree
   if (!worktree) return 'Select ref'
   if (newWorktreeDraft(thread)) {
+    // A pull request checked out into a worktree: the new folder takes that branch as it stands.
+    if (worktree.checkoutBranch && worktree.branch) return worktree.branch
     const base = worktree.baseBranch ?? worktree.git?.branch ?? worktree.git?.defaultBranch ?? 'main'
     return `From ${worktree.startFromOrigin === false ? '' : 'origin/'}${base}`
   }

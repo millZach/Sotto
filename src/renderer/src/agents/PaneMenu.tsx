@@ -12,6 +12,8 @@ export interface PaneMenuItem {
   readonly disabled?: boolean
   /** Why the row is disabled, shown as its tooltip and read with its name. */
   readonly hint?: string
+  /** A press that cannot be taken back from here, such as closing a pull request, reads in the error colour. */
+  readonly tone?: 'danger'
   readonly run: () => void
 }
 
@@ -74,7 +76,7 @@ export function PaneMenu({ groups, label = 'More actions', icon, className }: {
       }}>
       {shown.map((group, index) => <React.Fragment key={group[0]!.id}>
         {index > 0 ? <hr /> : null}
-        {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" tabIndex={-1} disabled={item.disabled} title={item.hint}
+        {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
           onClick={() => { close(true); item.run() }}>{item.icon}{item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
       </React.Fragment>)}
     </div> : null}

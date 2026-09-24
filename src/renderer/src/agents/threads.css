@@ -54,6 +54,7 @@
 .pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
 .pane-menu__item:hover:not(:disabled), .pane-menu__item:focus-visible { background: var(--tt-hover); outline: none; }
+.pane-menu__item[data-tone='danger'], .pane-menu__item[data-tone='danger'] > svg { color: var(--tt-error-text); }
 .pane-menu__item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .pane-menu__item:disabled { color: var(--tt-text-muted); cursor: default; }
 .pane-menu__item:disabled > svg { opacity: .55; }

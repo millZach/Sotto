@@ -3,6 +3,7 @@ import { agentAttachmentPreviewRequestSchema, agentCommandSchema, agentStateSche
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
+import { gitPullRequestRequestSchema } from './gitPullRequests'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -16,8 +17,10 @@ export const HOST_PROTOCOL_VERSION = 1 as const
  * (a `detail-delta` push) in place of the whole thread on every change. `git-refs`: the host answers the
  * `git-refs` request with a page of a thread's branches for the branch picker. `git-changed-files`: the
  * host answers the `git-changed-files` request with a thread's changed files for the commit dialog.
+ * `git-pull-request`: the host answers the `git-pull-request` request with one of a thread's pull requests,
+ * read through gh, for the Pull request surface and its dialogs.
  */
-export const HOST_FEATURES = ['detail-delta', 'git-refs', 'git-changed-files'] as const
+export const HOST_FEATURES = ['detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * Whether a host's Sotto version is later than this client's, by release number. A version that cannot
@@ -68,6 +71,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
   /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */
   z.object({ ...base, op: z.literal('git-changed-files'), request: gitChangedFilesRequestSchema }).strict(),
+  /** One of a thread's pull requests, read through gh for the Pull request surface; read on request (ADR-0027). */
+  z.object({ ...base, op: z.literal('git-pull-request'), request: gitPullRequestRequestSchema }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never

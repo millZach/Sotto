@@ -125,8 +125,9 @@ export interface AgentMembership {
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
+import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
-const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish'] as const
+const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
 
@@ -500,6 +501,11 @@ export class AgentControl {
   gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
     if (!this.dependencies.host.listThreadChangedFiles) throw new Error('Changed files are unavailable on this host.')
     return this.dependencies.host.listThreadChangedFiles(request)
+  }
+  /** One pull request of a thread's, read when the Pull request surface or a pull request dialog asks for it (ADR-0027). */
+  gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+    if (!this.dependencies.host.readThreadPullRequest) throw new Error('Pull requests are unavailable on this host.')
+    return this.dependencies.host.readThreadPullRequest(request)
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   attachmentPreview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult {
@@ -968,6 +974,37 @@ export class AgentControl {
           const { snapshot, url } = await host.publishThreadRepository(command.threadId, { repository: command.repository, visibility: command.visibility })
           this.acceptSnapshot(snapshot)
           this.state.notice = `Repository published at ${url}.`
+          this.state.error = null
+          break
+        }
+        case 'git-pull-request-action': {
+          if (!host.runPullRequestAction) throw new Error('Pull requests are unavailable.')
+          const { snapshot, notice } = await host.runPullRequestAction({ threadId: command.threadId, url: command.url, action: command.action, method: command.method })
+          this.acceptSnapshot(snapshot)
+          this.state.notice = notice
+          this.state.error = null
+          break
+        }
+        case 'git-link-pull-request': {
+          if (!host.linkThreadPullRequest) throw new Error('Linking pull requests is unavailable.')
+          const { snapshot, link } = await host.linkThreadPullRequest(command.threadId, command.reference)
+          this.acceptSnapshot(snapshot)
+          this.state.notice = `Linked PR #${link.number}.`
+          this.state.error = null
+          break
+        }
+        case 'git-unlink-pull-request': {
+          if (!host.unlinkThreadPullRequest) throw new Error('Linking pull requests is unavailable.')
+          this.acceptSnapshot(await host.unlinkThreadPullRequest(command.threadId, command.url))
+          this.state.notice = 'Unlinked the pull request from this thread.'
+          this.state.error = null
+          break
+        }
+        case 'git-checkout-pull-request': {
+          if (!host.checkoutThreadPullRequest) throw new Error('Checking out pull requests is unavailable.')
+          const { snapshot, notice } = await host.checkoutThreadPullRequest(command.threadId, command.reference, command.mode)
+          this.acceptSnapshot(snapshot)
+          this.state.notice = notice
           this.state.error = null
           break
         }

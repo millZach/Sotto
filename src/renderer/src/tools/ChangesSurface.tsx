@@ -1,5 +1,5 @@
 import React, { Fragment, memo, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, GitPullRequestArrow, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, sameReviewLine, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
@@ -8,7 +8,6 @@ import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, r
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
-import { GitPullRequest } from './GitPullRequest'
 import { GitActions } from './GitActions'
 import { ToolsChrome } from './ToolsChrome'
 import './changes.css'
@@ -41,8 +40,6 @@ export interface ChangesSurfaceProps {
   readonly bridge: GitChangesBridge | undefined
   readonly platform?: string | undefined
   readonly onStatus: (message: string) => void
-  /** Whether the thread's provider writes Git drafts (ADR-0026); a Devin thread's forms offer none. */
-  readonly drafts?: boolean
   /** Opens a file of the working folder in Files; absent, a file's name is only its name. */
   readonly onOpenFile?: ((path: string) => void) | undefined
   /** Reads the branches Branch changes can compare against; tests pass their own. */
@@ -56,7 +53,7 @@ export interface ChangesSurfaceProps {
  * files of that comparison as collapsible blocks with their counts, and a file tree beside them. Review only:
  * committing is the Git action's, and there is no staging, discarding or reverting here (ADR-0027).
  */
-export function ChangesSurface({ threadId, store, bridge, platform, onStatus, drafts = true, onOpenFile, refs, comments = reviewCommentStore }: ChangesSurfaceProps): ReactNode {
+export function ChangesSurface({ threadId, store, bridge, platform, onStatus, onOpenFile, refs, comments = reviewCommentStore }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
   const view = useChangesView(store)
   // Diff layout, Hide whitespace changes and Default diff file state say where the view starts (ADR-0027, #271).
@@ -65,7 +62,6 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
   useLayoutEffect(() => {
     if (startLayout !== undefined && startHidden !== undefined && startFileState !== undefined) store.applyStartingView({ layout: startLayout, ignoreWhitespace: startHidden, collapsed: startFileState === 'collapsed' })
   }, [store, startLayout, startHidden, startFileState])
-  const [pullRequestOpen, setPullRequestOpen] = useState(false)
   // Checkpoints draws its toggle into the line of chrome.
   const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
   if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>
@@ -78,9 +74,6 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
       {bridge && repository ? <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button> : null}
     </div></>
   }
-  if (pullRequestOpen && bridge && changes.workspace) return <div className="changes-surface">
-    <GitPullRequest key={`${threadId}:${changes.workspace.workspaceId}`} threadId={threadId} workspaceId={changes.workspace.workspaceId} bridge={bridge} drafts={drafts} onBack={() => setPullRequestOpen(false)} />
-  </div>
   const reviewState = changes.review
   const review = reviewState?.status === 'ready' ? reviewState.review : reviewState?.status === 'loading' ? reviewState.previous : undefined
   const files = review?.files ?? []
@@ -102,8 +95,6 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
       </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
-        {bridge?.reviewPullRequest ? <button type="button" className="tools-chrome__button tt-focusable" title="Pull request" onClick={() => setPullRequestOpen(true)}>
-          <GitPullRequestArrow size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Pull request</span></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="Refresh diff" title="Refresh diff" data-busy={changes.refreshing || reviewState?.status === 'loading' || undefined}
           onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
       </div>
