@@ -80,6 +80,12 @@ export function rowShowing(lines: readonly DiffLine[], rows: readonly DiffRow[],
   return rows.find(row => row.indices.some(index => { const line = reviewLine(lines[index]!); return line !== null && sameReviewLine(line, wanted) }))
 }
 
+/** Whether any line of the file, drawn or not, is this one. */
+export function fileHasLine(lines: readonly DiffLine[], wanted: ReviewLine | undefined): boolean {
+  if (wanted === undefined) return false
+  return lines.some(line => { const quoted = reviewLine(line); return quoted !== null && sameReviewLine(quoted, wanted) })
+}
+
 /** A line's identity for matching a comment to the diff drawn now. */
 export function lineSignature(line: ReviewLine): string {
   return `${line.kind}\u0000${line.oldLine ?? ''}\u0000${line.newLine ?? ''}\u0000${line.text}`

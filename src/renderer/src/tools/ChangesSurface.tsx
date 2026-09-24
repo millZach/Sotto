@@ -4,7 +4,7 @@ import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges
 import type { ToolsError } from '../../../shared/tools'
 import { MAX_REVIEW_COMMENTS, reviewCommentStore, reviewLabel, useReviewComments, useReviewDraft, type ReviewComment, type ReviewCommentStore, type ReviewDraft, type ReviewLine } from '../agents/reviewComments'
 import { Button } from '../components/Button'
-import { diffRows, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
+import { diffRows, fileHasLine, quotedLines, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
 import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
@@ -361,18 +361,20 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const { selection: picked, draft, comments, actions } = review
   const draftRows = useMemo(() => draft ? rowsShowing(shown, rows, draft.lines) : NO_KEYS, [draft, rows, shown])
   const notedRows = useMemo(() => comments.length ? rowsShowing(shown, rows, comments.flatMap(comment => comment.lines)) : NO_KEYS, [comments, rows, shown])
-  // Each comment sits under the row that shows its last line now. One whose lines have changed since stays on the
-  // diff too, at the end of the file, saying so: it still goes with the message until it is sent or deleted.
+  // Each comment sits under the row that shows its last line now. One whose line is past the rows drawn, or has
+  // changed since, stays on the diff too, at the end of what is drawn, saying which: it still goes with the message
+  // until it is sent or deleted. Every line of the file counts, not only the ones drawn.
   const markers = useMemo(() => {
-    const map = new Map<string, { readonly comment: ReviewComment; readonly moved: boolean }[]>()
+    const map = new Map<string, { readonly comment: ReviewComment; readonly place: MarkerPlace }[]>()
     const end = rows.at(-1)?.key
     for (const comment of comments) {
       const key = rowShowing(shown, rows, comment.lines.at(-1))?.key
+      const place: MarkerPlace = key !== undefined ? 'here' : fileHasLine(lines, comment.lines.at(-1)) ? 'further' : 'changed'
       const at = key ?? end
-      if (at !== undefined) map.set(at, [...map.get(at) ?? [], { comment, moved: key === undefined }])
+      if (at !== undefined) map.set(at, [...map.get(at) ?? [], { comment, place }])
     }
     return map
-  }, [comments, rows, shown])
+  }, [comments, lines, rows, shown])
   // An open draft whose lines have moved on keeps its words at the end of the file rather than vanishing.
   const draftAnchor = draft ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
 
@@ -459,7 +461,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
           <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} />
           {selection && !review.drafting && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
             onPress={() => commentOn(to)} /> : null}
-          {markers.get(row.key)?.map(({ comment, moved }) => <CommentMarker key={comment.id} comment={comment} moved={moved}
+          {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place]}
             onDelete={() => { actions.remove(comment.id); done(row.position ?? current) }} />)}
           {draft && draftAnchor === row.key ? <CommentDraft draft={draft} full={review.full} focus={review.focusDraft}
             onText={actions.editDraft} onCancel={() => { const back = lastPosition(draftRows); actions.cancelDraft(); done(back) }}
@@ -549,8 +551,16 @@ function CommentDraft({ draft, full, focus, onText, onCancel, onAdd }: {
   </div></div>
 }
 
+/** Where a comment's marker is drawn: under its last line, after the rows drawn when its line is further on, or there because its lines have changed. */
+type MarkerPlace = 'here' | 'further' | 'changed'
+const MARKER_NOTE: Record<MarkerPlace, string | null> = {
+  here: null,
+  further: 'Its lines are further down. Show all to see them.',
+  changed: 'These lines have changed since. The comment still sends them as they were.',
+}
+
 /** A comment waiting on the composer, under its last line, until the message goes or it is deleted. */
-function CommentMarker({ comment, moved, onDelete }: { readonly comment: ReviewComment; readonly moved: boolean; readonly onDelete: () => void }): ReactNode {
+function CommentMarker({ comment, note, onDelete }: { readonly comment: ReviewComment; readonly note: string | null; readonly onDelete: () => void }): ReactNode {
   const label = reviewLabel(comment)
   return <div className="changes-comment changes-comment--marker" role="row"><div className="changes-comment__cell" role="gridcell">
     <div className="changes-comment__head">
@@ -559,7 +569,7 @@ function CommentMarker({ comment, moved, onDelete }: { readonly comment: ReviewC
       <Button variant="ghost" className="changes-comment__delete" aria-label={`Delete comment on ${label}`} onClick={onDelete}>Delete comment</Button>
     </div>
     <p className="changes-comment__text">{comment.text}</p>
-    {moved ? <p className="changes-comment__note">These lines have changed since. The comment still sends them as they were.</p> : null}
+    {note ? <p className="changes-comment__note">{note}</p> : null}
   </div></div>
 }
 

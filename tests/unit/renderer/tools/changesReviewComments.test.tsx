@@ -189,6 +189,27 @@ describe('review comments in Changes', () => {
     expect(elsewhere).toHaveFocus()
   })
 
+  it('marks a comment past the rows drawn as further down, not as changed', async () => {
+    const user = userEvent.setup()
+    // A new file of 3,100 lines: past the 3,000 rows Changes draws before Show all.
+    const long = `diff --git a/src/app.ts b/src/app.ts\n--- /dev/null\n+++ b/src/app.ts\n@@ -0,0 +1,3100 @@\n${Array.from({ length: 3100 }, (_, index) => `+line ${index + 1}`).join('\n')}\n`
+    const { comments } = setup(fakeGit([file(long)]))
+    await screen.findByText('line 1')
+    await user.click(screen.getByRole('button', { name: 'Show all' }))
+    await user.click(row('[data-new-line="3050"]'))
+    await user.click(screen.getByRole('button', { name: 'Comment on app.ts L3050' }))
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L3050' }), 'Far down')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    expect(screen.getByText('Far down').closest('.changes-comment--marker')!.previousElementSibling).toHaveAttribute('data-new-line', '3050')
+    // Collapsing and expanding draws the first 3,000 rows again; the comment's line is still in the file.
+    await user.click(screen.getByRole('button', { name: 'Collapse src/app.ts' }))
+    await user.click(screen.getByRole('button', { name: 'Expand src/app.ts' }))
+    const marker = (await screen.findByText('Far down')).closest('.changes-comment--marker')!
+    expect(marker).toHaveTextContent('Its lines are further down. Show all to see them.')
+    expect(marker).not.toHaveTextContent('changed since')
+    expect(comments.list(THREAD)).toHaveLength(1)
+  })
+
   it('picks split rows too, a pair quoting both of its lines', async () => {
     const user = userEvent.setup()
     const { store, comments } = setup()
