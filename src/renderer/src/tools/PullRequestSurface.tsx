@@ -78,18 +78,23 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   useEffect(() => () => { generation.current++ }, [])
   useEffect(() => { setChosen(null); setNotice(null); setDescriptionOpen(false); setLinksOpen(false) }, [thread.id])
 
-  const send = async (request: AgentCommand, pending: Busy, fallback: string): Promise<boolean> => {
+  /** One command at a time. `then` runs before the press counts as over, so its controls stay off until it has finished too. */
+  const send = async (request: AgentCommand, pending: Busy, fallback: string, then?: () => Promise<void>): Promise<boolean> => {
     if (!command || busy) return false
     setBusy(pending); setNotice(null)
-    const result = await sendCommand(command, request, fallback)
-    setBusy(null)
-    setNotice(result.error ? { text: result.error, tone: 'error' } : { text: result.notice ?? 'Done.', tone: 'status' })
-    return result.error === null
+    try {
+      const result = await sendCommand(command, request, fallback)
+      setNotice(result.error ? { text: result.error, tone: 'error' } : { text: result.notice ?? 'Done.', tone: 'status' })
+      await then?.()
+      return result.error === null
+    } finally { setBusy(null) }
   }
   const act = async (action: GitPullRequestAction, withMethod?: GitPullRequestMergeMethod): Promise<void> => {
     if (!detail) return
-    await send({ type: 'git-pull-request-action', threadId: thread.id, url: detail.url, action, ...(withMethod ? { method: withMethod } : {}) }, action, 'Sotto could not confirm this. Refresh to see what GitHub has.')
-    await load()
+    // The press is over only once GitHub has been read again: until then the checklist shows the pull request as it was
+    // before the press, and a control enabled over it could merge twice or update a branch that was just updated.
+    await send({ type: 'git-pull-request-action', threadId: thread.id, url: detail.url, action, ...(withMethod ? { method: withMethod } : {}) }, action,
+      'Sotto could not confirm this. Refresh to see what GitHub has.', load)
     // A press that settled its line takes its own button away; focus comes back to the pull request rather than the page.
     requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) top.current?.focus() })
   }
@@ -134,7 +139,8 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   const ready = mergeReady(detail, lines)
   const allowed = detail.mergeMethods
   const selected = resolveMergeMethod(allowed, preferred)
-  const running = busy !== null
+  // A read in flight, a Refresh or the one after a press, also holds every press: what is on screen may already be out of date.
+  const running = busy !== null || loading
   const open = detail.state === 'open'
   const autoMerge = canAutoMerge(detail)
   const behind = (detail.behindBy ?? 0) > 0

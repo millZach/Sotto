@@ -343,6 +343,24 @@ describe('the Pull request surface', () => {
     await waitFor(() => expect(within(lines()[4]!).queryByRole('button')).toBeNull())
     await waitFor(() => expect(screen.getByRole('heading', { name: '#74 Make the greeting friendlier' })).toHaveFocus())
   })
+  it('keeps every press off until GitHub has been read again after one, so nothing is pressed twice over the old reading', async () => {
+    let answer: ((value: GitPullRequestDetail) => void) | null = null
+    let reads = 0
+    const { command } = mount({ detail: (() => { reads += 1; return reads === 1 ? detail({ behindBy: 2 }) : new Promise<GitPullRequestDetail>(resolve => { answer = resolve }) }) as never })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'Update branch' }))
+    await waitFor(() => expect(reads).toBe(2))
+    // The command has answered and the re-read is running: the old reading is still on screen, and none of it can be pressed.
+    expect(sent(command)).toEqual([expect.objectContaining({ action: 'update-branch' })])
+    expect(screen.getByRole('button', { name: 'Updating...' })).toBeDisabled()
+    expect(mergeButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: 'Merge method: Merge' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Updating...' }))
+    expect(command).toHaveBeenCalledTimes(1)
+    answer!(detail())
+    await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
+    expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
+  })
   it('reads a paired host on an earlier build, which names no reviewer and no merge time', () => {
     const earlier: Record<string, unknown> = { ...detail() }
     delete earlier.reviews; delete earlier.mergedAt
