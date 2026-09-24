@@ -1249,7 +1249,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-git.png",
       "width": 791,
       "height": 1473,
-      "sha256": "3433a5902bf2e4eb59a55387f9ac2d21c7459b2aa3b28a805163e1fba000e32f"
+      "sha256": "d38263d3ec4f42bedf5ce8215fd2dded458ade36186dd6787bc935c1a31e8936"
     },
     {
       "theme": "light",
@@ -1263,7 +1263,7 @@
       "relativePath": "artifacts/design/app-review/baseline/settings-git-light.png",
       "width": 791,
       "height": 1473,
-      "sha256": "e2864315f7877160744f387af7156d6bd71b8bf0d1416b2189f3255ad9af112d"
+      "sha256": "f9438a27eac4d2dc77f0ece6b2d7693f400fe2869fe1de60d33419a89348c131"
     },
     {
       "theme": "dark",
