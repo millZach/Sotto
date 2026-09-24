@@ -115,6 +115,29 @@ describe('follow-up queue in the Threads composer', () => {
     expect(prompt()).toHaveValue('Keep this newer draft')
   })
 
+  it('leaves focus in the prompt when the user has gone back to writing before a removal shows in the queue', async () => {
+    const state = manualState({ running: true })
+    state.followups = [followup({ id: 'late-one', text: 'One' }), followup({ id: 'late-two', text: 'Two' })]
+    const { live, prompt } = mount(state)
+    // Main confirms the removal before the window draws it.
+    const answer = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'remove-followup'
+      ? { ...live.state, followups: live.state.followups!.filter(item => item.id !== request.itemId) } : answer(request))
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    const remove = within(queue).getByRole('button', { name: 'Remove queued message 1' })
+    remove.focus()
+    fireEvent.click(remove)
+    await waitFor(() => expect(requests(live, 'remove-followup')).toHaveLength(1))
+    await act(async () => { await Promise.resolve() })
+    prompt().focus()
+    type(prompt(), 'Still writing')
+    act(() => { live.publish({ followups: live.state.followups!.filter(item => item.id !== 'late-one') }) })
+    expect(within(queue).queryByText('One')).not.toBeInTheDocument()
+    // Without the check, focus would jump to the next message's Remove in the middle of the sentence.
+    expect(prompt()).toHaveFocus()
+    expect(prompt()).toHaveValue('Still writing')
+  })
+
   it('queues with Enter while a turn runs, empties the composer on the press and echoes the message in the transcript', async () => {
     const { live, prompt } = mount(manualState({ running: true }), { holdQueue: true })
     type(prompt(), 'Then run the visual gate')

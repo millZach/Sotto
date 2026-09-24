@@ -206,6 +206,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     const pending = refocus.current
     if (pending === null || !pending.shown(state)) return
     refocus.current = null
+    // By the time the change shows, the user may have moved on: typing in the prompt, or in another pane. The move
+    // only takes back focus the queue dropped (to the page) or still holds; the prompt counts as moved on, since a
+    // late move from there could land on a neighbour's Remove mid-word.
+    const active = document.activeElement
+    if (active !== null && active !== document.body && section.current?.contains(active) !== true) return
     const element = pending.target() ?? host.current?.querySelector<HTMLElement>('textarea:not(:disabled)')
     element?.focus()
   })
