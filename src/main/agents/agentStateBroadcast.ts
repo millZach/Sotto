@@ -14,11 +14,17 @@ interface CatalogSnapshot {
  * Turns a shell into what actually crosses `sotto:agents:state` for one destination window, omitting a
  * model catalog that window was already sent and nothing has changed since (issue #286): `models` is
  * rebuilt into new arrays and objects on every publish even when its content is unchanged (`clientAgentState`
- * deep-clones for its ID projection), so identity cannot tell a repeat from a change -- content, compared
+ * deep-clones for its ID projection), so identity cannot tell a repeat from a change — content, compared
  * with `isDeepStrictEqual`, can. A catalog's revision is a counter bumped only when its content actually
  * changes, shared by every destination; what each destination has already been sent is tracked apart, and
  * only once delivery of it is confirmed, so a window that never actually received a revision is not skipped
  * on the next attempt.
+ *
+ * `host.models` and the selected host's own `clientHosts[]` entry are today always the same array
+ * (`DesktopHostRouter.shell()`), but they are still keyed apart, with a `host:`/`client:` prefix, rather
+ * than sharing the selected host's ID: if the two ever held different content, sharing a key would flip
+ * one's revision out from under the other's own comparison on every publish, so neither could ever settle
+ * on `omitted` again.
  */
 export class AgentStateBroadcaster {
   private readonly catalogs = new Map<string, CatalogSnapshot>()
@@ -36,13 +42,14 @@ export class AgentStateBroadcaster {
       confirmed.push([key, revision])
       return { revision, models: models as AgentModel[] }
     }
-    const encodeClientHost = (client: AgentClientHost): AgentClientHostBroadcast => ({ ...client, models: encode(client.hostId, client.models) })
+    const encodeClientHost = (client: AgentClientHost): AgentClientHostBroadcast => ({ ...client, models: encode(clientCatalogKey(client.hostId), client.models) })
+    const { clientHosts, ...hostRest } = state.host
     const payload: AgentStateBroadcast = {
       ...state,
       host: {
-        ...state.host,
+        ...hostRest,
         models: encode(hostCatalogKey(state), state.host.models),
-        clientHosts: state.host.clientHosts?.map(encodeClientHost),
+        ...(clientHosts ? { clientHosts: clientHosts.map(encodeClientHost) } : {}),
       },
     }
     const delivered = deliver(payload)
@@ -60,5 +67,9 @@ export class AgentStateBroadcaster {
 }
 
 function hostCatalogKey(state: AgentState): string {
-  return state.host.hostId ?? PRIMARY_CATALOG_KEY
+  return `host:${state.host.hostId ?? PRIMARY_CATALOG_KEY}`
+}
+
+function clientCatalogKey(hostId: string): string {
+  return `client:${hostId}`
 }

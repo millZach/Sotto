@@ -467,24 +467,23 @@ export type AgentState = z.infer<typeof agentStateSchema>
  * to was already sent it. `AGENT_GET` and a command's own answer are read on demand, once, so they always
  * carry the array in full; only the coalesced broadcast in `src/main/index.ts` ever omits one, and only
  * after a send it knows reached that window. The revision is what keeps an omission from ever being read
- * as an empty catalog: a window missing the one it names -- fresh, reloaded, or a message it never saw --
- * asks `AGENT_GET` for the whole state instead of showing no models. See ADR-0027.
+ * as an empty catalog: a window missing the one it names — fresh, reloaded, or a message it never saw —
+ * asks `AGENT_GET` for the whole state instead of showing no models. Nothing parses this shape: the
+ * preload forwards it to the page unparsed (contextBridge would otherwise copy a catalog it just put
+ * back together a second time crossing back), and the page's own reassembly reads it structurally, the
+ * same way `trustedState` does for the rest of this channel. See ADR-0027 and
+ * `src/renderer/src/agents/agentStateCatalogs.ts`.
  */
-export const agentModelCatalogBroadcastSchema = z.union([
-  z.object({ revision: z.number().int().nonnegative(), models: z.array(agentModelSchema) }).strict(),
-  z.object({ revision: z.number().int().nonnegative(), omitted: z.literal(true) }).strict(),
-])
-export type AgentModelCatalogBroadcast = z.infer<typeof agentModelCatalogBroadcastSchema>
-export const agentClientHostBroadcastSchema = agentClientHostSchema.omit({ models: true }).extend({ models: agentModelCatalogBroadcastSchema })
-export type AgentClientHostBroadcast = z.infer<typeof agentClientHostBroadcastSchema>
-export const agentHostSnapshotBroadcastSchema = agentHostSnapshotSchema.omit({ models: true, clientHosts: true }).extend({
-  models: agentModelCatalogBroadcastSchema,
-  clientHosts: z.array(agentClientHostBroadcastSchema).optional(),
-})
-export type AgentHostSnapshotBroadcast = z.infer<typeof agentHostSnapshotBroadcastSchema>
+export type AgentModelCatalogBroadcast =
+  | { revision: number; models: AgentModel[] }
+  | { revision: number; omitted: true }
+export type AgentClientHostBroadcast = Omit<AgentClientHost, 'models'> & { models: AgentModelCatalogBroadcast }
+export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts'> & {
+  models: AgentModelCatalogBroadcast
+  clientHosts?: AgentClientHostBroadcast[]
+}
 /** What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`. */
-export const agentStateBroadcastSchema = agentStateSchema.omit({ host: true }).extend({ host: agentHostSnapshotBroadcastSchema })
-export type AgentStateBroadcast = z.infer<typeof agentStateBroadcastSchema>
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
 
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the

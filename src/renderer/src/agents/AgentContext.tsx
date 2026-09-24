@@ -2,6 +2,7 @@ import React, { createContext, startTransition, useCallback, useContext, useEffe
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
+import { wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import type { DictationState } from '../../../shared/dictation'
@@ -293,7 +294,8 @@ export function AgentProvider({ children, settings, dictation }: {
   readonly settings: AppSettings | null
   readonly dictation: DictationState
 }): ReactNode {
-  const connection = useAgentConnection(window.sotto?.agents)
+  const agentsBridge = window.sotto?.agents
+  const connection = useAgentConnection(agentsBridge && wrapAgentBridge(agentsBridge))
   const [voice, setVoice] = useState<AgentVoiceState>({ status: 'off' })
   const voiceRef = useRef<AgentVoiceSession | null>(null)
   const [personalAudio, setPersonalAudio] = useState(false)

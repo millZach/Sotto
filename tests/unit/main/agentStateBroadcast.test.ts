@@ -98,4 +98,26 @@ describe('AgentStateBroadcaster', () => {
     expect(sent[1]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
     expect(sent[1]!.host.clientHosts![1]!.models).toMatchObject({ revision: 2, models: [model('grok-4', { ready: false })] })
   })
+
+  it('keys host.models and the selected host\'s own clientHosts entry apart, so a divergence between them cannot flip both forever', () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const sent: AgentStateBroadcast[] = []
+    const hostId = 'aaaaaaaa-0000-4000-8000-000000000000'
+    const hostModels = [model('gpt-5')]
+    const clientModels = [model('grok-4')]
+    // Contrived: host.models and the selected host's own entry hold different content, which
+    // `DesktopHostRouter.shell()` never does today but nothing stops it in principle.
+    const send = () => broadcaster.send(state(hostModels, [clientHost(hostId, clientModels)]), 'main', payload => { sent.push(payload); return true })
+    send()
+    expect(sent[0]!.host.models).toMatchObject({ revision: 1, models: hostModels })
+    expect(sent[0]!.host.clientHosts![0]!.models).toMatchObject({ revision: 1, models: clientModels })
+    // Neither catalog changes on the next two publishes; a shared key would have kept flipping both
+    // between full and omitted forever, since each would see the other's unrelated content as a change.
+    send()
+    send()
+    expect(sent[1]!.host.models).toEqual({ revision: 1, omitted: true })
+    expect(sent[1]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
+    expect(sent[2]!.host.models).toEqual({ revision: 1, omitted: true })
+    expect(sent[2]!.host.clientHosts![0]!.models).toEqual({ revision: 1, omitted: true })
+  })
 })
