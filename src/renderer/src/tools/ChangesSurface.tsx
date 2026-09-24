@@ -245,11 +245,21 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
   const comments = useReviewComments(commentStore, threadId)
   const draft = useReviewDraft(commentStore, threadId)
   const [selection, setSelection] = useState<LineSelection | null>(null)
-  // A draft takes focus when the user opens it, never when Changes mounts with one already written.
+  // A draft takes focus in the render that opens it, and at no other time: the flag lives for one frame, so a
+  // later render of the file (a diff poll, a turn ending) never pulls focus out of wherever the user has gone.
   const focusDraft = useRef(false)
   const actions = useMemo<ReviewActions>(() => ({
     select: next => { setSelection(next); commentStore.closeEmptyDraft(threadId) },
-    comment: (path, lines) => { focusDraft.current = true; commentStore.openDraft(threadId, path, lines) },
+    comment: (path, lines) => {
+      focusDraft.current = true
+      const { opened } = commentStore.openDraft(threadId, path, lines)
+      if (opened) { requestAnimationFrame(() => { focusDraft.current = false }); return }
+      // A draft with words in it stays; the user is taken to it rather than left wondering where their press went.
+      focusDraft.current = false
+      const field = body.current?.querySelector<HTMLTextAreaElement>('.changes-comment--draft textarea')
+      field?.focus({ preventScroll: true })
+      field?.closest('.changes-comment')?.scrollIntoView({ block: 'nearest' })
+    },
     editDraft: text => commentStore.editDraft(threadId, text),
     cancelDraft: () => commentStore.closeDraft(threadId),
     addDraft: () => { if (commentStore.addDraft(threadId) !== null) setSelection(null) },

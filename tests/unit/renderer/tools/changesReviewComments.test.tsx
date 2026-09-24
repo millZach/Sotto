@@ -11,10 +11,11 @@ import { TOKEN_A } from './fakeFilesBridge'
 const THREAD = 'visual-gate'
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,4 +3,4 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n end\n'
 const workspace = { threadId: THREAD, projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
-const file = (patch: string): GitReviewFile => ({ path: 'src/app.ts', status: 'modified', additions: 1, deletions: 1, content: { kind: 'text', patch } })
+const file = (patch: string, path = 'src/app.ts'): GitReviewFile => ({ path, status: 'modified', additions: 1, deletions: 1, content: { kind: 'text', patch } })
+const OTHER = 'diff --git a/src/other.ts b/src/other.ts\n--- a/src/other.ts\n+++ b/src/other.ts\n@@ -1,2 +1,2 @@\n-before\n+after\n same\n'
 
-function fakeGit() {
-  let files = [file(PATCH)]
+function fakeGit(initial: GitReviewFile[] = [file(PATCH)]) {
+  let files = initial
   let revision = 'r1'
   const listeners = new Set<(event: { threadId: string; workspaceId: string; revision: string }) => void>()
   const bridge = {
@@ -26,15 +27,14 @@ function fakeGit() {
   } as unknown as GitChangesBridge
   return {
     bridge,
-    change(patch: string) {
-      files = [file(patch)]; revision = `${revision}+`
+    change(patch: string, extra: GitReviewFile[] = files.slice(1)) {
+      files = [file(patch), ...extra]; revision = `${revision}+`
       for (const listener of [...listeners]) listener({ threadId: THREAD, workspaceId: TOKEN_A, revision })
     },
   }
 }
 
-function setup() {
-  const git = fakeGit()
+function setup(git = fakeGit()) {
   const store = new ChangesStore()
   const comments = new ReviewCommentStore()
   store.activate(git.bridge, THREAD)
@@ -164,6 +164,29 @@ describe('review comments in Changes', () => {
     expect(fireEvent.keyDown(pill, { key: 'Escape' })).toBe(false)
     expect(grid().querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
     await waitFor(() => expect(row('[data-kind="add"]')).toHaveFocus())
+  })
+
+  it('takes the user to a draft with words in it, and never pulls focus back to it on a later render', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit([file(PATCH), file(OTHER, 'src/other.ts')])
+    setup(git)
+    await screen.findByText('export const ready = true')
+    await user.click(row('[data-new-line="6"]').querySelectorAll('.changes-line__number')[1]!)
+    await user.type(screen.getByRole('textbox', { name: 'Comment on app.ts L6' }), 'Keep writing')
+    // Another file: a pick, then the picked line's own number, which re-renders nothing, while the worded draft is open.
+    const other = screen.getByRole('grid', { name: 'Lines of src/other.ts' })
+    await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!)
+    await user.click(other.querySelector<HTMLElement>('[data-position][data-new-line="1"]')!.querySelectorAll('.changes-line__number')[1]!)
+    const draft = screen.getByRole('textbox', { name: 'Comment on app.ts L6' })
+    expect(draft).toHaveFocus()
+    expect(draft).toHaveValue('Keep writing')
+    // The user leaves for somewhere else; a diff poll re-renders the draft's file; focus stays where the user put it.
+    const elsewhere = screen.getByRole('button', { name: 'Refresh diff' })
+    elsewhere.focus()
+    git.change(PATCH.replace(' tail\n', ' tail!\n'))
+    await screen.findByText('tail!')
+    await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))
+    expect(elsewhere).toHaveFocus()
   })
 
   it('picks split rows too, a pair quoting both of its lines', async () => {

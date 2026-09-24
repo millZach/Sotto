@@ -115,15 +115,16 @@ export class ReviewCommentStore {
 
   /**
    * Open a draft on these lines. A draft that already has words in it is kept rather than replaced, so nothing
-   * the user wrote goes without them asking; the caller shows that one instead. Resolves to the draft now open.
+   * the user wrote goes without them asking; the caller shows that one instead. Says which draft is open and
+   * whether this call opened it.
    */
-  openDraft(threadId: string, path: string, lines: readonly ReviewLine[]): ReviewDraft {
+  openDraft(threadId: string, path: string, lines: readonly ReviewLine[]): { readonly draft: ReviewDraft; readonly opened: boolean } {
     const current = this.draft(threadId)
-    if (current !== null && current.text.trim() !== '') return current
+    if (current !== null && current.text.trim() !== '') return { draft: current, opened: false }
     const next: ReviewDraft = { path, lines: lines.map(line => ({ ...line })), text: '' }
     this.drafts.set(threadId, next)
     this.emit()
-    return next
+    return { draft: next, opened: true }
   }
 
   editDraft(threadId: string, text: string): void {

@@ -94,7 +94,7 @@ describe('the review comment store', () => {
     comments.openDraft('t', 'a.ts', [add(1, 'a')])
     comments.editDraft('t', 'Explain this')
     comments.closeEmptyDraft('t')
-    expect(comments.openDraft('t', 'b.ts', [add(9, 'b')])).toMatchObject({ path: 'a.ts', text: 'Explain this' })
+    expect(comments.openDraft('t', 'b.ts', [add(9, 'b')])).toMatchObject({ opened: false, draft: { path: 'a.ts', text: 'Explain this' } })
     expect(comments.addDraft('t')).toMatchObject({ path: 'a.ts', text: 'Explain this' })
     expect(comments.draft('t')).toBeNull()
     comments.openDraft('t', 'b.ts', [add(9, 'b')])
