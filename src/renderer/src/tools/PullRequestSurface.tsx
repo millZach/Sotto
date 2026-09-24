@@ -172,7 +172,7 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   }
   const when = mergedWhen(detail.mergedAt)
 
-  return <div ref={surface} className="pr-surface" aria-busy={loading || running}>
+  return <div ref={surface} className="pr-surface" aria-busy={running}>
     <div className="tools-chrome pr-surface__top">
       <span className="pr-surface__lead">
         <StateIcon size={16} aria-hidden="true" data-state={stateKey(detail)} />
