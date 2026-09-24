@@ -8,6 +8,7 @@ import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, use
 import { GitActions } from './GitActions'
 import { ToolsChrome } from './ToolsChrome'
 import './changes.css'
+import { useDiffPreferences } from '../state/gitSettings'
 
 /** A long file shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -50,6 +51,12 @@ export interface ChangesSurfaceProps {
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus, onOpenFile, refs }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
   const view = useChangesView(store)
+  // Diff layout, Hide whitespace changes and Default diff file state say where the view starts (ADR-0027, #271).
+  const preferences = useDiffPreferences()
+  const startLayout = preferences?.layout, startHidden = preferences?.hideWhitespace, startFileState = preferences?.fileState
+  useLayoutEffect(() => {
+    if (startLayout !== undefined && startHidden !== undefined && startFileState !== undefined) store.applyStartingView({ layout: startLayout, ignoreWhitespace: startHidden, collapsed: startFileState === 'collapsed' })
+  }, [store, startLayout, startHidden, startFileState])
   // Checkpoints draws its toggle into the line of chrome.
   const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
   if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>

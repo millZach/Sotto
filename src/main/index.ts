@@ -221,6 +221,8 @@ type NativeDiagnostic =
   | 'checkpoint-unavailable'
   | 'worktree-cleanup-reclaimed'
   | 'worktree-cleanup-skipped'
+  | 'thread-auto-settled'
+  | 'thread-auto-settle-skipped'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)

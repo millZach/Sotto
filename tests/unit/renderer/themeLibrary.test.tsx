@@ -372,7 +372,7 @@ describe('appearance settings', () => {
     for (const value of ['110', '130', '152']) fireEvent.change(contrast, { target: { value } })
     expect(appearancePreview.effective(DEFAULT_SETTINGS).appearanceContrast).toBe(150)
     expect(save).not.toHaveBeenCalled()
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
     expect(save.mock.calls[0]![0]).toEqual({ appearanceContrast: 150 })
 
     const glass = screen.getByRole('slider', { name: 'Glass opacity' })

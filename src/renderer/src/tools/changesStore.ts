@@ -19,7 +19,10 @@ export type ChangesScope =
   | { readonly kind: 'branch'; readonly base: string | null }
   | { readonly kind: 'turn'; readonly checkpointId: string | null }
 
-/** How the files are drawn. Local to this session; the settings that keep them are a later ticket (#271). */
+/**
+ * How the files are drawn, for this session. The layout and whitespace start where Settings says (Diff layout,
+ * Hide whitespace changes); the controls change them from there.
+ */
 export interface ChangesView {
   readonly layout: 'stacked' | 'split'
   readonly wrap: boolean
@@ -27,6 +30,14 @@ export interface ChangesView {
   readonly fileTree: boolean
 }
 export const DEFAULT_CHANGES_VIEW: ChangesView = { layout: 'stacked', wrap: true, ignoreWhitespace: false, fileTree: false }
+
+/** Where the Diff layout, Hide whitespace changes and Default diff file state settings say Changes starts. */
+export interface ChangesStartingView {
+  readonly layout: ChangesView['layout']
+  readonly ignoreWhitespace: boolean
+  /** Whether each comparison's files start collapsed to their headers. */
+  readonly collapsed: boolean
+}
 
 /** A comparison as read: its files, and what it compared (the resolved base, or which turn). */
 export interface ChangesReview {
@@ -94,6 +105,9 @@ export class ChangesStore {
   private readonly tokens = new Map<string, { list: number; review: number }>()
   private readonly scroll = new Map<string, number>()
   private viewState: ChangesView = DEFAULT_CHANGES_VIEW
+  /** The starting view last taken from Settings, so only a changed setting overrides what the user chose here. */
+  private startingView: string | null = null
+  private startCollapsed = false
   private watched: { threadId: string; workspaceId: string } | null = null
   private active: { threadId: string; bridge: GitChangesBridge | undefined } | null = null
   private unsubscribe: (() => void) | null = null
@@ -184,6 +198,19 @@ export class ChangesStore {
     if (before.ignoreWhitespace !== this.viewState.ignoreWhitespace && this.active) void this.loadReview(this.active.bridge, this.active.threadId)
   }
 
+  /**
+   * Starts the view where Settings says. Applied when first given and again only when a setting changes, so a
+   * layout or whitespace choice made with the controls here lasts the session until Settings says otherwise.
+   * Collapsed files apply to each comparison as it is first read; one the user has already opened keeps its files.
+   */
+  applyStartingView(start: ChangesStartingView): void {
+    const key = `${start.layout}:${start.ignoreWhitespace}:${start.collapsed}`
+    if (key === this.startingView) return
+    this.startingView = key
+    this.startCollapsed = start.collapsed
+    this.setView({ layout: start.layout, ignoreWhitespace: start.ignoreWhitespace })
+  }
+
   toggleCollapsed(threadId: string, path: string): void {
     const current = this.threads.get(threadId)
     if (!current) return
@@ -252,7 +279,10 @@ export class ChangesStore {
     } else next = await this.readTurn(bridge, target, scope.checkpointId, key, ignoreWhitespace)
     const latest = this.threads.get(threadId)
     if (!latest || this.token(threadId, 'review') !== token) return
-    this.set({ ...latest, review: next })
+    // Default diff file state Collapsed: a comparison read for the first time starts with its files folded.
+    const collapseKey = scopeKey(scope)
+    const folded = this.startCollapsed && next.status === 'ready' && !latest.collapsed.has(collapseKey) ? next.review.files.map(file => file.path) : null
+    this.set({ ...latest, review: next, ...(folded ? { collapsed: new Map(latest.collapsed).set(collapseKey, new Set(folded)) } : {}) })
   }
 
   /** A turn's comparison from its checkpoint; a checkpoint that cannot be read says so rather than showing nothing. */

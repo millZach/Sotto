@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { featureBranchName, GitActionRefusal, GitActions, type GitActionEvent } from '../../../src/main/agents/gitActions'
+import { featureBranchName, GitActions, type GitActionEvent } from '../../../src/main/agents/gitActions'
 import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { gitActionStages } from '../../../src/shared/gitActions'
 import type { CommitMaterial } from '../../../src/main/llm/commitMessage'
@@ -18,7 +18,7 @@ const configure = (cwd: string) => { git(cwd, 'config', 'user.name', 'Fixture');
 
 interface GhFixture { (args: readonly string[]): Promise<string> }
 /** A repository on `main`, pushed to an owned bare remote, and a second clone that can move the remote under it. */
-async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessage?: string | null; pullRequestText?: { title: string; body: string } | null } = {}) {
+async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessage?: string | null; pullRequestText?: { title: string; body: string } | null; followTemplates?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-git-actions-')); roots.push(root)
   const repo = join(root, 'repo'), remote = join(root, 'remote.git'), other = join(root, 'other')
   await mkdir(repo)
@@ -38,7 +38,7 @@ async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessag
   const status = new GitStatusReader({ run, fetchIntervalMs: () => 30_000 })
   const writeCommitMessage = vi.fn<(threadId: string, material: CommitMaterial) => Promise<string | null>>(async () => options.commitMessage === undefined ? 'Write the commit from the diff\n\nBecause the fixture asked.' : options.commitMessage)
   const writePullRequestText = vi.fn<(threadId: string, material: PullRequestMaterial) => Promise<{ title: string; body: string } | null>>(async () => options.pullRequestText === undefined ? { title: 'Ship the feature', body: '## What changed\n- Feature work' } : options.pullRequestText)
-  const actions = new GitActions({ run, status, writeCommitMessage, writePullRequestText })
+  const actions = new GitActions({ run, status, writeCommitMessage, writePullRequestText, ...(options.followTemplates === undefined ? {} : { followPullRequestTemplates: () => options.followTemplates! }) })
   const events: GitActionEvent[] = []
   const onProgress = (event: GitActionEvent) => { events.push(event) }
   return { root, repo, remote, other, actions, calls, events, onProgress, writeCommitMessage, writePullRequestText, gh: () => calls.filter(call => call[0] === 'gh') }
@@ -208,6 +208,22 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(f.events.find(event => event.kind === 'action_started')).toMatchObject({ stages: ['Pushing to origin...', 'Preparing PR...', 'Generating PR content...', 'Creating pull request...'] })
     expect(f.events.filter(event => event.kind === 'phase_started').map(event => (event as { stage: string }).stage)).toEqual(['Pushing to origin...', 'Preparing PR...', 'Generating PR content...', 'Creating pull request...'])
   }, 40000)
+  it('neither reads nor fills the pull request template while Follow pull request templates is off', async () => {
+    const f = await fixture({ followTemplates: false, pullRequestText: null, gh: async args => {
+      if (args[1] === 'list') return '[]'
+      if (args[1] === 'create') return 'https://github.com/o/r/pull/35\n'
+      if (args[0] === 'repo') return JSON.stringify({ defaultBranchRef: { name: 'main' } })
+      return ''
+    } })
+    await mkdir(join(f.repo, '.github'))
+    await writeFile(join(f.repo, '.github', 'pull_request_template.md'), '## Checklist\n'); commit(f.repo, 'Add the template')
+    git(f.repo, 'push', '-q')
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    await writeFile(join(f.repo, 'work.txt'), 'feature\n'); commit(f.repo, 'Feature work')
+    await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'create_pr' })
+    expect(f.writePullRequestText.mock.calls[0]![1].template).toBeNull()
+    expect(f.calls.some(call => call[0] === 'git' && call[1] === 'ls-tree')).toBe(false)
+  }, 40000)
   it('settles a lost create acknowledgement by what GitHub lists, and refuses only when nothing is there', async () => {
     let listed = false, createCalls = 0
     const f = await fixture({ gh: async args => {
@@ -266,8 +282,19 @@ describe('the stacked Git action, the way T3 runs it', () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'work.txt'), 'second\n')
     const first = f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Second' })
-    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'commit', commitMessage: 'Third' })).rejects.toBeInstanceOf(GitActionRefusal)
+    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'commit', commitMessage: 'Third' })).rejects.toThrow('Git action in progress.')
     await first
+  }, 30000)
+  it('says what holds the folder when an action is pressed during Automatically pull\'s own pull', async () => {
+    const f = await fixture()
+    const automatic = f.actions.pull(f.repo, { automatic: true })
+    // Nothing on screen shows an automatic pull, so the refusal names it rather than an action in progress.
+    await expect(f.actions.runStackedAction({ threadId: 'u', cwd: f.repo, action: 'push' })).rejects.toThrow('Sotto is pulling this folder. Try again in a moment.')
+    await automatic
+    // Once it is done the folder is free again, and a pressed pull holds it the ordinary way.
+    const pressed = f.actions.pull(f.repo)
+    await expect(f.actions.pull(f.repo, { automatic: true })).rejects.toThrow('Git action in progress.')
+    await pressed
   }, 30000)
 })
 

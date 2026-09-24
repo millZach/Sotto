@@ -1206,6 +1206,25 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).toHaveBeenLastCalledWith({ projectThreadWorkingCopyDefaults: {} })
   })
 
+  it('persists every Git and diff setting through the allow-list, one at a time, and refuses a value none of them takes', async () => {
+    const { ipc, settings } = createIpcHarness()
+    const choices = [
+      { gitAutoPull: true }, { defaultMergeMethod: 'squash' }, { lastMergeMethod: 'rebase' },
+      { diffLayout: 'split' }, { diffHideWhitespace: false }, { diffFileState: 'expanded' },
+      { gitWritingStyle: 'custom' }, { gitWritingInstructions: 'Subjects in the past tense.' }, { followPullRequestTemplates: false },
+      { autoSettleMergedThreads: true }, { proactivePanels: true },
+    ]
+    // One control saves one field, so each must survive the allow-list on its own or its toggle snaps back.
+    for (const patch of choices) {
+      await expect(ipc.invoke(SETTINGS_UPDATE, patch)).resolves.toMatchObject(patch)
+      expect(settings.update).toHaveBeenLastCalledWith(patch)
+    }
+    for (const patch of [{ defaultMergeMethod: 'fast-forward' }, { lastMergeMethod: 'last' }, { diffLayout: 'unified' }, { diffFileState: 'open' }, { gitWritingStyle: 'haiku' }, { gitWritingInstructions: 'x'.repeat(2_001) }, { proactivePanels: 'yes' }]) {
+      await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toThrow('Invalid IPC payload')
+    }
+    expect(settings.update).toHaveBeenCalledTimes(choices.length)
+  })
+
   it.each([
     ['hotkey', { hotkey: 'Alt+Space' }],
     ['startup', { launchAtStartup: true }],

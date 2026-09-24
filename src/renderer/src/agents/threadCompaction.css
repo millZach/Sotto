@@ -2,3 +2,9 @@
 .thread-compaction { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; color: var(--tt-text-muted); padding-top: 4px; }
 .thread-compaction:empty { display: none; }
 .thread-compaction p { margin: 0; font-size: 14px; line-height: 1.45; flex: 1 1 250px; }
+/* The row under a thread's composer, which says compaction's result in one quiet line. Side by side it holds that
+   line open when there is nothing to say, so a compacted pane's composer stays level with its neighbour's. */
+.thread-pane__meta { --thread-meta-top: 6px; --thread-meta-line: calc(11.5px * 1.5); }
+.thread-pane__meta .thread-compaction { padding-top: var(--thread-meta-top); }
+.thread-pane__meta .thread-compaction p[role='status'] { font-size: 11.5px; line-height: var(--thread-meta-line); }
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane__meta { min-height: calc(var(--thread-meta-top) + var(--thread-meta-line)); }

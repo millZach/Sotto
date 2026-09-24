@@ -149,7 +149,7 @@ export class WorkspaceHost implements AgentHost {
   private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
   /** Reads a folder's Git status the way T3 does; without one, records carry no status. */
   private gitStatus: GitStatusSource | undefined
-  private gitStatusOptions: { foreground: () => boolean; pollIntervalMs: () => number } = { foreground: () => true, pollIntervalMs: () => 0 }
+  private gitStatusOptions: { foreground: () => boolean; pollIntervalMs: () => number; autoPull: () => boolean } = { foreground: () => true, pollIntervalMs: () => 0, autoPull: () => false }
   private gitStatusTimer: ReturnType<typeof setInterval> | undefined
   private gitStatusPolledAt = 0
   private gitStatusPolling = false
@@ -213,11 +213,12 @@ export class WorkspaceHost implements AgentHost {
   /**
    * Gives the workspace its Git status source. Status is read with the worktree after a turn, with the
    * remote on a refresh, and for the threads a window is looking at on a timer while that window is in
-   * front, once per fetch interval; an interval of zero leaves the timer with nothing to do.
+   * front, once per fetch interval; an interval of zero leaves the timer with nothing to do. `autoPull` is the
+   * Automatically pull setting, read at each remote read; absent, nothing is pulled on its own.
    */
-  setGitStatus(source: GitStatusSource, options: { foreground?: () => boolean; pollIntervalMs: () => number; tickMs?: number }): void {
+  setGitStatus(source: GitStatusSource, options: { foreground?: () => boolean; pollIntervalMs: () => number; autoPull?: () => boolean; tickMs?: number }): void {
     this.gitStatus = source
-    this.gitStatusOptions = { foreground: options.foreground ?? (() => true), pollIntervalMs: options.pollIntervalMs }
+    this.gitStatusOptions = { foreground: options.foreground ?? (() => true), pollIntervalMs: options.pollIntervalMs, autoPull: options.autoPull ?? (() => false) }
     if (this.gitStatusTimer) clearInterval(this.gitStatusTimer)
     this.gitStatusTimer = setInterval(() => { void this.pollGitStatus() }, options.tickMs ?? GIT_STATUS_TICK_MS)
     this.gitStatusTimer.unref?.()
@@ -556,6 +557,7 @@ export class WorkspaceHost implements AgentHost {
     try { folder = resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)) } catch { return }
     let status: GitStatus
     try { status = await this.gitStatus.read(folder, { remote }) } catch { return }
+    if (remote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
@@ -563,6 +565,31 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
+  }
+  /** Automatically pull's condition, T3's: on, the default branch, clean, tracking an upstream, and only behind it. */
+  private mayAutoPull(status: GitStatus): boolean {
+    if (!this.gitActions || !status.isRepository || !status.isDefaultBranch || status.dirty || !status.upstream || status.ahead > 0 || status.behind <= 0) return false
+    try { return this.gitStatusOptions.autoPull() } catch { return false }
+  }
+  /**
+   * Fast-forwards the folder with the Pull action's own `git pull --ff-only`, while the caller holds the thread's
+   * lane. A folder any thread is working in, waiting on, setting up or running a Git action in is left for the next
+   * read, and a pull that fails changes nothing. The status read after the pull, or null when nothing was pulled.
+   */
+  private async autoPull(threadId: string, folder: string): Promise<GitStatus | null> {
+    const projects = this.state.snapshot.projects
+    const busy = this.state.snapshot.threads.some(thread => {
+      if (thread.status !== 'running' && !thread.requests.length && !this.preparations.has(thread.id) && thread.gitAction?.status !== 'running') return false
+      if (thread.id === threadId) return true
+      try { return sameFolder(resolveThreadWorkingDirectory(thread, projects.find(project => project.id === thread.projectId)), folder) } catch { return false }
+    })
+    if (busy || !this.gitActions || !this.gitStatus) return null
+    try {
+      if (this.mutationGuard && !await this.mutationGuard(threadId)) return null
+      const result = await this.gitActions.pull(folder, { automatic: true })
+      if (result.status !== 'pulled') return null
+      return await this.gitStatus.read(folder, { remote: false })
+    } catch { return null }
   }
   /**
    * Removes this thread's own worktree folder because the user asked, or a rule the user turned on did
