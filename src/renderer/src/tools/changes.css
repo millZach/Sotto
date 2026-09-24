@@ -20,6 +20,13 @@
 .changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
 .changes-scope__chevron { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
 .changes-counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.changes-counts--bar { display: none; margin-right: 6px; }
+/* Beside the window's controls a narrow panel's line of chrome holds the scope and its actions only; the totals
+   move to the head of the view bar, which has the room. */
+@container tools-body (max-width: 559px) {
+  .changes-counts--chrome { display: none; }
+  .changes-counts--bar { display: inline; }
+}
 .changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }
 .changes-counts__remove { color: var(--tt-error-text); }
 
@@ -28,7 +35,7 @@
   position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px;
   min-height: 38px; padding: 3px 6px 3px 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px;
 }
-.changes-bar__fact { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.changes-bar__fact { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .changes-bar__view { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
 .changes-bar__segment { display: inline-flex; gap: 1px; padding: 1px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
 .changes-bar__segment .files-icon--small { width: 26px; height: 26px; border-radius: 6px; }

@@ -605,6 +605,8 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
           expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .changes-bar button, .changes-file__head button.files-icon')]
             .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} controls clipped`).toEqual([])
           expect(await panel.locator('.tools-chrome').first().evaluate(element => element.getBoundingClientRect().height), `${key} one line of chrome`).toBeLessThanOrEqual(46)
+          // The comparison's totals show at every size: on the line of chrome, or at the head of the view bar in a narrow panel.
+          if (item.key !== 'turn-1-unavailable') await expect(panel.locator('.changes-counts:not(.changes-counts--file)').filter({ visible: true }), `${key} totals`).toHaveCount(1)
           await screenshot(launched, key, false)
         }
       }

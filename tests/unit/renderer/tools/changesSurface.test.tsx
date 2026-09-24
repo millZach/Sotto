@@ -9,6 +9,7 @@ import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
 import { baseChoices } from '../../../../src/renderer/src/tools/ChangesBasePicker'
+import { inWorkingCopy } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { changesChord } from '../../../../src/renderer/src/tools/changesShortcut'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { threadsStateFixture } from '../liveAgentState'
@@ -78,7 +79,9 @@ describe('Changes as T3’s diff', () => {
     expect(git.bridge.review).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, scope: { kind: 'working' }, ignoreWhitespace: false })
     expect(within(panel()).getByRole('combobox', { name: 'Diff scope' })).toHaveValue('working')
     // Header counts are the sum of every file's; a binary file counts nothing.
-    expect(panel().querySelector('.changes-summary .changes-counts')).toHaveTextContent('+2 −1')
+    expect(panel().querySelector('.changes-summary .changes-counts--chrome')).toHaveTextContent('+2 −1')
+    // The same totals wait at the head of the view bar, which CSS shows in a panel too narrow for them on the chrome.
+    expect(panel().querySelector('.changes-bar .changes-counts--bar')).toHaveTextContent('+2 −1')
     expect([...panel().querySelectorAll('.changes-file')].map(item => item.getAttribute('data-file-path'))).toEqual(['docs/new.md', 'logo.png', 'src/app.ts'])
     expect(within(block('src/app.ts')).getByRole('img', { name: 'Modified' })).toHaveTextContent('M')
     expect(within(block('logo.png')).getByText('Binary file: no text diff.')).toBeInTheDocument()
@@ -309,6 +312,22 @@ describe('the Changes shortcut', () => {
     expect(changesChord('CommandOrControl+D', 'win32')).toBe('mod+shift+d')
     expect(changesChord('Command+D', 'darwin')).toBe('mod+shift+d')
     expect(changesChord('Control+D', 'darwin')).toBe('mod+d')
+  })
+})
+
+describe('what Open can open', () => {
+  it('offers a file only while the working copy has it', () => {
+    const thread = (scope: 'working' | 'branch', working: GitChange[]) => ({ threadId: 't', workspace: null, scope: scope === 'working' ? { kind: 'working' as const } : { kind: 'branch' as const, base: null },
+      list: { status: 'ready' as const, branch: 'b', revision: 'r', files: working, truncated: false }, review: null, turns: [], collapsed: new Map(), refreshing: false })
+    const text = { kind: 'text' as const, patch: '' }
+    expect(inWorkingCopy(reviewFile('a.ts', 'deleted', text), thread('working', [{ path: 'a.ts', status: 'deleted' }]))).toBe(false)
+    expect(inWorkingCopy(reviewFile('a.ts', 'modified', text), thread('working', [{ path: 'a.ts', status: 'modified' }]))).toBe(true)
+    // Deleted by the branch or a turn: gone unless it has come back since.
+    expect(inWorkingCopy(reviewFile('a.ts', 'deleted', text), thread('branch', []))).toBe(false)
+    expect(inWorkingCopy(reviewFile('a.ts', 'deleted', text), thread('branch', [{ path: 'a.ts', status: 'untracked' }]))).toBe(true)
+    // Added by the branch or a turn, then deleted in the working copy.
+    expect(inWorkingCopy(reviewFile('a.ts', 'added', text), thread('branch', [{ path: 'a.ts', status: 'deleted' }]))).toBe(false)
+    expect(inWorkingCopy(reviewFile('a.ts', 'added', text), thread('branch', []))).toBe(true)
   })
 })
 

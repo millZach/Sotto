@@ -13,4 +13,4 @@ Proved in the built app on September 23, 2026, on Windows, with `tests/e2e/tools
 
 ## What I worked out
 
-At the 820x560 minimum the scope keeps its words and the `+adds −dels` beside it drop out whole, the way a fact beside a title does elsewhere in Tools; each file still shows its own counts. The design capture matrix (`npm run design:verify`) has no Changes tuple, so no baseline there changed; its one failure, `settings-application-privacy.png`, reproduces on the base commit `820b4864` and is not from this work.
+In a panel narrower than 560 pixels the line of chrome has no room beside the window's own controls for the comparison's `+adds −dels`, so they move to the head of the view bar; the spec checks that exactly one copy shows for every scope at every size. The design capture matrix (`npm run design:verify`) has no Changes tuple, so no baseline there changed; its one failure, `settings-application-privacy.png`, reproduces on the base commit `820b4864` and is not from this work.

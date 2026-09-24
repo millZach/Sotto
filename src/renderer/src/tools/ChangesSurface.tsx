@@ -86,10 +86,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
       {/* The scope keeps its words; the counts beside it show whole or drop to a line the lead never shows. */}
       <span className="changes-lead">
         <ScopePicker changes={changes} onChange={setScope} />
-        {files.length > 0 ? <span className="changes-counts" title={`${totals.additions} lines added, ${totals.deletions} removed`}>
-          <span aria-hidden="true"><span className="changes-counts__add">+{totals.additions}</span> <span className="changes-counts__remove">−{totals.deletions}</span></span>
-          <span className="tt-visually-hidden">{totals.additions} lines added, {totals.deletions} removed</span>
-        </span> : null}
+        {files.length > 0 ? <Totals {...totals} place="chrome" /> : null}
       </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
@@ -105,6 +102,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
         ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
         : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? 'Against HEAD' : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
       <div className="changes-bar__view" role="group" aria-label="Diff view">
+        {files.length > 0 ? <Totals {...totals} place="bar" /> : null}
         <button type="button" className="files-icon files-icon--small tt-focusable" disabled={files.length === 0}
           aria-label={allCollapsed ? 'Expand all files' : 'Collapse all files'} title={allCollapsed ? 'Expand all files' : 'Collapse all files'}
           onClick={() => store.setAllCollapsed(threadId, !allCollapsed)}>{allCollapsed ? <ChevronsUpDown size={15} aria-hidden="true" /> : <ChevronsDownUp size={15} aria-hidden="true" />}</button>
@@ -138,6 +136,17 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
               </div>
             </>}
   </div>
+}
+
+/**
+ * The comparison's `+adds −dels`. It sits on the line of chrome; in a narrow panel the chrome has no room beside
+ * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
+ */
+function Totals({ additions, deletions, place }: { readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar' }): ReactNode {
+  return <span className={`changes-counts changes-counts--${place}`} title={`${additions} lines added, ${deletions} removed`}>
+    <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
+    <span className="tt-visually-hidden">{additions} lines added, {deletions} removed</span>
+  </span>
 }
 
 function turnWhen(createdAt: string): string {
@@ -186,6 +195,17 @@ function ScopePicker({ changes, onChange }: { readonly changes: ThreadChanges; r
   </label>
 }
 
+/**
+ * Whether a file of the comparison is in the working folder now, so Files can open it: not deleted by the
+ * comparison unless it has come back since, and not deleted in the working copy since.
+ */
+export function inWorkingCopy(file: GitReviewFile, changes: ThreadChanges): boolean {
+  const now = changes.list.status === 'ready' ? changes.list.files.find(item => item.path === file.path)?.status : undefined
+  if (changes.scope.kind === 'working') return file.status !== 'deleted'
+  if (now === 'deleted') return false
+  return file.status !== 'deleted' || now === 'added' || now === 'untracked'
+}
+
 function ChangesFiles({ changes, review, view, store, onCopy, onReveal, onOpenFile, platform }: {
   readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore
   readonly onCopy: (path: string) => void; readonly onReveal: (path: string) => void; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
@@ -201,7 +221,7 @@ function ChangesFiles({ changes, review, view, store, onCopy, onReveal, onOpenFi
     role="region" onScroll={event => store.setScroll(changes.threadId, key, event.currentTarget.scrollTop)}>
     {review.files.map(file => <FileBlock key={file.path} file={file} collapsed={collapsed.has(file.path)} split={view.layout === 'split'} labels={labels}
       onToggle={() => store.toggleCollapsed(changes.threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
-      onOpen={onOpenFile && !(changes.scope.kind === 'working' && file.status === 'deleted') ? onOpenFile : undefined} platform={platform} />)}
+      onOpen={onOpenFile && inWorkingCopy(file, changes) ? onOpenFile : undefined} platform={platform} />)}
   </div>
 }
 
