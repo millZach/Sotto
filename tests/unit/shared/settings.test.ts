@@ -8,8 +8,11 @@ import {
   APPEARANCES,
   DEFAULT_SETTINGS,
   EFFORT_COLORS,
+  GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS,
   SETTINGS_VERSION,
   defaultSettings,
+  initialMergeMethod,
+  mergeMethodChosenPatch,
   parseSettings,
   settingsSchema,
   type AppSettings,
@@ -59,6 +62,17 @@ const customSettings = {
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
   gitFetchIntervalSeconds: 60,
+  gitAutoPull: true,
+  defaultMergeMethod: 'rebase',
+  lastMergeMethod: 'squash',
+  diffLayout: 'split',
+  diffHideWhitespace: false,
+  diffFileState: 'expanded',
+  gitWritingStyle: 'custom',
+  gitWritingInstructions: 'Subjects in the past tense.',
+  followPullRequestTemplates: false,
+  autoSettleMergedThreads: true,
+  proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
   streamingAsr: false,
@@ -88,6 +102,37 @@ describe('settings', () => {
     expect(parseSettings({}).gitFetchIntervalSeconds).toBe(30)
     expect(parseSettings({ gitFetchIntervalSeconds: 0 }).gitFetchIntervalSeconds).toBe(0)
     expect(parseSettings({ gitFetchIntervalSeconds: 7 }).gitFetchIntervalSeconds).toBe(30)
+  })
+  it('starts the Git and diff settings where T3 Code does, with everything that acts on its own off', () => {
+    expect(parseSettings({})).toMatchObject({
+      gitAutoPull: false, defaultMergeMethod: 'last', lastMergeMethod: 'merge',
+      diffLayout: 'stacked', diffHideWhitespace: true, diffFileState: 'collapsed',
+      gitWritingStyle: 'repository', gitWritingInstructions: '', followPullRequestTemplates: true,
+      autoSettleMergedThreads: false, proactivePanels: false,
+    })
+  })
+  it('keeps every Git and diff choice and recovers each unusable one to its default alone', () => {
+    const chosen = {
+      gitAutoPull: true, defaultMergeMethod: 'squash', lastMergeMethod: 'rebase',
+      diffLayout: 'split', diffHideWhitespace: false, diffFileState: 'expanded',
+      gitWritingStyle: 'conventional', gitWritingInstructions: 'Keep it short.', followPullRequestTemplates: false,
+      autoSettleMergedThreads: true, proactivePanels: true,
+    } as const
+    expect(parseSettings(chosen)).toMatchObject(chosen)
+    const unusable = {
+      gitAutoPull: 'yes', defaultMergeMethod: 'fast-forward', lastMergeMethod: 'last',
+      diffLayout: 'unified', diffHideWhitespace: 1, diffFileState: 'open',
+      gitWritingStyle: 'haiku', gitWritingInstructions: 'x'.repeat(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS + 1), followPullRequestTemplates: 'no',
+      autoSettleMergedThreads: null, proactivePanels: 'sometimes',
+    }
+    expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60 })
+  })
+  it('starts a merge on the chosen method, or the one used last, and remembers a choice only under Last selected', () => {
+    expect(initialMergeMethod({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' })).toBe('squash')
+    expect(initialMergeMethod({ defaultMergeMethod: 'rebase', lastMergeMethod: 'squash' })).toBe('rebase')
+    expect(mergeMethodChosenPatch({ defaultMergeMethod: 'last', lastMergeMethod: 'merge' }, 'squash')).toEqual({ lastMergeMethod: 'squash' })
+    expect(mergeMethodChosenPatch({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' }, 'squash')).toBeNull()
+    expect(mergeMethodChosenPatch({ defaultMergeMethod: 'merge', lastMergeMethod: 'merge' }, 'squash')).toBeNull()
   })
   it('drops retired transcription settings while preserving valid settings', () => {
     const legacy = { ...customSettings, modelPreset: 'fast', inferencePreference: 'wasm', remoteAsr: true, remoteAsrUrl: 'http://retired.invalid' }
@@ -230,6 +275,17 @@ describe('settings', () => {
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
       gitFetchIntervalSeconds: 30,
+      gitAutoPull: false,
+      defaultMergeMethod: 'last',
+      lastMergeMethod: 'merge',
+      diffLayout: 'stacked',
+      diffHideWhitespace: true,
+      diffFileState: 'collapsed',
+      gitWritingStyle: 'repository',
+      gitWritingInstructions: '',
+      followPullRequestTemplates: true,
+      autoSettleMergedThreads: false,
+      proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
       streamingAsr: true,
