@@ -36,7 +36,8 @@ const onGitHub = (url: string): boolean => /^https:\/\/github\.com\//iu.test(url
  * One large Merge, in the method chosen beside it, is enabled only when no line holds it back; Merge when ready
  * arms GitHub's auto-merge instead. The description and the linked pull requests fold below, and the rest is in
  * the ··· menu. Nothing happens from viewing: every change is a press, and the merge, turning on auto-merge,
- * closing and Update with rebase ask first.
+ * closing and Update with rebase ask first. ToolsPanel keys it by the thread, so another thread starts it afresh:
+ * nothing of one thread's pull request, choice or notice carries over.
  */
 export function PullRequestSurface({ thread, command, onStatus }: { readonly thread: AgentThread; readonly command: Command | undefined; readonly onStatus: (message: string) => void }): ReactNode {
   /** The pull request chosen from Linked pull requests; null for the thread's own (its branch's, else the one linked last). */
@@ -76,7 +77,6 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
   // Read again when another pull request is chosen, and when the record says GitHub moved (a new branch pull request, a link).
   useEffect(() => { void load() }, [load, branchUrl, linkKey])
   useEffect(() => () => { generation.current++ }, [])
-  useEffect(() => { setChosen(null); setNotice(null); setDescriptionOpen(false); setLinksOpen(false) }, [thread.id])
 
   /** One command at a time. `then` runs before the press counts as over, so its controls stay off until it has finished too. */
   const send = async (request: AgentCommand, pending: Busy, fallback: string, then?: () => Promise<void>): Promise<boolean> => {
