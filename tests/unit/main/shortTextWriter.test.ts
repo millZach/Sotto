@@ -193,7 +193,7 @@ describe('the commit message a staged diff earns', () => {
   })
 })
 
-describe('the writing style of commit and pull request text', () => {
+describe('the Commit and pull request style', () => {
   const branch = { subjects: ['Draft the form'], diff: 'diff --git a/x b/x\n+x', template: '## Checklist\n- [ ] Tested' }
   it('adds nothing for the repository\'s own conventions, and the Conventional Commits form when chosen', async () => {
     const repository = createWriter(async () => 'Raise the contrast')

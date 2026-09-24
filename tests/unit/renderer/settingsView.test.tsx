@@ -254,7 +254,7 @@ describe('SettingsView', () => {
     expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ writingModel: expect.anything() }))
   })
 
-  it('chooses the writing style of commit and pull request text, with custom instructions saved as typing pauses', async () => {
+  it('chooses the Commit and pull request style, with custom instructions saved as typing pauses', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update })

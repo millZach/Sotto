@@ -95,7 +95,7 @@ export interface GatedWriterShape<Input, Output> {
   readonly enabled: (settings: AppSettings) => boolean
   /** Input with nothing to describe is not sent; absent, every input is. */
   readonly worthAsking?: (input: Input) => boolean
-  /** The request, which may read the settings of the moment (the writing style of commit and pull request text). */
+  /** The request, which may read the settings of the moment (the Commit and pull request style). */
   readonly request: (input: Input, settings: AppSettings) => ShortTextRequest
   /** Turns the written text into what the caller keeps; absent, the text itself. */
   readonly shape?: (written: string | null) => Output

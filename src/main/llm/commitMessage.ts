@@ -50,7 +50,7 @@ export function commitMessageRequest(material: CommitMaterial, style?: GitWritin
   if (conventions?.nameStatus) parts.unshift(`Staged files (status and path):\n${conventions.nameStatus}`)
   if (conventions?.subjects.length) parts.push(`Recent commit subjects in this repository, newest first, to match in style:\n${conventions.subjects.map(subject => `- ${subject}`).join('\n')}`)
   if (conventions?.agentsFile) parts.push(`The repository's AGENTS.md, for any rule it gives about commit messages:\n${conventions.agentsFile}`)
-  // The writing style chosen in Settings: nothing for the repository's own, else one more instruction.
+  // The Commit and pull request style chosen in Settings: nothing for the repository's own, else one more instruction.
   const styled = gitWritingStyleInstruction(style, 'commit')
   return {
     purpose: 'commit-message',
