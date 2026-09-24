@@ -66,7 +66,8 @@ async function expectCardWhole(page: Page, threadId: string, submit: RegExp, wit
   expect(facts.action!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.paneScroll, context).toBeLessThanOrEqual(1)
   expect(facts.transcript, context).toBeGreaterThanOrEqual(90)
-  // The row under the composer, where compaction's result is said, fits inside the window as well.
+  // The row under the composer, where compaction's result is said, fits inside the window as well. It has height only
+  // side by side, where it holds one line open, or once compaction has something to say.
   expect(facts.meta, context).not.toBeNull()
   expect(facts.meta!, context).toBeLessThanOrEqual(facts.limit)
   expect(facts.promptFont).toBe('15px')
@@ -233,7 +234,9 @@ test('keyboard focus stays put through Write here and a refused Manage', async (
     await expect(workshopPrompt).toBeFocused()
     await expect(workshopPrompt).toHaveValue('Workshop draft kept through a refusal.')
     expect(await bodyFrames(page)).toBe(0)
-    expect((await agents(page)).assignments.map(item => item.threadId)).not.toContain(hostEntityKey(hostId, 'workshop'))
+    const assigned = (await agents(page)).assignments.map(item => item.threadId)
+    expect(assigned).not.toContain(hostEntityKey(hostId, 'workshop'))
+    expect(assigned).not.toContain('workshop')
     expect((await userMessageTexts(page, 'workshop')).some(text => text.includes('kept through a refusal'))).toBe(false)
   } finally {
     await closeSotto(launched)
