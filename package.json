@@ -33,7 +33,7 @@
     "host:verify": "node scripts/verify-host-archive.mjs",
     "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/socketHostService.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts --maxWorkers=2"
   },
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "node-pty": "1.1.0",
