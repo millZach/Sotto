@@ -1,7 +1,7 @@
 import { promises as fsPromises } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { afterEach } from 'vitest'
-import { configure } from '@testing-library/dom'
+import { configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 // jsdom keeps one web storage per test file, so whatever a test leaves behind is read by the next one.

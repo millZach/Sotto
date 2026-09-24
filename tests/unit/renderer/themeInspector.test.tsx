@@ -238,7 +238,7 @@ describe('the spotlight and colour readers do not wake each other', () => {
       reply.setAttribute('data-test-page-change', '')
       document.body.append(reply)
     })
-    await waitFor(() => expect(highlight.mock.calls.length).toBe(settled + 1), { timeout: 1500 })
+    await waitFor(() => expect(highlight.mock.calls.length).toBe(settled + 1))
     await wait(1100)
     expect(highlight.mock.calls.length).toBe(settled + 1)
     counter.disconnect()
