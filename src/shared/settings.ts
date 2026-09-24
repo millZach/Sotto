@@ -49,6 +49,10 @@ export const worktreeCleanupRulesSchema = z.object({
 }) satisfies z.ZodType<WorktreeCleanupRules>
 export const DEFAULT_WORKTREE_CLEANUP: WorktreeCleanupRules = { afterDays: null, merged: false, onSettle: false, unchanged: false }
 
+/** Seconds between background fetches of a project's origin remote, while the window is in front. Zero turns the fetch off. */
+export type GitFetchIntervalSeconds = 0 | 15 | 30 | 60 | 300
+export const GIT_FETCH_INTERVAL_SECONDS = [0, 15, 30, 60, 300] as const satisfies readonly GitFetchIntervalSeconds[]
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -91,6 +95,11 @@ export interface AppSettings {
    * is off by default, and none of them ever removes uncommitted work.
    */
   worktreeCleanup: WorktreeCleanupRules
+  /**
+   * How often the host fetches a project's origin remote so a thread's branch knows whether it is
+   * ahead or behind, the way T3 Code does. Only while the window is in front; zero turns it off.
+   */
+  gitFetchIntervalSeconds: GitFetchIntervalSeconds
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
@@ -210,6 +219,7 @@ const fieldSchemas = {
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
+  gitFetchIntervalSeconds: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300)]),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   streamingAsr: z.boolean(),
@@ -269,6 +279,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
   worktreeCleanup: DEFAULT_WORKTREE_CLEANUP,
+  // T3's default. The fetch contacts only the project's own origin, with prompts off, and only while the window is in front.
+  gitFetchIntervalSeconds: 30,
   pullRequestText: true,
   // On by default for the same reason: a thread whose provider writes nothing
   // simply opens the commit form empty.
@@ -361,6 +373,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
+    gitFetchIntervalSeconds: parseField(persisted, 'gitFetchIntervalSeconds', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     streamingAsr: parseField(persisted, 'streamingAsr', defaults),

@@ -13,6 +13,8 @@ import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
+import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
+import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
@@ -250,6 +252,8 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     ...(role === 'main' ? {
     chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, z.string().min(1).max(4_096).nullable()),
     workingCopyOptions: (projectId: string) => invokeParsed(renderer, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema.parse(projectId)),
+    gitRefs: (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
+    gitChangedFiles: (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
     synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
     cancelSpeech: () => invokeParsed(renderer, AGENT_SPEECH_CANCEL, voidSchema),
     grokVoices: () => invokeParsed(renderer, AGENT_GROK_VOICES, agentSpeechVoicesSchema),
@@ -264,8 +268,13 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     } : {}),
     command: (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentStateSchema, validatedRoutedCommand(command)),
+    // The broadcast may omit a model catalog this window already has (issue #286), coded as
+    // AgentStateBroadcast rather than AgentState. This crosses to the page unreassembled on purpose:
+    // contextBridge copies whatever a listener is called with back across the isolated-world boundary,
+    // so putting the catalog back here would clone it again on the way out, defeating most of what
+    // omitting it saved. The page puts it back; see src/renderer/src/agents/agentStateCatalogs.ts.
     onState: (listener: (state: import('../shared/agents').AgentState) => void) => subscribe(renderer, AGENT_STATE,
-      trustedState<import('../shared/agents').AgentState>('host'), listener),
+      trustedState<Record<string, unknown>>('host'), raw => listener(raw as import('../shared/agents').AgentState)),
   })
 }
 

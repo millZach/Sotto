@@ -7,8 +7,6 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
-import { ThreadWorkingCopyFields, type ThreadWorkingCopySelection } from './ThreadWorkingCopyFields'
-import './newThread.css'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
@@ -129,7 +127,6 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
     window.addEventListener('resize', update)
     return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
   }, [open])
-  const configurable = thread.projectId && thread.nativeSessionStarted === false && (!thread.worktree?.path || thread.worktree.mode === 'shared')
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.branch || facts.repositoryRoot ? GitBranch : Folder
   return <span className="working-copy" ref={root} data-status={facts.status}
     onKeyDown={event => { if (event.key === 'Escape' && open && !reclaiming) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
@@ -138,14 +135,14 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
       <Icon size={14} aria-hidden="true" /><span>{facts.label}</span>
     </button>
     {open ? <div ref={panel} id={panelId} className="working-copy__panel" style={position ?? undefined} role="group" aria-label="Working copy details">
-      {configurable ? <UnsentWorkingCopy key={thread.id} thread={thread} command={command} /> : null}
       <dl>
         {facts.directory ? <div><dt>Folder</dt><dd className="working-copy__path">{facts.directory}</dd></div> : null}
         {facts.branch ? <div><dt>Branch</dt><dd className="working-copy__path">{facts.branch}</dd></div> : null}
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt>Repository</dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
         {facts.status === 'ready' && facts.reclaimed ? <div><dt>Status</dt><dd>Folder removed. Sending to this thread puts it back on {facts.branch ?? 'its branch'}.</dd></div> : null}
         {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt>Changes</dt><dd>{facts.dirty ? 'Uncommitted changes' : 'No uncommitted changes'}</dd></div> : null}
-        {facts.status === 'pending' && !configurable ? <div><dt>Status</dt><dd>Preparing the working copy.</dd></div> : null}
+        {/* A draft's worktree is not being prepared: it is made on first send, and the composer's toolbar chooses it (ADR-0027). */}
+        {facts.status === 'pending' ? <div><dt>Status</dt><dd>{thread.nativeSessionStarted === false ? 'Created on first send. Choose the workspace and branch under the composer.' : 'Preparing the working copy.'}</dd></div> : null}
         {facts.status === 'error' ? <div><dt>Status</dt><dd>{facts.error ?? 'Setup did not finish.'}</dd></div> : null}
       </dl>
       {thread.remoteHost ? <p>This folder is on the host machine. Open it there.</p> : null}
@@ -209,43 +206,6 @@ export function useSettleThread(command: AgentConnection['command']) {
       return false
     }} /> : null
   return { settle, dialog }
-}
-
-/** Choices remain editable until a first send allocates a checkout or binds a provider session. */
-function UnsentWorkingCopy({ thread, command }: { readonly thread: WorkingCopyThread; readonly command: AgentConnection['command'] }): ReactNode {
-  const [selection, setSelection] = useState<ThreadWorkingCopySelection>(() => ({ workingCopy: thread.worktree?.mode ?? 'shared', baseBranch: thread.worktree?.baseBranch, startFromOrigin: thread.worktree?.startFromOrigin ?? true, existingWorktreePath: thread.worktree?.existingWorktreePath }))
-  const [changed, setChanged] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const applying = useRef(false)
-  const form = useRef<HTMLDivElement>(null)
-  const applyButton = useRef<HTMLButtonElement>(null)
-  const restoreFocus = useRef(false)
-  useLayoutEffect(() => {
-    if (saving || !restoreFocus.current) return
-    restoreFocus.current = false
-    form.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus()
-  }, [saving])
-  const apply = async (): Promise<void> => {
-    if (applying.current) return
-    const hadFocus = document.activeElement === applyButton.current
-    applying.current = true; setSaving(true); setError(null)
-    try {
-      const result = await command({ type: 'configure-thread-working-copy', threadId: thread.id, ...selection })
-      if (!result || result.error) setError(result?.error ?? 'Could not confirm the working copy. Your choices are retained.')
-      else {
-        // Apply disappears after success. Keep keyboard navigation inside the popover unless the user moved away.
-        restoreFocus.current = hadFocus && (document.activeElement === applyButton.current || document.activeElement === document.body)
-        setChanged(false)
-      }
-    } catch { setError('Could not confirm the working copy. Your choices are retained.') }
-    finally { applying.current = false; setSaving(false) }
-  }
-  return <div ref={form} className="working-copy__selection">
-    <ThreadWorkingCopyFields projectId={thread.projectId} value={selection} disabled={saving} onChange={value => { setSelection(value); setChanged(true) }} />
-    {changed ? <Button ref={applyButton} variant="secondary" aria-disabled={saving} onClick={() => void apply()}>{saving ? 'Applying…' : 'Apply working copy'}</Button> : null}
-    {error ? <p className="agent-error" role="alert">{error}</p> : null}
-  </div>
 }
 
 /** Above the pane composer: a failed setup and the one action that can recover it. The draft stays untouched. */

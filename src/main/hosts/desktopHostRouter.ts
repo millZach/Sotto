@@ -1,6 +1,8 @@
 import { agentCommandSchema, agentShell, isThreadProviderConnected, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { ClientIdentity, HostService } from '../agents/hostService'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 
 export interface DesktopHostConnection {
   hostId: string
@@ -9,6 +11,8 @@ export interface DesktopHostConnection {
   service: Pick<HostService, 'shell' | 'command' | 'subscribe'>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
@@ -74,9 +78,11 @@ export class DesktopHostRouter {
       connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
         projects: entries.flatMap(item => item.state.host.projects), threads,
-        clientHosts: entries.map(({ connection, original }) => ({ hostId: connection.hostId,
+        // The selected host's catalog is the same array as `host.models`, which structured clone sends once:
+        // a copy here would put every model on the wire twice with each publish.
+        clientHosts: entries.map(({ connection, original, state }) => ({ hostId: connection.hostId,
           connected: connection.available?.() !== false && original.host.connected,
-          models: original.host.models, capabilities: original.host.capabilities,
+          models: state.host.models, capabilities: original.host.capabilities,
           ...(original.host.providers ? { providers: original.host.providers } : {}),
         })),
       },
@@ -105,6 +111,18 @@ export class DesktopHostRouter {
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
+  }
+  async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitRefs) throw new Error('Branches are unavailable on this host.')
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its branches.')
+    return connection.gitRefs({ ...request, threadId: id! })
+  }
+  async gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.gitChangedFiles) throw new Error('Changed files are unavailable on this host.')
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its changes.')
+    return connection.gitChangedFiles({ ...request, threadId: id! })
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     this.notice = undefined

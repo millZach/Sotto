@@ -4,6 +4,9 @@ import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentS
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachment, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 export type AgentHostCommand =
@@ -108,6 +111,16 @@ export interface AgentHost {
   /** Remove the thread's own worktree folder and keep its branch (ADR-0019). */
   reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean }): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
+  /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
+  runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
+  pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
+  /** The branches the thread's folder offers, for the picker (ADR-0027). */
+  listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  /** The changed files of the thread's folder with their line counts, for the commit dialog (ADR-0027). */
+  listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
+  switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
+  initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
+  publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   privacyChanged?(): Promise<void>
   createProjectId?(provider: ProviderId): string
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>

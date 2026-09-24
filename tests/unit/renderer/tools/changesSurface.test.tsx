@@ -2,7 +2,7 @@ import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { GitChange, GitChangesBridge, GitChangeListing, GitCommitDraft, GitFileDiff } from '../../../../src/shared/gitChanges'
+import type { GitChange, GitChangesBridge, GitFileDiff } from '../../../../src/shared/gitChanges'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
@@ -59,98 +59,34 @@ function setup(git = fakeGit(), state = threadsStateFixture()) {
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
 
-describe('local Git action feedback', () => {
-  it('keeps the editable commit message after rejection and refreshes only after a confirmed action', async () => {
-    const user = userEvent.setup(), git = fakeGit()
-    git.bridge.act = vi.fn(async () => ({ ok: false as const, error: { code: 'blocked' as const, message: 'Resolve the conflicting files first.' } }))
-    git.bridge.branches = vi.fn(async () => ({ ok: true as const, value: { current: 'feature/changes', branches: ['feature/changes'] } }))
-    setup(git)
-    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
-    const message = screen.getByRole('textbox', { name: 'Commit message' })
-    await user.type(message, 'Preserve this commit message')
-    await user.click(screen.getByRole('button', { name: 'Commit staged changes (1)' }))
-    expect(await screen.findByText('Resolve the conflicting files first.')).toBeInTheDocument()
-    expect(message).toHaveValue('Preserve this commit message')
-    expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'commit', message: 'Preserve this commit message' }))
-  })
-
-  it('puts the Git toggles on the line of chrome and the file’s staging in its head, with no bar between', async () => {
+describe('the Checkpoints toggle and the file’s staging', () => {
+  it('puts the Checkpoints toggle on the line of chrome and the file’s staging in its head, with no commit form of its own', async () => {
     const user = userEvent.setup(), git = fakeGit()
     git.bridge.act = vi.fn(async () => ({ ok: true as const, value: undefined as never }))
     git.bridge.checkpoints = vi.fn(async () => ({ ok: true as const, value: { supported: true, checkpoints: [] } as never }))
     setup(git)
-    const toggle = await screen.findByRole('button', { name: 'Git actions', exact: true })
+    const toggle = await screen.findByRole('button', { name: 'Checkpoints', exact: true })
     expect(toggle.closest('.tools-chrome')).toHaveClass('changes-summary')
-    expect(screen.getByRole('button', { name: 'Checkpoints', exact: true }).closest('.tools-chrome')).toHaveClass('changes-summary')
+    // Commit, branch and push live in the pane header's Git action now (ADR-0027).
+    expect(screen.queryByRole('button', { name: 'Git actions', exact: true })).toBeNull()
     expect(panel().querySelector('.git-actions')).toBeNull()
     await user.click(within(panel()).getByRole('option', { name: /^app\.ts/u }))
     const stage = await screen.findByRole('button', { name: 'Stage file', exact: true })
     expect(stage.closest('.files-preview__head')).not.toBeNull()
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(within(panel().querySelector('.git-actions') as HTMLElement).getByRole('textbox', { name: 'Commit message' })).toBeInTheDocument()
+    expect(await within(panel().querySelector('.git-actions') as HTMLElement).findByText('No completed checkpoints yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Commit message' })).toBeNull()
   })
-})
 
-describe('the drafted commit message', () => {
-  const committed: GitChangeListing = { workspace, branch: 'feature/changes', revision: 'r2', files: [], truncated: false }
-
-  it('shows a writing state, then the draft, and commits only the edited text when the button is pressed', async () => {
+  it('keeps the staging feedback after a refused action', async () => {
     const user = userEvent.setup(), git = fakeGit()
-    let release!: (draft: GitCommitDraft) => void
-    git.bridge.draftCommitMessage = vi.fn(() => new Promise<ToolsResult<GitCommitDraft>>(resolve => { release = draft => resolve({ ok: true, value: draft }) }))
-    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
+    git.bridge.act = vi.fn(async () => ({ ok: false as const, error: { code: 'blocked' as const, message: 'Resolve the conflicting files first.' } }))
     setup(git)
-    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
-    const message = screen.getByRole('textbox', { name: 'Commit message' })
-    expect(await screen.findByText('Writing…')).toBeInTheDocument()
-    expect(message).toHaveValue('')
-    expect(git.bridge.draftCommitMessage).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1' })
-    // Writing never locks the form: only an empty message keeps Commit disabled.
-    expect(screen.getByRole('button', { name: 'Commit staged changes (1)' })).toBeDisabled()
-
-    await act(async () => { release({ message: 'Raise the dark palette contrast', truncated: false }) })
-    await waitFor(() => expect(message).toHaveValue('Raise the dark palette contrast'))
-    expect(screen.queryByText('Writing…')).toBeNull()
-    // A draft on screen is not a commit.
-    expect(git.bridge.act).not.toHaveBeenCalled()
-
-    await user.clear(message)
-    await user.type(message, 'Raise the dark palette contrast in both themes')
-    await user.click(screen.getByRole('button', { name: 'Commit staged changes (1)' }))
-    expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ action: 'commit', message: 'Raise the dark palette contrast in both themes' }))
-  })
-
-  it('opens empty with nothing written, and regenerates over the field on request', async () => {
-    const user = userEvent.setup(), git = fakeGit()
-    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: null, truncated: false } }))
-    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
-    setup(git)
-    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
-    const message = screen.getByRole('textbox', { name: 'Commit message' })
-    await waitFor(() => expect(git.bridge.draftCommitMessage).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.queryByText('Writing…')).toBeNull())
-    expect(message).toHaveValue('')
-    expect(screen.queryByText(/could not|unavailable|failed/iu)).toBeNull()
-
-    await user.type(message, 'Something I typed')
-    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: 'Add the drafted commit message', truncated: true } }))
-    await user.click(screen.getByRole('button', { name: 'Regenerate' }))
-    await waitFor(() => expect(message).toHaveValue('Add the drafted commit message'))
-    expect(await screen.findByText(/too large to send whole/u)).toBeInTheDocument()
-  })
-
-  it('asks for no draft on a Devin thread and offers no Regenerate, because Devin writes none (ADR-0026)', async () => {
-    const user = userEvent.setup(), git = fakeGit()
-    git.bridge.draftCommitMessage = vi.fn(async () => ({ ok: true as const, value: { message: 'Never asked for', truncated: false } }))
-    git.bridge.act = vi.fn(async () => ({ ok: true as const, value: committed }))
-    const state = threadsStateFixture()
-    setup(git, { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const } : thread) } })
-    await user.click(await screen.findByRole('button', { name: 'Git actions', exact: true }))
-    expect(screen.getByRole('textbox', { name: 'Commit message' })).toHaveValue('')
-    expect(screen.queryByText('Writing…')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Regenerate' })).toBeNull()
-    expect(git.bridge.draftCommitMessage).not.toHaveBeenCalled()
+    await user.click(await within(panel()).findByRole('option', { name: /^app\.ts/u }))
+    await user.click(await screen.findByRole('button', { name: 'Stage file', exact: true }))
+    expect(await screen.findByText('Resolve the conflicting files first.')).toBeInTheDocument()
+    expect(git.bridge.act).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'visual-gate', workspaceId: TOKEN_A, revision: 'r1', action: 'stage', path: 'src/app.ts' }))
   })
 })
 

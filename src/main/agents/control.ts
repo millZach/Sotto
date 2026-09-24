@@ -123,6 +123,13 @@ export interface AgentMembership {
 }
 
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
+import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
+
+const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish'] as const
+type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
+const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
+
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly threadActions = new Map<string, Promise<unknown>>()
@@ -483,6 +490,16 @@ export class AgentControl {
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void {
     this.detailListeners.add(listener)
     return () => this.detailListeners.delete(listener)
+  }
+  /** The branches a thread's folder offers, read on request rather than pushed with every state. */
+  gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
+    if (!this.dependencies.host.listThreadRefs) throw new Error('Branches are unavailable on this host.')
+    return this.dependencies.host.listThreadRefs(request)
+  }
+  /** The changed files the commit dialog lists, read when it opens rather than pushed with every state. */
+  gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
+    if (!this.dependencies.host.listThreadChangedFiles) throw new Error('Changed files are unavailable on this host.')
+    return this.dependencies.host.listThreadChangedFiles(request)
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   attachmentPreview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult {
@@ -910,6 +927,55 @@ export class AgentControl {
    * The thread's new name. It is a state edit alone: no native work is started, interrupted or queued
    * behind, so a thread can be renamed while its agent is still working.
    */
+  /** T3's Git commands, answered in the host's words: a refusal is the notice, never a thrown error the window has to guess at. */
+  private async gitCommand(command: GitCommand): Promise<AgentState> {
+    const host = this.dependencies.host
+    try {
+      this.thread(command.threadId)
+      switch (command.type) {
+        case 'git-action': {
+          if (!host.runGitAction) throw new Error('Git actions are unavailable.')
+          this.acceptSnapshot(await host.runGitAction(command))
+          const outcome = this.state.host.threads.find(thread => thread.id === command.threadId)?.gitAction
+          if (outcome?.actionId === command.actionId && outcome.status === 'failed') this.state.error = outcome.error ?? 'The Git action failed.'
+          else this.state.error = null
+          break
+        }
+        case 'git-pull': {
+          if (!host.pullThreadBranch) throw new Error('Pull is unavailable.')
+          const { snapshot, result } = await host.pullThreadBranch(command.threadId)
+          this.acceptSnapshot(snapshot)
+          this.state.notice = result.status === 'pulled' ? `Pulled. Updated ${result.branch} from ${result.upstream ?? 'its upstream'}.` : `Already up to date. ${result.branch} matches ${result.upstream ?? 'its upstream'}.`
+          this.state.error = null
+          break
+        }
+        case 'git-switch-branch': {
+          if (!host.switchThreadBranch) throw new Error('Switching branches is unavailable.')
+          this.acceptSnapshot(await host.switchThreadBranch(command.threadId, command.ref, command.create === true))
+          this.state.notice = command.create ? `Created and switched to ${command.ref}.` : `Switched to ${command.ref}.`
+          this.state.error = null
+          break
+        }
+        case 'git-init': {
+          if (!host.initThreadRepository) throw new Error('Initializing Git is unavailable.')
+          this.acceptSnapshot(await host.initThreadRepository(command.threadId))
+          this.state.notice = 'Git initialized.'
+          this.state.error = null
+          break
+        }
+        case 'git-publish': {
+          if (!host.publishThreadRepository) throw new Error('Publishing is unavailable.')
+          const { snapshot, url } = await host.publishThreadRepository(command.threadId, { repository: command.repository, visibility: command.visibility })
+          this.acceptSnapshot(snapshot)
+          this.state.notice = `Repository published at ${url}.`
+          this.state.error = null
+          break
+        }
+      }
+    } catch (error) { this.state.error = error instanceof Error ? error.message : 'The Git command failed.' }
+    this.publish()
+    return this.get()
+  }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
     try {
@@ -1047,6 +1113,8 @@ export class AgentControl {
       return Promise.resolve(this.get())
     }
     if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
+    // A Git action runs as long as its hooks and its push take, on the thread's own lane in the host, never on the global one.
+    if (isGitCommand(command)) return this.gitCommand(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.

@@ -25,15 +25,34 @@ const INSTRUCTION = [
 ].join(' ')
 
 /**
- * The commit request: the staged diff (already capped by `diffExcerpt`, which
- * says so in the text when it cut anything) and nothing else, so no part of the
- * thread transcript is sent again through a commit message.
+ * What the repository says about its own commits, sent with the diff the way T3 Code sends it (ADR-0027):
+ * the last few subjects show the house style, the `AGENTS.md` says it outright where there is one, and the
+ * name-status list names the files the diff excerpt may have cut. All of it is the repository's own text.
  */
-export function commitMessageRequest(excerpt: DiffExcerpt): ShortTextRequest {
+export interface CommitConventions {
+  readonly subjects: readonly string[]
+  readonly agentsFile: string | null
+  readonly nameStatus: string | null
+}
+/** The staged diff, capped, and the conventions when the caller read them; the Changes drawer sends the diff alone. */
+export type CommitMaterial = DiffExcerpt & { readonly conventions?: CommitConventions }
+
+/**
+ * The commit request: the staged diff (already capped by `diffExcerpt`, which
+ * says so in the text when it cut anything), and the repository's own
+ * conventions when given, so no part of the thread transcript is sent again
+ * through a commit message.
+ */
+export function commitMessageRequest(material: CommitMaterial): ShortTextRequest {
+  const parts = [`Staged diff:\n${material.text}`]
+  const conventions = material.conventions
+  if (conventions?.nameStatus) parts.unshift(`Staged files (status and path):\n${conventions.nameStatus}`)
+  if (conventions?.subjects.length) parts.push(`Recent commit subjects in this repository, newest first, to match in style:\n${conventions.subjects.map(subject => `- ${subject}`).join('\n')}`)
+  if (conventions?.agentsFile) parts.push(`The repository's AGENTS.md, for any rule it gives about commit messages:\n${conventions.agentsFile}`)
   return {
     purpose: 'commit-message',
     instruction: INSTRUCTION,
-    material: `Staged diff:\n${excerpt.text}`,
+    material: parts.join('\n\n'),
     maxCharacters: COMMIT_MESSAGE_MAX_CHARACTERS,
     shape: 'text',
   }
@@ -57,10 +76,10 @@ export function shapeCommitMessage(message: string | null): string | null {
 export function commitMessageWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
-): (threadId: string, excerpt: DiffExcerpt) => Promise<string | null> {
+): (threadId: string, material: CommitMaterial) => Promise<string | null> {
   return settingsGatedWriter(writer, getSettings, {
     enabled: settings => settings.commitMessages,
-    worthAsking: excerpt => excerpt.text.trim().length > 0,
+    worthAsking: material => material.text.trim().length > 0,
     request: commitMessageRequest,
     shape: shapeCommitMessage,
   })

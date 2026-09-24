@@ -66,42 +66,19 @@ describe('ThreadWorkingCopy', () => {
     expect(panel).toHaveStyle({ left: '-142px', width: '304px', maxHeight: '511px' })
   })
 
-  it('changes an unsent worktree choice without creating a checkout, including a selected base', async () => {
-    vi.stubGlobal('sotto', { agents: { workingCopyOptions: vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main', 'develop'], worktrees: [{ path: 'C:/existing', branch: 'fix/work' }] })) } })
-    const command = vi.fn(async () => snapshot())
-    render(<ThreadWorkingCopy thread={{ id: 'empty', projectId: 'project', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: project.path } }} project={project} command={command} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Working copy: Project folder' }))
-    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    fireEvent.change(await screen.findByLabelText('Start from'), { target: { value: 'origin:develop' } })
-    expect(screen.getByLabelText('Start from')).toHaveValue('origin:develop')
-    expect(command).not.toHaveBeenCalled()
-    const apply = screen.getByRole('button', { name: 'Apply working copy' })
-    apply.focus()
-    fireEvent.click(apply)
-    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread-working-copy', threadId: 'empty', workingCopy: 'independent', baseBranch: 'develop', startFromOrigin: true })))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Apply working copy' })).toBeNull())
-    expect(screen.getByRole('radio', { name: 'New worktree' })).toHaveFocus()
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
-    expect(screen.queryByRole('group', { name: 'Working copy details' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Working copy: Project folder' })).toHaveFocus()
+  it('tells a draft its worktree is made on first send and points to the composer for the choice', () => {
+    render(<ThreadWorkingCopy thread={{ id: 'empty', projectId: 'project', nativeSessionStarted: false, worktree: { mode: 'independent', status: 'pending' } }} project={project} command={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Working copy: New worktree' }))
+    const details = screen.getByRole('group', { name: 'Working copy details' })
+    expect(details).toHaveTextContent('Created on first send. Choose the workspace and branch under the composer.')
+    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Apply working copy' })).toBeNull()
   })
 
   it('does not offer a new folder once an independent checkout is allocated', () => {
     render(<ThreadWorkingCopy thread={{ ...ready, projectId: 'project' }} project={project} command={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: `Working copy: ${branch}` }))
     expect(screen.queryByRole('radio', { name: 'Project folder' })).toBeNull()
-  })
-
-  it('keeps the apply button focused when changing an unsent working copy is refused', async () => {
-    const command = vi.fn(async () => snapshot('The thread has already started.'))
-    render(<ThreadWorkingCopy thread={{ id: 'empty', projectId: 'project', nativeSessionStarted: false, worktree: { mode: 'shared', status: 'ready', path: project.path } }} project={project} command={command} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Working copy: Project folder' }))
-    fireEvent.click(screen.getByRole('radio', { name: 'New worktree' }))
-    const apply = screen.getByRole('button', { name: 'Apply working copy' })
-    apply.focus()
-    fireEvent.click(apply)
-    expect(await screen.findByRole('alert')).toHaveTextContent('The thread has already started.')
-    expect(screen.getByRole('button', { name: 'Apply working copy' })).toHaveFocus()
   })
 
   it('shows the branch, opens details by keyboard, and closes on Escape back to the chip', async () => {

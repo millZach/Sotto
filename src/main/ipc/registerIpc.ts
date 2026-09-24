@@ -107,6 +107,7 @@ const settingKeys = [
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',
+  'gitFetchIntervalSeconds',
   'commitMessages',
   'pullRequestText',
   'streamingAsr',

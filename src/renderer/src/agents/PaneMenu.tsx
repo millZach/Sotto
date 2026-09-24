@@ -10,6 +10,8 @@ export interface PaneMenuItem {
   readonly label: string
   readonly icon?: ReactNode
   readonly disabled?: boolean
+  /** Why the row is disabled, shown as its tooltip and read with its name. */
+  readonly hint?: string
   readonly run: () => void
 }
 
@@ -24,9 +26,12 @@ const ITEM = '[role="menuitem"]:not(:disabled)'
  * the pane's own focus bookkeeping keeps working. Escape or Tab closes it and returns focus to the button,
  * as a pointer outside it does.
  */
-export function PaneMenu({ groups, label = 'More actions' }: {
+export function PaneMenu({ groups, label = 'More actions', icon, className }: {
   readonly groups: readonly (readonly PaneMenuItem[])[]
   readonly label?: string
+  /** The button's glyph; the ellipsis unless a control says otherwise. */
+  readonly icon?: ReactNode
+  readonly className?: string
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
@@ -49,12 +54,12 @@ export function PaneMenu({ groups, label = 'More actions' }: {
     setOpen(false)
     if (restore) button.current?.focus()
   }
-  return <div className="pane-menu">
+  return <div className={className ? `pane-menu ${className}` : 'pane-menu'}>
     <button ref={button} type="button" className="pane-action tt-focusable" aria-label={label} title={label}
       aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}
       // A menu whose every row is disabled leaves focus on the button; Escape still puts it away.
       onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false) } }}>
-      <MoreHorizontal size={16} aria-hidden="true" />
+      {icon ?? <MoreHorizontal size={16} aria-hidden="true" />}
     </button>
     {open ? <div ref={list} className="pane-menu__list" role="menu" aria-label={label}
       onKeyDown={event => {
@@ -69,8 +74,8 @@ export function PaneMenu({ groups, label = 'More actions' }: {
       }}>
       {shown.map((group, index) => <React.Fragment key={group[0]!.id}>
         {index > 0 ? <hr /> : null}
-        {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" tabIndex={-1} disabled={item.disabled}
-          onClick={() => { close(true); item.run() }}>{item.icon}{item.label}</button>)}
+        {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" tabIndex={-1} disabled={item.disabled} title={item.hint}
+          onClick={() => { close(true); item.run() }}>{item.icon}{item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
       </React.Fragment>)}
     </div> : null}
   </div>

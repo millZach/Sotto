@@ -24,13 +24,21 @@ async function fixture(options: { writeCommitMessage?: (threadId: string, excerp
   const other = join(root, 'other'); git(repo, 'worktree', 'add', '-q', '-b', 'other', other)
   const bindings: Record<string, string> = { a: repo, b: other, shared: repo }
   const files = new FilesService({ resolveBinding: threadId => bindings[threadId] ? { threadId, projectId: 'project', workingDirectory: bindings[threadId]! } : null, copyPath: vi.fn(), reveal: vi.fn() })
-  const emit = vi.fn(), copyPath = vi.fn(), reveal = vi.fn()
-  const service = new GitChangesService({ files, emit, copyPath, reveal, pollMs: 40, ...(options.writeCommitMessage ? { writeCommitMessage: options.writeCommitMessage } : {}) })
+  const emit = vi.fn(), copyPath = vi.fn(), reveal = vi.fn(), acted = vi.fn()
+  const service = new GitChangesService({ files, emit, copyPath, reveal, acted, pollMs: 40, ...(options.writeCommitMessage ? { writeCommitMessage: options.writeCommitMessage } : {}) })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
-  return { root, repo, other, service, target: { threadId: 'a', workspaceId: owner.workspaceId }, emit, copyPath, reveal }
+  return { root, repo, other, service, target: { threadId: 'a', workspaceId: owner.workspaceId }, emit, copyPath, reveal, acted }
 }
 describe('Git review in exact thread working directories', () => {
+  it('tells the workspace which thread acted, so its Git status is read again without waiting', async () => {
+    const f = await fixture()
+    await writeFile(join(f.repo, 'changed.txt'), 'staged content\n')
+    const listing = unwrap(await f.service.list(f.target))
+    expect(f.acted).not.toHaveBeenCalled()
+    unwrap(await f.service.act({ ...f.target, revision: listing.revision, action: 'stage', path: 'changed.txt' }))
+    expect(f.acted).toHaveBeenCalledExactlyOnceWith('a')
+  }, 20000)
   it('reports detached HEAD and requires an explicit branch before committing', async () => {
     const f = await fixture(); git(f.repo, 'switch', '-q', '--detach')
     await writeFile(join(f.repo, 'changed.txt'), 'detached work\n')

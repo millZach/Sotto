@@ -146,6 +146,7 @@ import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
+import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { ConfiguredAgentReasoner } from './agents/reasoning'
 import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
 import { GrokSubscriptionClient } from './agents/subscriptionGrok'
@@ -567,17 +568,29 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     throw new Error('The Devin test fixture requires absolute paths.')
   }
   const testAgentHost = e2eConfiguration === null || devinFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  // A Playwright journey pushes to an owned remote and "creates" its pull request through a scripted gh; development only.
+  const ghStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_GH_SCRIPT'] : undefined
+  const ghStandInExecutable = process.env['SOTTO_E2E_GH_EXECUTABLE']
+  if (ghStandInScript && (!isAbsolute(ghStandInScript) || !ghStandInExecutable || !isAbsolute(ghStandInExecutable))) throw new Error('The gh test stand-in requires absolute paths.')
+  const ghStandIn = ghStandInScript && ghStandInExecutable ? { executable: ghStandInExecutable, args: [ghStandInScript] } : undefined
   // Static design fixtures include deliberately unavailable folders. Interactive E2E
   // journeys need real, profile-owned folders and exercise the production cwd checks.
   if (testAgentHost !== null && process.env['SOTTO_DESIGN_CAPTURE'] !== '1') {
     await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
   }
   let openedThreadFolder: string | null = null
+  // T3's rule for background Git reads: the window is showing and has the focus, or had it within the last 45 seconds.
+  let windowBlurredAt = 0
+  app.on('browser-window-focus', () => { windowBlurredAt = 0 })
+  app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
+    && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}) },
     openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
@@ -610,6 +623,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
+    gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
@@ -664,11 +678,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
   // nothing more. Only the threads the main window has declared viewed receive their messages.
+  const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     personalChats.configurationChanged()
-    windows.sendToMain(AGENT_STATE, state)
-    windows.sendToWidget(AGENT_STATE, state)
+    // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
+    agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
+    agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
   const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail))
@@ -994,9 +1010,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change))
       const checkpointIntegration = connectCheckpoints({ files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         git: () => gitChanges, report: () => { logOperational('checkpoint-unavailable') } })
+      agentHost.setMutationGuard(checkpointIntegration.canMutate)
       const gitChanges = new GitChangesService({ files, checkpoints: checkpointIntegration.checkpoints, canMutate: checkpointIntegration.canMutate,
         draftPullRequestText: pullRequestTextWriter(shortTextWriter, writingSettings),
         writeCommitMessage: commitMessageWriter(shortTextWriter, writingSettings),
+        acted: threadId => { void agentHost.gitActionFinished(threadId).catch(() => undefined) },
         copyPath: path => clipboard.writeText(path), reveal: path => shell.showItemInFolder(path), emit: event => { windows.sendToMain(GIT_CHANGES_EVENT, event) } })
       const cleanupTerminals = registerTerminalWorkspaceIpc(ipcMain, new TerminalWorkspaceService({
         projects: () => agentControl.projects(), git: runWorktreeGit,

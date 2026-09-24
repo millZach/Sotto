@@ -8,6 +8,7 @@ import { useVoiceCoordinatorEnabled } from '../state/voiceCoordinator'
 import type { AgentConnection } from './AgentContext'
 import { AgentComposer } from './AgentView'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
+import { GitActionButton } from './GitActionButton'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
@@ -88,6 +89,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [holdingWriteHere, setHoldingWriteHere] = useState(false)
+  /** A Git refusal the branch toolbar shows under its row; the pane's own error line leaves it to the row. */
+  const [toolbarExplained, setToolbarExplained] = useState<string | null>(null)
+  /** The same for the Git action's notice above the composer. */
+  const [gitExplained, setGitExplained] = useState<string | null>(null)
+  /** Where the Git action draws its notice: above the composer, in the pane's own flow. */
+  const [gitNoticeSlot, setGitNoticeSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLElement>(null)
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
@@ -227,13 +234,15 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         </span>
       </div>
       <div className="thread-workspace__actions">
+        {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
+        {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
         <PaneMenu groups={[naming, context, shelf, supervision, recovery]} />
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {settleDialog}
-    {error && !deliveryExplains && !answerExplains ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && !deliveryExplains && !answerExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
@@ -245,6 +254,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </ThreadTranscript></ThreadWebLinks>
     <div className="thread-workspace__compose" ref={compose}>
       {notice}
+      <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />
       {managed ? <ThreadFollowups row={row} state={state} command={command} store={store}
@@ -259,7 +269,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         onClick={() => { writeHere(); setHoldingWriteHere(false); onFocusPane?.() }}>Write here</Button></div>
         : foreignDraft && managed ? <div className="thread-draft-notice"><p>Your saved draft belongs to <strong>{foreignDraft.title}</strong>.</p><Button variant="secondary" onClick={() => onOpenThread(foreignDraft.id)}>Open draft thread</Button>{options}</div>
           : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined} />
-            : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} onSend={() => setFollowSignal(signal => signal + 1)} />}
+            : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)} />}
       {/* One row under the composer: what compaction has to say at its start, the two usage figures at its end. One row,
           so panes side by side keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">

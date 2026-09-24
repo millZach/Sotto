@@ -7,7 +7,16 @@ import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 const SHOTS = 'artifacts/new-thread-setup'
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim()
+/** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
+const git = (cwd: string, ...args: string[]): string => {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }
+    catch (error) {
+      if (attempt >= 30 || !/index\.lock/u.test(error instanceof Error ? error.message : '')) throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+    }
+  }
+}
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/, '').replace(/\\/gu, '/').toLowerCase()
 const countWorktrees = (repo: string): number => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).length
 async function commitFile(repo: string, name: string, text: string): Promise<void> {
@@ -57,24 +66,48 @@ async function openCreation(page: Page, project: string, title: string): Promise
   await page.keyboard.type(project)
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
+  await expect(dialog.locator('summary')).toBeFocused()
   await dialog.locator('summary').click()
   await dialog.getByRole('textbox', { name: 'Thread name' }).fill(title)
   await dialog.locator('summary').click()
-  await dialog.getByRole('radio', { name: 'Project folder', exact: true }).focus()
-  await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeFocused()
-  await expect(dialog.getByRole('radio', { name: 'Project folder', exact: true })).toBeChecked()
+  await expect(dialog.getByText('Starts in the project folder. Change it under the composer.')).toBeVisible()
 }
-async function createByKeyboard(page: Page, project: string, title: string, independent = false): Promise<void> {
+/** The composer's branch toolbar for the active pane, T3's row under the prompt (ADR-0027). */
+const toolbar = (page: Page) => page.getByRole('group', { name: 'Branch toolbar', exact: true })
+/** The workspace chip on the toolbar: the draft's choice of checkout, new worktree or another thread's worktree. */
+async function chooseWorkspace(page: Page, option: string | RegExp): Promise<void> {
+  await toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true }).click()
+  await page.getByRole('listbox', { name: 'Workspace', exact: true }).getByRole('option', { name: option }).click()
+}
+/** Open the branch picker by its shortcut and wait for the refs to arrive. */
+async function openPicker(page: Page): Promise<void> {
+  await page.keyboard.press('Control+Shift+G')
+  await expect(page.getByLabel('Search refs')).toBeFocused()
+  // Refs, or the line that says there are none yet (a repository with no commits).
+  await expect(page.locator('[role="listbox"][aria-label="Refs"] [role="option"], .branch-toolbar__empty').first()).toBeVisible()
+}
+async function createByKeyboard(page: Page, project: string, title: string, independent = false, repository = true): Promise<void> {
   await openCreation(page, project, title)
-  if (independent) await page.keyboard.press('ArrowRight')
   const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
-  await expect(dialog.getByRole('radio', { name: independent ? 'New worktree' : 'Project folder', exact: true })).toBeChecked()
-  if (independent) await dialog.getByRole('combobox', { name: 'Start from', exact: true }).selectOption('local:')
   await dialog.getByRole('button', { name: 'Create thread', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect.poll(async () => (await activeThread(page))?.title).toBe(title)
+  // The toolbar appears once the host has read the folder; a draft on the shared checkout starts as Current checkout.
+  // A folder without Git has no toolbar to show.
+  if (repository) await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toHaveText(/Current checkout/)
+  else await expect(toolbar(page)).toHaveCount(0)
+  if (independent) {
+    await chooseWorkspace(page, 'New worktree')
+    await expect.poll(async () => (await activeThread(page)).worktree?.mode).toBe('independent')
+    // Start from the local branch as it is, as the older Start from control's "local" choice did.
+    await openPicker(page)
+    await page.getByRole('switch', { name: /Start from origin/ }).click()
+    await expect.poll(async () => (await activeThread(page)).worktree?.startFromOrigin).toBe(false)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('listbox', { name: 'Refs', exact: true })).toHaveCount(0)
+  }
 }
 async function send(page: Page, text: string): Promise<void> {
   const id = (await activeThread(page)).id
@@ -120,24 +153,56 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     expect(await readFile(join(shared.workingDirectory!, 'README.md'), 'utf8')).toBe('Uncommitted project edit\n')
     await send(page, 'Inspect the project as it stands.')
     await expect(page.getByRole('button', { name: 'Working copy: main', exact: true })).toBeVisible()
+    // Once sent, Workspace and Run on read as static text; the picker keeps working.
+    await expect(toolbar(page)).toContainText('Run on This computer')
+    await expect(toolbar(page)).toContainText('Workspace Current checkout')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toHaveCount(0)
+    // The picker switches the shared checkout: a search, a pick, and the folder is on release. The sent branch
+    // follows a switch made here, so no branch-changed notice appears for it.
+    await openPicker(page)
+    const refs = page.getByRole('listbox', { name: 'Refs', exact: true })
+    await expect(refs.getByRole('option', { name: /^main/ })).toContainText('current')
+    await page.keyboard.type('rel')
+    await expect(refs.getByRole('option').first()).toHaveText(/^release/)
+    await page.keyboard.press('Enter')
+    await expect.poll(() => git(repo, 'branch', '--show-current')).toBe('release')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/release/)
+    await expect(page.getByRole('button', { name: 'Working copy: release', exact: true })).toBeVisible()
+    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Still no notice after a switch made here.')
+    await expect(page.locator('.branch-notice')).toHaveCount(0)
+    await expect.poll(async () => (await activeThread(page)).worktree?.sentBranch).toBe('release')
+    // Create new ref: a name nothing matches becomes a branch from HEAD, checked out.
+    await openPicker(page)
+    await page.keyboard.type('feat/from picker')
+    await expect(page.getByLabel('Search refs')).toHaveValue('feat/from picker')
+    await refs.getByRole('option', { name: 'Create new ref “feat/from-picker”', exact: true }).click()
+    await expect.poll(() => git(repo, 'branch', '--show-current')).toBe('feat/from-picker')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/feat\/from-picker/)
+    // Git's refusal is shown in its words: a dirty file that the switch would overwrite.
+    git(repo, 'checkout', '-q', 'main')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/main/)
+    await writeFile(join(repo, 'README.md'), 'Conflicting edit\n'); git(repo, 'checkout', '-q', 'release'); await writeFile(join(repo, 'README.md'), 'Release edit\n'); git(repo, 'commit', '-qam', 'Release edit'); git(repo, 'checkout', '-q', 'main'); await writeFile(join(repo, 'README.md'), 'Uncommitted project edit\n')
+    await openPicker(page)
+    await refs.getByRole('option', { name: /^release/ }).click()
+    await expect(toolbar(page).getByRole('alert')).toContainText('Failed to switch ref.')
+    await expect(page.locator('.thread-workspace__error')).toHaveCount(0) // said once, under the row, not again by the pane
+    expect(git(repo, 'branch', '--show-current')).toBe('main')
+    expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('Uncommitted project edit\n')
+    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('')
     await createByKeyboard(page, 'repo-app', 'Shared second')
     expect(sameFolder((await activeThread(page)).workingDirectory!, repo)).toBe(true)
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
-    expect(git(repo, 'branch', '--format=%(refname)')).toBe(initialBranches)
+    expect(git(repo, 'branch', '--format=%(refname)')).toBe(`refs/heads/feat/from-picker
+${initialBranches}`) // only the picker's own branch was added
 
     await openCreation(page, 'repo-app', 'Abandoned worktree')
     await page.screenshot({ path: `${SHOTS}/shared-default-dialog.png`, animations: 'disabled' })
-    await page.keyboard.press('ArrowRight')
     const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
-    await expect(dialog.getByRole('combobox', { name: 'Start from', exact: true })).toBeVisible()
     await captureMatrix(launched)
     await resize(launched, 820, 560)
-    // Keyboard focus scrolls each remaining field into view at the minimum size.
-    await dialog.getByRole('radio', { name: 'New worktree', exact: true }).focus()
-    await page.keyboard.press('Tab')
-    await expect(dialog.getByRole('combobox', { name: 'Start from', exact: true })).toBeFocused()
-    await page.keyboard.press('Tab')
-    await expect(dialog.locator('summary')).toBeFocused()
+    // Keyboard creation continues at Thread options at the minimum size; Escape folds it and then closes the dialog.
+    await dialog.locator('summary').focus()
     await page.keyboard.press('Enter')
     await page.keyboard.press('Tab')
     await expect(dialog.getByRole('textbox', { name: 'Thread name' })).toBeFocused()
@@ -153,35 +218,36 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
 
     await createByKeyboard(page, 'repo-app', 'Changed before sending', true)
     expect((await activeThread(page)).worktree).toMatchObject({ mode: 'independent', status: 'pending' })
-    await page.getByRole('button', { name: 'Working copy: New worktree', exact: true }).click()
-    const details = page.getByRole('group', { name: 'Working copy details' })
-    await details.getByRole('radio', { name: 'Project folder', exact: true }).check()
-    await details.getByRole('button', { name: 'Apply working copy', exact: true }).click()
-    await expect.poll(async () => (await activeThread(page)).worktree?.mode).toBe('shared')
-    await expect(details.getByRole('radio', { name: 'Project folder', exact: true })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Working copy: New worktree', exact: true })).toBeVisible()
+    // The Workspace shortcut opens the chip; the choice goes back to the checkout without creating anything.
+    await page.keyboard.press('Control+Shift+X')
+    await expect(page.getByRole('listbox', { name: 'Workspace', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toBeFocused()
+    await chooseWorkspace(page, 'Current checkout')
+    await expect.poll(async () => (await activeThread(page)).worktree?.mode).toBe('shared')
     await send(page, 'Use the existing project folder.')
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
 
     await createByKeyboard(page, 'repo-app', 'Independent task', true)
     const pending = await activeThread(page)
-    expect(pending).toMatchObject({ nativeSessionStarted: false, worktree: { mode: 'independent', status: 'pending' } })
+    expect(pending).toMatchObject({ nativeSessionStarted: false, worktree: { mode: 'independent', status: 'pending', startFromOrigin: false } })
     expect(pending.worktree?.path).toBeUndefined()
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
     await resize(launched, 820, 560)
-    await page.getByRole('button', { name: 'Working copy: New worktree', exact: true }).click()
-    await details.getByRole('combobox', { name: 'Start from', exact: true }).selectOption('local:release')
-    await details.getByRole('button', { name: 'Apply working copy', exact: true }).focus()
-    const editorBounds = await details.boundingBox()
-    const paneBounds = await page.locator(`section.thread-pane[data-thread-id="${pending.id}"]`).boundingBox()
-    expect(editorBounds!.x).toBeGreaterThanOrEqual(paneBounds!.x)
-    expect(editorBounds!.x + editorBounds!.width).toBeLessThanOrEqual(820)
-    expect(editorBounds!.y + editorBounds!.height).toBeLessThanOrEqual(560)
-    await page.screenshot({ path: `${SHOTS}/working-copy-editor-820x560.png`, animations: 'disabled' })
-    await details.getByRole('button', { name: 'Apply working copy', exact: true }).click()
-    await expect(details.getByRole('radio', { name: 'New worktree', exact: true })).toBeFocused()
-    await page.keyboard.press('Escape')
-    await expect(details).toHaveCount(0)
+    // At the minimum size the picker's panel stays inside the window, and a pick records the base without a checkout.
+    await openPicker(page)
+    const panel = page.getByRole('group', { name: 'Branches', exact: true })
+    const panelBounds = await panel.boundingBox()
+    expect(panelBounds!.x).toBeGreaterThanOrEqual(0)
+    expect(panelBounds!.x + panelBounds!.width).toBeLessThanOrEqual(820)
+    expect(panelBounds!.y).toBeGreaterThanOrEqual(0)
+    expect(panelBounds!.y + panelBounds!.height).toBeLessThanOrEqual(560)
+    await page.screenshot({ path: `${SHOTS}/branch-picker-820x560.png`, animations: 'disabled' })
+    await page.getByRole('listbox', { name: 'Refs', exact: true }).getByRole('option', { name: /^release/ }).click()
+    await expect.poll(async () => (await activeThread(page)).worktree?.baseBranch).toBe('release')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/From release/)
+    expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(initialWorktrees)
     await resize(launched, 1280, 800)
     await send(page, 'Work independently from release.')
     const independent = await activeThread(page)
@@ -189,10 +255,11 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     const branch = independent.worktree!.branch!, worktreePath = independent.worktree!.path!
     expect(branch).toMatch(/^sotto\/[a-z0-9-]{1,20}$/u)
     expect(sameFolder(worktreePath, repo)).toBe(false)
-    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toMatch(/^Committed checkout\r?\n$/u)
+    expect(await readFile(join(worktreePath, 'README.md'), 'utf8')).toMatch(/^Release edit\r?\n$/u) // release's own commit, made above
     expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('Uncommitted project edit\n')
     expect(git(repo, 'branch', '--show-current')).toBe('main')
     await page.getByRole('button', { name: `Working copy: ${branch}`, exact: true }).click()
+    const details = page.getByRole('group', { name: 'Working copy details' })
     await details.getByRole('button', { name: 'Open folder', exact: true }).click()
     await expect.poll(async () => sameFolder((await page.evaluate(async () => (await window.sottoE2E!.snapshot()).openedThreadFolder)) ?? '', independent.workingDirectory!)).toBe(true)
     await details.press('Escape')
@@ -202,15 +269,25 @@ test('shared checkout is the default; independent worktrees are lazy, editable a
     await expect(page.getByRole('button', { name: 'Working copy: feat/task-branch', exact: true })).toBeVisible()
     await expect(page.locator('.branch-notice')).toHaveCount(0)
     await send(page, 'Continue on the task branch.')
-    await openCreation(page, 'repo-app', 'Continue existing worktree')
-    await page.keyboard.press('ArrowRight')
-    await dialog.getByRole('radio', { name: 'Existing worktree', exact: true }).check()
-    const worktreeChoice = dialog.getByRole('combobox', { name: 'Existing worktree', exact: true })
-    await expect(worktreeChoice.locator('option').filter({ hasText: 'feat/task-branch' })).toHaveCount(1)
-    await worktreeChoice.selectOption({ label: await worktreeChoice.locator('option').filter({ hasText: 'feat/task-branch' }).innerText() })
-    await dialog.getByRole('button', { name: 'Create thread', exact: true }).click()
-    await expect(dialog).toHaveCount(0)
-    await expect.poll(async () => (await activeThread(page))?.title).toBe('Continue existing worktree')
+    // Another thread's worktree is offered as Previous worktree, and the picker re-points a draft at the worktree
+    // a branch is already checked out in rather than checking it out twice.
+    await createByKeyboard(page, 'repo-app', 'Continue existing worktree')
+    await openPicker(page)
+    const busy = page.getByRole('listbox', { name: 'Refs', exact: true }).getByRole('option', { name: /^feat\/task-branch/ })
+    await expect(busy).toContainText('worktree')
+    await busy.click()
+    await expect.poll(async () => (await activeThread(page)).worktree?.existingWorktreePath ?? '').not.toBe('')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toHaveText('WorkspacePrevious worktree (feat/task-branch)')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/feat\/task-branch/)
+    await openPicker(page)
+    await expect(page.getByRole('listbox', { name: 'Refs', exact: true }).getByRole('option', { name: /^feat\/task-branch/ })).toContainText('current')
+    await page.keyboard.press('Escape')
+    await chooseWorkspace(page, 'Current checkout')
+    await expect.poll(async () => (await activeThread(page)).worktree?.mode).toBe('shared')
+    // The shortcut waits for the row to be free: a change still being confirmed keeps the chips disabled.
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toBeEnabled()
+    await page.keyboard.press('Control+Shift+L')
+    await expect.poll(async () => (await activeThread(page)).worktree?.existingWorktreePath ?? '').not.toBe('')
     await send(page, 'Continue in the existing working copy.')
     expect(sameFolder((await activeThread(page)).workingDirectory!, independent.workingDirectory!)).toBe(true)
     expect(countWorktrees(repo)).toBe(2)
@@ -288,7 +365,7 @@ test('failed first-send setup preserves the draft and retries without dispatchin
   try {
     launched = await launch([['fresh-repo', fresh], ['plain-notes', plain]])
     const { page } = launched
-    await createByKeyboard(page, 'plain-notes', 'Plain folder')
+    await createByKeyboard(page, 'plain-notes', 'Plain folder', false, false)
     await send(page, 'Use this ordinary folder.')
     expect(sameFolder((await activeThread(page)).workingDirectory!, plain)).toBe(true)
     expect(existsSync(join(plain, '.git'))).toBe(false)

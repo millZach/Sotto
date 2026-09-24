@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import React, { useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 import { Button } from './Button'
+import { useDialogFocus } from './useDialogFocus'
 
 export interface ConfirmationDialogProps {
   readonly title: string
@@ -32,8 +33,6 @@ export function ConfirmationDialog({
   const [submitting, setSubmitting] = useState(false)
   const [failed, setFailed] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
-  const returnFocusRef = useRef<HTMLElement | null>(null)
-  const dialogRef = useRef<HTMLElement>(null)
   const submittingRef = useRef(false)
   const onCancelRef = useRef(onCancel)
   const titleId = useId()
@@ -41,44 +40,8 @@ export function ConfirmationDialog({
 
   onCancelRef.current = onCancel
   submittingRef.current = submitting
-
-  useEffect(() => {
-    returnFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null
-    cancelRef.current?.focus()
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !submittingRef.current) {
-        event.preventDefault()
-        onCancelRef.current()
-        return
-      }
-      if (event.key === 'Tab') {
-        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
-        ) ?? [])]
-        if (focusable.length === 0) return
-        const first = focusable[0]
-        const last = focusable.at(-1)
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault()
-          last?.focus()
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault()
-          first?.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      const target = returnFocusRef.current
-      queueMicrotask(() => {
-        if (target?.isConnected) target.focus()
-        else fallbackFocusRef?.current?.focus()
-      })
-    }
-  }, [fallbackFocusRef])
+  // Escape is Cancel, except while the confirmation is under way.
+  const dialogRef = useDialogFocus({ onEscape: () => { if (!submittingRef.current) onCancelRef.current() }, initialFocus: cancelRef, fallbackFocus: fallbackFocusRef })
 
   const confirm = async (): Promise<void> => {
     if (submittingRef.current) return

@@ -6,6 +6,10 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
+import { gitStatusSchema } from './gitStatus'
+import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
+import type { GitRefsPage, GitRefsRequest } from './gitRefs'
+import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -170,6 +174,8 @@ export const agentWorktreeSchema = z.object({
   projectRelativePath: z.string().optional(),
   baseBranch: z.string().optional(), startFromOrigin: z.boolean().optional(),
   existingWorktreePath: z.string().optional(), reused: z.boolean().optional(), temporaryBranch: z.boolean().optional(),
+  /** The folder's Git status as the host last read it: branch, upstream, ahead and behind, dirty, the pull request. */
+  git: gitStatusSchema.optional(),
   /** The branch this worktree was on when Sotto last sent to the thread. Absent before the first send,
    * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
   sentBranch: z.string().optional(),
@@ -203,6 +209,8 @@ export const agentThreadSchema = z.object({
   providerMode: providerEntityId.optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
+  /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
+  gitAction: gitActionProgressSchema.optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -257,10 +265,14 @@ export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted ch
 /** What main answers when reclaiming a worktree would discard uncommitted work; the pane opens its confirmation on this exact sentence. */
 export const RECLAIM_WORKTREE_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. Removing it loses them, so confirm it first.'
 
+/** One connected host's catalog, as the desktop keeps it apart from the others when it combines threads. */
+export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
+  capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional() })
+export type AgentClientHost = z.infer<typeof agentClientHostSchema>
+
 export const agentHostSnapshotSchema = z.object({
   /** Desktop projection only: catalogs stay with their host when a window combines threads. */
-  clientHosts: z.array(z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
-    capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional() })).optional(),
+  clientHosts: z.array(agentClientHostSchema).optional(),
   hostId: z.uuid().optional(),
   providers: z.array(agentProviderStatusSchema).optional(),
   connected: z.boolean(), name: z.string(), version: z.string(),
@@ -456,6 +468,31 @@ export const agentStateSchema = z.object({
   stale: z.boolean().optional(),
 })
 export type AgentState = z.infer<typeof agentStateSchema>
+
+/**
+ * A model catalog as it may cross the `AGENT_STATE` broadcast on `sotto:agents:state` (issue #286): the
+ * full array, tagged with the revision it represents, or that revision alone when the window it is going
+ * to was already sent it. `AGENT_GET` and a command's own answer are read on demand, once, so they always
+ * carry the array in full; only the coalesced broadcast in `src/main/index.ts` ever omits one, and only
+ * after a send it knows reached that window. The revision is what keeps an omission from ever being read
+ * as an empty catalog: a window missing the one it names — fresh, reloaded, or a message it never saw —
+ * asks `AGENT_GET` for the whole state instead of showing no models. Nothing parses this shape: the
+ * preload forwards it to the page unparsed (contextBridge would otherwise copy a catalog it just put
+ * back together a second time crossing back), and the page's own reassembly reads it structurally, the
+ * same way `trustedState` does for the rest of this channel. See ADR-0027 and
+ * `src/renderer/src/agents/agentStateCatalogs.ts`.
+ */
+export type AgentModelCatalogBroadcast =
+  | { revision: number; models: AgentModel[] }
+  | { revision: number; omitted: true }
+export type AgentClientHostBroadcast = Omit<AgentClientHost, 'models'> & { models: AgentModelCatalogBroadcast }
+export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts'> & {
+  models: AgentModelCatalogBroadcast
+  clientHosts?: AgentClientHostBroadcast[]
+}
+/** What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`. */
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
+
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
  * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
@@ -600,6 +637,20 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
+  /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
+   * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`
+   * is the client's word that pushing from the default branch was confirmed. */
+  z.object({ type: z.literal('git-action'), threadId: id, actionId: z.uuid(), action: gitStackedActionSchema,
+    commitMessage: z.string().max(10_000).optional(), featureBranch: z.boolean().optional(),
+    filePaths: z.array(z.string().min(1).max(4_096)).max(2_000).optional(), allowDefaultBranch: z.boolean().optional() }).strict(),
+  /** `git pull --ff-only` on the thread's folder; a diverged branch is refused. */
+  z.object({ type: z.literal('git-pull'), threadId: id }).strict(),
+  /** Check out a branch in the thread's folder, creating it from HEAD when `create` is set; a remote ref gets a tracking branch. */
+  z.object({ type: z.literal('git-switch-branch'), threadId: id, ref: z.string().min(1).max(512), create: z.boolean().optional() }).strict(),
+  /** `git init` in a thread's folder that is not a repository yet. */
+  z.object({ type: z.literal('git-init'), threadId: id }).strict(),
+  /** Publish the thread's repository to GitHub through `gh`, adding `origin` and pushing (GitHub only, ADR-0027). */
+  z.object({ type: z.literal('git-publish'), threadId: id, repository: z.string().min(3).max(200), visibility: z.enum(['private', 'public']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
@@ -621,6 +672,10 @@ export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
 export interface AgentBridge {
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
+  /** The branches a thread's folder offers, for the picker; the thread is the window's client-scoped one. */
+  gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
+  /** The changed files of a thread's folder with their line counts, for the commit dialog. */
+  gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>

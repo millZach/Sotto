@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
+import { wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import type { DictationState } from '../../../shared/dictation'
@@ -77,26 +78,37 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    */
   const ask = useRef<(threadId: string) => void>(() => undefined)
   const resync = useRef<(threadId: string) => void>(() => undefined)
-  const receiveState = useCallback((next: AgentState): void => {
+  // Arriving agent state is background news, about 1.4 times a second while a thread works, and the
+  // render it causes must not sit in front of a keystroke. `startTransition`
+  // gives the commit low priority so a sync update — the composer's draft store — interrupts it, while
+  // React still guarantees the transition itself lands, just later. `urgent` opts a caller out of that:
+  // the initial connect (nothing is on screen yet to stay interruptible for) and a command's own reply
+  // (the user is watching that one land) both ask for it.
+  const receiveState = useCallback((next: AgentState, options: { urgent?: boolean } = {}): void => {
     arrived.current = performance.now()
     detail.shell = next
     // The thread on screen needs its history whether or not this window asked for it: a restart opens
     // straight onto the selected thread, with no pane change to declare it viewed.
     if (next.stale !== true && next.activeThreadId !== null) ask.current(next.activeThreadId)
     const assembled = assemble(next)
-    setSnapshot(current => {
+    // React's own update queue, not extra bookkeeping here, keeps this in order: a `useState` setter
+    // called from a transition and one called urgently both enqueue on the same fiber, and whichever
+    // priority renders first, React replays the whole queue in the order the setters were called
+    // once every lane has rendered — so a call made after another's can never be overwritten by it.
+    const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
       if (current?.session !== session || current.state.stale === true) return { session, state: assembled }
       const state = share(current.state, assembled)
       return state === current.state ? current : { session, state }
     })
+    if (options.urgent === true) commit(); else startTransition(commit)
   }, [session, assemble, detail])
   /** A shell held for its frame commits now: the detail that follows it lands in the same commit. */
-  const commitPendingShell = useCallback((): void => {
+  const commitPendingShell = useCallback((options: { urgent?: boolean } = {}): void => {
     if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
     const pending = detail.pendingShell
     detail.pendingShell = null
-    if (pending !== null) receiveState(pending)
+    if (pending !== null) receiveState(pending, options)
   }, [detail, receiveState])
   const receiveDetail = useRef<(update: AgentThreadDetailUpdate) => void>(() => undefined)
   receiveDetail.current = (update: AgentThreadDetailUpdate): void => {
@@ -156,7 +168,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
         if (session.current) {
           setFailure(null)
           // A shell held for its frame is older than this response; it commits first so it can never land after.
-          if (version === session.observed) { commitPendingShell(); receiveState(next) }
+          // Both commit urgently: the user is watching their own action land, and a transition here could let
+          // the sync command reply paint before the older pending shell it must follow.
+          if (version === session.observed) { commitPendingShell({ urgent: true }); receiveState(next, { urgent: true }) }
         }
         return next
       } catch {
@@ -191,7 +205,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // waits out the frame so the detail that follows commits with it; a shell nothing follows commits in
     // the frame it would have painted in anyway, and a second shell inside the frame commits the first —
     // nothing published is skipped. Hidden windows cannot wait for animation frames: voice controls must
-    // still reach their effects. They and windows without a detail channel commit at once.
+    // still reach their effects. They and windows without a detail channel commit at once — still as a
+    // transition, which is fine: React's scheduler runs on its own timer, not a rAF, so it keeps
+    // committing while the window is hidden.
     const flushPendingShell = (): void => { if (active) commitPendingShell() }
     const unsubscribe = bridge?.onState(next => {
       ++session.observed
@@ -205,13 +221,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     document.addEventListener('visibilitychange', visibilityChanged)
     const unsubscribeDetail = bridge?.onThreadDetail?.(next => { if (active) receiveDetail.current(next) })
     // The shell this window saw last time paints the page on the first frame, marked stale and
-    // disconnected, and the first live shell replaces it.
+    // disconnected, and the first live shell replaces it. Both are urgent: there is nothing on
+    // screen yet for a transition to stay interruptible for, only a blank window to fill in.
     if (detail.shell === null) {
       const cached = readShellCache()
-      if (cached !== null) receive(cached)
+      if (cached !== null) receive(cached, { urgent: true })
     }
     void bridge?.get().then(next => {
-      if (active && version === session.observed) receive(next)
+      if (active && version === session.observed) receive(next, { urgent: true })
     }).catch(() => { if (active) setFailure({ session, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' }) })
     const flush = (): void => threadDrafts.flushAll()
     window.addEventListener('pagehide', flush)
@@ -243,7 +260,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // says nothing about what is on disk now.
   useLayoutEffect(() => { if (state !== null && state.stale !== true) threadDrafts.receive(state) }, [state, threadDrafts])
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
-  // dev console at most once a second. Development only: the production bundle drops the whole effect body.
+  // dev console at most once a second — the figure now includes whatever time a transition spent waiting
+  // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
   useEffect(() => {
     if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
     const at = arrived.current
@@ -277,7 +295,8 @@ export function AgentProvider({ children, settings, dictation }: {
   readonly settings: AppSettings | null
   readonly dictation: DictationState
 }): ReactNode {
-  const connection = useAgentConnection(window.sotto?.agents)
+  const agentsBridge = window.sotto?.agents
+  const connection = useAgentConnection(agentsBridge && wrapAgentBridge(agentsBridge))
   const [voice, setVoice] = useState<AgentVoiceState>({ status: 'off' })
   const voiceRef = useRef<AgentVoiceSession | null>(null)
   const [personalAudio, setPersonalAudio] = useState(false)
