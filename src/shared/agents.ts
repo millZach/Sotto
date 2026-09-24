@@ -10,6 +10,7 @@ import { gitStatusSchema } from './gitStatus'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestDetail, type GitPullRequestRequest } from './gitPullRequests'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
 export const agentVoiceTimingSchema = z.object({
@@ -182,6 +183,9 @@ export const agentWorktreeSchema = z.object({
   /** When Sotto reclaimed this worktree's folder. The branch and the thread stay; the next send puts
    * the folder back on that branch (ADR-0019). Absent while the folder is there. */
   reclaimedAt: z.string().optional(),
+  /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
+   * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
+  checkoutBranch: z.boolean().optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -211,6 +215,9 @@ export const agentThreadSchema = z.object({
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
   gitAction: gitActionProgressSchema.optional(),
+  /** The pull requests linked to this thread: the one its Git action created, ones linked by hand, one checked out
+   * from the branch picker. Newest last; the Pull request surface lists them (ADR-0027). */
+  pullRequests: z.array(gitPullRequestLinkSchema).max(GIT_PULL_REQUEST_LINKS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -622,6 +629,17 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('git-init'), threadId: id }).strict(),
   /** Publish the thread's repository to GitHub through `gh`, adding `origin` and pushing (GitHub only, ADR-0027). */
   z.object({ type: z.literal('git-publish'), threadId: id, repository: z.string().min(3).max(200), visibility: z.enum(['private', 'public']) }).strict(),
+  /** A press on the Pull request surface, run through `gh` on the host's own sign-in: merge with a method, ready or draft,
+   * close or reopen, update the branch (`method` rebase for Update with rebase), or turn auto-merge on or off. Only for a
+   * pull request the thread knows: its branch's own or one linked to it. */
+  z.object({ type: z.literal('git-pull-request-action'), threadId: id, url: gitPullRequestUrlSchema, action: gitPullRequestActionSchema,
+    method: gitPullRequestMergeMethodSchema.optional() }).strict(),
+  /** Link a pull request to the thread by a GitHub URL or `#42`, or take the link away again. */
+  z.object({ type: z.literal('git-link-pull-request'), threadId: id, reference: z.string().min(1).max(2_048) }).strict(),
+  z.object({ type: z.literal('git-unlink-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  /** T3's Checkout pull request: `local` checks it out in the thread's folder with `gh pr checkout`; `worktree` fetches its
+   * head as a branch a draft's new worktree takes on first send. */
+  z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
@@ -647,6 +665,8 @@ export interface AgentBridge {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   /** The changed files of a thread's folder with their line counts, for the commit dialog. */
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
+  /** One pull request of a thread's, with its checks and what the surface may do; null when the thread has none. */
+  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
   chooseProjectDirectory?(): Promise<string | null>
   prepareWake?(): Promise<AgentWakeDetection>
   detectWake?(audio: Float32Array): Promise<AgentWakeDetection>

@@ -29,7 +29,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const shell = () => structuredClone(state)
   const control = {
     get: shell, shell, configuration: () => state.configuration, command: async () => unavailable(),
-    threadDetail: () => null, attachmentPreview: unavailable, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(),
+    threadDetail: () => null, attachmentPreview: unavailable, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
