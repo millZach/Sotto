@@ -8,14 +8,16 @@
 /* The line of chrome: scope, counts, then the surface's own actions. */
 .changes-summary { gap: 6px; padding-left: 8px; }
 .tools-panel .changes-summary__git { display: contents; }
-/* The select is as wide as the scope it shows, not its longest option, and gives way only past a short word. */
-.changes-scope { position: relative; display: inline-flex; flex: 0 1 auto; align-items: center; min-width: 11ch; }
+/* The scope and its counts wrap inside a one-line box, so counts without room drop out whole instead of clipping.
+   The select is as wide as the scope it shows, not its longest option. */
+.changes-lead { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; column-gap: 6px; min-width: 0; height: 30px; overflow: hidden; }
+.changes-scope { position: relative; display: inline-flex; flex: none; align-items: center; max-width: 100%; }
 .changes-scope__select {
   field-sizing: content; min-width: 0; max-width: 100%; height: 30px; padding: 0 26px 0 8px; border: 0; border-radius: 7px; background: transparent;
   color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; text-overflow: ellipsis; cursor: pointer; appearance: none;
 }
 .changes-scope__select:hover { background: var(--tools-hover); }
-.changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 400; }
+.changes-scope__select option, .changes-scope__select optgroup { background: var(--tt-surface-elevated); color: var(--tt-text); }
 .changes-scope__chevron { position: absolute; right: 8px; color: var(--tt-text-muted); pointer-events: none; }
 .changes-counts { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .changes-counts__add { color: color-mix(in srgb, var(--tt-success) 70%, var(--tt-text)); }

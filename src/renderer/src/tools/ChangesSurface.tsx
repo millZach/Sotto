@@ -83,11 +83,14 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, dr
 
   return <div className="changes-surface">
     <div className="changes-summary tools-chrome">
-      <ScopePicker changes={changes} onChange={setScope} />
-      {files.length > 0 ? <span className="changes-counts" title={`${totals.additions} lines added, ${totals.deletions} removed`}>
-        <span aria-hidden="true"><span className="changes-counts__add">+{totals.additions}</span> <span className="changes-counts__remove">−{totals.deletions}</span></span>
-        <span className="tt-visually-hidden">{totals.additions} lines added, {totals.deletions} removed</span>
-      </span> : null}
+      {/* The scope keeps its words; the counts beside it show whole or drop to a line the lead never shows. */}
+      <span className="changes-lead">
+        <ScopePicker changes={changes} onChange={setScope} />
+        {files.length > 0 ? <span className="changes-counts" title={`${totals.additions} lines added, ${totals.deletions} removed`}>
+          <span aria-hidden="true"><span className="changes-counts__add">+{totals.additions}</span> <span className="changes-counts__remove">−{totals.deletions}</span></span>
+          <span className="tt-visually-hidden">{totals.additions} lines added, {totals.deletions} removed</span>
+        </span> : null}
+      </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
         {bridge?.reviewPullRequest ? <button type="button" className="tools-chrome__button tt-focusable" title="Pull request" onClick={() => setPullRequestOpen(true)}>
