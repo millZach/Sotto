@@ -153,6 +153,26 @@ describe('Changes as T3’s diff', () => {
     expect(within(panel()).getByRole('button', { name: 'Hide whitespace changes' })).toBeInTheDocument()
   })
 
+  it('waits for settings on a cold start, so the first read already hides whitespace and there is no second', async () => {
+    let current: AppContextValue['settings'] = null
+    vi.mocked(useOptionalApp).mockImplementation(() => ({ settings: current } as unknown as AppContextValue))
+    const git = fakeGit()
+    const store = new ToolsPanelStore()
+    store.setOpen(true)
+    store.setSurface('changes')
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: {} } })
+    const view = render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} gitChanges={git.bridge} store={store} />)
+    // Settings have not arrived: Changes reads nothing yet, rather than reading once with whitespace shown.
+    await act(async () => { await Promise.resolve() })
+    expect(git.bridge.list).not.toHaveBeenCalled()
+    expect(git.bridge.review).not.toHaveBeenCalled()
+    current = { ...DEFAULT_SETTINGS, diffHideWhitespace: true }
+    view.rerender(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} gitChanges={git.bridge} store={store} />)
+    await waitFor(() => expect(git.bridge.review).toHaveBeenCalled())
+    await within(panel()).findAllByRole('button', { name: /^Expand /u })
+    expect(git.bridge.review).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ignoreWhitespace: true }))
+  })
+
   it('draws stacked or split, wraps or not, hides whitespace through Git, and shows a file tree', async () => {
     const user = userEvent.setup()
     const patch = 'diff --git a/src/old.ts b/src/app.ts\nold mode 100644\nnew mode 100755\nsimilarity index 75%\nrename from src/old.ts\nrename to src/app.ts\nindex abc123..def456 100755\n--- a/src/old.ts\n+++ b/src/app.ts\n@@ -10,4 +20,5 @@\n keep\n-old one\n-old two\n+new one\n+new two\n+new three\n tail\n@@ -30 +40 @@\n-old end\n\\ No newline at end of file\n+new end\n'

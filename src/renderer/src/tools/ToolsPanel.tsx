@@ -294,12 +294,15 @@ export function ToolsPanel({ focusedThreadId, state, files: filesBridge, gitChan
   useEffect(() => {
     if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(bridge, threadId)
   }, [open, threadId, onFiles, bridge, store])
-  // Changes watches the working copy only while it is the visible surface.
+  // Changes watches the working copy only while it is the visible surface. In the app it waits for settings, so its
+  // first read already follows Hide whitespace changes rather than reading once each way on a cold start. Outside
+  // the app (a panel rendered on its own) there are no settings to wait for.
+  const diffSettingsKnown = app === null || app.settings !== null
   useEffect(() => {
-    if (!open || threadId === undefined || chrome.surface !== 'changes') return
+    if (!open || threadId === undefined || chrome.surface !== 'changes' || !diffSettingsKnown) return
     store.changes.activate(changesBridge, threadId)
     return () => store.changes.deactivate(changesBridge)
-  }, [open, threadId, chrome.surface, changesBridge, store])
+  }, [open, threadId, chrome.surface, changesBridge, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
     if (open && threadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, threadId)
