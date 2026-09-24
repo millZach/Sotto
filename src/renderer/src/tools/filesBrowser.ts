@@ -132,6 +132,14 @@ export class FilesBrowserStore {
     void this.loadPreview(bridge, threadId, path, false)
   }
 
+  /** Open a file from elsewhere (a name in Changes): its folders open in the tree, and the file in the preview. */
+  showFile(bridge: FilesBridge | undefined, threadId: string, path: string): void {
+    if (!this.threads.has(threadId)) this.activate(bridge, threadId)
+    const parts = path.split('/')
+    for (let depth = 1; depth < parts.length; depth++) this.toggleDirectory(bridge, threadId, parts.slice(0, depth).join('/'), true)
+    this.openFile(bridge, threadId, path)
+  }
+
   closePreview(threadId: string): void {
     const current = this.threads.get(threadId)
     if (current) this.patch(threadId, current.generation, { selectedPath: null, preview: null })

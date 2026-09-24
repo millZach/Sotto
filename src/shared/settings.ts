@@ -138,7 +138,7 @@ export interface AppSettings {
   threadTitles: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
-  /** Off stops every commit-message draft; the commit form opens empty. */
+  /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
   commitMessages: boolean
   streamingAsr: boolean
   autoUpdateCheck: boolean

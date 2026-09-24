@@ -34,7 +34,7 @@ export interface CommitConventions {
   readonly agentsFile: string | null
   readonly nameStatus: string | null
 }
-/** The staged diff, capped, and the conventions when the caller read them; the Changes drawer sends the diff alone. */
+/** The staged diff, capped, and the repository's conventions when the caller read them, as the Git action does. */
 export type CommitMaterial = DiffExcerpt & { readonly conventions?: CommitConventions }
 
 /**

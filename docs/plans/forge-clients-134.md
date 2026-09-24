@@ -55,6 +55,12 @@ Owner choice recorded September 21, 2026, and narrowed to the iOS client the sam
 - iOS delivery: plan for TestFlight. The owner reports an Apple developer account. Paid program enrollment, App Store Connect team access, signing and build-machine access have not yet been checked. No app has been uploaded or distributed.
 
 Framework, wire protocol details, token storage defaults and minimum supported iOS version can be proposed and recorded by the implementation owner; they do not all require separate owner picks. Notifications and optional QR pairing can be decided after the first phone journey.
+## Adding a host the way T3 Code does (#206)
+
+The owner picked variant A on September 23, 2026, from the prototype on branch `prototype/hosts-add-206` (`docs/prototypes/hosts-add-prototype.html`, served by `node docs/prototypes/hosts-add-prototype.mjs` at `?variant=A`). Add host is a dialog with one "SSH host or alias" field suggesting the SSH configuration's aliases and the known hosts, optional Username and Port, and the folders under a disclosure; pressing Add host connects inside the dialog and saves the row only when the host answers. Each row has an On/Off switch and a menu with Stop host, Rename, Edit connection and Forget. Projects carry a small host badge when a remote host is connected, and New thread has host buttons when there is more than one host to choose. Variants B (add inline on the page) and C (pick from a sheet of SSH hosts) stay on the prototype branch. Decided with the owner at the same time: all of #206 ships in the next release, and hosts already saved (forge) start switched on and reconnect at launch (ADR-0025, September 23 amendment on the switch).
+
+The prototype's composer "Run on <host>" chip assumed a composer with no thread behind it yet. Sotto has none: New thread creates the thread on its project's host before the first message is written, so the host is chosen in New thread and the composer shows it fixed, as "Runs on forge". The owner approved that change from the pick on September 23, 2026, and chose to merge without the hand test against forge.
+
 ## Environment
 
 Default shell, image viewer and node REPL currently fail Windows sandbox ACL initialization (`apply deny-read ACLs`). Reviewed escalated shell commands work. Dependencies installed with `npm ci` in this worktree, without a node_modules junction.

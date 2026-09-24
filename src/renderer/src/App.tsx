@@ -21,6 +21,7 @@ import { useApp, type AppNavigation } from './state/AppContext'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
+import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { AgentProvider } from './agents/AgentContext'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
@@ -434,6 +435,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
             onCancel={updateFlow.cancelInstall}
           />
         ) : null}
+        {/* A saved host reconnecting on its own can need an answer from SSH on any page. */}
+        <HostQuestionDialog />
         <ThemeEditorHost
           settings={app.settings}
           onSave={app.actions.updateSettings}

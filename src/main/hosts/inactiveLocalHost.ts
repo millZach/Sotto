@@ -38,6 +38,8 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
     useBrowserTools: idle,
+    // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
+    setMutationGuard: idle, gitActionFinished: async () => undefined,
     dispose: idle, disconnect: idle, close: async () => undefined,
   }
   const refuseMissing = <T extends object>(value: T): T => new Proxy(value, {

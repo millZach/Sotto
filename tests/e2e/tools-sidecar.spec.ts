@@ -1,10 +1,12 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
 
@@ -16,6 +18,8 @@ const SHOTS = resolve(process.cwd(), 'artifacts/tools-rail-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const MODES = ['dark', 'light'] as const
 const TOOLS = ['Browser', 'Terminal', 'Files', 'Changes', 'Pull request', 'Agents'] as const
+/** Changes' Git scopes, each captured through the whole matrix. */
+const GIT_SCOPES = ['working', 'branch'] as const
 type Tool = typeof TOOLS[number]
 type Width = 'normal' | 'minimum' | 'wide'
 const MIN_WIDTH = 380
@@ -101,8 +105,8 @@ async function railLayout(panel: Locator): Promise<{
     const controls = box(document.querySelector('.threads-view__winctl'))
     const overlaps = (rect: DOMRect) => controls !== null && rect.right > controls.left && rect.left < controls.right && rect.bottom > controls.top && rect.top < controls.bottom
     const underControls = [...chrome.querySelectorAll('button, input, select, [role="tab"]')].filter(control => overlaps(control.getBoundingClientRect())).length
-    const list = box(element.querySelector('.files-surface[data-preview] > .files-tree, .changes-surface[data-diff] > .changes-list'))
-    const detail = box(element.querySelector('.files-surface[data-preview] > .files-preview, .changes-surface[data-diff] > .changes-diff'))
+    const list = box(element.querySelector('.files-surface[data-preview] > .files-tree, .changes-review[data-tree] > .changes-tree'))
+    const detail = box(element.querySelector('.files-surface[data-preview] > .files-preview, .changes-review[data-tree] > .changes-files'))
     return {
       sheet: { x: sheet.x, width: sheet.width },
       main: main.clientWidth,
@@ -141,6 +145,7 @@ async function chromeContrast(panel: Locator): Promise<{ lowest: number; name: s
     const texts = [
       '.tools-rail__tab', '.tools-chrome__title', '.tools-chrome__detail', '.tools-chrome .terminal-tabs__tab', '.tools-chrome__button:not(:disabled)',
       '.tools-panel__copy', '.tools-panel__branch', '.tools-panel__label', '.tools-panel__foot', '.tools-panel__pinned-owner .tools-panel__thread-title', '.tools-panel__tag',
+      '.changes-scope__select', '.changes-counts__add', '.changes-counts__remove', '.changes-bar__fact', '.changes-base__head', '.changes-base__value', '.changes-file__base', '.changes-file__folder',
     ].join(', ')
     const ratios = [...element.querySelectorAll(texts)].map(node => {
       const layers: string[] = []
@@ -211,12 +216,17 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     expect(folder.startsWith(launched.userData)).toBe(true)
     await mkdir(join(folder, 'src'), { recursive: true })
     const git = (args: string[]) => run('git', args, { cwd: folder, windowsHide: true, timeout: 15_000 })
-    await git(['init', '--quiet'])
+    await git(['init', '--quiet', '-b', 'main'])
     await writeFile(join(folder, 'src/app.ts'), "export function greet(name: string): string {\n  return 'Hello ' + name\n}\n")
     await writeFile(join(folder, 'src/styles.css'), 'body { background: white; color: black; }\n')
     await writeFile(join(folder, 'README.md'), '# Fieldnotes\n\nFind your next trail.\n')
     await git(['add', '.'])
-    await git(['-c', 'user.name=Sotto verification', '-c', 'user.email=verification@example.invalid', '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Owned Tools fixture'])
+    const commit = (message: string) => git(['-c', 'user.name=Sotto verification', '-c', 'user.email=verification@example.invalid', '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', message])
+    await commit('Owned Tools fixture')
+    await git(['switch', '--quiet', '-c', 'feature/warmer'])
+    await writeFile(join(folder, 'src/trail.ts'), "export const trail = 'Start somewhere close.'\n")
+    await git(['add', '.'])
+    await commit('Add the trail line')
     await writeFile(join(folder, 'src/app.ts'), 'export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n\nexport const version = 2\n')
     await writeFile(join(folder, 'src/styles.css'), 'body { background: #f3f1e8; color: #273e34; }\n')
     await writeFile(join(folder, 'CHANGELOG.md'), '# Changes\n\n- Warmer colors and a friendlier greeting.\n')
@@ -242,6 +252,14 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     const tab = (tool: Tool) => rail.getByRole('tab', { name: tool, exact: true })
     const select = async (tool: Tool): Promise<void> => { await tab(tool).click(); await expect(tab(tool)).toHaveAttribute('aria-selected', 'true') }
     const separator = panel.getByRole('separator', { name: 'Resize tools panel', exact: true })
+    const changesScope = async (scope: typeof GIT_SCOPES[number]): Promise<void> => {
+      await panel.getByRole('combobox', { name: 'Diff scope' }).selectOption(scope)
+      if (scope === 'working') await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('export const version = 2')
+      else {
+        await expect(panel.getByRole('group', { name: 'src/trail.ts' })).toContainText('Start somewhere close.')
+        await expect(panel.getByRole('button', { name: 'Change the base. Comparing feature/warmer with main, chosen automatically', exact: true })).toBeVisible()
+      }
+    }
 
     // Opening lands on the rail; the keyboard walks the rail, then its foot, then the surface's line of chrome.
     await expect(rail).toHaveAttribute('aria-orientation', 'vertical')
@@ -267,9 +285,10 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await expect(panel.locator('.files-preview__text')).toContainText('export const version = 2')
     await expect(panel.locator('.files-preview__meta')).toContainText('Read only')
     await select('Changes')
-    await panel.getByRole('option', { name: /^app\.ts/u }).click()
-    await expect(panel.getByRole('region', { name: 'Changes in src/app.ts' })).toContainText('return `Hello, ${name}!`')
+    await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('return `Hello, ${name}!`')
     await expect(tab('Changes')).toHaveAttribute('aria-description', '3 changed files')
+    // The file tree stays open through the matrix, so its place beside or above the files is measured too.
+    await panel.getByRole('button', { name: 'Show file tree', exact: true }).click()
     await select('Terminal')
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     await expect(panel.locator('.xterm-screen')).toBeVisible()
@@ -318,9 +337,10 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
           expect(await rail.evaluate(element => [...element.querySelectorAll('.tools-rail__word')].filter(word => word.scrollWidth > word.clientWidth).map(word => word.textContent)), 'rail words cut short').toEqual([])
           expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-rail button, .tools-panel__foot button')]
             .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), 'rail and footer controls clipped').toEqual([])
-          for (const tool of TOOLS) {
+          for (const [tool, scope] of TOOLS.flatMap((tool): [Tool, typeof GIT_SCOPES[number] | null][] => tool === 'Changes' ? GIT_SCOPES.map(scope => [tool, scope]) : [[tool, null]])) {
             await select(tool)
-            const key = `${tool.toLowerCase()}-${width}x${height}-${panelWidth}-${mode}`
+            if (scope !== null) await changesScope(scope)
+            const key = `${tool.toLowerCase()}${scope === null ? '' : `-${scope}`}-${width}x${height}-${panelWidth}-${mode}`
             await expect(sheet).toBeVisible()
             expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), key).toBe(true)
             const layout = await railLayout(panel)
@@ -332,7 +352,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
             expect(layout.footBottom, `${key} rail foot clipped`).toBeLessThanOrEqual(height)
             expect(layout.chromeHeight, `${key} one line of chrome`).toBeLessThanOrEqual(46)
             expect(layout.detailStubs, `${key} a fact in the line of chrome cut to a stub`).toEqual([])
-            expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .files-preview__head button')]
+            expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .files-preview__head button, .changes-bar button, .changes-file__head button.files-icon')]
               .filter(control => control.scrollWidth > control.clientWidth + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} line and head controls clipped`).toEqual([])
             if (tool === 'Files' || tool === 'Changes') expect(layout.stacked, `${key} list and detail`).toBe(layout.main < 640)
             const native = tool === 'Browser'
@@ -355,11 +375,21 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await setWidth('normal')
     await appearance(page, 'dark')
     await select('Changes')
-    await panel.getByRole('button', { name: 'Split view', exact: true }).click()
-    await expect(panel.locator('.changes-diff__rows')).toHaveAttribute('data-layout', 'split')
-    await expect(panel.locator('.changes-split__cell[data-kind="add"]')).toContainText(['return `Hello, ${name}!`', '', 'export const version = 2'])
+    await changesScope('working')
+    const app = panel.getByRole('group', { name: 'src/app.ts' })
+    await panel.getByRole('button', { name: 'Split diff view', exact: true }).click()
+    await expect(app.locator('.changes-diff__rows')).toHaveAttribute('data-layout', 'split')
+    await expect(app.locator('.changes-split__cell[data-kind="add"]')).toContainText(['return `Hello, ${name}!`', '', 'export const version = 2'])
     await screenshot(launched, 'changes-split-1280-dark', false)
-    await panel.getByRole('button', { name: 'Split view', exact: true }).click()
+    await panel.getByRole('button', { name: 'Stacked diff view', exact: true }).click()
+    // The shortcut: mod+d closes Tools while it shows Changes and opens it on Changes again (the fixture's hotkey is not mod+d).
+    await tab('Changes').focus()
+    await page.keyboard.press('Control+d')
+    await expect(panel).toBeHidden()
+    await expect(toggle).toBeFocused()
+    await page.keyboard.press('Control+d')
+    await expect(tab('Changes')).toHaveAttribute('aria-selected', 'true')
+    await expect(tab('Changes')).toBeFocused()
     await select('Browser')
     await panel.getByRole('button', { name: 'Pin to Workshop', exact: true }).click()
     await expect(panel.locator('.tools-panel__pinned-owner')).toHaveText('WorkshopPinned')
@@ -475,5 +505,117 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
   } finally {
     await closeSotto(launched)
     await new Promise<void>(done => server.close(() => done()))
+  }
+})
+
+/**
+ * Changes' four scopes, T3's: Working tree, Branch changes against its automatic base, Latest turn and Turn N from
+ * Sotto's checkpoints, including a turn whose checkpoint is unavailable. Each is captured at the three window sizes
+ * in both appearances; nothing clips and the page never scrolls sideways.
+ */
+test('Changes reads every scope, turns from checkpoints, at three window sizes, dark and light', async () => {
+  test.setTimeout(600_000)
+  await mkdir(SHOTS, { recursive: true })
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-changes-scopes-'))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
+  const repo = join(profile, 'scopes-repo')
+  await mkdir(join(repo, 'src'), { recursive: true })
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, windowsHide: true })
+  git('init', '-q', '-b', 'main'); git('config', 'core.autocrlf', 'false'); git('config', 'user.name', 'Sotto verification'); git('config', 'user.email', 'verification@example.invalid'); git('config', 'commit.gpgSign', 'false')
+  await writeFile(join(repo, 'src/app.ts'), "export function greet(name: string): string {\n  return 'Hello ' + name\n}\n")
+  await writeFile(join(repo, 'README.md'), '# Fieldnotes\n\nFind your next trail.\n')
+  git('add', '.'); git('commit', '-qm', 'Owned scopes fixture')
+  git('switch', '-q', '-c', 'feature/scopes')
+  await writeFile(join(repo, 'src/trail.ts'), "export const trail = 'Start somewhere close.'\n")
+  git('add', '.'); git('commit', '-qm', 'Add the trail line')
+  const launched = await launchSotto('phase3-workspace', profile)
+  const { page } = launched
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  try {
+    const threadId = await page.evaluate(async repo => {
+      const agents = window.sotto!.agents!
+      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'connect' })
+      const created = await agents.command({ type: 'create-project', title: 'Scopes project', path: repo, useExisting: true })
+      const projectId = created.host.projects.find(project => project.title === 'Scopes project')!.id
+      const state = await agents.command({ type: 'create-thread', projectId, title: 'Scopes review', modelId: 'codex:gpt', managed: false, workingCopy: 'shared' })
+      if (!state.activeThreadId || state.error) throw new Error(state.error ?? 'No selected thread')
+      return state.activeThreadId
+    }, repo)
+    const checkpointStates = () => page.evaluate(async threadId => {
+      const result = await window.sotto!.gitChanges!.checkpoints!({ threadId })
+      return result.ok ? result.value.checkpoints.map(checkpoint => checkpoint.status) : [result.error.message]
+    }, threadId)
+    // Three turns, each editing files while the thread works. The first also stages a file, so its checkpoint is unavailable.
+    const turns: [string, () => Promise<void>][] = [
+      ['Note where the trail starts.', async () => { await writeFile(join(repo, 'notes.txt'), 'Trailhead by the old mill.\n'); git('add', 'notes.txt') }],
+      ['Make the greeting friendlier.', async () => { await writeFile(join(repo, 'src/app.ts'), 'export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n') }],
+      ['Say more in the README.', async () => { await writeFile(join(repo, 'README.md'), '# Fieldnotes\n\nFind your next trail.\n\nLess scrolling. More wandering.\n') }],
+    ]
+    for (const [index, [text, edit]] of turns.entries()) {
+      await page.evaluate(async ({ threadId, text }) => { await window.sotto!.agents!.command({ type: 'manual-send', threadId, text }) }, { threadId, text })
+      await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)?.status, threadId)).toBe('running')
+      await edit()
+      await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, status: 'idle', text: 'Done.' }), threadId)
+      await expect.poll(async () => (await checkpointStates()).length).toBe(index + 1)
+      await expect.poll(async () => (await checkpointStates())[0]).toBe(index === 0 ? 'unavailable' : 'ready')
+    }
+    await openThreads(page)
+    await page.evaluate(() => document.fonts.ready)
+    await page.getByRole('button', { name: 'Scopes review', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
+    const scope = panel.getByRole('combobox', { name: 'Diff scope' })
+    await expect(scope.locator('option')).toHaveText(['Working tree', 'Branch changes', 'Latest turn', 'Turn 3', 'Turn 2', 'Turn 1 (unavailable)'])
+    const scopes: { readonly key: string; readonly pick: { label: string }; readonly shows: () => Promise<void> }[] = [
+      { key: 'working', pick: { label: 'Working tree' }, shows: async () => {
+        await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('return `Hello, ${name}!`')
+        await expect(panel.getByRole('group', { name: 'notes.txt' })).toContainText('Trailhead by the old mill.')
+      } },
+      { key: 'branch', pick: { label: 'Branch changes' }, shows: async () => {
+        await expect(panel.getByRole('group', { name: 'src/trail.ts' })).toContainText('Start somewhere close.')
+        await expect(panel.locator('.changes-file')).toHaveCount(1)
+        await expect(panel.getByRole('button', { name: 'Change the base. Comparing feature/scopes with main, chosen automatically', exact: true })).toBeVisible()
+      } },
+      { key: 'latest-turn', pick: { label: 'Latest turn' }, shows: async () => {
+        await expect(panel.getByRole('group', { name: 'README.md' })).toContainText('Less scrolling. More wandering.')
+        await expect(panel.locator('.changes-file')).toHaveCount(1)
+      } },
+      { key: 'turn-2', pick: { label: 'Turn 2' }, shows: async () => {
+        await expect(panel.getByRole('group', { name: 'src/app.ts' })).toContainText('return `Hello, ${name}!`')
+        await expect(panel.locator('.changes-file')).toHaveCount(1)
+      } },
+      { key: 'turn-1-unavailable', pick: { label: 'Turn 1 (unavailable)' }, shows: async () => {
+        await expect(panel.getByRole('status').filter({ hasText: 'Turn 1’s checkpoint is unavailable, so its changes cannot be shown.' })).toBeVisible()
+        await expect(panel.locator('.changes-file')).toHaveCount(0)
+      } },
+    ]
+    for (const [width, height] of SIZES) {
+      await resize(launched, width, height)
+      for (const mode of MODES) {
+        await appearance(page, mode)
+        for (const item of scopes) {
+          await scope.selectOption(item.pick)
+          await item.shows()
+          const key = `changes-scope-${item.key}-${width}x${height}-${mode}`
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), key).toBe(true)
+          expect(await panel.evaluate(element => { const main = element.querySelector<HTMLElement>('.tools-panel__main')!; return main.scrollWidth - main.clientWidth }), `${key} horizontal overflow`).toBeLessThanOrEqual(1)
+          expect(await panel.evaluate(element => [...element.querySelectorAll('.tools-chrome button:not([role="tab"]), .changes-bar button, .changes-file__head button.files-icon')]
+            .filter(control => control.scrollWidth > control.clientWidth + 1 || control.scrollHeight > control.clientHeight + 1).map(control => control.getAttribute('aria-label') ?? control.textContent)), `${key} controls clipped`).toEqual([])
+          expect(await panel.locator('.tools-chrome').first().evaluate(element => element.getBoundingClientRect().height), `${key} one line of chrome`).toBeLessThanOrEqual(46)
+          // The comparison's totals show at every size: on the line of chrome, or at the head of the view bar in a narrow panel.
+          if (item.key !== 'turn-1-unavailable') await expect(panel.locator('.changes-counts:not(.changes-counts--file)').filter({ visible: true }), `${key} totals`).toHaveCount(1)
+          await screenshot(launched, key, false)
+        }
+      }
+    }
+    expect(errors).toEqual([])
+  } catch (error) {
+    await page.screenshot({ path: join(SHOTS, 'changes-scopes-failure.png') }).catch(() => undefined)
+    throw error
+  } finally {
+    await closeSotto(launched)
   }
 })

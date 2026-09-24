@@ -19,7 +19,7 @@ const wrapped = new WeakMap<AgentBridge, AgentBridge>()
 
 /**
  * Puts a model catalog the `AGENT_STATE` broadcast omitted back before any consumer reads the state
- * (issue #286, ADR-0027). Reassembly lives here, in the page, not in the preload: `contextBridge` copies
+ * (issue #286, ADR-0028). Reassembly lives here, in the page, not in the preload: `contextBridge` copies
  * every argument a main-world listener is called with back across the isolated-world boundary, so putting
  * the catalog back together on the preload side would clone the whole thing again on the way out —
  * exactly the cost omitting it was for. Only the small `{ revision, omitted: true }` marker needs to make

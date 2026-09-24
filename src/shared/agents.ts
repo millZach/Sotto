@@ -486,7 +486,7 @@ export type AgentState = z.infer<typeof agentStateSchema>
  * asks `AGENT_GET` for the whole state instead of showing no models. Nothing parses this shape: the
  * preload forwards it to the page unparsed (contextBridge would otherwise copy a catalog it just put
  * back together a second time crossing back), and the page's own reassembly reads it structurally, the
- * same way `trustedState` does for the rest of this channel. See ADR-0027 and
+ * same way `trustedState` does for the rest of this channel. See ADR-0028 and
  * `src/renderer/src/agents/agentStateCatalogs.ts`.
  */
 export type AgentModelCatalogBroadcast =

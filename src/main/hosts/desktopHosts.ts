@@ -1,14 +1,17 @@
 import { join } from 'node:path'
 import { z } from 'zod'
-import { remoteHostSchema, type HostsCommand, type HostsState, type HostStatus } from '../../shared/hosts'
+import { remoteHostSchema, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
+import { validateSshHost } from './sshConfiguration'
 import { SshFailure, SshHostLauncher, type SshFailureCode, type SshHostConnection } from './sshLauncher'
 import type { DesktopHostRouter } from './desktopHostRouter'
 
+/** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
+type Connection = Omit<RemoteHost, 'enabled'>
 /**
  * `closing` is set while Stop host or Forget runs. Both drop the socket on purpose before the SSH reply
  * arrives (the host closes its listener to stop, and a revoke closes the revoked peer), and a drop then
@@ -16,7 +19,10 @@ type SavedHost = z.infer<typeof savedHostSchema>
  * with the host just told to forget this computer.
  */
 interface LiveHost { launcher: SshHostLauncher; tunnel?: SshHostConnection; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
-interface Retry { timer: ReturnType<typeof setTimeout>; attempt: number; active: LiveHost | undefined }
+/** A pending reconnect. `timer` is absent while the first attempt of a launch or a switch-on runs. */
+interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined
+  /** Set for the first attempt after a switch-on or an edit, which reads Connecting… rather than Reconnecting…. */
+  first?: boolean }
 /**
  * Failures only the user can resolve stop the reconnect backoff instead of retrying: SSH refused this
  * account, a host key changed or was not trusted, a prompt went unanswered, the host machine lacks what
@@ -30,6 +36,24 @@ class FinalHostError extends Error {}
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
 const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
 export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
+const NOTHING_SAVED = 'Nothing was saved.'
+/**
+ * A failure sentence for Add host: what happened, then that nothing was saved, then what to do. A saved host's
+ * sentence ends in "reconnect", which its row's Connect again does; in the dialog, what to do is add it again.
+ */
+function unsavedMessage(message: string): string {
+  const next = message.replace(/,? then reconnect\.$/u, ', then add the host again.').replace(/ and reconnect\.$/u, ' and add the host again.')
+    .replace(/ before reconnecting\.$/u, ' before adding the host again.').replace(/Connect again (to|when)/u, 'Add the host again $1')
+  const end = next.search(/[.!?]\s/u)
+  return end < 0 ? `${next} ${NOTHING_SAVED}` : `${next.slice(0, end + 1)} ${NOTHING_SAVED} ${next.slice(end + 2)}`
+}
+/** The host part of an SSH target, which names a new host until the user renames it. */
+const targetHost = (target: string): string => target.split('@').at(-1) ?? target
+/** Checks a connection the way the launcher will, so a mistyped one is refused before anything starts. */
+function validateConnection(host: Connection): void {
+  validateSshHost({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
+    ...(host.sshPort ? { sshPort: host.sshPort } : {}), ...(host.identityFile ? { identityFile: host.identityFile } : {}) })
+}
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
@@ -39,6 +63,13 @@ export class DesktopHosts {
   private readonly live = new Map<string, LiveHost>()
   private readonly retries = new Map<string, Retry>()
   private readonly listeners = new Set<(state: HostsState) => void>()
+  /**
+   * The host Add host is connecting to. Its status, connection and prompt are keyed by its ID like a saved
+   * host's, and it joins the saved hosts only once the host answers and this computer pairs.
+   */
+  private adding: SavedHost | undefined
+  /** Add host's connect, which close() waits for so a quit does not leave its credential behind. */
+  private pendingAdd: Promise<void> = Promise.resolve()
   private generation = 0
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
@@ -51,9 +82,30 @@ export class DesktopHosts {
   }) {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
   }
-  async start(): Promise<void> { this.saved = await this.store.read(); for (const host of this.saved) this.status.set(host.id, { ...remoteHostSchema.strip().parse(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' }) }
-  get(): HostsState { const state = this.options.router.shell(); const local = state.connections?.find(item => item.kind === 'local'); return { ...(state.hostId ? { activeHostId: state.hostId } : {}), ...(local ? { localHostId: local.hostId } : {}), hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...remoteHostSchema.strip().parse(host) })), localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() } }
+  /**
+   * Reads the saved hosts and starts connecting every host that is switched on, in the background, the way a
+   * dropped connection reconnects: Reconnecting… on the row, the same backoff, and a stop at a failure only
+   * the user can fix. Nothing here waits for a host to answer.
+   */
+  async start(): Promise<void> {
+    this.saved = await this.store.read()
+    for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
+    for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host, true)
+  }
+  get(): HostsState {
+    const state = this.options.router.shell(); const local = state.connections?.find(item => item.kind === 'local')
+    const adding = this.adding ? this.status.get(this.adding.id) : undefined
+    return { ...(state.hostId ? { activeHostId: state.hostId } : {}), ...(local ? { localHostId: local.hostId } : {}),
+      hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...this.fields(host) })),
+      ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
+      localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
+  }
   subscribe(listener: (state: HostsState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  /** What a row shows of a saved host: its connection, with `enabled` read as on when an older file left it out. */
+  private fields(host: SavedHost): Omit<HostStatus, 'phase'> {
+    const { enabled, ...fields } = remoteHostSchema.strip().parse(host)
+    return { ...fields, enabled: enabled !== false }
+  }
   private emit(): void { const state = this.get(); for (const listener of this.listeners) listener(state) }
   private update(id: string, patch: Partial<HostStatus>): void { const current = this.status.get(id); if (current) { this.status.set(id, { ...current, ...patch }); this.emit() } }
   private save(): Promise<void> {
@@ -65,27 +117,36 @@ export class DesktopHosts {
   async command(command: HostsCommand): Promise<HostsState> {
     if (command.type === 'select') { this.options.router.select(command.hostId); this.emit(); return this.get() }
     if (command.type === 'restart') { this.options.restart(); return this.get() }
-    if (command.type === 'save') {
-      const host = command.host
-      this.clearRetry(host.id)
-      if (this.live.has(host.id)) {
-        // A host of another version keeps its SSH session only so Stop host can reach it, and its row offers
-        // Edit, not Disconnect: saving closes that session. The next Connect finds the host still running
-        // and offers Stop host again.
-        if (this.status.get(host.id)?.phase === 'error') await this.disconnect(host.id)
-        else throw new Error('Disconnect this host before changing its connection.')
-      }
-      const existing = this.saved.find(item => item.id === host.id)
-      // Editing a route must not silently transfer a credential to a different host.
-      const next = existing ? { ...existing, ...host } : host
-      this.saved = [...this.saved.filter(item => item.id !== host.id), next]
-      this.status.set(host.id, { ...host, phase: 'disconnected' })
-      await this.save(); this.emit(); return this.get()
+    if (command.type === 'add') return this.add(command.host)
+    if (command.type === 'cancel-add') { await this.cancelAdd(command.id); return this.get() }
+    if (this.adding !== undefined && this.adding.id === ('id' in command ? command.id : command.host.id)) {
+      // Add host's own questions are answered in its dialog, and its Cancel ends the attempt.
+      if (command.type === 'ssh-answer') { this.live.get(command.id)?.launcher.answerPrompt(command.promptId, command.answer); return this.get() }
+      if (command.type === 'disconnect') { await this.cancelAdd(command.id); return this.get() }
     }
+    if (command.type === 'save') return this.edit(command.host)
     const host = this.saved.find(item => item.id === command.id)
     if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
     if (command.type === 'ssh-answer') {
       this.live.get(host.id)?.launcher.answerPrompt(command.promptId, command.answer)
+      return this.get()
+    }
+    if (command.type === 'rename') {
+      host.name = command.name
+      const registered = this.live.get(host.id)?.registeredHostId
+      if (registered) this.options.router.rename(registered, host.name)
+      this.update(host.id, { name: host.name })
+      await this.save(); return this.get()
+    }
+    // Switched off keeps the row, its pairing and a host Sotto started running; it only stops this computer
+    // connecting, now and at launch. Switched on connects now and at every launch, retrying like a drop.
+    if (command.type === 'set-enabled') {
+      if (command.enabled) delete host.enabled; else host.enabled = false
+      await this.save()
+      if (!command.enabled) { this.clearRetry(host.id); await this.disconnect(host.id); this.update(host.id, { enabled: false }); return this.get() }
+      this.update(host.id, { enabled: true })
+      // Switching on again is also how a host that needs attention is tried again once its cause is fixed.
+      if (!this.live.has(host.id) || this.status.get(host.id)?.phase === 'error') this.keepConnected(host)
       return this.get()
     }
     // Disconnect only closes this computer's connection. A host Sotto started keeps running, the same as
@@ -99,6 +160,10 @@ export class DesktopHosts {
       const stopped = await this.stopOwnedHost(active!)
       await this.disconnect(host.id)
       if (!stopped) throw new Error(this.notStopped(host))
+      // A stopped host is switched off, so the next launch does not start it again; switching it on does.
+      host.enabled = false
+      this.update(host.id, { enabled: false })
+      await this.save()
       return this.get()
     }
     if (command.type === 'forget') {
@@ -120,24 +185,122 @@ export class DesktopHosts {
       await this.save(); this.status.delete(host.id); this.emit(); return this.get()
     }
     if (this.closed) return this.get()
+    await this.open(host)
+    return this.get()
+  }
+  /**
+   * Add host: connect first, from inside the dialog, and save the host only when it answers and this computer
+   * pairs. On any failure nothing is saved, no credential is kept, and the dialog says what happened. One
+   * exception: a host that answers but runs another Sotto version is saved, so its row can say which side to
+   * update and offer Stop host for a host Sotto started.
+   */
+  private async add(input: Connection): Promise<HostsState> {
+    if (this.closed) return this.get()
+    if (this.adding && this.status.get(this.adding.id)?.phase === 'connecting') throw new Error(`Sotto is still connecting to ${targetHost(this.adding.target)}. Wait for it, or cancel it first.`)
+    if (this.saved.some(item => item.id === input.id)) throw new Error('This host is already saved.')
+    validateConnection(input)
+    const duplicate = this.saved.find(item => item.target === input.target && (item.sshPort ?? 22) === (input.sshPort ?? 22))
+    if (duplicate) throw new Error(`${input.target} is already saved as ${duplicate.name}. ${NOTHING_SAVED} Switch it on in the list instead.`)
+    if (this.adding) await this.cancelAdd(this.adding.id)
+    const host: SavedHost = { ...input }
+    this.adding = host
+    this.status.set(host.id, { ...this.fields(host), phase: 'connecting' })
+    this.emit()
+    const pending = this.open(host)
+    this.pendingAdd = pending.catch(() => undefined)
+    await pending
+    return this.get()
+  }
+  private async cancelAdd(id: string): Promise<void> {
+    const host = this.adding
+    if (host?.id !== id) return
+    this.adding = undefined
+    // Pairing already finished, so the host holds a record of this computer that nothing will use. Revoke it
+    // while the connection is still open; `closing` keeps the drop the revoke causes from being read as a failure.
+    const active = this.live.get(id)
+    if (host.clientId && active?.tunnel) { active.closing = true; await active.tunnel.revokeClient(host.clientId).catch(() => false) }
+    await this.disconnect(id)
+    this.status.delete(id)
+    await this.forgetCredential(id)
+    this.emit()
+  }
+  /** Removes a credential a failed or cancelled add left behind; the desktop keeps nothing for a host it did not save. */
+  private async forgetCredential(id: string): Promise<void> {
+    if (this.options.credentials.has(`remote-host:${id}`)) await this.options.credentials.set(`remote-host:${id}`, '')
+  }
+  /** Moves the host Add host connected to into the saved list, switched on. */
+  private async commitAdd(host: SavedHost): Promise<void> {
+    if (this.adding !== host) return
+    this.adding = undefined
+    delete host.enabled
+    this.saved = [...this.saved, host]
+    await this.save()
+    this.emit()
+  }
+  /**
+   * Edit connection. The new connection takes effect on a fresh connect, so a live one closes first, including
+   * a host of another version whose SSH session is kept only for Stop host; a host that is on connects again.
+   */
+  private async edit(input: Connection): Promise<HostsState> {
+    const existing = this.saved.find(item => item.id === input.id)
+    if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+    validateConnection(input)
+    await this.disconnect(existing.id)
+    // Editing a route must not silently transfer a credential to a different host: the saved host identity stays
+    // and is checked on the next connect. The switch is not part of the connection, so it stays as it was.
+    const next: SavedHost = { ...existing, ...input }
+    if (input.sshPort === undefined) delete next.sshPort
+    this.saved = this.saved.map(item => item.id === next.id ? next : item)
+    this.status.set(next.id, { ...this.status.get(next.id)!, ...this.fields(next), phase: 'disconnected' })
+    await this.save(); this.emit()
+    if (next.enabled !== false) this.keepConnected(next)
+    return this.get()
+  }
+  /**
+   * Connects now and keeps the host connected: a failure a retry can fix is retried on the reconnect backoff,
+   * as a dropped connection is. At launch the row reads Reconnecting… from the first attempt; after a switch-on
+   * or an edit, the first attempt reads Connecting… and only a retry reads Reconnecting….
+   */
+  private keepConnected(host: SavedHost, atLaunch = false): void {
+    if (this.closed) return
+    this.clearRetry(host.id)
+    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined, ...(atLaunch ? {} : { first: true }) })
+    void this.open(host).catch(() => undefined)
+  }
+  private async open(host: SavedHost): Promise<void> {
+    const adding = this.adding === host
+    const wasOn = host.enabled !== false
     if (this.live.has(host.id)) await this.disconnect(host.id, true)
+    // Tearing down the previous session takes a moment. A switch-off, Forget, edit or cancelled add in that
+    // moment already cleared the row, so this attempt has nothing left to connect for.
+    if (this.closed || (adding ? this.adding !== host : !this.saved.includes(host)) || (wasOn && host.enabled === false)) return
     const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
     this.live.set(host.id, active)
-    this.status.set(host.id, { ...remoteHostSchema.strip().parse(host), phase: 'connecting' }); this.emit()
+    this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined }); this.emit()
     try {
       active.tunnel = await active.launcher.connect({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
-        ...(host.identityFile ? { identityFile: host.identityFile } : {}) }, {
+        ...(host.sshPort ? { sshPort: host.sshPort } : {}), ...(host.identityFile ? { identityFile: host.identityFile } : {}) }, {
         onPrompt: prompt => { if (this.live.get(host.id) !== active) return; const state = this.status.get(host.id); if (state) { if (prompt) state.prompt = prompt; else delete state.prompt; this.emit() } },
         onDisconnected: () => { if (this.live.get(host.id) === active && !active.closing) this.dropped(host, active) },
       })
-      if (this.live.get(host.id) !== active) { await active.tunnel.close(); return this.get() }
+      if (this.live.get(host.id) !== active) { await active.tunnel.close(); return }
       if (host.hostId && host.hostId !== active.tunnel.hostId) throw new FinalHostError('The host identity changed. Check its data folder before connecting again.')
+      const same = adding ? this.saved.find(item => item.hostId === active.tunnel!.hostId) : undefined
+      if (same) throw new FinalHostError(`This is the same host as ${same.name}, which is already saved. Switch ${same.name} on in the list instead.`)
       this.update(host.id, { hostId: active.tunnel.hostId })
       if (!this.options.credentials.has(`remote-host:${host.id}`)) await this.pairOverTunnel(host, active)
       await this.openSocket(host, active)
+      if (adding) {
+        if (this.adding === host && this.live.get(host.id) === active) await this.commitAdd(host)
+        // Cancelled while the socket opened: the credential it paired with belongs to nothing.
+        else await this.forgetCredential(host.id)
+      }
     } catch (error) {
       let failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
-      if (error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active && active.tunnel) {
+      const otherVersion = error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active
+      // A host that answers with another version is the right host, so Add host keeps it (see add()).
+      if (otherVersion && this.adding === host) await this.commitAdd(host)
+      if (otherVersion && active.tunnel) {
         const newer = active.socket?.hostIsNewer() ?? false
         await active.socket?.close().catch(() => undefined)
         delete active.socket
@@ -146,11 +309,11 @@ export class DesktopHosts {
         // computer, has nothing to keep it for: the sentence already says what to do instead.
         if (active.tunnel.owned && !newer) {
           this.clearRetry(host.id)
-          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: error.message })
-          return this.get()
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message })
+          return
         }
       }
-      if (error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.tunnel) {
+      if (!adding && error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.tunnel) {
         await active.socket?.close().catch(() => undefined)
         delete active.socket
         await this.options.credentials.set(`remote-host:${host.id}`, '')
@@ -158,15 +321,33 @@ export class DesktopHosts {
           await this.pairOverTunnel(host, active)
           await this.openSocket(host, active)
           this.clearRetry(host.id)
-          return this.get()
+          return
         } catch (repair) {
           // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
           failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new FinalHostError('This device is no longer paired and could not pair again. Check the host, then connect again.')
         }
       }
+      const unsaved = adding && !this.saved.includes(host)
+      if (unsaved && host.clientId && active.tunnel && this.live.get(host.id) === active) {
+        // Pairing finished before the failure, so the host holds a record of this computer that nothing will
+        // use. Revoke it while the connection is open; failing that, it stays revocable on the host.
+        await active.tunnel.revokeClient(host.clientId).catch(() => false)
+      }
       await active.socket?.close().catch(() => undefined)
       await active.launcher.disconnect().catch(() => undefined)
-      if (this.live.get(host.id) === active) this.live.delete(host.id)
+      // Superseded: switched off, disconnected, stopped or replaced by a newer attempt while this one ran. Whatever
+      // did that has already set the row, and a cancelled connect is not something to report or retry.
+      const current = this.live.get(host.id) === active
+      if (current) this.live.delete(host.id)
+      if (unsaved) {
+        delete host.hostId; delete host.clientId
+        await this.forgetCredential(host.id)
+        // A cancelled add has no dialog left to tell.
+        if (this.adding === host) this.update(host.id, { phase: 'error', reconnecting: false, error: unsavedMessage(failure.message) })
+        return
+      }
+      // A host forgotten or edited while it connected has no row left for this attempt to report to.
+      if (!this.saved.includes(host) || !current) return
       if (this.retries.has(host.id) && !this.final(failure) && !this.status.get(host.id)?.prompt) {
         this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
         this.scheduleReconnect(host, undefined)
@@ -175,15 +356,16 @@ export class DesktopHosts {
         this.update(host.id, { phase: 'error', reconnecting: false, error: failure.message })
       }
     }
-    return this.get()
   }
   private async pairOverTunnel(host: SavedHost, active: LiveHost): Promise<void> {
     const code = await active.tunnel!.showHostPairingCode()
     const pairing = await SocketHostService.pair(active.tunnel!.url, code.code, 'Sotto desktop')
+    // Cancelled or quit while pairing: keep no credential. The record the host made stays revocable there.
+    if (this.live.get(host.id) !== active) throw new Error('The connection was closed while this computer paired.')
     if (pairing.hostId !== active.tunnel!.hostId || host.hostId && pairing.hostId !== host.hostId) throw new Error('This is a different host. Check the address before pairing.')
     await this.options.credentials.set(`remote-host:${host.id}`, pairing.token)
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
-    await this.save()
+    if (this.saved.includes(host)) await this.save()
   }
   /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
   private final(error: Error): boolean {
@@ -194,10 +376,12 @@ export class DesktopHosts {
     if (this.closed) return
     const previous = this.retries.get(host.id)
     if (previous) clearTimeout(previous.timer)
-    const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined as never }
+    const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined }
     entry.timer = setTimeout(() => {
       if (this.retries.get(host.id) !== entry) return
       if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return
+      // A host switched off is not reconnected, whatever scheduled this.
+      if (host.enabled === false) { this.retries.delete(host.id); return }
       void this.command({ type: 'connect', id: host.id })
     }, (this.options.retryDelayMs ?? reconnectDelayMs)(entry.attempt))
     entry.attempt += 1
@@ -207,9 +391,12 @@ export class DesktopHosts {
     const status = this.status.get(host.id)
     // The SSH session kept open for Stop host has ended, so Stop host can no longer reach the host.
     if (!active.closing && status?.phase === 'error' && status.owned) { this.update(host.id, { owned: undefined }); return }
-    if (active.closing || status?.phase !== 'connected') return
+    // A host still being added is not saved yet: its drop fails the add rather than scheduling a reconnect.
+    if (active.closing || status?.phase !== 'connected' || !this.saved.includes(host)) return
     if (active.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     if (!this.status.has(host.id)) return
+    // A host that is switched off is not kept connected: its drop only closes what is left of the session.
+    if (host.enabled === false) { void this.disconnect(host.id).catch(() => undefined); return }
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
     if (!this.status.get(host.id)!.prompt) this.scheduleReconnect(host, active)
   }
@@ -226,7 +413,7 @@ export class DesktopHosts {
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     host.hostId = hello.hostId; host.clientId = hello.clientId
-    await this.save()
+    if (this.saved.includes(host)) await this.save()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     this.options.router.add({ hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
@@ -270,6 +457,10 @@ export class DesktopHosts {
   async close(): Promise<void> {
     this.closed = true
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
+    // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
+    // the quit drain does not end before its credential is cleared and its pairing revoked.
+    if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
+    await this.pendingAdd
     await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id))); await this.writing
   }
 }

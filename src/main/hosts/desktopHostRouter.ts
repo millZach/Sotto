@@ -54,6 +54,13 @@ export class DesktopHostRouter {
     if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
     this.selectedHostId = hostId; this.selectedThreadId = null; this.selectedProjectId = null; this.emit()
   }
+  /** A saved host was renamed: its threads and badges take the new name at once. */
+  rename(hostId: string, name: string): void {
+    const entry = this.hosts.get(hostId)
+    if (!entry) return
+    entry.connection = { ...entry.connection, name }
+    this.emit()
+  }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   get(): AgentState { return this.shell() }

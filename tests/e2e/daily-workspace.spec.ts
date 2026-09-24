@@ -148,10 +148,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
       return view.executeJavaScript('({title: document.title, bridge: typeof window.sotto, require: typeof window.require})')
     }, url)).toEqual({ title: 'Daily local preview', bridge: 'undefined', require: 'undefined' })
     await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
-    await panel.getByRole('option', { name: /^greeting.txt/ }).click()
-    await expect(panel.getByRole('region', { name: 'Changes in greeting.txt' })).toContainText('Hello, daily workspace')
-    await panel.getByRole('button', { name: 'Stage file', exact: true }).click()
-    await expect(panel.getByText('Change staged.', { exact: true })).toBeVisible()
+    // Changes reads the working tree against HEAD; there is no staging to do first (ADR-0027).
+    await expect(panel.getByRole('group', { name: 'greeting.txt' })).toContainText('Hello, daily workspace')
+    await expect(panel.getByRole('button', { name: 'Stage file', exact: true })).toHaveCount(0)
     // The commit is the pane header's Git action (ADR-0027): Commit from its menu, the message typed in the dialog.
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Commit', exact: true }).click()

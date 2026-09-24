@@ -1,16 +1,16 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstat, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { copyFile, lstat, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FilePath, FileWorkspace } from '../../shared/files'
 import { fileRelativePathSchema } from '../../shared/files'
-import { gitActionSchema, gitCommitDraftRequestSchema, gitDiffRequestSchema, gitWatchRequestSchema, GIT_MAX_PATCH, type GitChange, type GitChangeListing, type GitCommitDraft, type GitFileDiff } from '../../shared/gitChanges'
-import { COMMIT_DIFF_MAX_CHARACTERS } from '../llm/commitMessage'
-import { diffExcerpt, type DiffExcerpt } from '../llm/diffExcerpt'
+import { gitPathRequestSchema, gitReviewRequestSchema, gitWatchRequestSchema, GIT_MAX_PATCH, GIT_REVIEW_MAX_FILES, GIT_REVIEW_MAX_PATCH, type GitChange, type GitChangeListing, type GitReview, type GitReviewFile } from '../../shared/gitChanges'
 import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
 import type { CheckpointService } from './checkpoints'
+import { parseNameStatusZ, parseNumstatZ, sectionIsBinary, sectionPath, splitPatch } from './gitReview'
 
 interface GitDependencies {
   files: FilesService
@@ -20,16 +20,24 @@ interface GitDependencies {
   pollMs?: number
   canMutate?(threadId: string): Promise<boolean> | boolean
   checkpoints?: CheckpointService
-  /** Writes a commit message from the staged diff by asking the thread's own provider, or null when Sotto writes nothing. */
-  writeCommitMessage?(threadId: string, excerpt: DiffExcerpt): Promise<string | null>
   /** A Git action changed this thread's folder, so the thread's Git status is read again without waiting for the timer. */
   acted?(threadId: string): void
 }
+interface GitRunOptions { readonly maxBuffer?: number; readonly env?: Readonly<Record<string, string>>; readonly input?: string }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const inside = (root: string, target: string): boolean => {
   const path = relative(root, target)
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`))
 }
+const TOO_LARGE_FILE = 'This file is past the 512 KiB diff preview limit. Copy its path or open it.'
+const TOO_LARGE_REVIEW = 'This comparison is past the 2 MiB preview limit, so this file is not shown. Copy its path or open it.'
+const BINARY = 'Binary file: no text diff.'
+
+/**
+ * Changes' reads of a thread's working folder: the change list (for the rail's count and the watch), and the
+ * comparisons T3's diff panel shows, Working tree (the working copy against HEAD, untracked files included) and
+ * Branch changes (`base...HEAD`). Nothing here stages, commits or switches; the Git action does that (ADR-0027).
+ */
 export class GitChangesService extends ToolOperations {
   private readonly mutations = new Set<string>()
   private readonly watches = new Map<string, { target: ToolTarget; revision: string }>()
@@ -46,17 +54,19 @@ export class GitChangesService extends ToolOperations {
   inspectCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.inspectCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   revertCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.revertCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   recoverCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.recoverCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
-  private git(cwd: string, args: string[], maxBuffer = 2 * 1024 * 1024): Promise<string> {
+  private git(cwd: string, args: string[], options: GitRunOptions = {}): Promise<string> {
     if (this.disposed) return Promise.reject(new Error('disposed'))
-    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' }
-    for (const key of Object.keys(env)) if (/^GIT_/i.test(key) && !['GIT_TERMINAL_PROMPT', 'GIT_OPTIONAL_LOCKS'].includes(key)) delete env[key as keyof typeof env]
+    const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' }
+    for (const key of Object.keys(env)) if (/^GIT_/i.test(key) && !['GIT_TERMINAL_PROMPT', 'GIT_OPTIONAL_LOCKS'].includes(key)) delete env[key]
+    Object.assign(env, options.env)
     return new Promise((resolveOutput, reject) => {
-      const child = execFile('git', ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '-c', 'diff.external=', ...args], { cwd, env, windowsHide: true, timeout: 10_000, maxBuffer, encoding: 'utf8' }, (error, stdout) => {
+      const child = execFile('git', ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '-c', 'diff.external=', ...args], { cwd, env, windowsHide: true, timeout: 10_000, maxBuffer: options.maxBuffer ?? 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
         this.children.delete(child)
         // The output read before a failure travels with it: an overflowing diff is still a diff.
         if (error) reject(Object.assign(error, { stdout })); else resolveOutput(stdout)
       })
       this.children.add(child)
+      if (options.input !== undefined) child.stdin?.end(options.input)
     })
   }
   private async safePath(owner: FileWorkspace, path: string): Promise<{ absolutePath: string; existing: string; stamp: string; size: number; regular: boolean }> {
@@ -106,137 +116,139 @@ export class GitChangesService extends ToolOperations {
       if (!repositoryPath.startsWith(prefix)) continue
       const path = repositoryPath.slice(prefix.length)
       if (!fileRelativePathSchema.safeParse(path).success || !path) { truncated = true; continue }
-      if (files.size >= 2000) { truncated = true; break }
+      if (files.size >= GIT_REVIEW_MAX_FILES) { truncated = true; break }
       const status: GitChange['status'] = xy.includes('U') || ['AA', 'DD'].includes(xy) ? 'conflicted' : xy === '??' ? 'untracked' : xy.includes('R') ? 'renamed' : xy.includes('D') ? 'deleted' : xy.includes('A') ? 'added' : xy.includes('T') ? 'type-changed' : 'modified'
       const originalPath = original?.startsWith(prefix) ? original.slice(prefix.length) : undefined
-      files.set(path, { path, ...(originalPath && fileRelativePathSchema.safeParse(originalPath).success ? { originalPath } : {}), status, staged: xy[0] !== ' ' && xy[0] !== '?', unstaged: xy[1] !== ' ' })
+      files.set(path, { path, ...(originalPath && fileRelativePathSchema.safeParse(originalPath).success ? { originalPath } : {}), status })
       stamps.push(await this.safePath(owner, path).then(info => `${path}:${info.stamp}`, () => `${path}:unavailable`))
     }
     await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
     const indexState = await this.git(owner.workingDirectory, ['ls-files', '--stage', '-z'])
     return { workspace: owner, branch, revision: digest(`${branch}\0${head}\0${raw}\0${indexState}\0${stamps.join('\0')}`), files: [...files.values()], truncated }
   }
-  branches(payload: unknown) { return this.run(async () => {
-    const request = parse(toolListRequestSchema, payload)
+  /**
+   * T3's automatic base for Branch changes: the branch's recorded `gh-merge-base`, the remote's default branch,
+   * then `main` and `master`, each as the primary remote's copy when it has one and the local branch otherwise,
+   * never the branch itself. Null when none exists.
+   */
+  private async automaticBase(cwd: string, branch: string): Promise<string | null> {
+    const exists = (ref: string): Promise<boolean> => this.git(cwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true, () => false)
+    const configured = (await this.git(cwd, ['config', '--get', `branch.${branch}.gh-merge-base`]).catch(() => '')).trim()
+    const remotes = (await this.git(cwd, ['remote']).catch(() => '')).split('\n').map(line => line.trim()).filter(Boolean)
+    const primary = remotes.includes('origin') ? 'origin' : remotes[0] ?? null
+    const head = primary ? (await this.git(cwd, ['symbolic-ref', '--short', '-q', `refs/remotes/${primary}/HEAD`]).catch(() => '')).trim() : ''
+    const defaultBranch = primary && head.startsWith(`${primary}/`) ? head.slice(primary.length + 1) : null
+    for (const candidate of [configured || null, defaultBranch, 'main', 'master']) {
+      if (!candidate) continue
+      const name = candidate.startsWith('origin/') ? candidate.slice('origin/'.length) : primary && candidate.startsWith(`${primary}/`) ? candidate.slice(primary.length + 1) : candidate
+      if (!name || name === branch || name.startsWith('-')) continue
+      if (primary && await exists(`refs/remotes/${primary}/${name}`)) return `${primary}/${name}`
+      if (await exists(`refs/heads/${name}`)) return name
+    }
+    return null
+  }
+  review(payload: unknown) { return this.run(() => this.readReview(payload)) }
+  private async readReview(payload: unknown, retry = true): Promise<GitReview> {
+    const request = parse(gitReviewRequestSchema, payload)
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     const listing = await this.listing(owner)
-    return { current: listing.branch, branches: (await this.git(owner.workingDirectory, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])).trim().split('\n').filter(Boolean) }
-  }) }
-  act(payload: unknown) { return this.run(async () => {
-    const request = parse(gitActionSchema, payload)
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const root = await realpath(owner.workingDirectory)
-    if (this.mutations.has(root)) return fail('busy', 'Another Git action is still running in this working copy.')
-    this.mutations.add(root)
+    const cwd = owner.workingDirectory
+    const hasHead = await this.git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false)
+    const empty = (scope: GitReview['scope']): GitReview => ({ workspace: owner, revision: listing.revision, scope, files: [], truncated: false })
+    let scope: GitReview['scope']
+    let range: string
+    const extra: GitReviewFile[] = []
+    let temporary: string | null = null
+    const env: Record<string, string> = {}
     try {
-      if (this.dependencies.canMutate && !await this.dependencies.canMutate(request.threadId)) return fail('blocked', 'Wait for active or pending thread work before changing Git.')
-      const listing = await this.listing(owner)
-      if (listing.revision !== request.revision) return fail('workspace-changed', 'Changes moved since review. Refresh before trying this action again.')
-      if (listing.truncated) return fail('blocked', 'This change list is incomplete. Review the working copy externally before changing Git.')
-      let args: string[]
-      if (request.action === 'stage' || request.action === 'unstage') {
-        const entry = listing.files.find(file => file.path === request.path)
-        if (!entry) return fail('path-unavailable', 'Select a current changed file.')
-        await this.safePath(owner, entry.path)
-        if (entry.originalPath) await this.safePath(owner, entry.originalPath)
-        const paths = [entry.path, ...(entry.originalPath ? [entry.originalPath] : [])]
-        if (request.action === 'stage') args = ['add', '--', ...paths]
-        else {
-          const head = await this.git(root, ['rev-parse', '--verify', 'HEAD']).then(() => true, () => false)
-          args = head ? ['reset', '-q', 'HEAD', '--', ...paths] : ['rm', '--cached', '-f', '-q', '--', ...paths]
+      if (request.scope.kind === 'working') {
+        scope = { kind: 'working' }
+        range = hasHead ? 'HEAD' : (await this.git(cwd, ['hash-object', '-t', 'tree', '--stdin'], { input: '' })).trim()
+        // Untracked files join the comparison through a copy of the index that marks them intent-to-add, as T3
+        // does; the real index is never written. A file too large, not regular or reaching outside is listed without.
+        const untracked: string[] = []
+        for (const file of listing.files.filter(item => item.status === 'untracked')) {
+          let info: Awaited<ReturnType<GitChangesService['safePath']>> | null = null
+          try { info = await this.safePath(owner, file.path) } catch { info = null }
+          const skipped = (content: GitReviewFile['content']): void => { extra.push({ path: file.path, status: 'untracked', additions: null, deletions: null, content }) }
+          if (!info || !info.regular) skipped({ kind: 'unavailable', message: 'This path is not an available regular file.' })
+          else if (info.size > GIT_MAX_PATCH) skipped({ kind: 'too-large', message: TOO_LARGE_FILE })
+          else untracked.push(file.path)
+        }
+        if (untracked.length > 0) {
+          temporary = await mkdtemp(join(tmpdir(), 'sotto-changes-'))
+          const index = join(temporary, 'index')
+          env.GIT_INDEX_FILE = index
+          const real = resolve(cwd, (await this.git(cwd, ['rev-parse', '--git-path', 'index'])).trim())
+          try { await copyFile(real, index) }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; await this.git(cwd, ['read-tree', '--empty'], { env }) }
+          await this.git(cwd, ['-c', 'core.splitIndex=false', 'update-index', '--no-split-index'], { env }).catch(() => undefined)
+          await this.git(cwd, ['-c', 'core.splitIndex=false', 'add', '--intent-to-add', '--pathspec-from-file=-', '--pathspec-file-nul'], { env, input: `${untracked.join('\0')}\0` })
         }
       } else {
-        if ((await this.git(root, ['rev-parse', '--show-prefix'])).trim()) return fail('blocked', 'Commit and branch actions require the repository root as this thread’s working folder.')
-        if (listing.files.some(file => file.status === 'conflicted')) return fail('blocked', 'Resolve and stage the conflicted files before continuing.')
-        if (request.action === 'commit') {
-          if (!request.message?.trim()) return fail('invalid-request', 'Write a commit message first.')
-          if (!listing.files.some(file => file.staged)) return fail('blocked', 'Stage at least one change before committing.')
-          if (!listing.branch) return fail('blocked', 'Create or check out a branch before committing from detached HEAD.')
-          args = ['commit', '-m', request.message.trim()]
-        } else {
-          if (!request.branch || request.branch.startsWith('-')) return fail('invalid-request', 'Enter a valid local branch name.')
-          await this.git(root, ['check-ref-format', '--branch', request.branch]).catch(() => fail('invalid-request', 'Enter a valid local branch name.'))
-          args = request.action === 'create-branch' ? ['switch', '-c', request.branch] : ['switch', '--no-guess', request.branch]
+        const branch = listing.branch
+        if (!hasHead) return fail('blocked', 'This branch has no commits yet, so there are no branch changes to compare.')
+        if (!branch) return fail('blocked', 'Branch changes compare a branch with its base. This working copy is on a detached HEAD.')
+        const automatic = request.scope.base === null
+        const base = request.scope.base ?? await this.automaticBase(cwd, branch)
+        if (base === null) return empty({ kind: 'branch', base: null, automatic, head: branch })
+        const known = await this.git(cwd, ['rev-parse', '--verify', '-q', '--end-of-options', `${base}^{commit}`]).then(() => true, () => false)
+        if (!known) return fail('path-unavailable', `${base} is not a branch in this repository. Choose another base.`)
+        scope = { kind: 'branch', base, automatic, head: branch }
+        range = `${base}...HEAD`
+      }
+      const diff = ['-c', 'core.bigFileThreshold=512k', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames', '--relative', '--src-prefix=a/', '--dst-prefix=b/', ...(request.ignoreWhitespace ? ['--ignore-all-space'] : [])]
+      const nameStatus = parseNameStatusZ(await this.git(cwd, [...diff, '--name-status', '-z', range, '--'], { env }))
+      const numstat = new Map(parseNumstatZ(await this.git(cwd, [...diff, '--numstat', '-z', range, '--'], { env })).map(entry => [entry.path, entry]))
+      let patch: string, overflowed = false
+      try { patch = await this.git(cwd, [...diff, '--patch', range, '--'], { env, maxBuffer: GIT_REVIEW_MAX_PATCH }) }
+      catch (error) {
+        const partial = error as { code?: unknown; stdout?: unknown }
+        if (partial.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || typeof partial.stdout !== 'string') throw error
+        patch = partial.stdout; overflowed = true
+      }
+      const sections = splitPatch(patch)
+      const incomplete = overflowed ? sections.at(-1) : undefined
+      const byPath = new Map<string, string>()
+      for (const section of sections) { const path = sectionPath(section); if (path !== null && !byPath.has(path)) byPath.set(path, section) }
+      const files: GitReviewFile[] = [...extra]
+      const untrackedPaths = new Set(listing.files.filter(item => item.status === 'untracked').map(item => item.path))
+      for (const entry of nameStatus) {
+        if (!fileRelativePathSchema.safeParse(entry.path).success || entry.originalPath !== undefined && !fileRelativePathSchema.safeParse(entry.originalPath).success) continue
+        const counts = numstat.get(entry.path)
+        const section = byPath.get(entry.path)
+        let content: GitReviewFile['content']
+        if (!section || section === incomplete) content = overflowed ? { kind: 'too-large', message: TOO_LARGE_REVIEW } : { kind: 'unavailable', message: 'Git gave no text diff for this file.' }
+        else if (sectionIsBinary(section)) {
+          const size = request.scope.kind === 'working' && entry.status !== 'deleted' ? await this.safePath(owner, entry.path).then(info => info.size, () => 0) : 0
+          content = size > GIT_MAX_PATCH ? { kind: 'too-large', message: TOO_LARGE_FILE } : { kind: 'binary', message: BINARY }
+        }
+        else if (section.length > GIT_MAX_PATCH) content = { kind: 'too-large', message: TOO_LARGE_FILE }
+        else content = { kind: 'text', patch: section }
+        const status = request.scope.kind === 'working' && entry.status === 'added' && untrackedPaths.has(entry.path) ? 'untracked' : entry.status
+        files.push({ path: entry.path, ...(entry.originalPath ? { originalPath: entry.originalPath } : {}), status, additions: counts?.additions ?? null, deletions: counts?.deletions ?? null, content })
+      }
+      files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+      const truncated = files.length > GIT_REVIEW_MAX_FILES || (request.scope.kind === 'working' && listing.truncated)
+      if (request.scope.kind === 'working' && retry) {
+        const current = await this.listing(owner)
+        if (current.revision !== listing.revision) {
+          if (temporary) await rm(temporary, { recursive: true, force: true }).catch(() => undefined)
+          temporary = null
+          return this.readReview(payload, false)
         }
       }
-      await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-      await this.git(root, args).catch(error => fail('blocked', String((error as { stderr?: string }).stderr || (error as Error).message).slice(-1800)))
-      const updated = await this.listing(owner)
-      this.dependencies.emit({ threadId: request.threadId, workspaceId: request.workspaceId, revision: updated.revision })
-      this.dependencies.acted?.(request.threadId)
-      return updated
-    } finally { this.mutations.delete(root) }
-  }) }
-  /**
-   * The commit form's draft. Nothing is committed here: the message goes back to
-   * the panel for the user to edit, and only the Commit button sends it on. The
-   * staged diff is the only thing the writer is given, and it goes to the
-   * thread's own provider (ADR-0026). With generation off or a provider that
-   * writes nothing, the writer answers null and the form stays empty.
-   */
-  draftCommitMessage(payload: unknown) { return this.run(async (): Promise<GitCommitDraft> => {
-    const request = parse(gitCommitDraftRequestSchema, payload)
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const empty: GitCommitDraft = { message: null, truncated: false }
-    if (!this.dependencies.writeCommitMessage) return empty
-    const listing = await this.listing(owner)
-    if (listing.revision !== request.revision) return fail('workspace-changed', 'Changes moved since review. Refresh before drafting a commit message.')
-    if (!listing.files.some(file => file.staged)) return empty
-    const root = await realpath(owner.workingDirectory)
-    let patch: string
-    try { patch = await this.git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'], GIT_MAX_PATCH) }
-    catch (error) {
-      // A staged diff past the buffer is still a diff: the first part is all the excerpt needs, and it says it was cut.
-      const overflow = error as { code?: unknown; stdout?: unknown }
-      if (overflow.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || typeof overflow.stdout !== 'string') return empty
-      patch = overflow.stdout + '\n'.repeat(COMMIT_DIFF_MAX_CHARACTERS)
+      return { workspace: owner, revision: listing.revision, scope, files: files.slice(0, GIT_REVIEW_MAX_FILES), truncated }
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return fail('too-large', 'This comparison is too large to list. Review it with Git directly.')
+      throw error
+    } finally {
+      if (temporary) await rm(temporary, { recursive: true, force: true }).catch(() => undefined)
     }
-    const excerpt = diffExcerpt(patch, COMMIT_DIFF_MAX_CHARACTERS)
-    await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const message = await this.dependencies.writeCommitMessage(request.threadId, excerpt)
-    return { message, truncated: excerpt.truncated }
-  }) }
-  diff(payload: unknown) { return this.run(() => this.readDiff(payload)) }
-  private async readDiff(payload: unknown, retry = true): Promise<GitFileDiff> {
-    const request = parse(gitDiffRequestSchema, payload)
-    const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const listing = await this.listing(owner)
-    const entry = listing.files.find(file => file.path === request.path)
-    const base = { workspace: owner, path: request.path, revision: listing.revision }
-    const unavailable = (message: string): GitFileDiff => ({ ...base, content: { kind: 'unavailable', message } })
-    if (!entry) return unavailable('This file is no longer in the current change list. Refresh Git changes.')
-    let info: Awaited<ReturnType<GitChangesService['safePath']>>
-    try {
-      info = await this.safePath(owner, request.path)
-      if (entry.originalPath) await this.safePath(owner, entry.originalPath)
-    }
-    catch { return unavailable('This file is unavailable or points outside the working directory.') }
-    if (info.size > GIT_MAX_PATCH) return { ...base, content: { kind: 'too-large', message: 'This file exceeds the 512 KiB diff preview limit. Copy its path or reveal it externally.' } }
-    const head = await this.git(owner.workingDirectory, ['rev-parse', '--verify', 'HEAD']).then(() => true, () => false)
-    let patch: string
-    if (entry.status === 'untracked' && request.scope !== 'staged' || !head && (!request.scope || request.scope === 'working')) {
-      if (!info.regular) return unavailable('This path is not an available regular file.')
-      const preview = await this.dependencies.files.preview(request)
-      if (!preview.ok) return { ...base, content: { kind: preview.error.code === 'too-large' ? 'too-large' : preview.error.code === 'binary' ? 'binary' : 'unavailable', message: preview.error.message } }
-      if (preview.value.content.kind === 'image') return { ...base, content: { kind: 'binary', message: 'Binary content has no text diff. Reveal the file to inspect it.' } }
-      const text = preview.value.content.text
-      const lines = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n')
-      patch = `diff --git a/${request.path} b/${request.path}\nnew file mode 100644\n--- /dev/null\n+++ b/${request.path}\n@@ -0,0 +1,${text ? lines.length : 0} @@\n${text ? lines.map(line => '+' + line).join('\n') + '\n' : ''}${text && !text.endsWith('\n') ? '\\ No newline at end of file\n' : ''}`
-    } else {
-      try { patch = await this.git(owner.workingDirectory, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/', ...(request.scope === 'staged' ? ['--cached'] : request.scope === 'unstaged' ? [] : ['HEAD']), '--', request.path, ...(entry.originalPath ? [entry.originalPath] : [])], GIT_MAX_PATCH) }
-      catch (error) { return { ...base, content: { kind: (error as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'too-large' : 'unavailable', message: 'This diff could not be read within the preview limits. Copy its path or reveal the file.' } } }
-    }
-    if (patch.length > GIT_MAX_PATCH) return { ...base, content: { kind: 'too-large', message: 'This diff exceeds the 512 KiB preview limit.' } }
-    if (/^Binary files .* differ$/m.test(patch) || patch.includes('\0')) return { ...base, content: { kind: 'binary', message: 'Binary content has no text diff. Reveal the file to inspect it.' } }
-    const current = await this.listing(owner)
-    if (current.revision !== listing.revision) return retry ? this.readDiff(payload, false) : unavailable('The working changes moved while this diff was read. Refresh to inspect the current version.')
-    return { ...base, content: { kind: 'text', patch } }
   }
   private pathAction(payload: unknown, action: 'copyPath' | 'reveal') { return this.run(async (): Promise<FilePath> => {
-    const request = parse(gitDiffRequestSchema, payload)
+    const request = parse(gitPathRequestSchema, payload)
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    const listing = await this.listing(owner)
-    if (!listing.files.some(file => file.path === request.path)) return fail('path-unavailable', 'Refresh and select a changed file.')
     const info = await this.safePath(owner, request.path)
     await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     this.dependencies[action](action === 'copyPath' ? info.absolutePath : info.existing)
