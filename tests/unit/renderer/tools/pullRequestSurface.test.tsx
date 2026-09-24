@@ -121,7 +121,7 @@ describe('the merge checklist, read from the pull request', () => {
       expect(checklistCount(lines)).toBe('4 of 5 done, 1 does not block')
     }
     expect(checklist(detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested'), review('sam', 'changes_requested')] }))[1])
-      .toMatchObject({ tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
+      .toMatchObject({ label: 'Review', tone: 'open', why: 'sam and 1 more asked for changes. This repository does not require a review', fix: { author: 'sam' } })
   })
   it('reads a merged or closed pull request as settled, and offers auto-merge only where it can be armed', () => {
     const merged = detail({ state: 'merged', behindBy: 3, mergeable: 'unknown' })
@@ -424,6 +424,13 @@ describe('the Pull request surface', () => {
     answer!(detail())
     await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
     expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
+  })
+  it('reads an open request for changes with nobody approving without claiming an approval', async () => {
+    mount({ detail: detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested')] }) })
+    await opened()
+    expect(lines()[1]).toHaveTextContent('Does not block: Reviewola asked for changes. This repository does not require a review')
+    expect(lines()[1]).not.toHaveTextContent(/approved/iu)
+    expect(within(lines()[1]!).getByRole('button', { name: "Open ola's review on GitHub" })).toBeInTheDocument()
   })
   it('shows the count in the done colour beside Ready to merge, a line that does not block included', async () => {
     mount({ detail: detail({ behindBy: null }) })

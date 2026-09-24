@@ -65,7 +65,8 @@ function reviewLine(detail: Detail): ChecklistLine {
       if (changes) {
         const others = detail.reviews.filter(review => review.state === 'changes_requested').length - 1
         const who = others > 0 ? `${changes.author} and ${others} more` : changes.author
-        return { ...line, tone: 'open', fix: { kind: 'open-review', author: changes.author, url: changes.url ?? detail.url },
+        // With nobody approving, the label claims no approval: it is read before the reason, as "Does not block: Review".
+        return { ...line, label: approved ? line.label : 'Review', tone: 'open', fix: { kind: 'open-review', author: changes.author, url: changes.url ?? detail.url },
           why: approved ? `Approved by ${approved.author}. ${others > 0 ? `Requests for changes from ${who} are` : `${changes.author}'s request for changes is`} still open`
             : `${who} asked for changes. This repository does not require a review` }
       }
