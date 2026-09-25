@@ -163,7 +163,7 @@ const control = setInterval(() => {
  if (command.type === 'inherited-exit') {spawn(process.execPath,['-e','setTimeout(()=>{},1000)'],{stdio:['ignore',process.stdout,process.stderr],windowsHide:true});process.exit(0)}
  if (command.type === 'permission' || command.type === 'question') {
   const id = ++serial; pending.set(id,{kind:command.type,text:command.text})
-  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
+  if (command.type === 'permission') send({id,method:'session/request_permission',params:{sessionId:command.sessionId,toolCall:{toolCallId:String(id),title:command.text,...(command.rawInput===undefined?{}:{rawInput:command.rawInput})},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'},{optionId:'no',name:'Deny',kind:'reject_once'}]}})
   // 1.0.40 puts a question's own parameters straight under the underscored method; earlier clients
   // wrapped them in an envelope naming the method again. Both are the same request.
   else {
