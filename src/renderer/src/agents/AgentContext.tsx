@@ -14,6 +14,7 @@ import { playWakeCue } from './voiceCue'
 import { useAttentionReview, type AttentionReview } from './attentionReview'
 import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
+import { approximateDetailBytes } from './detailCacheSize'
 
 export interface AgentConnection {
   readonly state: AgentState | null
@@ -38,7 +39,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    */
   const detail = useMemo(() => ({
     held: new Map<string, AgentThreadDetail>(), used: new Map<string, number>(), asked: new Set<string>(),
-    viewed: new Set<string>(), shell: null as AgentState | null, clock: 0,
+    viewed: new Set<string>(), shell: null as AgentState | null, clock: 0, hits: 0, misses: 0,
     pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
@@ -62,7 +63,6 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     function splice(thread: AgentThread): AgentThread {
       const held = detail.held.get(thread.id)
       if (held !== undefined) {
-        detail.used.set(thread.id, ++detail.clock)
         return { ...thread, messages: held.messages, ...(held.activities === undefined ? {} : { activities: held.activities }) }
       }
       // A thread whose history has not arrived is exactly what `historyStatus: 'loading'` already says;
@@ -128,7 +128,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       next = update
     }
     detail.held.set(next.threadId, next)
-    detail.used.set(next.threadId, ++detail.clock)
+    // A history that arrives unasked, for work main wants this window to see land, starts as recent as its
+    // arrival. After that only a look moves it: a streamed chunk is not the user coming back to a thread.
+    if (!detail.used.has(next.threadId)) detail.used.set(next.threadId, ++detail.clock)
     if (detail.held.size > DETAIL_CACHE_LIMIT) {
       const evictable = [...detail.held.keys()].filter(id => !detail.viewed.has(id) && id !== detail.shell?.activeThreadId)
         .sort((first, second) => (detail.used.get(first) ?? 0) - (detail.used.get(second) ?? 0))
@@ -142,17 +144,30 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    * A thread's history the window does not hold, asked for once until it arrives. A resync asks for a
    * history the window does hold but can no longer follow, and is deduplicated the same way, so a run of
    * deltas the window cannot apply costs one request rather than one per delta.
+   *
+   * Asking is also what recency is made of. A history moves up when its thread is selected, declared viewed
+   * or on screen, so the one evicted is the one the user looked at longest ago, never whichever a shell
+   * happened to list first. A resync is the window catching up, not the user looking, and moves nothing.
+   * A request from a selection or a view counts as a hit or a miss for the development console.
    */
-  const requestDetail = useCallback((threadId: string, options: { stale?: boolean } = {}): void => {
-    if (bridge?.threadDetail === undefined || detail.asked.has(threadId)) return
+  const requestDetail = useCallback((threadId: string, options: { stale?: boolean; onScreen?: boolean } = {}): void => {
+    if (bridge?.threadDetail === undefined) return
+    if (options.stale !== true) {
+      detail.used.set(threadId, ++detail.clock)
+      if (options.onScreen !== true) { if (detail.held.has(threadId)) detail.hits++; else detail.misses++ }
+    }
+    if (detail.asked.has(threadId)) return
     if (detail.held.has(threadId) && options.stale !== true) return
     detail.asked.add(threadId)
+    // A history that never arrives leaves no recency behind.
+    const forget = (): void => { if (!detail.held.has(threadId)) detail.used.delete(threadId) }
     void bridge.threadDetail(threadId).then(result => {
       detail.asked.delete(threadId)
       if (result !== null && session.current) receiveDetail.current(result)
-    }).catch(() => { detail.asked.delete(threadId) })
+      forget()
+    }).catch(() => { detail.asked.delete(threadId); forget() })
   }, [bridge, detail, session])
-  ask.current = requestDetail
+  ask.current = threadId => requestDetail(threadId, { onScreen: true })
   resync.current = threadId => requestDetail(threadId, { stale: true })
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     // Telling main which panes are open is also this window's own record of whose history it needs.
@@ -268,6 +283,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second — the figure now includes whatever time a transition spent waiting
   // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
+  // Beside it, how many histories the window holds, roughly how large they are, and how often a selection
+  // or a view found its history already held: the numbers a byte budget for the cache would be set from.
   useEffect(() => {
     if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
     const at = arrived.current
@@ -277,7 +294,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     if (now - reported.current < 1000) return
     reported.current = now
     console.info(`sotto: state update ${Math.round(now - at)} ms`)
-  }, [state])
+    const kilobytes = Math.round(approximateDetailBytes(detail.held.values()) / 1024)
+    console.info(`sotto: history cache ${detail.held.size} held, about ${kilobytes} KB, ${detail.hits} hits, ${detail.misses} misses`)
+  }, [state, detail])
   return { state, error, command, threadDrafts }
 }
 
