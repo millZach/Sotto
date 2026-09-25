@@ -131,6 +131,10 @@ export class GrokAcpHost implements AgentHost {
     if (!this.browserTools || this.aliases[id]?.kind === 'personal' || !this.browserHttp) return []
     return [await this.browserTools.mcpServer(id)]
   }
+  private showRequest(pending: Pending): void {
+    if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
+    this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
+  }
   /** Grok's prompt for this thread's own browser server, answered here rather than shown (ADR-0020). */
   private browserAdmission(pending: Pending): unknown {
     if (!pending.permission || !this.browserTools || !this.browserHttp || this.aliases[pending.threadId]?.kind === 'personal') return undefined
@@ -684,10 +688,10 @@ export class GrokAcpHost implements AgentHost {
         pending.request.id = `grok-request-${digest(JSON.stringify([threadId, pending.toolCallId, pending.request.kind]))}`
         this.reaper.touch(pending.threadId)
         if (this.answeredRequests.has(pending.request.id) || this.pending.has(pending.request.id)) return
-        const admission = this.browserAdmission(pending)
-        if (admission !== undefined) { this.rpc?.reply(pending.wireId, admission).catch(() => undefined); return }
-        if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
-        this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
+        const admission = this.browserAdmission(pending); const rpc = this.rpc
+        // An admission that fails to arrive is shown instead, so a request never goes unanswered and unseen.
+        if (admission !== undefined && rpc) { rpc.reply(pending.wireId, admission).catch(() => { if (rpc === this.rpc) this.showRequest(pending) }); return }
+        this.showRequest(pending)
       }
       else {
         this.rpc?.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })

@@ -27,9 +27,10 @@ function grokBrowserText(rawInput: unknown): string | undefined {
  * the user. The answer is the reply to send, or undefined.
  */
 export function grokBrowserAdmission(pending: GrokPending, server: string, tools: readonly string[]): unknown {
-  const used = useToolSchema.safeParse(pending.permission?.toolCall.rawInput)
-  if (!used.success || !tools.some(tool => used.data.tool_name === `${server}__${tool}`)) return undefined
-  const once = pending.permission!.options.find(option => option.kind === 'allow_once')
+  const permission = pending.permission
+  const used = useToolSchema.safeParse(permission?.toolCall.rawInput)
+  if (!permission || !used.success || !tools.some(tool => used.data.tool_name === `${server}__${tool}`)) return undefined
+  const once = permission.options.find(option => option.kind === 'allow_once')
   return once ? { outcome: { outcome: 'selected', optionId: once.optionId } } : undefined
 }
 

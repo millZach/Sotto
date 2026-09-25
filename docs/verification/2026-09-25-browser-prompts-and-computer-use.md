@@ -9,7 +9,7 @@ Two opt-in live tests, which cost paid model turns and never run in CI:
 - `SOTTO_BROWSER_TURN_LIVE=1 npx vitest run tests/integration/browserProvidersLive.test.ts` runs one turn per case through Sotto's own adapter. A `BrowserAgentServer` exposes one tool named `browser_status`, and the agent is asked to call it once. The test records whether a native request reached the thread before the tool was called. Each request is denied.
 - `SOTTO_CODEX_COMPUTER_USE_LIVE=1 npx vitest run tests/integration/codexComputerUseLive.test.ts` asks a Codex thread to list the open apps using Computer Use only. It records the native requests and how the Computer Use tool calls ended. Every request is denied. `SOTTO_CODEX_EXECUTABLE` runs a different Codex build.
 
-Both report the request's kind, method or tool name and choice kinds, plus tool call status. Neither logs a prompt, an argument or a page.
+Both report the request's kind, method or tool name and choice kinds, plus tool call status. The Computer Use test reports which known outcome a reply or tool result names (the sandbox stopped it, the native pipe was missing, native APIs were disabled, or no failure) rather than the text itself. Neither prints a prompt, an argument, a reply or a page. The early Computer Use runs quoted Codex's error messages, and those quotations are what this note reproduces.
 
 ## Does the client ask before Sotto's browser tool?
 
@@ -65,6 +65,7 @@ What this shows:
 
 - Whether the self-started helper asks the same per-app questions as the app's helper ("Allow Codex to use <app>?"). Only listing was tried, and no question came from either.
 - Whether the self-started path works from a Sotto thread. It was proven with plain `codex exec`, and Sotto's default sandbox kills Computer Use whichever helper it uses.
+- A server named `sotto_browser` in Grok's own configuration would look the same to the adapter as Sotto's, so its tools would be admitted too. Whether Grok lets a configured server share the name of one Sotto supplies was not tried.
 - `SKY_CUA_NATIVE_PIPE` is an internal switch in OpenAI's library, not a documented setting, so a Codex update may change it.
 - Whether Codex's Computer Use can run under `workspace-write` with a narrower allowance than Full access.
 - The real Sotto browser tools other than `browser_status`, and Sotto's own question in Tools. Neither was part of these turns.
