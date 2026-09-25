@@ -32,6 +32,7 @@ export default tseslint.config(
       'artifacts/process-creature/**',
       'artifacts/held-action/**',
       'artifacts/working-creature/**',
+      'artifacts/background-command/**',
       'artifacts/terminal-loading/**',
       'artifacts/thread-sidebar/**',
       'artifacts/forge-hand-test/**',

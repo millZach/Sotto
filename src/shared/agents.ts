@@ -422,6 +422,8 @@ export const providerClientUpdateSchema = z.object({
   checkedAt: z.string(),
   state: z.enum(['idle', 'updating', 'updated', 'unchanged', 'failed']).default('idle'),
   error: z.string().max(600).optional(),
+  /** When the last update of this client finished, so a press that ran is told from one refused before it did. */
+  ranAt: z.string().max(64).optional(),
 })
 export type ProviderClientUpdate = z.infer<typeof providerClientUpdateSchema>
 export const agentStateSchema = z.object({

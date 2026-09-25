@@ -60,20 +60,70 @@ describe('the client update card', () => {
     expect(screen.queryByRole('button', { name: 'Update' })).toBeNull()
   })
 
-  it('reports a failure with the installer’s own words and keeps the installed version', () => {
-    provide(fixture([behind({ state: 'failed', error: 'npm ERR! code EACCES' })]))
+  it('reports a failure in one line, keeps the installer’s own words under Details and offers to try again', async () => {
+    const command = provide(fixture([behind({ state: 'failed', error: 'npm ERR! code EACCES' })]))
     render(<ClientUpdateCard />)
-    expect(screen.getByText('A client did not update')).toBeTruthy()
-    expect(screen.getByText('npm ERR! code EACCES')).toBeTruthy()
-    expect(screen.getByText('Your installed version is unchanged')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.getByText('Grok Build did not update.')).toBeTruthy()
+    expect(screen.getByText('Nothing was changed.')).toBeTruthy()
+    expect(screen.getByText('Details')).toBeTruthy()
+    expect(screen.getByText(/The installer said: npm ERR! code EACCES\./u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'grok' }))
+  })
+
+  it('offers to try again when the version did not move, and says it once', async () => {
+    const command = provide(fixture([behind({ state: 'unchanged' })]))
+    render(<ClientUpdateCard />)
+    expect(screen.getByText('Grok Build is still on 1.0.5.')).toBeTruthy()
+    expect(screen.getByText('1.0.40 is published.')).toBeTruthy()
+    expect(screen.getAllByText(/still reports 1\.0\.5 when Sotto connects/u)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'grok' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'dismiss-client-updates' }))
+  })
+
+  it('says a working thread will stop before trying again, and sends that press as the word for it', async () => {
+    const command = provide(fixture([behind({ state: 'unchanged' })], true))
+    render(<ClientUpdateCard />)
+    expect(screen.getByText(/A thread is working now; updating stops it/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Update anyway' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'grok', force: true }))
+  })
+
+  it('says a refused press out loud rather than under Details', async () => {
+    const state = fixture([behind({ state: 'unchanged' })])
+    const command = provide(state)
+    command.mockResolvedValueOnce({ ...state, error: 'Another client is updating. Wait for it to finish.' })
+    render(<ClientUpdateCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Another client is updating. Wait for it to finish.')).toBeTruthy()
+  })
+
+  it('does not repeat an outcome the card already shows', async () => {
+    const state = fixture([behind({ state: 'unchanged', ranAt: '2026-09-25T09:40:00.000Z' })])
+    const command = provide(state)
+    command.mockResolvedValueOnce({ ...state, clientUpdates: [behind({ state: 'unchanged', ranAt: '2026-09-25T09:45:00.000Z' })], error: 'The installer finished, but Grok Build still reports 1.0.5 when Sotto connects. Another app may still have the old Grok Build open. Close it, then try again.' })
+    render(<ClientUpdateCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(command).toHaveBeenCalled())
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(screen.getAllByText(/still reports 1\.0\.5 when Sotto connects/u)).toHaveLength(1)
   })
 
   it('offers no press while an update is running', () => {
     provide(fixture([behind({ state: 'updating' })]))
     render(<ClientUpdateCard />)
-    expect(screen.getByText('Updating clients')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Update|Not now/u })).toBeNull()
+    expect(screen.getByText('Updating Grok Build to 1.0.40…')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('keeps the list for several clients, with Try again on a row that did not change', () => {
+    provide(fixture([behind({ state: 'unchanged' }), behind({ id: 'codex', installed: '0.155.1', published: '0.156.0' })]))
+    render(<ClientUpdateCard />)
+    expect(screen.getByText('A client did not change')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy()
   })
 
   it('goes down on Escape while it holds focus, and leaves Escape alone otherwise', async () => {

@@ -99,6 +99,49 @@
   border-top-color: var(--tt-border);
 }
 
+/* One client that went wrong: one line, its press, and the reason under Details. */
+.client-updates[data-tone='error'] {
+  border-left-color: var(--tt-error);
+}
+
+.client-updates--single .client-updates__row {
+  padding: 12px 10px 12px 14px;
+}
+
+.client-updates--single .client-updates__row small {
+  line-height: 1.45;
+}
+
+.client-updates--single .client-updates__row .tt-button--icon {
+  width: 28px;
+  padding: 0;
+}
+
+.client-updates__details {
+  border-top: 1px solid var(--tt-hairline);
+}
+
+.client-updates__details summary {
+  padding: 8px 14px;
+  color: var(--tt-text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.client-updates__details summary:focus-visible {
+  outline: 2px solid var(--tt-focus-ring);
+  outline-offset: -2px;
+}
+
+.client-updates__details p {
+  margin: 0;
+  padding: 0 14px 10px;
+  color: var(--tt-text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .client-updates__error {
   margin: 0;
   padding: 10px 14px;

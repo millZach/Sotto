@@ -21,7 +21,7 @@ import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
-import { ThreadMonitor, ThreadHeld, ThreadWorking, useHeldAction } from './ThreadMonitor'
+import { ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -116,14 +116,18 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const ornamentAllowed = rowConnected && !closed && !monitoringBlocked && thread.status !== 'error' && thread.requests.length === 0
   const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
   const liveWork = ornamentAllowed ? thread.backgroundWork ?? [] : []
+  const liveCommands = liveWork.filter(task => task.type === 'command')
   // One ornament, because the composer reserves room for exactly one, taken by the strongest claim. A watch
-  // says the provider is looking at something; background work says only that agents it started still run;
+  // says the provider is looking at something; background agents say only that work it started still runs;
   // waiting says only that time is passing, so the two confirmed states keep the track ahead of the clock.
   const confirmed = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
-    : liveWork.length ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} /> : undefined
+    : liveWork.length > liveCommands.length ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} /> : undefined
   const held = useHeldAction(thread, ornamentAllowed && confirmed === undefined, now)
-  const ornament = confirmed ?? (held === undefined ? undefined
-    : <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />)
+  // A command left running in the background waits once the turn is over; while it is live, the turn's
+  // own held action already holds the glass.
+  const ornament = confirmed ?? (held !== undefined ? <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />
+    : liveCommands.length && thread.status !== 'running' ? <ThreadWaitingCommand key={`command:${thread.id}`} commands={liveCommands} now={now} />
+    : undefined)
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
   const composing = paneHasDraft
     || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))
