@@ -1,0 +1,364 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: the branch toolbar (Run on, Workspace, the pull request badge and the branch picker) sits
+  inside the composer card under a hairline. Zach wants it out of the card, as its own buttons below the
+  message box. And the branch picker's list clips long names and their badges behind a horizontal scrollbar.
+
+  Variants on ?variant=now|a|b|c, switched from the bar at the bottom (← → keys too):
+   now  Today, for comparison. The row inside the card under a hairline, as src/renderer/src/agents/branchToolbar.css draws it.
+   a    Buttons.   The card ends at the send disc. Below it, each control is its own bordered pill, the same
+                   pill the option chips wear a size smaller. Run on is a quiet label pill, not pressable.
+   b    Tray.      One low tray under the card, on the follow-up ledger's surface, holding the same controls as
+                   ghost chips. The controls read as one group, the tray keeps them off the card.
+   c    Segments.  One segmented control at the left (This computer | Current checkout | branch), the grammar the
+                   pane header's Git action already uses, and the pull request badge at the right.
+
+  Every variant carries the picker fix: the list's grid column is minmax(0, 1fr) and it never scrolls sideways,
+  so a long ref name ellipsizes and its badge stays in view. "Show today's clipping" in the bar puts the bug back.
+
+  Extras in the bar: Light flips the palette; Picker opens the ref list; Narrow sets the pane to the 820px
+  minimum so the row wraps; PR hides the pull request badge, as a thread without one. Open the file in a
+  browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — branch toolbar under the composer, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* The Sotto palette, dark half (src/shared/themes/palettes.ts, SOTTO_DARK_THEME_COLORS), through the roles
+   src/renderer/src/styles/tokens.css derives at contrast 100. Names follow the --tt-* tokens the stylesheet uses. */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-field: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-bubble: oklch(0.205 0.014 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-activity: oklch(0.83 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-scrollbar: oklch(0.3 0.01 265);
+  --tt-radius-pill: 999px;
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-field: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-bubble: oklch(0.945 0.007 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-text-faint: oklch(0.535 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.82 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-activity: oklch(0.42 0.1 235);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-hover: color-mix(in srgb, oklch(0.9 0.03 230) 70%, transparent);
+  --tt-success: oklch(0.5 0.11 158);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-scrollbar: oklch(0.8 0.01 80);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 var(--tt-font); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+svg { width: 1em; height: 1em; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+
+/* The pane: the header strip, an empty transcript, the compose area at the bottom (threads.css). */
+.pane { display: flex; flex: 1; flex-direction: column; min-height: 0; width: min(100%, 1440px); margin: 0 auto; transition: width 160ms ease; }
+body[data-narrow] .pane { width: 820px; border-inline: 1px dashed var(--tt-hairline); }
+.head { display: flex; flex: none; align-items: center; gap: 10px; height: 44px; padding: 0 12px 0 18px; font-size: 15px; }
+.head__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.head__title > svg { width: 18px; height: 18px; color: var(--tt-activity); }
+.head__crumb { color: var(--tt-text-muted); }
+.head__branch { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); }
+.head__branch > svg { color: var(--tt-text-muted); }
+.head .git-action { display: inline-flex; align-items: center; height: 30px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+.head .git-action > button { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 9px; border: 0; background: transparent; color: var(--tt-text-2); font-size: 12.5px; cursor: pointer; }
+.head .git-action > button + button { width: 24px; padding: 0; border-left: 1px solid var(--tt-hairline); justify-content: center; }
+.head .git-action > button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.transcript { display: grid; flex: 1; place-content: center; gap: 6px; min-height: 0; padding: 0 24px; text-align: center; }
+.transcript > svg { width: 30px; height: 30px; margin: 0 auto 6px; color: var(--tt-text-muted); }
+.transcript > h2 { margin: 0; font-size: 17px; font-weight: 500; }
+.transcript > p { margin: 0; color: var(--tt-text-muted); font-size: 15px; }
+.compose { position: relative; flex: none; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+
+/* The composer card, as threads.css draws it. */
+.prompt { display: grid; padding: 14px 16px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt:focus-within { border-color: var(--tt-field-border-focus); }
+.prompt textarea { display: block; width: 100%; min-height: 74px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.prompt__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+.clip { display: grid; place-items: center; width: 28px; height: 28px; margin: 0 4px 0 -6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.clip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.chip > i { display: grid; place-items: center; width: 15px; height: 15px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 9px; font-style: normal; font-weight: 700; }
+.chip > svg { flex: none; width: 12px; height: 12px; }
+.send { display: grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: var(--tt-activity); color: var(--tt-on-accent); cursor: pointer; }
+.send > svg { width: 15px; height: 15px; stroke-width: 2.25; }
+
+/* Shared by every toolbar: the row's controls. Each variant restyles them. */
+.tb { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.tb__spacer { flex: 1 1 8px; }
+.tb__static, .tb__chip, .tb__branch, .tb__pr { display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); white-space: nowrap; }
+.tb__static > strong, .tb__chip > b { overflow: hidden; color: var(--tt-text-2); font-weight: 500; text-overflow: ellipsis; }
+.tb__key { color: var(--tt-text-muted); }
+.tb__chip, .tb__branch, .tb__pr { cursor: pointer; }
+.tb__chip:hover, .tb__branch:hover, .tb__pr:hover, .tb__branch[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-hover); color: var(--tt-text); }
+.tb__branch { max-width: 260px; font-family: var(--tt-font-mono); font-size: 12px; }
+.tb__branch > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tb svg { flex: none; width: 13px; height: 13px; }
+.tb .chev { width: 12px; height: 12px; }
+.tb__pr { height: 24px; padding: 0 7px; border-color: var(--tt-field-border); font-size: 12px; }
+.tb__pr > svg { color: var(--tt-success); }
+body[data-nopr] .tb__pr { display: none; }
+
+/* NOW: inside the card, under a hairline (branchToolbar.css). */
+.tb--now { margin: 6px -4px 0; padding-top: 6px; border-top: 1px solid var(--tt-hairline); gap: 4px 10px; }
+
+/* A. Buttons: each control its own bordered pill, under the card. Run on is a label, not a control. */
+.tb--a { margin-top: 8px; padding: 0 2px; gap: 6px; }
+.tb--a .tb__static, .tb--a .tb__chip, .tb--a .tb__branch, .tb--a .tb__pr { height: 30px; padding: 0 11px; border-color: var(--tt-hairline); }
+.tb--a .tb__static { padding-left: 9px; color: var(--tt-text-muted); cursor: default; }
+.tb--a .tb__static > strong { color: var(--tt-text-muted); font-weight: 400; }
+.tb--a .tb__static > svg { color: var(--tt-text-faint); }
+.tb--a .tb__chip:hover, .tb--a .tb__branch:hover, .tb--a .tb__pr:hover, .tb--a .tb__branch[aria-expanded='true'] { border-color: var(--tt-text-faint); }
+.tb--a .tb__pr { border-color: var(--tt-hairline); }
+
+/* B. Tray: one low surface under the card, the follow-up ledger's colour, ghost chips inside. */
+.tb--b { margin: 6px 12px 0; padding: 4px 6px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: color-mix(in srgb, var(--tt-field) 70%, var(--tt-canvas)); gap: 2px 6px; }
+.tb--b .tb__static { padding-left: 6px; }
+
+/* C. Segments: one control in parts at the left, the pull request badge at the right. The Git action's grammar. */
+.tb--c { margin-top: 8px; padding: 0 2px; gap: 8px; }
+.tb--c .seg { display: inline-flex; align-items: stretch; height: 30px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: 8px; overflow: hidden; }
+.tb--c .seg > * { height: auto; border: 0; border-radius: 0; }
+.tb--c .seg > * + * { border-left: 1px solid var(--tt-hairline); }
+.tb--c .seg > .tb__static { padding: 0 9px; color: var(--tt-text-muted); }
+.tb--c .seg > .tb__static > strong { color: var(--tt-text-muted); font-weight: 400; }
+.tb--c .seg > .tb__static > svg { color: var(--tt-text-faint); }
+.tb--c .seg > .tb__chip, .tb--c .seg > .tb__branch { padding: 0 10px; }
+.tb--c .seg > .tb__chip:hover, .tb--c .seg > .tb__branch:hover, .tb--c .seg > .tb__branch[aria-expanded='true'] { border-color: var(--tt-hairline); }
+.tb--c .tb__pr { height: 30px; border-radius: 8px; border-color: var(--tt-hairline); }
+
+/* Only the chosen variant's toolbar is in the page. */
+.tb { display: none; }
+body[data-variant='now'] .tb--now, body[data-variant='a'] .tb--a, body[data-variant='b'] .tb--b, body[data-variant='c'] .tb--c { display: flex; }
+
+/* The picker's panel, as branchToolbar.css draws it, with the list column fixed: minmax(0, 1fr) and no sideways scroll. */
+.panel { position: absolute; z-index: 30; display: none; width: min(340px, calc(100% - 48px)); padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
+.panel[data-open] { display: grid; }
+.panel__search { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; color: var(--tt-text-muted); }
+.panel__search > svg { width: 14px; height: 14px; }
+.panel__search > input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
+.panel__search > input::placeholder { color: var(--tt-text-muted); }
+.refs { display: grid; grid-template-columns: minmax(0, 1fr); max-height: min(320px, calc(100vh - 260px)); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.refs > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.refs > button:hover, .refs > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.refs > button[aria-selected='true'] { color: var(--tt-activity); }
+.ref-name { min-width: 0; overflow: hidden; font-family: var(--tt-font-mono); font-size: 12.5px; text-overflow: ellipsis; }
+.badges { display: inline-flex; flex: none; gap: 4px; }
+.badges > small { padding: 1px 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
+.badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }
+.badges > small[data-badge='default'] { color: var(--tt-text-2); }
+.more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; cursor: pointer; }
+.more:hover { background: var(--tt-hover); color: var(--tt-text); }
+/* Today's clipping, put back on request: an auto column sized to the widest nowrap row, and a sideways scrollbar. */
+body[data-broken] .refs { grid-template-columns: auto; overflow-x: auto; }
+body[data-broken] .refs > button { width: auto; min-width: 100%; }
+body[data-broken] .ref-name { overflow: visible; }
+
+/* The prototype's own bar: not part of the design. */
+.bar { position: fixed; top: 54px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 4px; padding: 5px 6px; border: 1px solid #fff3; border-radius: 999px; background: #17181b; box-shadow: 0 12px 40px #0009; color: #eee; font-size: 12.5px; transform: translateX(-50%); }
+:root[data-theme='light'] .bar { background: #fffdf7; color: #222; border-color: #0002; }
+.bar button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: inherit; white-space: nowrap; cursor: pointer; }
+.bar button:hover { background: #8883; }
+.bar button[aria-pressed='true'] { background: #8884; }
+.bar__label { min-width: 200px; padding: 0 6px; text-align: center; font-weight: 500; white-space: nowrap; }
+.bar__sep { width: 1px; height: 18px; margin: 0 4px; background: #8886; }
+</style>
+</head>
+<body data-variant="a">
+
+<main class="pane">
+  <header class="head">
+    <div class="head__title">
+      <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>
+      <span>Composer toolbar</span><span class="head__crumb">/ Sotto</span>
+      <span class="head__branch"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>fix/composer-keystroke-rendering</span>
+    </div>
+    <div class="git-action"><button type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/></svg>Commit</button><button type="button" aria-label="More Git actions"><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>
+  </header>
+
+  <section class="transcript">
+    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <h2>What is next for this thread?</h2>
+    <p>Write a prompt below to continue.</p>
+  </section>
+
+  <section class="compose">
+    <form class="prompt" onsubmit="return false">
+      <textarea rows="3" placeholder="What would you like to do next?" aria-label="Prompt"></textarea>
+      <div class="prompt__footer">
+        <div class="prompt__meta">
+          <button type="button" class="clip" aria-label="Attach screenshots"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+          <button type="button" class="chip"><i>C</i>Claude Test<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button type="button" class="chip">Low<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button type="button" class="chip">Permissions<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+        </div>
+        <button type="submit" class="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+      </div>
+
+      <!-- NOW: the row inside the card. -->
+      <div class="tb tb--now" data-toolbar>
+        <span class="tb__static">Run on <strong>This computer</strong></span>
+        <button type="button" class="tb__chip"><span class="tb__key">Workspace</span><b>Current checkout</b><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+        <span class="tb__spacer"></span>
+        <button type="button" class="tb__pr"><svg viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg><span>#74</span></button>
+        <button type="button" class="tb__branch" data-branch aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>fix/composer-keystroke-rendering</span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      </div>
+    </form>
+
+    <!-- A: buttons. -->
+    <div class="tb tb--a" data-toolbar>
+      <span class="tb__static"><svg viewBox="0 0 24 24"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg><strong>This computer</strong></span>
+      <button type="button" class="tb__chip"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><b>Current checkout</b><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <span class="tb__spacer"></span>
+      <button type="button" class="tb__pr"><svg viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg><span>#74</span></button>
+      <button type="button" class="tb__branch" data-branch aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>fix/composer-keystroke-rendering</span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+
+    <!-- B: tray. -->
+    <div class="tb tb--b" data-toolbar>
+      <span class="tb__static">Run on <strong>This computer</strong></span>
+      <button type="button" class="tb__chip"><span class="tb__key">Workspace</span><b>Current checkout</b><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <span class="tb__spacer"></span>
+      <button type="button" class="tb__pr"><svg viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg><span>#74</span></button>
+      <button type="button" class="tb__branch" data-branch aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>fix/composer-keystroke-rendering</span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+
+    <!-- C: segments. -->
+    <div class="tb tb--c" data-toolbar>
+      <div class="seg">
+        <span class="tb__static"><svg viewBox="0 0 24 24"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg><strong>This computer</strong></span>
+        <button type="button" class="tb__chip"><b>Current checkout</b><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button type="button" class="tb__branch" data-branch aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>fix/composer-keystroke-rendering</span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      </div>
+      <span class="tb__spacer"></span>
+      <button type="button" class="tb__pr"><svg viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg><span>#74</span></button>
+    </div>
+
+    <!-- The picker's panel, placed above whichever branch control is showing. -->
+    <div class="panel" role="group" aria-label="Branches" id="panel">
+      <div class="panel__search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input aria-label="Search refs" placeholder="Search refs..." autocomplete="off" spellcheck="false"></div>
+      <div class="refs" role="listbox" aria-label="Refs">
+        <button type="button" role="option" aria-selected="true"><span class="ref-name">fix/composer-keystroke-rendering</span><span class="badges"><small data-badge="current">current</small></span></button>
+        <button type="button" role="option"><span class="ref-name">main</span><span class="badges"><small data-badge="default">default</small></span></button>
+        <button type="button" role="option"><span class="ref-name">chore/readme-and-mit-license</span><span class="badges"><small data-badge="worktree">worktree</small></span></button>
+        <button type="button" role="option"><span class="ref-name">feat/browser-cards-for-codex-and-grok-with-a-very-long-suffix-that-never-ends</span><span class="badges"><small data-badge="worktree">worktree</small></span></button>
+        <button type="button" role="option"><span class="ref-name">chore/git-interface-docs</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">feat/pull-request-surface</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">fix/steer-focus</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">test/e2e-host-keyed-panes</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">feat/review-comments</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">feat/git-settings</span><span class="badges"></span></button>
+        <button type="button" role="option"><span class="ref-name">feat/remove-usage-figures</span><span class="badges"></span></button>
+      </div>
+      <button type="button" class="more">Show more</button>
+    </div>
+  </section>
+</main>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span class="bar__label" id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <span class="bar__sep"></span>
+  <button type="button" data-toggle="theme">Light</button>
+  <button type="button" data-toggle="picker">Picker</button>
+  <button type="button" data-toggle="broken" title="Put today's clipping back in the picker's list">Show today's clipping</button>
+  <button type="button" data-toggle="narrow" title="The 820px minimum window">Narrow</button>
+  <button type="button" data-toggle="nopr" title="A thread with no pull request">No PR</button>
+</div>
+
+<script>
+const VARIANTS = [['now', 'Today, for comparison'], ['a', 'Buttons'], ['b', 'Tray'], ['c', 'Segments']]
+const params = new URLSearchParams(location.search)
+const state = { variant: VARIANTS.some(([k]) => k === params.get('variant')) ? params.get('variant') : 'a',
+  theme: params.get('theme') === 'light', picker: params.get('picker') === '1', broken: params.get('broken') === '1', narrow: params.get('narrow') === '1', nopr: params.get('nopr') === '1' }
+
+function apply() {
+  document.body.dataset.variant = state.variant
+  document.documentElement.toggleAttribute('data-theme', false)
+  if (state.theme) document.documentElement.setAttribute('data-theme', 'light')
+  for (const key of ['broken', 'narrow', 'nopr']) document.body.toggleAttribute('data-' + key, state[key])
+  const index = VARIANTS.findIndex(([k]) => k === state.variant)
+  document.getElementById('label').textContent = state.variant.toUpperCase() + ' — ' + VARIANTS[index][1]
+  for (const button of document.querySelectorAll('.bar [data-toggle]')) button.setAttribute('aria-pressed', String(Boolean(state[button.dataset.toggle])))
+  const search = new URLSearchParams()
+  search.set('variant', state.variant)
+  if (state.theme) search.set('theme', 'light')
+  for (const key of ['picker', 'broken', 'narrow', 'nopr']) if (state[key]) search.set(key, '1')
+  history.replaceState(null, '', '?' + search)
+  placePicker()
+}
+function placePicker() {
+  const panel = document.getElementById('panel')
+  const trigger = document.querySelector('body[data-variant="' + state.variant + '"] .tb--' + state.variant + ' [data-branch]')
+  for (const button of document.querySelectorAll('[data-branch]')) button.setAttribute('aria-expanded', 'false')
+  if (!state.picker || !trigger) { panel.removeAttribute('data-open'); return }
+  trigger.setAttribute('aria-expanded', 'true')
+  panel.setAttribute('data-open', '')
+  // As the real picker: as wide as the pane allows, ending at the trigger's right edge when that fits.
+  const compose = document.querySelector('.compose').getBoundingClientRect()
+  const anchor = trigger.getBoundingClientRect()
+  const width = Math.min(340, compose.width - 48)
+  const left = Math.max(compose.left + 24, Math.min(anchor.right - width, compose.right - 24 - width)) - compose.left
+  panel.style.left = left + 'px'
+  panel.style.width = width + 'px'
+  panel.style.bottom = (compose.bottom - anchor.top + 6) + 'px'
+  panel.querySelector('input').focus()
+}
+function step(delta) { const i = VARIANTS.findIndex(([k]) => k === state.variant); state.variant = VARIANTS[(i + delta + VARIANTS.length) % VARIANTS.length][0]; apply() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+for (const button of document.querySelectorAll('.bar [data-toggle]')) button.onclick = () => { state[button.dataset.toggle] = !state[button.dataset.toggle]; apply() }
+for (const button of document.querySelectorAll('[data-branch]')) button.onclick = () => { state.picker = !state.picker; apply() }
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && state.picker) { state.picker = false; apply(); return }
+  if (event.target.matches('input, textarea, [contenteditable]')) return
+  if (event.key === 'ArrowLeft') step(-1)
+  if (event.key === 'ArrowRight') step(1)
+})
+document.addEventListener('pointerdown', event => {
+  if (!state.picker) return
+  if (event.target.closest('#panel, [data-branch], .bar')) return
+  state.picker = false; apply()
+}, true)
+window.addEventListener('resize', placePicker)
+apply()
+</script>
+</body>
+</html>
