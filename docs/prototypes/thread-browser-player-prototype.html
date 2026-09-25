@@ -1,0 +1,501 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (docs/plans/2026-09-25-agent-tool-exposure.md, step 1): Zach picked a T3-style floating browser for
+  each thread in place of the corner preview. What should it look like? It opens when a thread's agent opens a
+  page, shows only in that thread, can dock into Tools > Browser, and carries the thread's "uses the browser
+  without asking" state with a Stop control.
+
+  Three players on ?variant=a|b|c, cycled by the bar at the top (or the arrow keys outside a text field):
+   a  Floating player.  T3's mini player: a small window, 340x250 to start, above the composer. Drag it by its
+                        title anywhere in the window below the drag strip (or focus the title and use the arrow
+                        keys, Shift for bigger steps), resize it from the bottom-right corner down to 280x200,
+                        shrink it to a pill where it sits, or dock it in Tools. One spot for every thread.
+                        PICKED by Zach on September 25, 2026, who asked for it smaller and movable anywhere in Sotto.
+   b  Pane split.       The thread pane splits: the conversation on the left, the page on the right, with a
+                        divider you drag. Collapse leaves a thin strip. Belongs to the pane, so it cannot leak.
+   c  Strip + stage.    A one-line strip above the composer says what the agent is doing. Watch opens a large
+                        stage over the conversation with the page and every step; Escape closes it.
+
+  Try: switch to Docs (the player is not drawn there); press "Open a page in Docs" and go to Docs;
+  press Stop on the grant line and watch the next click wait for an answer; Dock in Tools, then switch threads.
+
+  Run: node docs/prototypes/composer-selectors-serve.mjs, then open
+  http://127.0.0.1:4173/docs/prototypes/thread-browser-player-prototype.html?variant=a
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thread browser player - prototype</title>
+<style>
+  @font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+  @font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+  :root { --tt-bg:#000; --tt-sidebar:#0f1012; --tt-surface:#15171a; --tt-elev:#1b1d21; --tt-hair:#26292e; --tt-border:#34383e; --tt-text:#f1f2f3; --tt-text-2:#c3c7cc; --tt-muted:#979ca4; --tt-hover:rgb(255 255 255/6%); --tt-accent:#46b8a8; --tt-accent-ink:#021412; --tt-selected:#12302b; --tt-selected-border:#2b5a51; --tt-warn:#f0b45c; --tt-focus:#5fc6b7; --tt-shadow:0 18px 50px rgb(0 0 0/55%); }
+  :root[data-theme=light] { --tt-bg:#fafaf9; --tt-sidebar:#f1f2f0; --tt-surface:#fff; --tt-elev:#fff; --tt-hair:#dfe2df; --tt-border:#cdd2cf; --tt-text:#15191a; --tt-text-2:#3a4144; --tt-muted:#5f676b; --tt-hover:rgb(0 0 0/5%); --tt-accent:#1f7a6c; --tt-accent-ink:#fff; --tt-selected:#e1ece8; --tt-selected-border:#b3cdc4; --tt-warn:#8a5200; --tt-focus:#1f7a6c; --tt-shadow:0 18px 50px rgb(0 0 0/18%); }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; display:grid; grid-template-columns:260px minmax(0,1fr) auto 64px; background:var(--tt-bg); color:var(--tt-text); font:14px/1.45 Figtree, "Segoe UI", system-ui, sans-serif; overflow:hidden; }
+  button { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--tt-focus); outline-offset:1px; }
+  .icon { width:16px; height:16px; flex:none; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .ibtn { display:inline-grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:7px; background:transparent; color:var(--tt-muted); cursor:pointer; flex:none; }
+  .ibtn:hover { background:var(--tt-hover); color:var(--tt-text); }
+  .tbtn { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--tt-border); border-radius:8px; background:transparent; color:var(--tt-text-2); cursor:pointer; font-size:13px; white-space:nowrap; }
+  .tbtn:hover { background:var(--tt-hover); color:var(--tt-text); }
+  .tbtn.primary { background:var(--tt-accent); border-color:var(--tt-accent); color:var(--tt-accent-ink); font-weight:600; }
+  .link { border:0; background:none; padding:0; color:var(--tt-text); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+
+  /* sidebar */
+  nav.side { display:flex; flex-direction:column; background:var(--tt-sidebar); border-right:1px solid var(--tt-hair); min-height:0; }
+  .brand { display:flex; align-items:center; gap:8px; height:48px; padding:0 14px; font-weight:600; }
+  .brand i { width:18px; height:18px; border-radius:5px; background:var(--tt-accent); }
+  .project { padding:10px 16px 6px; color:var(--tt-text-2); font-weight:600; font-size:13px; }
+  .threads { list-style:none; margin:0; padding:0 8px; }
+  .threads button { display:grid; grid-template-columns:minmax(0,1fr) auto; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:8px; background:transparent; text-align:left; cursor:pointer; color:var(--tt-text-2); }
+  .threads button:hover { background:var(--tt-hover); }
+  .threads button[aria-current] { background:var(--tt-selected); border-color:var(--tt-selected-border); color:var(--tt-text); }
+  .threads .t { font-weight:500; }
+  .threads .s { grid-column:1; color:var(--tt-muted); font-size:12px; }
+  .threads .b { grid-row:1 / span 2; grid-column:2; align-self:center; display:inline-flex; align-items:center; gap:4px; color:var(--tt-muted); font-size:12px; }
+  .threads .b .dot { width:6px; height:6px; border-radius:50%; background:var(--tt-accent); }
+  .threads .b .dot.wait { background:var(--tt-warn); }
+
+  /* thread pane */
+  main.pane { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; }
+  .strip { display:flex; align-items:center; gap:8px; height:48px; padding:0 14px 0 20px; border-bottom:1px solid var(--tt-hair); flex:none; }
+  .strip h1 { margin:0; font-size:15px; font-weight:600; }
+  .strip .crumb { color:var(--tt-muted); font-size:13px; margin-right:auto; }
+  .body { position:relative; flex:1; display:flex; min-height:0; }
+  .conv { position:relative; flex:1; display:flex; flex-direction:column; min-width:0; }
+  .messages { flex:1; overflow:auto; padding:22px 28px 12px; }
+  .msg { max-width:640px; margin:0 auto 18px; }
+  .msg .who { color:var(--tt-muted); font-size:12px; margin-bottom:4px; }
+  .msg p { margin:0; color:var(--tt-text); }
+  .msg.user p { color:var(--tt-text-2); }
+  .composer-wrap { padding:0 20px 16px; flex:none; }
+  .composer { max-width:720px; margin:0 auto; border:1px solid var(--tt-border); border-radius:14px; padding:12px 14px 10px; background:var(--tt-surface); }
+  .composer textarea { width:100%; min-height:44px; border:0; resize:none; background:transparent; color:var(--tt-text); font:inherit; outline:none; }
+  .composer .row { display:flex; gap:6px; align-items:center; }
+  .composer .row .tbtn { height:26px; font-size:12px; border-radius:999px; }
+  .empty-thread { margin:auto; text-align:center; color:var(--tt-muted); }
+
+  /* the page (shared by every variant): a fixed 800x540 design, scaled to its frame */
+  .frame { position:relative; overflow:hidden; background:#f3efe6; }
+  .page { position:absolute; left:0; top:0; width:800px; height:540px; transform-origin:0 0; color:#1f2a24; font-family:Figtree, system-ui, sans-serif; background:#f3efe6; }
+  .page header { display:flex; align-items:center; height:52px; padding:0 28px; border-bottom:1px solid #e0dbcf; font-weight:700; }
+  .page header span { margin-left:auto; font-weight:400; font-size:14px; display:flex; gap:18px; }
+  .page .hero { display:grid; grid-template-columns:1.1fr .9fr; gap:28px; padding:34px 28px 18px; }
+  .page .eyebrow { font-size:11px; letter-spacing:.14em; color:#5b6a60; }
+  .page h2 { margin:10px 0 8px; font-size:34px; letter-spacing:-.02em; }
+  .page .lede { margin:0 0 16px; color:#4d5b53; }
+  .page .cta { display:inline-block; padding:10px 16px; background:#2f5a44; color:#fff; border-radius:4px; font-weight:600; }
+  .page .art { height:190px; background:linear-gradient(155deg,#dfe6d9 0 35%,#a9bfa5 35% 60%,#6b8f76 60% 80%,#2f5a44 80%); }
+  .page .search { display:flex; gap:10px; align-items:center; padding:0 28px; }
+  .page .field { flex:1; height:38px; border:1px solid #c9c2b2; border-radius:4px; background:#fff; padding:8px 12px; font-size:15px; color:#1f2a24; }
+  .page .results { padding:14px 28px; display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .page .results div { height:70px; border-radius:4px; background:#e6e0d3; padding:10px; font-size:13px; font-weight:600; color:#3a4a40; }
+  .page .target { outline:3px solid #f0a13c; outline-offset:3px; transition:outline-color .2s; }
+  .cursor { position:absolute; width:18px; height:18px; border-radius:50%; background:rgb(240 161 60/55%); border:2px solid #f0a13c; transform:translate(-50%,-50%); transition:left .5s, top .5s; pointer-events:none; }
+
+  /* grant line + request (shared copy) */
+  .grant { display:flex; flex-wrap:wrap; align-items:center; gap:2px 10px; color:var(--tt-muted); font-size:12px; }
+  .grant .on { color:var(--tt-text-2); }
+  .request { border:1px solid var(--tt-warn); border-radius:10px; padding:10px 12px; background:var(--tt-elev); }
+  .request p { margin:0 0 8px; font-size:13px; }
+  .request .row { display:flex; gap:6px; flex-wrap:wrap; }
+  .action { display:flex; align-items:center; gap:8px; min-width:0; font-size:13px; }
+  .action .dot { width:7px; height:7px; border-radius:50%; background:var(--tt-accent); flex:none; animation:pulse 1.6s ease-in-out infinite; }
+  .action .dot.wait { background:var(--tt-warn); animation:none; }
+  .action .dot.idle { background:var(--tt-muted); animation:none; }
+  .action .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  @keyframes arrive { from { opacity:0; transform:translateY(8px) scale(.98); } }
+
+  /* A: floating player */
+  #floating { display:contents; }
+  .fp { position:fixed; z-index:40; display:flex; flex-direction:column; min-width:280px; min-height:200px; border:1px solid var(--tt-border); border-radius:12px; background:var(--tt-elev); box-shadow:var(--tt-shadow); overflow:hidden; }
+  .fp[data-new] { animation:arrive .18s ease-out; }
+  .fp .bar { display:flex; align-items:center; gap:4px; height:32px; padding:0 2px 0 10px; cursor:grab; user-select:none; border-bottom:1px solid var(--tt-hair); }
+  .fp .bar .title { font-weight:600; font-size:13px; }
+  .fp .bar .url { color:var(--tt-muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:auto; font-family:'Spline Sans Mono', monospace; }
+  .fp .frame { flex:1; min-height:48px; }
+  .fp .foot { display:flex; flex-direction:column; gap:4px; padding:6px 8px 7px 10px; border-top:1px solid var(--tt-hair); }
+  .fp .foot .top { display:flex; align-items:center; gap:8px; }
+  .fp .foot .top .action { flex:1; }
+  .fp .grip { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize; }
+  .fp .grip::after { content:''; position:absolute; right:4px; bottom:4px; width:6px; height:6px; border-right:1.5px solid var(--tt-muted); border-bottom:1.5px solid var(--tt-muted); }
+  .fp .bar:focus-visible { outline-offset:-2px; }
+  .fp .request { padding:6px 8px; }
+  .fp .request .row { flex-wrap:nowrap; gap:4px; }
+  .fp .request .tbtn { height:24px; font-size:12px; padding:0 7px; }
+  .fp .request p { font-size:12px; margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fp .foot .tbtn { height:26px; font-size:12px; }
+  .fp-pill { position:fixed; z-index:40; display:inline-flex; align-items:center; gap:8px; max-width:340px; height:34px; padding:0 6px 0 12px; border:1px solid var(--tt-border); border-radius:999px; background:var(--tt-elev); box-shadow:var(--tt-shadow); cursor:pointer; }
+
+  /* B: pane split */
+  .split { position:relative; display:flex; flex-direction:column; flex:none; min-width:280px; border-left:1px solid var(--tt-hair); background:var(--tt-surface); }
+  .split .divider { position:absolute; left:-5px; top:0; bottom:0; width:9px; cursor:col-resize; z-index:3; }
+  .split .divider:hover::after, .split .divider:focus-visible::after { content:''; position:absolute; left:3px; top:0; bottom:0; width:2px; background:var(--tt-focus); }
+  .split .divider:focus-visible { outline:none; }
+  .split .head { display:flex; align-items:center; gap:6px; height:40px; padding:0 6px 0 12px; border-bottom:1px solid var(--tt-hair); }
+  .split .head .url { flex:1; min-width:0; height:28px; padding:4px 10px; border:1px solid var(--tt-border); border-radius:7px; color:var(--tt-text-2); font:12px/1.5 'Spline Sans Mono', monospace; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .split .frame { flex:1; }
+  .split .foot { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-top:1px solid var(--tt-hair); }
+  .split .foot .top { display:flex; align-items:center; gap:8px; } .split .foot .top .action { flex:1; }
+  .split-rail { display:flex; flex-direction:column; align-items:center; gap:8px; width:40px; padding-top:8px; border-left:1px solid var(--tt-hair); background:var(--tt-surface); }
+  .split-rail .dot { width:7px; height:7px; border-radius:50%; background:var(--tt-accent); }
+
+  /* C: strip + stage */
+  .cstrip { max-width:720px; margin:0 auto 8px; display:flex; align-items:center; gap:10px; height:40px; padding:0 6px 0 8px; border:1px solid var(--tt-border); border-radius:10px; background:var(--tt-surface); }
+  .cstrip .thumb { width:44px; height:28px; border-radius:4px; }
+  .cstrip .action { flex:1; }
+  .cstrip .meta { color:var(--tt-muted); font-size:12px; white-space:nowrap; }
+  .stage { position:absolute; z-index:20; inset:12px 12px 0 12px; display:grid; grid-template-columns:minmax(0,1fr) 260px; grid-template-rows:auto minmax(0,1fr); border:1px solid var(--tt-border); border-radius:12px; background:var(--tt-elev); box-shadow:var(--tt-shadow); overflow:hidden; }
+  .stage .head { grid-column:1 / -1; display:flex; align-items:center; gap:8px; height:42px; padding:0 6px 0 14px; border-bottom:1px solid var(--tt-hair); }
+  .stage .head .title { font-weight:600; }
+  .stage .head .url { color:var(--tt-muted); font:12px 'Spline Sans Mono', monospace; margin-right:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stage .frame { min-height:0; }
+  .stage aside { display:flex; flex-direction:column; gap:10px; padding:12px; border-left:1px solid var(--tt-hair); min-height:0; overflow:auto; }
+  .steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; font-size:13px; }
+  .steps li { display:flex; gap:8px; color:var(--tt-muted); } .steps li.done { color:var(--tt-text-2); } .steps li.now { color:var(--tt-text); font-weight:600; }
+  .steps li::before { content:''; width:7px; height:7px; margin-top:6px; border-radius:50%; border:1.5px solid currentColor; flex:none; }
+  .steps li.done::before { background:currentColor; }
+
+  /* Tools panel (docked) + rail */
+  aside.tools { display:flex; flex-direction:column; width:0; min-width:0; overflow:hidden; border-left:1px solid var(--tt-hair); background:var(--tt-surface); }
+  aside.tools[data-open] { width:min(520px,42vw); }
+  aside.tools .head { display:flex; align-items:center; gap:6px; height:48px; padding:0 6px 0 14px; border-bottom:1px solid var(--tt-hair); }
+  aside.tools .head b { margin-right:auto; }
+  aside.tools .frame { flex:1; }
+  aside.tools .foot { display:flex; flex-direction:column; gap:8px; padding:10px 14px; border-top:1px solid var(--tt-hair); }
+  aside.tools .none { margin:auto; color:var(--tt-muted); padding:20px; text-align:center; }
+  nav.rail { display:flex; flex-direction:column; align-items:center; gap:4px; padding-top:8px; border-left:1px solid var(--tt-hair); background:var(--tt-sidebar); }
+  nav.rail button { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; width:56px; padding:8px 0; border:0; border-radius:8px; background:transparent; color:var(--tt-muted); font-size:11px; cursor:pointer; }
+  nav.rail button[aria-pressed=true] { background:var(--tt-selected); color:var(--tt-text); }
+  nav.rail .mark { position:absolute; top:6px; right:12px; width:6px; height:6px; border-radius:50%; background:var(--tt-accent); }
+  nav.rail .mark.wait { background:var(--tt-warn); }
+
+  /* prototype chrome: deliberately loud so it never reads as part of the design */
+  .proto { position:fixed; z-index:100; left:50%; top:8px; transform:translateX(-50%); display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:999px; background:#ff3d7f; color:#fff; font:600 12px/1 system-ui, sans-serif; box-shadow:0 6px 24px rgb(0 0 0/35%); white-space:nowrap; max-width:calc(100vw - 16px); overflow-x:auto; }
+  .proto button { height:26px; padding:0 10px; border:0; border-radius:999px; background:rgb(255 255 255/22%); color:#fff; font:inherit; cursor:pointer; }
+  .proto label { display:inline-flex; align-items:center; gap:4px; padding:0 6px; }
+  .proto .v { min-width:120px; text-align:center; }
+  .readout { position:fixed; z-index:100; right:76px; top:52px; width:300px; max-height:46vh; overflow:auto; margin:0; padding:10px; border-radius:10px; background:#1a0710; color:#ffd1e1; font:11px/1.4 'Spline Sans Mono', monospace; border:1px solid #ff3d7f; }
+  .readout[hidden] { display:none; }
+
+  @media (max-width: 900px) { body { grid-template-columns:200px minmax(0,1fr) auto 64px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+<nav class="side" aria-label="Threads">
+  <div class="brand"><i></i>Sotto</div>
+  <div class="project">Sotto test</div>
+  <ul class="threads" id="threadList"></ul>
+</nav>
+<main class="pane" id="pane"></main>
+<div id="floating"></div>
+<aside class="tools" id="tools" aria-label="Tools"></aside>
+<nav class="rail" aria-label="Tools surfaces" id="rail"></nav>
+
+<div class="proto" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="v" id="vlabel"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+  <button id="openDocs">Open a page in Docs</button>
+  <label><input type="checkbox" id="setAuto" checked> Show on open</label>
+  <label><input type="checkbox" id="setAllow" checked> Without asking</label>
+  <button id="theme">Light</button>
+  <button id="showState">State</button>
+</div>
+<pre class="readout" id="readout" hidden></pre>
+
+<script>
+const VARIANTS = { a: 'Floating player', b: 'Pane split', c: 'Strip + stage' }
+const ICON = {
+  globe: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  dock: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg>',
+  float: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="11" width="7" height="6" rx="1"/></svg>',
+  min: '<svg class="icon" viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
+  close: '<svg class="icon" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  expand: '<svg class="icon" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+  collapse: '<svg class="icon" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
+  files: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 5h6l2 2h8v12H4z"/></svg>',
+  term: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M12 15h5"/></svg>',
+}
+// Steps an agent takes on the page. `held` marks the actions ADR-0020 holds for an answer when the thread asks.
+const STEPS = [
+  { text: 'Opening fieldnotes.local', held: 'open', target: null },
+  { text: 'Reading the page', target: null },
+  { text: 'Clicking “Find a trail”', held: 'click', target: 'cta', ask: 'click “Find a trail”' },
+  { text: 'Typing “Olympic” in Search', held: 'type', target: 'field', ask: 'type “Olympic” in Search' },
+  { text: 'Checking the trail list', target: 'results' },
+]
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: VARIANTS[params.get('variant')] ? params.get('variant') : 'a',
+  focused: 'workshop',
+  settings: { showWhenAgentOpens: true, useWithoutAsking: true },
+  tools: { open: false },
+  // Where the user put the player. One place for every thread: the page is the thread's, the spot is the user's.
+  placement: { x: null, y: null, w: 340, h: 250 },
+  threads: {
+    workshop: { title: 'Workshop', provider: 'Claude', messages: [['You', 'Check the landing page still leads to the trail list, and search for Olympic.'], ['Claude', 'Opening it in Sotto’s browser to check.']], task: null, player: null, grant: 'on' },
+    docs: { title: 'Docs', provider: 'Codex', messages: [['You', 'Tidy the README intro.'], ['Codex', 'Done. The intro is two sentences now.']], task: null, player: null, grant: 'on' },
+  },
+}
+const $ = s => document.querySelector(s)
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const thread = () => state.threads[state.focused]
+
+function startTask(id) {
+  const t = state.threads[id]
+  t.grant = state.settings.useWithoutAsking ? (t.grant === 'stopped' ? 'stopped' : 'on') : (t.grant === 'thread' ? 'thread' : 'stopped')
+  t.task = { url: 'http://fieldnotes.local/', title: 'Fieldnotes', step: 0, paused: false, finished: false, pending: null, typed: '' }
+  t.player = state.settings.showWhenAgentOpens ? { mode: 'open', x: null, y: null, w: 440, h: 330, splitW: 460, stage: false } : { mode: 'closed', x: null, y: null, w: 440, h: 330, splitW: 460, stage: false }
+  if (t.player.mode === 'open' && state.tools.open && state.tools.browser) t.player.mode = 'docked'
+  advance(id, true)
+}
+function allowed(t) { return t.grant === 'on' || t.grant === 'thread' }
+function advance(id, first) {
+  const t = state.threads[id], task = t.task
+  if (!task || task.paused || task.finished || task.pending) return
+  if (!first) task.step++
+  if (task.step >= STEPS.length) { task.finished = true; task.step = STEPS.length - 1; return render() }
+  const step = STEPS[task.step]
+  if (step.held && !allowed(t)) task.pending = { ask: step.ask ?? 'open fieldnotes.local' }
+  if (step.target === 'field' && !task.pending) typeInto(task)
+  render()
+}
+function typeInto(task) { let i = 0; const word = 'Olympic'; const tick = () => { task.typed = word.slice(0, ++i); render(); if (i < word.length) setTimeout(tick, 90) }; tick() }
+function answer(id, how) {
+  const t = state.threads[id]; const task = t.task
+  if (how === 'deny') { task.pending = null; task.finished = true; task.failed = 'You denied that action. The agent stopped here.' }
+  else { if (how === 'thread') t.grant = 'thread'; task.pending = null; if (STEPS[task.step].target === 'field') typeInto(task) }
+  render()
+}
+setInterval(() => { for (const id of Object.keys(state.threads)) advance(id, false) }, 2600)
+
+/* ---------- pieces every variant shares ---------- */
+function pageHtml(task, id) {
+  const s = STEPS[task.step]; const tgt = s.target
+  return `<div class="page" data-page="${id}"><header>&#8594; Fieldnotes<span><span>Explore</span><span>Journal</span></span></header>
+    <div class="hero"><div><div class="eyebrow">LESS SCROLLING. MORE WANDERING.</div><h2>Find your next trail.</h2><p class="lede">Good trails. Quiet places. A reason to take the long way home.</p><span class="cta ${tgt === 'cta' ? 'target' : ''}">Find a trail &rarr;</span></div><div class="art"></div></div>
+    <div class="search"><div class="field ${tgt === 'field' ? 'target' : ''}">${esc(task.typed || '')}${task.typed ? '' : '<span style="color:#9a9384">Search trails</span>'}</div></div>
+    <div class="results ${tgt === 'results' ? 'target' : ''}">${task.step >= 3 && task.typed === 'Olympic' ? '<div>Hoh River</div><div>Hurricane Ridge</div><div>Rialto Beach</div>' : '<div></div><div></div><div></div>'}</div></div>`
+}
+function actionHtml(task) {
+  const dot = task.pending ? 'wait' : task.paused || task.finished ? 'idle' : ''
+  const text = task.failed ? task.failed : task.pending ? 'Waiting for your answer' : task.finished ? 'Finished: the trail list shows 3 results' : task.paused ? `Paused: ${STEPS[task.step].text}` : STEPS[task.step].text
+  return `<div class="action" aria-live="polite"><span class="dot ${dot}"></span><span class="txt">${esc(text)}</span></div>`
+}
+function pauseBtn(task, id) {
+  if (task.finished) return ''
+  return `<button class="tbtn" data-act="pause" data-id="${id}">${task.paused ? 'Resume' : 'Pause'}</button>`
+}
+function grantHtml(t, id, compact) {
+  return allowed(t)
+    ? `<div class="grant"><span class="on">${compact ? 'Uses the browser without asking' : 'This thread uses the browser without asking'}</span><button class="link" data-act="stop" data-id="${id}">Stop</button></div>`
+    : `<div class="grant"><span>${compact ? 'Asks before it opens, clicks or types' : 'This thread asks before it opens, clicks or types'}</span><button class="link" data-act="allowThread" data-id="${id}">${compact ? 'Stop asking' : 'Let it use the browser without asking'}</button></div>`
+}
+function requestHtml(task, id, compact) {
+  if (!task.pending) return ''
+  // Compact (the floating player): the page and thread are already on screen, so the question is the action alone.
+  const text = compact ? `Wants to ${esc(task.pending.ask)}.` : `${esc(state.threads[id].title)} wants to ${esc(task.pending.ask)} on fieldnotes.local.`
+  return `<div class="request" role="alert"><p>${text}</p><div class="row">
+    <button class="tbtn primary" data-act="once" data-id="${id}">Allow once</button>
+    <button class="tbtn" data-act="thread" data-id="${id}" ${compact ? 'aria-label="Allow this thread to use the browser without asking" title="Allow this thread to use the browser without asking"' : ''}>${compact ? 'Allow this thread' : 'Allow this thread to use the browser'}</button>
+    <button class="tbtn" data-act="deny" data-id="${id}">Deny</button></div></div>`
+}
+function fit(frame) {
+  // A browser fills the width and lets the page run on below; it does not letterbox.
+  const page = frame.querySelector('.page'); if (!page) return
+  const scale = frame.clientWidth / 800
+  page.style.transform = `scale(${scale})`
+  page.style.height = `${Math.max(540, frame.clientHeight / scale)}px`
+}
+
+/* ---------- variant A: floating player ---------- */
+const STRIP_H = 48 // the drag strip stays clear, so its controls and the window buttons remain reachable
+function placed() {
+  const pl = state.placement, pane = $('#pane').getBoundingClientRect()
+  const w = Math.min(pl.w, innerWidth - 16), h = Math.min(pl.h, innerHeight - STRIP_H - 8)
+  const x = pl.x ?? pane.right - w - 20, y = pl.y ?? pane.bottom - h - 150
+  return { w, h, x: Math.max(0, Math.min(x, innerWidth - w)), y: Math.max(STRIP_H, Math.min(y, innerHeight - h)) }
+}
+function variantA(t, id) {
+  const task = t.task, p = t.player, at = placed()
+  // Shrunk, it becomes a pill at the player's own bottom-right corner, so it stays where the user put it.
+  if (p.mode === 'min') return `<button class="fp-pill" data-act="restore" data-id="${id}" style="right:${innerWidth - at.x - at.w}px;bottom:${innerHeight - at.y - at.h}px" aria-label="Show the browser for ${esc(t.title)}">${ICON.globe}${actionHtml(task)}</button>`
+  if (p.mode !== 'open') return ''
+  const fresh = !p.shown; p.shown = true
+  return `<section class="fp" ${fresh ? 'data-new' : ''} role="dialog" aria-label="Browser for ${esc(t.title)}" style="left:${at.x}px;top:${at.y}px;width:${at.w}px;height:${at.h}px" data-id="${id}">
+    <div class="bar" id="fpBar" data-drag tabindex="0" aria-label="Move the browser. Drag, or use the arrow keys" title="Drag to move">${ICON.globe}<span class="title">${esc(task.title)}</span><span class="url">${esc(task.url.replace(/^https?:\/\//, ''))}</span>
+      <button class="ibtn" data-act="dock" data-id="${id}" aria-label="Move the browser into Tools" title="Move into Tools">${ICON.dock}</button>
+      <button class="ibtn" data-act="min" data-id="${id}" aria-label="Shrink the browser to a pill" title="Shrink">${ICON.min}</button>
+      <button class="ibtn" data-act="close" data-id="${id}" aria-label="Hide the browser; the agent keeps working" title="Hide">${ICON.close}</button></div>
+    <div class="frame">${pageHtml(task, id)}</div>
+    <div class="foot">${requestHtml(task, id, true)}<div class="top">${actionHtml(task)}${pauseBtn(task, id)}</div>${task.pending ? "" : grantHtml(t, id, true)}</div>
+    <div class="grip" data-resize aria-hidden="true"></div></section>`
+}
+/* ---------- variant B: pane split ---------- */
+function variantB(t, id) {
+  const task = t.task, p = t.player
+  if (p.mode === 'min') return `<div class="split-rail"><button class="ibtn" data-act="restore" data-id="${id}" aria-label="Show the browser for ${esc(t.title)}" title="Show the browser">${ICON.globe}</button><span class="dot" style="${task.pending ? 'background:var(--tt-warn)' : ''}"></span></div>`
+  if (p.mode !== 'open') return ''
+  // The conversation keeps at least half the pane; at the minimum window the page gets the rest.
+  const width = Math.max(260, Math.min(p.splitW, $('#pane').clientWidth * 0.5))
+  return `<section class="split" aria-label="Browser for ${esc(t.title)}" style="width:${width}px">
+    <div class="divider" data-split tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize the browser"></div>
+    <div class="head">${ICON.globe}<div class="url">${esc(task.url)}</div>
+      <button class="ibtn" data-act="dock" data-id="${id}" aria-label="Move the browser into Tools" title="Move into Tools">${ICON.dock}</button>
+      <button class="ibtn" data-act="min" data-id="${id}" aria-label="Collapse the browser to a strip" title="Collapse">${ICON.collapse}</button>
+      <button class="ibtn" data-act="close" data-id="${id}" aria-label="Hide the browser; the agent keeps working" title="Hide">${ICON.close}</button></div>
+    <div class="frame">${pageHtml(task, id)}</div>
+    <div class="foot">${requestHtml(task, id)}<div class="top">${actionHtml(task)}${pauseBtn(task, id)}</div>${grantHtml(t, id)}</div></section>`
+}
+/* ---------- variant C: strip + stage ---------- */
+function variantCStrip(t, id) {
+  const task = t.task, p = t.player
+  if (p.mode === 'docked') return ''
+  return `<div class="cstrip" role="group" aria-label="Browser for ${esc(t.title)}"><div class="frame thumb">${pageHtml(task, id)}</div>${actionHtml(task)}
+    <span class="meta">${allowed(t) ? 'Without asking' : task.pending ? '' : 'Asks first'}</span>
+    <button class="tbtn ${task.pending ? 'primary' : ''}" data-act="stage" data-id="${id}">${task.pending ? 'Answer' : 'Watch'}</button>${pauseBtn(task, id)}</div>`
+}
+function variantCStage(t, id) {
+  const task = t.task, p = t.player
+  if (!p.stage || p.mode === 'docked') return ''
+  const steps = STEPS.map((s, i) => `<li class="${i < task.step || (task.finished && !task.failed) ? 'done' : i === task.step ? 'now' : ''}">${esc(s.text)}</li>`).join('')
+  return `<section class="stage" role="dialog" aria-label="Browser for ${esc(t.title)}">
+    <div class="head">${ICON.globe}<span class="title">${esc(task.title)}</span><span class="url">${esc(task.url)}</span>
+      <button class="ibtn" data-act="dock" data-id="${id}" aria-label="Move the browser into Tools" title="Move into Tools">${ICON.dock}</button>
+      <button class="ibtn" data-act="unstage" data-id="${id}" aria-label="Close the large view; the agent keeps working" title="Close (Esc)">${ICON.close}</button></div>
+    <div class="frame">${pageHtml(task, id)}</div>
+    <aside>${requestHtml(task, id)}${actionHtml(task)}<ol class="steps">${steps}</ol>${pauseBtn(task, id)}${grantHtml(t, id)}</aside></section>`
+}
+
+/* ---------- render ---------- */
+function render() {
+  // Keep keyboard focus (and the caret) across the full re-render.
+  const a = document.activeElement
+  const key = a?.id ? `#${a.id}` : a?.dataset?.act ? `[data-act="${a.dataset.act}"]${a.dataset.id ? `[data-id="${a.dataset.id}"]` : ''}${a.dataset.key ? `[data-key="${a.dataset.key}"]` : ''}` : a?.dataset?.split !== undefined ? '[data-split]' : null
+  const caret = a?.id === 'draft' ? [a.selectionStart, a.selectionEnd] : null
+  paint()
+  const back = key && document.querySelector(key)
+  if (back && back !== document.activeElement) { back.focus({ preventScroll: true }); if (caret) back.setSelectionRange(...caret) }
+}
+function paint() {
+  document.documentElement.dataset.variant = state.variant
+  $('#vlabel').textContent = `${state.variant.toUpperCase()}: ${VARIANTS[state.variant]}`
+  $('#threadList').innerHTML = Object.entries(state.threads).map(([id, t]) => {
+    const badge = t.task && !t.task.finished ? `<span class="b"><span class="dot ${t.task.pending ? 'wait' : ''}"></span>${t.task.pending ? 'Waiting' : 'Browser'}</span>` : ''
+    return `<li><button data-act="focus" data-id="${id}" ${id === state.focused ? 'aria-current="true"' : ''}><span class="t">${t.title}</span>${badge}<span class="s">${t.provider}</span></button></li>`
+  }).join('')
+  const id = state.focused, t = thread(), task = t.task
+  const docked = task && t.player.mode === 'docked'
+  const messages = t.messages.map(([who, text]) => `<div class="msg ${who === 'You' ? 'user' : ''}"><div class="who">${who}</div><p>${esc(text)}</p></div>`).join('')
+  const composer = `<div class="composer-wrap">${task && state.variant === 'c' ? variantCStrip(t, id) : ''}<div class="composer"><textarea id="draft" aria-label="Message ${esc(t.title)}" placeholder="What would you like to do next?"></textarea><div class="row"><span class="tbtn">${t.provider}</span><span class="tbtn">Low</span><span class="tbtn">Permissions</span></div></div></div>`
+  const conv = `<div class="conv"><div class="messages">${messages}</div>${composer}${task && state.variant === 'c' ? variantCStage(t, id) : ''}</div>`
+  const split = task && state.variant === 'b' ? variantB(t, id) : ''
+  const hiddenNote = task && t.player.mode === 'closed' ? `<button class="tbtn" data-act="restore" data-id="${id}">${ICON.globe} Show browser</button>` : ''
+  const draft = $('#draft')?.value ?? ''
+  $('#pane').innerHTML = `<div class="strip"><h1>${esc(t.title)}</h1><span class="crumb">/ Sotto test</span>${hiddenNote}</div><div class="body">${conv}${split}</div>`
+  $('#floating').innerHTML = task && state.variant === 'a' ? variantA(t, id) : ''
+  if ($('#draft')) $('#draft').value = draft
+  // Tools: Browser shows the focused thread's docked page, or says there is none. It never pins.
+  const tools = $('#tools'); tools.toggleAttribute('data-open', state.tools.open)
+  tools.innerHTML = !state.tools.open ? '' : `<div class="head"><b>Browser</b><span style="color:var(--tt-muted);font-size:12px">${esc(t.title)}</span>
+      ${docked ? `<button class="ibtn" data-act="undock" data-id="${id}" aria-label="Float the browser over the thread" title="Float over the thread">${ICON.float}</button>` : ''}
+      <button class="ibtn" data-act="toolsClose" aria-label="Close Tools">${ICON.close}</button></div>
+    ${docked ? `<div class="frame">${pageHtml(task, id)}</div><div class="foot">${requestHtml(task, id)}<div style="display:flex;gap:8px;align-items:center">${actionHtml(task)}<span style="flex:1"></span>${pauseBtn(task, id)}</div>${grantHtml(t, id)}</div>`
+      : `<div class="none">${task ? `${esc(t.title)}’s page is ${t.player.mode === 'open' || t.player.mode === 'min' ? 'in its player' : 'hidden'}. <button class="link" data-act="dock" data-id="${id}">Move it here</button>` : `No pages in ${esc(t.title)}.`}</div>`}`
+  $('#rail').innerHTML = [['browser', 'Browser', ICON.globe], ['terminal', 'Terminal', ICON.term], ['files', 'Files', ICON.files]].map(([key, label, icon]) => {
+    const mark = key === 'browser' && task && !task.finished ? `<span class="mark ${task.pending ? 'wait' : ''}"></span>` : ''
+    return `<button data-act="rail" data-key="${key}" aria-pressed="${key === 'browser' && state.tools.open}">${icon}${label}${mark}</button>`
+  }).join('')
+  document.querySelectorAll('.frame').forEach(fit)
+  const readout = $('#readout')
+  if (!readout.hidden) readout.textContent = JSON.stringify({ variant: state.variant, focused: state.focused, settings: state.settings, tools: state.tools,
+    threads: Object.fromEntries(Object.entries(state.threads).map(([k, v]) => [k, { grant: v.grant, player: v.player && { mode: v.player.mode, stage: v.player.stage }, task: v.task && { step: STEPS[v.task.step].text, paused: v.task.paused, finished: v.task.finished, pending: v.task.pending } }])) }, null, 2)
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return
+  const id = b.dataset.id, t = id && state.threads[id]
+  switch (b.dataset.act) {
+    case 'focus': state.focused = id; break
+    case 'pause': t.task.paused = !t.task.paused; break
+    case 'stop': t.grant = 'stopped'; break
+    case 'allowThread': t.grant = 'thread'; break
+    case 'once': case 'thread': case 'deny': return answer(id, b.dataset.act)
+    case 'min': t.player.mode = 'min'; break
+    case 'close': t.player.mode = 'closed'; break
+    case 'restore': t.player.mode = 'open'; t.player.shown = false; break
+    case 'dock': t.player.mode = 'docked'; t.player.stage = false; state.tools.open = true; state.tools.browser = true; break
+    case 'undock': t.player.mode = 'open'; break
+    case 'stage': t.player.stage = true; break
+    case 'unstage': t.player.stage = false; $('#draft')?.focus(); break
+    case 'toolsClose': state.tools.open = false; for (const th of Object.values(state.threads)) if (th.player?.mode === 'docked') th.player.mode = 'open'; break
+    case 'rail': state.tools.open = !state.tools.open; state.tools.browser = state.tools.open; break
+  }
+  render()
+})
+document.addEventListener('keydown', e => {
+  const typing = e.target.closest('input, textarea, [contenteditable]')
+  if (e.key === 'Escape') {
+    const t = thread(); if (!t.task) return
+    if (state.variant === 'c' && t.player.stage) t.player.stage = false
+    else if (t.player.mode === 'open') t.player.mode = state.variant === 'b' ? 'min' : 'min'
+    render(); $('#draft')?.focus(); return
+  }
+  if (e.target.id === 'fpBar' && e.key.startsWith('Arrow')) {
+    e.preventDefault()
+    const at = placed(), step = e.shiftKey ? 64 : 16, pl = state.placement
+    Object.assign(pl, { x: at.x, y: at.y, w: at.w, h: at.h })
+    if (e.key === 'ArrowLeft') pl.x -= step
+    if (e.key === 'ArrowRight') pl.x += step
+    if (e.key === 'ArrowUp') pl.y -= step
+    if (e.key === 'ArrowDown') pl.y += step
+    return render()
+  }
+  if (typing || e.target.closest('[data-split]')) return
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') cycle(e.key === 'ArrowRight' ? 1 : -1)
+})
+function cycle(dir) {
+  const keys = Object.keys(VARIANTS); state.variant = keys[(keys.indexOf(state.variant) + dir + keys.length) % keys.length]
+  const url = new URL(location.href); url.searchParams.set('variant', state.variant); history.replaceState(null, '', url); render()
+}
+$('#prev').onclick = () => cycle(-1); $('#next').onclick = () => cycle(1)
+$('#openDocs').onclick = () => startTask('docs')
+$('#setAuto').onchange = e => { state.settings.showWhenAgentOpens = e.target.checked; render() }
+$('#setAllow').onchange = e => { state.settings.useWithoutAsking = e.target.checked; for (const t of Object.values(state.threads)) t.grant = e.target.checked ? 'on' : 'stopped'; render() }
+$('#theme').onclick = e => { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; e.target.textContent = light ? 'Dark' : 'Light' }
+$('#showState').onclick = () => { $('#readout').hidden = !$('#readout').hidden; render() }
+// Drag (A's title bar), resize (A's corner), and the split divider (B, also arrow keys).
+document.addEventListener('pointerdown', e => {
+  const drag = e.target.closest('[data-drag]'), grip = e.target.closest('[data-resize]'), split = e.target.closest('[data-split]')
+  if ((!drag && !grip && !split) || e.target.closest('button')) return
+  const t = thread(), p = t.player, pl = state.placement, box = e.target.closest('.fp')?.getBoundingClientRect(), pane = $('#pane').getBoundingClientRect()
+  const sx = e.clientX, sy = e.clientY, fp = e.target.closest('.fp'), start = { x: box?.left ?? 0, y: box?.top ?? 0, w: fp?.offsetWidth ?? 0, h: fp?.offsetHeight ?? 0, split: p.splitW }
+  const move = ev => {
+    const dx = ev.clientX - sx, dy = ev.clientY - sy
+    if (drag) { pl.x = start.x + dx; pl.y = start.y + dy; pl.w = start.w; pl.h = start.h }
+    if (grip) { pl.x = start.x; pl.y = start.y; pl.w = Math.max(280, start.w + dx); pl.h = Math.max(200, start.h + dy) }
+    if (split) p.splitW = Math.max(280, Math.min(pane.width - 320, start.split - dx))
+    render()
+  }
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up) }
+  addEventListener('pointermove', move); addEventListener('pointerup', up)
+})
+document.addEventListener('keydown', e => {
+  if (!e.target.closest('[data-split]') || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+  const p = thread().player; p.splitW = Math.max(280, p.splitW + (e.key === 'ArrowLeft' ? 24 : -24)); render(); $('[data-split]')?.focus()
+})
+addEventListener('resize', render)
+render()
+startTask('workshop')
+</script>
+</body>
+</html>
