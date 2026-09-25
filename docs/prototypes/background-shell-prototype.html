@@ -1,0 +1,166 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not part of the build; delete once a variant is picked.
+  Question: how the composer's creature shows a background shell (Claude Code's run_in_background
+  command) that keeps running after the turn has ended.
+  Already decided with Zach: once the turn ends, a running shell holds the hourglass ("Waiting"), named
+  by the shell's own description; background agents outrank it ("Working"); a running shell keeps the
+  session from being reaped. The open question is how Working mentions a shell running beside agents.
+  Switch variants with ?variant=A|B|C, the arrows at the bottom, or ← →. Switch states top right.
+  Pixel art and layout are copied from ThreadMonitor.tsx and threadMonitor.css; colours approximate the dark theme.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · background shell on the composer</title>
+<style>
+  :root { --canvas: #0b0b0c; --surface: #141518; --field-border: #2c2d33; --border: #3a3b41; --text: #e8e8ea; --muted: #a3a3ab; --activity: #6fc3b0;
+    font-family: Figtree, "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--canvas); color: var(--text); }
+  .pane { position: fixed; inset: 0 0 0 0; display: grid; grid-template-rows: 1fr auto; max-width: 860px; margin: 0 auto; padding: 24px 28px 96px; }
+  .transcript { color: #55565e; font-size: 13px; line-height: 1.6; overflow: hidden; }
+  .transcript .me { color: #8b8c94; margin: 14px 0 6px; }
+  .transcript .bubble { color: #6f7078; }
+  .compose { position: relative; margin-top: 68px; border: 1px solid var(--field-border); border-radius: 12px; background: var(--surface); padding: 14px 16px; color: var(--muted); font-size: 14px; min-height: 92px; }
+  .compose small { position: absolute; left: 16px; bottom: 12px; font-size: 12px; color: #6f7078; }
+  .monitor { position: absolute; left: 0; right: 0; bottom: 100%; height: 64px; padding: 0 14px; display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, min(172px, 45%)); align-items: end; }
+  .track { position: relative; height: 64px; min-width: 0; }
+  .monitor[data-kind='working'] .track { overflow: hidden; }
+  .actor { position: absolute; bottom: 0; left: 0; width: 80px; height: 64px; }
+  .actor svg { display: block; width: 80px; height: 64px; overflow: visible; }
+  .mini { position: absolute; bottom: 0; left: 0; width: 24px; height: 20px; }
+  .mini svg { display: block; width: 24px; height: 20px; overflow: visible; }
+  .c { fill: var(--activity); } .ink { fill: var(--canvas); } .shine { fill: var(--text); } .handle { fill: var(--border); }
+  .task { min-width: 0; padding: 8px 12px; border: 1px solid var(--field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--surface); }
+  .label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; line-height: 1.5; }
+  .status { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .states { position: fixed; top: 16px; right: 20px; display: flex; gap: 6px; z-index: 5; }
+  .states button { background: #1b1c20; color: var(--muted); border: 1px solid var(--field-border); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+  .states button[aria-pressed='true'] { color: var(--text); border-color: var(--activity); }
+  .note { position: fixed; left: 20px; top: 56px; max-width: 360px; color: var(--muted); font-size: 12.5px; line-height: 1.55; z-index: 5; }
+  .note strong { color: var(--text); }
+  .note code { color: var(--text); font-size: 12px; }
+  .switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+    background: #f5d547; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 6px 20px rgb(0 0 0 / .5); font: 600 12px system-ui; z-index: 9; }
+  .switcher button { background: #111; color: #f5d547; border: 0; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; }
+  .switcher span { padding: 0 10px; min-width: 300px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="states" role="group" aria-label="State">
+  <button data-state="live">1 · Turn live, command held 25 s</button>
+  <button data-state="shell">2 · Turn ended, shell running</button>
+  <button data-state="both">3 · Shell and 2 agents</button>
+  <button data-state="idle">4 · Everything finished</button>
+</div>
+<div class="note" id="note"></div>
+<div class="pane">
+  <div class="transcript">
+    <div class="me">You</div><div class="bubble">Fix the reconnect race and run the gates.</div>
+    <div class="me">Claude</div><div class="bubble">The final CI gates are running in the background (about 12 minutes). Once they pass I'll commit and open the PR.</div>
+  </div>
+  <div class="compose" id="compose">Reply to Claude…<small id="hint"></small><div id="ornament"></div></div>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+
+<script>
+const BODY = 'M9 8h4v8H9z M21 7h4v9h-4z M11 6h2v5h-2z M23 5h2v5h-2z M9 13h17v15H9z M7 16h21v9H7z M11 11h12v18H11z M5 23h4v4H5z'
+const EYES = 'M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z'
+const MINI = 'M3 2h2v2H3z M7 1h2v3H7z M2 4h8v5H2z M1 6h10v2H1z M3 9h2v1H3z M7 9h2v1H7z'
+const MINI_EYES = 'M4 5h1v1H4z M7 5h1v1H7z'
+const TOP = [[31, 10, 5], [31, 11, 5], [32, 12, 3]], BOTTOM = [[32, 16, 3], [31, 17, 5], [31, 18, 5]]
+const sand = rows => rows.map(([x, y, w]) => `M${x} ${y}h${w}v1h-${w}z`).join(' ') || 'M0 0h0v0z'
+
+const VARIANTS = { A: 'Readout counts the command', B: 'Command only in the hover title', C: 'One of the agents carries an hourglass' }
+const NOTES = {
+  A: '<strong>A — the readout counts it.</strong> In state 3 the dispatcher stays, and its second line adds the command: <code>Working · 2 agents · 1 command</code>. Hover lists every task by name.',
+  B: '<strong>B — only the hover title.</strong> In state 3 the readout is exactly what it is today, <code>Working · 2 agents</code>; the command appears only in the hover list, so nothing new is learned by looking.',
+  C: '<strong>C — an agent with an hourglass.</strong> In state 3 one of the small agents sent out along the track carries a tiny hourglass for the command, and the readout counts tasks: <code>Working · 3 tasks</code>.',
+}
+const STATE_NOTES = {
+  live: 'State 1 is today’s behaviour and every variant keeps it: the turn is live, so its held command already shows the hourglass.',
+  shell: 'State 2 is the new case, the same in every variant: the turn has ended, the shell is still running, and the hourglass stays up, named by the shell’s description, counting from when the shell started.',
+  both: '',
+  idle: 'State 4: the shell’s end frame arrived. The creature leaves and the composer has its room back.',
+}
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+let state = ['live', 'shell', 'both', 'idle'].includes(params.get('state')) ? params.get('state') : 'shell'
+const shellStarted = Date.now() - (4 * 60 + 12) * 1000
+const heldStarted = Date.now() - 25 * 1000
+
+function held(label, since) {
+  return { kind: 'held', label, title: label, since, svg: `<div class="actor" id="actor"><svg viewBox="0 0 40 32" shape-rendering="crispEdges">
+    <path class="c" d="M11 29h5v3h-5z M21 29h5v3h-5z"/><g id="body"><path class="c" d="${BODY}"/><path class="shine" opacity=".24" d="M10 14h3v9h-3z"/>
+    <path class="ink" opacity=".24" d="M13 25h10v3H13z"/><path class="ink" d="${EYES}"/><path class="c" d="M28 14h2v2h-2z"/>
+    <g id="glass"><path class="c" opacity=".28" d="M31 10h5v2h-5z M32 12h3v1h-3z M33 13h1v3h-1z M32 16h3v1h-3z M31 17h5v2h-5z"/>
+    <path id="top" class="c"/><path id="bottom" class="c"/><path id="grain" class="c"/>
+    <path class="shine" d="M30 9h7v1h-7z M30 19h7v1h-7z M30 10h1v2h-1z M36 10h1v2h-1z M31 12h1v1h-1z M35 12h1v1h-1z M32 13h1v3h-1z M34 13h1v3h-1z M31 16h1v1h-1z M35 16h1v1h-1z M30 17h1v2h-1z M36 17h1v2h-1z"/></g>
+    <path class="c" d="M25 25h5v2h-5z"/></g></svg></div>` }
+}
+function working(minis, status, title, hourglassMini) {
+  const miniSvg = i => `<div class="mini" data-i="${i}"><svg viewBox="0 0 12 10" shape-rendering="crispEdges"><path class="c" d="${MINI}"/><path class="ink" d="${MINI_EYES}"/>${
+    hourglassMini === i ? '<path class="shine" d="M10 1h3v1h-3z M10 7h3v1h-3z M10 2h1v1h-1z M12 2h1v1h-1z M11 3h1v3h-1z M10 5h1v1h-1z M12 5h1v1h-1z"/><path class="c" d="M11 6h1v1h-1z"/>' : ''}</svg></div>`
+  return { kind: 'working', label: 'Review the reconnect fix', title, status, svg: Array.from({ length: minis }, (_, i) => miniSvg(i)).join('') +
+    `<div class="actor" id="actor"><svg viewBox="0 0 40 32" shape-rendering="crispEdges"><g transform="translate(40 0) scale(-1 1)">
+    <path class="c" d="M11 29h5v3h-5z M21 29h5v3h-5z"/><path class="c" d="${BODY}"/><path class="shine" opacity=".24" d="M10 14h3v9h-3z"/>
+    <path class="ink" opacity=".24" d="M13 25h10v3H13z"/><path class="ink" d="${EYES}"/><path id="arm" class="c" d="M28 16h4v2h-4z"/><path class="c" d="M25 25h5v2h-5z"/></g></svg></div>` }
+}
+function ornament() {
+  if (state === 'idle') return null
+  if (state === 'live') return held('npm test -- --maxWorkers=2', heldStarted)
+  if (state === 'shell') return held('Run all CI gates', shellStarted)
+  const title = 'Review the reconnect fix\nCheck the personal chats release\nRun all CI gates (command)'
+  if (variant === 'A') return working(2, 'Working · 2 agents · 1 command', title)
+  if (variant === 'B') return working(2, 'Working · 2 agents', title)
+  return working(3, 'Working · 3 tasks', title, 2)
+}
+const fmt = ms => { const s = Math.floor(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s` }
+
+let current = null, began = performance.now()
+function render() {
+  current = ornament(); began = performance.now()
+  const host = document.getElementById('ornament')
+  host.innerHTML = current ? `<div class="monitor" data-kind="${current.kind}"><div class="track" id="track">${current.svg}</div>
+    <div class="task" title="${current.title}"><span class="label">${current.label}</span><span class="status" id="status">${current.status ?? ''}</span></div></div>` : ''
+  document.getElementById('compose').style.marginTop = current ? '68px' : '0'
+  document.getElementById('hint').textContent = state === 'live' ? 'Claude is working · Stop' : ''
+  document.getElementById('vlabel').textContent = `${variant} — ${VARIANTS[variant]}`
+  document.getElementById('note').innerHTML = (state === 'both' ? NOTES[variant] : STATE_NOTES[state]) + (state === 'both' ? '' : '<br><br>Switch to state 3 to compare the variants.')
+  document.querySelectorAll('.states button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === state)))
+  const url = new URL(location.href); url.searchParams.set('variant', variant); url.searchParams.set('state', state); history.replaceState(null, '', url)
+}
+function tick(now) {
+  requestAnimationFrame(tick)
+  if (!current) return
+  const time = (now - began) / 1000, track = document.getElementById('track'); if (!track) return
+  const width = track.clientWidth, actor = document.getElementById('actor')
+  if (current.kind === 'held') {
+    const status = document.getElementById('status'); status.textContent = `Waiting · ${fmt(Date.now() - current.since)}`
+    const phase = time % 6, drain = Math.min(1, phase / 5.5), spin = phase > 5.5 ? (phase - 5.5) / .5 : 0, gone = Math.min(3, Math.floor(drain * 3))
+    document.getElementById('body').setAttribute('transform', Math.floor(time * 1.2) % 2 ? 'translate(0 -1)' : '')
+    document.getElementById('glass').setAttribute('transform', `rotate(${spin * 180} 33.5 14.5)`)
+    document.getElementById('top').setAttribute('d', sand(TOP.slice(gone)))
+    document.getElementById('bottom').setAttribute('d', sand(BOTTOM.slice(3 - gone)))
+    document.getElementById('grain').setAttribute('d', drain < 1 ? `M33 ${13 + Math.floor(time * 8) % 3}h1v1h-1z` : 'M0 0h0v0z')
+  } else {
+    const reach = Math.max(0, width - 80); actor.style.transform = `translateX(${Math.round(reach / 2) * 2}px)`
+    const start = Math.max(0, width - 96), span = start + 24
+    document.querySelectorAll('.mini').forEach((mini, i) => {
+      const x = start - span * ((time * 0.09 + i * 0.17) % 1)
+      mini.style.transform = `translate(${Math.round(x / 2) * 2}px, ${Math.floor(time * 6 + i) % 2 ? -1 : 0}px)`
+    })
+    document.getElementById('arm').setAttribute('transform', Math.floor(time * 2) % 2 ? 'translate(0 -1)' : '')
+  }
+}
+const keys = Object.keys(VARIANTS)
+const step = d => { variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.querySelectorAll('.states button').forEach(b => b.onclick = () => { state = b.dataset.state; render() })
+addEventListener('keydown', e => { if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+render(); requestAnimationFrame(tick)
+</script>
+</body>
+</html>
