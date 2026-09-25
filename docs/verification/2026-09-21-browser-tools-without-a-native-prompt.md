@@ -1,5 +1,7 @@
 # Browser tools without a native prompt
 
+Superseded in part on September 25, 2026 by `2026-09-25-browser-prompts-and-computer-use.md`: real turns showed the Codex and Grok settings below did not stop the prompt, and what replaced them.
+
 Windows, September 21, 2026. Written against `133ea38c` and re-run after merging `origin/main`, which is what made the Grok run below possible. Zach reported that a Claude Code thread found the browser tools, asked to open a page and was refused without ever showing him anything he could answer. This note records what was actually checked.
 
 ## What was wrong

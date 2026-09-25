@@ -42,7 +42,7 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     const records = await fixture.driver.requests()
     if (provider === 'codex') {
       // The browser's own tools carry no native prompt; Tools still asks for every page action.
-      expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, default_tools_approval_mode: 'auto', http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
+      expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, default_tools_approval_mode: 'approve', http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch?.params?.frame as { args: string[] }).args
@@ -68,5 +68,38 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     expect(renewed.headers).not.toEqual(endpoint.headers)
     const nextRecords = await fixture.driver.requests()
     expect(JSON.stringify(nextRecords.slice(records.length))).toContain(renewed.headers[0]!.value)
+  })
+})
+
+// Grok's leader ignores `--allow` rules, so its prompt for Sotto's own browser server is answered by the
+// adapter (ADR-0020). Only that one: the same tool name on any other server still reaches the user.
+describe('grok browser admission', () => {
+  const setUp = async () => {
+    const fixture = await grokFixture(); cleanup.push(fixture.cleanup)
+    const server = new BrowserAgentServer(browserToolDefinitions, async () => ({ content: [] })); cleanup.push(() => server.close())
+    fixture.host.useBrowserTools(server)
+    await fixture.host.connect()
+    await fixture.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Project', path: fixture.root })
+    const threadId = randomUUID()
+    await fixture.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: fixture.projectId, title: 'Browser admission', modelId: fixture.modelId })
+    fixture.host.observeThreads?.([threadId])
+    await fixture.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: 'browser-admission', text: 'Synthetic prompt' })
+    const thread = async () => (await fixture.host.snapshot()).threads.find(thread => thread.id === threadId)!
+    const decisions = async () => (await fixture.driver.requests()).map(record => fixture.protocol!.permissionDecision(record)).filter(decision => decision !== undefined)
+    return { fixture, threadId, thread, decisions }
+  }
+
+  it('answers Grok\'s prompt for this thread\'s own browser tool once, without showing it', async () => {
+    const { fixture, threadId, thread, decisions } = await setUp()
+    await fixture.action(threadId, { type: 'permission', text: 'use_tool', rawInput: { tool_name: 'sotto_browser__browser_status', tool_input: {} } })
+    await expect.poll(decisions).toEqual([true])
+    expect((await thread()).requests).toEqual([])
+  })
+
+  it('shows the user a prompt for the same tool name on another server', async () => {
+    const { fixture, threadId, thread, decisions } = await setUp()
+    await fixture.action(threadId, { type: 'permission', text: 'use_tool', rawInput: { tool_name: 'other_server__browser_status', tool_input: {} } })
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+    expect(await decisions()).toEqual([])
   })
 })

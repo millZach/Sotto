@@ -186,4 +186,18 @@ $env:SOTTO_BROWSER_LIVE = '1'
 npx vitest run tests/integration/browserProvidersLive.test.ts --maxWorkers=1
 ```
 
+The same file's turn cases send one paid model turn per client and mode, asking the agent to use a synthetic `browser_status` tool, and report whether the client asked its own permission before reaching it. Every native request is denied. They report only a request's kind, tool name and choice kinds, never a prompt, argument or reply. Three test-only switches exist to diagnose a client: `SOTTO_BROWSER_TURN_PROMPT` replaces the prompt, `SOTTO_GROK_ARGS` (a JSON array) launches Grok with other arguments, and `SOTTO_BROWSER_NO_ADMISSION=1` hides the tool names from the adapter, so only the client's own rules can let a call through.
+
+```powershell
+$env:SOTTO_BROWSER_TURN_LIVE = '1'
+npx vitest run tests/integration/browserProvidersLive.test.ts --maxWorkers=1
+```
+
+`tests/integration/codexComputerUseLive.test.ts` sends one paid Codex turn per case, asking only for the list of open apps with Computer Use, and reports the requests that arrive and which known outcome each Computer Use call ended in, never its text. `SOTTO_CODEX_COMPUTER_USE_PROMPT` replaces the prompt and `SOTTO_CODEX_EXECUTABLE` runs another Codex build. Its Full access case needs the Codex desktop app open. Results so far are in `docs/verification/2026-09-25-browser-prompts-and-computer-use.md`.
+
+```powershell
+$env:SOTTO_CODEX_COMPUTER_USE_LIVE = '1'
+npx vitest run tests/integration/codexComputerUseLive.test.ts --maxWorkers=1
+```
+
 Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/phase-three-tools-bridge.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/agent-browser/`. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
