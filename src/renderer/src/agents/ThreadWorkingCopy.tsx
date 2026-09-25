@@ -222,6 +222,19 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
     latestRecovered.current?.()
   }, [facts.status])
   useEffect(() => { recovering.current = false }, [thread.id])
+  const [, rerender] = useState(0)
+  const originBase = thread.worktree?.originBase
+  if (facts.status === 'ready' && (originBase === 'missing' || originBase === 'no-remote') && !dismissedOriginNotices.has(thread.id)) {
+    // Start from origin found nothing to fetch and the worktree took the local branch instead (ADR-0014). Said once,
+    // in the status tone: nothing stopped, and the branch the folder is on is the one the toolbar shows.
+    const base = thread.worktree?.baseBranch ?? 'the branch'
+    return <div className="working-copy-notice" data-tone="status" role="status">
+      <p>{originBase === 'missing'
+        ? <><strong>origin/{base} was not found</strong>, so the worktree started from the local branch {base}.</>
+        : <><strong>This project has no origin</strong>, so the worktree started from the local branch {base}.</>}</p>
+      <Button variant="secondary" onClick={() => { dismissedOriginNotices.add(thread.id); rerender(value => value + 1) }}>Dismiss</Button>
+    </div>
+  }
   if (facts.status !== 'error') return null
   // Setup can only be retried before native work starts; afterwards Sotto only re-checks the bound folder.
   const retry = thread.nativeSessionStarted === false
@@ -242,6 +255,8 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
  * and asks first when the folder has uncommitted work to carry along.
  */
 const dismissedBranchNotices = new Set<string>()
+/** Threads whose Start from origin notice was dismissed this client session; it is said once per thread. */
+const dismissedOriginNotices = new Set<string>()
 /** Test seam: a new client session has no dismissed notices. */
 export function resetBranchNoticeDismissals(): void { dismissedBranchNotices.clear() }
 

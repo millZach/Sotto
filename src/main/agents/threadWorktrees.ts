@@ -66,6 +66,23 @@ export class ThreadWorktrees {
   constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
 
   /**
+   * Start from origin, T3's way (ADR-0014, amended September 24, 2026): fetch the base when origin has it, fall back
+   * to the local branch when origin does not, and skip the fetch for a project with no origin at all. Only a fetch
+   * that fails for another reason, the connection or the credentials, stops setup. The answer is kept on the
+   * worktree so the pane can say which happened.
+   */
+  private async originBase(repositoryRoot: string, baseBranch: string): Promise<NonNullable<AgentWorktree['originBase']>> {
+    try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) } catch { return 'no-remote' }
+    const failure = new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`)
+    // --exit-code answers 2 for a remote that is reachable and has no such branch; anything else is a real failure.
+    try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`]) }
+    catch (error) { if ((error as { code?: unknown }).code === 2) return 'missing'; throw failure }
+    try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
+    catch { throw failure }
+    return 'used'
+  }
+
+  /**
    * `checkoutBranch` names a branch that exists already, such as a pull request's head: the worktree checks it
    * out as it stands rather than cutting a new branch from a base.
    */
@@ -99,11 +116,8 @@ export class ThreadWorktrees {
     const baseBranch = selection.baseBranch ?? (selection.startFromOrigin ? (await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined : undefined)
     if (baseBranch) await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${baseBranch}`])
     if (selection.startFromOrigin && !baseBranch) throw new Error('Choose a base branch before starting from origin.')
-    const base = baseBranch ? `${selection.startFromOrigin ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
-    if (selection.startFromOrigin) {
-      try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
-      catch { throw new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`) }
-    }
+    const originBase = selection.startFromOrigin && baseBranch ? await this.originBase(repositoryRoot, baseBranch) : undefined
+    const base = baseBranch ? `${originBase === 'used' ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`])).trim() }
     catch { throw new Error(baseBranch ? `The base branch ${baseBranch} is unavailable. Choose an existing branch and retry.` : 'This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.') }
@@ -114,7 +128,7 @@ export class ThreadWorktrees {
       } catch { throw new Error('The project subdirectory is not present in the committed source. Commit that folder or explicitly choose a shared working copy, then retry.') }
     }
     const token = randomUUID()
-    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${this.home === THREAD_WORKTREE_HOME ? token.slice(0, 8) : token}`, baseCommit, projectRelativePath, baseBranch, startFromOrigin: selection.startFromOrigin, temporaryBranch: this.home === THREAD_WORKTREE_HOME }
+    return { mode, status: 'pending', ...(originBase ? { originBase } : {}), path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${this.home === THREAD_WORKTREE_HOME ? token.slice(0, 8) : token}`, baseCommit, projectRelativePath, baseBranch, startFromOrigin: selection.startFromOrigin, temporaryBranch: this.home === THREAD_WORKTREE_HOME }
   }
 
 
