@@ -55,6 +55,26 @@ type names (`workflow`, `subagent`, `teammate`, `remote-agent`). The field is `b
 `monitoring`, and like it is stripped from the workspace file, the renderer's shell cache and any thread whose
 provider is disconnected.
 
+## Amendment: a command left running in the background
+
+*September 25, 2026.* The decision above left a background shell inert, so a thread that started a long command
+with `run_in_background` and ended its turn looked idle for as long as the command ran, and the session reaper
+could stop the session under it. Zach asked for it to be shown as waiting. A `local_bash` task is now background
+work of type `command`, on the same evidence and ownership rules as agent work: a start, the bookend that ends it,
+started by this thread and not by an agent. A shell the turn is still running is marked `is_backgrounded: false`
+and stays the turn's own action, as a foreground subagent does, until it is sent to the background. `shell`,
+`mcp_task`, `plan`, `dream` and `scheduled` stay inert.
+
+A command waits rather than works, so it does not take the dispatcher. Once the turn has ended, a running command
+holds the hourglass: the reader is told **Waiting**, the readout names the command by its description, and the
+clock counts from when Sotto saw it start, since the frames carry no time of their own (*Waiting · 2 commands*
+when there are several). While the turn is live, the turn's own held action keeps the glass. Agents outrank
+commands: with both running the dispatcher stays and counts the commands beside the agents, *Working · 2 agents ·
+1 command*, chosen from three mock-ups (`docs/prototypes/background-shell-prototype.html` on
+`prototype/background-shell`). Because it is background work, a running command also holds its session from the
+reaper and refuses settings changes and rewinds, and the refusal now says "background work" rather than "agents".
+The field keeps its name; `backgroundWork` entries gain an optional `startedAt`.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live

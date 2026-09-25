@@ -13,16 +13,16 @@ const notification = (task_id = 'native-agent-id', status = 'completed'): Claude
 describe('Claude background work', () => {
   it.each([
     ['local_workflow', 'workflow'], ['workflow', 'workflow'], ['local_agent', 'subagent'],
-    ['in_process_teammate', 'teammate'], ['remote_agent', 'remote-agent'],
+    ['in_process_teammate', 'teammate'], ['remote_agent', 'remote-agent'], ['local_bash', 'command'],
   ])('counts a root %s task as %s work, not as a watch', (task_type, type) => {
     const work = new ClaudeMonitoring()
     work.apply(start({ task_type, is_backgrounded: undefined, spawn_depth: undefined }))
-    expect(work.working).toEqual([{ id: expect.any(String), label: 'Review the diff', type }])
+    expect(work.working).toEqual([{ id: expect.any(String), label: 'Review the diff', type, startedAt: expect.any(String) }])
     expect(work.current).toEqual([])
     expect(agentBackgroundWorkSchema.safeParse(work.working).success).toBe(true)
   })
 
-  it.each(['plan', 'dream', 'scheduled', 'shell', 'local_bash', 'mcp_task', 'unknown', undefined])('leaves %s inert', task_type => {
+  it.each(['plan', 'dream', 'scheduled', 'shell', 'mcp_task', 'unknown', undefined])('leaves %s inert', task_type => {
     const work = new ClaudeMonitoring()
     work.apply(start({ task_type }))
     work.apply({ type: 'system', subtype: 'task_progress', task_id: 'native-agent-id', description: 'Still going' })
@@ -37,7 +37,7 @@ describe('Claude background work', () => {
     expect(first?.id).not.toContain('native-agent-id')
     expect(agentBackgroundWorkSchema.safeParse(work.working).success).toBe(true)
     work.apply(update({ description: 'Review the tests' }))
-    expect(work.working).toEqual([{ id: first!.id, label: 'Review the tests', type: 'subagent' }])
+    expect(work.working).toEqual([{ id: first!.id, label: 'Review the tests', type: 'subagent', startedAt: first!.startedAt }])
     work.working[0]!.label = 'Mutated outside'
     expect(work.working[0]!.label).toBe('Review the tests')
     work.apply(start({ task_id: 'unnamed', task_type: 'local_workflow', description: '' }))
@@ -67,7 +67,7 @@ describe('Claude background work', () => {
     work.apply(update({ description: 'Still in the foreground' }))
     expect(work.working).toEqual([])
     work.apply(update({ is_backgrounded: true }))
-    expect(work.working).toEqual([{ id: expect.any(String), label: 'Still in the foreground', type: 'subagent' }])
+    expect(work.working).toEqual([{ id: expect.any(String), label: 'Still in the foreground', type: 'subagent', startedAt: expect.any(String) }])
   })
 
   it('survives the turn ending and unrelated foreground frames', () => {
@@ -75,8 +75,26 @@ describe('Claude background work', () => {
     work.apply(start())
     work.apply({ type: 'assistant', message: { content: 'All the agents have finished.' } })
     work.apply({ type: 'result', is_error: false, result: 'ok' })
-    work.apply(start({ task_id: 'command', task_type: 'local_bash' }))
+    work.apply(start({ task_id: 'plan', task_type: 'plan' }))
     expect(work.working).toHaveLength(1)
+  })
+
+  it('counts a command sent to the background, never one the turn is still running, and keeps when it started', () => {
+    // The CLI registers every shell as a local_bash task; one the turn is waiting on says is_backgrounded: false.
+    const work = new ClaudeMonitoring()
+    work.apply(start({ task_id: 'tests', task_type: 'local_bash', is_backgrounded: false, description: 'Run the tests' }))
+    expect(work.working).toEqual([])
+    work.apply(update({ is_backgrounded: true }, 'tests'))
+    const [command] = work.working
+    expect(command).toEqual({ id: expect.any(String), label: 'Run the tests', type: 'command', startedAt: expect.any(String) })
+    work.apply(start({ task_id: 'gates', task_type: 'local_bash', is_backgrounded: true, description: 'Run all CI gates' }))
+    work.apply(update({ description: 'Run the unit tests' }, 'tests'))
+    expect(work.working.map(task => [task.label, task.type])).toEqual([['Run the unit tests', 'command'], ['Run all CI gates', 'command']])
+    expect(work.working[0]!.startedAt).toBe(command!.startedAt)
+    work.apply(notification('tests'))
+    expect(work.working.map(task => task.label)).toEqual(['Run all CI gates'])
+    work.apply(start({ task_id: 'untitled', task_type: 'local_bash', description: '' }))
+    expect(work.working.at(-1)).toMatchObject({ label: 'Background command', type: 'command' })
   })
 
   it.each([

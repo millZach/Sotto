@@ -14,4 +14,6 @@
 .thread-monitor__handle { fill: var(--tt-border); }
 .thread-monitor__task { pointer-events: auto; min-width: 0; padding: 8px 12px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--tt-surface); }
 .thread-monitor__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text); font-size: 13px; line-height: 1.5; }
-.thread-monitor__status { display: block; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.thread-monitor__status { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+/* A readout that counts commands beside agents needs more than the usual column; one line keeps the track 64px tall. */
+.thread-monitor[data-readout="wide"] { grid-template-columns: minmax(80px, 1fr) minmax(0, min(240px, 50%)); }

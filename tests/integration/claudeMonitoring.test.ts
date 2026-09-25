@@ -115,15 +115,18 @@ it('keeps background work through the turn result and clears it on interrupt, an
   expect((await thread(f)).backgroundWork ?? []).toEqual([])
 })
 
-it('holds a session with background work open while an ordinary idle session is reaped', async () => {
+// A shell left running in the background: stopping the CLI under it would stop the command too.
+const command = { type: 'system', subtype: 'task_started', task_id: 'private-shell-task', task_type: 'local_bash', description: 'Run all CI gates', is_backgrounded: true }
+
+it.each([['an agent', agent], ['a background command', command]])('holds a session with %s open while an ordinary idle session is reaped', async (_, work) => {
   const f = await fixture(true)
-  await raw(f, agent)
+  await raw(f, work)
   await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
   await f.host.execute({ type: 'create-thread', commandId: 'idle-create', threadId: 'idle', projectId: f.projectId, title: 'Idle', modelId: f.modelId })
   await f.adapter.refreshThread('idle')
   await expect.poll(() => f.sessions!.stopped('idle')).toBe(true)
   expect(await f.sessions!.stopped('thread')).toBe(false)
-  await raw(f, { type: 'system', subtype: 'task_notification', task_id: agent.task_id, status: 'completed' })
+  await raw(f, { type: 'system', subtype: 'task_notification', task_id: work.task_id, status: 'completed' })
   await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
   await expect.poll(() => f.sessions!.stopped('thread')).toBe(true)
 })
@@ -132,8 +135,8 @@ it('refuses to change settings or rewind while background work runs, because eit
   const f = await fixture()
   await raw(f, agent)
   await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
-  await expect(f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).rejects.toThrow('background agents are still working')
-  await expect(f.adapter.rollbackThread('thread', 1, ['first'])).rejects.toThrow('background agents are still working')
+  await expect(f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).rejects.toThrow('"Review the diff" is still running for this thread. Nothing was changed. Wait for it to finish, or ask Claude to stop it, before')
+  await expect(f.adapter.rollbackThread('thread', 1, ['first'])).rejects.toThrow('"Review the diff" is still running for this thread. Nothing was changed. Wait for it to finish, or ask Claude to stop it, before')
   expect((await thread(f)).backgroundWork).toHaveLength(1)
   expect((await thread(f)).runtimeMode).not.toBe('auto-accept-edits')
   await raw(f, { type: 'system', subtype: 'task_notification', task_id: agent.task_id, status: 'completed' })

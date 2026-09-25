@@ -7,14 +7,15 @@ const monitorTypes = new Set(['monitor', 'monitor_mcp'])
 /**
  * Claude's own task types for agent work, read off the CLI's `task_started` emitter (`task_type: e.type`).
  * A workflow's discriminant is `local_workflow`; `workflow` is the friendly label the SDK's task summaries
- * use, accepted too so a CLI that emits either is read the same. Shells, plans, dreams and scheduled
- * tasks are not agent work and stay inert.
+ * use, accepted too so a CLI that emits either is read the same. A shell command left running in the
+ * background (`local_bash`) counts too, as a command rather than an agent (ADR-0023, amended). `shell`, plans,
+ * dreams, MCP tasks and scheduled tasks are not work this thread is waiting on and stay inert.
  */
 const workTypes = new Map<string, BackgroundWorkType>([
   ['local_workflow', 'workflow'], ['workflow', 'workflow'], ['local_agent', 'subagent'],
-  ['in_process_teammate', 'teammate'], ['remote_agent', 'remote-agent'],
+  ['in_process_teammate', 'teammate'], ['remote_agent', 'remote-agent'], ['local_bash', 'command'],
 ])
-const workLabels: Record<BackgroundWorkType, string> = { workflow: 'Workflow', subagent: 'Subagent', teammate: 'Teammate', 'remote-agent': 'Remote agent' }
+const workLabels: Record<BackgroundWorkType, string> = { workflow: 'Workflow', subagent: 'Subagent', teammate: 'Teammate', 'remote-agent': 'Remote agent', command: 'Background command' }
 const endedStatuses = new Set(['completed', 'failed', 'killed', 'stopped', 'cancelled', 'interrupted'])
 const label = (value: unknown): string | undefined => typeof value === 'string'
   ? value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, MAX_MONITOR_LABEL) || undefined : undefined
@@ -27,6 +28,8 @@ interface Task {
   active: boolean
   /** A subagent the spawning tool call is blocking on is the turn's own action, not background work, until it is moved there. */
   foreground: boolean
+  /** When this adapter saw the task start. The frames carry no clock of their own. */
+  readonly startedAt: string
 }
 
 /**
@@ -43,7 +46,8 @@ export class ClaudeMonitoring {
 
   /** Background work survives the turn's `result`; only its own bookend, an interrupt, an error or a restart ends it. */
   get working(): AgentBackgroundWork[] {
-    return [...this.tasks.values()].flatMap(task => task.work && task.active && !task.foreground ? [{ id: task.id, label: task.label, type: task.work }] : [])
+    return [...this.tasks.values()].flatMap(task => task.work && task.active && !task.foreground
+      ? [{ id: task.id, label: task.label, type: task.work, startedAt: task.startedAt }] : [])
   }
 
   apply(frame: ClaudeFrame): void {
@@ -91,6 +95,7 @@ export class ClaudeMonitoring {
         label: label(frame.description) ?? (work ? workLabels[work] : 'Background process'),
         active: status === undefined || status === 'running',
         foreground: frame.is_backgrounded === false,
+        startedAt: previous?.startedAt ?? new Date().toISOString(),
       })
       return
     }

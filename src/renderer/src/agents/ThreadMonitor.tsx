@@ -281,14 +281,16 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
-function ThreadOrnament({ kind, creature, label, title, status }: {
+function ThreadOrnament({ kind, creature, label, title, status, wide = false }: {
   readonly kind: 'monitoring' | 'working' | 'held'
   readonly creature: ReactNode
   readonly label: string
   readonly title: string
   readonly status: ReactNode
+  /** The readout carries more than a word and a count, so it gets the wider column. */
+  readonly wide?: boolean
 }): ReactNode {
-  return <div className="thread-monitor" data-ornament={kind} role="status" aria-live="polite" aria-atomic="true">
+  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} role="status" aria-live="polite" aria-atomic="true">
     <div className="thread-monitor__track">{creature}</div>
     <div className="thread-monitor__task" title={title}>
       <span className="thread-monitor__label">{label}</span>
@@ -306,18 +308,39 @@ export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitor
     status={tasks.length === 1 ? 'Monitoring' : `Monitoring ${tasks.length} tasks`} />
 }
 
-/** The readout's second line: the word for the state, and how many agents when there is more than one. */
-const workingStatus = (count: number): string => count > 1 ? `Working · ${count} agents` : 'Working'
+const commandCount = (count: number): string => `${count} command${count === 1 ? '' : 's'}`
+
+/** The readout's second line: the word for the state, how many agents when there is more than one, and any commands beside them. */
+const workingStatus = (agents: number, commands: number): string =>
+  ['Working', ...agents > 1 ? [`${agents} agents`] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
 
 /**
  * Observational only. The caller supplies this thread's live background work, provider-confirmed, and has
- * already judged that nothing stronger holds the track. Every task is named in the hover title.
+ * already judged that nothing stronger holds the track. Agents lead; a command running beside them is
+ * counted rather than drawn. Every task is named in the hover title.
  */
 export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroundWork[] }): ReactNode {
-  const first = work[0]
+  const agents = work.filter(task => task.type !== 'command')
+  const commands = work.filter(task => task.type === 'command')
+  const first = agents[0]
   if (!first) return null
-  return <ThreadOrnament kind="working" creature={<WorkingCreature agents={work.length} />}
-    label={first.label} title={work.map(task => task.label).join('\n')} status={workingStatus(work.length)} />
+  return <ThreadOrnament kind="working" creature={<WorkingCreature agents={agents.length} />}
+    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(agents.length, commands.length)}
+    wide={commands.length > 0} />
+}
+
+/**
+ * Observational only. The turn has ended and a command it left running in the background is still going,
+ * provider-confirmed; the caller judged that nothing stronger holds the track. It wears the held pose,
+ * because a command is waited on rather than worked, and counts from when Sotto saw it start.
+ */
+export function ThreadWaitingCommand({ commands, now }: { readonly commands: readonly AgentBackgroundWork[]; readonly now: number | undefined }): ReactNode {
+  const first = commands[0]
+  if (!first) return null
+  return <ThreadOrnament kind="held" creature={<HeldCreature key={first.id} />} label={first.label}
+    title={commands.map(task => task.label).join('\n')} wide={commands.length > 1}
+    status={<>Waiting{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
+      {first.startedAt ? <WaitedFor startedAt={first.startedAt} now={now} /> : null}</>} />
 }
 
 /**
