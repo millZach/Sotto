@@ -4,11 +4,14 @@ import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMEN
 import { Button } from '../components/Button'
 import './screenshots.css'
 
+// The refusals a file's own type and size decide, checked before anything is read.
+const NOT_A_SCREENSHOT = 'Choose PNG, JPEG, GIF, or WebP screenshots.'
+const TOO_LARGE = 'Each screenshot must be 10 MB or smaller.'
 const TOO_LARGE_IN_TOTAL = 'Screenshots must total 20 MB or less. Remove an image or choose smaller files.'
 
 function checkImage(file: File): void {
-  if (!(AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) throw new Error('Choose PNG, JPEG, GIF, or WebP screenshots.')
-  if (file.size > AGENT_MAX_IMAGE_BYTES) throw new Error('Each screenshot must be 10 MB or smaller.')
+  if (!(AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) throw new Error(NOT_A_SCREENSHOT)
+  if (file.size > AGENT_MAX_IMAGE_BYTES) throw new Error(TOO_LARGE)
 }
 
 function readImage(file: File): Promise<AgentAttachment> {

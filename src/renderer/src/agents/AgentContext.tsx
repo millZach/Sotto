@@ -281,8 +281,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second — the figure now includes whatever time a transition spent waiting
   // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
-  // Beside it, how many histories the window holds, roughly how large they are, and how often a selection
-  // or a view found its history already held: the numbers a byte budget for the cache would be set from.
+  // Beside it, how many thread details the window holds, roughly how large they are, and how often a
+  // selection or a view found its detail already held: the numbers a byte budget for them would be set from.
   useEffect(() => {
     if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
     const at = arrived.current
@@ -293,7 +293,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     reported.current = now
     console.info(`sotto: state update ${Math.round(now - at)} ms`)
     const kilobytes = Math.round(approximateDetailBytes(detail.held.values()) / 1024)
-    console.info(`sotto: history cache ${detail.held.size} held, about ${kilobytes} KB, ${detail.hits} hits, ${detail.misses} misses`)
+    console.info(`sotto: ${detail.held.size} thread details held, about ${kilobytes} KB, ${detail.hits} hits, ${detail.misses} misses`)
   }, [state, detail])
   return { state, error, command, threadDrafts }
 }

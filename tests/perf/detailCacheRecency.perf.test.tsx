@@ -80,7 +80,7 @@ function wire() {
   }
 }
 
-describe('the history cache over a session', () => {
+describe('the thread details the window holds, over a session', () => {
   it('reports how often coming back to the working thread fetched its history again', async () => {
     const link = wire()
     const { result } = renderHook(() => useAgentConnection(link.bridge))
@@ -121,7 +121,7 @@ describe('the history cache over a session', () => {
       jsonBytes: details.reduce((sum, detail) => sum + JSON.stringify(detail).length, 0),
       medianShellMs: round(median(shellTimes), 3),
     }
-    console.info(`history cache recency: ${JSON.stringify(report)}`)
+    console.info(`held detail recency: ${JSON.stringify(report)}`)
     expect(report.held).toBe(HELD)
     // The thread the user keeps coming back to is the last one the window should give up.
     expect(refetches).toBe(0)
