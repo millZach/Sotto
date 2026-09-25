@@ -128,12 +128,17 @@ it.each([
   { field: 'status', label: 'unknown status', bad: 'unknown-native-status' },
 ] as const)('rejects invalid live $field ($label) without poisoning unrelated state or authorizing native work', async ({ field, bad }) => {
   const { fixture, service, path } = await setup()
+  await service.connect()
   const chat = (await service.create()).chats[0]!
   await service.create()
   const native: CodexPersonalConversation = { ...chat, messages: [{ id: 'answer', role: 'assistant', text: 'Valid previous answer', createdAt: 'now' }] }
   vi.spyOn(fixture.adapter, 'personalSnapshot').mockReturnValue([native])
   vi.spyOn(fixture.adapter, 'refreshThread').mockImplementation(() => fixture.adapter.snapshot())
+  // Connect is a no-op once startup has connected. Reconnect after installing the
+  // snapshot so the valid history is accepted before the invalid observation.
+  await service.disconnect(); await fixture.adapter.closed()
   await service.connect(); await service.settled()
+  expect(serialized(service).chats.find(c => c.id === chat.id)?.messages).toEqual(native.messages)
   Object.assign(native, { [field]: bad })
   await service.refresh(chat.id); await service.settled()
   const state = serialized(service)
