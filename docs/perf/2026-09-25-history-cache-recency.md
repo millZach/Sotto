@@ -32,7 +32,7 @@ The size counts two bytes a string character, eight a number and four a boolean,
 ## Re-run
 
 ```sh
-npx vitest run tests/perf/detailCacheRecency.perf.test.tsx --reporter=verbose
+npx vitest run tests/perf/detailCacheRecency.perf.test.tsx --maxWorkers=1 --disable-console-intercept
 ```
 
-The test prints one `history cache recency:` line and fails if coming back to the working thread ever refetches. For the before figure, check out `origin/main`'s `src/renderer/src/agents/AgentContext.tsx` over this one and run it again; the test fails and still prints the line. The behaviour itself is pinned in `tests/unit/renderer/agentShellAssembly.test.tsx` under "which history the window gives up".
+It needs no switch: it counts refetches rather than timing anything, so it runs in the default `npm test` like `markdownRender.perf.test.tsx`. The test prints one `history cache recency:` line and fails if coming back to the working thread ever refetches. For the before figure, check out `origin/main`'s `src/renderer/src/agents/AgentContext.tsx` over this one and run it again; the test fails and still prints the line. The behaviour itself is pinned in `tests/unit/renderer/agentShellAssembly.test.tsx` under "which history the window gives up".

@@ -12,6 +12,8 @@ import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import type { AgentBridge, AgentState } from '../../src/shared/agents'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { agentBridgeFor } from '../fixtures/agentBridge'
+import { median, PERF_BENCH, round } from '../fixtures/perfBench'
+import { expectWithinBudget } from '../fixtures/perfBudget'
 
 /**
  * How long a settings change on one thread waits while another thread's answer is still pending.
@@ -23,8 +25,10 @@ import { agentBridgeFor } from '../fixtures/agentBridge'
  * that second call with `performance.now()`: when the command reaches the bridge, and when its reply
  * lands back in the window. Nothing a user wrote is read or reported, only the two durations.
  *
- * Runs only when asked: `SOTTO_PERF_LANES=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --disable-console-intercept`.
- * With `SOTTO_PERF_ASSERT=1` as well it also holds the window to its budget.
+ * It runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`). With `SOTTO_PERF_ASSERT=1` as well it
+ * also holds the settings change to reaching main within half the acknowledgement (`tests/fixtures/perfBudget.ts`):
+ *
+ *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1 --disable-console-intercept
  */
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -32,14 +36,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const RUNS = 8
 const ACKS_MS = [0, 250] as const
 
-const median = (values: number[]): number => {
-  const sorted = [...values].sort((first, second) => first - second)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
-}
-const round = (value: number): number => Math.round(value * 10) / 10
-
-describe.runIf(process.env.SOTTO_PERF_LANES === '1')('thread command lanes in the window', () => {
+describe.skipIf(!PERF_BENCH)('thread command lanes in the window', () => {
   it('reports how long one thread’s settings wait behind another thread’s pending answer', async () => {
     const report: Record<string, { reachedMainMs: number; replyMs: number; answerMs: number }> = {}
     for (const ackMs of ACKS_MS) {
@@ -82,7 +79,7 @@ describe.runIf(process.env.SOTTO_PERF_LANES === '1')('thread command lanes in th
         }
         unmount()
         report[`ack ${ackMs} ms`] = { reachedMainMs: round(median(reached)), replyMs: round(median(replied)), answerMs: round(median(answered)) }
-        if (process.env.SOTTO_PERF_ASSERT === '1' && ackMs > 0) expect(median(reached)).toBeLessThan(ackMs / 2)
+        if (ackMs > 0) expectWithinBudget(median(reached), ackMs / 2, `settings reaching main behind a ${ackMs} ms answer`)
       } finally {
         cleanup(); control.dispose(); await control.privacyChanged()
         // Only ever removes the folder this run made under the system's temporary directory.

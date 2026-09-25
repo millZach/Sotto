@@ -24,10 +24,10 @@ They are jsdom timings. jsdom's `FileReader` encodes on the main thread with Nod
 
 ## Re-run
 
-The benchmark reads real multi-megabyte files, so it is skipped unless asked for:
+The benchmark reads real multi-megabyte files and asserts no time, so it is skipped unless `SOTTO_PERF_BENCH=1` is set:
 
 ```sh
-SOTTO_PERF_SCREENSHOTS=1 npx vitest run tests/perf/screenshotTotal.perf.test.tsx --maxWorkers=1 --disable-console-intercept
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/screenshotTotal.perf.test.tsx --maxWorkers=1 --disable-console-intercept
 ```
 
 For the before column, check out `src/renderer/src/agents/ScreenshotInput.tsx` from this change's parent commit and run it again. The unit tests in `tests/unit/renderer/screenshotInput.test.tsx` pin the behaviour by count: a drop over the total, and one that crosses it with what is already attached, both refuse with no `FileReader` made, and a drop of exactly 20 MB is still read.

@@ -3,14 +3,16 @@
  * Synthetic framing cost of `ClaudeProtocol`: one native user replay frame carrying a base64 image,
  * handed to the stdout listener in 64 KiB pieces, the size a Node pipe read delivers. It times the
  * framer alone (byte counting, newline search, joining, one `JSON.parse`), not a Claude send.
+ * It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`):
  *
- *   npx vitest run tests/perf/claudeFramer.perf.test.ts
+ *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/claudeFramer.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { ClaudeProtocol, type ClaudeFrame } from '../../src/main/agents/claudeProtocol'
+import { median, PERF_BENCH } from '../fixtures/perfBench'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
 
@@ -31,12 +33,7 @@ function framer(): { feed: (chunk: string) => void; frames: ClaudeFrame[] } {
   return { feed: listener, frames }
 }
 
-function median(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
-}
-
-describe('Claude frame parser cost', () => {
+describe.skipIf(!PERF_BENCH)('Claude frame parser cost', () => {
   for (const mebibytes of [1, 10, 20]) {
     it(`frames a ${mebibytes} MiB image replay split into 64 KiB chunks`, () => {
       const line = replayFrame(mebibytes * 1024 * 1024)

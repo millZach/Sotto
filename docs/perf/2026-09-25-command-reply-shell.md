@@ -30,7 +30,7 @@ These are synthetic timings in a Vitest worker, not app latency. They do not inc
 ## Re-run
 
 ```sh
-SOTTO_PERF_COMMAND_REPLY=1 npx vitest run tests/perf/commandReply.perf.test.ts --silent=false --reporter=verbose
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/commandReply.perf.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
-It prints one `command reply:` line of JSON with the medians in milliseconds. Without the variable it is skipped, so the default `npm test` does not pay for it.
+It prints one `command reply:` line of JSON with the medians in milliseconds. Without `SOTTO_PERF_BENCH=1` it is skipped, like every benchmark that only reports timings, so the default `npm test` does not pay for it.

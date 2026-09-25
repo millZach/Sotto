@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentAttachment } from '../../src/shared/agents'
 import { ScreenshotInput } from '../../src/renderer/src/agents/ScreenshotInput'
+import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -24,12 +25,6 @@ function countReaders(): Counts {
   }
   vi.stubGlobal('FileReader', CountingReader)
   return counts
-}
-
-function median(values: readonly number[]): number {
-  const sorted = [...values].sort((left, right) => left - right)
-  const middle = sorted.length >> 1
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
 }
 
 /** A PNG-typed file of `bytes` zero bytes; the input checks type and size, not the signature. */
@@ -63,17 +58,19 @@ async function measure(label: string, files: File[], attachments: AgentAttachmen
   for (let index = 0; index < RUNS; index += 1) runs.push(await refusedDrop(files, attachments, refusal))
   const report = {
     label,
-    droppedMB: Number((files.reduce((sum, file) => sum + file.size, 0) / MB).toFixed(1)),
-    medianMs: Number(median(runs.map(run => run.ms)).toFixed(2)),
+    droppedMB: round(files.reduce((sum, file) => sum + file.size, 0) / MB),
+    medianMs: round(median(runs.map(run => run.ms)), 2),
     readers: runs[0]!.counts.readers,
-    encodedMB: Number((runs[0]!.counts.encodedChars / MB).toFixed(1)),
+    encodedMB: round(runs[0]!.counts.encodedChars / MB),
   }
   console.log(`screenshot total refusal: ${JSON.stringify(report)}`)
   return report
 }
 
-// Reads real multi-megabyte files through jsdom, so it stays out of the default run.
-describe.skipIf(process.env.SOTTO_PERF_SCREENSHOTS !== '1')('refusing screenshots that total more than 20 MB', () => {
+// Reads real multi-megabyte files through jsdom and asserts no time, so it runs only under `SOTTO_PERF_BENCH=1`
+// (`tests/fixtures/perfBench.ts`):
+//   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/screenshotTotal.perf.test.tsx --maxWorkers=1 --disable-console-intercept
+describe.skipIf(!PERF_BENCH)('refusing screenshots that total more than 20 MB', () => {
   it('floor: nine small screenshots, refused by count before any read on every version', async () => {
     const files = Array.from({ length: 9 }, (_, index) => screenshot(`${index}.png`, 8))
     const report = await measure('floor: 9 x 8 B refused by count', files, [], /Attach up to 8 screenshots/u)

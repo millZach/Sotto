@@ -1,4 +1,4 @@
-# Thread commands in the window's lanes
+# Thread commands in the window's lanes - September 25, 2026
 
 Issue #311. Main runs a thread's own commands in that thread's lane, and Stop in no lane at all. The window undid that. It sent most commands through one promise chain, so a command waited for the reply to the one before it, whichever thread that was. A permission change on Workshop waited for Docs' answer to come back before main heard of it.
 
@@ -9,10 +9,10 @@ The window now reads the same list main does, `THREAD_SCOPED_COMMAND_TYPES` in `
 `tests/perf/threadCommandLanes.perf.test.tsx` mounts the window's connection over a real coordinator and the fixture provider, in one process. Each run raises a fresh question on Docs, answers it, and at once changes Workshop's permission mode. It times, with `performance.now()`, when the Workshop change reaches the bridge and when its reply is back in the window. The fixture provider takes 0 ms or 250 ms to acknowledge the answer; 250 ms stands in for a real adapter's round trip. Each figure is the median of eight runs. No prompt, answer or thread text is read or reported, only durations.
 
 ```sh
-SOTTO_PERF_LANES=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --disable-console-intercept
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1 --disable-console-intercept
 ```
 
-It is skipped in the default run. With `SOTTO_PERF_ASSERT=1` as well it fails when the change takes more than half the acknowledgement to reach main.
+It is skipped without `SOTTO_PERF_BENCH=1`. With `SOTTO_PERF_ASSERT=1` as well it fails when the change takes more than half the acknowledgement to reach main.
 
 "Before" is `AgentContext.tsx` from `origin/main` at `242af9b1`, put back in this checkout for the run. "After" is this branch. Three runs of each, on the Windows development machine.
 

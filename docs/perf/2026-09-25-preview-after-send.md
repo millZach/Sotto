@@ -29,7 +29,7 @@ The write still happens, and it still runs on the main process. Serialising the 
 ## Re-run
 
 ```sh
-SOTTO_PERF_PREVIEW_SEND=1 npx vitest run tests/perf/previewSend.perf.test.ts --reporter=verbose --silent=false
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/previewSend.perf.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
-It is skipped without the variable. Each line it prints is timers only: nothing about the prompt or the image is recorded. The behaviour is pinned in `tests/unit/main/attachmentPreviews.test.ts`, including a refused send that writes nothing to the preview store.
+It is skipped without `SOTTO_PERF_BENCH=1`, because every send rewrites a store of tens of megabytes. Each line it prints is timers only: nothing about the prompt or the image is recorded. The behaviour is pinned in `tests/unit/main/attachmentPreviews.test.ts`, including a refused send that writes nothing to the preview store.

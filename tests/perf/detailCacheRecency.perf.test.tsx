@@ -5,6 +5,7 @@ import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import { approximateDetailBytes } from '../../src/renderer/src/agents/detailCacheSize'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST,
   type AgentBridge, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { median, round } from '../fixtures/perfBench'
 
 /**
  * Which history the window drops when it must drop one, over a scripted session. The window holds 16
@@ -79,8 +80,6 @@ function wire() {
   }
 }
 
-const median = (values: number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!
-
 describe('the history cache over a session', () => {
   it('reports how often coming back to the working thread fetched its history again', async () => {
     const link = wire()
@@ -120,7 +119,7 @@ describe('the history cache over a session', () => {
       held: heldIds.length,
       approximateBytes: approximateDetailBytes(details),
       jsonBytes: details.reduce((sum, detail) => sum + JSON.stringify(detail).length, 0),
-      medianShellMs: Number(median(shellTimes).toFixed(3)),
+      medianShellMs: round(median(shellTimes), 3),
     }
     console.info(`history cache recency: ${JSON.stringify(report)}`)
     expect(report.held).toBe(HELD)

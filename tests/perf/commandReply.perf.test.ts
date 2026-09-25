@@ -2,9 +2,9 @@
 /**
  * What one command's reply costs in main when eight threads hold long histories (issue #313).
  * The histories are synthetic and the timers read nothing but durations, so no thread content is
- * reported. Skipped unless asked for, because building and timing the fixture takes a few seconds:
+ * reported. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`):
  *
- *   SOTTO_PERF_COMMAND_REPLY=1 npx vitest run tests/perf/commandReply.perf.test.ts
+ *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/commandReply.perf.test.ts --maxWorkers=1 --disable-console-intercept
  *
  * Each command goes the way the desktop window sends it: the `AGENT_COMMAND` handler, the desktop
  * host router and the local host service, joined as `index.ts` joins them. The time is from the
@@ -25,6 +25,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../src/main/ipc/registerIpc'
 import { AGENT_COMMAND, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentState, type AgentThread } from '../../src/shared/agents'
+import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
 import { registerAgentIpc } from '../../src/main/agents/ipc'
@@ -58,12 +59,6 @@ class LongHistoryHost extends E2EAgentHost {
   }
 }
 
-function median(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
-}
-const round = (value: number): number => Math.round(value * 100) / 100
-
 async function time(work: () => unknown): Promise<number> {
   for (let index = 0; index < WARMUP; index++) await work()
   const samples: number[] = []
@@ -72,10 +67,10 @@ async function time(work: () => unknown): Promise<number> {
     await work()
     samples.push(performance.now() - started)
   }
-  return round(median(samples))
+  return round(median(samples), 2)
 }
 
-describe.skipIf(process.env.SOTTO_PERF_COMMAND_REPLY !== '1')('command reply cost', () => {
+describe.skipIf(!PERF_BENCH)('command reply cost', () => {
   let root = ''
   let control: AgentControl | undefined
   let dispose: (() => void) | undefined

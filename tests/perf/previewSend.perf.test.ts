@@ -4,10 +4,9 @@
  * store already holding some images. Drives the real coordinator and the real preview store on a
  * temporary folder; the provider is the in-process E2E host, so the numbers are Sotto's own work and
  * the disk, not a provider round trip. Timers only: nothing about the prompt or the image is recorded.
+ * It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`):
  *
- *   SOTTO_PERF_PREVIEW_SEND=1 npx vitest run tests/perf/previewSend.perf.test.ts
- *
- * Skipped without that variable, because every send rewrites a store of tens of megabytes.
+ *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/previewSend.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,9 +18,9 @@ import { AgentCredentials } from '../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentAttachment } from '../../src/shared/agents'
+import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
-const enabled = process.env.SOTTO_PERF_PREVIEW_SEND === '1'
 const SENDS = 9
 const MiB = 1024 * 1024
 
@@ -44,16 +43,10 @@ class TimedHost extends E2EAgentHost {
   }
 }
 
-function median(samples: number[]): number {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
-}
-const round = (value: number): number => Math.round(value * 10) / 10
-
 const roots: string[] = []
 afterAll(async () => { for (const root of roots) await rm(root, { recursive: true, force: true }) })
 
-describe.skipIf(!enabled)('send with an image', () => {
+describe.skipIf(!PERF_BENCH)('send with an image', () => {
   it.each([0, 10, 50])('reports admission to provider acknowledgement with %i MiB of previews already stored', async stored => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-perf-preview-send-')); roots.push(root)
     // Earlier sends, dated now so retention keeps them, one 1 MiB screenshot each.

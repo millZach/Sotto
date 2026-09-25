@@ -21,7 +21,18 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, `SOTTO_SIDE_WRITING_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
-- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. `markdownRender.perf.test.tsx` needs no data and does run: it renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters. Its elapsed-time comparison is opt-in like the other stopwatch budgets below.
+- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. The benchmarks that build their own workload and only report timings, `claudeFramer.perf.test.ts`, `commandReply.perf.test.ts`, `previewSend.perf.test.ts`, `screenshotTotal.perf.test.tsx` and `threadCommandLanes.perf.test.tsx`, skip themselves unless `SOTTO_PERF_BENCH=1` is set (`tests/fixtures/perfBench.ts`, which also holds the median they report). They tell a run nothing and cost it seconds, so CI never sets the switch. Two need no data and assert something other than time, so they do run: `markdownRender.perf.test.tsx` renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters; `detailCacheRecency.perf.test.tsx` scripts a session over the window's connection and always checks that coming back to the thread the user works in never fetches its detail again. The markdown file's elapsed-time comparison is opt-in like the other stopwatch budgets below.
+
+  Run a timing benchmark by hand on an idle machine. Each prints its medians to the console; the matching note in `docs/perf/` says what they mean:
+
+  ```powershell
+  $env:SOTTO_PERF_BENCH = '1'
+  npx vitest run tests/perf/claudeFramer.perf.test.ts --maxWorkers=1 --disable-console-intercept
+  ```
+
+  ```sh
+  SOTTO_PERF_BENCH=1 npx vitest run tests/perf/claudeFramer.perf.test.ts --maxWorkers=1 --disable-console-intercept
+  ```
 - **Wall-clock budgets.** See below.
 - **Desktop packaging and all publishing.** Desktop releases are still cut by hand on the Windows PC and the Apple silicon Mac. The Linux host archive is built and verified in its separate job, then published manually.
 
@@ -67,6 +78,7 @@ renderer tests for memoization and identical final markup run in CI.
 | 250 ms | `tests/integration/codexStreamingResponsiveness.test.ts`, `tests/integration/nativeStreamingResponsiveness.test.ts` | The longest main-process heartbeat gap while three threads stream 600 output updates, tested for Codex, Claude and Grok. Snapshot coalescing and lossless output are checked regardless of the budget switch. |
 | Less than half of structuredClone | `tests/unit/main/cloneHostSnapshot.test.ts` | Median internal snapshot copy with 24 MiB of retained output; container isolation and the incremental-storage work bound are always checked. |
 | Less than whole-message rendering | `tests/perf/markdownRender.perf.test.tsx` | Total elapsed time for rendering a reply in 40 incremental chunks against re-parsing each whole prefix. |
+| Half the answer's 250 ms acknowledgement | `tests/perf/threadCommandLanes.perf.test.tsx` | Median time for one thread's settings change to reach main while another thread's answer waits on its provider. It is a timing benchmark, so it also needs `SOTTO_PERF_BENCH=1`. |
 
 Run them by hand on an idle machine:
 
@@ -74,11 +86,14 @@ Run them by hand on an idle machine:
 $env:SOTTO_PERF_ASSERT = '1'
 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
+$env:SOTTO_PERF_BENCH = '1'
+npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
 
 ```sh
 SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
+SOTTO_PERF_ASSERT=1 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
 
 One test is skipped by platform rather than gated: *preserves an occupied broken-symlink backup

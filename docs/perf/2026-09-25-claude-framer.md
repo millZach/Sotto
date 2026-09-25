@@ -18,14 +18,14 @@ The framer now keeps the unfinished line as a list of fragments with a running b
 
 ## What these numbers are not
 
-They are synthetic framing cost, not app latency. They leave out the pipe, UTF-8 decoding, the Claude process and everything the adapter does with the frame, and they say nothing about a send that carries no image. They were taken on the development machine (Windows 11, Intel Core Ultra 9 275HX, Node v24.14.1) while other agents' test suites were running on it, so read them as sizes rather than budgets. There is no stopwatch assertion; the benchmark only checks that one frame came out.
+They are synthetic framing cost, not app latency. They leave out the pipe, UTF-8 decoding, the Claude process and everything the adapter does with the frame, and they say nothing about a send that carries no image. They were taken on the development machine (Windows 11, Intel Core Ultra 9 275HX, Node v24.14.1) while other agents' test suites were running on it, so read them as sizes rather than budgets. There is no stopwatch assertion; the benchmark only checks that one frame came out, and it is skipped unless `SOTTO_PERF_BENCH=1` is set.
 
 A side effect: `tests/unit/main/claudeProtocol.test.ts` feeds frames of about 28 MiB through the limit checks. Before the bytes-not-characters case was added, its tests took 6.6 s on the old framer and 0.2 s on the new one.
 
 ## Re-run
 
 ```sh
-npx vitest run tests/perf/claudeFramer.perf.test.ts --reporter=verbose --silent=false
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/claudeFramer.perf.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
 For the before figures, put the old framer in place (`git show 242af9b1:src/main/agents/claudeProtocol.ts`), run the same command, and restore the file.
