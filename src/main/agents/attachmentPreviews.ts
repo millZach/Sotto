@@ -88,36 +88,37 @@ export class AttachmentPreviews {
   maintain(): Promise<void> {
     return this.enqueue(async () => { if (this.prune()) await this.write() })
   }
+  /**
+   * Records the images a prompt carried once the provider has it. The entry is live at once, so the next publish
+   * carries its marker; the disk write follows in order and nothing waits on it to send. A failed write drops the
+   * entry again, which the window shows as an unavailable preview: the message itself was already sent.
+   */
   remember(threadId: string, messageId: string, commandId: string, attachments: AgentAttachment[]): Promise<void> {
-    return this.enqueue(async () => {
-      const entry = entrySchema.parse({ threadId, messageId, commandId, storedAt: this.now(), attachments })
-      this.prune()
-      const existing = this.entries.find(item => item.threadId === threadId && item.messageId === messageId)
-      if (existing) {
-        if (existing.commandId !== commandId || JSON.stringify(existing.attachments) !== JSON.stringify(entry.attachments)) {
-          throw new Error('That message already owns different attachment previews.')
-        }
-        if (this.dirty) await this.write()
-        return // A retry never extends retention or changes identity.
+    let entry: Entry
+    try { entry = entrySchema.parse({ threadId, messageId, commandId, storedAt: this.now(), attachments }) }
+    catch (error) { return Promise.reject(error) }
+    this.prune()
+    const existing = this.entries.find(item => item.threadId === threadId && item.messageId === messageId)
+    if (existing) {
+      if (existing.commandId !== commandId || JSON.stringify(existing.attachments) !== JSON.stringify(entry.attachments)) {
+        return Promise.reject(new Error('That message already owns different attachment previews.'))
       }
-      if (!attachments.length) return
-      const previous = this.entries
-      this.entries = [...this.entries, { ...entry, retain: this.enabled }]
-      this.dirty = true
-      this.prune()
+      // A retry never extends retention or changes identity.
+      return this.enqueue(async () => { if (this.dirty) await this.write() })
+    }
+    if (!attachments.length) return Promise.resolve()
+    const cached: Cached = { ...entry, retain: this.enabled }
+    this.entries = [...this.entries, cached]
+    this.dirty = true
+    this.prune()
+    return this.enqueue(async () => {
       try { await this.write() }
       catch (cause) {
-        this.entries = previous
-        throw new Error('Could not save attachment previews. The prompt was not sent.', { cause })
+        // Only this preview goes. What it pushed out under the size limit stays out: restoring entries here
+        // could bring back ones a privacy change has since cleared.
+        this.entries = this.entries.filter(item => item !== cached)
+        throw new Error('Could not save attachment previews.', { cause })
       }
-    })
-  }
-  forget(threadId: string, messageId: string, commandId: string): Promise<void> {
-    return this.enqueue(async () => {
-      const before = this.entries.length
-      this.entries = this.entries.filter(entry => entry.threadId !== threadId || entry.messageId !== messageId || entry.commandId !== commandId)
-      this.dirty ||= before !== this.entries.length
-      if (this.prune()) await this.write()
     })
   }
   /** Entries retention and the privacy setting still allow, keyed by thread and message. */

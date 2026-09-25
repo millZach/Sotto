@@ -2071,11 +2071,12 @@ export class AgentControl {
     let result
     if ((command.type === 'send' || command.type === 'steer') || command.type === 'answer') addTurnContext(turn, (command.type === 'send' || command.type === 'steer') ? command.text : command.answer)
     let providerLatencyMs: number | undefined
+    let previewAttachments: AgentAttachment[] = []
     try {
       this.canAct(); this.guardAuthority(command, turn); validate?.()
       if ((command.type === 'send' || command.type === 'steer') && command.attachments?.length) {
-        const attachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
-        await this.attachmentPreviews.remember(command.threadId, command.messageId, command.commandId, attachments)
+        // Checked before the provider hears anything; kept as a preview only once it has.
+        previewAttachments = validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, command.attachments)
       }
       if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
         const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
@@ -2089,7 +2090,6 @@ export class AgentControl {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, 'failed')
       await this.persist()
-      if ((command.type === 'send' || command.type === 'steer') && command.attachments?.length) await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
       throw error
     } finally {
       if (turn) turn.delegationMs += providerLatencyMs ?? 0
@@ -2097,6 +2097,11 @@ export class AgentControl {
         const delivery = this.state.deliveries?.find(item => item.threadId === command.threadId && item.draftId === draftId)
         this.setDelivery(command.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
+    }
+    // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
+    if ((command.type === 'send' || command.type === 'steer') && previewAttachments.length
+      && (result.accepted || result.uncertain || !this.outbox.some(item => item.id === command.commandId))) {
+      this.rememberPreviews(command.threadId, command.messageId, command.commandId, previewAttachments)
     }
     // An exact native message already reconciled this outbox item. Delivery is
     // settled even if its running turn prevents a later display/history read.
@@ -2119,9 +2124,6 @@ export class AgentControl {
         : 'The provider has not confirmed these thread settings in its state. Refresh to reconcile the existing save; it will not be replayed.')
       return
     }
-    if ((command.type === 'send' || command.type === 'steer') && !result.accepted && !result.uncertain && command.attachments?.length) {
-      await this.attachmentPreviews.forget(command.threadId, command.messageId, command.commandId)
-    }
     if (command.type === 'answer' && result.accepted) {
       if (!result.uncertain && answerIntent) this.recordAnsweredRequest(answerIntent)
       // The user gave this answer whether or not the provider confirmed taking it, so who gave it is recorded either way.
@@ -2131,6 +2133,18 @@ export class AgentControl {
     await this.persist()
     if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
     this.acceptSnapshot(await this.readThread(threadId, provider))
+  }
+  /**
+   * Keeps the images of a prompt the provider has taken, without holding the send on the disk write. A failed
+   * write leaves the preview unavailable, which is all a lost thumbnail costs; the message was already sent.
+   */
+  private rememberPreviews(threadId: string, messageId: string, commandId: string, attachments: AgentAttachment[]): void {
+    void this.attachmentPreviews.remember(threadId, messageId, commandId, attachments).catch(() => undefined)
+    // The provider's echo of this message can land while it is still being sent, and a window that already
+    // holds it undecorated would never be sent it again: the thread goes out whole on the next publish.
+    if (this.state.host.threads.find(thread => thread.id === threadId)?.messages.some(message => message.id === messageId)) {
+      this.publishedDetail.delete(threadId); this.detailSnapshots.delete(threadId); this.publish()
+    }
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachment[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[]): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
