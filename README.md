@@ -23,6 +23,7 @@ Sotto runs the Claude Code, Codex, Grok Build and Devin clients you already have
 - **One sidebar for every agent.** Each provider keeps its own sign-in and models. Sotto keeps the threads.
 - **You answer every request.** Anything a thread's permissions don't already allow waits for you.
 - **Tools beside each thread.** A browser, a terminal, the thread's files and its changes.
+- **Codex's Computer Use.** In a Codex thread set to Full access, with the Codex app open, Codex can operate the apps on your computer.
 - **Git in one press.** Commit, push and open a pull request. Leave the message empty and the agent writes it.
 - **Worktrees for parallel work.** Give a thread its own branch and folder, and remove the folder when you're done.
 - **Dictation anywhere.** Press `Ctrl+Shift+Space` (`⌃⇧Space` on a Mac), speak, and press it again. The text is copied and can be pasted at your cursor.

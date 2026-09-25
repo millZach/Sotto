@@ -27,7 +27,9 @@ async function removeProbe(root: string): Promise<void> {
 }
 // No reply, request or tool text is printed (AGENTS.md): only which known Computer Use outcome a text reports.
 const outcomeOf = (value: string | undefined): string | undefined => value === undefined ? undefined
-  : /windows sandbox failed|trusted Node process exited/i.test(value) ? 'sandbox stopped it'
+  : /can't run in this thread's sandbox/u.test(value) ? 'Sotto says: switch to Full access'
+    : /needs the Codex app open/u.test(value) ? 'Sotto says: open the Codex app'
+      : /windows sandbox failed|trusted Node process exited/i.test(value) ? 'sandbox stopped it'
     : /native pipe/i.test(value) ? 'native pipe unavailable (Codex app closed)'
       : /Native computer APIs are disabled/i.test(value) ? 'native computer APIs disabled'
         : /^UNAVAILABLE:/m.test(value) ? 'unavailable, other reason' : 'no failure reported'

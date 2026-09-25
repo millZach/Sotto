@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT, compactAgentIdentity, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
-type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'>
+type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
 // Display fields selected from installed codex-cli 0.154.0's generated schema.
 // Only displayable fields survive this
@@ -15,6 +15,29 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   collabAgentToolCall: ['tool', 'prompt', 'model', 'senderThreadId', 'receiverThreadIds', 'agentsStates'],
   webSearch: ['query'], contextCompaction: [],
 }
+/**
+ * Codex's Computer Use runs as MCP tool calls: `cua_repl`, or the general `node_repl` JavaScript tool with its
+ * `@oai/sky` library, which the computer-use skill imports on its first call and uses as `sky` after. The item
+ * carries no surface marker of its own (codex app-server 0.157.0), so this reads the server and the code.
+ */
+function isComputerUse(server: unknown, args: unknown): boolean {
+  if (server === 'cua_repl') return true
+  if (server !== 'node_repl') return false
+  const code = typeof args === 'object' && args !== null ? (args as { code?: unknown }).code : undefined
+  return typeof code === 'string' && /@oai\/sky|(?<![\w.$])sky\.\w+\(/u.test(code)
+}
+/**
+ * What Sotto can say about a Computer Use call that failed for a reason it recognises: Codex's sandbox stopped
+ * it, or the Codex app, whose helper Computer Use talks to, is closed (docs/verification/2026-09-25-…). The
+ * sandbox texts are Windows Codex's own; "trusted Node process exited" also names other crashes, so it counts as
+ * the sandbox's doing only outside Full access, where the advice to switch can be right.
+ */
+export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
+  if (!text) return undefined
+  if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
+  if (/native pipe/iu.test(text)) return 'Computer Use needs the Codex app open. Nothing was changed. Open Codex and ask again.'
+  return undefined
+}
 export const codexItemSchema = z.preprocess(value => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const item = value as Record<string, unknown>
@@ -22,7 +45,9 @@ export const codexItemSchema = z.preprocess(value => {
   // Native item variants reuse field names with different shapes (imageGeneration.result
   // is a string). Unsupported presentation must not break the shared transport or retain its payload.
   const keys = fields === undefined ? ['id', 'type'] : ['id', 'type', 'status', 'durationMs', ...fields]
-  return Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]))
+  const kept = Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]))
+  // The call's arguments are not kept; only whether it is Codex's Computer Use survives.
+  return item.type === 'mcpToolCall' && isComputerUse(item.server, item.arguments) ? { ...kept, computerUse: true } : kept
 }, z.object({
   id: z.string(), type: z.string(), clientId: z.string().nullish(), text: z.string().optional(),
   content: z.unknown().optional(), status: z.string().optional(), summary: z.array(z.string()).optional(),
@@ -34,7 +59,7 @@ export const codexItemSchema = z.preprocess(value => {
   agentsStates: z.record(z.string(), z.object({ status: z.string(), message: z.string().nullish() })).optional(),
   result: z.object({ content: z.array(z.unknown()).optional() }).nullish(),
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
-  query: z.string().optional(),
+  query: z.string().optional(), computerUse: z.literal(true).optional(),
 }))
 type Item = z.infer<typeof codexItemSchema>
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
@@ -114,7 +139,7 @@ export class CodexActivityProjection {
   item(thread: ActivityConversation, item: Item, context: Context): void {
     const kinds: Record<string, [AgentActivity['kind'], string]> = {
       commandExecution: ['command', 'Command'], fileChange: ['file-change', 'File changes'],
-      mcpToolCall: ['tool', [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
+      mcpToolCall: ['tool', item.computerUse ? 'Computer Use' : [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
       dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', 'Reasoning summary'],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
       webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
@@ -146,6 +171,9 @@ export class CodexActivityProjection {
     if (item.type === 'webSearch') activity.text = item.query
     const output = contentText(item.result?.content ?? item.contentItems)
     if (output !== undefined) activity.output = output
+    // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
+    const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined
+    if (needs) activity.error = [needs, item.error?.message].filter(Boolean).join('\n')
     if (item.type === 'collabAgentToolCall') {
       if (item.prompt != null) activity.text = item.prompt
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]
