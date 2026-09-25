@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentThreadDetailPublishes, type PublishScheduler } from '../../../src/main/agents/control'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -64,7 +65,7 @@ describe('the published shell', () => {
       : { type, status: 'off', error: null }
     const clone = vi.spyOn(globalThis, 'structuredClone')
     try {
-      const reply = await f.control.command(command)
+      const reply = await f.control.commandShell(command)
       // Check the work before the reply reaches the router: stripping histories after cloning
       // still blocks Electron's main thread, even though the renderer sees a small response.
       const historyCopies = clone.mock.calls.filter(([value]) => {
@@ -80,6 +81,55 @@ describe('the published shell', () => {
       } else expect(reply.voice).toMatchObject({ status: 'off', error: null })
     } finally { clone.mockRestore() }
     expect(f.control.threadDetail('workshop')?.messages.map(message => message.text)).toEqual(['Pick the palette', 'Indigo it is.'])
+  })
+
+  // Issue #313: every command used to answer with `get()`, a copy of every loaded history with preview
+  // markers walked into each message, which the IPC layer then stripped. Each lane's answer to a client is the shell.
+  it.each<[string, (draftId: string) => AgentCommand]>([
+    ['voice', () => ({ type: 'voice', action: 'mute' })],
+    ['spoken reply setting', () => ({ type: 'configure', patch: { speak: false } })],
+    ['select-thread', () => ({ type: 'select-thread', threadId: 'workshop' })],
+    ['observe-threads', () => ({ type: 'observe-threads', threadIds: ['workshop'] })],
+    ['rename-thread', () => ({ type: 'rename-thread', threadId: 'docs', title: 'Guide' })],
+    ['regenerate-thread-title', () => ({ type: 'regenerate-thread-title', threadId: 'workshop' })],
+    ['refresh-thread-skills', () => ({ type: 'refresh-thread-skills', threadId: 'workshop' })],
+    ['refresh on the global lane', () => ({ type: 'refresh' })],
+    ['connect on the provider lane', () => ({ type: 'connect', provider: 'claude' })],
+    ['manual-send on the thread lane', draftId => ({ type: 'manual-send', threadId: 'docs', text: 'Outline the next section', draftId })],
+    ['remove-followup', () => ({ type: 'remove-followup', threadId: 'docs', itemId: randomUUID() })],
+    ['interrupt', () => ({ type: 'interrupt', threadId: 'workshop' })],
+  ])('answers %s with the shell, without copying or decorating any history', async (_name, build) => {
+    const f = await fixture()
+    const get = vi.spyOn(f.control, 'get')
+    const decorate = vi.spyOn(AttachmentPreviews.prototype, 'decorate')
+    try {
+      const reply = await f.control.commandShell(build(randomUUID()))
+      expect(get).not.toHaveBeenCalled()
+      expect(decorate).not.toHaveBeenCalled()
+      expect(reply.host.threads.map(thread => thread.id)).toEqual(expect.arrayContaining(['workshop', 'docs']))
+      expect(reply.host.threads.every(thread => thread.messages.length === 0 && !thread.activities?.length)).toBe(true)
+      expect(reply.host.threads.find(thread => thread.id === 'workshop')!.summary).toMatchObject({ messageCount: 2 })
+    } finally { get.mockRestore(); decorate.mockRestore() }
+    // The history is still there for a window that asks for it.
+    expect(f.control.threadDetail('workshop')?.messages.map(message => message.text)).toEqual(['Pick the palette', 'Indigo it is.'])
+  })
+
+  it('answers a command sent while stopping with the shell and the reason', async () => {
+    const f = await fixture()
+    f.control.dispose()
+    const reply = await f.control.commandShell({ type: 'voice', action: 'mute' })
+    expect(reply.error).toMatch(/Sotto is stopping/)
+    expect(reply.host.threads.every(thread => thread.messages.length === 0)).toBe(true)
+  })
+
+  it('still gives a caller that reads histories the whole state from get() and command()', async () => {
+    const f = await fixture()
+    expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.map(message => message.text))
+      .toEqual(['Pick the palette', 'Indigo it is.'])
+    const reply = await f.control.command({ type: 'voice', action: 'mute' })
+    expect(reply.error).toBeNull()
+    expect(reply.host.threads.find(thread => thread.id === 'workshop')!.messages.map(message => message.text))
+      .toEqual(['Pick the palette', 'Indigo it is.'])
   })
 
   it('carries every thread with the facts a row reads and none of its history', async () => {
