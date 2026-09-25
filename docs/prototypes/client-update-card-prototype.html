@@ -1,0 +1,165 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not part of the build; delete once a variant is picked.
+  Question: what the client update card offers when an update ran but the client still reports the
+  old version ("did not change"), and when the installer failed. Today neither state has a button in
+  the card, and the "did not change" sentence is shown twice.
+  Three variants, switchable with ?variant=A|B|C, the arrows at the bottom, or the ← → keys.
+  Colours approximate the dark theme's roles; spacing and type follow clientUpdates.css.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · client update card</title>
+<style>
+  :root {
+    --bg: #0b0b0c; --surface: #111214; --elevated: #17181b; --hairline: #2a2b30; --border: #3a3b41;
+    --text: #e8e8ea; --muted: #a3a3ab; --error: #f0938a; --update: #6fc3b0; --accent-wash: #1f2a28;
+    font-family: Figtree, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+  .room { position: fixed; inset: 0; padding: 28px 32px; color: #3b3c42; font-size: 13px; }
+  .room p { margin: 0 0 10px; }
+  .room .line { height: 10px; border-radius: 5px; background: #16171a; margin: 12px 0; }
+  .states { position: fixed; top: 16px; right: 20px; display: flex; gap: 6px; }
+  .states button { background: #1b1c20; color: var(--muted); border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+  .states button[aria-pressed='true'] { color: var(--text); border-color: var(--update); }
+
+  .card { position: fixed; right: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px));
+    border: 1px solid var(--hairline); border-left: 2px solid var(--update); border-radius: 12px;
+    background: var(--elevated); box-shadow: 0 18px 50px rgb(0 0 0 / .55); overflow: hidden; font-size: 12.5px; }
+  .card[data-tone='error'] { border-left-color: var(--error); }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 12px 14px 10px; border-bottom: 1px solid var(--hairline); }
+  .head strong { font-size: 13px; font-weight: 600; }
+  .head span { color: var(--muted); font-size: 11.5px; text-align: right; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; }
+  .row > div { display: grid; flex: 1; gap: 1px; min-width: 0; }
+  .row small { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; line-height: 1.45; }
+  .row small.error { color: var(--error); }
+  .mark { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--text); flex: none; opacity: .85; }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--hairline); background: var(--surface); }
+  .foot > span { color: var(--muted); font-size: 11.5px; }
+  .foot > div { display: flex; gap: 8px; }
+  .body { padding: 10px 14px 12px; color: var(--muted); line-height: 1.5; }
+  .body p { margin: 0 0 6px; }
+  .body p:last-child { margin: 0; }
+  .body strong { color: var(--text); font-weight: 500; }
+  button.b { font: inherit; font-size: 12px; min-height: 28px; padding: 4px 10px; border-radius: 8px; cursor: pointer; flex: none; }
+  button.b:focus-visible { outline: 2px solid var(--update); outline-offset: 2px; }
+  .primary { background: var(--text); color: #111; border: 1px solid var(--text); font-weight: 600; }
+  .secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .ghost { background: transparent; color: var(--muted); border: 1px solid transparent; }
+  .ghost:hover { color: var(--text); }
+  .link { background: none; border: 0; padding: 0; color: var(--update); font: inherit; font-size: 11.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  details { border-top: 1px solid var(--hairline); }
+  details summary { padding: 8px 14px; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+  details p { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+
+  .switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
+    background: #f5d547; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 6px 20px rgb(0 0 0 / .5); font: 600 12px system-ui; z-index: 99; }
+  .switcher button { background: #111; color: #f5d547; border: 0; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; }
+  .switcher span { padding: 0 10px; min-width: 250px; text-align: center; }
+  .note { position: fixed; left: 32px; bottom: 70px; max-width: 520px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  .note strong { color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="room">
+    <p>Threads</p>
+    <div class="line" style="width:40%"></div><div class="line" style="width:62%"></div><div class="line" style="width:51%"></div>
+    <div class="line" style="width:70%"></div><div class="line" style="width:33%"></div>
+  </div>
+  <div class="states" role="group" aria-label="Card state">
+    <button data-state="unchanged">Did not change</button>
+    <button data-state="failed">Installer failed</button>
+    <button data-state="retrying">After a press</button>
+  </div>
+  <div class="note" id="note"></div>
+  <div id="card"></div>
+  <div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+
+<script>
+const VARIANTS = {
+  A: 'Try again on the row',
+  B: 'One next step in the footer',
+  C: 'Short line, reason behind Details',
+}
+const NOTES = {
+  A: '<strong>A — Try again on the row.</strong> The card keeps its shape. The Codex row says what happened once and carries its own <em>Try again</em>, like a failed row already does in Settings. The duplicate red paragraph goes.',
+  B: '<strong>B — One next step in the footer.</strong> The row only states versions. A short body explains in two sentences, and the footer leads with <em>Update again</em>, with <em>Open Settings</em> beside it for anyone who wants the details.',
+  C: '<strong>C — Short line, reason behind Details.</strong> The card shrinks to one sentence and one button. Why it happened (and the installer\'s own words, on failure) sits under a <em>Details</em> disclosure.',
+}
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+let state = ['unchanged', 'failed', 'retrying'].includes(params.get('state')) ? params.get('state') : 'unchanged'
+
+const mark = '<span class="mark" aria-hidden="true"></span>'
+const spinner = '<span style="width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--update);border-radius:50%;flex:none;display:inline-block;animation:s 900ms linear infinite"></span><style>@keyframes s{to{transform:rotate(360deg)}}</style>'
+const failedWords = 'npm ERR! code EBUSY'
+
+function A() {
+  if (state === 'retrying') return `<div class="card" role="status" aria-label="Updating clients">
+    <div class="head"><strong>Updating clients</strong><span>Leave this open until it finishes</span></div>
+    <div class="row">${mark}<div><span>Codex</span><small>Updating to 0.157.0…</small></div>${spinner}</div>
+    <div class="foot"><span>Checked just now</span><div></div></div></div>`
+  const failed = state === 'failed'
+  return `<div class="card" data-tone="${failed ? 'error' : ''}" role="status">
+    <div class="head"><strong>${failed ? 'Codex did not update' : 'Codex did not change'}</strong><span>${failed ? 'Your installed version is unchanged' : 'The update ran, but it still reports 0.156.1'}</span></div>
+    <div class="row">${mark}<div><span>Codex</span>
+      <small class="${failed ? 'error' : ''}">${failed ? `The installer stopped: ${failedWords}. Close anything using Codex, then try again.` : 'Still 0.156.1; 0.157.0 is published. Close other apps using Codex, then try again.'}</small></div>
+      <button class="b secondary">Try again</button></div>
+    <div class="foot"><span>Checked just now</span><div><button class="b ghost">Dismiss</button></div></div></div>`
+}
+
+function B() {
+  if (state === 'retrying') return `<div class="card" role="status">
+    <div class="head"><strong>Updating Codex</strong><span>Leave this open until it finishes</span></div>
+    <div class="body"><p>Installing 0.157.0, then connecting again.</p></div>
+    <div class="row">${mark}<div><span>Codex</span><small>0.156.1 → 0.157.0</small></div>${spinner}</div>
+    <div class="foot"><span>Checked just now</span><div></div></div></div>`
+  const failed = state === 'failed'
+  return `<div class="card" data-tone="${failed ? 'error' : ''}" role="status">
+    <div class="head"><strong>${failed ? 'Codex did not update' : 'Codex is still on 0.156.1'}</strong><span>Checked just now</span></div>
+    <div class="row">${mark}<div><span>Codex</span><small>0.156.1 installed · 0.157.0 published</small></div></div>
+    <div class="body">${failed
+      ? `<p>The installer stopped with <strong>${failedWords}</strong>. Nothing was changed.</p><p>Another app may be using Codex. Close it, then update again.</p>`
+      : `<p>The update ran, but Codex still answers with the old version.</p><p>Close other apps using Codex, then update again.</p>`}</div>
+    <div class="foot"><button class="b ghost">Not now</button><div><button class="b secondary">Open Settings</button><button class="b primary">Update again</button></div></div></div>`
+}
+
+function C() {
+  if (state === 'retrying') return `<div class="card" role="status">
+    <div class="row" style="padding:12px 14px">${mark}<div><span>Updating Codex to 0.157.0…</span></div>${spinner}</div></div>`
+  const failed = state === 'failed'
+  return `<div class="card" data-tone="${failed ? 'error' : ''}" role="status">
+    <div class="row" style="padding:12px 14px">${mark}<div><span>${failed ? 'Codex did not update.' : 'Codex is still on 0.156.1.'}</span>
+      <small>${failed ? 'Nothing was changed.' : '0.157.0 is published.'}</small></div>
+      <button class="b secondary">Try again</button><button class="b ghost" aria-label="Dismiss">✕</button></div>
+    <details><summary>Details</summary><p>${failed
+      ? `The installer said: ${failedWords}. Another app may be using Codex. Close it, then try again.`
+      : 'The installer finished, but Codex still reports 0.156.1 when Sotto connects. Another app may still have the old Codex open. Close it, then try again.'}</p></details></div>`
+}
+
+const render = () => {
+  document.getElementById('card').innerHTML = { A, B, C }[variant]()
+  document.getElementById('label').textContent = `${variant} — ${VARIANTS[variant]}`
+  document.getElementById('note').innerHTML = NOTES[variant]
+  document.querySelectorAll('.states button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === state)))
+  const url = new URL(location.href); url.searchParams.set('variant', variant); url.searchParams.set('state', state)
+  history.replaceState(null, '', url)
+}
+const keys = Object.keys(VARIANTS)
+const step = d => { variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.querySelectorAll('.states button').forEach(b => b.onclick = () => { state = b.dataset.state; render() })
+addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+render()
+</script>
+</body>
+</html>
