@@ -79,7 +79,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin'
   const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
   const [reviewBusy, setReviewBusy] = useState(false)
-  const [stoppingPageOpening, setStoppingPageOpening] = useState(false)
+  const [stoppingGrant, setStoppingGrant] = useState(false)
   const address = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -124,12 +124,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
   }
   const focusTab = (id: string): void => document.getElementById(`browser-tab-${id}`)?.focus()
   // Stop takes its own line away, so focus goes to the address, the next thing the eye reads.
-  const stopPageOpening = (): void => {
-    setStoppingPageOpening(true); setProblem(null)
-    void store.revokePageOpening(bridge, threadId).then(error => {
+  const stopGrant = (): void => {
+    setStoppingGrant(true); setProblem(null)
+    void store.stopGrant(bridge, threadId).then(error => {
       if (error) setProblem(error)
       else requestAnimationFrame(() => address.current?.focus())
-    }).finally(() => setStoppingPageOpening(false))
+    }).finally(() => setStoppingGrant(false))
   }
   const startNew = (): void => {
     setCreating(true)
@@ -195,7 +195,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
             <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
           {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
-            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>
+            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : `Let the agent in this thread read page contents and screenshots.${browser.grant ? ' It can already open, click and type here without asking.' : ' Opening, clicking and typing still ask you.'}`} onClick={() => void reviewPage('share')}>
             <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
         </> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
@@ -228,9 +228,9 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           </select>
         </> : null}
     </form>
-    {browser.pageOpening ? <div className="browser-page-opening">
-      <span>This thread may open pages without asking</span><span aria-hidden="true">·</span>
-      <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread open pages without asking" title="Opening and going to pages will ask you again" disabled={stoppingPageOpening} onClick={stopPageOpening}>Stop</button>
+    {browser.grant ? <div className="browser-grant">
+      <span>This thread uses the browser without asking</span><span aria-hidden="true">·</span>
+      <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread use the browser without asking" title="This thread will ask before opening, clicking or typing again" disabled={stoppingGrant} onClick={stopGrant}>Stop</button>
     </div> : null}
     {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}

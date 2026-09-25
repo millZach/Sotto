@@ -8,6 +8,8 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 const SHOTS = resolve('artifacts/agent-browser')
 const GRANT_SHOTS = resolve('artifacts/browser-grant')
 const CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{padding:20px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}.landscape{height:120px;background:linear-gradient(150deg,#dbe0d0 35%,#a7b8a0 35%,#a7b8a0 57%,#688a73 57%,#688a73 76%,#294b3e 76%);margin:20px 0}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:12px 18px;font:inherit}#saved{min-height:28px}</style></head><body><header>Fieldnotes</header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><div class="landscape"></div><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved';localStorage.setItem('saved','yes')">Save trail</button><p id="saved" role="status"></p></main></body></html>`
+// Test 2's own page, apart from CONTENT: an input field to prove typing runs without asking, kept off the other test's element order.
+const GRANT_CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{padding:20px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}.landscape{height:120px;background:linear-gradient(150deg,#dbe0d0 35%,#a7b8a0 35%,#a7b8a0 57%,#688a73 57%,#688a73 76%,#294b3e 76%);margin:20px 0}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:12px 18px;font:inherit}input{display:block;margin-top:12px;padding:8px;font:inherit}#saved{min-height:28px}</style></head><body><header>Fieldnotes</header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><div class="landscape"></div><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved';localStorage.setItem('saved','yes')">Save trail</button><p id="saved" role="status"></p><input id="note" type="text" placeholder="Trail notes"></main></body></html>`
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, size) => {
     const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
@@ -24,10 +26,14 @@ async function screenshot(launched: LaunchedSotto, name: string, native: boolean
   const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
     const bounds = BrowserWindow.getAllWindows().find(item => item.getTitle() === title)!.getBounds()
     const scale = screen.getDisplayMatching(bounds).scaleFactor
-    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-    const source = sources.find(item => item.name === title)
-    if (!source) throw new Error('Native window capture unavailable')
-    return source.thumbnail.toPNG().toString('base64')
+    // The OS window manager can be slow to register the retitled window under load; a reached deadline costs nothing.
+    for (let attempt = 0; ; attempt++) {
+      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
+      const source = sources.find(item => item.name === title)
+      if (source) return source.thumbnail.toPNG().toString('base64')
+      if (attempt >= 9) throw new Error('Native window capture unavailable')
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
   }, title)
   await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
 }
@@ -45,7 +51,8 @@ test('agents and users share the real browser page, permissions, feedback and vi
   const report: Record<string, unknown> = {}
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      // This test proves the one-time permission cards, so it turns the ADR-0029 default off before the first open.
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', browserWithoutAsking: false })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
@@ -155,11 +162,14 @@ test('agents and users share the real browser page, permissions, feedback and vi
     await screenshot(launched, 'page-feedback', false)
     const selection = feedback.getByRole('button', { name: /Select page element/ })
     await selection.focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter')
+    await expect(feedback.getByText(/^Selected:/)).toBeVisible()
     await feedback.getByRole('textbox', { name: 'Browser feedback comment' }).fill('Give the saved trail message more space.')
+    await expect(feedback.getByRole('button', { name: 'Add to draft' })).toBeEnabled()
     await feedback.getByRole('button', { name: 'Add to draft' }).click()
     await expect(feedback).toBeHidden()
-    await expect.poll(() => page.evaluate(async () => { const state = await window.sotto!.agents!.get(); return state.threadDrafts?.find(item => item.threadId === 'workshop')?.text ?? '' })).toContain('Give the saved trail message more space.')
-    const draft = await page.evaluate(async () => { const state = await window.sotto!.agents!.get(); return state.threadDrafts?.find(item => item.threadId === 'workshop') })
+    // A connected host namespaces its thread IDs (`host:<id>:workshop`); match the same way review-comments.spec.ts and tools-sidecar.spec.ts do.
+    await expect.poll(() => page.evaluate(async () => { const state = await window.sotto!.agents!.get(); const id = state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`; return state.threadDrafts?.find(item => item.threadId === id)?.text ?? '' })).toContain('Give the saved trail message more space.')
+    const draft = await page.evaluate(async () => { const state = await window.sotto!.agents!.get(); const id = state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`; return state.threadDrafts?.find(item => item.threadId === id) })
     expect(draft?.attachments).toHaveLength(1)
     const finish = await agent('browser_finish', { ...target, status: 'completed', summary: 'Saved the trail and checked the confirmation.', unchecked: ['Reload persistence'] })
     expect(finish.isError).not.toBe(true)
@@ -189,10 +199,10 @@ test('agents and users share the real browser page, permissions, feedback and vi
   } finally { await closeSotto(launched); await new Promise<void>(done => server.close(() => done())) }
 })
 
-test('a thread the user lets open pages opens them without asking, previews follow the focused thread, and previews can be turned off', async () => {
+test('a thread uses the browser without asking by default, the user can stop or turn it off, and previews follow the focused thread', async () => {
   test.setTimeout(240_000)
   await mkdir(GRANT_SHOTS, { recursive: true })
-  const server = createServer((_request, response) => { response.writeHead(200, { 'content-type': 'text/html' }); response.end(CONTENT) })
+  const server = createServer((_request, response) => { response.writeHead(200, { 'content-type': 'text/html' }); response.end(GRANT_CONTENT) })
   await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Preview server unavailable')
   const url = `http://127.0.0.1:${address.port}/`
@@ -202,6 +212,7 @@ test('a thread the user lets open pages opens them without asking, previews foll
   const shot = (name: string) => page.screenshot({ path: join(GRANT_SHOTS, `${name}.png`), animations: 'disabled' })
   try {
     await page.evaluate(async () => {
+      // ADR-0029: this profile keeps the default, Let agents use the browser without asking, on.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
@@ -217,18 +228,48 @@ test('a thread the user lets open pages opens them without asking, previews foll
       await window.sotto!.browser!.answerAction({ threadId, workspaceId: task.workspaceId, pageId: task.pageId, taskId: task.id, actionId: task.pendingAction!.id, allow: false })
     }, threadId)
     const waitingOn = async (threadId: string) => expect.poll(async () => (await tasks(threadId)).some(task => task.pendingAction !== null)).toBe(true)
+    const pageReady = (threadId: string, pageId: string, expectedUrl: string) => expect.poll(() => page.evaluate(async ({ threadId, pageId }) => {
+      const listed = await window.sotto!.browser!.list({ threadId })
+      const shown = listed.ok ? listed.value.pages.find(item => item.id === pageId) : undefined
+      return shown ? `${shown.status} ${shown.url}` : 'missing'
+    }, { threadId, pageId })).toBe(`ready ${expectedUrl}`)
     const body = (result: { content: { type: string }[] }) => JSON.parse((result.content[0] as unknown as { text: string }).text) as { approvalRequired: boolean; task: { id: string; pageId: string; pendingAction: unknown } }
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const workshopPreview = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
     const docsPreview = page.getByRole('complementary', { name: 'Browser preview for Docs' })
-    const grantLine = panel.getByText('This thread may open pages without asking', { exact: true })
+    const grantLine = panel.getByText('This thread uses the browser without asking', { exact: true })
     const request = panel.getByRole('group', { name: 'Browser action permission' })
 
-    // The first open asks, and the request card offers the thread-wide answer.
-    const opening = agent('workshop', 'browser_open', { url, description: 'Checking the trail list' })
+    // A first open runs without asking by default, and the grant line names it.
+    const opened = await agent('workshop', 'browser_open', { url, description: 'Checking the trail list' })
+    expect(opened.isError).not.toBe(true)
+    expect(body(opened)).toMatchObject({ approvalRequired: false, task: { pendingAction: null } })
+    const firstTask = body(opened).task
     await expect(workshopPreview).toBeVisible()
     await workshopPreview.getByRole('button', { name: /Open browser task/ }).click()
-    await expect(request.getByRole('button')).toHaveText(['Allow once', 'Allow this thread to open pages', 'Deny'])
+    await expect(grantLine).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Stop sharing' })).toBeVisible()
+    await shot('grant-line')
+
+    // A click and typing also run without asking while the grant is live.
+    await pageReady('workshop', firstTask.pageId, url)
+    const click = await agent('workshop', 'browser_action', { pageId: firstTask.pageId, taskId: firstTask.id, action: { type: 'click', x: 40, y: 40 } })
+    expect(body(click)).toMatchObject({ approvalRequired: false })
+    await launched.app.evaluate(async ({ webContents }, url) => {
+      webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript("document.querySelector('#note').focus()")
+    }, url)
+    const typed = await agent('workshop', 'browser_action', { pageId: firstTask.pageId, taskId: firstTask.id, action: { type: 'type', text: 'Sunny today' } })
+    expect(body(typed)).toMatchObject({ approvalRequired: false })
+    await expect.poll(() => launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript("document.querySelector('#note').value"), url)).toBe('Sunny today')
+
+    // Stop makes the next open ask, with the three answers the setting being on would have skipped.
+    await panel.getByRole('button', { name: 'Stop letting this thread use the browser without asking' }).click()
+    await expect(grantLine).toBeHidden()
+    await expect(panel.getByRole('textbox', { name: 'Address' })).toBeFocused()
+    const asksAgain = agent('workshop', 'browser_open', { url: `${url}again`, description: 'Checking again' })
+    await waitingOn('workshop')
+    await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
+    await expect(request.getByRole('button')).toHaveText(['Allow once', 'Allow this thread to use the browser', 'Deny'])
     await shot('request-card')
     // At the minimum window, in light, the three answers wrap inside the panel rather than clipping.
     await resize(launched, 820, 560)
@@ -243,54 +284,40 @@ test('a thread the user lets open pages opens them without asking, previews foll
     await shot('request-card-820x560-light')
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
     await resize(launched, 1280, 800)
-    await request.getByRole('button', { name: 'Allow this thread to open pages' }).click()
-    const opened = await opening
-    expect(opened.isError).not.toBe(true)
-    const firstTask = body(opened).task
-    await expect(grantLine).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Stop sharing' })).toBeVisible()
-    await shot('grant-line')
-    await resize(launched, 820, 560)
-    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
-    await expect(grantLine).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await shot('grant-line-820x560-light')
-    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await resize(launched, 1280, 800)
-
-    // Later opens and navigations run without asking; clicks still ask, with no thread-wide answer.
-    const second = await agent('workshop', 'browser_open', { url: `${url}saved`, description: 'Checking saved trails' })
-    expect(second.isError).not.toBe(true)
-    const secondTask = body(second)
-    expect(secondTask).toMatchObject({ approvalRequired: false, task: { pendingAction: null } })
-    await expect(panel.getByRole('tab', { name: /Fieldnotes/ })).toHaveCount(2)
-    const moved = await agent('workshop', 'browser_action', { pageId: secondTask.task.pageId, taskId: secondTask.task.id, action: { type: 'navigate', url: `${url}saved?sort=recent` } })
-    expect(body(moved)).toMatchObject({ approvalRequired: false })
-    // A click is requested against the settled page on show; a page still loading refuses it as changed.
-    await expect.poll(() => page.evaluate(async pageId => {
-      const listed = await window.sotto!.browser!.list({ threadId: 'workshop' })
-      const shown = listed.ok ? listed.value.pages.find(item => item.id === pageId) : undefined
-      return shown ? `${shown.status} ${shown.url}` : 'missing'
-    }, secondTask.task.pageId)).toBe(`ready ${url}saved?sort=recent`)
-    await expect(panel.locator('.browser-viewport')).toBeVisible()
-    let clicked: Awaited<ReturnType<typeof agent>> | undefined
-    const click = agent('workshop', 'browser_action', { pageId: firstTask.pageId, taskId: firstTask.id, action: { type: 'click', x: 40, y: 40 } }).then(result => { clicked = result; return result })
-    await expect.poll(async () => clicked ? `returned early: ${JSON.stringify(clicked.content[0])}` : (await tasks('workshop')).some(task => task.pendingAction !== null)).toBe(true)
-    await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
-    await expect(request.getByRole('button')).toHaveText(['Allow once', 'Deny'])
-    await request.getByRole('button', { name: 'Deny' }).click()
-    await click
-
-    // Stop ends it; the next open asks again.
-    await panel.getByRole('button', { name: 'Stop letting this thread open pages without asking' }).click()
+    // Answered once, the thread still is not granted: it stays stopped.
+    await request.getByRole('button', { name: 'Allow once' }).click()
+    const reopened = await asksAgain
+    expect(reopened.isError).not.toBe(true)
+    const stoppedTask = body(reopened).task
     await expect(grantLine).toBeHidden()
-    await expect(panel.getByRole('textbox', { name: 'Address' })).toBeFocused()
-    const asksAgain = agent('workshop', 'browser_open', { url: `${url}again`, description: 'Checking again' })
-    await waitingOn('workshop')
-    await deny('workshop'); await asksAgain
 
-    // Another thread's task never takes the focused thread's corner.
+    // A click then asks too, with the same three answers; the thread-wide one runs it and brings the line back.
+    await pageReady('workshop', stoppedTask.pageId, `${url}again`)
+    const secondClick = agent('workshop', 'browser_action', { pageId: stoppedTask.pageId, taskId: stoppedTask.id, action: { type: 'click', x: 40, y: 40 } })
+    await waitingOn('workshop')
+    await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
+    await expect(request.getByRole('button')).toHaveText(['Allow once', 'Allow this thread to use the browser', 'Deny'])
+    await request.getByRole('button', { name: 'Allow this thread to use the browser' }).click()
+    expect((await secondClick).isError).not.toBe(true)
+    await expect(grantLine).toBeVisible()
+    await shot('grant-line-restored')
+    // Stop again, so the later assertions below find this thread asking as they expect.
+    await panel.getByRole('button', { name: 'Stop letting this thread use the browser without asking' }).click()
+    await expect(grantLine).toBeHidden()
+
+    // Turning the setting off makes another thread, which never answered, ask too.
     await panel.getByRole('button', { name: 'Close tools panel' }).click()
+    await page.getByRole('link', { name: 'Settings' }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+    const grantToggle = page.getByRole('switch', { name: 'Let agents use the browser without asking' })
+    await expect(grantToggle).toBeChecked()
+    await grantToggle.click()
+    await expect(grantToggle).not.toBeChecked()
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).browserWithoutAsking)).toBe(false)
+    await grantToggle.scrollIntoViewIfNeeded()
+    await shot('settings-switch-grant')
+    await openThreads(page)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await expect(workshopPreview).toBeVisible()
     const docs = agent('docs', 'browser_open', { url, description: 'Checking the docs page' })
     await waitingOn('docs')
@@ -299,16 +326,16 @@ test('a thread the user lets open pages opens them without asking, previews foll
     await shot('focused-thread-preview')
     await deny('docs'); await docs
 
-    // The switch: no preview anywhere, and the work still shows in Tools > Browser.
+    // The preview switch: no preview anywhere, and the work still shows in Tools > Browser.
     await page.getByRole('link', { name: 'Settings' }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
-    const toggle = page.getByRole('switch', { name: 'Show browser previews' })
-    await expect(toggle).toBeChecked()
-    await toggle.click()
-    await expect(toggle).not.toBeChecked()
+    const previewToggle = page.getByRole('switch', { name: 'Show browser previews' })
+    await expect(previewToggle).toBeChecked()
+    await previewToggle.click()
+    await expect(previewToggle).not.toBeChecked()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).showBrowserPreviews)).toBe(false)
-    await toggle.scrollIntoViewIfNeeded()
-    await shot('settings-switch')
+    await previewToggle.scrollIntoViewIfNeeded()
+    await shot('settings-switch-previews')
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
     await expect(workshopPreview).toBeHidden()
@@ -324,7 +351,7 @@ test('a thread the user lets open pages opens them without asking, previews foll
     await request.getByRole('button', { name: 'Deny' }).click()
     await quiet
     expect(errors).toEqual([])
-    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedOpenWithoutAsking: true, navigateWithoutAsking: true, clickStillAsked: true, stopAskedAgain: true, otherThreadPreviewHidden: true, previewsOffHidden: true, toolsIconMarkedWaiting: true, errors }, null, 2))
+    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedByDefault: true, clickAndTypeWithoutAsking: true, stopAsksAgain: true, threadWideAnswerRestoresGrant: true, settingOffAsksOtherThread: true, otherThreadPreviewHidden: true, previewsOffHidden: true, toolsIconMarkedWaiting: true, errors }, null, 2))
   } catch (error) {
     await page.screenshot({ path: join(GRANT_SHOTS, 'failure.png') }).catch(() => undefined)
     console.error(await page.locator('body').innerText().catch(() => 'No renderer'))

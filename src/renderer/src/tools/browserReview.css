@@ -29,8 +29,8 @@
 .browser-task__evidence img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; }
 .browser-action-request p { overflow-wrap: anywhere; margin: 8px 0; }
 .browser-action-request > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.browser-page-opening { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 2px 10px 2px 12px; border-bottom: 1px solid var(--tt-border-faint); font-size: 14px; color: var(--tt-text-muted); }
-.browser-page-opening > span { min-width: 0; overflow-wrap: anywhere; }
+.browser-grant { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 2px 10px 2px 12px; border-bottom: 1px solid var(--tt-border-faint); font-size: 14px; color: var(--tt-text-muted); }
+.browser-grant > span { min-width: 0; overflow-wrap: anywhere; }
 .browser-tabs__waiting { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
 .browser-feedback { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: 12px; gap: 10px; }
 .browser-feedback p { margin: 0; font-size: 14px; color: var(--tt-text-muted); }

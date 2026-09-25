@@ -127,6 +127,7 @@ const settingKeys = [
   'responseStreaming',
   'localHostEnabled',
   'showBrowserPreviews',
+  'browserWithoutAsking',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
 ] as const satisfies readonly (keyof SettingsPatch)[]

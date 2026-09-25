@@ -20,7 +20,7 @@ describe('the browser permission card says what a press does', () => {
     for (const tool of browserToolDefinitions) {
       const text = ask(`mcp__${BROWSER_MCP_SERVER}__${tool.name}`, {})!.request.text
       expect(text).toContain('Sotto’s browser')
-      expect(text).toContain('still ask you in Tools')
+      expect(text).toContain('unless this thread uses the browser without asking')
       expect(text).not.toContain('mcp__')
       expect(text).not.toContain('{}')
     }
@@ -66,7 +66,7 @@ describe('a Grok permission for Sotto’s browser says the same thing', () => {
   it('reads the tool out of use_tool and its arguments out of tool_input', () => {
     const text = grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_open`, tool_input: { url: 'http://localhost:5173/' } })
     expect(text).toContain('open http://localhost:5173/')
-    expect(text).toContain('still ask you in Tools')
+    expect(text).toContain('unless this thread uses the browser without asking')
     expect(text).not.toContain('use_tool')
   })
 
@@ -93,7 +93,7 @@ describe('a Codex elicitation about Sotto’s browser says which browser', () =>
     const text = codexAsk({ serverName: BROWSER_MCP_SERVER, message: 'Approve app tool call?' })
     expect(text).toContain('Sotto’s browser')
     expect(text).toContain('Approve app tool call?')
-    expect(text).toContain('still ask you in Tools')
+    expect(text).toContain('unless this thread uses the browser without asking')
   })
 
   it('leaves another server’s elicitation alone', () => {

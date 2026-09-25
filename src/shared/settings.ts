@@ -118,6 +118,8 @@ export interface AppSettings {
   responseStreaming: 'live' | 'complete'
   /** Whether a browser task introduces itself in the corner of the Threads page. Off hides only the preview; the work and Tools > Browser carry on. */
   showBrowserPreviews: boolean
+  /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
+  browserWithoutAsking: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -246,6 +248,7 @@ const fieldSchemas = {
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
   showBrowserPreviews: z.boolean(),
+  browserWithoutAsking: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -319,6 +322,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webLinkDestination: 'external',
   responseStreaming: 'live',
   showBrowserPreviews: true,
+  browserWithoutAsking: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -432,6 +436,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
+    browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
