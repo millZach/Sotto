@@ -9,7 +9,7 @@ describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'revokePageOpening', 'viewport', 'capture']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
     const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
     const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
     const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
@@ -31,7 +31,7 @@ describe('tools IPC and preload boundary', () => {
     await expect(browser.share({ ...page, enabled: 'yes' } as never)).rejects.toThrow()
     await expect(browser.answerAction({ ...page, taskId: page.pageId, actionId: page.pageId, allow: 'true' } as never)).rejects.toThrow()
     await expect(browser.answerAction({ ...page, taskId: page.pageId, actionId: page.pageId, allow: true, forThread: 'yes' } as never)).rejects.toThrow()
-    await expect(browser.revokePageOpening({ threadId: 'thread' } as never)).rejects.toThrow()
+    await expect(browser.stopGrant({ threadId: 'thread' } as never)).rejects.toThrow()
     await expect(browser.viewport({ ...page, width: 0, height: 800 })).rejects.toThrow()
     await expect(browser.capture({ ...page, point: { x: -1, y: 0 } })).rejects.toThrow()
     expect(invoke).not.toHaveBeenCalled()
@@ -43,8 +43,8 @@ describe('tools IPC and preload boundary', () => {
     await browser.answerAction({ ...page, taskId: page.pageId, actionId: page.pageId, allow: true, forThread: true })
     expect(invoke).toHaveBeenLastCalledWith('sotto:browser:answerAction', { ...page, taskId: page.pageId, actionId: page.pageId, allow: true, forThread: true })
     invoke.mockResolvedValue({ ok: true, value: undefined })
-    await browser.revokePageOpening({ threadId: 'thread', workspaceId: page.workspaceId })
-    expect(invoke).toHaveBeenLastCalledWith('sotto:browser:revokePageOpening', { threadId: 'thread', workspaceId: page.workspaceId })
+    await browser.stopGrant({ threadId: 'thread', workspaceId: page.workspaceId })
+    expect(invoke).toHaveBeenLastCalledWith('sotto:browser:stopGrant', { threadId: 'thread', workspaceId: page.workspaceId })
   })
   it('validates comparisons and explicit checkpoint confirmation before crossing IPC, and offers no staging, commit or branch call', async () => {
     const rejected = { ok: false as const, error: { code: 'blocked' as const, message: 'A native operation is pending.' } }

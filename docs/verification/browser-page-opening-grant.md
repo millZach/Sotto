@@ -1,5 +1,7 @@
 # Page-opening grant, focused-thread previews and the preview switch (#232)
 
+Superseded on September 25, 2026 by ADR-0029 and `2026-09-25-browser-grant-by-default.md`: the page-opening grant this note checks became the browser grant, on by default, and its captures in `artifacts/browser-grant/` were retaken for it.
+
 Checked on September 22, 2026, on Windows, in the built app driven by `tests/e2e/agent-browser.spec.ts` against a local page server. Agent calls go through the e2e bridge into the same browser agent tools a provider reaches; answers are pressed in Tools the way a user presses them. The captures are in `artifacts/browser-grant/`. The native page is drawn by main over the window, so a renderer capture shows the pane dark where the page sits.
 
 ## The answer for the whole thread

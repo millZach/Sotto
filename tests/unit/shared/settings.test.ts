@@ -33,6 +33,7 @@ const customSettings = {
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
   showBrowserPreviews: false,
+  browserWithoutAsking: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -94,6 +95,11 @@ describe('settings', () => {
     expect(parseSettings({}).showBrowserPreviews).toBe(true)
     expect(parseSettings({ showBrowserPreviews: false }).showBrowserPreviews).toBe(false)
     expect(parseSettings({ showBrowserPreviews: 'no' }).showBrowserPreviews).toBe(true)
+  })
+  it('lets agents use the browser without asking for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0029)', () => {
+    expect(parseSettings({}).browserWithoutAsking).toBe(true)
+    expect(parseSettings({ browserWithoutAsking: false }).browserWithoutAsking).toBe(false)
+    expect(parseSettings({ browserWithoutAsking: 'no' }).browserWithoutAsking).toBe(true)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -237,6 +243,7 @@ describe('settings', () => {
       webLinkDestination: 'external',
       responseStreaming: 'live',
       showBrowserPreviews: true,
+      browserWithoutAsking: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',

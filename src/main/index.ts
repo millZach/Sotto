@@ -891,6 +891,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     async onSettingsChanged(settings): Promise<void> {
       workingCopySettings = settings
       worktreeCleanup?.settingsChanged()
+      browserService?.settingChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()
@@ -1023,6 +1024,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
+        byDefault: () => workingCopySettings.browserWithoutAsking,
       })
       const terminalService = new TerminalService({ files, directory: userDataPath, emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
       // A folder with a shell still running in it is not reclaimed under that shell.

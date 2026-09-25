@@ -23,7 +23,7 @@ function fake(initial: BrowserTask[] = [task()]) {
     create: vi.fn(async () => ok(page)), navigate: vi.fn(async () => ok(page)), back: vi.fn(async () => ok(page)), forward: vi.fn(async () => ok(page)), reload: vi.fn(async () => ok(page)), close: vi.fn(async () => ok(undefined)), mount: vi.fn(async () => ok(undefined)),
     share: vi.fn(async () => ok(page)), viewport: vi.fn(async () => ok(page)), capture: vi.fn(async () => ok(capture)),
     controlTask: vi.fn(async request => ok(task({ status: request.control === 'pause' ? 'paused' : 'working', updatedAt: Date.now() }))),
-    answerAction: vi.fn(async () => ok(task())), revokePageOpening: vi.fn(async () => ok(undefined)), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
+    answerAction: vi.fn(async () => ok(task())), stopGrant: vi.fn(async () => ok(undefined)), openLink: vi.fn(async () => ok({ destination: 'external' as const })),
     onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
   }
   return { bridge, emit: (event: BrowserEvent) => listeners.forEach(listener => listener(event)) }
@@ -111,19 +111,22 @@ describe('the shared browser preview', () => {
     render(<BrowserTaskDetails task={pending} bridge={browser.bridge} store={store.browser} />)
     expect(screen.getByText('Not checked: Saving')).toBeInTheDocument()
     expect(browser.bridge.answerAction).not.toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: 'Allow this thread to open pages' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     await waitFor(() => expect(browser.bridge.answerAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: pending.pendingAction!.id, allow: true })))
     expect(vi.mocked(browser.bridge.answerAction).mock.calls[0]![0]).not.toHaveProperty('forThread')
   })
-  it('offers the thread-wide answer for opening a page, and gives it only when that button is pressed', async () => {
+  it.each([
+    { type: 'navigate' as const, url: 'http://localhost:5173/', description: 'Open and share this page with the thread: http://localhost:5173/' },
+    { type: 'click' as const, x: 10, y: 20, description: 'Click at 10, 20 on localhost' },
+  ])('offers the thread-wide answer for every action, and gives it only when that button is pressed: $type', async action => {
     const browser = fake(); const store = new ToolsPanelStore()
-    const opening = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'navigate', url: 'http://localhost:5173/' }, description: 'Open and share this page with the thread: http://localhost:5173/', expiresAt: Date.now() + 10000 } })
+    const { description, ...actionPayload } = action
+    const opening = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: actionPayload, description, expiresAt: Date.now() + 10000 } })
     render(<BrowserTaskDetails task={opening} bridge={browser.bridge} store={store.browser} />)
     const group = screen.getByRole('group', { name: 'Browser action permission' })
-    expect([...group.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Allow once', 'Allow this thread to open pages', 'Deny'])
+    expect([...group.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Allow once', 'Allow this thread to use the browser', 'Deny'])
     expect(browser.bridge.answerAction).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Allow this thread to open pages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow this thread to use the browser' }))
     await waitFor(() => expect(browser.bridge.answerAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: opening.pendingAction!.id, allow: true, forThread: true })))
   })
 })

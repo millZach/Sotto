@@ -59,7 +59,7 @@ describe('browser service lifecycle', () => {
       webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1 }),
       contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) },
     }) as unknown as BrowserWindow
-    const service = new BrowserService({ files, getWindow: () => window, emit: vi.fn(), openExternal: vi.fn(), destination: async () => 'external' })
+    const service = new BrowserService({ files, getWindow: () => window, emit: vi.fn(), openExternal: vi.fn(), destination: async () => 'external', byDefault: () => false })
     cleanup.push(async () => service.dispose())
     const owner = unwrap(await service.list({ threadId: 'a' })).workspace
     const target = { threadId: 'a', workspaceId: owner.workspaceId }
@@ -81,7 +81,7 @@ describe('browser service lifecycle', () => {
     cleanup.push(() => rm(directory, { recursive: true, force: true }))
     const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
     const emit = vi.fn(), openExternal = vi.fn().mockResolvedValue(undefined)
-    const service = new BrowserService({ files, getWindow: () => null, emit, openExternal, destination: async () => 'external' })
+    const service = new BrowserService({ files, getWindow: () => null, emit, openExternal, destination: async () => 'external', byDefault: () => false })
     cleanup.push(async () => service.dispose())
     const owner = unwrap(await service.list({ threadId: 'a' })).workspace
     const target = { threadId: 'a', workspaceId: owner.workspaceId }
@@ -106,13 +106,13 @@ describe('browser service lifecycle', () => {
   })
 })
 
-async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set()) {
+async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set(), byDefault: () => boolean = () => false) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-actions-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const files = new FilesService({ resolveBinding: threadId => gone.has(threadId) ? null : ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), attached = new Set<WebContentsView>()
   const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1 }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
-  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded' })
+  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   const target = { threadId: 'a', workspaceId: owner.workspaceId }
@@ -356,7 +356,7 @@ describe('browser agent boundaries', () => {
 
 })
 
-describe('page-opening grant', () => {
+describe('browser grant (ADR-0029)', () => {
   const lastView = (): WebContentsView => vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
   async function grantThread(service: BrowserService, target: { threadId: string; workspaceId: string }) {
     const opened = unwrap(await service.agentOpen({ ...target, url: 'http://localhost:4555/', description: 'Check the app' }))
@@ -370,17 +370,29 @@ describe('page-opening grant', () => {
     const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
     await grantThread(service, owner)
     expect(lastView().webContents.getURL()).toBe('http://localhost:4555/')
-    expect(emit).toHaveBeenCalledWith({ type: 'page-opening', threadId: 'a', pageOpening: { grantedAt: expect.any(Number) } })
-    expect(unwrap(await service.list({ threadId: 'a' })).pageOpening).toEqual({ grantedAt: expect.any(Number) })
+    expect(emit).toHaveBeenCalledWith({ type: 'browser-grant', threadId: 'a', grant: { grantedAt: expect.any(Number), source: 'user' } })
+    expect(unwrap(await service.list({ threadId: 'a' })).grant).toEqual({ grantedAt: expect.any(Number), source: 'user' })
     const next = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4600/', description: 'Check the settings page' }))
     expect(next.approvalRequired).toBe(false)
     expect(next.task.pendingAction).toBeNull()
-    expect(next.task.steps.at(-1)).toMatchObject({ action: 'navigate', status: 'completed', detail: expect.stringContaining('Not asked: you let this thread open pages.') })
+    expect(next.task.steps.at(-1)).toMatchObject({ action: 'navigate', status: 'completed', detail: expect.stringContaining('Not asked: you let this thread use the browser without asking.') })
     expect(lastView().webContents.getURL()).toBe('http://localhost:4600/')
     expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === next.task.pageId)?.sharedOrigin).toBe('http://localhost:4600')
   })
 
-  it('also answers the thread’s opens already waiting when it is given, and no other thread’s', async () => {
+  it('is on by default: every action runs without a pending action, until the setting is off', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => true)
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'http://localhost:4555/', description: 'Check the app' }))
+    expect(opened.approvalRequired).toBe(false)
+    const request = { threadId: target.threadId, workspaceId: target.workspaceId, pageId: opened.task.pageId, taskId: opened.task.id }
+    const click = unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
+    expect(click.approvalRequired).toBe(false)
+    const typed = unwrap(await service.action({ ...request, action: { type: 'type', text: 'hello' } }))
+    expect(typed.approvalRequired).toBe(false)
+    expect(unwrap(await service.list({ threadId: 'a' })).grant?.source).toBe('settings')
+  })
+
+  it('also answers the thread’s requests already waiting when it is given, and no other thread’s', async () => {
     const { service, target } = await browserFixture()
     const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
     const other = { threadId: 'b', workspaceId: unwrap(await service.list({ threadId: 'b' })).workspace.workspaceId }
@@ -391,12 +403,12 @@ describe('page-opening grant', () => {
     unwrap(await service.answerAction({ ...owner, pageId: first.task.pageId, taskId: first.task.id, actionId: first.task.pendingAction!.id, allow: true, forThread: true }))
     const answered = await settled
     expect(answered?.pendingAction).toBeNull()
-    expect(answered?.steps.at(-1)).toMatchObject({ action: 'navigate', status: 'completed', detail: expect.stringContaining('Not asked: you let this thread open pages.') })
+    expect(answered?.steps.at(-1)).toMatchObject({ action: 'navigate', status: 'completed', detail: expect.stringContaining('Not asked: you let this thread use the browser without asking.') })
     expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === second.task.pageId)?.sharedOrigin).toBe('http://localhost:4600')
     expect(unwrap(await service.tasks(other)).find(task => task.id === elsewhere.task.id)?.pendingAction?.id).toBe(elsewhere.task.pendingAction!.id)
   })
 
-  it('lets the thread navigate its shared pages without asking, but still asks for every click and every keystroke', async () => {
+  it('lets the thread navigate, click and type its shared pages without asking once granted', async () => {
     const { service, target } = await browserFixture()
     const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
     const view = lastView()
@@ -404,14 +416,20 @@ describe('page-opening grant', () => {
     expect(moved.approvalRequired).toBe(false)
     expect(view.webContents.getURL()).toBe('http://localhost:4555/settings')
     const click = unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
-    expect(click.approvalRequired).toBe(true)
-    expect(click.task.pendingAction?.action.type).toBe('click')
-    expect(await service.answerAction({ ...request, actionId: click.task.pendingAction!.id, allow: true, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
-    unwrap(await service.answerAction({ ...request, actionId: click.task.pendingAction!.id, allow: false }))
+    expect(click.approvalRequired).toBe(false)
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.objectContaining({ type: 'mousePressed' }))
     const typing = unwrap(await service.action({ ...request, action: { type: 'type', text: 'hello' } }))
-    expect(typing.approvalRequired).toBe(true)
-    expect(view.webContents.debugger.sendCommand).not.toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.anything())
-    expect(view.webContents.debugger.sendCommand).not.toHaveBeenCalledWith('Input.insertText', expect.anything())
+    expect(typing.approvalRequired).toBe(false)
+  })
+
+  it('a waiting action whose page changed still does not run once granted', async () => {
+    const { service, target } = await browserFixture()
+    const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
+    const opened = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4555/', description: 'Check the app' }))
+    const request = { ...owner, pageId: opened.task.pageId, taskId: opened.task.id }
+    const view = lastView()
+    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4555/moved', false, true)
+    await expect(service.answerAction({ ...request, actionId: opened.task.pendingAction!.id, allow: true, forThread: true })).resolves.toMatchObject({ ok: false, error: { code: 'blocked' } })
   })
 
   it('revokes sharing when a granted navigation leaves the origin, as any navigation does', async () => {
@@ -422,14 +440,14 @@ describe('page-opening grant', () => {
     expect(await service.action({ ...request, action: { type: 'navigate', url: 'https://example.com/next' } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
   })
 
-  it('reaches no other thread and is never made by a denial or a one-time answer', async () => {
+  it('reaches no other thread and is never made by a denial', async () => {
     const { service, target } = await browserFixture()
     const other = { threadId: 'b', workspaceId: unwrap(await service.list({ threadId: 'b' })).workspace.workspaceId }
     const opened = unwrap(await service.agentOpen({ ...other, url: 'http://localhost:4555/', description: 'Check the app' }))
     const request = { ...other, pageId: opened.task.pageId, taskId: opened.task.id }
     expect(await service.answerAction({ ...request, actionId: opened.task.pendingAction!.id, allow: false, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
     unwrap(await service.answerAction({ ...request, actionId: opened.task.pendingAction!.id, allow: true }))
-    expect(unwrap(await service.list({ threadId: 'b' })).pageOpening).toBeNull()
+    expect(unwrap(await service.list({ threadId: 'b' })).grant).toBeNull()
     await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
     expect(unwrap(await service.agentOpen({ ...other, url: 'http://localhost:4700/', description: 'Another check' })).approvalRequired).toBe(true)
   })
@@ -438,10 +456,24 @@ describe('page-opening grant', () => {
     const { service, target, emit } = await browserFixture()
     const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
     await grantThread(service, owner)
-    unwrap(await service.revokePageOpening(owner))
-    expect(emit).toHaveBeenLastCalledWith({ type: 'page-opening', threadId: 'a', pageOpening: null })
-    expect(unwrap(await service.list({ threadId: 'a' })).pageOpening).toBeNull()
+    unwrap(await service.stopGrant(owner))
+    expect(emit).toHaveBeenLastCalledWith({ type: 'browser-grant', threadId: 'a', grant: null })
+    expect(unwrap(await service.list({ threadId: 'a' })).grant).toBeNull()
     expect(unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4600/', description: 'Check again' })).approvalRequired).toBe(true)
+  })
+
+  it('turning the setting off ends the settings grant but keeps a grant the user gave by answering', async () => {
+    let on = false
+    const { service } = await browserFixture(false, new Set(), () => on)
+    // Thread b gets an explicit user grant while the setting is off.
+    const userGranted = { threadId: 'b', workspaceId: unwrap(await service.list({ threadId: 'b' })).workspace.workspaceId }
+    await grantThread(service, userGranted)
+    on = true
+    expect(unwrap(await service.list({ threadId: 'a' })).grant?.source).toBe('settings')
+    expect(unwrap(await service.list(userGranted)).grant?.source).toBe('user')
+    on = false
+    expect(unwrap(await service.list({ threadId: 'a' })).grant).toBeNull()
+    expect(unwrap(await service.list(userGranted)).grant?.source).toBe('user')
   })
 
   it('ends with its thread and with the browser session', async () => {
@@ -451,12 +483,12 @@ describe('page-opening grant', () => {
     await grantThread(service, owner)
     gone.add('a')
     expect(await service.list({ threadId: 'a' })).toMatchObject({ ok: false, error: { code: 'thread-unavailable' } })
-    expect(emit).toHaveBeenLastCalledWith({ type: 'page-opening', threadId: 'a', pageOpening: null })
+    expect(emit).toHaveBeenLastCalledWith({ type: 'browser-grant', threadId: 'a', grant: null })
     gone.delete('a')
-    expect(unwrap(await service.list({ threadId: 'a' })).pageOpening).toBeNull()
+    expect(unwrap(await service.list({ threadId: 'a' })).grant).toBeNull()
     await grantThread(service, owner)
     service.dispose()
     const restarted = (await browserFixture()).service
-    expect(unwrap(await restarted.list({ threadId: 'a' })).pageOpening).toBeNull()
+    expect(unwrap(await restarted.list({ threadId: 'a' })).grant).toBeNull()
   })
 })

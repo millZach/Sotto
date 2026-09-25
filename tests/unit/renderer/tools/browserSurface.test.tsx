@@ -27,7 +27,7 @@ function fakeBrowser(initial: BrowserPage[] = []) {
     share: vi.fn(async ({ pageId, enabled }) => ok(page(pageId, { sharedOrigin: enabled ? 'http://localhost:5173' : null }))),
     viewport: vi.fn(async request => ok(page(request.pageId, { viewport: 'reset' in request ? null : { width: request.width, height: request.height } }))),
     capture: vi.fn(async () => ok({ image: 'data:image/png;base64,YWJj', url: 'http://localhost:5173/', width: 1280, height: 800, element: null })),
-    controlTask: vi.fn(), answerAction: vi.fn(), revokePageOpening: vi.fn(async () => ok(undefined)),
+    controlTask: vi.fn(), answerAction: vi.fn(), stopGrant: vi.fn(async () => ok(undefined)),
     list: vi.fn(async () => ok({ workspace, pages })),
     create: vi.fn(async ({ url }) => { const created = page(pages.length ? PAGE_2 : PAGE_1, { url, title: '', status: 'loading' }); pages = [...pages, created]; return ok(created) }),
     navigate: vi.fn(async ({ pageId, url }) => ok(page(pageId, { url, canGoBack: true }))),
@@ -149,38 +149,38 @@ describe('Browser surface', () => {
   })
 })
 
-describe('page-opening grant', () => {
-  it('says the thread may open pages without asking, and Stop ends it and returns focus to the address', async () => {
+describe('browser grant', () => {
+  it('says the thread uses the browser without asking, and Stop ends it and returns focus to the address', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
-    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], pageOpening: { grantedAt: 1 } }))
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], grant: { grantedAt: 1, source: 'settings' } }))
     setup(browser)
-    const stop = await within(panel()).findByRole('button', { name: 'Stop letting this thread open pages without asking' })
-    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+    const stop = await within(panel()).findByRole('button', { name: 'Stop letting this thread use the browser without asking' })
+    expect(within(panel()).getByText('This thread uses the browser without asking')).toBeInTheDocument()
     fireEvent.click(stop)
-    await waitFor(() => expect(browser.bridge.revokePageOpening).toHaveBeenCalledWith(target))
-    await waitFor(() => expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument())
+    await waitFor(() => expect(browser.bridge.stopGrant).toHaveBeenCalledWith(target))
+    await waitFor(() => expect(within(panel()).queryByText('This thread uses the browser without asking')).not.toBeInTheDocument())
     await waitFor(() => expect(within(panel()).getByRole('textbox', { name: 'Address' })).toHaveFocus())
   })
   it('says the grant may still be live when Stop fails, and keeps the line', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
-    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], pageOpening: { grantedAt: 1 } }))
-    vi.mocked(browser.bridge.revokePageOpening).mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'The browser is busy.' } })
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1)], grant: { grantedAt: 1, source: 'user' } }))
+    vi.mocked(browser.bridge.stopGrant).mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'The browser is busy.' } })
     setup(browser)
-    fireEvent.click(await within(panel()).findByRole('button', { name: 'Stop letting this thread open pages without asking' }))
-    expect(await within(panel()).findByText('Could not stop this thread opening pages. It may still open pages without asking; try Stop again. The browser is busy.')).toBeInTheDocument()
-    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
+    fireEvent.click(await within(panel()).findByRole('button', { name: 'Stop letting this thread use the browser without asking' }))
+    expect(await within(panel()).findByText('Could not stop this thread using the browser without asking; try Stop again. The browser is busy.')).toBeInTheDocument()
+    expect(within(panel()).getByText('This thread uses the browser without asking')).toBeInTheDocument()
   })
   it('follows main when the answer is given or ends elsewhere', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
     setup(browser)
     await within(panel()).findByRole('tab', { name: 'Vite App' })
-    expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument()
-    act(() => browser.emit({ type: 'page-opening', threadId: 'visual-gate', pageOpening: { grantedAt: 2 } }))
-    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
-    act(() => browser.emit({ type: 'page-opening', threadId: 'another-thread', pageOpening: null }))
-    expect(within(panel()).getByText('This thread may open pages without asking')).toBeInTheDocument()
-    act(() => browser.emit({ type: 'page-opening', threadId: 'visual-gate', pageOpening: null }))
-    expect(within(panel()).queryByText('This thread may open pages without asking')).not.toBeInTheDocument()
+    expect(within(panel()).queryByText('This thread uses the browser without asking')).not.toBeInTheDocument()
+    act(() => browser.emit({ type: 'browser-grant', threadId: 'visual-gate', grant: { grantedAt: 2, source: 'user' } }))
+    expect(within(panel()).getByText('This thread uses the browser without asking')).toBeInTheDocument()
+    act(() => browser.emit({ type: 'browser-grant', threadId: 'another-thread', grant: null }))
+    expect(within(panel()).getByText('This thread uses the browser without asking')).toBeInTheDocument()
+    act(() => browser.emit({ type: 'browser-grant', threadId: 'visual-gate', grant: null }))
+    expect(within(panel()).queryByText('This thread uses the browser without asking')).not.toBeInTheDocument()
   })
 })
 

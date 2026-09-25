@@ -1197,6 +1197,12 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ showBrowserPreviews: false })
   })
 
+  it('persists turning the browser grant off through settings IPC (ADR-0029)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { browserWithoutAsking: false })).resolves.toMatchObject({ browserWithoutAsking: false })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ browserWithoutAsking: false })
+  })
+
   it('persists and clears working-copy defaults through the settings allow-list', async () => {
     const { ipc, settings } = createIpcHarness()
     const patch = { threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }

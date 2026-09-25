@@ -35,7 +35,7 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       share: request => call(BROWSER_CHANNEL + 'share', browserShareSchema, browserPageSchema, request),
       controlTask: request => call(BROWSER_CHANNEL + 'controlTask', browserControlTaskSchema, browserTaskSchema, request),
       answerAction: request => call(BROWSER_CHANNEL + 'answerAction', browserAnswerActionSchema, browserTaskSchema, request),
-      revokePageOpening: request => call(BROWSER_CHANNEL + 'revokePageOpening', toolTargetSchema, z.undefined(), request),
+      stopGrant: request => call(BROWSER_CHANNEL + 'stopGrant', toolTargetSchema, z.undefined(), request),
       viewport: request => call(BROWSER_CHANNEL + 'viewport', browserViewportSchema, browserPageSchema, request),
       capture: request => call(BROWSER_CHANNEL + 'capture', browserCaptureSchema, browserCaptureResultSchema, request),
       list: request => call(BROWSER_CHANNEL + 'list', toolListRequestSchema, browserListingSchema, request),

@@ -94,7 +94,7 @@ ADR-0020 already says (a) was never the gate; this step makes that true for the 
 - Narrow `browserRequests.ts` to what can still reach a user, if anything.
 - **Tests.** Fixture tests: Grok's request for `sotto_browser` is answered without a pending request; the same request for any other tool still reaches the user. Re-run `SOTTO_BROWSER_TURN_LIVE=1` and expect "reached the tool without a native prompt" in all six cases.
 
-### Step 3. Let a thread use the browser without asking, by default (`feat/browser-thread-standing-grant`)
+### Step 3. Let a thread use the browser without asking, by default (`feat/browser-thread-grant`, done September 25, 2026)
 
 Zach picked: the grant covers everything (opening, navigating, clicking and typing), it is per thread, and it is on by default.
 

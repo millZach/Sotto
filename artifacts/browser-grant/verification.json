@@ -1,8 +1,9 @@
 {
-  "grantedOpenWithoutAsking": true,
-  "navigateWithoutAsking": true,
-  "clickStillAsked": true,
-  "stopAskedAgain": true,
+  "grantedByDefault": true,
+  "clickAndTypeWithoutAsking": true,
+  "stopAsksAgain": true,
+  "threadWideAnswerRestoresGrant": true,
+  "settingOffAsksOtherThread": true,
   "otherThreadPreviewHidden": true,
   "previewsOffHidden": true,
   "toolsIconMarkedWaiting": true,
