@@ -32,6 +32,7 @@ import { requestQuestionsDigest, type BindRequestDraftDecision } from './request
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
 import { resolveFilesBinding } from '../files/binding'
+import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -41,27 +42,6 @@ const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'utterance', 'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'select-attention', 'assign', 'unassign', 'resume', 'pause', 'interrupt', 'next', 'later',
   'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
-])
-/**
- * The commands that name one thread and act only on it. Each runs in that thread's own lane, so an
- * action on one thread never waits on an action on another, nor on the global lane.
- *
- * Everything else keeps the one global lane, including commands that carry a `threadId` but reach
- * past the thread they name:
- * - `assign`, `unassign`, `resume`, `pause` move assignment authority and hand the single composer
- *   draft to or from management, which supervision reads across every thread.
- * - `recover-draft` and `resume-draft` rebind that same single composer draft.
- * - `create-thread` has no existing thread to key a lane on, and it also takes the selection.
- * - `settle-project` and `restore-project` move every thread of a project at once.
- * `interrupt`, `select-thread`, `save-thread-draft`, `refresh-thread-skills` and the follow-up queue
- * edits are thread-scoped too, and are absent here because they never enter a lane at all: each one
- * answers before a lane is chosen, which is already the behaviour this list gives the rest, so none of
- * them waits on the global lane or on another thread. They are unchanged.
- */
-const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
-  'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
-  'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
-  'reclaim-thread-worktree', 'load-earlier-messages',
 ])
 
 const savedSchema = z.object({

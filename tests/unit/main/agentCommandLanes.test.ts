@@ -221,6 +221,22 @@ describe('prompt admission beside a thread lane', () => {
     expect((await first).error).toBeNull()
   })
 
+  it('runs a send made straight after a thread’s settings behind them, in the order they arrived', async () => {
+    const f = await fixture()
+    f.host.hold = true
+    const configure = f.control.command(options('docs', 'full-access'))
+    const send = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'After the settings' })
+    await vi.waitFor(() => expect(f.host.started).toEqual(['configure-thread:docs']))
+    await settled()
+    // The send is admitted, not diverted into the queue, and waits in the lane for the settings.
+    expect(f.host.started).toEqual(['configure-thread:docs'])
+    expect(f.control.get().followups ?? []).toEqual([])
+    f.host.hold = false; f.host.release()
+    expect((await configure).error).toBeNull(); expect((await send).error).toBeNull()
+    expect(f.host.started).toEqual(['configure-thread:docs', 'send:docs'])
+    expect(f.control.get().host.threads.find(thread => thread.id === 'docs')?.runtimeMode).toBe('full-access')
+  })
+
   it('dispatches a queued follow-up while other work on that thread is still in flight', async () => {
     const f = await fixture()
     f.host.hold = true
