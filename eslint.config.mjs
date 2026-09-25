@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/phase-three-themes/**',
       'artifacts/codex-questions-thread-agents/**',
       'artifacts/agent-browser/**',
       'artifacts/browser-grant/**',

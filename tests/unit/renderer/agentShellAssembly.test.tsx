@@ -63,6 +63,26 @@ function shellBridge(state: AgentState, options: { detail?: boolean } = {}) {
 }
 
 describe('assembling the window state from the shell', () => {
+  it('does not walk retained history again for unrelated shell updates', async () => {
+    let reads = 0
+    const messages = Array.from({ length: 200 }, (_, index) => ({
+      ...message(String(index), 'assistant', 'Retained history'),
+      get id() { reads++; return String(index) },
+    }))
+    const state = fullState([thread('workshop', messages)], 'workshop')
+    const wire = shellBridge(state)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state?.host.threads[0]?.messages.length).toBe(200))
+    wire.publish({ ...state, notice: 'First update' })
+    await waitFor(() => expect(result.current.state?.notice).toBe('First update'))
+    reads = 0
+    wire.publish({ ...state, notice: 'Another update' })
+    await waitFor(() => expect(result.current.state?.notice).toBe('Another update'))
+    // The shell summary may inspect the last message; reconciliation must not
+    // scan every retained message merely because another shell arrived.
+    expect(reads).toBeLessThan(10)
+  })
+
   it('splices the history it holds into each arriving shell and leaves the rest of the state alone', async () => {
     const messages = [message('a', 'user', 'Pick the palette'), message('bb', 'assistant', 'Indigo it is.')]
     const wire = shellBridge(fullState([thread('workshop', messages), thread('docs', [])], 'workshop'))

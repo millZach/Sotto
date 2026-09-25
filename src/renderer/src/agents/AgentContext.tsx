@@ -11,7 +11,7 @@ import { createE2EAgentVoiceEffects } from '../e2e/agentVoiceEffects'
 import { createConfiguredSpeech } from './naturalSpeech'
 import { playWakeCue } from './voiceCue'
 import { useAttentionReview, type AttentionReview } from './attentionReview'
-import { share } from './stateSharing'
+import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 
 export interface AgentConnection {
@@ -29,7 +29,7 @@ const SHELL_CACHE_INTERVAL_MS = 2_000
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {
   // A connection owns its command lane and draft durability knowledge. Neither page
   // navigation nor outstanding writes create a new store; a different bridge does.
-  const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown> }), [bridge])
+  const session = useMemo(() => ({ current: false, observed: 0, tail: Promise.resolve() as Promise<unknown>, share: createStateSharing() }), [bridge])
   /**
    * Main publishes every thread's state but only the history of the threads this window says it is
    * looking at, so the window holds those histories and splices them back into each arriving shell.
@@ -98,7 +98,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
       if (current?.session !== session || current.state.stale === true) return { session, state: assembled }
-      const state = share(current.state, assembled)
+      const state = session.share(current.state, assembled)
       return state === current.state ? current : { session, state }
     })
     if (options.urgent === true) commit(); else startTransition(commit)

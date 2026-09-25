@@ -16,7 +16,7 @@ import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './reques
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
-import { hasDraftContent, submissionStatus, useSubmissions, useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
+import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
@@ -67,8 +67,8 @@ export interface ThreadPaneProps {
   readonly onClose?: (() => void) | undefined
   /** An unfocused managed pane asks to take the selection before writing. */
   readonly onFocusPane?: (() => void) | undefined
-  /** Placed after the project title in the header. */
-  readonly crumb?: ReactNode
+  /** The working-copy control, placed after the project title in the header. */
+  readonly workingCopy?: ReactNode
   /** Placed at the end of the header actions. */
   readonly actions?: ReactNode
   /** Placed directly above the composer. */
@@ -83,7 +83,7 @@ export interface ThreadPaneProps {
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, crumb, actions, notice, now }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, workingCopy, actions, notice, now }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -99,7 +99,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Keyboard focus waiting for the composer that a handoff (Manage, Stop managing, Write here) mounts. */
   const handoff = useRef<{ readonly managed: boolean; readonly focused?: true; readonly until: number } | null>(null)
   const submissions = useSubmissions(store)
-  const paneDraft = useThreadComposer(store, row.thread.id)
+  // The pane only needs to know whether a draft exists. Subscribing to its text
+  // re-renders the transcript and header synchronously on every keystroke.
+  const paneHasDraft = useSyncExternalStore(store.subscribe, () => hasDraftContent(store.draft(row.thread.id)))
   // Management is the voice coordinator's own work, so with it hidden a managed thread still composes by hand.
   const coordinated = useVoiceCoordinatorEnabled()
   const thread = row.thread
@@ -123,7 +125,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const ornament = confirmed ?? (held === undefined ? undefined
     : <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />)
   // Sotto's own composer holds a managed thread's draft; every other pane keeps its own.
-  const composing = hasDraftContent(paneDraft.draft)
+  const composing = paneHasDraft
     || (managed && state.draftThreadId === thread.id && Boolean(state.draft.trim() || state.draftAttachments?.length))
   const capabilities = capabilitiesForThread(state.host, thread)
   /** This thread's own lane. Work on another thread leaves every control here live. */
@@ -227,7 +229,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={() => setRenaming(false)} /></h2>
           : <h2>{thread.title}</h2>}
-        <span className="thread-workspace__crumb"><span>{row.project?.title ?? row.provider}</span>{crumb}
+        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
         </span>

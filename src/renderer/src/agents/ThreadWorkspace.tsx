@@ -33,7 +33,7 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'onOpenAgents' | '
   return <ThreadsView {...props}
     tools={tools => <ToolsPanel {...tools} />}
     focusedPaneActions={<ToolsPanelToggle />}
-    paneCrumb={({ row, command: paneCommand }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={paneCommand} />}
+    paneWorkingCopy={({ row, command: paneCommand }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={paneCommand} />}
     paneNotice={({ row, command: paneCommand, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={paneCommand} onRecovered={focusPrompt} />}
     onPaneThreadsChange={observe}
   />

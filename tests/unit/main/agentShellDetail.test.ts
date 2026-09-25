@@ -3,6 +3,7 @@
  * The split between the shell every window gets and the history only a looked-at thread gets.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +15,7 @@ import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import * as detailMath from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentState, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import type { AgentCommand, AgentState, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 /** The whole detail an update must be for the assertion that follows to mean anything. */
 function whole(update: AgentThreadDetailUpdate | undefined): AgentThreadDetail {
@@ -55,6 +56,32 @@ async function fixture(schedule: PublishScheduler = immediatePublishScheduler) {
 }
 
 describe('the published shell', () => {
+  it.each(['save-thread-draft', 'voice-state'] as const)('%s replies without copying loaded histories', async type => {
+    const f = await fixture()
+    const draftId = randomUUID()
+    const command: AgentCommand = type === 'save-thread-draft'
+      ? { type, threadId: 'workshop', draftId, text: 'Keep this draft' }
+      : { type, status: 'off', error: null }
+    const clone = vi.spyOn(globalThis, 'structuredClone')
+    try {
+      const reply = await f.control.command(command)
+      // Check the work before the reply reaches the router: stripping histories after cloning
+      // still blocks Electron's main thread, even though the renderer sees a small response.
+      const historyCopies = clone.mock.calls.filter(([value]) => {
+        const state = value as Partial<AgentState> | null
+        return state?.host?.threads.some(thread => thread.messages.length > 0 || (thread.activities?.length ?? 0) > 0)
+      })
+      expect(historyCopies).toHaveLength(0)
+      expect(reply.error).toBeNull()
+      expect(reply.host.threads.every(thread => thread.messages.length === 0 && !thread.activities?.length)).toBe(true)
+      if (type === 'save-thread-draft') {
+        expect(reply.threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'workshop', draftId, text: 'Keep this draft' }))
+        expect(reply.threadDraftPersistence).toContainEqual({ threadId: 'workshop', draftId, status: 'saved' })
+      } else expect(reply.voice).toMatchObject({ status: 'off', error: null })
+    } finally { clone.mockRestore() }
+    expect(f.control.threadDetail('workshop')?.messages.map(message => message.text)).toEqual(['Pick the palette', 'Indigo it is.'])
+  })
+
   it('carries every thread with the facts a row reads and none of its history', async () => {
     const f = await fixture()
     const shell = f.control.shell()

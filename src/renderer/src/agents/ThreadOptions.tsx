@@ -162,12 +162,12 @@ function ChoiceChip({ label, placeholder, value, options, disabled, onChange }: 
  * focus returns to a closed chip unless the user has moved on. New thread and New terminal show the same three
  * controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true, draftText, onDraftText }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
   /** Present only beside an editable prompt; Ultrathink changes its visible text before sending. */
-  readonly draftText?: string
+  readonly getDraftText?: () => string
   readonly onDraftText?: (text: string) => void
 }): ReactNode {
   const [saving, setSaving] = useState<'effort' | 'other' | null>(null)
@@ -218,9 +218,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, draftTe
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
   const claude = (thread.providerId ?? model?.providerId) === 'claude' || /^claude(?: code)?$/iu.test(model?.provider ?? '')
-  const hasUltrathink = /\bultrathink\b/iu.test(draftText ?? '')
-  const addUltrathink = claude && draftText !== undefined && onDraftText ? (): void => {
-    if (!hasUltrathink) onDraftText(draftText ? `${draftText}${/\s$/u.test(draftText) ? '' : '\n\n'}ultrathink` : 'ultrathink')
+  const hasUltrathink = /\bultrathink\b/iu.test(getDraftText?.() ?? '')
+  const addUltrathink = claude && getDraftText && onDraftText ? (): void => {
+    const draftText = getDraftText()
+    if (!/\bultrathink\b/iu.test(draftText)) onDraftText(draftText ? `${draftText}${/\s$/u.test(draftText) ? '' : '\n\n'}ultrathink` : 'ultrathink')
   } : undefined
   const note = locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
   return <div className="thread-options-bar" data-provider-locked={locked}>

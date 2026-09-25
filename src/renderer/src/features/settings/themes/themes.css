@@ -376,11 +376,11 @@
 :root[data-theme-token-probe] *::before,
 :root[data-theme-token-probe] *::after { transition: none !important; }
 
-:root:has(.theme-editor[data-inspecting]) body,
-:root:has(.theme-editor[data-inspecting]) body * { cursor: crosshair; }
-:root:has(.theme-editor[data-inspecting]) .theme-editor,
-:root:has(.theme-editor[data-inspecting]) .theme-editor * { cursor: auto; }
-:root:has(.theme-editor[data-inspecting]) .theme-editor button { cursor: pointer; }
+:root[data-theme-inspecting] body,
+:root[data-theme-inspecting] body * { cursor: crosshair; }
+:root[data-theme-inspecting] .theme-editor,
+:root[data-theme-inspecting] .theme-editor * { cursor: auto; }
+:root[data-theme-inspecting] .theme-editor button { cursor: pointer; }
 
 #theme-inspector-spotlight {
   position: fixed;

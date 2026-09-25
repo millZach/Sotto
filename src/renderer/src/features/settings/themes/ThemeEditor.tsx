@@ -422,6 +422,9 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
       clearThemeInspectorHover()
       return
     }
+    // Keep the cursor mode explicit. A :root:has(...) rule with universal
+    // descendants invalidates the whole window when a textarea's text changes.
+    document.documentElement.setAttribute('data-theme-inspecting', '')
     let disarmAfterClick = false
     let hoverTarget: Element | null = null
     let hoverInspection: ThemeElementInspection | null = null
@@ -496,6 +499,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     window.addEventListener('resize', onResize)
     window.addEventListener('scroll', clearHover, true)
     return () => {
+      document.documentElement.removeAttribute('data-theme-inspecting')
       document.removeEventListener('pointerover', onPointerOver, true)
       document.removeEventListener('pointerout', onPointerOut, true)
       document.removeEventListener('pointerdown', onPointerDown, true)

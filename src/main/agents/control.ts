@@ -599,9 +599,10 @@ export class AgentControl {
   }
   /**
    * Records this moment's feedback evidence, then asks for a broadcast. A provider emits dozens of
-   * frames a second and every one of them publishes, so the broadcast itself — the full copy of
-   * every thread's history each listener receives — coalesces onto one run per window. Commands
-   * that `return this.get()` are untouched: their caller still gets the state its command produced.
+   * frames a second and every one of them publishes, so listener notifications coalesce onto
+   * one run per window. Commands
+   * still return the state their action produced. Draft saves and voice-status reports return the
+   * shell directly so a routine reply never copies histories the desktop router will discard.
    */
   private publish(feedback?: { receivedAt: number; threadId: string; draftId: string }): void {
     if (this.disposed) return
@@ -886,7 +887,7 @@ export class AgentControl {
       const draft = agentThreadDraftSchema.parse({ ...command, attachments: command.attachments ?? [],
         requestId: command.requestId ?? null, updatedAt: new Date().toISOString() })
       if (!this.state.threadDrafts?.some(item => item.threadId === draft.threadId)) this.thread(draft.threadId)
-      if (this.state.followupReceipts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId) || this.state.deliveredDrafts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId)) return this.get()
+      if (this.state.followupReceipts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId) || this.state.deliveredDrafts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId)) return this.shell()
       const submitted = this.state.deliveries?.find(item => item.threadId === draft.threadId && item.draftId === draft.draftId)
       if (submitted && submitted.status !== 'failed') throw new Error('Use a new draft revision when editing a submitted prompt.')
       const previous = this.state.threadDrafts?.find(item => item.threadId === draft.threadId)
@@ -908,7 +909,9 @@ export class AgentControl {
       await this.persist().catch(() => { throw new Error('Could not save this thread draft. Keep your text and images and retry when storage is available.') })
     } catch (error) { this.state.error = error instanceof z.ZodError ? 'Choose valid draft text and images before saving.' : error instanceof Error ? error.message : 'Could not save this thread draft.' }
     this.publish()
-    return this.get()
+    // Saving text needs exact revision/durability evidence, not a copy of every loaded history.
+    // The desktop router discards those histories anyway; copying them here blocks native input.
+    return this.shell()
   }
   private readonly skillReads = new Map<string, number>()
   private async refreshThreadSkills(threadId: string, forceReload = false): Promise<AgentState> {
@@ -1201,7 +1204,7 @@ export class AgentControl {
     }
     if (command.type === 'voice-state') {
       this.state.voice.status = command.status; this.state.voice.error = command.error; this.publish()
-      return Promise.resolve(this.get())
+      return Promise.resolve(this.shell())
     }
     if (command.type === 'voice') {
       this.state.voice.action = command.action; this.state.voice.revision += 1; this.publish()
