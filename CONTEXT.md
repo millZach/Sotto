@@ -78,6 +78,8 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Thread activity.** Provider-reported work alongside a thread's messages, including commands, file changes, visible summaries, tool results and subagent states. Activity is observational history, not a user message, an assignment or permission to act.
 
+**Computer Use.** Codex's own tool for seeing and operating the apps on the computer, named as Codex names it. In a Codex thread it works only in Full access and while the Codex desktop app is open; its calls show in the thread activity as Computer Use, and a call stopped by either condition says which. Sotto relays it and changes nothing about how Codex runs it. Avoid: using it for Sotto's own browser, which is the Tools panel's.
+
 **Native skill.** A reusable instruction set exposed by a provider for a thread's working copy. Selecting a skill adds reviewed text and a provider-recognized reference to that draft; it neither submits the draft nor grants authority.
 
 **File mention.** A file of a thread's working copy named in a draft by typing `@` and picking it, like a native skill's `$`: both are mentions, a sigil and a name written into the draft's own text. The mention is the reference — deleting its token removes the file from the send — and it reaches every provider as the same `@path` relative to the working copy. Files outside the working copy, git-administrative entries and paths containing a space are never offered.

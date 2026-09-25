@@ -8,7 +8,7 @@ const option = z.object({ label: z.string(), description: z.string().optional() 
 const question = z.object({ id: z.string(), question: z.string(), header: z.string().optional(), isOther: z.boolean().optional(), options: z.array(option).nullish() })
 const paramsSchema = z.object({ threadId: z.string(), itemId: z.string().optional(), command: z.string().nullish(), reason: z.string().nullish(), cwd: z.string().nullish(), permissions: z.record(z.string(), z.unknown()).optional(), networkApprovalContext: z.unknown().optional(),
   grantRoot: z.string().nullish(), availableDecisions: z.array(z.unknown()).nullish(), questions: z.array(question).optional(),
-  message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional(),
+  message: z.string().optional(), description: z.string().optional(), mode: z.string().optional(), requestedSchema: z.unknown().optional(), url: z.string().optional(),
   /** Named beside an elicitation, which is where an app tool confirmation arrives (issue #199). */
   serverName: z.string().optional(), request: z.unknown().optional() })
 export type CodexPendingRequest = { id: string | number; method: string; sessionId: string; params: z.infer<typeof paramsSchema>; request: AgentRequest }
@@ -21,6 +21,9 @@ const requestMethods: Record<string, { kind: 'permission' | 'question'; decline:
   'item/tool/requestUserInput': { kind: 'question', decline: () => ({ answers: {} }) },
   'mcpServer/elicitation/request': { kind: 'question', decline: () => ({ action: 'decline', content: null }) },
 }
+// codex app-server 0.157.0's generated schema lists OpenAI's own form under two spellings beside MCP's `form`, and
+// a `url` mode; the three forms carry a requested schema, the link does not.
+const formModes = new Set(['form', 'openai/form', 'openaiForm'])
 const formSchema = z.object({ type: z.literal('object'), properties: z.record(z.string(), z.unknown()), required: z.array(z.string()).nullish() })
 const fieldSchema = z.object({ type: z.string(), enum: z.array(z.string()).optional(), enumNames: z.array(z.string()).nullish(),
   oneOf: z.array(z.object({ const: z.string(), title: z.string() })).optional(), minLength: z.number().nullish(), maxLength: z.number().nullish(),
@@ -57,13 +60,17 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   const permission = mapping.kind === 'permission'
   const questions = params.questions ?? []
   const browser = method === 'mcpServer/elicitation/request' ? codexBrowserText(params) : undefined
+  const link = method === 'mcpServer/elicitation/request' && params.mode === 'url' ? params.url : undefined
   const text = browser ?? (permission ? params.command ?? fileSummary ?? params.reason ?? (params.grantRoot ? `Allow file changes under ${params.grantRoot}?` : 'Codex requests additional permissions. Answer in Codex for detailed scope.')
     : questions.length ? questions.map((q, i) => `${questions.length > 1 ? `${i + 1}. ` : ''}${q.question}${questions.length > 1 && q.options?.length ? ` (${q.options.map(o => o.label).join('; ')})` : ''}`).join('\n')
       : params.message ?? params.description ?? 'Codex needs your input.')
+    + (link ? `\n${link}` : '')
   let options: AgentRequest['options'] = permission ? [{ id: 'accept', label: 'Allow' }, { id: 'decline', label: 'Deny' }]
     : questions.length === 1 ? (questions[0]!.options ?? []).map(o => ({ id: o.label, label: o.label })) : []
   let formQuestions: AgentRequest['questions']
-  if (method === 'mcpServer/elicitation/request') {
+  // A link to open, not a form: Continue says the user has opened it, Decline refuses.
+  if (link) options = [{ id: 'continue', label: 'Continue' }, { id: 'decline', label: 'Decline' }]
+  if (method === 'mcpServer/elicitation/request' && formModes.has(params.mode ?? '')) {
     const form = formSchema.safeParse(params.requestedSchema)
     if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => {
       const field = fieldSchema.safeParse(value)
@@ -123,8 +130,10 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   }
   if (pending.method === 'mcpServer/elicitation/request') {
     if (approved === false) return declineRequest(pending.method)
-    if (pending.params.mode !== 'form') throw new Error('Complete this interactive question directly in Codex; Sotto cannot answer this form.')
-    const form = formSchema.parse(pending.params.requestedSchema)
+    if (pending.params.mode === 'url' && pending.params.url) return answer === 'decline' ? declineRequest(pending.method) : { action: 'accept', content: null }
+    const parsed = formModes.has(pending.params.mode ?? '') ? formSchema.safeParse(pending.params.requestedSchema) : undefined
+    if (!parsed?.success) throw new Error('Complete this interactive question directly in Codex; Sotto cannot answer this form.')
+    const form = parsed.data
     const keys = Object.keys(form.properties)
     let content: Record<string, unknown>
     if (questionAnswers) {
