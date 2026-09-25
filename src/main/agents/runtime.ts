@@ -46,6 +46,7 @@ export interface AgentRuntimeOptions {
   preferences?: ControlDependencies['preferences']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
+  releaseClient?: ControlDependencies['releaseClient']
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
   /** Native process overrides keep tests on the production coordinator path. */
@@ -130,6 +131,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
+    ...(options.releaseClient ? { releaseClient: options.releaseClient } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     reasoner,
   })

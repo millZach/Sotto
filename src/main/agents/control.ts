@@ -110,6 +110,10 @@ function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', 
 /** What a snapshot says about a connection that was refused, or undefined if it
  * connected. An adapter may report a refusal in the snapshot rather than by
  * throwing, so accepting one is not on its own evidence that it connected. */
+/** What a Connect press meets while that provider's client is being replaced. */
+function updatingRefusal(provider: ProviderId): string {
+  return `${PROVIDER_LABELS[provider]} is updating. It connects again when the update finishes.`
+}
 function connectionRefusal(snapshot: AgentHostSnapshot, provider: ProviderId | undefined, fallback: string): string | undefined {
   const requested = provider && snapshot.providers?.find(entry => entry.id === provider)
   if (requested && requested.connection !== 'connected') return requested.error || `${requested.name} did not confirm the connection.`
@@ -234,6 +238,11 @@ export class AgentControl {
     clients?: ProviderClients
     /** Where a client is installed. Injected so a test never reads the machine's real PATH. */
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
+    /**
+     * Anything else in this process running a client, told to let go of it before an install and
+     * handed back the way to take it again after. Personal chats hold their own copy of each client.
+     */
+    releaseClient?: (provider: ProviderId) => Promise<() => Promise<void>>
   }) {
     this.followupStore = new FollowupStore(dependencies.directory)
     this.clients = dependencies.clients ?? new ProviderClients()
@@ -718,7 +727,7 @@ export class AgentControl {
       const reading = await this.clients.check(provider.id, installed, executable)
       const before = fresh ? undefined : previous.find(item => item.id === provider.id)
       readings.push(before && before.state !== 'idle' && before.installed === reading.installed
-        ? { ...reading, state: before.state, ...(before.error ? { error: before.error } : {}) } : reading)
+        ? { ...reading, state: before.state, ...(before.error ? { error: before.error } : {}), ...(before.ranAt ? { ranAt: before.ranAt } : {}) } : reading)
     }
     if (this.disposed) return
     // A client that updated, failed or did not change still has something to say after its provider
@@ -765,9 +774,13 @@ export class AgentControl {
     try {
       const executable = await this.clientPath(provider)
       this.dependencies.host.disconnect(provider)
-      const result = await this.clients.install(provider, executable)
+      const restore = await this.dependencies.releaseClient?.(provider).catch(() => undefined)
+      let result: Awaited<ReturnType<ProviderClients['install']>>
+      // Handed back whatever the install did, without holding up the threads' own reconnect.
+      try { result = await this.clients.install(provider, executable) }
+      finally { void restore?.().catch(() => undefined) }
       if (!result.ok) {
-        this.setClientUpdate(provider, { state: 'failed', ...(result.detail ? { error: result.detail } : {}) })
+        this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}) })
         // The client was not replaced, so put the connection back the way it was.
         await this.dependencies.host.connect(provider).then(snapshot => this.acceptSnapshot(snapshot)).catch(() => undefined)
         throw new Error(`${PROVIDER_LABELS[provider]} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged.`)
@@ -787,14 +800,18 @@ export class AgentControl {
       // can check, so the reading says what the client actually reports.
       const running = this.state.clientUpdates?.find(item => item.id === provider)?.installed
       const moved = running !== undefined && running !== record.installed
-      this.setClientUpdate(provider, { state: moved ? 'updated' : 'unchanged',
+      this.setClientUpdate(provider, { state: moved ? 'updated' : 'unchanged', ranAt: new Date().toISOString(),
         ...(reconnectFailure ? { error: reconnectFailure } : {}) })
       if (reconnectFailure) throw new Error(`${PROVIDER_LABELS[provider]} updated, but did not reconnect. ${reconnectFailure}`)
       if (running === record.installed) {
-        throw new Error(`${PROVIDER_LABELS[provider]} still reports ${record.installed}. The update ran, but this client is the one still open. Close other windows using it and connect again.`)
+        throw new Error(`The installer finished, but ${PROVIDER_LABELS[provider]} still reports ${record.installed} when Sotto connects. Another app may still have the old ${PROVIDER_LABELS[provider]} open. Close it, then try again.`)
       }
       this.say(`${PROVIDER_LABELS[provider]} updated.`)
-    } finally { this.updatingClient = null }
+    } finally {
+      this.updatingClient = null; this.scheduleProviderReconnects()
+      // A Connect refused while this ran is answered now, one way or the other.
+      if (this.state.error === updatingRefusal(provider)) this.state.error = null
+    }
   }
   private observe(...threadIds: string[]): void {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
@@ -1475,7 +1492,10 @@ export class AgentControl {
     let failure: string | undefined
     try { this.state.error = null; await this.execute(command, turn); await this.persist() }
     catch (error) { failure = error instanceof Error ? error.message : 'Provider action failed.'; this.state.error = failure }
-    await this.finishTurn(turn, failure); this.publish(); return this.get()
+    await this.finishTurn(turn, failure); this.publish()
+    // Provider commands overlap, so each answers with its own outcome and not a refusal another one met meanwhile.
+    const state = this.get()
+    return failure === undefined ? { ...state, error: null } : state
   }
   private beginTurn(input: Parameters<TurnRecorder['begin']>[0]): ActiveTurn | undefined {
     try { return this.dependencies.turns?.begin(input) } catch { return undefined }
@@ -1560,6 +1580,12 @@ export class AgentControl {
         if (!['active', 'beta'].includes(this.state.membership.status)) this.state.assignments.forEach(a => { a.paused = true })
         return
       case 'connect': {
+        if (command.provider && this.updatingClient === command.provider) throw new Error(updatingRefusal(command.provider))
+        // Connecting every provider must still leave the one being replaced alone.
+        // A host with one provider at a time has nothing else to connect.
+        const others = !command.provider && this.updatingClient ? this.dependencies.host.concurrentProviders
+          ? enabledThreadProviders(this.state.configuration).filter(provider => provider !== this.updatingClient) : [] : undefined
+        if (others && !others.length) throw new Error(updatingRefusal(this.updatingClient!))
         if (command.provider) {
           this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
@@ -1569,7 +1595,9 @@ export class AgentControl {
         this.publish(); this.observe()
         try {
           if (this.disposed) throw new Error('Sotto is stopping. Reconnect after restarting it.')
-          const snapshot = await (command.provider ? this.dependencies.host.connect(command.provider) : this.dependencies.host.connect())
+          const snapshot = command.provider ? await this.dependencies.host.connect(command.provider)
+            : others ? (await Promise.all(others.map(provider => this.dependencies.host.connect(provider))), await this.dependencies.host.snapshot())
+            : await this.dependencies.host.connect()
           this.acceptSnapshot(snapshot)
           const refusal = connectionRefusal(snapshot, command.provider, `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           if (refusal) throw new Error(refusal)
@@ -2583,7 +2611,9 @@ export class AgentControl {
     this.state.connection = 'disconnected'; this.state.host.connected = false
   }
   private scheduleProviderReconnects(): void {
-    const retryable = (provider: ProviderId): boolean => !this.disposed
+    // A client being replaced is disconnected on purpose. Retrying it while npm runs starts the old
+    // binary again, and the update's own reconnect then finds that one connected and reads its version.
+    const retryable = (provider: ProviderId): boolean => !this.disposed && this.updatingClient !== provider
       && enabledThreadProviders(this.state.configuration).includes(provider)
       && this.state.host.providers?.find(status => status.id === provider)?.connection === 'disconnected'
     for (const provider of providerIdSchema.options) {

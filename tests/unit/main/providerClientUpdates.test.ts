@@ -2,7 +2,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { clientVersionOf, compareClientVersions } from '../../../src/main/agents/clientVersions'
@@ -190,7 +190,22 @@ class VersionedHost extends E2EAgentHost {
   override disconnect(): void { this.log.push('disconnect'); super.disconnect() }
 }
 
-async function coordinator(host: VersionedHost, run: RunLike, published = '1.0.40'): Promise<{ control: AgentControl }> {
+/** Publishes its disconnect the way a real provider host does, so the coordinator's retry sees it. */
+class PublishingHost extends VersionedHost {
+  private readonly watchers = new Set<(snapshot: AgentHostSnapshot) => void>()
+  override subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
+    this.watchers.add(listener)
+    const unsubscribe = super.subscribe(listener)
+    return () => { this.watchers.delete(listener); unsubscribe() }
+  }
+  override disconnect(): void {
+    super.disconnect()
+    void this.snapshot().then(snapshot => { for (const listener of this.watchers) listener(snapshot) })
+  }
+}
+
+async function coordinator(host: VersionedHost, run: RunLike, published = '1.0.40',
+  extra: Partial<ConstructorParameters<typeof AgentControl>[0]> = {}): Promise<{ control: AgentControl }> {
   const directory = await root('sotto-client-updates-')
   // A real npm global layout, so the channel is detected the way it is on a machine.
   const prefix = join(directory, 'npm')
@@ -206,6 +221,7 @@ async function coordinator(host: VersionedHost, run: RunLike, published = '1.0.4
     locateClient: async (provider: ProviderId) => join(prefix, `${provider}.exe`),
     reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
     membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) },
+    ...extra,
   })
   await control.start()
   return { control }
@@ -266,7 +282,7 @@ describe('updating a client from the app', () => {
       await control.command({ type: 'connect' })
       await control.command({ type: 'check-client-updates' })
       const result = await control.command({ type: 'update-client', provider: 'grok', force: true })
-      expect(result.error).toMatch(/still reports 1\.0\.5.*Close other windows/u)
+      expect(result.error).toMatch(/still reports 1\.0\.5 when Sotto connects.*Close it, then try again/u)
       expect(control.get().clientUpdates).toEqual([expect.objectContaining({ installed: '1.0.5', state: 'unchanged' })])
     } finally { control.dispose() }
   })
@@ -282,6 +298,68 @@ describe('updating a client from the app', () => {
       // The reading has to outlive the connection, or the sentence about it has nowhere to appear.
       expect(control.get().clientUpdates).toEqual([expect.objectContaining({ id: 'grok', state: 'unchanged',
         error: 'Grok CLI 1.0.40 sent an invalid response.' })])
+    } finally { control.dispose() }
+  })
+
+  it('does not start the old client again while npm is still replacing it', async () => {
+    // The live failure: the disconnect is published, the 5 s provider retry fires during a longer
+    // install and starts the old binary, and the update's own reconnect finds that one connected.
+    const host = new PublishingHost()
+    let release!: () => void
+    const running = new Promise<void>(resolve => { release = resolve })
+    const { control } = await coordinator(host, async () => { await running; host.installed = '1.0.40'; return { ok: true } })
+    try {
+      await control.command({ type: 'connect', provider: 'grok' })
+      await control.command({ type: 'check-client-updates' })
+      host.log.length = 0
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const update = control.command({ type: 'update-client', provider: 'grok', force: true })
+      await vi.advanceTimersByTimeAsync(6_000)
+      expect(host.log, 'nothing may reconnect the client npm is replacing').toEqual(['disconnect'])
+      const pressed = await control.command({ type: 'connect', provider: 'grok' })
+      expect(pressed.error).toMatch(/is updating\. It connects again when the update finishes/u)
+      expect(host.log).toEqual(['disconnect'])
+      vi.useRealTimers()
+      release()
+      const result = await update
+      expect(result.error).toBeNull()
+      expect(host.log).toEqual(['disconnect', 'connect'])
+      expect(control.get().clientUpdates).toEqual([expect.objectContaining({ installed: '1.0.40', state: 'updated' })])
+    } finally { vi.useRealTimers(); release(); control.dispose() }
+  })
+
+  it('leaves the client being replaced alone when every provider is asked to connect', async () => {
+    const host = new PublishingHost()
+    let release!: () => void
+    const running = new Promise<void>(resolve => { release = resolve })
+    const { control } = await coordinator(host, async () => { await running; host.installed = '1.0.40'; return { ok: true } })
+    try {
+      await control.command({ type: 'connect', provider: 'grok' })
+      await control.command({ type: 'check-client-updates' })
+      host.log.length = 0
+      const update = control.command({ type: 'update-client', provider: 'grok', force: true })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      // "Connect providers" on the Threads page names no provider.
+      const pressed = await control.command({ type: 'connect' })
+      expect(pressed.error).toMatch(/is updating\. It connects again when the update finishes/u)
+      expect(host.log).toEqual(['disconnect'])
+      release()
+      expect((await update).error).toBeNull()
+      expect(control.get().error, 'the refusal is answered once the update finishes').toBeNull()
+    } finally { release(); control.dispose() }
+  })
+
+  it('has personal chats let go of the client before npm runs, and take it back after', async () => {
+    const host = new VersionedHost()
+    const order: string[] = []
+    const { control } = await coordinator(host, async () => { order.push('install'); host.installed = '1.0.40'; return { ok: true } },
+      '1.0.40', { releaseClient: async provider => { order.push(`release ${provider}`); return async () => { order.push(`restore ${provider}`) } } })
+    try {
+      await control.command({ type: 'connect' })
+      await control.command({ type: 'check-client-updates' })
+      const result = await control.command({ type: 'update-client', provider: 'grok', force: true })
+      expect(result.error).toBeNull()
+      expect(order).toEqual(['release grok', 'install', 'restore grok'])
     } finally { control.dispose() }
   })
 
