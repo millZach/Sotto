@@ -632,6 +632,49 @@ describe('background work in the thread composer', () => {
     expect(ornament(view)!.dataset.ornament).toBe('held')
   })
 
+  const command = (label: string, index = 0, startedAt = new Date(NOW - 252_000).toISOString()) => ({
+    id: `7a1d2b3c-8f4b-4d3c-9a1e-${String(index).padStart(12, '0')}`, label, type: 'command' as const, startedAt,
+  })
+
+  it('waits on a command left running once the turn is over, named by its description and counted from its start', () => {
+    const { state, thread } = watched()
+    thread.status = 'idle'
+    thread.backgroundWork = [command('Run all CI gates')]
+    const view = renderThreads(state)
+    const node = ornament(view)!
+    expect(node.dataset.ornament).toBe('held')
+    expect(node.querySelector('.thread-monitor__label')).toHaveTextContent('Run all CI gates')
+    expect(node.querySelector('.thread-monitor__status')).toHaveTextContent('Waiting · 4m 12s')
+    thread.backgroundWork = [command('Run all CI gates'), command('Watch the dev server', 1)]
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(ornament(view)!.querySelector('.thread-monitor__status')).toHaveTextContent('Waiting · 2 commands · 4m 12s')
+    expect(ornament(view)!.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Run all CI gates\nWatch the dev server')
+    thread.backgroundWork = []
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(ornament(view)).toBeNull()
+  })
+
+  it('leaves a live turn to its own held action, even with a command in the background', () => {
+    const { state, thread } = watched()
+    thread.status = 'running'
+    thread.backgroundWork = [command('Run all CI gates')]
+    const view = renderThreads(state)
+    expect(ornament(view)).toBeNull()
+  })
+
+  it('lets agents lead and counts a command running beside them', () => {
+    const { state, thread } = watched()
+    thread.status = 'idle'
+    thread.backgroundWork = [...work(2), command('Run all CI gates')]
+    const view = renderThreads(state)
+    const node = ornament(view)!
+    expect(node.dataset.ornament).toBe('working')
+    expect(node.querySelector('.thread-monitor__label')).toHaveTextContent('Agent 1')
+    expect(node.querySelector('.thread-monitor__status')).toHaveTextContent('Working · 2 agents · 1 command')
+    expect(node.querySelectorAll('.thread-monitor__mini')).toHaveLength(2)
+    expect(node.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Agent 1\nAgent 2\nRun all CI gates')
+  })
+
   it.each(['disconnected', 'settled', 'archived', 'error', 'permission', 'question', 'blocked'] as const)(
     'hides the working creature for %s even though the work is still reported', reason => {
       const { state, thread } = watched()

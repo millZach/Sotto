@@ -16,20 +16,23 @@ export const agentMonitoringSchema = z.array(z.object({
 export type AgentMonitoringTask = z.infer<typeof agentMonitoringSchema>[number]
 
 /**
- * What kind of agent work the provider confirmed. Sotto's own names, not a provider's task types, so the
- * renderer never learns a native discriminant: a workflow, a subagent, a teammate or a remote agent.
+ * What kind of background work the provider confirmed. Sotto's own names, not a provider's task types, so
+ * the renderer never learns a native discriminant: a workflow, a subagent, a teammate, a remote agent, or a
+ * command left running in the background. A command is not an agent: it waits rather than works.
  */
-export const backgroundWorkTypes = ['workflow', 'subagent', 'teammate', 'remote-agent'] as const
+export const backgroundWorkTypes = ['workflow', 'subagent', 'teammate', 'remote-agent', 'command'] as const
 export type BackgroundWorkType = typeof backgroundWorkTypes[number]
 
 /**
- * Background work: agent work started from this thread that the provider confirms is still running,
- * whether or not a turn is. Observation only, like a watch; never restored from history and grants nothing.
+ * Background work: agent work or a command started from this thread that the provider confirms is still
+ * running, whether or not a turn is. Observation only, like a watch; never restored from history and grants nothing.
  */
 export const agentBackgroundWorkSchema = z.array(z.object({
   id: z.string().uuid(),
   label,
   type: z.enum(backgroundWorkTypes),
+  /** When Sotto saw it start, so a command's wait can be counted. */
+  startedAt: z.string().datetime().optional(),
 }).strict()).max(MAX_BACKGROUND_WORK)
 
 export type AgentBackgroundWork = z.infer<typeof agentBackgroundWorkSchema>[number]

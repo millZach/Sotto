@@ -18,6 +18,7 @@ import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
+import type { AgentBackgroundWork } from '../../shared/agentMonitoring'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
@@ -62,7 +63,9 @@ const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permi
  * Changing settings or rewinding restarts the CLI, and a restart ends the agents a thread still has running
  * (ADR-0023), so both wait for them rather than end work the user started without saying so.
  */
-const backgroundWorkRunning = (action: string): string => `This thread's background agents are still working. Nothing was changed. Wait for them to finish before ${action}.`
+/** Names what is still running, because a command such as a dev server may never finish on its own. */
+const backgroundWorkRunning = (work: readonly AgentBackgroundWork[], action: string): string =>
+  `${work.length === 1 ? `"${work[0]!.label}" is` : `${work.length} background tasks are`} still running for this thread. Nothing was changed. Wait for ${work.length === 1 ? 'it' : 'them'} to finish, or ask Claude to stop ${work.length === 1 ? 'it' : 'them'}, before ${action}.`
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -157,7 +160,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * A turn, live watch, background work, unanswered request, compaction or command mid-dispatch holds a
-   * session open: stopping the CLI would end the workflow or subagent the thread is still running.
+   * session open: stopping the CLI would end the workflow, subagent or command the thread is still running.
    */
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
@@ -305,8 +308,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; it will not be replayed.')
     if (!Number.isSafeInteger(removeTurns) || removeTurns < 1 || removeTurns > expectedUserMessageIds.length) throw new Error('Choose an exact Claude turn boundary.')
     if (thread.status === 'running' || thread.requests.length || this.dispatching.has(id)) throw new Error('Wait for Claude and answer its requests before rewinding.')
-    // Rewinding restarts the CLI, which would end the agents it is still running for this thread.
-    if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning('rewinding it'))
+    // Rewinding restarts the CLI, which would end the agents or commands it is still running for this thread.
+    if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'rewinding it'))
     const generation = this.generation
     const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, this.options.historyModulePath)
     await this.refreshThread(id)
@@ -443,8 +446,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (command.type === 'configure-thread') {
       validateThreadOptions(this.state, command, alias.modelId)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
-      // New settings restart the CLI, which would end the agents it is still running for this thread.
-      if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning('changing its settings'))
+      // New settings restart the CLI, which would end the agents or commands it is still running for this thread.
+      if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
       const runtime = this.runtimes.get(id)
       if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
       alias.modelId = command.modelId ?? alias.modelId; alias.reasoningEffort = command.reasoningEffort ?? alias.reasoningEffort; if (command.runtimeMode) alias.runtimeMode = command.runtimeMode

@@ -370,3 +370,68 @@ test('background work sends agents out from the readout, yields to a watch, and 
     await expect(indicator(page)).toHaveCount(0)
   } finally { await closeSotto(launched) }
 })
+
+const commandEvidence = resolve('artifacts/background-command')
+const gates = (startedAt = new Date(Date.now() - 252_000).toISOString()) =>
+  ({ id: '7a1d2b3c-8f4b-4d3c-9a1e-000000000000', label: 'Run all CI gates', type: 'command' as const, startedAt })
+
+async function background(page: Page, work: readonly Record<string, unknown>[]): Promise<void> {
+  await event(page, { type: 'background-work', threadId: 'workshop', text: '', backgroundWork: [...work] as never, status: 'idle' })
+}
+
+test('a command left running after the turn waits with the hourglass, yields to agents, and fits every size in both themes', async () => {
+  test.setTimeout(120_000)
+  const launched = await launchSotto()
+  const { page } = launched
+  try {
+    await start(launched)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const command = gates()
+    await background(page, [command])
+    await expect(indicator(page)).toHaveAttribute('data-ornament', 'held')
+    await expect(indicator(page)).toHaveAttribute('role', 'status')
+    await expect(indicator(page).locator('.thread-monitor__label')).toHaveText('Run all CI gates')
+    await expect(indicator(page).locator('.thread-monitor__status')).toHaveText(/^Waiting · 4m \d\ds$/u)
+    // Agents outrank a command: the dispatcher takes the track and counts the command beside them.
+    await background(page, [...agents.slice(0, 2), command])
+    await expect(indicator(page)).toHaveAttribute('data-ornament', 'working')
+    await expect(indicator(page).locator('.thread-monitor__status')).toHaveText('Working · 2 agents · 1 command')
+    await expect(indicator(page).locator('.thread-monitor__mini')).toHaveCount(2)
+    await background(page, [command])
+    await expect(indicator(page)).toHaveAttribute('data-ornament', 'held')
+
+    await mkdir(commandEvidence, { recursive: true })
+    const contrasts: Record<string, { label: number; status: number }> = {}
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      contrasts[appearance] = await contrastRatios(page)
+      expect(contrasts[appearance]!.label).toBeGreaterThanOrEqual(4.5)
+      expect(contrasts[appearance]!.status).toBeGreaterThanOrEqual(4.5)
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+        await contentSize(launched, width, height)
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        await background(page, [command])
+        await expect(indicator(page)).toHaveAttribute('data-ornament', 'held')
+        await expectWhole(page)
+        await page.screenshot({ path: resolve(commandEvidence, `${appearance}-${width}x${height}.png`), animations: 'disabled', caret: 'hide' })
+        // The longest readout this adds still fits on one line, whole, and keeps the creature on the composer.
+        await background(page, [...agents.slice(0, 2), command])
+        await expect(indicator(page).locator('.thread-monitor__mini')).toHaveCount(2)
+        await expectWhole(page)
+        expect(await indicator(page).locator('.thread-monitor__status').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      }
+    }
+    await writeFile(resolve(commandEvidence, 'contrast.json'), `${JSON.stringify(contrasts, null, 2)}\n`, 'utf8')
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await background(page, [...agents.slice(0, 2), command])
+    await expect(indicator(page)).toHaveAttribute('data-ornament', 'working')
+    await expect(indicator(page).locator('.thread-monitor__mini')).toHaveCount(2)
+    await expectWhole(page)
+    await page.screenshot({ path: resolve(commandEvidence, 'dark-820x560-agents-and-command.png'), animations: 'disabled', caret: 'hide' })
+    // Its bookend ends it, and the composer has its room back.
+    await background(page, [])
+    await expect(indicator(page)).toHaveCount(0)
+  } finally { await closeSotto(launched) }
+})

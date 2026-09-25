@@ -1,5 +1,7 @@
 # Working creature verification
 
+*`local_bash` has counted as background work, shown as Waiting, since September 25, 2026; see ADR-0023's amendment and `background-command.md`.*
+
 September 22, 2026. Issue #221, on `feat/working-creature` from `main` at ed2cbc40. The owner picked pose A, the
 dispatcher, and the status word **Working** from the throwaway prototype on `prototype/working-creature`
 (b7cf5e14, `docs/prototypes/working-creature-prototype.html`), which stays off `main`. The decision is ADR-0023;
