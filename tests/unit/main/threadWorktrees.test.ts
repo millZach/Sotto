@@ -108,7 +108,7 @@ describe('independent working-copy allocation', () => {
     await expect(f.service.allocate(f.project, 'independent', { baseBranch: 'missing' })).rejects.toThrow('base branch missing is unavailable')
     // No origin remote: Start from origin has nothing to fetch, so the worktree takes the local branch and says so.
     const noRemote = await f.service.allocate(f.project, 'independent', { baseBranch: 'chosen-base', startFromOrigin: true })
-    expect(noRemote).toMatchObject({ baseBranch: 'chosen-base', startFromOrigin: true, originBase: 'no-remote' })
+    expect(noRemote).toMatchObject({ baseBranch: 'chosen-base', startFromOrigin: true, originBase: 'no-origin' })
     expect(await readFile(join((await f.service.ensure(noRemote)).path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
   })
   it("checks a pull request's branch out as it stands in a new worktree, with no branch of its own", async () => {
@@ -137,11 +137,11 @@ describe('independent working-copy allocation', () => {
     await git(f.project, ['branch', '-f', 'base', 'HEAD'])
     const checkout = await f.service.ensure(await f.service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true }))
     expect(await readFile(join(checkout.path!, 'tracked.txt'), 'utf8')).toBe('committed baseline')
-    expect(checkout).toMatchObject({ baseBranch: 'base', startFromOrigin: true, originBase: 'used' })
+    expect(checkout).toMatchObject({ baseBranch: 'base', startFromOrigin: true, originBase: 'fetched' })
     // A branch origin does not have falls back to the local one, as T3 does, and the worktree records that it did.
     await git(f.project, ['branch', 'local-only', 'HEAD'])
     const local = await f.service.ensure(await f.service.allocate(f.project, 'independent', { baseBranch: 'local-only', startFromOrigin: true }))
-    expect(local).toMatchObject({ baseBranch: 'local-only', startFromOrigin: true, originBase: 'missing' })
+    expect(local).toMatchObject({ baseBranch: 'local-only', startFromOrigin: true, originBase: 'not-on-origin' })
     expect(await readFile(join(local.path!, 'tracked.txt'), 'utf8')).toBe('local-only commit')
     // A fetch that fails for any other reason still stops setup: here the remote is not there to ask.
     await git(f.project, ['remote', 'set-url', 'origin', join(f.root, 'no-such-remote')])

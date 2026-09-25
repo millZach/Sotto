@@ -71,15 +71,17 @@ export class ThreadWorktrees {
    * that fails for another reason, the connection or the credentials, stops setup. The answer is kept on the
    * worktree so the pane can say which happened.
    */
-  private async originBase(repositoryRoot: string, baseBranch: string): Promise<NonNullable<AgentWorktree['originBase']>> {
-    try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) } catch { return 'no-remote' }
+  private async resolveOriginBase(repositoryRoot: string, baseBranch: string): Promise<NonNullable<AgentWorktree['originBase']>> {
+    // No origin is an answer; Git being unavailable is not, and the message runWorktreeGit gives it must reach the user.
+    try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) }
+    catch (error) { if (error instanceof Error && /Git is unavailable/u.test(error.message)) throw error; return 'no-origin' }
     const failure = new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`)
     // --exit-code answers 2 for a remote that is reachable and has no such branch; anything else is a real failure.
     try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`]) }
-    catch (error) { if ((error as { code?: unknown }).code === 2) return 'missing'; throw failure }
+    catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw failure }
     try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
     catch { throw failure }
-    return 'used'
+    return 'fetched'
   }
 
   /**
@@ -116,8 +118,8 @@ export class ThreadWorktrees {
     const baseBranch = selection.baseBranch ?? (selection.startFromOrigin ? (await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined : undefined)
     if (baseBranch) await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${baseBranch}`])
     if (selection.startFromOrigin && !baseBranch) throw new Error('Choose a base branch before starting from origin.')
-    const originBase = selection.startFromOrigin && baseBranch ? await this.originBase(repositoryRoot, baseBranch) : undefined
-    const base = baseBranch ? `${originBase === 'used' ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
+    const originBase = selection.startFromOrigin && baseBranch ? await this.resolveOriginBase(repositoryRoot, baseBranch) : undefined
+    const base = baseBranch ? `${originBase === 'fetched' ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`])).trim() }
     catch { throw new Error(baseBranch ? `The base branch ${baseBranch} is unavailable. Choose an existing branch and retry.` : 'This Git repository has no commit to branch from. Make its first commit, or create the thread with Project folder.') }

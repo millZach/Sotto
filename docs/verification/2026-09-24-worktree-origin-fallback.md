@@ -15,16 +15,18 @@ npx playwright test tests/e2e/thread-worktrees.spec.ts
 
 5 tests, 1.0 minute. The four existing tests passed. The new one failed once on its own file assertion, because the new checkout wrote Windows line endings; the assertion compares trimmed text now and the test passed on its next two runs (6 seconds each), the second with the light capture added.
 
-Unit: `npx vitest run tests/unit/main/threadWorktrees.test.ts`, 22 passed. Its origin test now covers the three outcomes on real repositories with a bare remote: origin has the branch (`originBase: 'used'`, the worktree carries origin's content), origin lacks it (`originBase: 'missing'`, the worktree carries the local commit), and a remote that cannot be reached (still "could not be fetched"). A project with no origin remote allocates with `originBase: 'no-remote'`.
+After the two-axis review the notice's Dismiss got its full name, its dismissal is remembered on this computer, the outcome values were renamed to read at a glance, and the run's captures moved to an ignored `-run` folder. The test was run again on the rebuilt app with a reload added: 1 passed, 6 seconds. `tests/unit/renderer/localBranchNotice.test.tsx` (2 tests) covers the notice's three states and its dismissal across a remount.
+
+Unit: `npx vitest run tests/unit/main/threadWorktrees.test.ts`, 22 passed. Its origin test now covers the three outcomes on real repositories with a bare remote: origin has the branch (`originBase: 'fetched'`, the worktree carries origin's content), origin lacks it (`originBase: 'not-on-origin'`, the worktree carries the local commit), and a remote that cannot be reached (still "could not be fetched"). A project with no origin remote allocates with `originBase: 'no-origin'`.
 
 ## What was checked
 
 The new e2e test makes a repository with a real bare origin that has `main`, leaves the folder on a local-only branch `feat/local-only` with one commit of its own, creates a thread, chooses New worktree with Start from origin left on, and sends.
 
-- The worktree is made and ready, its record reads `baseBranch: 'feat/local-only', originBase: 'missing'`, and its folder has the local-only commit's file.
+- The worktree is made and ready, its record reads `baseBranch: 'feat/local-only', originBase: 'not-on-origin'`, and its folder has the local-only commit's file.
 - `local-branch-notice-1280x800-dark.png`: above the composer, in the status tone rather than the error tone, "origin/feat/local-only was not found, so the worktree started from the local branch feat/local-only." with **Dismiss** at its right. The pane header shows the worktree's own branch.
 - `local-branch-notice-820x560-light.png`: the same notice at the minimum size in light. The sentence wraps onto two lines beside the button; nothing overflows the pane (the test asserts the document is no wider than the window).
-- Dismiss removes the notice, and it stays away for that thread for the rest of the client session.
+- **Dismiss the local branch notice** removes it, and it stays away for that thread on this computer: the test reloads the window and the notice does not come back.
 
 Reduced motion: the notice has no motion of its own; it takes the working-copy notice's styles, which animate nothing.
 
