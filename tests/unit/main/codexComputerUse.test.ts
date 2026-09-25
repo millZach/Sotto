@@ -8,7 +8,7 @@ const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 
 const context = { turnId: 'turn-1', phase: 'completed' as const }
 const call = (server: string, code: string, extra: Record<string, unknown> = {}) =>
   codexItemSchema.parse({ id: `${server}-call`, type: 'mcpToolCall', server, tool: 'js', status: 'completed', arguments: { code }, ...extra })
-const project = (item: ReturnType<typeof call>) => { const t = thread(); new CodexActivityProjection(() => 2_000).item(t, item, context); return t.activities![0]! }
+const project = (item: ReturnType<typeof call>, runtimeMode?: AgentThread['runtimeMode']) => { const t = { ...thread(), ...(runtimeMode ? { runtimeMode } : {}) }; new CodexActivityProjection(() => 2_000).item(t, item, context); return t.activities![0]! }
 
 /** Codex's Computer Use, as the live runs saw it (docs/verification/2026-09-25-browser-prompts-and-computer-use.md). */
 describe('Codex Computer Use calls', () => {
@@ -22,7 +22,7 @@ describe('Codex Computer Use calls', () => {
   })
 
   it('leave other JavaScript tool calls as they were', () => {
-    const item = call('node_repl', 'console.log(skyline.length)')
+    const item = call('node_repl', 'console.log(skyline.length, weather.sky.colour, "./sky.js")')
     expect(item).not.toHaveProperty('computerUse')
     expect(project(item).title).toBe('node_repl / js')
   })
@@ -35,9 +35,17 @@ describe('Codex Computer Use calls', () => {
     expect(project(call('node_repl', 'await sky.click()', { status: 'failed', error: { message: 'Window not found' } })).error).toBe('Window not found')
   })
 
+  it('keep Codex\'s own words under Sotto\'s, and do not blame the sandbox in Full access', () => {
+    const crashed = call('node_repl', 'await sky.list_apps()', { status: 'failed', error: { message: 'trusted Node process exited unexpectedly; kernel reset, rerun your request' } })
+    expect(project(crashed).error).toBe("Computer Use cannot run in this thread's sandbox. Nothing was changed. Switch the thread to Full access to use it.\ntrusted Node process exited unexpectedly; kernel reset, rerun your request")
+    expect(project(crashed, 'full-access').error).toBe('trusted Node process exited unexpectedly; kernel reset, rerun your request')
+    const denied = call('node_repl', 'await sky.list_apps()', { status: 'failed', error: { message: 'windows sandbox failed: helper_unknown_error: apply deny-read ACLs' } })
+    expect(project(denied, 'full-access').error).toMatch(/^Computer Use cannot run in this thread's sandbox/u)
+  })
+
   it('are only explained when the text is one Sotto recognises', () => {
-    expect(computerUseNeeds('Window not found')).toBeUndefined()
-    expect(computerUseNeeds(undefined)).toBeUndefined()
+    expect(computerUseNeeds('Window not found', true)).toBeUndefined()
+    expect(computerUseNeeds(undefined, true)).toBeUndefined()
   })
 })
 

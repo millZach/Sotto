@@ -47,7 +47,7 @@ Codex can see and operate the apps on your computer with its Computer Use, as it
 - The thread's permissions are **Full access**. Codex's sandbox stops Computer Use in every other mode. Full access means exactly that: Codex can then run anything and change anything, on the whole computer.
 - The Codex desktop app is open. Computer Use talks to a helper the Codex app runs.
 
-Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its steps show in the thread as **Computer Use**. When one fails because either condition is missing, the step says which, and nothing was changed.
+Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its calls show in the thread's activity as **Computer Use**. When one fails because either condition is missing, the activity says which, and nothing was changed.
 
 ### Sending, steering and screenshots
 

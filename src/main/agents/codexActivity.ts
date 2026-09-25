@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT, compactAgentIdentity, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
-type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'>
+type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
 // Display fields selected from installed codex-cli 0.154.0's generated schema.
 // Only displayable fields survive this
@@ -24,15 +24,17 @@ function isComputerUse(server: unknown, args: unknown): boolean {
   if (server === 'cua_repl') return true
   if (server !== 'node_repl') return false
   const code = typeof args === 'object' && args !== null ? (args as { code?: unknown }).code : undefined
-  return typeof code === 'string' && /@oai\/sky|\bsky\./u.test(code)
+  return typeof code === 'string' && /@oai\/sky|(?<![\w.$])sky\.\w+\(/u.test(code)
 }
 /**
  * What Sotto can say about a Computer Use call that failed for a reason it recognises: Codex's sandbox stopped
- * it, or the Codex app, whose helper Computer Use talks to, is closed (docs/verification/2026-09-25-…).
+ * it, or the Codex app, whose helper Computer Use talks to, is closed (docs/verification/2026-09-25-…). The
+ * sandbox texts are Windows Codex's own; "trusted Node process exited" also names other crashes, so it counts as
+ * the sandbox's doing only outside Full access, where the advice to switch can be right.
  */
-export function computerUseNeeds(text: string | undefined): string | undefined {
+export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
   if (!text) return undefined
-  if (/windows sandbox failed|trusted Node process exited unexpectedly/iu.test(text)) return "Computer Use can't run in this thread's sandbox. Nothing was changed. Switch the thread to Full access to use it."
+  if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
   if (/native pipe/iu.test(text)) return 'Computer Use needs the Codex app open. Nothing was changed. Open Codex and ask again.'
   return undefined
 }
@@ -170,8 +172,8 @@ export class CodexActivityProjection {
     const output = contentText(item.result?.content ?? item.contentItems)
     if (output !== undefined) activity.output = output
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
-    const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n')) : undefined
-    if (needs) activity.error = needs
+    const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined
+    if (needs) activity.error = [needs, item.error?.message].filter(Boolean).join('\n')
     if (item.type === 'collabAgentToolCall') {
       if (item.prompt != null) activity.text = item.prompt
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]

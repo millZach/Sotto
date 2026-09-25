@@ -76,6 +76,6 @@ Sotto now names Computer Use calls and explains the two known failures on the ca
 - Whether the self-started path works from a Sotto thread. It was proven with plain `codex exec`, and Sotto's default sandbox kills Computer Use whichever helper it uses.
 - A server named `sotto_browser` in Grok's own configuration would look the same to the adapter as Sotto's, so its tools would be admitted too. Whether Grok lets a configured server share the name of one Sotto supplies was not tried.
 - `SKY_CUA_NATIVE_PIPE` is an internal switch in OpenAI's library, not a documented setting, so a Codex update may change it.
-- Whether Codex's Computer Use can run under `workspace-write` with a narrower allowance than Full access.
+- Whether Codex's Computer Use can run under `workspace-write` with a narrower allowance than Full access. The sandbox texts Sotto recognises are Windows Codex's; on macOS a sandboxed failure shows Codex's own words only.
 - The real Sotto browser tools other than `browser_status`, and Sotto's own question in Tools. Neither was part of these turns.
 - macOS.

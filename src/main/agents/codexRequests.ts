@@ -21,7 +21,8 @@ const requestMethods: Record<string, { kind: 'permission' | 'question'; decline:
   'item/tool/requestUserInput': { kind: 'question', decline: () => ({ answers: {} }) },
   'mcpServer/elicitation/request': { kind: 'question', decline: () => ({ action: 'decline', content: null }) },
 }
-// Codex sends OpenAI's own form under two spellings beside MCP's `form`; all three carry a requested schema.
+// codex app-server 0.157.0's generated schema lists OpenAI's own form under two spellings beside MCP's `form`, and
+// a `url` mode; the three forms carry a requested schema, the link does not.
 const formModes = new Set(['form', 'openai/form', 'openaiForm'])
 const formSchema = z.object({ type: z.literal('object'), properties: z.record(z.string(), z.unknown()), required: z.array(z.string()).nullish() })
 const fieldSchema = z.object({ type: z.string(), enum: z.array(z.string()).optional(), enumNames: z.array(z.string()).nullish(),
@@ -59,16 +60,17 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   const permission = mapping.kind === 'permission'
   const questions = params.questions ?? []
   const browser = method === 'mcpServer/elicitation/request' ? codexBrowserText(params) : undefined
+  const link = method === 'mcpServer/elicitation/request' && params.mode === 'url' ? params.url : undefined
   const text = browser ?? (permission ? params.command ?? fileSummary ?? params.reason ?? (params.grantRoot ? `Allow file changes under ${params.grantRoot}?` : 'Codex requests additional permissions. Answer in Codex for detailed scope.')
     : questions.length ? questions.map((q, i) => `${questions.length > 1 ? `${i + 1}. ` : ''}${q.question}${questions.length > 1 && q.options?.length ? ` (${q.options.map(o => o.label).join('; ')})` : ''}`).join('\n')
       : params.message ?? params.description ?? 'Codex needs your input.')
-    + (method === 'mcpServer/elicitation/request' && params.mode === 'url' && params.url ? `\n${params.url}` : '')
+    + (link ? `\n${link}` : '')
   let options: AgentRequest['options'] = permission ? [{ id: 'accept', label: 'Allow' }, { id: 'decline', label: 'Deny' }]
     : questions.length === 1 ? (questions[0]!.options ?? []).map(o => ({ id: o.label, label: o.label })) : []
   let formQuestions: AgentRequest['questions']
   // A link to open, not a form: Continue says the user has opened it, Decline refuses.
-  if (method === 'mcpServer/elicitation/request' && params.mode === 'url' && params.url) options = [{ id: 'continue', label: 'Continue' }, { id: 'decline', label: 'Decline' }]
-  if (method === 'mcpServer/elicitation/request' && params.mode !== 'url') {
+  if (link) options = [{ id: 'continue', label: 'Continue' }, { id: 'decline', label: 'Decline' }]
+  if (method === 'mcpServer/elicitation/request' && formModes.has(params.mode ?? '')) {
     const form = formSchema.safeParse(params.requestedSchema)
     if (form.success) formQuestions = Object.entries(form.data.properties).map(([id, value]) => {
       const field = fieldSchema.safeParse(value)
