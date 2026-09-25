@@ -1,4 +1,6 @@
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BranchToolbar } from '../../../src/renderer/src/agents/BranchToolbar'
@@ -314,5 +316,15 @@ describe('BranchToolbar', () => {
     await act(async () => { fireEvent.click(screen.getByRole('combobox', { name: 'Choose branch' })) })
     expect(await screen.findByText('This folder is not a Git repository.')).toBeInTheDocument()
     void rerender
+  })
+
+  // The list is a grid; an `auto` column sized itself to the widest no-wrap row, so the list scrolled sideways and a long
+  // name pushed its badges out of view (#325). jsdom lays nothing out, so the rule is read from the stylesheet itself.
+  it('lets a long ref name shrink instead of scrolling the list sideways', () => {
+    const css = readFileSync(join(process.cwd(), 'src/renderer/src/agents/branchToolbar.css'), 'utf8')
+    const refs = /\.branch-toolbar__refs\s*\{([^}]*)\}/u.exec(css)?.[1] ?? ''
+    expect(refs).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/u)
+    expect(refs).toMatch(/overflow-x:\s*hidden/u)
+    expect(css).toMatch(/\.branch-toolbar__refs > button\s*\{[^}]*min-width:\s*0/u)
   })
 })

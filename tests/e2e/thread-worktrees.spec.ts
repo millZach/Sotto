@@ -277,7 +277,7 @@ ${initialBranches}`) // only the picker's own branch was added
     await expect(busy).toContainText('worktree')
     await busy.click()
     await expect.poll(async () => (await activeThread(page)).worktree?.existingWorktreePath ?? '').not.toBe('')
-    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toHaveText('WorkspacePrevious worktree (feat/task-branch)')
+    await expect(toolbar(page).getByRole('combobox', { name: 'Choose workspace', exact: true })).toHaveText('Previous worktree (feat/task-branch)')
     await expect(toolbar(page).getByRole('combobox', { name: 'Choose branch', exact: true })).toHaveText(/feat\/task-branch/)
     await openPicker(page)
     await expect(page.getByRole('listbox', { name: 'Refs', exact: true }).getByRole('option', { name: /^feat\/task-branch/ })).toContainText('current')
