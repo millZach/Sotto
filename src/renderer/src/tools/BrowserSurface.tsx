@@ -195,7 +195,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
           <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
             <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
           {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
-            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Actions still ask you.'} onClick={() => void reviewPage('share')}>
+            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : `Let the agent in this thread read page contents and screenshots.${browser.grant ? ' It can already open, click and type here without asking.' : ' Opening, clicking and typing still ask you.'}`} onClick={() => void reviewPage('share')}>
             <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
         </> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}

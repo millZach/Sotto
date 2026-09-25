@@ -491,4 +491,26 @@ describe('browser grant (ADR-0029)', () => {
     const restarted = (await browserFixture()).service
     expect(unwrap(await restarted.list({ threadId: 'a' })).grant).toBeNull()
   })
+  it('never makes a page the user opened observable, even while the thread uses the browser without asking', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => true)
+    expect(await service.startTask({ ...target, description: 'Check the form' })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === target.pageId)?.sharedOrigin).toBeFalsy()
+  })
+
+  it('tells every listed thread when the setting changes, and answers what was waiting when it turns on', async () => {
+    let on = false
+    const { service, target, emit } = await browserFixture(false, new Set(), () => on)
+    const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
+    const waiting = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4555/', description: 'Check the app' }))
+    expect(waiting.approvalRequired).toBe(true)
+    unwrap(await service.list({ threadId: 'b' }))
+    on = true; emit.mockClear()
+    const settled = service.waitForAction(waiting.task.id, waiting.task.pendingAction!.id)
+    service.settingChanged()
+    for (const threadId of ['a', 'b']) expect(emit).toHaveBeenCalledWith({ type: 'browser-grant', threadId, grant: { grantedAt: expect.any(Number), source: 'settings' } })
+    expect((await settled)?.pendingAction).toBeNull()
+    on = false; emit.mockClear()
+    service.settingChanged()
+    for (const threadId of ['a', 'b']) expect(emit).toHaveBeenCalledWith({ type: 'browser-grant', threadId, grant: null })
+  })
 })

@@ -51,6 +51,7 @@ Sotto has no account of its own and collects nothing about you: no analytics, no
 - **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. OpenRouter charges about $0.10 per hour of audio.
 - **Optional AI cleanup** sends the finished text to OpenRouter too. It is off until you turn it on.
 - **Your threads** go to the agent's own provider, under that provider's account and data policy.
+- **Sotto's browser** is used by agents without asking, by default: they can open pages, click and type there, including on sites you are signed in to in it. Turn that off in Settings → Application, or stop it for one thread in Tools → Browser.
 - **Git** talks to your own remotes, including a background fetch every 30 seconds while the window is in front (you can change or turn it off in Settings → Git), and to GitHub through `gh` on your own sign-in for pull requests.
 - **Update checks** ask GitHub for new Sotto versions (Windows) and `registry.npmjs.org` for new agent client versions. Both can be turned off.
 - **Only if you use them:** `api.openai.com` and `api.x.ai` for optional reasoning and reply voices, `open-vsx.org` (with `openvsxorg.blob.core.windows.net` and `openvsx.eclipsecontent.org`) for themes, `huggingface.co` for the natural voice download, SSH hosts you add, and pages you open in Sotto's browser.

@@ -889,9 +889,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(currentTrayState)
     },
     async onSettingsChanged(settings): Promise<void> {
+      const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       workingCopySettings = settings
       worktreeCleanup?.settingsChanged()
-      browserService?.settingChanged()
+      if (grantDefaultChanged) browserService?.settingChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await agentControl.privacyChanged()

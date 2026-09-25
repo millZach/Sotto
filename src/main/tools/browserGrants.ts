@@ -29,6 +29,9 @@ export interface BrowserGrant {
  * moving every time it is read. A `user` grant is made only by the user's own answer in Tools and outlives the
  * setting turning off, so only Stop or the thread going away can end it.
  */
+/** The actions ADR-0020 holds for an answer, and so the ones a browser grant can answer instead. */
+export const grantCovers = (type: string): boolean => type === 'navigate' || type === 'click' || type === 'type'
+
 export class BrowserGrants {
   private readonly grants = new Map<string, BrowserGrant>()
   private readonly stopped = new Set<string>()
@@ -49,7 +52,7 @@ export class BrowserGrants {
     const current = this.grants.get(threadId)
     if (current?.source === 'user' && current.revokedAt === null) return current
     if (this.stopped.has(threadId) || !this.byDefault()) {
-      if (current) this.grants.delete(threadId)
+      if (current) { current.revokedAt ??= now; this.grants.delete(threadId) }
       return null
     }
     if (current?.source === 'settings') return current
@@ -67,6 +70,9 @@ export class BrowserGrants {
     grant.revokedAt = now
     return true
   }
+
+  /** Every thread this session has a grant or a Stop for, so a change of the setting can reach each. */
+  threads(): string[] { return [...new Set([...this.grants.keys(), ...this.stopped])] }
 
   /** A thread Sotto no longer lists takes its grant with it, without counting as a Stop for a later thread of the same ID. */
   forget(threadId: string): void {

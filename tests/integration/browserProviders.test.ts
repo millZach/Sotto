@@ -41,13 +41,13 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     const endpoint = await server.mcpServer(threadId)
     const records = await fixture.driver.requests()
     if (provider === 'codex') {
-      // The browser's own tools carry no native prompt; Tools still asks for every page action.
+      // The browser's own tools carry no native prompt; page actions are Tools' to decide (ADR-0029).
       expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, default_tools_approval_mode: 'approve', http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch?.params?.frame as { args: string[] }).args
       expect(JSON.parse(args[args.indexOf('--mcp-config') + 1]!)).toMatchObject({ mcpServers: { sotto_browser: { url: endpoint.url } } })
-      // The browser's own tools carry no native prompt; Tools still asks for every page action.
+      // The browser's own tools carry no native prompt; page actions are Tools' to decide (ADR-0029).
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual(browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`))
     } else {

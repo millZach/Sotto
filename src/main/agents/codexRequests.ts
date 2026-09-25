@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
-import { browserRequestText } from './browserRequests'
+import { browserRequestText, TOOLS_STILL_DECIDES } from './browserRequests'
 import { BROWSER_MCP_SERVER } from './browserAgentServer'
 
 const option = z.object({ label: z.string(), description: z.string().optional() })
@@ -50,7 +50,7 @@ function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefi
   if (named) return named
   const said = params.message ?? params.description ?? ''
   return 'Codex is asking before it uses Sotto’s browser.' + (said ? '\n' + said : '')
-    + '\nClicking and typing still ask you in Tools, and so do opening a page and going to another unless you let this thread open pages.'
+    + '\n' + TOOLS_STILL_DECIDES
 }
 
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {

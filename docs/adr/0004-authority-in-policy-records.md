@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — 2026-09-10. ADR-0025's September 22 amendment applies this to paired clients: the commands a paired device may send, and which of them need a `remote-answer` policy record.
+Accepted — 2026-09-10. ADR-0025's September 22 amendment applies this to paired clients: the commands a paired device may send, and which of them need a `remote-answer` policy record. ADR-0029 (September 25, 2026) makes one standing exception: by default a thread may open, navigate, click and type in Sotto's own browser without asking, through a grant shaped like a policy record with the source `settings`.
 
 ## Context
 

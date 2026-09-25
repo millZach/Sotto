@@ -3,6 +3,8 @@ import { BROWSER_MCP_SERVER } from './browserAgentServer'
 type Frame = Record<string, unknown>
 const frame = (value: unknown): Frame => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Frame : {}
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
+/** What answering a client's own browser prompt does not decide: page actions stay Tools' (ADR-0029). */
+export const TOOLS_STILL_DECIDES = 'Tools asks you before opening, navigating, clicking or typing, unless this thread uses the browser without asking.'
 
 /**
  * Sotto's own browser tools, said in the words the user would use. A native tool carries no
@@ -49,5 +51,5 @@ export function browserRequestText(name: string, input: unknown, server?: string
   if (!said) return undefined
   const why = text(args.description).trim() ? '\n“' + text(args.description).trim() + '”' : ''
   // Answering here only lets it reach the browser. Page actions ask again in Tools unless a browser grant covers them (ADR-0029).
-  return 'Use Sotto’s browser to ' + said + '.' + why + '\nOpening, navigating, clicking and typing ask you in Tools unless you let this thread use the browser without asking.'
+  return 'Use Sotto’s browser to ' + said + '.' + why + '\n' + TOOLS_STILL_DECIDES
 }
