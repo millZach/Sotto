@@ -174,6 +174,9 @@ export const agentWorktreeSchema = z.object({
   baseCommit: z.string().optional(), error: z.string().optional(), dirty: z.boolean().optional(),
   projectRelativePath: z.string().optional(),
   baseBranch: z.string().optional(), startFromOrigin: z.boolean().optional(),
+  /** What Start from origin found when the worktree was allocated: origin's branch was fetched, origin did not have
+   * the branch so the local one was used, or the project has no origin remote so nothing was fetched. */
+  originBase: z.enum(['fetched', 'not-on-origin', 'no-origin']).optional(),
   existingWorktreePath: z.string().optional(), reused: z.boolean().optional(), temporaryBranch: z.boolean().optional(),
   /** The folder's Git status as the host last read it: branch, upstream, ahead and behind, dirty, the pull request. */
   git: gitStatusSchema.optional(),

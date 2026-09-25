@@ -505,3 +505,54 @@ test('a worktree can be reclaimed from the pane or on settle, keeps its branch, 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+/** Every run writes here (ignored); the images the verification note names are copied to artifacts/worktree-origin-fallback/. */
+const ORIGIN_SHOTS = 'artifacts/worktree-origin-fallback-run'
+test('a new worktree with Start from origin on starts from the local branch when origin does not have it, and says so', async () => {
+  test.setTimeout(120_000)
+  // A repository with a real origin that has main, and a local-only branch the shared folder is left on: the case
+  // the shared-checkout default makes common, and the one that used to refuse setup (ADR-0014, #328).
+  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-origin-fallback-')), repo = join(root, 'repo-app'), remote = join(root, 'origin.git')
+  await mkdir(repo); await mkdir(remote)
+  git(repo, 'init', '-q', '-b', 'main')
+  await commitFile(repo, 'README.md', 'Committed checkout\n')
+  git(remote, 'init', '-q', '--bare')
+  git(repo, 'remote', 'add', 'origin', remote)
+  git(repo, 'push', '-q', 'origin', 'main')
+  git(repo, 'checkout', '-q', '-b', 'feat/local-only')
+  await commitFile(repo, 'NOTES.md', 'Only on this computer\n')
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launch([['repo-app', repo]])
+    const { page } = launched
+    await createByKeyboard(page, 'repo-app', 'Local base')
+    await chooseWorkspace(page, 'New worktree')
+    await expect.poll(async () => (await activeThread(page)).worktree?.mode).toBe('independent')
+    expect((await activeThread(page)).worktree?.startFromOrigin).toBe(true)
+    await send(page, 'Start from what is here.')
+    const thread = await activeThread(page)
+    expect(thread.worktree).toMatchObject({ mode: 'independent', status: 'ready', baseBranch: 'feat/local-only', originBase: 'not-on-origin' })
+    expect((await readFile(join(thread.workingDirectory!, 'NOTES.md'), 'utf8')).trim()).toBe('Only on this computer')
+    const notice = page.getByRole('status').filter({ hasText: 'was not found' })
+    await expect(notice).toContainText('origin/feat/local-only was not found, so the worktree started from the local branch feat/local-only.')
+    await expect(notice).toHaveAttribute('data-tone', 'status')
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await mkdir(ORIGIN_SHOTS, { recursive: true })
+    await page.screenshot({ path: `${ORIGIN_SHOTS}/local-branch-notice-1280x800-dark.png`, animations: 'disabled' })
+    // The notice at the minimum size and in light: it wraps, and nothing overflows the pane.
+    await resize(launched, 820, 560)
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: `${ORIGIN_SHOTS}/local-branch-notice-820x560-light.png`, animations: 'disabled' })
+    await notice.getByRole('button', { name: 'Dismiss the local branch notice', exact: true }).click()
+    await expect(notice).toHaveCount(0)
+    // Remembered on this computer: a reload does not bring it back.
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Local base', exact: true })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: 'was not found' })).toHaveCount(0)
+  } finally {
+    if (launched) await closeSotto(launched)
+    await rm(root, { recursive: true, force: true })
+  }
+})

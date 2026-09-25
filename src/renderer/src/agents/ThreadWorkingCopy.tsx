@@ -208,7 +208,10 @@ export function useSettleThread(command: AgentConnection['command']) {
   return { settle, dialog }
 }
 
-/** Above the pane composer: a failed setup and the one action that can recover it. The draft stays untouched. */
+/**
+ * Above the pane composer: a failed setup and the one action that can recover it, or the local branch notice for a
+ * worktree that started from the local branch because origin had nothing to fetch. The draft stays untouched.
+ */
 export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered }: ThreadWorkingCopyProps & { readonly onRecovered?: (() => void) | undefined }): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const { running, error, run } = useWorkingCopyAction(thread.id, command)
@@ -222,6 +225,19 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
     latestRecovered.current?.()
   }, [facts.status])
   useEffect(() => { recovering.current = false }, [thread.id])
+  const [, rerender] = useState(0)
+  const originBase = thread.worktree?.originBase
+  if (facts.status === 'ready' && (originBase === 'not-on-origin' || originBase === 'no-origin') && !localBranchNoticeDismissed(thread.id)) {
+    // The local branch notice (CONTEXT.md): Start from origin found nothing to fetch and the worktree took the local
+    // branch instead (ADR-0014). Said once, in the status tone: nothing stopped, and the pane header names the branch.
+    const base = thread.worktree?.baseBranch ?? 'the branch'
+    return <div className="working-copy-notice" data-tone="status" role="status">
+      <p>{originBase === 'not-on-origin'
+        ? <><strong>origin/{base} was not found</strong>, so the worktree started from the local branch {base}.</>
+        : <><strong>This project has no origin</strong>, so the worktree started from the local branch {base}.</>}</p>
+      <Button variant="secondary" aria-label="Dismiss the local branch notice" onClick={() => { dismissLocalBranchNotice(thread.id); rerender(value => value + 1) }}>Dismiss</Button>
+    </div>
+  }
   if (facts.status !== 'error') return null
   // Setup can only be retried before native work starts; afterwards Sotto only re-checks the bound folder.
   const retry = thread.nativeSessionStarted === false
@@ -242,8 +258,29 @@ export function ThreadWorkingCopyNotice({ thread, project, command, onRecovered 
  * and asks first when the folder has uncommitted work to carry along.
  */
 const dismissedBranchNotices = new Set<string>()
+/**
+ * Threads whose local branch notice was dismissed. The worktree record keeps `originBase` for the thread's life, so
+ * a dismissal that lived only in memory would bring the notice back at every launch; it is remembered on this
+ * computer instead. Thread ids only, nothing the user wrote.
+ */
+const LOCAL_BRANCH_NOTICE_KEY = 'sotto.localBranchNotice.dismissed'
+const LOCAL_BRANCH_NOTICE_LIMIT = 200
+function localBranchNoticeDismissed(threadId: string): boolean { return readDismissedLocalBranchNotices().includes(threadId) }
+function dismissLocalBranchNotice(threadId: string): void {
+  const kept = [...readDismissedLocalBranchNotices().filter(id => id !== threadId), threadId].slice(-LOCAL_BRANCH_NOTICE_LIMIT)
+  try { globalThis.localStorage?.setItem(LOCAL_BRANCH_NOTICE_KEY, JSON.stringify(kept)) } catch { /* Storage refused: the notice comes back next launch, which loses nothing. */ }
+}
+function readDismissedLocalBranchNotices(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(globalThis.localStorage?.getItem(LOCAL_BRANCH_NOTICE_KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch { return [] }
+}
 /** Test seam: a new client session has no dismissed notices. */
-export function resetBranchNoticeDismissals(): void { dismissedBranchNotices.clear() }
+export function resetBranchNoticeDismissals(): void {
+  dismissedBranchNotices.clear()
+  try { globalThis.localStorage?.removeItem(LOCAL_BRANCH_NOTICE_KEY) } catch { /* nothing to clear */ }
+}
 
 export function ThreadBranchNotice({ thread, project, command, composing }: ThreadWorkingCopyProps & { readonly composing: boolean }): ReactNode {
   const facts = describeWorkingCopy(thread, project)
