@@ -22,7 +22,7 @@ import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { grokActivities } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
-import { grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
+import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending as Pending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -53,13 +53,12 @@ function sessionPolicy(mode: GrokRuntimeMode | undefined): { yoloMode: boolean; 
   return { yoloMode: mode === 'full-access', autoMode: mode === 'auto' }
 }
 /**
- * How Sotto spawns the native client. The allow rule covers Sotto's own browser server and nothing
- * else, and lives on this process rather than in Grok's own configuration; Tools still asks before
- * any page action (ADR-0020). One leader serves every thread, so the rule cannot be per-thread: on a
- * personal chat, which never receives a browser server, it matches nothing.
+ * How Sotto spawns the native client. It once carried an allow rule for Sotto's browser server, but Grok
+ * does not apply `--allow` rules to calls made through its `use_tool`, as a leader or as a local agent, so
+ * the adapter answers that prompt itself instead (ADR-0020).
  */
 export function grokArguments(): string[] {
-  return ['--permission-mode', 'default', '--allow', `MCPTool(${BROWSER_MCP_SERVER}__*)`, 'agent', '--leader', 'stdio']
+  return ['--permission-mode', 'default', 'agent', '--leader', 'stdio']
 }
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
@@ -131,6 +130,11 @@ export class GrokAcpHost implements AgentHost {
   private async browserServers(id: string) {
     if (!this.browserTools || this.aliases[id]?.kind === 'personal' || !this.browserHttp) return []
     return [await this.browserTools.mcpServer(id)]
+  }
+  /** Grok's prompt for this thread's own browser server, answered here rather than shown (ADR-0020). */
+  private browserAdmission(pending: Pending): unknown {
+    if (!pending.permission || !this.browserTools || !this.browserHttp || this.aliases[pending.threadId]?.kind === 'personal') return undefined
+    return grokBrowserAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name))
   }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
@@ -680,6 +684,8 @@ export class GrokAcpHost implements AgentHost {
         pending.request.id = `grok-request-${digest(JSON.stringify([threadId, pending.toolCallId, pending.request.kind]))}`
         this.reaper.touch(pending.threadId)
         if (this.answeredRequests.has(pending.request.id) || this.pending.has(pending.request.id)) return
+        const admission = this.browserAdmission(pending)
+        if (admission !== undefined) { this.rpc?.reply(pending.wireId, admission).catch(() => undefined); return }
         if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
         this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
       }

@@ -28,6 +28,13 @@ Both report the request's kind, method or tool name and choice kinds, plus tool 
 
 So "it asks every time" was the Codex and Grok native prompt, then Sotto's own question in Tools. On Claude it was Sotto's question alone.
 
+### After step 2 (`fix/browser-tools-ask-once`)
+
+Codex's entry carries `approve`, and the Grok adapter answers Grok's prompt for this thread's own `sotto_browser__…` tools with Grok's one-time allow (ADR-0020, September 25 amendment). The same six cases then all reached the tool with no native prompt: Claude 2.1.282, Codex 0.157.0 and Grok 1.0.41. Two Grok findings shaped the change:
+
+- **No Grok setting does it.** With the adapter's answer switched off (`SOTTO_BROWSER_NO_ADMISSION=1`) and the model told to use the full name `sotto_browser__browser_status`, Grok still prompted with `--allow 'MCPTool(sotto_browser__*)'`, both as a leader (`agent --leader stdio`) and as a local agent (`agent --no-leader stdio`). Grok's prompt concerns its `use_tool` meta-tool (`variant: "UseTool"`), and the rule does not reach it.
+- **The name the model uses varies.** Told to call "the browser_status tool from the sotto_browser MCP server", Grok passed the bare `browser_status`, which does not say which server it belongs to, so the adapter leaves that prompt for the user. Asked in ordinary words to check the browser, it found the tool through `search_tool` and used `sotto_browser__browser_status` in both runs, which the adapter answered. The probe now asks Grok that way.
+
 ## Codex and Computer Use
 
 Two tool servers are involved, and the first runs went to the wrong one. `cua_repl`, from the `unified-computer-use` plugin, has only its browser surface on (`CUA_REPL_ENABLED_SURFACES=browser`). Native desktop control is the `computer-use` skill, which runs through `node_repl` (the `@oai/sky` service in the user's global `~/.codex/config.toml`) and a helper, `codex-computer-use.exe`, that serves a named pipe. Sotto loads both servers from the user's own Codex config. Asked only to "use Computer Use", the model picked `cua_repl`. Invoked with `$computer-use:computer-use`, it used `node_repl`.

@@ -9,13 +9,11 @@ import { browserToolDefinitions } from '../../../src/main/tools/browserAgentTool
  * the fixtures replace the client, so these are the only checks that notice a setting going missing.
  */
 describe('browser admission carries no native prompt', () => {
-  it('names Sotto\'s own server in Grok\'s allow rule and nothing else', () => {
+  it('gives Grok no allow rule, which it would not apply to use_tool', () => {
+    // The adapter answers Grok's prompt for this thread's own browser tools instead (grokBrowserAdmission).
     const args = grokArguments()
-    expect(args).toContain('--allow')
-    const rules = args.filter((_value, index) => args[index - 1] === '--allow')
-    expect(rules).toEqual([`MCPTool(${BROWSER_MCP_SERVER}__*)`])
-    // The rule is a global option, ahead of the subcommand, which is where the client reads it.
-    expect(args.indexOf('--allow')).toBeLessThan(args.indexOf('agent'))
+    expect(args).not.toContain('--allow')
+    expect(args.join(' ')).not.toContain('MCPTool(')
   })
 
   it('approves only Sotto\'s own server for Codex', async () => {
@@ -23,7 +21,7 @@ describe('browser admission carries no native prompt', () => {
     try {
       const config = await browserCodexConfig(server, 'thread', 'high') as { config: { mcp_servers: Record<string, { default_tools_approval_mode?: string }> } }
       expect(Object.keys(config.config.mcp_servers)).toEqual([BROWSER_MCP_SERVER])
-      expect(config.config.mcp_servers[BROWSER_MCP_SERVER]!.default_tools_approval_mode).toBe('auto')
+      expect(config.config.mcp_servers[BROWSER_MCP_SERVER]!.default_tools_approval_mode).toBe('approve')
     } finally { await server.close() }
   })
 

@@ -19,6 +19,20 @@ function grokBrowserText(rawInput: unknown): string | undefined {
   return used.success ? browserRequestText(used.data.tool_name, used.data.tool_input) : undefined
 }
 
+/**
+ * Grok asks before every call to Sotto's own browser server in its default mode, and has no way to allow
+ * one server for a session. That prompt only admits the agent to this thread's endpoint; page actions
+ * still wait for the user in Tools (ADR-0020). So a request for one of `tools` on `server` is answered
+ * with Grok's own one-time allow, and anything else, or a request with no one-time allow, is left for
+ * the user. The answer is the reply to send, or undefined.
+ */
+export function grokBrowserAdmission(pending: GrokPending, server: string, tools: readonly string[]): unknown {
+  const used = useToolSchema.safeParse(pending.permission?.toolCall.rawInput)
+  if (!used.success || !tools.some(tool => used.data.tool_name === `${server}__${tool}`)) return undefined
+  const once = pending.permission!.options.find(option => option.kind === 'allow_once')
+  return once ? { outcome: { outcome: 'selected', optionId: once.optionId } } : undefined
+}
+
 export function grokPending(wireId: string | number, method: string, value: unknown, threadId: string): GrokPending | undefined {
   const id = `grok-request-${JSON.stringify(wireId)}`
   if (method === 'session/request_permission') {

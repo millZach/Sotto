@@ -83,7 +83,7 @@ Checked in headless Chromium: the default size and spot, dragging, stopping at t
 - **Tests.** Unit tests for the store rules. A Playwright spec: an agent in thread A opens a page, the player shows over A; focus B, and neither A's page nor its player is drawn; go back to A and it returns. Keyboard: the player's controls have names, Escape closes it, and focus returns to the composer.
 - **Docs.** Amend ADR-0020 (the corner preview and pinning); a new `CONTEXT.md` entry for the player, replacing **Browser preview**; `README.md` and `docs/guide.md`. Design captures at the three window sizes, in light, dark and reduced motion.
 
-### Step 2. Remove the provider's prompt for Sotto's own browser tools (`fix/browser-tools-ask-once`)
+### Step 2. Remove the provider's prompt for Sotto's own browser tools (`fix/browser-tools-ask-once`, done September 25, 2026)
 
 ADR-0020 already says (a) was never the gate; this step makes that true for the two clients step 0 caught.
 

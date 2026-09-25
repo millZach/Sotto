@@ -116,8 +116,9 @@ export async function browserCodexConfig(tools: BrowserAgentTools | undefined, t
   if (tools) {
     const server = await tools.mcpServer(threadId)
     // Sotto's own browser tools carry no native prompt; the answer that matters is the one the user
-    // gives in Tools (ADR-0020). The mode is scoped to this server alone and changes no global config.
-    config.mcp_servers = { [server.name]: { url: server.url, tool_timeout_sec: 360, default_tools_approval_mode: 'auto', http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
+    // gives in Tools (ADR-0020). `approve`, not `auto`: Codex's `auto` decides from a tool's own hints
+    // and still asked in a real turn. The mode is scoped to this server alone and changes no global config.
+    config.mcp_servers = { [server.name]: { url: server.url, tool_timeout_sec: 360, default_tools_approval_mode: 'approve', http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
   }
   return Object.keys(config).length ? { config } : {}
 }
