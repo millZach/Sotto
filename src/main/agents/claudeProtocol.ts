@@ -19,27 +19,38 @@ export class ClaudeProtocol {
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
     this.child = spawn(executable, args, { cwd, env, windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); resolve(); if (!this.stopping) onExit() }))
-    let buffer = ''; let stderrBytes = 0
+    // The unfinished line is kept as fragments with a running byte count, so a large frame arriving in
+    // many chunks costs one pass over each chunk and one join, not a rescan of everything so far.
+    let fragments: string[] = []; let pendingBytes = 0; let stderrBytes = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
-      buffer += chunk
-      if (Buffer.byteLength(buffer) > CLAUDE_MAX_FRAME_BYTES) { this.abort(); return }
-      let newline: number
-      while ((newline = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1)
-        if (!line.trim()) continue
-        let frame: ClaudeFrame
-        try { frame = JSON.parse(line) as ClaudeFrame; if (!frame || typeof frame !== 'object') throw new Error() } catch { this.abort(); return }
-        if (frame.type === 'control_response') {
-          const response = object(frame.response); const id = response?.request_id
-          const waiter = typeof id === 'string' ? this.waiters.get(id) : undefined
-          if (waiter) {
-            clearTimeout(waiter.timer); this.waiters.delete(id as string)
-            if (response?.subtype === 'success' && object(response.response)) waiter.resolve(response.response as ClaudeFrame)
-            else waiter.reject(new Error('Claude rejected a control request. Check the native client.'))
+      pendingBytes += Buffer.byteLength(chunk)
+      if (pendingBytes > CLAUDE_MAX_FRAME_BYTES) { fragments = []; this.abort(); return }
+      let start = 0
+      try {
+        let newline: number
+        while ((newline = chunk.indexOf('\n', start)) >= 0) {
+          let line = chunk.slice(start, newline); start = newline + 1
+          if (fragments.length) { fragments.push(line); line = fragments.join(''); fragments = [] }
+          if (!line.trim()) continue
+          let frame: ClaudeFrame
+          try { frame = JSON.parse(line) as ClaudeFrame; if (!frame || typeof frame !== 'object') throw new Error() } catch { this.abort(); return }
+          if (frame.type === 'control_response') {
+            const response = object(frame.response); const id = response?.request_id
+            const waiter = typeof id === 'string' ? this.waiters.get(id) : undefined
+            if (waiter) {
+              clearTimeout(waiter.timer); this.waiters.delete(id as string)
+              if (response?.subtype === 'success' && object(response.response)) waiter.resolve(response.response as ClaudeFrame)
+              else waiter.reject(new Error('Claude rejected a control request. Check the native client.'))
+            }
           }
+          onFrame(frame)
         }
-        onFrame(frame)
+      } finally {
+        // Whatever this chunk did not consume stays pending, as the rest of the old buffer did, even
+        // when a malformed line or a throwing listener ends the loop early.
+        if (start === 0) fragments.push(chunk)
+        else { const rest = chunk.slice(start); fragments = rest ? [rest] : []; pendingBytes = Buffer.byteLength(rest) }
       }
     })
     this.child.stderr.on('data', (chunk: Buffer) => { stderrBytes += chunk.length; if (stderrBytes > 1024 * 1024) this.abort() })
