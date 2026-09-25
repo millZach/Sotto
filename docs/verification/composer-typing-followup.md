@@ -13,10 +13,13 @@ is temporary for that session, not an installed update or a release.
 - [x] Demonstrate regressions that fail before the fix and pass afterward.
 - [x] Confirm typing and deleting feel responsive in the user's normal app.
 - [x] Run relevant Electron journeys and inspect the supported window sizes.
-- [x] Finish manual standards/spec review and remove diagnostic collection.
+- [x] Finish independent standards/spec reviews and remove diagnostic collection.
 - [x] Complete the full CI test run and record failures separately.
-- [ ] Fully green test gates: one intermittent chat-recovery failure and two
-  baseline theme failures remain; this branch is not claimed merge-ready.
+- [x] Required Windows and Linux CI gates passed on `686236ee` (5,240 tests
+  passed, 50 skipped on Windows). The final test/documentation follow-up must
+  also pass before merge; [PR #330](https://github.com/millZach/Sotto/pull/330)
+  records checks for its exact latest revision. Baseline theme failures remain
+  separately documented below.
 
 ## Cause and evidence
 
@@ -150,18 +153,37 @@ does nothing when already connected; the test had depended on startup still bein
 in flight to import its mock. The fixture now explicitly disconnects and reconnects
 after installing the snapshot and asserts that the valid history was accepted
 before introducing invalid data. All 22 recovery cases pass with that ordering.
-Production personal-chat behavior was not changed. A fresh full gate run follows.
+Production personal-chat behavior was not changed.
+
+The next local full run passed 5,242 tests and failed one Claude socket fixture
+at connection setup, before the scenario ran: the fake CLI's subscription/model
+probe failed. That run coincided with Windows allocation failures in concurrent
+lint/build processes; its elapsed time was 1,944.23 seconds. All four socket
+creation/streaming cases passed in isolation afterward. The clean Windows CI run
+on `686236ee` then passed 397 files / 5,240 tests with 23 files / 50 tests skipped;
+the Linux host archive/socket/SSH job also passed. Local typecheck, lint, notices
+and build passed (lint/build were retried after the allocation failures).
+
+A final Electron run also covered skills and review-comment sending; both passed,
+as did typing styles, keyboard handoff and split workspace. The attachment-layout
+setup exposed another timing assumption: its optimistic first message appeared
+before queuing was enabled. It now waits for the enabled Queue prompt action
+before pressing Enter to build the layout fixture. Both short-window cases passed
+three consecutive runs afterward (six passes). Assertions were not weakened.
 
 ## Review and diagnostic cleanup
 
-Standards and spec are reviewed separately against AGENTS.md and the user's
-reported typing/backspace symptom. The code-review skill's required custom
-`code-reviewer` agent is unavailable here, so this is a manual review, not an
-independent two-agent review. No unresolved findings in the changed code: the
-standards pass checked privacy, theme roles, gates and shell/detail boundaries;
-the spec pass checked responsiveness, exact draft durability, latest-text sends,
-keyboard/picker behavior and preservation of the existing appearance. The two
-pre-existing theme journey failures above remain open verification limitations.
+Standards and spec were reviewed separately by two independent local critics
+against AGENTS.md and the user's typing/backspace symptom. This was the project's
+separate-critic workflow: the code-review skill's custom reviewer role was
+unavailable, and both GitHub review bots reported account usage limits. Neither
+critic found an actionable defect. Standards covered privacy, theme roles, gates,
+shell/detail boundaries and cache ownership. Behavior covered durability, latest
+text, queue/steer/answer paths, references, keyboard behavior and appearance.
+The behavior critic suggested a nonblocking coverage improvement, now added:
+the review-comment send test performs a second nonempty edit before submission
+to check that comments are appended to the latest text. Incidental design capture
+changes were restored. The two baseline theme failures remain documented above.
 
 The dedicated diagnostic Electron window was closed and its owned temporary
 profile removed. CPU profiling and replay broadcasts stopped. Private workload

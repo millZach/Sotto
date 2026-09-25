@@ -61,6 +61,9 @@ describe('review comments on the composer', () => {
   it('sends the comments in the prompt’s own text after the message, then takes the chips off', () => {
     const { live, prompt } = mount()
     act(() => { reviewCommentStore.add(THREAD, { path: 'src/main/voice.ts', lines: [remove(12, 'old'), add(12, 'new')], text: 'Say why.' }) })
+    fireEvent.change(prompt(), { target: { value: 'An earlier draft.' } })
+    // A second nonempty edit need not render the surrounding controls. Comments
+    // must be appended to the latest text rather than the first captured draft.
     fireEvent.change(prompt(), { target: { value: 'Tighten this before we merge.' } })
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const text = 'Tighten this before we merge.\n\nComment on `src/main/voice.ts L12`:\n\nSay why.\n\n```diff\n-old\n+new\n```'
