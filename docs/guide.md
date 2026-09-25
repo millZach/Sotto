@@ -38,6 +38,17 @@ Model questions with choices appear above the thread's message bar. Pick an answ
 
 Sotto enables Codex's clarification tool during normal work and asks it to use that tool for questions that need your answer. A question can appear while Codex continues independent work. Only **Send answer** submits your choice. Questions written only as ordinary chat text remain in the conversation.
 
+When Codex asks you to open a link, for example to sign in to an app, the question shows the link with **Continue** and **Decline**. Open the link yourself, then press **Continue**.
+
+### Codex's Computer Use
+
+Codex can see and operate the apps on your computer with its Computer Use, as it does in the Codex app. In Sotto it works when two things are true:
+
+- The thread's permissions are **Full access**. Codex's sandbox stops Computer Use in every other mode. Full access means exactly that: Codex can then run anything and change anything, on the whole computer.
+- The Codex desktop app is open. Computer Use talks to a helper the Codex app runs.
+
+Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its steps show in the thread as **Computer Use**. When one fails because either condition is missing, the step says which, and nothing was changed.
+
 ### Sending, steering and screenshots
 
 While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery.
