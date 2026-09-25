@@ -61,6 +61,15 @@ What this shows:
 - **Not the cause:** Sotto's handling of elicitations and permission requests (none came), the environment allow-list (passing everything through changed nothing), or the Codex build (the desktop app's binary behaved like the npm one).
 - **T3 Code does the same thing and no more.** Read at `pingdotgg/t3code@d06f0ff1`: it spawns its own `codex app-server` over stdio (`CodexSessionRuntime.ts:1334-1363`, `codexLaunchArgs.ts:3-14`), passes its whole environment (`ProviderInstanceEnvironment.ts:5-21`), and maps Full access to `never` / `danger-full-access` for the whole thread and turn (`CodexSessionRuntime.ts:541-546`, `:581-584`). It has no sandbox exemption for one server, no daemon or proxy connection, and no mention of the helper, its pipe or `CODEX_WINDOWS_REGISTERED_CORE`. Its Computer Use working comes from starting threads in Full access while the Codex app is open. T3's own provider logs on this machine (`~/.t3/userdata/logs/provider`, files dated September 13 and 19) record the same error 18 times, "Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified." So T3 needs the app open too. Only the error text and file dates were read, no conversation content.
 
+### After step 4 (`fix/codex-computer-use-needs`)
+
+Sotto now names Computer Use calls and explains the two known failures on the call's own step. Two live turns with `$computer-use:computer-use`, Codex 0.157.0, the Codex app closed:
+
+| Run | Steps | What the step says |
+| --- | --- | --- |
+| Default mode | two `Computer Use` steps, both failed | "Computer Use can't run in this thread's sandbox. Nothing was changed. Switch the thread to Full access to use it." |
+| Full access | one `Computer Use` step completed, one helper `node_repl / js` step (no `sky` use) completed, one `Computer Use` step failed | "Computer Use needs the Codex app open. Nothing was changed. Open Codex and ask again." |
+
 ## Unchecked
 
 - Whether the self-started helper asks the same per-app questions as the app's helper ("Allow Codex to use <app>?"). Only listing was tried, and no question came from either.
