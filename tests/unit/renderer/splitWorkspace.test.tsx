@@ -244,7 +244,7 @@ describe('split thread workspace', () => {
     const reported: (readonly string[])[] = []
     const view = mount({ slots: {
       onPaneThreadsChange: ids => reported.push(ids),
-      paneCrumb: pane => <span data-testid="crumb">{pane.row.thread.id}</span>,
+      paneWorkingCopy: pane => <span data-testid="crumb">{pane.row.thread.id}</span>,
       paneNotice: pane => <button type="button" onClick={pane.focusPrompt}>Notice for {pane.row.thread.id}</button>,
       focusedPaneActions: <button type="button">Files</button>,
     } })

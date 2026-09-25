@@ -88,9 +88,9 @@
   .threads-view .thread-pane .thread-workspace__head { padding-left: 14px; }
   /* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. */
   .threads-view .thread-pane .thread-workspace__crumb { display: none; }
-  .threads-view .thread-pane .thread-workspace__crumb:has(.working-copy) { display: flex; flex: 0 1 auto; min-width: 32px; }
-  .threads-view .thread-pane .thread-workspace__crumb:has(.working-copy)::before,
-  .threads-view .thread-pane .thread-workspace__crumb:has(.working-copy) > :not(.working-copy) { display: none; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
   .threads-view .thread-pane .working-copy__trigger { max-width: 160px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px; }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }

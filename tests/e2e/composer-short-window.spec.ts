@@ -99,6 +99,9 @@ test('one attached image keeps the prompt and its action above the window edge a
     await expect(docs.getByLabel('Thread transcript')).toContainText('Start the long job.')
     for (const text of ['Queued first.', 'Queued second.']) {
       await docsManual.fill(text)
+      // The transcript shows the optimistic send before main admits the running
+      // turn. Build the layout fixture only once the next prompt can be queued.
+      await expect(docs.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
       await docsManual.press('Enter')
       await expect(docs.getByRole('region', { name: 'Queued messages' })).toContainText(text)
     }

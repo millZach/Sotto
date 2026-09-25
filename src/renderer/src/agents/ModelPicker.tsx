@@ -49,10 +49,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   const rail = useRef<HTMLDivElement>(null)
   const dialogId = useId()
   const groups = useMemo(() => {
+    if (!open) return []
     const result = new Map<string, AgentModel[]>()
-    for (const model of models) result.set(model.provider, [...(result.get(model.provider) ?? []), model])
+    for (const model of models) {
+      const group = result.get(model.provider)
+      if (group) group.push(model)
+      else result.set(model.provider, [model])
+    }
     return [...result].map(([name, items]) => ({ name, providerId: items[0]?.providerId, models: newestModelsFirst(items) }))
-  }, [models])
+  }, [models, open])
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   useLayoutEffect(() => {

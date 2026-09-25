@@ -295,12 +295,15 @@ describe('composer option chips', () => {
     const state = fixture()
     const command = vi.fn(async () => state)
     const onDraftText = vi.fn()
-    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} draftText="Review this plan." onDraftText={onDraftText} />)
+    let draftText = 'Review this plan.'
+    const { rerender } = render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} getDraftText={() => draftText} onDraftText={onDraftText} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    // Typing does not render these controls again; the click must read the current draft.
+    draftText = 'Review this plan and the latest edit.'
     fireEvent.click(screen.getByRole('button', { name: 'Add Ultrathink to prompt' }))
-    expect(onDraftText).toHaveBeenCalledWith('Review this plan.\n\nultrathink')
+    expect(onDraftText).toHaveBeenCalledWith('Review this plan and the latest edit.\n\nultrathink')
     expect(command).not.toHaveBeenCalled()
-    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} draftText="Review this plan. ULTRATHINK" onDraftText={onDraftText} />)
+    rerender(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} getDraftText={() => 'Review this plan. ULTRATHINK'} onDraftText={onDraftText} />)
     if (!screen.queryByRole('dialog', { name: 'Reasoning effort' })) fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     const included = screen.getByRole('button', { name: 'Ultrathink is in this prompt' })
     fireEvent.click(included)
@@ -345,7 +348,7 @@ describe('composer option chips', () => {
     expect(screen.queryByRole('button', { name: 'Add Ultrathink to prompt' })).toBeNull()
     cleanup()
     const state = fixture({ providerId: 'codex', modelId: 'codex:model' })
-    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={vi.fn()} draftText="Review this." onDraftText={vi.fn()} />)
+    render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={vi.fn()} getDraftText={() => "Review this."} onDraftText={vi.fn()} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     expect(screen.queryByRole('button', { name: 'Add Ultrathink to prompt' })).toBeNull()
   })

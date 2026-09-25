@@ -22,3 +22,25 @@ The catalog itself rarely changes — a model list is edited by a subscription o
 - A window's own memory of what it holds lives only as long as its wrapped bridge's closure does, so a reload or a fresh window empties it at exactly the moment the window's actual knowledge also empties, without main needing to notice the window came back — correctness does not depend on `windowManager.ts`'s `loadedRendererUrls` catching every reload path, only on `deliver()`'s return value gating what main assumes was received.
 - `AGENT_GET` and `AGENT_COMMAND` (`src/main/agents/ipc.ts`) are unchanged: both still answer with a whole `AgentState`, model arrays included, because they are the recovery path this design depends on.
 - The remote host socket protocol (`src/host/socketServer.ts`, `socketHostService.ts`) is untouched. It still sends a whole `AgentState` on every event; a catalog omission is only a property of the desktop's own broadcast to its two windows; see `docs/agent-control.md` if that protocol's own cost is addressed later.
+
+### September 25 amendment: routine replies do not copy histories
+
+Draft saves and voice-status reports now return the coordinator's shell directly,
+including the model catalogs and exact draft persistence evidence. The desktop
+router and host protocol already return a shell for commands. Previously the
+coordinator first copied all loaded histories into a full reply, which the router
+then discarded. On the owner's 80-thread session with about 20,400 activity
+records, that intermediate copy took 226 ms on Electron's main thread; the shell
+took 10 ms. This blocked desktop input even after the renderer's work was reduced.
+
+Persistence, revision checks, error replies and the separate thread-detail channel
+are unchanged. An explicit `get()` still returns the full state. Other command
+paths retain their existing replies. The desktop's catalog recovery remains a
+whole-catalog read, not an omitted-catalog broadcast. This changes no wire schema.
+
+Renderer work also stays near the edited field: the pane and controls subscribe
+only to the draft facts they display, a closed model picker does not group its
+catalog, and repeated immutable history arrays reuse their reconciled identity.
+Theme inspection and working-copy presence use explicit attributes rather than
+broad descendant `:has()` selectors that invalidated the window on textarea edits.
+See [the follow-up verification](../verification/composer-typing-followup.md).

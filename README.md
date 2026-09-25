@@ -27,6 +27,8 @@ Sotto runs the Claude Code, Codex, Grok Build and Devin clients you already have
 - **Worktrees for parallel work.** Give a thread its own branch and folder, and remove the folder when you're done.
 - **Dictation anywhere.** Press `Ctrl+Shift+Space` (`⌃⇧Space` on a Mac), speak, and press it again. The text is copied and can be pasted at your cursor.
 
+Thread drafts save automatically while you type, including while other threads are working.
+
 ## Install
 
 You need Windows 10 or 11 (x64), or an Apple silicon Mac with macOS 12 or newer.

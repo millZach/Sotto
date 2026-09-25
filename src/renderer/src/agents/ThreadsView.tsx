@@ -56,8 +56,8 @@ export interface ThreadsViewProps {
   readonly tools?: ThreadToolsSlot | undefined
   /** Once, at the end of the focused pane's header actions (the tools panel's toggle). */
   readonly focusedPaneActions?: ReactNode
-  /** In each pane's header, after the project title. */
-  readonly paneCrumb?: ThreadPaneSlot | undefined
+  /** The working-copy control in each pane's header, after the project title. */
+  readonly paneWorkingCopy?: ThreadPaneSlot | undefined
   /** In each pane, directly above its composer. */
   readonly paneNotice?: ThreadPaneSlot | undefined
   /**
@@ -72,7 +72,7 @@ export interface ThreadsViewProps {
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools, focusedPaneActions, paneCrumb, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools, focusedPaneActions, paneWorkingCopy, paneNotice, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const agents = useAgents()
   const app = useOptionalApp()
   // Voice is hidden for the beta, and the Agents room is a voice surface: without it the page offers only a new thread.
@@ -197,7 +197,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenThread={openThread}
       onFocusPane={() => focusPane(threadId)} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
-      crumb={paneCrumb?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
+      workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={focused ? focusedPaneActions : undefined} />
   }
 
   return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
