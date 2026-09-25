@@ -224,13 +224,13 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ showWidgetWhenIdle: false })
   })
 
-  it('turns browser previews off through the ordinary patch flow', async () => {
+  it('turns showing the browser when an agent opens a page off through the ordinary patch flow', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
     await selectCategory('Application')
 
-    const toggle = screen.getByRole('switch', { name: 'Show browser previews' })
+    const toggle = screen.getByRole('switch', { name: 'Show the browser when an agent opens a page' })
     expect(toggle).toBeChecked()
     await user.click(toggle)
 

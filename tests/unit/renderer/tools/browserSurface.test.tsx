@@ -321,8 +321,8 @@ describe('Browser page placement', () => {
 })
 
 describe('web links in a thread', () => {
-  function transcript(browser: ReturnType<typeof fakeBrowser>, store: ToolsPanelStore) {
-    render(<ThreadWebLinks threadId="visual-gate" threadTitle="Visual gate flake" bridge={browser.bridge} store={store}>
+  function transcript(browser: ReturnType<typeof fakeBrowser>, store: ToolsPanelStore, focused = true) {
+    render(<ThreadWebLinks threadId="visual-gate" threadTitle="Visual gate flake" bridge={browser.bridge} store={store} focused={focused}>
       <MessageContent text="See [the docs](https://example.com/docs) or [mail us](mailto:team@example.com)." />
     </ThreadWebLinks>)
   }
@@ -339,8 +339,19 @@ describe('web links in a thread', () => {
     store.setOpen(false)
     store.pin('grok-previews')
     await userEvent.click(screen.getByRole('link', { name: 'the docs' }))
-    expect(await screen.findByText('Opened in Visual gate flake’s browser. The tools panel is pinned to another thread.')).toBeInTheDocument()
+    expect(await screen.findByText('Opened in Visual gate flake’s browser. Open Tools > Browser in that thread to see it.')).toBeInTheDocument()
     expect(store.getSnapshot()).toMatchObject({ open: false, pinnedThreadId: 'grok-previews' })
+  })
+
+  it('adopts the page but never opens Tools when the click came from a pane that is not focused (#331)', async () => {
+    const browser = fakeBrowser()
+    const store = new ToolsPanelStore()
+    transcript(browser, store, false)
+    await userEvent.click(screen.getByRole('link', { name: 'the docs' }))
+    await waitFor(() => expect(browser.bridge.openLink).toHaveBeenCalledWith({ url: 'https://example.com/docs', target }))
+    expect(await screen.findByText('Opened in Visual gate flake’s browser. Open Tools > Browser in that thread to see it.')).toBeInTheDocument()
+    expect(store.getSnapshot()).toMatchObject({ open: false })
+    expect(store.browser.thread('visual-gate')?.activePageId).toBe(PAGE_2)
   })
 
   it('offers a per-link choice from the keyboard and returns focus to the link', async () => {

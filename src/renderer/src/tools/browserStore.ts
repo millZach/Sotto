@@ -55,12 +55,9 @@ function sameBounds(a: BrowserBounds | null, b: BrowserBounds | null): boolean {
  */
 export class BrowserStore {
   private tasksSnapshot: readonly BrowserTask[] = []
-  private readonly dismissedTasks = new Set<string>()
   private readonly taskThreads = new Set<string>()
   taskSnapshot = (): readonly BrowserTask[] => this.tasksSnapshot
-  isDismissed(id: string): boolean { return this.dismissedTasks.has(id) }
-  dismissTask(id: string): void { this.dismissedTasks.add(id); this.tasksSnapshot = [...this.tasksSnapshot]; this.emit() }
-  /** Subscribe before Tools opens, so background browser work can introduce itself in the corner. */
+  /** Subscribe before Tools opens, so background browser work can introduce itself in the player. */
   watchTasks(bridge: BrowserBridge | undefined, threadIds: readonly string[]): void {
     if (!bridge) return
     this.listen(bridge)
@@ -99,8 +96,6 @@ export class BrowserStore {
   private receiveTask(task: BrowserTask): void {
     const previous = this.tasksSnapshot.find(item => item.id === task.id)
     if (previous && previous.updatedAt > task.updatedAt) return
-    // A new permission needs the user again; ordinary progress never reopens a dismissed preview.
-    if (task.pendingAction && task.pendingAction.id !== previous?.pendingAction?.id) this.dismissedTasks.delete(task.id)
     this.tasksSnapshot = [...this.tasksSnapshot.filter(item => item.id !== task.id), task].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100)
     this.emit()
   }

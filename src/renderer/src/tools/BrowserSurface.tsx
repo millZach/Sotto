@@ -1,11 +1,13 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, Plus, RotateCw, Share2, X } from 'lucide-react'
-import type { BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
+import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { useOptionalAgents } from '../agents/AgentContext'
-import { BrowserTaskDetails } from './BrowserTaskPreview'
+import { BrowserTaskDetails } from './BrowserTaskDetails'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { useBrowserPageMount } from './useBrowserPageMount'
+import { useOverlayOpen } from './browserOverlay'
 import { ToolsChrome } from './ToolsChrome'
 
 export interface BrowserSurfaceProps {
@@ -15,9 +17,6 @@ export interface BrowserSurfaceProps {
   readonly onStatus: (message: string) => void
 }
 
-/** Anything drawn above the page that a native view would cover. Native views composite over all DOM. */
-const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], dialog[open], [data-covers-native-view]'
-
 function listProblem(error: ToolsError, bridge: boolean): string {
   if (!bridge) return 'Browser is not available in this window.'
   switch (error.code) {
@@ -25,45 +24,6 @@ function listProblem(error: ToolsError, bridge: boolean): string {
     case 'workspace-unavailable': return 'The working folder is not available.'
     default: return error.message || 'The browser could not list its pages.'
   }
-}
-
-/**
- * The theme editor minimized to its bar is the one overlay that covers only what it overlaps: the reader keeps it up
- * while checking a theme against the page, so the page shows beside it and steps aside only under it.
- */
-const COVERS_WHERE_IT_OVERLAPS = '[data-theme-editor-panel][data-minimized]'
-
-/** Whether `element` reaches a pixel of the native page, which main draws at `viewport`'s rounded rectangle. */
-function overlapsPage(element: HTMLElement, viewport: HTMLElement | null): boolean {
-  if (!viewport) return true
-  const box = element.getBoundingClientRect()
-  const page = viewport.getBoundingClientRect()
-  return Math.floor(box.left) < Math.round(page.right) && Math.ceil(box.right) > Math.round(page.left)
-    && Math.floor(box.top) < Math.round(page.bottom) && Math.ceil(box.bottom) > Math.round(page.top)
-}
-
-/** True while an overlay outside `inside` covers the page at `viewport`, so the native page steps aside for it. */
-function useOverlayOpen(inside: React.RefObject<HTMLElement | null>, viewport: React.RefObject<HTMLElement | null>): boolean {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    let frame = 0
-    const check = (): void => {
-      cancelAnimationFrame(frame)
-      frame = 0
-      const overlays = [...document.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR)].filter(element => !inside.current?.contains(element) && element.getClientRects().length > 0)
-      const bars = overlays.filter(element => element.matches(COVERS_WHERE_IT_OVERLAPS))
-      const modal = bars.length < overlays.length
-      setOpen(modal || bars.some(bar => overlapsPage(bar, viewport.current)))
-      // A bar moves with no DOM change this observes (a drag, the window or panel resizing), so it is measured every
-      // frame while it alone could cover the page.
-      if (!modal && bars.length > 0) frame = requestAnimationFrame(check)
-    }
-    check()
-    const observer = new MutationObserver(check)
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'open', 'hidden', 'data-covers-native-view', 'data-minimized'] })
-    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
-  }, [inside, viewport])
-  return open
 }
 
 /**
@@ -263,26 +223,8 @@ function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenE
   const show = page.status !== 'unavailable' && !covered
   const pageId = page.id
 
-  // Main draws the page where this element sits. Layout can move it without resizing it (the panel's edge, a
-  // pane split), so the rectangle is read every frame while shown and sent only when it changes.
-  useLayoutEffect(() => {
-    if (!show) { store.mount(bridge, threadId, pageId, null); return }
-    let frame = 0
-    const place = (): void => {
-      const element = host.current
-      if (element) {
-        const rect = element.getBoundingClientRect()
-        const x = Math.max(0, Math.round(rect.left))
-        const y = Math.max(0, Math.round(rect.top))
-        const width = Math.round(rect.right) - x
-        const height = Math.round(rect.bottom) - y
-        store.mount(bridge, threadId, pageId, width >= 1 && height >= 1 && document.visibilityState !== 'hidden' ? { x, y, width, height } : null)
-      }
-      frame = requestAnimationFrame(place)
-    }
-    place()
-    return () => { cancelAnimationFrame(frame); store.mount(bridge, threadId, pageId, null) }
-  }, [show, store, bridge, threadId, pageId])
+  const mount = useCallback((bounds: BrowserBounds | null) => store.mount(bridge, threadId, pageId, bounds), [store, bridge, threadId, pageId])
+  useBrowserPageMount(host, show, mount)
 
   return <div className="browser-page" id="browser-page" role="tabpanel" aria-label={pageLabel(page)} data-status={page.status}>
     {page.status === 'unavailable' ? <div className="files-problem browser-unavailable" role="status">

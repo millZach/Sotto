@@ -284,7 +284,7 @@ interface AgentContextValue extends AgentConnection {
   readonly claimPersonalAudio: () => () => void
   readonly waitForPersonalAudio: () => Promise<void>
   readonly responseStreaming: AppSettings['responseStreaming']
-  /** Whether browser tasks show a corner preview; off leaves the work and Tools > Browser unchanged. */
+  /** Whether the browser player opens on its own when an agent opens a page; off leaves the work and Tools > Browser unchanged. */
   readonly showBrowserPreviews: boolean
 }
 

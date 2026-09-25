@@ -4,8 +4,9 @@
   "stopAsksAgain": true,
   "threadWideAnswerRestoresGrant": true,
   "settingOffAsksOtherThread": true,
-  "otherThreadPreviewHidden": true,
-  "previewsOffHidden": true,
+  "otherThreadPlayerHidden": true,
+  "autoShowOffHidden": true,
   "toolsIconMarkedWaiting": true,
+  "focusSwitchHidesPlayerAndPage": true,
   "errors": []
 }

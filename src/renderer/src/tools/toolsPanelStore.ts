@@ -61,11 +61,14 @@ export class ToolsPanelStore {
   setWidth(width: number): void { this.update({ width: clampPanelWidth(width), resized: true }) }
 
   /**
-   * Shows a page main just opened for a thread. The panel opens on Browser; a panel pinned to another thread
-   * keeps its pin, and the answer is false so the caller can say where the page went.
+   * Shows a page main just opened for a thread's own pane. The page is adopted either way, so Tools > Browser has
+   * it once the user gets there; the panel itself only opens on Browser when the click came from the *focused*
+   * pane (a link in an unfocused split pane must never pull the focused thread's Browser open, #331) and the panel
+   * is not pinned to a different thread. The answer is false so the caller can say where the page went.
    */
-  showBrowserPage(page: BrowserPage): boolean {
+  showBrowserPage(page: BrowserPage, focused: boolean): boolean {
     this.browser.adopt(page)
+    if (!focused) return false
     const pinned = this.chrome.pinnedThreadId
     if (pinned !== null && pinned !== page.workspace.threadId) return false
     this.update({ open: true, surface: 'browser' })
@@ -87,12 +90,16 @@ export class ToolsPanelStore {
   /** Whether the open that just happened was a quiet one, which leaves focus alone; asking clears it. */
   takeQuietOpen(): boolean { const quiet = this.quietOpen; this.quietOpen = false; return quiet }
 
-  /** Clicking a task is an explicit request to inspect that thread's exact retained page. */
+  /**
+   * Moves a task's page into Tools > Browser: what the player's own "Move into Tools" button asks for. It never
+   * pins (only the rail's own pin control pins, ADR-0020's September 25 player amendment); the player shows only
+   * the focused thread's task, so Tools already follows it there once unpinned.
+   */
   async showBrowserTask(task: BrowserTask, bridge: BrowserBridge | undefined): Promise<boolean> {
     await this.browser.activate(bridge, task.threadId)
     if (!this.browser.thread(task.threadId)?.pages.some(page => page.id === task.pageId && page.workspace.workspaceId === task.workspaceId)) return false
     this.browser.select(task.threadId, task.pageId)
-    this.update({ open: true, surface: 'browser', pinnedThreadId: task.threadId })
+    this.update({ open: true, surface: 'browser' })
     return true
   }
 

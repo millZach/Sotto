@@ -205,7 +205,8 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
   const report: Record<string, unknown> = {}
   try {
     const folder = await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      // The browser player section later proves a waiting request, so ADR-0029's default grant is off before it opens a page.
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', browserWithoutAsking: false })
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
       const state = await agents.command({ type: 'connect' })
@@ -469,26 +470,26 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     }
     await screenshot(launched, 'agents-reduced-motion-1280-dark', false)
 
-    // A browser task waiting on another surface puts the corner preview up while Tools shows Files; it stands
+    // A browser task waiting on another surface puts the floating player up while Tools shows Files; it stands
     // inside the rail rather than over its lower tiles.
     await select('Files')
     // The request waits for an answer; a teardown that closes the page first must not hide the failure that caused it.
     const opening = page.evaluate(async request => window.sottoE2E!.browserAgent!(request), { threadId: 'workshop', name: 'browser_open', arguments: { url, description: 'Checking the trail list' } })
       .catch((error: unknown) => ({ failed: String(error) }))
-    const corner = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
+    const player = page.getByRole('complementary', { name: 'Browser for Workshop' })
     for (const [width, height] of [[1280, 800], [820, 560]] as const) {
       await resize(launched, width, height)
-      await expect(corner).toBeVisible()
-      await expect(corner).toContainText('Waiting for your permission')
+      await expect(player).toBeVisible()
+      await expect(player).toContainText('Waiting for your answer')
       await expect(tab('Browser')).toHaveAttribute('aria-description', 'A browser request is waiting for your answer')
       expect(await page.evaluate(() => {
-        const preview = document.querySelector('.browser-corner')!.getBoundingClientRect()
+        const shown = document.querySelector('.browser-player')!.getBoundingClientRect()
         return [...document.querySelectorAll('.tools-rail__tab, .tools-rail__foot button')].filter(control => {
           const box = control.getBoundingClientRect()
-          return box.left < preview.right && box.right > preview.left && box.top < preview.bottom && box.bottom > preview.top
+          return box.left < shown.right && box.right > shown.left && box.top < shown.bottom && box.bottom > shown.top
         }).map(control => control.getAttribute('aria-label') ?? control.textContent)
-      }), `${width}x${height} rail under the corner preview`).toEqual([])
-      await screenshot(launched, `corner-preview-files-${width}x${height}-dark`, false)
+      }), `${width}x${height} rail under the browser player`).toEqual([])
+      await screenshot(launched, `browser-player-files-${width}x${height}-dark`, false)
     }
     await page.evaluate(async () => {
       const listed = await window.sotto!.browser!.tasks({ threadId: 'workshop' })

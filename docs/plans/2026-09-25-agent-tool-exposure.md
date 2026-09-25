@@ -61,7 +61,7 @@ Each step is its own PR from `main`, in this order. Zach's decisions are recorde
 
 Two opt-in live tests, run through Sotto's own adapters with real, paid model turns: the `SOTTO_BROWSER_TURN_LIVE` case in `tests/integration/browserProvidersLive.test.ts`, and `tests/integration/codexComputerUseLive.test.ts`. The results are in `docs/verification/2026-09-25-browser-prompts-and-computer-use.md`, and the sections above now follow them. In short: Claude no longer asks before Sotto's browser tools; Codex and Grok (in its default mode) still do; and Codex's full Computer Use works from Sotto when the thread is in Full access and the Codex desktop app is running, and dies in Sotto's default sandbox.
 
-### Step 1. Give each thread its own floating browser (`feat/thread-browser-player`)
+### Step 1. Give each thread its own floating browser (`feat/thread-browser-player`, done September 25, 2026)
 
 Zach picked a T3-style floating player per thread over mending the corner preview. The layout is not settled, so it starts as HTML prototypes with variants, and Zach's pick is recorded here before any code.
 
