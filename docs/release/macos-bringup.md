@@ -1,6 +1,6 @@
 # macOS bring-up checklist (Apple Silicon)
 
-First-time validation of the macOS build, run on an Apple Silicon Mac. Background and rationale: `docs/adr/0001-macos-unsigned-arm64-distribution.md`. User-facing install steps: README "Install and first run" → macOS.
+First-time validation of the macOS build, run on an Apple Silicon Mac. Background and rationale: `docs/adr/0001-macos-unsigned-arm64-distribution.md`. User-facing install steps: README "Install" → macOS, with the full version in `docs/guide.md` "Install in detail".
 
 ## 0. Prerequisites
 
@@ -63,7 +63,7 @@ tccutil reset Accessibility com.sotto.desktop
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier'      release/mac-arm64/Sotto.app/Contents/Info.plist  # expect com.sotto.desktop
 ```
 
-Replace the `TODO(mac-bringup)` macOS version in README Requirements with the real `LSMinimumSystemVersion` value and commit.
+The README's Requirements table says macOS 12, the minimum for Electron 38 and later. If `LSMinimumSystemVersion` says otherwise, correct the README to the bundle's value and commit.
 
 ## 5. Hardened-runtime measurement (one-time decision)
 
@@ -81,7 +81,7 @@ A locally built DMG carries no quarantine flag, so fake what users see — do no
 xattr -w com.apple.quarantine "0081;00000000;Safari;" release/Sotto-*.dmg
 ```
 
-Open the DMG, drag to /Applications, and follow the README's macOS install steps **verbatim as a naive user** (ideally in a fresh macOS user account). Correct the README if any dialog wording differs on the current macOS version.
+Open the DMG, drag to /Applications, and follow the macOS install steps in the README and in `docs/guide.md` **verbatim as a naive user** (ideally in a fresh macOS user account). Correct both if any dialog wording differs on the current macOS version.
 
 ## 7. Release upload
 
