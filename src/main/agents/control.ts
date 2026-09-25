@@ -164,6 +164,12 @@ export class AgentControl {
   private selectionRevision = 0
   private manualDraftId: string | null = null
   private readonly promptAdmissions = new Map<string, { digest: string; task: Promise<AgentState> }>()
+  /**
+   * The whole-state answer `command()` built over each shell answer, keyed on the shell answer itself. A
+   * repeated prompt is answered with the task already admitted for it, so every caller of that prompt shares
+   * one shell answer, and through this map one whole-state answer too.
+   */
+  private readonly sharedWholeStateReplies = new WeakMap<Promise<AgentState>, Promise<AgentState>>()
   private deliveredPromptDigests: Saved['deliveredPromptDigests'] = []
   private answeredRequests: Saved['answeredRequests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
@@ -1100,12 +1106,10 @@ export class AgentControl {
    */
   command(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
     const reply = this.commandShell(command, client)
-    // A repeated prompt answers with the task already admitted; its callers keep sharing one answer.
-    let whole = this.wholeReplies.get(reply)
-    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error })); this.wholeReplies.set(reply, whole) }
+    let whole = this.sharedWholeStateReplies.get(reply)
+    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error })); this.sharedWholeStateReplies.set(reply, whole) }
     return whole
   }
-  private readonly wholeReplies = new WeakMap<Promise<AgentState>, Promise<AgentState>>()
   /**
    * One client's command, answered with the shell. `client` says who sent it, for the record an answer
    * leaves and for the policy check that decides whether a remote client's answer counts as a grant.

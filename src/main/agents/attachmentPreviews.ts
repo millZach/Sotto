@@ -117,7 +117,7 @@ export class AttachmentPreviews {
         // Only this preview goes. What it pushed out under the size limit stays out: restoring entries here
         // could bring back ones a privacy change has since cleared.
         this.entries = this.entries.filter(item => item !== cached)
-        throw new Error('Could not save attachment previews.', { cause })
+        throw new Error('Could not save the previews of the screenshots in this message. The message was sent; only its previews are unavailable. Check access to local storage.', { cause })
       }
     })
   }
