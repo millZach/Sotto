@@ -270,6 +270,11 @@ export const agentProviderStatusSchema = z.object({
   verifiedVersion: z.string().max(64).optional(),
 })
 export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
+/**
+ * What main answers when the provider refused an action outright: it answered, and it did not take it. Nothing
+ * is left waiting to reconcile, so a window may say that nothing changed; the option chips read this exact sentence.
+ */
+export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
 /** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
 export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
 /** What main answers when reclaiming a worktree would discard uncommitted work; the pane opens its confirmation on this exact sentence. */

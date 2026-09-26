@@ -16,6 +16,7 @@ import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './reques
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
 import { ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
+import { useThreadSettings } from './threadSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
@@ -145,6 +146,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const answerExplains = useSyncExternalStore(requestAnswerStore.subscribe,
     () => error !== null && thread.requests.some(request => requestAnswerStore.get(requestAnswerOwnerKey(thread.id, request,
       { kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }), request.id).error === error))
+  // A settings change the provider refused is told under the option chips, with Try again; the banner would say it twice.
+  const settingsRefusal = useThreadSettings(thread.id).refusal
+  const settingsExplains = error !== null && settingsRefusal?.error === error
   const options = <ThreadOptions key={thread.id} thread={thread} state={state} command={command} />
   useLayoutEffect(() => {
     const pending = handoff.current
@@ -247,7 +251,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {settleDialog}
-    {error && !deliveryExplains && !answerExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
+    {error && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />

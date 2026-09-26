@@ -9,7 +9,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -2178,7 +2178,7 @@ export class AgentControl {
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
-    if (!result.accepted && !result.uncertain) throw new Error('The provider rejected this action. Check its current permissions and account status.')
+    if (!result.accepted && !result.uncertain) throw new Error(PROVIDER_REJECTED_ACTION)
     this.acceptSnapshot(await this.readThread(threadId, provider))
   }
   /**

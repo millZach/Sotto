@@ -31,8 +31,8 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * names, so the menu costs the same whatever a provider is called; the name is the tile's accessible name
  * and its tooltip. On the right the chosen provider's models under a search line, with `note` beneath them
  * -- the reminder that a new thread may still change provider, or that this one may not. A single provider
- * has no rail. Escape or a click outside closes the menu and returns focus to the chip; after a choice the
- * owner restores focus once the change is confirmed.
+ * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
+ * shows on the chip at once while the owner saves it.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void

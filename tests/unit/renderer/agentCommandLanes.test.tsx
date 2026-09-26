@@ -1,4 +1,5 @@
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import React from 'react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -8,12 +9,14 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
-import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
+import { useAgentConnection, type AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
+import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
+import { threadSettingsStore } from '../../../src/renderer/src/agents/threadSettings'
 import type { AgentBridge, AgentCommand, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { agentBridgeFor } from '../../fixtures/agentBridge'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); threadSettingsStore.clear() })
 
 const label = (request: AgentCommand): string => `${request.type}:${'threadId' in request ? request.threadId : ''}`
 
@@ -103,6 +106,47 @@ describe('thread commands in the window', () => {
       expect(workshop?.runtimeMode).toBe('full-access')
       expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', status: 'accepted' }))
     } finally { await act(async () => { proceed(); await configuring; await sending }); await f.close() }
+  })
+
+  it('runs a prompt sent while a permission press is pending on the settings the press asked for, with no wait in the window', async () => {
+    const f = await laneFixture()
+    const executed: string[] = []
+    let proceed!: () => void
+    const provider = new Promise<void>(done => { proceed = done })
+    const execute = f.host.execute.bind(f.host)
+    vi.spyOn(f.host, 'execute').mockImplementation(async (command: AgentHostCommand) => {
+      // What the provider holds for the thread when each command reaches it: a send is labelled with its mode.
+      const mode = (await f.host.snapshot()).threads.find(thread => thread.id === 'workshop')?.runtimeMode ?? 'provider default'
+      executed.push(command.type === 'send' ? `send on ${mode}` : command.type)
+      if (command.type === 'configure-thread') await provider
+      return execute(command)
+    })
+    let connection!: AgentConnection
+    function Chips(): React.ReactElement | null {
+      connection = useAgentConnection(f.bridge)
+      const thread = connection.state?.host.threads.find(item => item.id === 'workshop')
+      return connection.state && thread ? <ThreadOptions thread={thread} state={connection.state} command={connection.command} /> : null
+    }
+    let sending: Promise<AgentState | null> | undefined
+    try {
+      render(<Chips />)
+      const chip = await screen.findByRole('combobox', { name: 'Thread permissions' })
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('option', { name: 'Full access' }))
+      expect(chip).toHaveAttribute('data-pending', 'true')
+      // The prompt goes the moment it is sent: the window holds nothing back behind the pending press.
+      act(() => { sending = connection.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'After the press' }) })
+      expect(f.arrived).toEqual(['configure-thread:workshop', 'manual-send:workshop'])
+      await waitFor(() => expect(executed).toEqual(['configure-thread']))
+      // Main's thread lane keeps the send behind the settings it followed.
+      await new Promise(done => { setImmediate(done) })
+      expect(executed).toEqual(['configure-thread'])
+      expect(chip).toHaveAttribute('data-pending', 'true')
+      await act(async () => { proceed(); await sending })
+      expect(executed).toEqual(['configure-thread', 'send on full-access'])
+      await waitFor(() => expect(chip).not.toHaveAttribute('data-pending'))
+      expect(chip).toHaveTextContent('Full access')
+    } finally { await act(async () => { proceed(); await sending }); await f.close() }
   })
 
   it('never lets a held reply to a thread command paint over state main published after it', async () => {

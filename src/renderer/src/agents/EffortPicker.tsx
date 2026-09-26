@@ -3,7 +3,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
-const effortLabel = (value: string): string => value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1)
+export const effortLabel = (value: string): string => value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1)
 
 /** One line per level: what it does and what it costs. The top of any list gets the top line, whatever its name. */
 const EFFORT_LINES: Record<string, string> = {
@@ -230,83 +230,34 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
 }
 
 /**
- * The effort chip and its card. The chosen level is what the whole control shows — the word, the line, the
- * chip and the arrival — from the frame it is pressed, and the save runs behind it; the provider is still
- * authoritative, so the level it answers with is what remains, and a refusal takes the press back (ADR-0019).
- * The chip wears the colourway at the model's highest level, and the composer around it reads that mark for
- * its outline and this wrapper's arrival mark for its tide.
+ * The effort chip and its card. `value` is the level to show: the one the user last pressed while the provider
+ * has not confirmed it (`threadSettings.ts` holds the press and the save behind it), the provider's own level
+ * otherwise. So the whole control — the word, the line, the chip and the arrival — moves from the frame a level
+ * is pressed; the provider is still authoritative, so the level it answers with is what remains, and a refusal
+ * takes the press back (ADR-0019). The chip wears the colourway at the model's highest level, and the composer
+ * around it reads that mark for its outline and this wrapper's arrival mark for its tide.
  */
 export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName }: {
-  readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => Promise<boolean>
+  readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => void
   readonly onUltrathink?: (() => void) | undefined; readonly hasUltrathink?: boolean | undefined
   /** The model's own default level, offered as the card's Default button when the model reports one. */
   readonly defaultValue?: string | undefined
   readonly modelName?: string | undefined
 }): ReactNode {
   const [open, setOpen] = useState(false)
-  const [chosen, setChosen] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const wrapper = useRef<HTMLDivElement>(null)
   const id = useId()
   const returnFocus = useRef(false)
   const close = (): void => { returnFocus.current = true; setOpen(false) }
   const choices = options.filter(option => !option.disabled)
-  // What the control shows: the press until the provider answers, the provider's own level from then on.
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
-  const level = chosen ?? value
-  const saving = useRef(false)
-  const pendingPress = useRef<string | null>(null)
-  /** The level the provider last reported, read inside a save that started before this render. */
-  const reported = useRef(value)
-  reported.current = value
-  const live = useRef(true)
-  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
-  /**
-   * Saves where the user ends up rather than every level they pass. A provider refuses a second settings
-   * change while one is in flight, so a press made during a save is remembered and sent when that save
-   * answers. Whatever the provider then reports is the shown level again, which takes back a refused press.
-   *
-   * Nothing here compares the target against the saved level to skip a save. The rendered level is a frame
-   * behind a press that has just been made, so a press that returns to the level the last save established
-   * looks redundant and is dropped; landing back where a save has already been sent is what the loop's own
-   * exit covers, and the card asks for a save only when the press differs from what it is showing.
-   *
-   * `onChange` is the one from the render the press was made in, deliberately: it carries the thread that was
-   * in front of the user then, and a press belongs to the thread it was made on even if another has since
-   * taken the composer.
-   */
-  const run = async (first: string): Promise<void> => {
-    saving.current = true
-    try {
-      let target = first
-      while (true) {
-        pendingPress.current = null
-        const before = reported.current
-        const took = await onChange(target).catch(() => false)
-        if (!live.current) return
-        if (pendingPress.current !== null && pendingPress.current !== target) { target = pendingPress.current; continue }
-        // Refused, or answered with a level of the provider's own: it has spoken, so what it says is shown
-        // again, which is what takes a refused press back. Taken but not yet reported: the press is held, so
-        // the word does not fall back to the old level for a frame on its way to the new one, and the effect
-        // below lets go of it when the level lands.
-        if (!took || reported.current !== before) setChosen(null)
-        return
-      }
-    } finally { saving.current = false; pendingPress.current = null }
-  }
-  const choose = (next: string): void => {
-    setChosen(next)
-    if (saving.current) { pendingPress.current = next; return }
-    void run(next)
-  }
-  // The saved level moving while nothing is being saved is the provider's own word on this thread — the level
-  // it settled on, or a change made somewhere else — and it replaces the press the control was holding.
-  useEffect(() => { if (!saving.current) setChosen(null) }, [value])
+  const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
   const still = useStill()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {
-    // Hide the native popover before restoring focus; saving the model or the permissions disables the chip.
+    // Hide the native popover before restoring focus; a turn starting or the provider going away disables the chip.
     if (open || disabled || !returnFocus.current) return
     returnFocus.current = false
     if (!document.activeElement || document.activeElement === document.body || wrapper.current?.contains(document.activeElement)) trigger.current?.focus()
@@ -324,7 +275,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
       className="thread-chip tt-focusable" data-effort-top={top} disabled={disabled} onClick={() => setOpen(current => !current)}>
       <span>{level ? effortLabel(level) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={choose} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
+    {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
       defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}
   </div>
 }
