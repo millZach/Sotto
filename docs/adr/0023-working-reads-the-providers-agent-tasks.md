@@ -77,19 +77,23 @@ The field keeps its name; `backgroundWork` entries gain an optional `startedAt`.
 
 ## Amendment: settings changes reach the running CLI
 
-*September 26, 2026.* Issue #317. A settings change no longer restarts Claude Code as a rule, so it no longer
+*September 25, 2026.* Issue #317. A settings change no longer restarts Claude Code as a rule, so it no longer
 ends background work as a rule either. The adapter sends the running CLI the control request for each changed
 setting: `set_model`, `apply_flag_settings` with `effortLevel`, and `set_permission_mode`. A model change carries
 the thread's effort with it in the same operation, the way `--effort` goes with `--model` at launch. The thread
 is saved and shown only once the CLI answers success, and the session, its transcript, its watches and its
-background work carry on. Claude Code 2.1.283 took all three (`docs/verification/2026-09-26-claude-settings-live.md`).
+background work carry on. Claude Code 2.1.283 took all three (`docs/verification/2026-09-25-claude-settings-live.md`).
 
 The restart stays as the fallback, and the refusal above now belongs to it alone. The adapter starts the CLI
 again when no CLI is running, when the running one refuses a request, and when the thread enters or leaves full
 access: the CLI takes `bypassPermissions` only when bypassing was allowed at launch, and a CLI launched with that
 allowance keeps it, so those two changes go through a fresh start to keep the launch arguments those of the
 mode. Background work still refuses the fallback, and nothing is changed. If the CLI refused part of a change
-after taking the rest, what it took is set back first, so that stays true.
+after taking the rest, what it took is set back first, so that stays true. A press that finds the CLI still
+starting waits for that start and takes the path its result allows. The fallback records the new settings before
+it lets the old CLI go, so a start that comes in meanwhile, such as the window opening the thread, launches with
+them. Either way, an accepted change comes back with the snapshot that shows it, and the coordinator takes that
+snapshot in place of reading the thread (ADR-0007's amendment for #318).
 
 A request whose answer is lost leaves the CLI on settings Sotto cannot know. The adapter stops that CLI, so
 nothing runs on settings the thread does not show, and saves the change as the one the next launch carries. It

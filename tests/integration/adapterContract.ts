@@ -448,7 +448,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     })
   })
 
-  // Thread settings results (#318), kept in a section of their own: #317 changes Claude's settings path beside them.
+  // Thread settings results (#318): what a settings change hands back for the coordinator to reconcile against,
+  // on every adapter. The section above covers how a live session takes the change.
   describe(`${name} thread settings result`, () => {
     let f: AdapterFixture
     let sessionId: string

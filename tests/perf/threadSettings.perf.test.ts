@@ -19,24 +19,31 @@ import { threadSettingsStack } from '../fixtures/threadSettingsStack'
 const PRESSES = 5
 const impatient = { reaperSweepMs: 20, sessionIdleMs: 150 }
 const modes: AgentRuntimeMode[] = ['full-access', 'auto-accept-edits']
+/**
+ * Claude Code enters and leaves full access only by starting its CLI again, so every press between `modes` restarts
+ * a running Claude thread. A running Claude thread is also pressed between two other modes, which its CLI takes in
+ * place over the control channel (#317).
+ */
+const inPlace: AgentRuntimeMode[] = ['auto-accept-edits', 'approval-required']
 
 describe.skipIf(!PERF_BENCH)('thread settings chip press', () => {
   it.each(['claude', 'codex'] as const)('%s: reports reads, writes, starts and time per press', async provider => {
     const native = provider === 'claude' ? await claudeFixture(undefined, undefined, undefined, impatient) : await codexFixture(undefined, false, undefined, impatient)
     const stack = await threadSettingsStack(provider, native)
     try {
-      for (const state of ['running', 'reaped'] as const) {
+      const cases: (readonly ['running' | 'reaped', AgentRuntimeMode[]])[] = [['running', modes], ...(provider === 'claude' ? [['running', inPlace] as const] : []), ['reaped', modes]]
+      for (const [state, pair] of cases) {
         const presses = []
         for (let index = 0; index < PRESSES; index++) {
           if (state === 'reaped') await stack.reap(); else await stack.watch()
-          const mode = modes[index % modes.length]!
+          const mode = pair[index % pair.length]!
           const press = await stack.press(mode)
           expect(press.error).toBeNull()
           expect(press.runtimeMode).toBe(mode)
           presses.push(press)
         }
         const last = presses.at(-1)!
-        console.log(JSON.stringify({ provider, state, presses: PRESSES, medianMs: round(median(presses.map(press => press.elapsedMs))),
+        console.log(JSON.stringify({ provider, state, modes: pair.join(' and '), presses: PRESSES, medianMs: round(median(presses.map(press => press.elapsedMs))),
           reads: median(presses.map(press => press.reads)), coordinatorWrites: median(presses.map(press => press.coordinatorWrites)),
           aliasWrites: median(presses.map(press => press.aliasWrites)), starts: median(presses.map(press => press.starts)),
           methods: last.methods.filter(method => !['fixture/ownership-started'].includes(method)) }))

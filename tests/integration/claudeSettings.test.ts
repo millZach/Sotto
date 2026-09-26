@@ -112,6 +112,9 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
   const outbox = async (): Promise<unknown[]> => (JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { outbox: unknown[] }).outbox
   try {
     await control.start(); await control.command({ type: 'connect' })
+    // Connecting ends the thread's CLI and the coordinator does not open a thread to change its settings (#318),
+    // so the window opens it, and the change goes to the CLI that starts.
+    await control.command({ type: 'observe-threads', threadIds: [id] })
     await f.liveSettings.silence()
     const unconfirmed = await control.command({ type: 'configure-thread', threadId: id, reasoningEffort: 'high' })
     expect(unconfirmed.error).toContain('did not confirm')
@@ -129,4 +132,49 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
     expect((await f.driver.requests()).filter(record => record.method === 'apply_flag_settings')).toHaveLength(1)
     expect((await control.command({ type: 'configure-thread', threadId: id, runtimeMode: 'auto' })).error).toBeNull()
   } finally { control.dispose() }
+})
+
+it('reaches a CLI the window started just before the press, once it is up, rather than the launch arguments it started with', async () => {
+  const { f, id, events } = await fixture(false)
+  const started = await launches(f)
+  // The window opening the thread starts its CLI, and the press comes in while that start is still in flight.
+  f.host.observeThreads?.([id])
+  const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
+  expect(result.accepted).toBe(true)
+  expect(await launches(f)).toBe(started + 1)
+  expect(await sent(f)).toEqual(['apply_flag_settings'])
+  expect(await f.liveSettings.effective(id)).toMatchObject({ reasoningEffort: 'high' })
+  expect(events).toEqual(['claude-settings-applied-live'])
+})
+
+it('launches the CLI the window asks for while a restart closes the old one with the new settings, and only that one', async () => {
+  const { f, id, events } = await fixture()
+  const started = await launches(f)
+  // Entering full access starts the CLI again. The window opening the thread asks for its CLI while the old one
+  // is still closing, before the new settings would otherwise be recorded.
+  const pending = f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })
+  f.host.observeThreads?.([id])
+  const result = await pending
+  expect(result.accepted).toBe(true)
+  expect(result.snapshot?.threads.find(value => value.id === id)?.runtimeMode).toBe('full-access')
+  expect(await launches(f)).toBe(started + 1)
+  expect(await f.liveSettings.effective(id)).toMatchObject({ runtimeMode: 'full-access' })
+  expect(events).toEqual(['claude-settings-applied-restart'])
+})
+
+it('launches the CLI the window asks for after an unconfirmed change with the change it was left carrying', async () => {
+  const { f, id, events } = await fixture()
+  // The window asks for the thread's CLI while the one that never answered is being stopped: the adapter logs
+  // the change as unconfirmed and then lets that CLI go.
+  const log = events.push.bind(events)
+  events.push = (...logged) => {
+    if (logged.includes('claude-settings-unconfirmed')) setImmediate(() => f.host.observeThreads?.([id]))
+    return log(...logged)
+  }
+  await f.liveSettings.silence()
+  const started = await launches(f)
+  expect(await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).toEqual({ accepted: false, uncertain: true })
+  await expect.poll(async () => (await thread(f, id)).reasoningEffort).toBe('high')
+  expect(await launches(f)).toBe(started + 1)
+  expect(await f.liveSettings.effective(id)).toMatchObject({ reasoningEffort: 'high' })
 })

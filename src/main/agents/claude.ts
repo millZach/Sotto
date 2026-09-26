@@ -631,8 +631,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   private async unconfirmedSettings(id: string, runtime: Runtime, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
     this.options.logEvent?.('claude-settings-unconfirmed')
-    if (this.runtimes.get(id) === runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    // Recorded before the CLI is let go, so a start that comes in while it closes launches with the change.
     this.recordSettings(this.aliases[id]!, command, settings)
+    if (this.runtimes.get(id) === runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
     await this.persist().catch(() => undefined)
     this.emit()
     return { accepted: false, uncertain: true }
@@ -645,8 +646,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
     const runtime = this.runtimes.get(id)
-    if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    // Recorded before the old CLI is let go. Once it leaves `runtimes`, anything that opens the thread (the
+    // window watching it, a read) starts a CLI, and that CLI must launch with these settings: the start below
+    // joins it rather than launching another, and accepted has to mean the CLI runs them.
     this.recordSettings(alias, command, settings)
+    if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
     await this.persist(); this.showSettings(id)
     await this.start(id); this.emit()
     this.options.logEvent?.('claude-settings-applied-restart')

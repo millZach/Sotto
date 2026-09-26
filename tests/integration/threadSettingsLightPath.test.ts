@@ -12,18 +12,28 @@ const impatient = { reaperSweepMs: 20, sessionIdleMs: 150 }
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => { await cleanup?.(); cleanup = undefined })
 
-it('starts a reaped Claude thread\'s CLI at most once for a settings change, and reads it only after the change', async () => {
+it('changes a running Claude thread\'s settings in place, and starts a reaped one\'s CLI once, reading neither', async () => {
   const stack = await threadSettingsStack('claude', await claudeFixture(undefined, undefined, undefined, impatient))
   cleanup = stack.cleanup
+  // The running CLI takes the change over its control channel (#317) and the adapter hands back the snapshot
+  // it produced, which crosses Sotto's thread identities and the workspace to the coordinator (#318): no CLI
+  // starts, and nothing reads the thread before or after.
+  const running = await stack.press('auto-accept-edits')
+  expect(running.error).toBeNull()
+  expect(running.runtimeMode).toBe('auto-accept-edits')
+  expect(running).toMatchObject({ reads: 0, starts: 0 })
+  expect(running.methods).toEqual(['set_permission_mode'])
+  expect(running.coordinatorWrites).toBe(1)
+
+  // Reading a Claude thread opens it, so a reaped thread's change starts its CLI once, with the new settings,
+  // and the snapshot of that start is the reconciliation.
   await stack.reap()
-  const press = await stack.press('full-access')
-  expect(press.error).toBeNull()
-  expect(press.runtimeMode).toBe('full-access')
-  expect(press.starts).toBeLessThanOrEqual(1)
-  // Reading a Claude thread opens it. Nothing reads it before the adapter has the change, and once the adapter
-  // hands back its own snapshot (#317) nothing reads it after either.
-  expect(press.order.slice(0, press.order.indexOf('configure-thread'))).not.toContain('read')
-  expect(press.reads).toBeLessThanOrEqual(1)
+  const reaped = await stack.press('full-access')
+  expect(reaped.error).toBeNull()
+  expect(reaped.runtimeMode).toBe('full-access')
+  expect(reaped).toMatchObject({ reads: 0, starts: 1 })
+  expect(reaped.methods.filter(method => ['set_model', 'apply_flag_settings', 'set_permission_mode'].includes(method))).toEqual([])
+  expect(reaped.order).toEqual(['configure-thread'])
 })
 
 it('changes a Codex thread\'s settings without reading its transcript, running or reaped', async () => {
