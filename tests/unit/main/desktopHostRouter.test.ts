@@ -31,6 +31,13 @@ describe('desktop host routing', () => {
     expect(local.command).not.toHaveBeenCalled()
     expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.threadId).toBe(hostEntityKey(REMOTE, 'thread'))
   })
+  it("names each host's unconfirmed settings changes by the thread's client key", () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    expect(router.shell().unconfirmedSettings).toBeUndefined()
+    remote.state.unconfirmedSettings = [{ threadId: 'thread', runtimeMode: 'full-access' }]
+    expect(router.shell().unconfirmedSettings).toEqual([{ threadId: hostEntityKey(REMOTE, 'thread'), runtimeMode: 'full-access' }])
+  })
   it('keeps selection client-local and uses the chosen host for commands without references', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add(remote.connection)

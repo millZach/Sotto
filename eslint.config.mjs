@@ -38,6 +38,7 @@ export default tseslint.config(
       'artifacts/forge-hand-test/**',
       'artifacts/effort-furnace/**',
       'artifacts/effort-slider/**',
+      'artifacts/pending-settings-run/**',
       'artifacts/natural-voice-qa/**',
       'artifacts/tts-bench/**',
       'artifacts/voice-perf/**',

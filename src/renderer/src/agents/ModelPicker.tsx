@@ -2,6 +2,7 @@ import React, { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNod
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import type { AgentModel } from '../../../shared/agents'
 import { moveListboxFocus } from './listboxKeys'
+import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
 import './threadChips.css'
 import './modelPicker.css'
@@ -31,8 +32,8 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * names, so the menu costs the same whatever a provider is called; the name is the tile's accessible name
  * and its tooltip. On the right the chosen provider's models under a search line, with `note` beneath them
  * -- the reminder that a new thread may still change provider, or that this one may not. A single provider
- * has no rail. Escape or a click outside closes the menu and returns focus to the chip; after a choice the
- * owner restores focus once the change is confirmed.
+ * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
+ * shows on the chip at once while the owner saves it.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -84,7 +85,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [open])
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
-    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label="Thread model" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
+    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={OPTION_CHIP_NAMES.model} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>

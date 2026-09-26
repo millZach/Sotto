@@ -138,6 +138,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
   const [readingImages, setReadingImages] = useState(false)
+  // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
+  const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
   const [answerState, setAnswerState] = useState<{ readonly sending: boolean; readonly error: string | null }>({ sending: false, error: null })
   const textarea = useRef<HTMLTextAreaElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
@@ -261,7 +263,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {threadHost ? <span className="thread-host-chip" title={`This thread runs on ${threadHost.kind === 'local' ? 'this computer' : threadHost.name}. New thread chooses the host for new work.`}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}Runs on {threadHost.kind === 'local' ? 'this computer' : threadHost.name}</span> : null}
           {row.thread.nativeSessionStarted === false || capabilities.configureThread
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false}
+            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); textarea.current?.focus() } } : {})} />
             : <span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>}
           {status}
@@ -277,6 +279,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
         </div>
       </div>
+      <div ref={setSettingsNotices} className="thread-options-notices" />
     </form>
     {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027).
         Its own row of buttons under the card, not a strip inside it (#325). */}

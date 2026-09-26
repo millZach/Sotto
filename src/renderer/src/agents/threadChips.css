@@ -9,6 +9,30 @@
 /* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
 .thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
 
+/* A permission change the provider has not confirmed yet (a pending setting): the chip already shows it, with a
+   dashed edge in the activity colour and a small dot, and the caption beside the chips says what is still in force.
+   The dot breathes; under reduced motion it holds still. */
+.thread-chip[data-pending='true'] { border-style: dashed; border-color: var(--tt-activity); color: var(--tt-text); }
+.thread-chip > .thread-chip__pending { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-chip__pending { animation: thread-chip-pending 1.1s ease-in-out infinite; }
+}
+@keyframes thread-chip-pending { 50% { opacity: .35; } }
+.thread-options__caption { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+/* Kept in the tree while empty so assistive technology hears it arrive, but out of the row's spacing. */
+.thread-options__caption:empty { position: absolute; }
+/* What a refused or unconfirmed change said, each on its own line in the warning colour the composer's other refusals
+   use. The composer gives them a row of their own under its footer, so the chips, the attach button and the send
+   button stay exactly where they are; the row is empty, and takes no room, until there is something to say. */
+.thread-options-notices { display: grid; gap: 4px; min-width: 0; margin-top: 6px; }
+.thread-options-notices:empty { display: none; }
+.thread-prompt > .thread-options-notices, .thread-workspace__compose .agent-composer > .thread-options-notices { grid-column: 2; }
+.thread-options__notice { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
+.thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.thread-options__notice > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.thread-options__notice > button:disabled { opacity: .55; cursor: default; }
+
 /* The effort and permission lists. */
 .thread-chip-menu { position: relative; min-width: 0; }
 .thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
