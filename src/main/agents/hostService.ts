@@ -36,6 +36,7 @@ export interface HostService {
   /** The published state without any thread's history: what every client needs on every frame. */
   shell(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
+  /** Runs one client's command and answers with the shell: no thread's history rides on the answer. */
   command(command: AgentCommand, client: ClientIdentity): Promise<AgentState>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -79,7 +80,8 @@ export interface LocalHostControl {
   shell(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
-  command(command: AgentCommand, client?: ClientIdentity): Promise<AgentState>
+  /** Runs one client's command and answers with the shell, without copying any history. */
+  commandShell(command: AgentCommand, client?: ClientIdentity): Promise<AgentState>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -133,6 +135,6 @@ export class LocalHostService implements HostService {
       else this.observations.delete(client.clientId)
       command = { type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }
     }
-    return this.control.command(command, client)
+    return this.control.commandShell(command, client)
   }
 }

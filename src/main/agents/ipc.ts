@@ -8,7 +8,7 @@ import { AGENT_GIT_REFS, gitRefsRequestSchema, type GitRefsPage, type GitRefsReq
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, type GitPullRequestDetail, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { resolveE2EConfiguration } from '../e2e/e2eBoundary'
-import { AGENT_ATTACHMENT_PREVIEW, AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL_GET, agentAttachmentPreviewRequestSchema, agentCommandSchema, agentThreadDetailRequestSchema, agentShell } from '../../shared/agents'
+import { AGENT_ATTACHMENT_PREVIEW, AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL_GET, agentAttachmentPreviewRequestSchema, agentCommandSchema, agentThreadDetailRequestSchema } from '../../shared/agents'
 import type { SottoPlatform } from '../../shared/platform'
 import { synthesizeAgentSpeech } from './speech'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -133,7 +133,8 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     const command = agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
     const speakOnly = command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1
     if (!speakOnly && ['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice', 'observe-threads'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    return host.command(payload as typeof command, windowClient).then(agentShell)
+    // The host answers with the shell already; the coordinator builds it without copying any history.
+    return host.command(payload as typeof command, windowClient)
   })
   return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

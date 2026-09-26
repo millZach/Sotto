@@ -157,6 +157,57 @@ describe('the detail deltas that follow a history', () => {
   })
 })
 
+describe('which history the window gives up', () => {
+  it('keeps the thread viewed last through streaming shells and drops one not viewed since before it', async () => {
+    // X is listed first, where shell order used to leave it looking oldest after every shell.
+    const ids = Array.from({ length: 17 }, (_, index) => `t${String(index).padStart(2, '0')}`)
+    const x = ids[0]!
+    const threadsAt = (tick: number): AgentThread[] => ids.map((id, index) =>
+      index === 0 || index === 16 ? thread(id, [message('a', 'assistant', `History of ${id}`)])
+        : { ...thread(id, [message('a', 'assistant', `History of ${id}${' more'.repeat(tick)}`)]), status: 'running' as const })
+    const wire = shellBridge(fullState(threadsAt(0)))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    const held = (id: string): boolean => (result.current.state!.host.threads.find(item => item.id === id)?.messages.length ?? 0) > 0
+    const view = async (threadIds: string[]): Promise<void> => {
+      await act(async () => { await result.current.command({ type: 'observe-threads', threadIds }) })
+    }
+    // Sixteen histories held, each viewed in turn, then X viewed again and left.
+    for (const id of ids.slice(0, 16)) { await view([id]); await waitFor(() => expect(held(id)).toBe(true)) }
+    await view([x])
+    await view([])
+    // Twenty shells while the other threads stream, two of them with work in flight whose history main pushes.
+    for (let tick = 1; tick <= 20; tick += 1) {
+      act(() => { wire.publish({ ...fullState(threadsAt(tick)), notice: `tick ${tick}` }) })
+      if (tick % 5 === 0) act(() => { wire.push('t01'); wire.push('t02') })
+    }
+    await waitFor(() => expect(result.current.state!.notice).toBe('tick 20'))
+    // A seventeenth history makes the window give one up.
+    await view([ids[16]!])
+    await waitFor(() => expect(held(ids[16]!)).toBe(true))
+    expect(held(x)).toBe(true)
+    expect(held('t01')).toBe(false)
+    expect(ids.slice(2, 16).every(held)).toBe(true)
+    expect(wire.threadDetail.mock.calls.filter(([id]) => id === x)).toHaveLength(1)
+  })
+
+  it('never gives up a viewed thread, even past the limit', async () => {
+    const ids = Array.from({ length: 17 }, (_, index) => `t${String(index).padStart(2, '0')}`)
+    const wire = shellBridge(fullState(ids.map(id => thread(id, [message('a', 'assistant', `History of ${id}`)]))))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    const held = (id: string): boolean => (result.current.state!.host.threads.find(item => item.id === id)?.messages.length ?? 0) > 0
+    for (const id of ids.slice(0, 16)) {
+      await act(async () => { await result.current.command({ type: 'observe-threads', threadIds: [id] }) })
+      await waitFor(() => expect(held(id)).toBe(true))
+    }
+    // Seventeen panes open at once: every one is viewed, so none is the window's to give up.
+    await act(async () => { await result.current.command({ type: 'observe-threads', threadIds: ids }) })
+    await waitFor(() => expect(held(ids[16]!)).toBe(true))
+    expect(ids.every(held)).toBe(true)
+  })
+})
+
 describe('the startup shell cache', () => {
   it('paints what the window saw last, marked stale and disconnected, then replaces it', async () => {
     const live = fullState([thread('workshop', [message('a', 'assistant', 'Indigo it is.')])], 'workshop')

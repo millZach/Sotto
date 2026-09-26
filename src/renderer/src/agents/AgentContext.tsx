@@ -2,6 +2,7 @@ import React, { createContext, startTransition, useCallback, useContext, useEffe
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
+import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../../../shared/threadLanes'
 import { wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
@@ -13,6 +14,7 @@ import { playWakeCue } from './voiceCue'
 import { useAttentionReview, type AttentionReview } from './attentionReview'
 import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
+import { approximateDetailBytes } from './detailCacheSize'
 
 export interface AgentConnection {
   readonly state: AgentState | null
@@ -37,7 +39,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    */
   const detail = useMemo(() => ({
     held: new Map<string, AgentThreadDetail>(), used: new Map<string, number>(), asked: new Set<string>(),
-    viewed: new Set<string>(), shell: null as AgentState | null, clock: 0,
+    viewed: new Set<string>(), shell: null as AgentState | null, clock: 0, hits: 0, misses: 0,
     pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
@@ -61,7 +63,6 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     function splice(thread: AgentThread): AgentThread {
       const held = detail.held.get(thread.id)
       if (held !== undefined) {
-        detail.used.set(thread.id, ++detail.clock)
         return { ...thread, messages: held.messages, ...(held.activities === undefined ? {} : { activities: held.activities }) }
       }
       // A thread whose history has not arrived is exactly what `historyStatus: 'loading'` already says;
@@ -127,7 +128,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       next = update
     }
     detail.held.set(next.threadId, next)
-    detail.used.set(next.threadId, ++detail.clock)
+    // A history that arrives unasked, for work main wants this window to see land, starts as recent as its
+    // arrival. After that only a look moves it: a streamed chunk is not the user coming back to a thread.
+    if (!detail.used.has(next.threadId)) detail.used.set(next.threadId, ++detail.clock)
     if (detail.held.size > DETAIL_CACHE_LIMIT) {
       const evictable = [...detail.held.keys()].filter(id => !detail.viewed.has(id) && id !== detail.shell?.activeThreadId)
         .sort((first, second) => (detail.used.get(first) ?? 0) - (detail.used.get(second) ?? 0))
@@ -141,17 +144,30 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
    * A thread's history the window does not hold, asked for once until it arrives. A resync asks for a
    * history the window does hold but can no longer follow, and is deduplicated the same way, so a run of
    * deltas the window cannot apply costs one request rather than one per delta.
+   *
+   * Asking is also what recency is made of. A history moves up when its thread is selected, declared viewed
+   * or on screen, so the one evicted is the one the user looked at longest ago, never whichever a shell
+   * happened to list first. A resync is the window catching up, not the user looking, and moves nothing.
+   * A request from a selection or a view counts as a hit or a miss for the development console.
    */
-  const requestDetail = useCallback((threadId: string, options: { stale?: boolean } = {}): void => {
-    if (bridge?.threadDetail === undefined || detail.asked.has(threadId)) return
+  const requestDetail = useCallback((threadId: string, options: { stale?: boolean; onScreen?: boolean } = {}): void => {
+    if (bridge?.threadDetail === undefined) return
+    if (options.stale !== true) {
+      detail.used.set(threadId, ++detail.clock)
+      if (options.onScreen !== true) { if (detail.held.has(threadId)) detail.hits++; else detail.misses++ }
+    }
+    if (detail.asked.has(threadId)) return
     if (detail.held.has(threadId) && options.stale !== true) return
     detail.asked.add(threadId)
+    // A history that never arrives leaves no recency behind.
+    const forget = (): void => { if (!detail.held.has(threadId)) detail.used.delete(threadId) }
     void bridge.threadDetail(threadId).then(result => {
       detail.asked.delete(threadId)
       if (result !== null && session.current) receiveDetail.current(result)
-    }).catch(() => { detail.asked.delete(threadId) })
+      forget()
+    }).catch(() => { detail.asked.delete(threadId); forget() })
   }, [bridge, detail, session])
-  ask.current = requestDetail
+  ask.current = threadId => requestDetail(threadId, { onScreen: true })
   resync.current = threadId => requestDetail(threadId, { stale: true })
   const command = useCallback((request: AgentCommand): Promise<AgentState | null> => {
     // Telling main which panes are open is also this window's own record of whose history it needs.
@@ -183,12 +199,15 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // checks busy state, provider locks and authority before dispatch.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
-    // A thread's own follow-up queue, steering and skills catalog never wait behind another thread's work;
-    // telling main which panes are open grants nothing and must not wait either.
-    const threadLane = request.type === 'queue-followup' || request.type === 'edit-followup' || request.type === 'remove-followup'
-      || request.type === 'reorder-followups' || request.type === 'resume-followups' || request.type === 'steer-followup' || request.type === 'steer' || request.type === 'refresh-thread-skills'
-      || request.type === 'observe-threads'
-    if (request.type === 'manual-send' || request.type === 'select-thread' || request.type === 'save-thread-draft' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation || threadLane) return run()
+    // A command main runs in one thread's own lane goes straight to main: waiting here for another
+    // thread's reply would undo that lane. Main orders a thread's commands in the order they arrive, so
+    // sending at once keeps them in user order. A thread's commands that never enter a lane in main (Stop,
+    // selection, its saved draft, its follow-up queue and its skills catalog) go at once too, and telling
+    // main which panes are open grants nothing, so it does not wait either. What main keeps global
+    // (assignment moves, a new thread, settling or restoring a project, the single composer draft) still
+    // waits for the reply before it.
+    const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
+    if (threadCommand || request.type === 'observe-threads' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
@@ -262,6 +281,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second — the figure now includes whatever time a transition spent waiting
   // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
+  // Beside it, how many thread details the window holds, roughly how large they are, and how often a
+  // selection or a view found its detail already held: the numbers a byte budget for them would be set from.
   useEffect(() => {
     if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return
     const at = arrived.current
@@ -271,7 +292,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     if (now - reported.current < 1000) return
     reported.current = now
     console.info(`sotto: state update ${Math.round(now - at)} ms`)
-  }, [state])
+    const kilobytes = Math.round(approximateDetailBytes(detail.held.values()) / 1024)
+    console.info(`sotto: ${detail.held.size} thread details held, about ${kilobytes} KB, ${detail.hits} hits, ${detail.misses} misses`)
+  }, [state, detail])
   return { state, error, command, threadDrafts }
 }
 

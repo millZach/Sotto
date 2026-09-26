@@ -190,8 +190,19 @@ async function fixture() {
 }
 const send = { type: 'manual-send' as const, threadId: 'workshop', text: '', attachments: [image] }
 
+/** Every value the preview store is asked to write, so a test can say nothing reached its file. */
+function previewWrites() {
+  const writes: { entries: unknown[] }[] = []
+  const write = AtomicJsonStore.prototype.write
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+    if ((this as unknown as { filePath: string }).filePath.endsWith('attachment-previews.json')) writes.push(structuredClone(value) as { entries: unknown[] })
+    await write.call(this, value)
+  })
+  return writes
+}
+
 describe('coordinator attachment dispatch boundary', () => {
-  it('does not call the provider when durable preview persistence fails', async () => {
+  it('sends the prompt when the preview cannot be saved, and shows that preview as unavailable', async () => {
     const f = await fixture()
     const write = AtomicJsonStore.prototype.write
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
@@ -199,21 +210,24 @@ describe('coordinator attachment dispatch boundary', () => {
         && Array.isArray(value.entries) && value.entries.length) throw new Error('Synthetic storage failure')
       await write.call(this, value)
     })
-    expect((await f.control.command(send)).error).toMatch(/Could not save attachment previews/)
-    expect(f.host.attempts).toEqual([])
-    expect(f.control.get().draftAttachments).toEqual([image])
-    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
+    expect((await f.control.command(send)).error).toBeNull()
+    expect(f.host.attempts).toHaveLength(1)
+    const messageId = f.control.get().host.threads[0]!.messages.at(-1)!.id
+    await vi.waitFor(() => expect(f.control.attachmentPreview({ threadId: 'workshop', messageId, attachmentId: image.id })).toBeNull())
+    expect(attachment(f.control.get().host)?.preview).toBeUndefined()
     expect((await saved(f.root)).entries).toEqual([])
   })
-  it('persists before native dispatch, decorates bridge state only, and reconciles uncertain delivery once after restart', async () => {
+  it('records previews only once the provider has the prompt, and reconciles uncertain delivery once after restart', async () => {
     const f = await fixture(); f.host.outcome = 'uncertain'
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementation(async command => {
-      expect((await saved(f.root)).entries[0]).toMatchObject({ threadId: 'workshop', messageId: 'messageId' in command ? command.messageId : '', attachments: [image] })
+      // The provider hears the prompt before the preview store is written.
+      expect((await saved(f.root)).entries).toEqual([])
       return execute(command)
     })
     expect((await f.control.command(send)).error).toMatch(/confirm/)
     expect(attachment(f.control.get().host)).toBeUndefined()
+    await vi.waitFor(async () => expect((await saved(f.root)).entries[0]).toMatchObject({ threadId: 'workshop', attachments: [image] }))
     await f.restart()
     expect((await f.control.command(send)).error).toMatch(/unknown result/)
     await f.host.acknowledge()
@@ -227,9 +241,28 @@ describe('coordinator attachment dispatch boundary', () => {
     await f.restart(); await f.control.command({ type: 'connect' })
     expect(attachment(f.control.get().host)?.preview).toBeDefined()
   })
-  it.each(['reject', 'throw'] as const)('removes submitted previews after definitive provider %s and keeps the unsent draft', async outcome => {
+  it('sends the preview marker to a window that already holds the echoed message', async () => {
+    const f = await fixture()
+    // The fixture provider echoes the user message before execute returns, as a native adapter can.
+    const held = new Map<string, AgentHostSnapshot['threads'][number]['messages'][number]>()
+    f.control.subscribeThreadDetail(update => {
+      if (update.threadId !== 'workshop') return
+      if ('messages' in update) { held.clear(); for (const message of update.messages) held.set(message.id, message) }
+      else for (const item of update.messageDeltas) if ('message' in item) held.set(item.message.id, item.message)
+    })
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    expect((await f.control.command(send)).error).toBeNull()
+    const messageId = f.control.get().host.threads[0]!.messages.at(-1)!.id
+    expect(held.get(messageId)?.attachments?.[0]?.preview).toEqual({ available: true })
+  })
+  it.each(['reject', 'throw'] as const)('writes nothing to the preview store after a definitive provider %s and keeps the unsent draft', async outcome => {
     const f = await fixture(); f.host.outcome = outcome
+    const writes = previewWrites()
     expect((await f.control.command(send)).error).toMatch(/reject/i)
+    expect(f.host.attempts).toHaveLength(1)
+    // Anything the store had queued lands before this cleanup finishes.
+    await f.control.privacyChanged()
+    expect(writes.filter(value => value.entries.length)).toEqual([])
     expect((await saved(f.root)).entries).toEqual([])
     expect(f.control.get().draftAttachments).toEqual([image])
   })
@@ -241,7 +274,7 @@ describe('coordinator attachment dispatch boundary', () => {
     expect(f.host.attempts).toEqual([]); expect((await saved(f.root)).entries).toEqual([])
     vi.restoreAllMocks()
     f.host.outcome = 'uncertain'; await f.control.command(send)
-    expect((await saved(f.root)).entries).toHaveLength(1)
+    await vi.waitFor(async () => expect((await saved(f.root)).entries).toHaveLength(1))
     await f.disableHistory()
     expect((await saved(f.root)).entries).toEqual([])
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).draftAttachments).toEqual([image])

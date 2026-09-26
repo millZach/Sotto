@@ -1,12 +1,20 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Paperclip, X } from 'lucide-react'
-import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_IMAGE_BYTES, agentAttachmentsSchema, type AgentAttachment } from '../../../shared/agents'
+import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_IMAGE_BYTES, agentAttachmentsSchema, attachmentSizeBytes, type AgentAttachment } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import './screenshots.css'
 
+// The refusals a file's own type and size decide, checked before anything is read.
+const NOT_A_SCREENSHOT = 'Choose PNG, JPEG, GIF, or WebP screenshots.'
+const TOO_LARGE = 'Each screenshot must be 10 MB or smaller.'
+const TOO_LARGE_IN_TOTAL = 'Screenshots must total 20 MB or less. Remove an image or choose smaller files.'
+
+function checkImage(file: File): void {
+  if (!(AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) throw new Error(NOT_A_SCREENSHOT)
+  if (file.size > AGENT_MAX_IMAGE_BYTES) throw new Error(TOO_LARGE)
+}
+
 function readImage(file: File): Promise<AgentAttachment> {
-  if (!(AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) throw new Error('Choose PNG, JPEG, GIF, or WebP screenshots.')
-  if (file.size > AGENT_MAX_IMAGE_BYTES) throw new Error('Each screenshot must be 10 MB or smaller.')
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('Could not read this screenshot. Try selecting it again.'))
@@ -38,12 +46,17 @@ export function ScreenshotInput({ attachments, onChange, disabled, supported, ch
     if (!supported) { setError('This model does not support screenshots. Choose a model with image support.'); return }
     setError(null)
     if (files.length + current.current.length > AGENT_MAX_ATTACHMENTS) { setError(`Attach up to ${AGENT_MAX_ATTACHMENTS} screenshots at a time.`); return }
+    // Every refusal that the file sizes alone can decide comes before any file is read and encoded.
+    try { files.forEach(checkImage) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not read these screenshots.'); return }
+    const total = current.current.reduce((sum, item) => sum + attachmentSizeBytes(item.dataUrl), 0) + files.reduce((sum, file) => sum + file.size, 0)
+    if (total > AGENT_MAX_ATTACHMENT_BYTES) { setError(TOO_LARGE_IN_TOTAL); return }
     reading.current = true; setBusy(true); onReadingChange?.(true)
     try {
       const images = await Promise.all(files.map(readImage))
       if (!mounted.current) return
+      // The schema stays the authority: it checks what was actually read, not what the files claimed.
       const result = agentAttachmentsSchema.safeParse([...current.current, ...images])
-      if (!result.success) { setError('Screenshots must total 20 MB or less. Remove an image or choose smaller files.'); return }
+      if (!result.success) { setError(TOO_LARGE_IN_TOTAL); return }
       latestChange.current(result.data)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not read these screenshots.') }
     finally { if (mounted.current) { reading.current = false; setBusy(false); onReadingChange?.(false) } }
