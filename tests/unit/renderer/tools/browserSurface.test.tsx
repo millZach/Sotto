@@ -6,6 +6,7 @@ import type { BrowserBridge, BrowserEvent, BrowserPage } from '../../../../src/s
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { BrowserStore, normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
@@ -110,6 +111,37 @@ describe('Browser surface', () => {
     act(() => store.setSurface('files'))
     expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null })
     expect(browser.bridge.close).not.toHaveBeenCalled()
+  })
+
+  it('offers a way back to the floating player for the focused thread’s own task, and never pins', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    browser.bridge.tasks = vi.fn(async () => ok([{
+      id: 'task-1', threadId: 'visual-gate', workspaceId: TOKEN_A, pageId: PAGE_1, status: 'working' as const,
+      description: 'Checking the docs', steps: [], thumbnail: null, summary: null, unchecked: [], updatedAt: 1, pendingAction: null, output: null,
+    }]))
+    const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    act(() => { store.setOpen(true); store.setSurface('browser') })
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: {} } })
+    render(<ToolsPanel focusedThreadId="visual-gate" state={threadsStateFixture()} files={files} browser={browser.bridge} store={store} playerStore={playerStore} />)
+    const float = await within(panel()).findByRole('button', { name: 'Float the browser over the thread' })
+    await userEvent.click(float)
+    expect(screen.queryByRole('complementary', { name: 'Tools' })).not.toBeInTheDocument()
+    expect(playerStore.visibilityFor('visual-gate')).toBe('open')
+    expect(store.getSnapshot().pinnedThreadId).toBeNull()
+  })
+
+  it('never offers the way back while Tools shows a thread other than the one focused', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    browser.bridge.tasks = vi.fn(async () => ok([{
+      id: 'task-1', threadId: 'visual-gate', workspaceId: TOKEN_A, pageId: PAGE_1, status: 'working' as const,
+      description: 'Checking the docs', steps: [], thumbnail: null, summary: null, unchecked: [], updatedAt: 1, pendingAction: null, output: null,
+    }]))
+    const store = new ToolsPanelStore()
+    act(() => { store.setOpen(true); store.setSurface('browser'); store.pin('visual-gate') })
+    const files = fakeFilesBridge({ 'visual-gate': { root: 'D:\\work\\workshop', token: TOKEN_A, tree: {} } })
+    render(<ToolsPanel focusedThreadId="grok-previews" state={threadsStateFixture()} files={files} browser={browser.bridge} store={store} />)
+    await within(panel()).findByRole('button', { name: 'New page' })
+    expect(within(panel()).queryByRole('button', { name: 'Float the browser over the thread' })).not.toBeInTheDocument()
   })
 
   it('shows an unavailable page as an explanation with Try again and the system browser, not an empty viewport', async () => {
@@ -339,7 +371,7 @@ describe('web links in a thread', () => {
     store.setOpen(false)
     store.pin('grok-previews')
     await userEvent.click(screen.getByRole('link', { name: 'the docs' }))
-    expect(await screen.findByText('Opened in Visual gate flake’s browser. Open Tools > Browser in that thread to see it.')).toBeInTheDocument()
+    expect(await screen.findByText('Opened in Visual gate flake’s browser, and Tools is pinned to another thread. Unpin it to see the page.')).toBeInTheDocument()
     expect(store.getSnapshot()).toMatchObject({ open: false, pinnedThreadId: 'grok-previews' })
   })
 

@@ -5,7 +5,7 @@ import type { BrowserBridge, BrowserCapture, BrowserEvent, BrowserPage, BrowserT
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserTaskDetails } from '../../../../src/renderer/src/tools/BrowserTaskDetails'
 import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
-import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
+import { BROWSER_PLAYER_MIN_WIDTH, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE, BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
@@ -108,7 +108,7 @@ describe('the browser player', () => {
     expect(store.browser.thread('visual-gate')?.activePageId).toBe(page.id)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Browser', exact: true })).toHaveFocus())
   })
-  it('shrinks to a pill showing the current action, and the pill restores it', async () => {
+  it('shrinks to a pill showing the current action, moves focus there, and the pill restores it', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
     render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
@@ -116,16 +116,20 @@ describe('the browser player', () => {
     expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
     const pill = screen.getByRole('button', { name: /Show the browser for Visual gate flake/ })
     expect(pill).toHaveTextContent('Checking the form')
+    // Focus follows the player to the pill that replaces it, never dropping to the page body.
+    await waitFor(() => expect(pill).toHaveFocus())
     fireEvent.click(pill)
     expect(await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })).toBeInTheDocument()
   })
-  it('hides on request, leaving Tools > Browser as the way back', async () => {
+  it('hides on request, leaving Tools > Browser as the way back, and moves focus to the composer', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    render(<><section className="thread-pane" data-focused><form className="thread-prompt"><textarea aria-label="Message" /></form></section>
+      <BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} /></>)
     await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
     fireEvent.click(screen.getByRole('button', { name: 'Hide the browser; the agent keeps working' }))
     expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Show the browser for Visual gate flake/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus())
   })
   it('shrinks the player and returns focus to the composer on Escape', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
@@ -149,6 +153,29 @@ describe('the browser player', () => {
     fireEvent.click(threadButton)
     await waitFor(() => expect(browser.bridge.answerAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: pending.pendingAction!.id, allow: true, forThread: true })))
   })
+  it('disables Allow once and Allow this thread while the task is paused, keeping Deny available, like the Tools task details', async () => {
+    const pending = task({ status: 'paused', pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'click', x: 10, y: 20 }, description: 'Click at 10, 20 on localhost', expiresAt: Date.now() + 10000 } })
+    const browser = fake([pending]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await screen.findByRole('group', { name: 'Browser action permission' })
+    expect(screen.getByRole('button', { name: 'Allow once' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Allow this thread to use the browser without asking' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeEnabled()
+  })
+  it('disables every answer while one is in flight, so a second press cannot double-answer', async () => {
+    const pending = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'click', x: 10, y: 20 }, description: 'Click at 10, 20 on localhost', expiresAt: Date.now() + 10000 } })
+    const browser = fake([pending]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    let settleAnswer: (() => void) | null = null
+    browser.bridge.answerAction = vi.fn(() => new Promise(resolve => { settleAnswer = () => resolve(ok(task())) }))
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    const allowOnce = await screen.findByRole('button', { name: 'Allow once' })
+    const deny = screen.getByRole('button', { name: 'Deny' })
+    fireEvent.click(allowOnce)
+    await waitFor(() => expect(allowOnce).toBeDisabled())
+    expect(deny).toBeDisabled()
+    expect(browser.bridge.answerAction).toHaveBeenCalledTimes(1)
+    settleAnswer!()
+  })
   it('shows a compact grant line with Stop when the thread has a browser grant', async () => {
     const browser = fake()
     browser.bridge.list = vi.fn(async () => ok({ workspace, pages: [page], grant: { grantedAt: Date.now(), source: 'settings' as const } }))
@@ -168,10 +195,56 @@ describe('the browser player', () => {
   })
 })
 
+describe('the browser player’s keyboard path for moving and resizing', () => {
+  it('names the drag bar for a screen reader and moves the player with the arrow keys', async () => {
+    const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
+    const bar = screen.getByRole('group', { name: /Move the browser\. Drag, or use the arrow keys/ })
+    expect(bar).toHaveAttribute('aria-roledescription', 'drag handle')
+    const windowSize = { width: window.innerWidth, height: window.innerHeight }
+    const before = playerStore.rectFor(windowSize)
+    fireEvent.keyDown(bar, { key: 'ArrowRight' })
+    expect(playerStore.rectFor(windowSize).x).toBe(before.x + BROWSER_PLAYER_MOVE_STEP)
+    fireEvent.keyDown(bar, { key: 'ArrowDown', shiftKey: true })
+    expect(playerStore.rectFor(windowSize).y).toBe(before.y + BROWSER_PLAYER_MOVE_STEP_LARGE)
+  })
+  it('makes the corner grip focusable and resizes the player with the arrow keys, respecting the minimum', async () => {
+    const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
+    const grip = screen.getByRole('separator', { name: /Resize the browser\. Use the arrow keys/ })
+    expect(grip).not.toHaveAttribute('aria-orientation')
+    expect(grip).toHaveAttribute('tabindex', '0')
+    grip.focus()
+    expect(grip).toHaveFocus()
+    const windowSize = { width: window.innerWidth, height: window.innerHeight }
+    const before = playerStore.rectFor(windowSize)
+    fireEvent.keyDown(grip, { key: 'ArrowRight' })
+    expect(playerStore.rectFor(windowSize).width).toBe(before.width + BROWSER_PLAYER_MOVE_STEP)
+    fireEvent.keyDown(grip, { key: 'ArrowDown', shiftKey: true })
+    expect(playerStore.rectFor(windowSize).height).toBe(before.height + BROWSER_PLAYER_MOVE_STEP_LARGE)
+    // Shrinking past the minimum stops there, the same rule a corner drag follows.
+    for (let attempt = 0; attempt < 40; attempt++) fireEvent.keyDown(grip, { key: 'ArrowLeft', shiftKey: true })
+    expect(playerStore.rectFor(windowSize).width).toBe(BROWSER_PLAYER_MIN_WIDTH)
+  })
+  it('resizes from the corner from a keyboard press even before the user has ever moved the player (no jump)', async () => {
+    const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    const grip = await screen.findByRole('separator', { name: /Resize the browser/ })
+    const windowSize = { width: window.innerWidth, height: window.innerHeight }
+    const drawn = playerStore.rectFor(windowSize) // the default, never moved or resized
+    fireEvent.keyDown(grip, { key: 'ArrowRight' })
+    expect(playerStore.rectFor(windowSize)).toMatchObject({ x: drawn.x, y: drawn.y, width: drawn.width + BROWSER_PLAYER_MOVE_STEP, height: drawn.height })
+  })
+})
+
 describe('placement across threads (BrowserPlayerStore integration)', () => {
   it('keeps one placement across threads: moving the player in one thread keeps it moved for the next', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
-    playerStore.move(40, 20, { width: window.innerWidth, height: window.innerHeight })
+    const windowSize = { width: window.innerWidth, height: window.innerHeight }
+    const start = playerStore.rectFor(windowSize)
+    playerStore.setRect({ ...start, x: start.x + 40, y: start.y + 20 }, windowSize)
     const before = playerStore.rectFor({ width: window.innerWidth, height: window.innerHeight })
     const { rerender } = render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })

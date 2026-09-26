@@ -58,7 +58,10 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
         }
         if (result.value.destination === 'external' || !result.value.page) return { ok: true }
         const shown = store.showBrowserPage(result.value.page, focused)
-        return shown ? { ok: true } : { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
+        if (shown === 'opened') return { ok: true }
+        // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
+        if (shown === 'pinned-elsewhere') return { ok: true, message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.` }
+        return { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
       } catch {
         return { ok: false }
       }

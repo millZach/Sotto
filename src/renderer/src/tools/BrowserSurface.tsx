@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, Plus, RotateCw, Share2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
 import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -15,6 +15,11 @@ export interface BrowserSurfaceProps {
   readonly store: BrowserStore
   readonly bridge: BrowserBridge | undefined
   readonly onStatus: (message: string) => void
+  /**
+   * Set only when this surface shows the focused thread's own page and that thread has a player to return to:
+   * the way back from Tools for a task the player itself can show. It never pins.
+   */
+  readonly onFloat?: (() => void) | undefined
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {
@@ -30,7 +35,7 @@ function listProblem(error: ToolsError, bridge: boolean): string {
  * Pages the thread opened, each a live page main keeps while it is hidden. One page shows at a time, drawn by
  * main at this surface's viewport; the address bar, history and page tabs stay in the app.
  */
-export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSurfaceProps): ReactNode {
+export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: BrowserSurfaceProps): ReactNode {
   const browser = useThreadBrowser(store, threadId)
   const tasks = useBrowserTasks(store)
   const agents = useOptionalAgents()
@@ -158,6 +163,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus }: BrowserSur
             title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : `Let the agent in this thread read page contents and screenshots.${browser.grant ? ' It can already open, click and type here without asking.' : ' Opening, clicking and typing still ask you.'}`} onClick={() => void reviewPage('share')}>
             <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
         </> : null}
+        {onFloat ? <button type="button" className="files-icon tt-focusable" aria-label="Float the browser over the thread" title="Float the browser over the thread" onClick={onFloat}><PictureInPicture2 size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="New page" title={full ? 'Sotto keeps at most 32 pages' : 'New page'} aria-pressed={creating}
           disabled={full || !bridge} onClick={() => creating ? (setCreating(false), setDraft(null)) : startNew()}><Plus size={16} aria-hidden="true" /></button>
       </div>

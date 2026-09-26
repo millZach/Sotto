@@ -14,6 +14,7 @@ import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
+import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
 import { BrowserSurface } from './BrowserSurface'
 import { useBrowserTasks } from './browserStore'
 import { ChangesSurface } from './ChangesSurface'
@@ -52,6 +53,7 @@ export interface ToolsPanelProps {
   /** How a terminal session is drawn; tests pass a light stand-in for xterm. */
   readonly terminalView?: TerminalViewFactory
   readonly store?: ToolsPanelStore
+  readonly playerStore?: BrowserPlayerStore
 }
 
 function bridgeFiles(): FilesBridge | undefined {
@@ -221,7 +223,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
  * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
@@ -328,8 +330,11 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')
+  // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
+  // the "Float the browser over the thread" control's own condition, computed once for the surface below.
+  const browserTasks = useBrowserTasks(store.browser)
 
-  const player = <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} />
+  const player = <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
   if (!open) return player
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
@@ -345,6 +350,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     if (aside.current?.contains(document.activeElement)) focusToggle()
     store.requestToggleFocus()
     store.setOpen(false)
+  }
+  // Never offered while Tools is pinned elsewhere: that thread has no player here to float back to (the pin,
+  // not this thread, owns what Browser shows), and the control never pins on its own way back either.
+  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && browserTasks.some(item => item.threadId === thread.id)
+  const floatBrowser = (): void => {
+    if (!thread) return
+    close()
+    playerStore.restore(thread.id)
   }
   const pathAction = (action: PathAction, path: string): void => {
     if (!thread) return
@@ -385,7 +398,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus} />
   else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
-  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
+  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus}
     onOpenFile={path => { store.files.showFile(bridge, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />

@@ -17,6 +17,12 @@ export const TOOLS_PANEL_MAX_WIDTH = 1200
 /** The panel docks beside the panes only while they keep at least this much width; otherwise it overlays them. */
 export const TOOLS_PANEL_MIN_PANE_WIDTH = 320
 
+/**
+ * Why `showBrowserPage` did or did not open Tools on the page: opened it, the click was on a pane that is not
+ * focused, or the panel is pinned to a different thread than the page's own.
+ */
+export type ShowBrowserPageResult = 'opened' | 'unfocused' | 'pinned-elsewhere'
+
 export interface ToolsPanelChrome {
   readonly open: boolean
   readonly surface: ToolSurfaceId
@@ -64,15 +70,17 @@ export class ToolsPanelStore {
    * Shows a page main just opened for a thread's own pane. The page is adopted either way, so Tools > Browser has
    * it once the user gets there; the panel itself only opens on Browser when the click came from the *focused*
    * pane (a link in an unfocused split pane must never pull the focused thread's Browser open, #331) and the panel
-   * is not pinned to a different thread. The answer is false so the caller can say where the page went.
+   * is not pinned to a different thread. When it does not open, the two reasons need their own words: an
+   * unfocused pane's click never touched Tools at all, but a pin means the page opened right here and Tools is
+   * merely looking elsewhere.
    */
-  showBrowserPage(page: BrowserPage, focused: boolean): boolean {
+  showBrowserPage(page: BrowserPage, focused: boolean): ShowBrowserPageResult {
     this.browser.adopt(page)
-    if (!focused) return false
+    if (!focused) return 'unfocused'
     const pinned = this.chrome.pinnedThreadId
-    if (pinned !== null && pinned !== page.workspace.threadId) return false
+    if (pinned !== null && pinned !== page.workspace.threadId) return 'pinned-elsewhere'
     this.update({ open: true, surface: 'browser' })
-    return true
+    return 'opened'
   }
 
   /**

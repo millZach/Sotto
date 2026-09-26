@@ -6,6 +6,7 @@
 
 .browser-player__bar { display: flex; align-items: center; gap: 4px; flex: none; height: 32px; padding: 0 2px 0 10px; border-bottom: 1px solid var(--tt-hairline); cursor: grab; user-select: none; }
 .browser-player__bar:active { cursor: grabbing; }
+.browser-player__bar:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .browser-player__bar > svg { flex: none; color: var(--tt-text-muted); }
 .browser-player__title { font-weight: 600; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .browser-player__host { margin-right: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 12px; font-family: var(--tt-font-mono); }
@@ -37,6 +38,7 @@
 
 .browser-player__grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; }
 .browser-player__grip::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 6px; height: 6px; border-right: 1.5px solid var(--tt-text-muted); border-bottom: 1.5px solid var(--tt-text-muted); }
+.browser-player__grip:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 
 .browser-player-pill { position: fixed; z-index: 40; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 34px; padding: 0 12px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); cursor: pointer; }
 .browser-player-pill > svg { flex: none; color: var(--tt-text-muted); }

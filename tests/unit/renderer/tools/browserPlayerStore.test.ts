@@ -6,6 +6,18 @@ import {
 
 const WINDOW = { width: 1280, height: 800 }
 
+// The production path for a move or resize (`BrowserPlayer.tsx`'s drag, arrow-key move and corner resize all
+// build the next rectangle from the one actually on screen, `rectFor`, and hand it whole to `setRect`); there is
+// no `move`/`resize` convenience left on the store to jump from a different, disagreeing default instead.
+function move(store: BrowserPlayerStore, dx: number, dy: number, window: { width: number; height: number }): void {
+  const before = store.rectFor(window)
+  store.setRect({ ...before, x: before.x + dx, y: before.y + dy }, window)
+}
+function resize(store: BrowserPlayerStore, width: number, height: number, window: { width: number; height: number }): void {
+  const before = store.rectFor(window)
+  store.setRect({ ...before, width, height }, window)
+}
+
 describe('clampBrowserPlayerRect', () => {
   it('keeps a rectangle already inside the window untouched', () => {
     const rect = { x: 800, y: 500, width: 340, height: 250 }
@@ -44,7 +56,7 @@ describe('BrowserPlayerStore placement', () => {
   })
   it('is one placement for every thread: moving it for one thread moves it for all of them', () => {
     const store = new BrowserPlayerStore()
-    store.move(50, 20, WINDOW)
+    move(store, 50, 20, WINDOW)
     const afterWorkshop = store.rectFor(WINDOW)
     // A different thread reads the very same placement; there is nothing thread-keyed about it.
     expect(store.rectFor(WINDOW)).toEqual(afterWorkshop)
@@ -54,15 +66,25 @@ describe('BrowserPlayerStore placement', () => {
     // Well clear of every edge, so the clamp never masks the step size being asserted.
     store.setRect({ x: 400, y: 300, width: 340, height: 250 }, WINDOW)
     const start = store.rectFor(WINDOW)
-    store.move(BROWSER_PLAYER_MOVE_STEP, 0, WINDOW)
+    move(store, BROWSER_PLAYER_MOVE_STEP, 0, WINDOW)
     expect(store.rectFor(WINDOW).x).toBe(start.x + BROWSER_PLAYER_MOVE_STEP)
-    store.move(BROWSER_PLAYER_MOVE_STEP_LARGE, 0, WINDOW)
+    move(store, BROWSER_PLAYER_MOVE_STEP_LARGE, 0, WINDOW)
     expect(store.rectFor(WINDOW).x).toBe(start.x + BROWSER_PLAYER_MOVE_STEP + BROWSER_PLAYER_MOVE_STEP_LARGE)
   })
   it('resizes down to the minimum and no further', () => {
     const store = new BrowserPlayerStore()
-    store.resize(50, 50, WINDOW)
+    resize(store, 50, 50, WINDOW)
     expect(store.rectFor(WINDOW)).toMatchObject({ width: BROWSER_PLAYER_MIN_WIDTH, height: BROWSER_PLAYER_MIN_HEIGHT })
+  })
+  it('starts a resize from the rectangle actually on screen, even before the user has ever moved it (no jump)', () => {
+    // Regression: `resize` used to rebuild its starting point from the store's own default, which could disagree
+    // with the one the player actually drew (pane-anchored) and jump on the very first corner drag.
+    const store = new BrowserPlayerStore()
+    const drawn = store.rectFor(WINDOW) // what the player has on screen before any placement is set
+    // A small grow, well clear of the window's edge, so the clamp that keeps the rectangle on screen never masks
+    // the jump this guards against: the corner (x, y) must stay exactly where it was drawn.
+    resize(store, drawn.width + 10, drawn.height + 10, WINDOW)
+    expect(store.getRect()).toMatchObject({ x: drawn.x, y: drawn.y, width: drawn.width + 10, height: drawn.height + 10 })
   })
   it('leaves a placement that still fits alone when the window resizes, and pulls in one that does not', () => {
     const store = new BrowserPlayerStore()
@@ -80,7 +102,7 @@ describe('BrowserPlayerStore placement', () => {
     store.subscribe(() => { notified++ })
     store.reclamp(WINDOW) // no placement set yet: nothing to reclamp
     expect(notified).toBe(0)
-    store.move(10, 0, WINDOW)
+    move(store, 10, 0, WINDOW)
     expect(notified).toBe(1)
     store.reclamp(WINDOW) // already fits: no change
     expect(notified).toBe(1)
@@ -112,6 +134,15 @@ describe('BrowserPlayerStore visibility', () => {
     store.hide('workshop')
     store.taskSeen('workshop', 'task-2', true)
     expect(store.visibilityFor('workshop')).toBe('open')
+  })
+  it('does not reopen a hidden player when an older, already-seen task becomes the newest again on a late update', () => {
+    const store = new BrowserPlayerStore()
+    store.taskSeen('workshop', 'task-1', true) // task-1 is first shown
+    store.taskSeen('workshop', 'task-2', true) // task-2 is newer, and is now shown instead
+    store.hide('workshop')
+    // task-1 gets a late update and is the newest-updated task again, but the thread has shown it before.
+    store.taskSeen('workshop', 'task-1', true)
+    expect(store.visibilityFor('workshop')).toBe('hidden')
   })
   it('restore and hide move a thread between states directly', () => {
     const store = new BrowserPlayerStore()

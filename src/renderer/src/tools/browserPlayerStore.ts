@@ -27,11 +27,20 @@ const EDGE_GAP = 16
 export const BROWSER_PLAYER_MOVE_STEP = 16
 export const BROWSER_PLAYER_MOVE_STEP_LARGE = 64
 
-/** Above the composer, clear of the window's edges, the spot the prototype starts a player in. */
+/**
+ * Above the composer, clear of the window's edges, before the user has ever moved the player: at the *focused
+ * pane's* bottom-right corner rather than the window's, when a pane is mounted. When Tools is open and docked
+ * beside the pane, the pane's own rectangle already stops short of it, so the default spot never opens on top of
+ * the rail. There is exactly one of these (`BrowserPlayer.tsx` reads it through `rectFor`, never its own copy),
+ * so a corner resize or drag never jumps from a position the store did not know the player actually started at.
+ */
 function defaultRect(window: WindowSize): BrowserPlayerRect {
-  const width = Math.min(BROWSER_PLAYER_DEFAULT_WIDTH, Math.max(BROWSER_PLAYER_MIN_WIDTH, window.width - EDGE_GAP * 2))
-  const height = Math.min(BROWSER_PLAYER_DEFAULT_HEIGHT, Math.max(BROWSER_PLAYER_MIN_HEIGHT, window.height - BROWSER_PLAYER_STRIP_HEIGHT - EDGE_GAP * 2))
-  return { x: window.width - width - 24, y: window.height - height - 132, width, height }
+  const pane = typeof document === 'undefined' ? undefined : document.querySelector<HTMLElement>('.thread-pane[data-focused]')?.getBoundingClientRect()
+  const width = Math.min(BROWSER_PLAYER_DEFAULT_WIDTH, window.width - EDGE_GAP * 2)
+  const height = Math.min(BROWSER_PLAYER_DEFAULT_HEIGHT, window.height - EDGE_GAP * 2)
+  const x = pane ? pane.right - width - 20 : window.width - width - 24
+  const y = pane ? pane.bottom - height - 150 : window.height - height - 132
+  return clampBrowserPlayerRect({ x, y, width, height }, window)
 }
 
 /** Keeps a placement's size at least the minimum and its whole rectangle inside the window, below the drag strip. */
@@ -51,7 +60,9 @@ export function clampBrowserPlayerRect(rect: BrowserPlayerRect, window: WindowSi
 export class BrowserPlayerStore {
   private rect: BrowserPlayerRect | null = null
   private readonly visibility = new Map<string, BrowserPlayerVisibility>()
-  private readonly lastTaskId = new Map<string, string>()
+  /** Every task ID a thread has ever shown, so a late update to an older task the user already saw (and maybe
+   * hid the player for) never reads as genuinely new just because it is not the *previous* one shown. */
+  private readonly seenTaskIds = new Map<string, Set<string>>()
   private readonly listeners = new Set<() => void>()
 
   subscribe = (listener: () => void): (() => void) => {
@@ -70,14 +81,6 @@ export class BrowserPlayerStore {
     if (this.rect && sameRect(this.rect, next)) return
     this.rect = next
     this.emit()
-  }
-  move(dx: number, dy: number, window: WindowSize): void {
-    const current = this.rectFor(window)
-    this.setRect({ ...current, x: current.x + dx, y: current.y + dy }, window)
-  }
-  resize(width: number, height: number, window: WindowSize): void {
-    const current = this.rectFor(window)
-    this.setRect({ ...current, width, height }, window)
   }
   /** The window resized: pull a placement that no longer fits back inside, and leave one that still fits alone. */
   reclamp(window: WindowSize): void {
@@ -99,13 +102,16 @@ export class BrowserPlayerStore {
   hide(threadId: string): void { this.setVisibility(threadId, 'hidden') }
 
   /**
-   * A thread's current task changed. A genuinely new task (a page the agent just opened) opens the player when
-   * `autoShow` is on, and otherwise leaves it hidden; the same task's own progress never overrides what the user
+   * A thread's current (newest-updated) task changed. A genuinely new task (a page the agent just opened) opens
+   * the player when `autoShow` is on, and otherwise leaves it hidden; the same task's own progress, or an older
+   * task the thread has shown before regaining the newest spot on a late update, never overrides what the user
    * chose for it (open, shrunk or hidden).
    */
   taskSeen(threadId: string, taskId: string, autoShow: boolean): void {
-    if (this.lastTaskId.get(threadId) === taskId) return
-    this.lastTaskId.set(threadId, taskId)
+    let seen = this.seenTaskIds.get(threadId)
+    if (!seen) { seen = new Set(); this.seenTaskIds.set(threadId, seen) }
+    if (seen.has(taskId)) return
+    seen.add(taskId)
     this.setVisibility(threadId, autoShow ? 'open' : 'hidden')
   }
 }
