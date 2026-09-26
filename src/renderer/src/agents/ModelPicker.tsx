@@ -2,6 +2,7 @@ import React, { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNod
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import type { AgentModel } from '../../../shared/agents'
 import { moveListboxFocus } from './listboxKeys'
+import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
 import './threadChips.css'
 import './modelPicker.css'
@@ -84,7 +85,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [open])
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
-    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label="Thread model" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
+    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={OPTION_CHIP_NAMES.model} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>

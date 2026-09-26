@@ -1,10 +1,10 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, providerIdSchema, type AgentCommand, type AgentState, type AgentThread } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, providerIdSchema, type AgentCommand, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import type { AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
-import { permissionInForceCaption, settingRefusalText, ThreadOptionFields, ThreadOptions, threadOptionsSummary } from '../../../src/renderer/src/agents/ThreadOptions'
-import { threadSettingsStore } from '../../../src/renderer/src/agents/threadSettings'
+import { permissionInForceCaption, settingRefusalText, ThreadOptionFields, unconfirmedSettingText, ThreadOptions, threadOptionsSummary } from '../../../src/renderer/src/agents/ThreadOptions'
+import { pendingSettingsStore } from '../../../src/renderer/src/agents/pendingSettings'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function fixture(thread: Partial<AgentThread> = {}): AgentState {
@@ -64,7 +64,7 @@ function LiveThread({ answer, draw = true, start = fixture(), redraw }: {
 }
 const withThread = (state: AgentState, patch: Partial<AgentThread>): AgentState =>
   ({ ...state, error: null, host: { ...state.host, threads: [{ ...state.host.threads[0]!, ...patch }] } })
-afterEach(() => { cleanup(); threadSettingsStore.clear() })
+afterEach(() => { cleanup(); pendingSettingsStore.clear() })
 
 describe('composer option chips', () => {
   it('shows the model with its provider mark, the effort and the permissions as three chips', () => {
@@ -190,7 +190,7 @@ describe('composer option chips', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
     fireEvent.keyDown(slider, { key: 'End' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('Sotto could not confirm Max effort with Claude Code. The chip shows what the thread last reported; check the connection before trying again.')
+    expect(await screen.findByRole('alert')).toHaveTextContent("Sotto did not get Claude Code's answer about Max effort, so the chip shows what the thread last reported. Try again to send it once more.")
     expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('High')
     expect(screen.getByRole('dialog', { name: 'Reasoning effort' })).toBeInTheDocument()
     expect(slider).toHaveValue('2')
@@ -489,8 +489,9 @@ describe('a pending setting', () => {
     expect(chip).toHaveTextContent('Full access')
     expect(chip).toHaveAttribute('data-pending', 'true')
     expect(chip.querySelector('.thread-chip__pending')).not.toBeNull()
-    expect(chip).toHaveAccessibleDescription('Switching to Full access. Ask for approval stays in force until Claude Code confirms.')
     expect(screen.getByRole('status')).toHaveTextContent('Claude Code still asks for approval until it confirms.')
+    // The chip is described by the caption itself, so the words are the ones on screen, said once.
+    expect(chip).toHaveAccessibleDescription('Claude Code still asks for approval until it confirms.')
     expect(chip).toBeEnabled()
     fireEvent.click(chip)
     expect(screen.getByRole('option', { name: 'Full access' })).toHaveAttribute('aria-selected', 'true')
@@ -498,7 +499,7 @@ describe('a pending setting', () => {
     await act(async () => { release() })
     expect(chip).toHaveTextContent('Full access')
     expect(chip).not.toHaveAttribute('data-pending')
-    expect(chip).not.toHaveAccessibleDescription(/Switching/u)
+    expect(chip).not.toHaveAccessibleDescription(/until it confirms/u)
     expect(screen.getByRole('status')).toBeEmptyDOMElement()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -546,14 +547,57 @@ describe('a pending setting', () => {
     expect(chip).toHaveFocus()
   })
 
-  it("shows the provider's own account of a lost answer rather than claiming nothing else changed", async () => {
-    const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread. Ask Claude to start it again if you still need it.'
-    render(<LiveThread start={fixture({ runtimeMode: 'approval-required' })} answer={async (_request, current) => ({ ...current, error: lost })} />)
+  it('keeps a choice the provider never answered on the chip, says what comes next, and offers nothing to press', async () => {
+    const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread.'
+    let commit!: (next: AgentState) => void
+    const start = fixture({ runtimeMode: 'approval-required' })
+    render(<LiveThread start={start} redraw={set => { commit = set }}
+      answer={async (_request, current) => ({ ...current, error: lost, unconfirmedSettings: [{ threadId: 'thread', runtimeMode: 'auto' }] })} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
+    fireEvent.click(chip)
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'Auto' })) })
+    // Main keeps the change for the thread's next start, so the chip keeps it, still marked as not confirmed.
+    expect(chip).toHaveTextContent('Auto')
+    expect(chip).toHaveAttribute('data-pending', 'true')
+    const notice = screen.getByRole('alert')
+    expect(notice).toHaveTextContent(`Claude Code has not confirmed Auto. ${lost}`)
+    expect(notice).not.toHaveTextContent('did not switch')
+    expect(within(notice).queryByRole('button')).toBeNull()
+    expect(chip).toHaveAccessibleDescription(`Claude Code has not confirmed Auto. ${lost}`)
+    // Nothing else goes to the thread until main knows, so the chips wait with it.
+    expect(chip).toBeDisabled()
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    // The thread's next start carries it: the thread shows Auto and main lets the change go.
+    act(() => { commit(withThread(start, { runtimeMode: 'auto' })) })
+    expect(chip).toHaveTextContent('Auto')
+    expect(chip).not.toHaveAttribute('data-pending')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(chip).toBeEnabled()
+  })
+
+  it('keeps a refusal under the chips while another chip is pressed', async () => {
+    render(<LiveThread start={fixture({ runtimeMode: 'approval-required', reasoningEffort: 'high' })} answer={async (request, current) =>
+      'runtimeMode' in request ? { ...current, error: PROVIDER_REJECTED_ACTION } : withThread(current, { reasoningEffort: (request as { reasoningEffort: string }).reasoningEffort })} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
     await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'Full access' })) })
-    const alert = screen.getByRole('alert')
-    expect(alert).toHaveTextContent(`Claude Code did not switch to Full access. ${lost}`)
-    expect(alert).not.toHaveTextContent('nothing else changed')
+    expect(screen.getByRole('alert')).toHaveTextContent('The thread stays on Ask for approval')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    await act(async () => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'End' }) })
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toHaveTextContent('Max')
+    expect(screen.getByRole('alert')).toHaveTextContent('Claude Code did not switch to Full access.')
+  })
+
+  it('fixes the chips while a prompt is on its way to the provider, and not for their own save', async () => {
+    const start = fixture()
+    const sending = { ...start, deliveries: [{ threadId: 'thread', draftId: '00000000-0000-4000-8000-000000000001', status: 'submitting' as const,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }
+    const command = vi.fn(() => new Promise<AgentState>(() => undefined))
+    const { rerender } = render(<ThreadOptions thread={sending.host.threads[0]!} state={sending} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeDisabled()
+    // The coordinator's busy mark for this thread's own save fixes nothing.
+    const busy = { ...start, busyThreadIds: ['thread'] }
+    rerender(<ThreadOptions thread={busy.host.threads[0]!} state={busy} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeEnabled()
   })
 
   it('sends one further save for the last of two presses made during one save', async () => {
@@ -641,7 +685,7 @@ describe('a pending setting', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Bypass permissions' }))
     expect(chip).toHaveTextContent('Bypass permissions')
     expect(screen.getByRole('status')).toHaveTextContent('Devin stays on Ask first until it confirms.')
-    expect(chip).toHaveAccessibleDescription('Switching to Bypass permissions. Ask first stays in force until Devin confirms.')
+    expect(chip).toHaveAccessibleDescription('Devin stays on Ask first until it confirms.')
   })
 
   it('names what each mode still lets the provider do, and words a refusal by what main said', () => {
@@ -654,6 +698,8 @@ describe('a pending setting', () => {
     expect(settingRefusalText('Codex', 'Full access', 'Allow edits', PROVIDER_REJECTED_ACTION)).toBe('Codex did not switch to Full access. The thread stays on Allow edits; nothing else changed.')
     expect(settingRefusalText('Codex', 'Full access', 'Allow edits', 'Wait for the thread and resolve pending requests before changing settings.'))
       .toBe('Codex did not switch to Full access. Wait for the thread and resolve pending requests before changing settings.')
+    expect(unconfirmedSettingText('Codex', 'Full access', PROVIDER_RESULT_UNCONFIRMED))
+      .toBe('Codex has not confirmed Full access. The thread starts on Full access the next time it is used, and Sotto checks it then.')
   })
 })
 

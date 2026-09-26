@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
+import { OPTION_CHIP_NAMES } from './optionChipNames'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
@@ -231,7 +232,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
 
 /**
  * The effort chip and its card. `value` is the level to show: the one the user last pressed while the provider
- * has not confirmed it (`threadSettings.ts` holds the press and the save behind it), the provider's own level
+ * has not confirmed it (`pendingSettings.ts` holds the press and the save behind it), the provider's own level
  * otherwise. So the whole control — the word, the line, the chip and the arrival — moves from the frame a level
  * is pressed; the provider is still authoritative, so the level it answers with is what remains, and a refusal
  * takes the press back (ADR-0019). The chip wears the colourway at the model's highest level, and the composer
@@ -271,7 +272,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
-    <button ref={trigger} type="button" role="combobox" aria-label="Thread reasoning" title="Thread reasoning" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+    <button ref={trigger} type="button" role="combobox" aria-label={OPTION_CHIP_NAMES.effort} title={OPTION_CHIP_NAMES.effort} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       className="thread-chip tt-focusable" data-effort-top={top} disabled={disabled} onClick={() => setOpen(current => !current)}>
       <span>{level ? effortLabel(level) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
     </button>

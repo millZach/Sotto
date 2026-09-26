@@ -23,8 +23,10 @@ export function AgentManualNotice({ state, command }: { readonly state: AgentSta
   </section>
 }
 
-export function AgentComposer({ state, command, compact = false, footerControls, enterToSend = false, ornament }: {
+export function AgentComposer({ state, command, compact = false, footerControls, footerAfter, enterToSend = false, ornament }: {
   readonly state: AgentState; readonly command: Command; readonly compact?: boolean; readonly footerControls?: ReactNode
+  /** A row under the footer, for what its controls have to say without moving the footer itself. */
+  readonly footerAfter?: ReactNode
   /** The Threads workspace sends on Enter (Shift+Enter for a new line); dictation surfaces keep Enter as a newline. */
   readonly enterToSend?: boolean
   /** Observational composer decoration supplied only by the thread pane. */
@@ -109,6 +111,7 @@ export function AgentComposer({ state, command, compact = false, footerControls,
         </>}
       </div>
     </div>
+    {footerAfter}
   </section>
 }
 

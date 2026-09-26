@@ -11,12 +11,12 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffec
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { useAgentConnection, type AgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
-import { threadSettingsStore } from '../../../src/renderer/src/agents/threadSettings'
+import { pendingSettingsStore } from '../../../src/renderer/src/agents/pendingSettings'
 import type { AgentBridge, AgentCommand, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { agentBridgeFor } from '../../fixtures/agentBridge'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); threadSettingsStore.clear() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); pendingSettingsStore.clear() })
 
 const label = (request: AgentCommand): string => `${request.type}:${'threadId' in request ? request.threadId : ''}`
 

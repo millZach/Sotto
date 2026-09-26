@@ -26,6 +26,20 @@ In every variant a refusal puts the chip back and an alert under the chips says 
 **A** (issue #319, comment of September 26, 2026). Model and effort show the pressed value with no pending mark: they
 change what the next turn is, not what the provider may do without asking.
 
+## Three outcomes after a press
+
+- **Confirmed.** The chip reads normally once the window draws the provider's answer.
+- **Refused.** The provider answered and did not take it, or main refused it before the provider heard anything. The
+  chip goes back to the value in force, and a line under the composer's row says so, with Try again.
+- **Unconfirmed.** The provider never gave a result: a lost answer (#317) or a result it did not report. Main keeps the
+  change for the thread's next start, holds it in its outbox and takes no other action on the thread until it knows.
+  So the chip keeps showing the choice with the same pending mark, the chips are fixed, and a line under the row says
+  what happened and what comes next, with nothing to press. It clears when the thread shows the choice, which the next
+  start carries, or when main lets the change go without it, and the chip then shows what the thread reports. This
+  stays inside variant A: the dashed edge and dot already mean "not confirmed yet", and the line under the row is the
+  refusal's place. Main now publishes the changes it keeps this way (`AgentState.unconfirmedSettings`), so the chips
+  read it from state rather than from the wording of an error.
+
 ## Wording
 
 - The caption names the mode in force, as the provider doing it, because that is what the next tool call runs
@@ -38,35 +52,48 @@ change what the next turn is, not what the provider may do without asking.
   write with approval on request both edit without asking and still ask before commands. "Decides what to ask you
   about" is Auto: Claude's auto mode and Codex's automatic reviewer both decide per call, so the caption says the
   deciding is theirs rather than promising either answer.
-- The chip's accessible description says both ends: "Switching to Full access. Ask for approval stays in force until
-  Claude Code confirms." The caption is a status region, so it is announced when it appears.
+- The chip is described by the caption itself, so a screen reader hears the words on screen, once: the caption is a
+  status region announced when it appears, and focus is already on the chip by then. In the unconfirmed state the chip
+  is described by the line under the row instead.
 - A refusal leads with what did not happen: "Claude Code did not switch to Full access." Then:
-  - When main's answer is the plain refusal (`PROVIDER_REJECTED_ACTION`, now a shared constant): the provider answered
+  - When main's answer is the plain refusal (`PROVIDER_REJECTED_ACTION`, a shared constant): the provider answered
     and did not take it, and nothing is left to reconcile, so "The thread stays on Ask for approval; nothing else
     changed."
-  - Any other answer is main's or the provider's own sentence, and it follows the lead as it is. It may say that
-    something else did change: #317's lost answer stops the session and names the background work that stopped with
-    it. So nothing is claimed beside it, and never "nothing else changed".
-  - No answer at all (the connection failed): "Sotto could not confirm Full access with Claude Code. The chip shows
-    what the thread last reported; check the connection before trying again."
-  - Model and effort refusals use the same sentences with the model's name or "Max effort".
-- "Saving..." is gone, and no chip is disabled by a save in flight.
+  - Any other reason, main's or the provider's, follows the lead as it is, with nothing claimed beside it.
+  - No answer came back to the window: "Sotto did not get Claude Code's answer about Full access, so the chip shows
+    what the thread last reported. Try again to send it once more." The words ask for the press the button makes.
+- An unconfirmed change leads with "Claude Code has not confirmed Auto." Then the provider's own account where it
+  gives one, such as #317's lost answer: "Claude Code did not confirm the settings change, so Sotto stopped this
+  thread's session, and "npm test" stopped with it. The session starts again with the new settings the next time you
+  use the thread." Where main has only its general sentence (`PROVIDER_RESULT_UNCONFIRMED`,
+  `THREAD_SETTINGS_UNRECONCILED`), it says instead: "The thread starts on Auto the next time it is used, and Sotto
+  checks it then." Never "did not switch", and no Try again, since main refuses anything else on the thread until it
+  knows.
+- Model and effort use the same sentences with the model's name or "Max effort".
+- "Saving..." is gone, and no chip is disabled by its own save.
 
 ## How it was built
 
-`src/renderer/src/agents/threadSettings.ts` holds, per thread and per setting, the press (desired) against what the
+`src/renderer/src/agents/pendingSettings.ts` holds, per thread and per setting, the press (desired) against what the
 window last drew from main's published state (confirmed). A press shows at once and is sent; a press made while that
-setting's save is in flight waits, and only the last one is sent when the save answers. A refusal lets go of the press,
-so the chip shows the value in force, and keeps main's sentence for the alert. A confirmed press is held until the
-window draws the value main answered with, not only until the reply lands, because a reply can arrive before the
-broadcast that carries it (#306); a four-second hold lets go if something newer moved the setting first. The store is
-keyed by thread rather than by the composer, so a press belongs to the thread it was made on, and a pane that remounts
-still shows it. The effort chip's own save loop moved into the store.
+setting's save is in flight waits, and only the last one is sent when the save answers. The mark stays while a save is
+in flight even when the press is back on the value in force, because that save may still land first. A refusal lets go
+of the press and is kept per setting, so a press on another chip leaves it; a new press of that setting, or the thread
+showing the value after all, clears it. A confirmed press is held until the window draws the value main answered with,
+not only until the reply lands, because a reply can arrive before the broadcast that carries it (#306); a four-second
+hold lets go if something newer moved the setting first. The store is keyed by thread rather than by the composer, so
+a press belongs to the thread it was made on and a pane that remounts still shows it; it lets go of threads the state
+no longer has. The effort chip's own save loop moved into the store.
 
 Nothing in the window gates a send: main's thread lane (#311) runs a thread's settings and its prompts in the order
-they arrive, so a prompt sent while a press is pending runs on the pressed settings. `tests/unit/renderer/agentCommandLanes.test.tsx`
-proves it through the chip over a real coordinator.
+they arrive, so a prompt sent while a press is pending runs on the pressed settings.
+`tests/unit/renderer/agentCommandLanes.test.tsx` proves it through the chip over a real coordinator.
 
-The chips are fixed only by what a provider refuses: a turn under way, an unanswered request, an archived thread, a
-provider that is gone. They no longer read the coordinator's busy mark, which covers the very save a press starts. The
-pane's own error line leaves a settings refusal to the alert under the chips.
+The chips are fixed by what a provider refuses: a turn under way, an unanswered request, an archived thread, a
+provider that is gone, a prompt still on its way to the provider (a delivery queued, submitting or unconfirmed), and a
+settings change main keeps unconfirmed. They no longer read the coordinator's busy mark, which covers the very save a
+press starts.
+
+The lines under the chips go in a row of their own that the composer places under its whole footer row, so the attach
+button, the chips and the send button stay exactly where they sit without them. The pane's own error line leaves a
+settings refusal or an unconfirmed change to that row.

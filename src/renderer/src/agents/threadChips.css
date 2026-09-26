@@ -21,12 +21,17 @@
 .thread-options__caption { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 /* Kept in the tree while empty so assistive technology hears it arrive, but out of the row's spacing. */
 .thread-options__caption:empty { position: absolute; }
-/* What a refused press said, on its own line under the chips, in the warning colour the composer's other refusals use. */
-.thread-options__refusal { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 2px 0 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
-.thread-options__refusal > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.thread-options__refusal > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
-.thread-options__refusal > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
-.thread-options__refusal > button:disabled { opacity: .55; cursor: default; }
+/* What a refused or unconfirmed change said, each on its own line in the warning colour the composer's other refusals
+   use. The composer gives them a row of their own under its footer, so the chips, the attach button and the send
+   button stay exactly where they are; the row is empty, and takes no room, until there is something to say. */
+.thread-options-notices { display: grid; gap: 4px; min-width: 0; margin-top: 6px; }
+.thread-options-notices:empty { display: none; }
+.thread-prompt > .thread-options-notices, .thread-workspace__compose .agent-composer > .thread-options-notices { grid-column: 2; }
+.thread-options__notice { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
+.thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.thread-options__notice > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.thread-options__notice > button:disabled { opacity: .55; cursor: default; }
 
 /* The effort and permission lists. */
 .thread-chip-menu { position: relative; min-width: 0; }

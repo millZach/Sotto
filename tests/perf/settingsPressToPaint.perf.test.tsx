@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import { ThreadOptions } from '../../src/renderer/src/agents/ThreadOptions'
-import { threadSettingsStore } from '../../src/renderer/src/agents/threadSettings'
+import { pendingSettingsStore } from '../../src/renderer/src/agents/pendingSettings'
 import { agentShell, type AgentBridge, type AgentRuntimeMode } from '../../src/shared/agents'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -28,7 +28,7 @@ import { threadSettingsStack } from '../fixtures/threadSettingsStack'
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/settingsPressToPaint.perf.test.tsx --maxWorkers=1 --disable-console-intercept
  */
 
-afterEach(() => { cleanup(); threadSettingsStore.clear() })
+afterEach(() => { cleanup(); pendingSettingsStore.clear() })
 // The window commits main's state on React's own schedule here, as it does in the app, rather than in act's batches.
 const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 
@@ -73,8 +73,8 @@ describe.skipIf(!PERF_BENCH)('permission chip press to paint', () => {
           fireEvent.click(chip)
           const option = screen.getByRole('option', { name: LABELS[mode] })
           let confirmedAt = 0
-          const unsubscribe = threadSettingsStore.subscribe(() => {
-            if (confirmedAt === 0 && threadSettingsStore.view(stack.threadId).pending.permissions === undefined) confirmedAt = performance.now()
+          const unsubscribe = pendingSettingsStore.subscribe(() => {
+            if (confirmedAt === 0 && pendingSettingsStore.view(stack.threadId).pending.permissions === undefined) confirmedAt = performance.now()
           })
           repliedAt = 0
           const pressedAt = performance.now()

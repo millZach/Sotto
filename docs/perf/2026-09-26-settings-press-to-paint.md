@@ -10,13 +10,13 @@ its caption going, for model and effort as nothing at all. The two are measured 
 One press is one permission-mode change on the composer's chip, in the window's own React tree (jsdom) over the whole
 host stack of `tests/fixtures/threadSettingsStack.ts`: the coordinator, the workspace, provider selection and the real
 Claude or Codex adapter over the fake client the adapter contract uses, each a real child process, with the thread's
-session running. Each figure is the median of six presses, and the range is across three runs on the same machine.
+session running. Each figure is the median of six presses, and the range is across four runs on the same machine.
 
 | Provider | Change | Press to painted selection | Press to main's reply | Press to confirmed on screen |
 | --- | --- | ---: | ---: | ---: |
-| Claude | in place (Allow edits and Ask for approval) | 2.7-2.8 ms | 13-14 ms | 39-40 ms |
+| Claude | in place (Allow edits and Ask for approval) | 2.7-3.2 ms | 13-15 ms | 39-40 ms |
 | Claude | restart (Full access and Allow edits) | 2.3-2.6 ms | 105-112 ms | 122-128 ms |
-| Codex | in place (Full access and Allow edits) | 2.3-2.4 ms | 17 ms | 41 ms |
+| Codex | in place (Full access and Allow edits) | 2.3-2.5 ms | 17-18 ms | 41 ms |
 
 - **Press to painted selection** is from the click on the option to React committing the chip with the new choice
   and its pending mark. The slowest single press in any run was 7 ms.
