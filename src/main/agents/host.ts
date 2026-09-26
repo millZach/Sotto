@@ -19,7 +19,16 @@ export type AgentHostCommand =
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
-export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
+export interface AgentHostResult {
+  readonly accepted: boolean
+  readonly uncertain?: boolean
+  /**
+   * For `configure-thread`: the snapshot the adapter emitted once the provider confirmed the change, carrying
+   * the thread's effective settings. The coordinator accepts it in place of reading the thread again, and
+   * reads only when it is absent. Never set on an uncertain result, which is reconciled from the outbox.
+   */
+  readonly snapshot?: AgentHostSnapshot
+}
 /**
  * What Sotto asks a thread's own client to write on the side: a title, a branch name, a commit message or
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
