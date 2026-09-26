@@ -21,6 +21,9 @@ const aliases = async () => JSON.parse(await readFile(join(f!.root, 'grok-thread
 const effective = async (id: string) => JSON.parse(await readFile(join(f!.root, 'native-sessions.json'), 'utf8'))[await f!.realId(id)].permissionMode as string
 const sessionRequests = async (method: string, id: string) => (await f!.driver.requests()).filter(request => request.method === method && (request.params as { sessionId?: string } | undefined)?.sessionId === id)
 const configure = (id: string, runtimeMode: AgentRuntimeMode) => f!.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode })
+/** A confirmed change hands back the snapshot Grok's confirmation produced, carrying the mode the thread now has (#318). */
+const confirmed = (id: string, runtimeMode: AgentRuntimeMode) => ({ accepted: true,
+  snapshot: expect.objectContaining({ threads: expect.arrayContaining([expect.objectContaining({ id, runtimeMode })]) }) })
 
 it('advertises only the Grok permission modes it can apply per session', async () => {
   f = await grokFixture(); const snapshot = await f.host.connect()
@@ -54,7 +57,7 @@ it('rejects a permission mode Grok cannot apply before creating a native session
 
 it('changes an existing thread permission mode by closing and reloading its native session', async () => {
   const id = await setup(); const nativeId = await f!.realId(id)
-  expect(await configure(id, 'full-access')).toEqual({ accepted: true })
+  expect(await configure(id, 'full-access')).toEqual(confirmed(id, 'full-access'))
   let methods: (string | undefined)[] = (await f!.driver.requests()).map(request => request.method).filter(method => method === '_x.ai/session/close' || method === 'session/load')
   expect(methods.slice(-2)).toEqual(['_x.ai/session/close', 'session/load'])
   expect(((await sessionRequests('session/load', nativeId)).at(-1)!.params as { _meta: unknown })._meta).toEqual(policy['full-access'])
@@ -63,9 +66,9 @@ it('changes an existing thread permission mode by closing and reloading its nati
   expect((await aliases())[id]).toMatchObject({ runtimeMode: 'full-access' })
   expect((await aliases())[id]).not.toHaveProperty('pendingRuntimeMode')
   // A resident Grok session cannot be downgraded by reloading alone; the close is load-bearing.
-  expect(await configure(id, 'approval-required')).toEqual({ accepted: true })
+  expect(await configure(id, 'approval-required')).toEqual(confirmed(id, 'approval-required'))
   expect(await effective(id)).toBe('default')
-  expect(await configure(id, 'auto')).toEqual({ accepted: true })
+  expect(await configure(id, 'auto')).toEqual(confirmed(id, 'auto'))
   expect(await effective(id)).toBe('auto')
   methods = (await f!.driver.requests()).map(request => request.method)
   expect(methods.filter(method => method === '_x.ai/session/close')).toHaveLength(3)
@@ -77,7 +80,7 @@ it('changes an existing thread permission mode by closing and reloading its nati
 
 it('keeps an unchanged permission mode without touching the native session', async () => {
   const id = await setup('auto')
-  expect(await configure(id, 'auto')).toEqual({ accepted: true })
+  expect(await configure(id, 'auto')).toEqual(confirmed(id, 'auto'))
   expect((await f!.driver.requests()).some(request => request.method === '_x.ai/session/close')).toBe(false)
 })
 

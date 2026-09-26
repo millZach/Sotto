@@ -299,10 +299,14 @@ export class ConfiguredProviderHost implements AgentHost {
     const capabilities = this.slots.get(id)!.status.capabilities
     const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'compact-thread' ? 'compact' : command.type === 'configure-thread' ? 'configureThread' : undefined
     if (needed && !capabilities[needed]) throw new Error('This provider does not support that thread action.')
-    if (command.type === 'configure-thread' && command.modelId !== undefined) {
-      return this.options.hosts[id].execute({ ...command, modelId: nativeEntityId(id, 'model', command.modelId) })
-    }
-    return this.options.hosts[id].execute(command)
+    if (command.type !== 'configure-thread') return this.options.hosts[id].execute(command)
+    const slot = this.slots.get(id)!; const epoch = slot.epoch
+    const { snapshot, ...result } = await this.options.hosts[id].execute(command.modelId !== undefined ? { ...command, modelId: nativeEntityId(id, 'model', command.modelId) } : command)
+    // The provider's snapshot of a confirmed change becomes the whole view, as a read of the thread would.
+    // One from a connection that has since changed, or on any result but a confirmed one, is dropped.
+    if (!snapshot || !result.accepted || result.uncertain || slot.epoch !== epoch) return result
+    this.accept(id, snapshot)
+    return { ...result, snapshot: cloneHostSnapshot(this.aggregate()) }
   }
   observeThreads(ids: readonly string[]): void {
     this.observed = [...ids]

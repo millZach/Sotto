@@ -137,6 +137,16 @@ export class AgentControl {
   // Skip unchanged state only when no writes are pending: an older queued write could otherwise
   // overwrite a newer state that happens to match the last completed save.
   private lastWritten = ''
+  /** The outbox as the last completed write left it on disk. */
+  private writtenOutbox: Saved['outbox'] = []
+  /** Thread settings changes being dispatched now: the outbox entries that were added inside this dispatch. */
+  private readonly settingsDispatching = new Set<string>()
+  /**
+   * Settings entries the provider confirmed inside their own dispatch, whose removal is not on disk yet. Dropping
+   * one is the only change such a write would carry, so it waits for the next write that carries anything else.
+   * Until then the entry stays on disk, where a restart reconciles it against the thread's settings (#318).
+   */
+  private readonly settledSettings = new Set<string>()
   private readonly attachmentPreviews: AttachmentPreviews
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly deciding = new Set<string>()
@@ -570,11 +580,13 @@ export class AgentControl {
     this.publish()
     if (failure?.status === 'rejected') throw failure.reason
   }
-  private async persist(): Promise<void> {
+  /** `closing`: the last write before Sotto stops, which leaves no confirmed settings entry behind on disk. */
+  private async persist(closing = false): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     const saved = this.saved()
     const serialized = JSON.stringify(saved)
-    if (serialized !== this.lastWritten || this.pendingDraftWrites.size > 0) {
+    const outbox = [...saved.outbox]
+    if ((serialized !== this.lastWritten || this.pendingDraftWrites.size > 0) && (closing || !this.onlySettledSettings(saved, outbox))) {
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
       try {
@@ -583,6 +595,8 @@ export class AgentControl {
         // completed, never newer state that changed while this write was outstanding.
         this.persistedDrafts = drafts
         this.lastWritten = serialized
+        this.writtenOutbox = outbox
+        for (const id of this.settledSettings) if (!outbox.some(item => item.id === id)) this.settledSettings.delete(id)
       } finally {
         this.pendingDraftWrites.delete(drafts)
       }
@@ -592,6 +606,16 @@ export class AgentControl {
     // Most writes follow host snapshots and change no evidence; republishing
     // every thread's history for them backs up the main process.
     if (JSON.stringify(this.draftPersistence()) !== this.publishedDraftPersistence) this.publish()
+  }
+  /**
+   * True when the state differs from the last completed write only by settings entries confirmed inside their own
+   * dispatch. The entry's add was the write that mattered; its removal rides on the next write (#318).
+   */
+  private onlySettledSettings(saved: Saved, outbox: Saved['outbox']): boolean {
+    if (!this.settledSettings.size || this.pendingDraftWrites.size > 0) return false
+    const kept = this.writtenOutbox.filter(item => !this.settledSettings.has(item.id))
+    if (kept.length === this.writtenOutbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false
+    return JSON.stringify({ ...saved, outbox: this.writtenOutbox }) === this.lastWritten
   }
   private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
     return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, files, requestId }) => [threadId,
@@ -1822,8 +1846,9 @@ export class AgentControl {
         this.canAct()
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
-        this.observe(command.threadId)
-        this.acceptSnapshot(await this.readThread(command.threadId))
+        // Checked against the thread as Sotto holds it, without opening it: watching or reading a reaped Claude
+        // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
+        // the thread's status, requests and model itself before it changes anything (#318).
         const validate = (): void => {
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
@@ -2023,7 +2048,7 @@ export class AgentControl {
     client: ClientIdentity = this.localClient): Promise<void> {
     if (turn) this.dispatchTurns.set(command.commandId, turn)
     try { await this.dispatchPending(command, turn, validate, draftId, client) }
-    finally { this.dispatchTurns.delete(command.commandId) }
+    finally { this.dispatchTurns.delete(command.commandId); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: AgentHostCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
     client: ClientIdentity = this.localClient): Promise<void> {
@@ -2059,6 +2084,7 @@ export class AgentControl {
       ...(command.type === 'create-project' ? { entityId: command.projectId } : command.type === 'create-thread' ? { entityId: command.threadId } : {}),
     })
     const answerIntent = command.type === 'answer' ? this.outbox.find(item => item.id === command.commandId) : undefined
+    if (command.type === 'configure-thread') this.settingsDispatching.add(command.commandId)
     if ((command.type === 'send' || command.type === 'steer') && draftId) {
       this.setDelivery(command.threadId, draftId, 'submitting', { commandId: command.commandId, messageId: command.messageId })
       // The message shows as Sending as soon as the intent exists, not after the disk write.
@@ -2116,7 +2142,9 @@ export class AgentControl {
     if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, result.accepted || result.uncertain ? 'uncertain' : 'failed')
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || (command.type === 'send' || command.type === 'steer')) && result.accepted) {
-      try { this.acceptSnapshot(await this.readThread(threadId)) }
+      // A settings change the provider confirmed comes back with the snapshot it produced, which is the
+      // reconciliation; the thread is read again only when the adapter has none to give (#318).
+      try { this.acceptSnapshot(command.type === 'configure-thread' && result.snapshot ? result.snapshot : await this.readThread(threadId)) }
       catch (error) {
         // The exact echo can arrive while this required reconciliation read is
         // in flight. Keep its receipt; an unconfirmed command still fails here.
@@ -2427,6 +2455,7 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
+      if (item.type === 'configure-thread' && this.settingsDispatching.has(item.id)) this.settledSettings.add(item.id)
       // A disappeared question does not prove that our answer was accepted.
       // Only the exact adapter acknowledgement above can retire retained content.
       const turn = this.dispatchTurns.get(item.id)
@@ -2655,7 +2684,7 @@ export class AgentControl {
   /** Called after disconnecting providers, before the headless process releases its stores. */
   async closed(): Promise<void> {
     await Promise.allSettled([...this.activeCommands, this.serial, ...this.threadActions.values(), ...this.titleWrites])
-    await this.persist()
+    await this.persist(true)
   }
   dispose(): void {
     this.disposed = true

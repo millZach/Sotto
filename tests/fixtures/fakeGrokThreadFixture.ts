@@ -23,6 +23,8 @@ export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIn
  const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root,'grok-threads.json'),'utf8'))[id].grokSessionId
  const action = async (id: string, value: Record<string,unknown>) => { await writeFile(join(root,'control.json'),JSON.stringify({id:randomUUID(),sessionId:await realId(id),...value})) }
  return {host:adapter,adapter,root,projectId:'project',modelId:'fixture-model',realId,script,action,
+  // A permission change comes back with the snapshot Grok's reload confirmed (#318).
+  settings:{snapshot:true},
   sideWriting:{answer:(text:string)=>writeFile(join(root,'oneshot.json'),JSON.stringify({text})),calls:()=>sideCalls(root)},
   protocol:{promptMethod:'session/prompt',resumeMethod:'session/load',permissionDecision:(record:RecordedRpc): boolean|undefined=>{
    const outcome = record.result?.outcome as {outcome?:string;optionId?:string}|undefined

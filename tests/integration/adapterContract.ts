@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { AgentHost, AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import type { AgentHostSnapshot, AgentRuntimeMode } from '../../src/shared/agents'
+import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 
@@ -66,6 +66,12 @@ export interface AdapterFixture {
     answer(): Promise<void>
     effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string }>
   }
+  /**
+   * What a thread settings change hands back (#318). `snapshot`: a change the provider confirmed comes back with
+   * the snapshot the adapter emitted for it; absent, a result may leave it out and the coordinator reads the
+   * thread instead. `loseConfirmation`: script the next settings change's confirmation away, where the fixture can.
+   */
+  settings?: { snapshot: boolean; loseConfirmation?(): Promise<void> }
 }
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
@@ -439,6 +445,60 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(await thread()).toMatchObject({ reasoningEffort: settled.reasoningEffort, runtimeMode: settled.runtimeMode })
       expect((await thread()).backgroundWork).toHaveLength(1)
       expect(await f.sessions!.starts(sessionId)).toBe(starts)
+    })
+  })
+
+  // Thread settings results (#318), kept in a section of their own: #317 changes Claude's settings path beside them.
+  describe(`${name} thread settings result`, () => {
+    let f: AdapterFixture
+    let sessionId: string
+    type Settings = Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode'>
+    /** Connect and make one watched thread. */
+    const open = async (): Promise<void> => {
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      sessionId = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
+      f.host.observeThreads?.([sessionId])
+    }
+    beforeEach(async () => { f = await factory() })
+    afterEach(async () => { await f?.cleanup() })
+    /** A permission setting this thread is not on: the provider's own mode where it names its own, otherwise one of Sotto's. */
+    const change = async (): Promise<Partial<Settings> | undefined> => {
+      await open()
+      const snapshot = await f.host.snapshot()
+      const current = snapshot.threads.find(thread => thread.id === sessionId)!
+      if (!snapshot.capabilities.configureThread) return undefined
+      const model = snapshot.models.find(item => item.id === current.modelId)
+      const providerMode = model?.providerModes?.find(mode => mode.id !== current.providerMode)
+      if (providerMode) return { providerMode: providerMode.id }
+      const runtimeMode = model?.runtimeModes?.find(mode => mode !== current.runtimeMode)
+      return runtimeMode ? { runtimeMode } : undefined
+    }
+    const settingsOf = (thread: AgentThread | undefined): Settings => ({ modelId: thread?.modelId ?? '', reasoningEffort: thread?.reasoningEffort,
+      runtimeMode: thread?.runtimeMode, providerMode: thread?.providerMode })
+
+    it('hands back the snapshot of a confirmed change, carrying the settings the adapter reports', async context => {
+      const requested = await change()
+      if (!requested) { context.skip(); return }
+      const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
+      expect(result.accepted).toBe(true)
+      expect(result.uncertain).toBeFalsy()
+      if (f.settings?.snapshot) expect(result.snapshot).toBeDefined()
+      if (!result.snapshot) return
+      // What came back shows the change, and is what the adapter goes on to report: it can stand in for a read.
+      const handed = result.snapshot.threads.find(thread => thread.id === sessionId)
+      expect(handed).toMatchObject(requested)
+      expect(settingsOf(handed)).toEqual(settingsOf((await f.host.snapshot()).threads.find(thread => thread.id === sessionId)))
+    })
+
+    it('carries no snapshot on an uncertain change', async context => {
+      if (!f.settings?.loseConfirmation) { context.skip(); return }
+      const requested = await change()
+      if (!requested) { context.skip(); return }
+      await f.settings.loseConfirmation()
+      const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
+      expect(result).toEqual({ accepted: false, uncertain: true })
     })
   })
 }

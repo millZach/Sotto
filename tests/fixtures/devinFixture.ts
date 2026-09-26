@@ -39,6 +39,8 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
   }
   return { host: adapter, adapter, root, projectId: 'project', modelId: 'fixture-model', realId, script, action,
     restartStatus: 'idle' as const,
+    // A permission change comes back with the snapshot that records it (#318).
+    settings: { snapshot: true },
     protocol: { promptMethod: 'session/prompt', resumeMethod: 'session/load', permissionDecision: (record: RecordedRpc): boolean | undefined => {
       const outcome = record.result?.outcome as { outcome?: string; optionId?: string } | undefined
       return outcome?.outcome === 'cancelled' ? false : outcome?.outcome === 'selected'

@@ -142,7 +142,10 @@ describe('Codex App Server provider adapter', () => {
     const threadId = randomUUID()
     await f.host.execute({ type: 'create-thread', commandId: 'create-ultra', threadId, projectId: f.projectId, title: 'Ultra settings', modelId: f.modelId,
       reasoningEffort: 'high', runtimeMode: 'approval-required' })
-    expect(await f.host.execute({ type: 'configure-thread', commandId: 'ultra', threadId, reasoningEffort: 'ultra' })).toEqual({ accepted: true })
+    // The snapshot Codex's confirmation produced comes back with the result, carrying the effective settings (#318).
+    const changed = await f.host.execute({ type: 'configure-thread', commandId: 'ultra', threadId, reasoningEffort: 'ultra' })
+    expect(changed.accepted).toBe(true)
+    expect(changed.snapshot?.threads.find(thread => thread.id === threadId)).toMatchObject({ reasoningEffort: 'ultra', runtimeMode: 'approval-required' })
     const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
     expect(aliases[threadId]).toMatchObject({ reasoningEffort: 'ultra', runtimeMode: 'approval-required' })
     expect(aliases[threadId].pendingSettings).toBeUndefined()

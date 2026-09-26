@@ -544,6 +544,8 @@ export class GrokAcpHost implements AgentHost {
     if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected || !this.rpc) throw new Error('Connect Grok before managing threads.')
     const rpc = this.rpc
+    /** A settings change Grok confirmed, or one that had nothing to change: its snapshot carries the effective settings. */
+    let settled = false
     try {
       if (command.type === 'create-project') {
         if (!isAbsolute(command.path)) throw new Error('Grok projects require an absolute working directory.')
@@ -600,6 +602,7 @@ export class GrokAcpHost implements AgentHost {
               thread.status = alias.settingsConfirmed ? 'idle' : 'error'
             }
           }
+          settled = alias.settingsConfirmed && !alias.pendingRuntimeMode
         } else if (command.type === 'send') {
           if (alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s permission mode. Reconnect to check before sending.')
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
@@ -669,7 +672,9 @@ export class GrokAcpHost implements AgentHost {
           rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.grokSessionId } })
         }
       }
-      this.emit(); return { accepted: true }
+      this.emit()
+      // What was emitted is the reconciliation of a confirmed settings change (#318).
+      return settled ? { accepted: true, snapshot: this.current() } : { accepted: true }
     } catch (error) { if (error instanceof GrokUncertain) return { accepted: false, uncertain: true }; throw error }
   }
   private async frame(frame: GrokFrame): Promise<void> {
