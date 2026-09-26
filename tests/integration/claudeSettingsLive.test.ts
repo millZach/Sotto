@@ -99,7 +99,10 @@ describe.skipIf(!LIVE)('Claude settings on a running session (live)', () => {
       console.info(`claude settings live: ${JSON.stringify({
         cliVersion: (await host.snapshot()).version,
         acknowledged: { set_model: model.result.accepted, apply_flag_settings: effort.result.accepted, set_permission_mode: mode.result.accepted },
-        readBack: { effort: readBack(afterEffort, 'effort', effortLevel), model: readBack(afterModel, 'model', target.id), effortAfterModel: readBack(afterModel, 'effort', effortLevel), permissionMode: readBack(afterMode, 'permissionMode', 'acceptEdits') },
+        readBack: { effort: readBack(afterEffort, 'effort', effortLevel), model: readBack(afterModel, 'model', target.id),
+          // A model change that names no level clears the old one, so the CLI runs the new model's own default.
+          effortAfterModel: !('effort' in afterModel) ? 'not reported' : afterModel.effort === effortLevel ? 'kept' : 'cleared',
+          permissionMode: readBack(afterMode, 'permissionMode', 'acceptEdits') },
         // Model names and modes are settings, not anything the thread said, so the values themselves are shown.
         models: { from: first.id, to: target.id, presses: modelPresses, appliedBefore: initial.model ?? null, appliedAfter: afterModel.model ?? null },
         permissionModeFrames: modesReported,

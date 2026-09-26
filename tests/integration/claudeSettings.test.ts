@@ -47,15 +47,26 @@ const thread = async (f: Fixture, id: string) => (await f.host.snapshot()).threa
 const sent = async (f: Fixture) => (await f.driver.requests()).flatMap(record => settingsRequests.has(record.method ?? '') ? [record.method] : [])
 const launches = async (f: Fixture) => (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').length
 
-it('changes the model and carries the thread\'s effort with it in one operation on the running CLI', async () => {
+it('changes the model with the new model\'s own default effort in one operation on the running CLI, as Codex does', async () => {
   const { f, id, events } = await fixture()
   const started = await launches(f)
+  // Claude Code reports no default level for a model, so a model change that names no level leaves none: the
+  // CLI is told to clear the old model's level and runs the new model's own default, and a later start passes no --effort.
   const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-large' })
   expect(result.accepted).toBe(true)
-  expect(result.snapshot?.threads.find(value => value.id === id)).toMatchObject({ modelId: 'fixture-large', reasoningEffort: 'low' })
+  expect(result.snapshot?.threads.find(value => value.id === id)).toMatchObject({ modelId: 'fixture-large' })
+  expect(result.snapshot?.threads.find(value => value.id === id)?.reasoningEffort).toBeUndefined()
   expect(await sent(f)).toEqual(['set_model', 'apply_flag_settings'])
-  expect(await f.liveSettings.effective(id)).toMatchObject({ modelId: 'fixture-large', reasoningEffort: 'low' })
+  expect((await f.driver.requests()).findLast(record => record.method === 'apply_flag_settings')?.params?.frame).toMatchObject({ request: { settings: { effortLevel: null } } })
+  const effective = await f.liveSettings.effective(id)
+  expect(effective.modelId).toBe('fixture-large')
+  expect(effective.reasoningEffort).toBeUndefined()
   expect(await launches(f)).toBe(started)
+  // A named level is checked against the model the change leaves the thread on, not the one it has: `medium` is
+  // offered by fixture-large alone, so it is refused with fixture-model and nothing is sent.
+  await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-model', reasoningEffort: 'medium' }))
+    .rejects.toThrow('That reasoning level is not supported by this model.')
+  expect(await sent(f)).toEqual(['set_model', 'apply_flag_settings'])
   // A model and a new level chosen together are still one operation, and nothing restarts in between.
   expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-model', reasoningEffort: 'high' })).accepted).toBe(true)
   expect(await f.liveSettings.effective(id)).toMatchObject({ modelId: 'fixture-model', reasoningEffort: 'high' })

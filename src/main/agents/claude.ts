@@ -26,7 +26,7 @@ import { ClaudeProtocol, ClaudeRejected, object, type ClaudeFrame } from './clau
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
-import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
@@ -96,11 +96,12 @@ const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode
 /**
  * The control requests that take a running CLI from one set of settings to another, in the order they are
- * sent. A model and its effort are one change: a new model carries the thread's effort with it, the way
- * `--effort` goes with `--model` at launch, rather than leaving the CLI on whatever it picks for that model.
- * Undefined when only a restart can make the change. The CLI takes `bypassPermissions` only when bypassing
- * was allowed at launch, and a CLI started with that allowance keeps it, so full access is entered and left
- * by starting the CLI again: its launch arguments stay the ones a fresh start in that mode would have.
+ * sent. A model and its effort are one change: a model change always sends the effort that goes with it, the
+ * way `--effort` goes with `--model` at launch, and no effort is sent as none, which the CLI reads as the
+ * model's own default. Undefined when only a restart can make the change. The CLI takes `bypassPermissions`
+ * only when bypassing was allowed at launch, and a CLI started with that allowance keeps it, so full access
+ * is entered and left by starting the CLI again: its launch arguments stay the ones a fresh start in that
+ * mode would have.
  */
 function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettingsStep[] | undefined {
   if ((from.runtimeMode === 'full-access') !== (to.runtimeMode === 'full-access')) return undefined
@@ -610,7 +611,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.configuring.has(id)) throw new Error('Wait for this thread’s settings change to finish.')
     if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
     const before = settingsOf(alias)
-    const after: ClaudeSettings = { modelId: command.modelId ?? before.modelId, reasoningEffort: command.reasoningEffort ?? before.reasoningEffort, runtimeMode: command.runtimeMode ?? before.runtimeMode }
+    const after: ClaudeSettings = { modelId: command.modelId ?? before.modelId, reasoningEffort: effortAfterChange(this.state, command, before.reasoningEffort),
+      runtimeMode: command.runtimeMode ?? before.runtimeMode }
     this.dispatching.add(id); this.configuring.add(id)
     try {
       // A CLI still starting is the one the change should reach, once it has.

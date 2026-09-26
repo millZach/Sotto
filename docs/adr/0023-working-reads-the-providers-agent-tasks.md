@@ -79,8 +79,11 @@ The field keeps its name; `backgroundWork` entries gain an optional `startedAt`.
 
 *September 25, 2026.* Issue #317. A settings change no longer restarts Claude Code as a rule, so it no longer
 ends background work as a rule either. The adapter sends the running CLI the control request for each changed
-setting: `set_model`, `apply_flag_settings` with `effortLevel`, and `set_permission_mode`. A model change carries
-the thread's effort with it in the same operation, the way `--effort` goes with `--model` at launch. The thread
+setting: `set_model`, `apply_flag_settings` with `effortLevel`, and `set_permission_mode`. A model change sends
+its effort in the same operation, the way `--effort` goes with `--model` at launch: the level the change names,
+checked against the new model, or else the new model's default, as a Codex model change does. Claude Code reports
+no default level for a model, so a model change that names none clears the old one, and the CLI runs the new
+model's own default rather than a level that model may not offer. The thread
 is saved and shown only once the CLI answers success, and the session, its transcript, its watches and its
 background work carry on. Claude Code 2.1.283 took all three (`docs/verification/2026-09-25-claude-settings-live.md`).
 
