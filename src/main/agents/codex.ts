@@ -893,7 +893,7 @@ export class CodexAppServerHost implements AgentHost {
             if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
           }
           // Codex's own notification confirmed the effective values and applySettings emitted them: that snapshot
-          // is the reconciliation, so the coordinator does not read the whole transcript again (#318).
+          // is the reconciliation, so the coordinator does not read the whole transcript again.
           return { accepted: true, snapshot: this.current() }
         } else if (command.type === 'steer') {
           const thread = this.ensureThread(id)

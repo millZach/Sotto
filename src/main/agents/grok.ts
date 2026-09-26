@@ -673,7 +673,7 @@ export class GrokAcpHost implements AgentHost {
         }
       }
       this.emit()
-      // What was emitted is the reconciliation of a confirmed settings change (#318).
+      // What was emitted is the reconciliation of a confirmed settings change.
       return settled ? { accepted: true, snapshot: this.current() } : { accepted: true }
     } catch (error) { if (error instanceof GrokUncertain) return { accepted: false, uncertain: true }; throw error }
   }

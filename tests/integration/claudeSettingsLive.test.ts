@@ -4,7 +4,7 @@
  * sends to a running session: `set_model`, `apply_flag_settings` with `effortLevel`, and `set_permission_mode`.
  * It creates a synthetic project in a temporary folder, starts one thread's CLI and changes its settings. No
  * prompt is sent and no model turn runs. What the CLI reports back through `get_settings` is compared, and only
- * whether each value matched is printed, with the CLI version and the timings; no prompt, reply or key is.
+ * whether each value matched is printed, with the CLI version, the model IDs and the timings; no prompt, reply or key is.
  *
  *   PowerShell:  $env:SOTTO_CLAUDE_LIVE = '1'; npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept
  *   sh:          SOTTO_CLAUDE_LIVE=1 npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept

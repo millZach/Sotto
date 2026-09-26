@@ -144,7 +144,7 @@ export class AgentControl {
   /**
    * Settings entries the provider confirmed inside their own dispatch, whose removal is not on disk yet. Dropping
    * one is the only change such a write would carry, so it waits for the next write that carries anything else.
-   * Until then the entry stays on disk, where a restart reconciles it against the thread's settings (#318).
+   * Until then the entry stays on disk, where a restart reconciles it against the thread's settings.
    */
   private readonly settledSettings = new Set<string>()
   private readonly attachmentPreviews: AttachmentPreviews
@@ -609,7 +609,7 @@ export class AgentControl {
   }
   /**
    * True when the state differs from the last completed write only by settings entries confirmed inside their own
-   * dispatch. The entry's add was the write that mattered; its removal rides on the next write (#318).
+   * dispatch. The entry's add was the write that mattered; its removal rides on the next write.
    */
   private onlySettledSettings(saved: Saved, outbox: Saved['outbox']): boolean {
     if (!this.settledSettings.size || this.pendingDraftWrites.size > 0) return false
@@ -1848,7 +1848,7 @@ export class AgentControl {
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         // Checked against the thread as Sotto holds it, without opening it: watching or reading a reaped Claude
         // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
-        // the thread's status, requests and model itself before it changes anything (#318).
+        // the thread's status, requests and model itself before it changes anything.
         const validate = (): void => {
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
@@ -2144,7 +2144,7 @@ export class AgentControl {
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error(result.error ?? 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || (command.type === 'send' || command.type === 'steer')) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
-      // reconciliation; the thread is read again only when the adapter has none to give (#318).
+      // reconciliation; the thread is read again only when the adapter has none to give.
       try { this.acceptSnapshot(command.type === 'configure-thread' && result.snapshot ? result.snapshot : await this.readThread(threadId)) }
       catch (error) {
         // The exact echo can arrive while this required reconciliation read is

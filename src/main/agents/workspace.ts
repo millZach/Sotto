@@ -11,7 +11,7 @@ import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, R
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, StoredMessageIdentity } from './host'
+import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
@@ -1900,9 +1900,9 @@ export class WorkspaceHost implements AgentHost {
     if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
     const result = await this.inner.execute(command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills } : command)
     if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
-    if (command.type === 'configure-thread' && result.snapshot) {
-      const { snapshot, ...confirmed } = result
-      if (!confirmed.accepted || confirmed.uncertain || this.deliveryStopped) return confirmed
+    if (command.type === 'configure-thread') {
+      const [confirmed, snapshot] = confirmedSettingsSnapshot(result)
+      if (!snapshot || this.deliveryStopped) return confirmed
       // Taken in as a provider snapshot is, and handed back as the workspace's view of it.
       this.accept(snapshot); this.writeSoon(); this.publishSoon()
       return { ...confirmed, snapshot: this.workspaceSnapshot() }

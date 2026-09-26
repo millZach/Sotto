@@ -47,7 +47,7 @@ export interface AgentRuntimeOptions {
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
   /** How a Claude settings change reached its CLI, as stable event names; never a model, a level or a mode. */
-  providerLog?: (event: ClaudeSettingsEvent) => void
+  claudeSettingsLog?: (event: ClaudeSettingsEvent) => void
   releaseClient?: ControlDependencies['releaseClient']
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
@@ -73,7 +73,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory }),
     claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
-      ...(options.providerLog ? { logEvent: options.providerLog } : {}) }),
+      ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
   }

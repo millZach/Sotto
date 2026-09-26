@@ -4,6 +4,7 @@ import { vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { AgentHost } from '../../src/main/agents/host'
+import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { publicProviderEntityId, type AgentCommand, type AgentRuntimeMode, type ProviderId } from '../../src/shared/agents'
@@ -50,12 +51,33 @@ export async function threadSettingsStack(provider: ProviderId, native: AdapterF
   const commands = vi.spyOn(native.adapter, 'execute').mockImplementation(async value => { order.push(value.type); return execute(value) })
   const write = AtomicJsonStore.prototype.write
   const aliasFile = `${provider}-threads.json`
+  /** Writes started and not yet finished, so a press is counted once every write it set going has landed. */
+  const writing = new Set<Promise<void>>()
   const writes = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
     const file = basename((this as unknown as { filePath: string }).filePath)
     if (file === 'agents.json') counts.coordinatorWrites += 1
     else if (file === aliasFile) counts.aliasWrites += 1
-    return write.call(this, value)
+    const written = write.call(this, value)
+    const settled = written.catch(() => undefined).finally(() => writing.delete(settled))
+    writing.add(settled)
+    return written
   })
+  // The workspace publishes a burst's last state at the end of a short window, and the coordinator answers each
+  // publish with a write when its state changed. Which workspace is the stack's is read off the publish itself.
+  type Publishing = { publishTimer?: unknown; publishSoon(): void }
+  const workspaces = new Set<Publishing>()
+  const publishSoon = (WorkspaceHost.prototype as unknown as Publishing).publishSoon
+  const publishes = vi.spyOn(WorkspaceHost.prototype as unknown as Publishing, 'publishSoon').mockImplementation(function (this: Publishing) {
+    workspaces.add(this); publishSoon.call(this)
+  })
+  /** Nothing the press set going is still to come: no publish is waiting in the workspace, and no write is in flight. */
+  const settled = async (): Promise<void> => {
+    for (;;) {
+      await vi.waitFor(() => { if ([...workspaces].some(workspace => workspace.publishTimer !== undefined)) throw new Error('A publish is still waiting') }, { timeout: 5_000, interval: 5 })
+      if (!writing.size) return
+      await Promise.all(writing)
+    }
+  }
   const starts = async (): Promise<number> => native.sessions!.starts(await session())
   // Claude's fixture keeps a stop on record after the thread starts again, so its adapter is asked instead.
   const stopped = async (): Promise<boolean> => provider === 'claude'
@@ -79,8 +101,9 @@ export async function threadSettingsStack(provider: ProviderId, native: AdapterF
     const started = performance.now()
     const state = await host.service.command({ type: 'configure-thread', threadId, runtimeMode }, client)
     const elapsedMs = performance.now() - started
-    // Writes the press queued without waiting land before they are counted.
-    await new Promise(resolve => setTimeout(resolve, 50))
+    // What the press queued without waiting, such as the coordinator's answer to the workspace's last publish,
+    // has happened before anything is counted.
+    await settled()
     const requests = (await native.driver.requests()).slice(before.requests)
     return { error: state.error, runtimeMode: state.host.threads.find(item => item.id === threadId)?.runtimeMode, elapsedMs,
       reads: counts.reads - before.reads, coordinatorWrites: counts.coordinatorWrites - before.coordinatorWrites,
@@ -88,5 +111,5 @@ export async function threadSettingsStack(provider: ProviderId, native: AdapterF
       methods: requests.map(record => record.method ?? ''), order: order.slice(before.order) }
   }
   return { host, threadId, command, press, reap, watch, starts,
-    cleanup: async () => { reads.mockRestore(); commands.mockRestore(); writes.mockRestore(); await host.close(); await native.cleanup() } }
+    cleanup: async () => { reads.mockRestore(); commands.mockRestore(); writes.mockRestore(); publishes.mockRestore(); await host.close(); await native.cleanup() } }
 }

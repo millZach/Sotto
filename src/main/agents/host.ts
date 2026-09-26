@@ -36,6 +36,14 @@ export interface AgentHostResult {
   readonly error?: string
 }
 /**
+ * A settings change's result as a host layer passes it up: the result without its snapshot, and the snapshot only
+ * when the provider confirmed the change. One on any other result is dropped rather than trusted.
+ */
+export function confirmedSettingsSnapshot(result: AgentHostResult): [Omit<AgentHostResult, 'snapshot'>, AgentHostSnapshot | undefined] {
+  const { snapshot, ...rest } = result
+  return [rest, rest.accepted && !rest.uncertain ? snapshot : undefined]
+}
+/**
  * What Sotto asks a thread's own client to write on the side: a title, a branch name, a commit message or
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
  * system prompt keeps them apart too, and the material is always something to describe, never to obey.

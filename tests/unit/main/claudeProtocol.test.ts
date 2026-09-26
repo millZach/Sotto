@@ -153,7 +153,7 @@ describe('ClaudeProtocol control requests', () => {
     expect(await refused).toBeInstanceOf(ClaudeRejected)
     // An answer Sotto cannot read leaves the request's outcome unknown, which is not a refusal.
     expect(await unreadable).not.toBeInstanceOf(ClaudeRejected)
-    expect((await unreadable as Error).message).toBe('Claude answered a control request in a form Sotto could not read.')
+    expect((await unreadable as Error).message).toBe('Claude Code answered in a form Sotto could not read, so whether it acted is unknown. Sotto did not send it again. Check for a Sotto or Claude Code update.')
   })
 
   it('rejects every waiter when the process closes, and refuses new writes', async () => {

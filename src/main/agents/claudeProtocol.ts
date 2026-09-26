@@ -48,7 +48,7 @@ export class ClaudeProtocol {
               // A success may carry no body, and the SDK reads a missing one as empty.
               if (response?.subtype === 'success' && (response.response === undefined || object(response.response))) waiter.resolve((response.response ?? {}) as ClaudeFrame)
               else if (response?.subtype === 'error') waiter.reject(new ClaudeRejected('Claude rejected a control request. Check the native client.'))
-              else waiter.reject(new ClaudeUncertain('Claude answered a control request in a form Sotto could not read.'))
+              else waiter.reject(new ClaudeUncertain('Claude Code answered in a form Sotto could not read, so whether it acted is unknown. Sotto did not send it again. Check for a Sotto or Claude Code update.'))
             }
           }
           onFrame(frame)

@@ -2,7 +2,7 @@
 
 Evidence for issue #317 and the September 25 amendment to `docs/adr/0023-working-reads-the-providers-agent-tasks.md`. Windows 11, 2026-09-25. **Claude Code 2.1.283**, the installed and signed-in client (`claude --version`), with the Agent SDK types pinned at 0.3.270.
 
-The check is `tests/integration/claudeSettingsLive.test.ts`, run with `SOTTO_CLAUDE_LIVE=1`. It makes a synthetic project in a temporary folder, creates one thread, which starts its CLI, and then changes the thread's effort, model and permission mode through the adapter, the way a chip press does. It sends no prompt and runs no model turn. After each change it asks the CLI what it will use for its next request (`get_settings`, whose `applied` field reports `effort` and `model`), and it listens for the permission mode the CLI reports on its own system frames. It printed the CLI version, whether each value matched and the timings; no prompt, reply or key.
+The check is `tests/integration/claudeSettingsLive.test.ts`, run with `SOTTO_CLAUDE_LIVE=1`. It makes a synthetic project in a temporary folder, creates one thread, which starts its CLI, and then changes the thread's effort, model and permission mode through the adapter, the way a chip press does. It sends no prompt and runs no model turn. After each change it asks the CLI what it will use for its next request (`get_settings`, whose `applied` field reports `effort` and `model`), and it listens for the permission mode the CLI reports on its own system frames. It printed the CLI version, the IDs of the models it moved between, whether each value matched and the timings; no prompt, reply or key.
 
 ## What the CLI did
 

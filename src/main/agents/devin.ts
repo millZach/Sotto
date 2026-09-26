@@ -678,7 +678,7 @@ export class DevinAcpHost implements AgentHost {
         if (!alias?.devinSessionId) throw new Error('Devin did not confirm this session. Your thread is kept.')
         const mode = DEVIN_MODES.find(candidate => candidate.id === command.providerMode)
         if (!mode) throw new Error('Devin does not offer that permission setting.')
-        // Already the recorded mode: the snapshot says so, and nothing is stopped or read (#318).
+        // Already the recorded mode: the snapshot says so, and nothing is stopped or read.
         if (modeOf(alias.providerMode).id === mode.id) return { accepted: true, snapshot: this.current() }
         // A session being opened or sent to has already chosen its profile; changing the mode under it would
         // leave the two out of step, so the change waits until the thread is quiet.
@@ -699,7 +699,7 @@ export class DevinAcpHost implements AgentHost {
         await this.stopSession(command.threadId)
         this.emit()
         // The profile is confirmed and recorded, and the session resumes under it on the thread's next action
-        // (ADR-0022). The snapshot says so; reading the thread now would start that session only to be read (#318).
+        // (ADR-0022). The snapshot says so; reading the thread now would start that session only to be read.
         if (generation === this.generation) return { accepted: true, snapshot: this.current() }
       } else if (command.type === 'steer' || command.type === 'compact-thread') {
         throw new Error('This Devin action is not supported. Start a new thread to choose a model, or queue a text follow-up.')
