@@ -13,7 +13,7 @@ The check is `tests/integration/claudeSettingsLive.test.ts`, run with `SOTTO_CLA
 | `apply_flag_settings` sent with the model change, carrying the thread's effort | success | `applied.effort` still matched after the model change |
 | `set_permission_mode` to `acceptEdits`, and back to `default` | success | a system frame reported `permissionMode: acceptEdits`; `get_settings` does not report the mode |
 
-These runs predate a review fix. A model change that names no level now clears the old one (`effortLevel: null`), as a Codex model change takes the new model's default, instead of carrying the thread's level, and the check now reports that read-back as `kept` or `cleared`. The installed CLI has not been re-run since; the scripted CLI in `tests/integration/claudeSettings.test.ts` proves what Sotto sends.
+These runs predate a review fix. A model change that names no level now clears the old one (`effortLevel: null`), as a Codex model change takes the new model's default, instead of carrying the thread's level, and the check now reports that read-back as `kept` or `cleared`. The check was run again on the finished branch, on Claude Code 2.1.283: 1 passed, 6.7 s. All three requests were acknowledged, the model moved from `claude-opus-5-5` to `claude-fable-5-1`, the effort read back as `cleared` after the model change, and each change stayed on one process. Press to accepted was 166 ms for effort, 668 ms for the model and 5 ms for the permission mode, against 1,446 ms to stop and start again.
 
 Every change reached the process that was already running: the adapter's runtime for the thread was the same object before and after, and every change logged `claude-settings-applied-live`.
 
