@@ -1,0 +1,312 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (#319): a permission choice should show the moment it is pressed, but until the provider confirms it
+  the OLD permission still decides what the provider does on its next tool call. How does the permission chip
+  read while a change is pending, how does it read once it is effective, and what does a refusal look like?
+
+  Model and effort need no mock-up: they simply show the pressed value (effort already does). The model chip
+  here follows that rule so the row reads as it will.
+
+  Variants on ?variant=now|a|b|c, switched from the bar (← → keys too):
+   now  Today, for comparison. Every chip goes dead and "Saving..." shows until the reply lands.
+   a    Caption.  The chip shows the new choice at once, with a dashed outline and a small pulsing dot. A line
+                  beside the chips says what is still in force: "Claude still asks for approval until it confirms."
+   b    Both.     The chip itself carries the change: "Ask for approval → Full access", the old value struck
+                  through, until Claude confirms; then it collapses to the new value. No extra line.
+   c    Notice.   The chip shows the new choice with a clock mark; a quiet status notice above the composer (the
+                  local-branch notice's tone) says what is in force and what is coming. It stays until confirmed.
+
+  Refusal, in every variant: the chip goes back to the value in force and an alert under the chips says so in
+  plain words, with Try again. Press the chip, pick a mode, then use Confirm or Refuse in the bar. "Auto" confirms
+  after 1.2 s on its own, which is roughly what #317 and #318 aim for. Light flips the palette; Narrow is the
+  820px minimum. Open the file in a browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — a pending permission change, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* The Sotto palette through the --tt-* roles, as the branch toolbar prototype draws it. */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-field: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-border-faint: oklch(0.45 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-activity: oklch(0.83 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-danger: oklch(0.72 0.15 25);
+  --tt-danger-surface: color-mix(in srgb, oklch(0.72 0.15 25) 12%, transparent);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-field: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-text-faint: oklch(0.535 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.82 0.016 80);
+  --tt-border-faint: oklch(0.7 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-activity: oklch(0.42 0.1 235);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-hover: color-mix(in srgb, oklch(0.9 0.03 230) 70%, transparent);
+  --tt-danger: oklch(0.5 0.17 25);
+  --tt-danger-surface: color-mix(in srgb, oklch(0.5 0.17 25) 9%, transparent);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 var(--tt-font); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+svg { width: 1em; height: 1em; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+
+.pane { display: flex; flex: 1; flex-direction: column; min-height: 0; width: min(100%, 1440px); margin: 0 auto; }
+body[data-narrow] .pane { width: 820px; border-inline: 1px dashed var(--tt-hairline); }
+.head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; font-size: 15px; }
+.head > span { color: var(--tt-text-muted); }
+.transcript { display: grid; flex: 1; place-content: center; gap: 6px; padding: 0 24px; text-align: center; }
+.transcript > h2 { margin: 0; font-size: 17px; font-weight: 500; }
+.transcript > p { margin: 0; color: var(--tt-text-muted); font-size: 15px; }
+.compose { position: relative; flex: none; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+
+/* Variant C's notice: the working-copy notice in its status tone (workingCopy.css). */
+.notice { display: none; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 13px; }
+.notice strong { color: var(--tt-text); font-weight: 500; }
+.notice > svg { flex: none; width: 15px; height: 15px; color: var(--tt-text-muted); }
+
+.prompt { display: grid; padding: 14px 16px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt textarea { display: block; width: 100%; min-height: 64px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.send { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--tt-activity); color: var(--tt-on-accent); }
+.send > svg { width: 15px; height: 15px; }
+
+/* The option chips, as threadChips.css draws them. */
+.chip-menu { position: relative; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 320px; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.chip > svg { flex: none; width: 12px; height: 12px; }
+.chip:hover:not(:disabled), .chip[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.chip:disabled { opacity: .55; cursor: default; }
+.chip > i { display: grid; place-items: center; width: 15px; height: 15px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 9px; font-style: normal; font-weight: 700; }
+.list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; display: none; min-width: 240px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.list[data-open] { display: grid; }
+.list > button { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; cursor: pointer; }
+.list > button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.list > button[aria-selected='true'] { color: var(--tt-activity); }
+.list > button > span { display: grid; gap: 2px; }
+.list > button small { color: var(--tt-text-muted); font-size: 11.5px; }
+.list > button > svg { flex: none; width: 14px; height: 14px; margin-top: 2px; }
+.list .tag { display: none; margin-left: 6px; padding: 0 6px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 10.5px; }
+
+.status { color: var(--tt-text-muted); font-size: 12px; }
+.alert { display: none; align-items: center; gap: 10px; margin: 8px 2px 0; color: var(--tt-danger); font-size: 13px; }
+.alert[data-shown] { display: flex; }
+.alert button { height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; cursor: pointer; }
+.alert button:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* The pending mark each variant uses. Only the chosen variant's styling applies. */
+.dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+@media (prefers-reduced-motion: no-preference) { .dot { animation: pulse 1.1s ease-in-out infinite; } }
+@keyframes pulse { 50% { opacity: .35; } }
+.old { display: none; text-decoration: line-through; color: var(--tt-text-faint); }
+.arrow { display: none; color: var(--tt-text-faint); }
+.clock { display: none; }
+
+/* A: dashed outline + dot on the chip, a caption beside the chips. */
+body[data-variant='a'][data-phase='pending'] .perm { border-style: dashed; border-color: var(--tt-activity); color: var(--tt-text); }
+body[data-variant='a'][data-phase='pending'] .perm .dot { display: inline-block; }
+body[data-variant='a'][data-phase='pending'] .caption { display: inline; }
+.caption { display: none; color: var(--tt-text-muted); font-size: 12px; }
+
+/* B: the chip carries both values. */
+body[data-variant='b'][data-phase='pending'] .perm .old, body[data-variant='b'][data-phase='pending'] .perm .arrow { display: inline; }
+body[data-variant='b'][data-phase='pending'] .perm { color: var(--tt-text); border-color: var(--tt-activity); }
+
+/* C: clock mark on the chip, a status notice above the composer; the list tags both rows. */
+body[data-variant='c'][data-phase='pending'] .perm .clock { display: inline-block; color: var(--tt-activity); }
+body[data-variant='c'][data-phase='pending'] .perm { color: var(--tt-text); }
+body[data-variant='c'][data-phase='pending'] .notice { display: flex; }
+body[data-variant='c'][data-phase='pending'] .list .tag { display: inline; }
+
+/* The state readout: not part of the design. */
+.readout { position: fixed; right: 14px; bottom: 14px; z-index: 100; padding: 8px 12px; border: 1px dashed #8886; border-radius: 10px; background: #17181bdd; color: #ddd; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+:root[data-theme='light'] .readout { background: #fffdf7ee; color: #333; }
+.bar { position: fixed; top: 54px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 4px; padding: 5px 6px; border: 1px solid #fff3; border-radius: 999px; background: #17181b; box-shadow: 0 12px 40px #0009; color: #eee; font-size: 12.5px; transform: translateX(-50%); }
+:root[data-theme='light'] .bar { background: #fffdf7; color: #222; border-color: #0002; }
+.bar button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: inherit; white-space: nowrap; cursor: pointer; }
+.bar button:hover { background: #8883; }
+.bar button[aria-pressed='true'] { background: #8884; }
+.bar button:disabled { opacity: .4; cursor: default; }
+.bar__label { min-width: 170px; padding: 0 6px; text-align: center; font-weight: 500; white-space: nowrap; }
+.bar__sep { width: 1px; height: 18px; margin: 0 4px; background: #8886; }
+</style>
+</head>
+<body data-variant="a" data-phase="effective">
+
+<main class="pane">
+  <header class="head">Permissions change <span>/ Sotto</span></header>
+  <section class="transcript">
+    <h2>What is next for this thread?</h2>
+    <p>Press the permission chip and pick a mode.</p>
+  </section>
+  <section class="compose">
+    <div class="notice" role="status" id="notice">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span>Switching to <strong data-desired></strong>. Until Claude confirms, it still works under <strong data-confirmed></strong>.</span>
+    </div>
+    <form class="prompt" onsubmit="return false">
+      <textarea rows="3" placeholder="What would you like to do next?" aria-label="Prompt"></textarea>
+      <div class="footer">
+        <div class="meta">
+          <div class="chip-menu">
+            <button type="button" class="chip" id="model" aria-label="Thread model"><i>C</i><span id="modelLabel">Claude Opus 5.5</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="chip-menu">
+            <button type="button" class="chip" id="effort" aria-label="Thread reasoning"><span>High</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+          <div class="chip-menu">
+            <button type="button" class="chip perm" id="perm" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-label="Thread permissions">
+              <span class="dot" aria-hidden="true"></span>
+              <svg class="clock" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <span class="old" data-confirmed></span><span class="arrow" aria-hidden="true">→</span>
+              <span data-shown-value></span>
+              <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="list" role="listbox" aria-label="Thread permissions" id="list"></div>
+          </div>
+          <span class="caption" role="status">Claude still <span data-in-force-verb></span> until it confirms.</span>
+          <span class="status" id="saving" role="status"></span>
+        </div>
+        <button type="submit" class="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+      </div>
+    </form>
+    <p class="alert" role="alert" id="alert"><span id="alertText"></span><button type="button" id="retry">Try again</button></p>
+  </section>
+</main>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span class="bar__label" id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <span class="bar__sep"></span>
+  <button type="button" id="confirm">Confirm</button>
+  <button type="button" id="refuse">Refuse</button>
+  <button type="button" data-toggle="auto" title="Confirm on its own after 1.2 s">Auto</button>
+  <span class="bar__sep"></span>
+  <button type="button" data-toggle="theme">Light</button>
+  <button type="button" data-toggle="narrow" title="The 820px minimum window">Narrow</button>
+</div>
+<div class="readout" id="readout"></div>
+
+<script>
+const VARIANTS = [['now', 'Today, for comparison'], ['a', 'Caption'], ['b', 'Both values'], ['c', 'Notice']]
+const MODES = [
+  ['approval-required', 'Ask for approval', 'Claude asks before every edit and command.', 'asks for approval'],
+  ['auto-accept-edits', 'Allow edits', 'Claude edits files without asking; commands still ask.', 'asks before edits'],
+  ['auto', 'Auto', 'Claude decides what needs asking.', 'decides what to ask'],
+  ['full-access', 'Full access', 'Claude runs anything without asking. Sotto still asks for its own browser actions when you turn that off.', 'runs without asking'],
+]
+const label = id => MODES.find(m => m[0] === id)[1]
+const params = new URLSearchParams(location.search)
+const s = { variant: VARIANTS.some(([k]) => k === params.get('variant')) ? params.get('variant') : 'a',
+  theme: params.get('theme') === 'light', narrow: params.get('narrow') === '1', auto: false,
+  confirmed: 'approval-required', desired: null, error: null, open: false }
+let timer = null
+
+function render() {
+  document.body.dataset.variant = s.variant
+  document.body.dataset.phase = s.desired ? 'pending' : 'effective'
+  document.documentElement.toggleAttribute('data-theme', false)
+  if (s.theme) document.documentElement.setAttribute('data-theme', 'light')
+  document.body.toggleAttribute('data-narrow', s.narrow)
+  const now = s.variant === 'now', pending = Boolean(s.desired)
+  // Today: the chip keeps showing the confirmed value and every chip is dead until the reply.
+  const shown = now ? s.confirmed : (s.desired ?? s.confirmed)
+  document.querySelectorAll('[data-shown-value]').forEach(e => e.textContent = label(shown))
+  document.querySelectorAll('[data-confirmed]').forEach(e => e.textContent = label(s.confirmed))
+  document.querySelectorAll('[data-desired]').forEach(e => e.textContent = s.desired ? label(s.desired) : '')
+  document.querySelectorAll('[data-in-force-verb]').forEach(e => e.textContent = MODES.find(m => m[0] === s.confirmed)[3])
+  for (const id of ['model', 'effort', 'perm']) document.getElementById(id).disabled = now && pending
+  document.getElementById('saving').textContent = now && pending ? 'Saving...' : ''
+  const perm = document.getElementById('perm')
+  perm.setAttribute('aria-expanded', String(s.open))
+  perm.setAttribute('aria-description', pending && !now ? `Switching to ${label(s.desired)}; ${label(s.confirmed)} is in force until Claude confirms.` : '')
+  const list = document.getElementById('list')
+  list.toggleAttribute('data-open', s.open)
+  list.innerHTML = MODES.map(([id, name, description]) => {
+    const selected = id === shown
+    const tag = id === s.confirmed && pending ? '<span class="tag">in force</span>' : id === s.desired ? '<span class="tag">confirming</span>' : ''
+    return `<button type="button" role="option" data-mode="${id}" aria-selected="${selected}"><span>${name}${tag}<small>${description}</small></span>${selected ? '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</button>`
+  }).join('')
+  list.querySelectorAll('button').forEach(b => b.onclick = () => choose(b.dataset.mode))
+  const alert = document.getElementById('alert')
+  alert.toggleAttribute('data-shown', Boolean(s.error))
+  document.getElementById('alertText').textContent = s.error?.text ?? ''
+  document.getElementById('confirm').disabled = !pending
+  document.getElementById('refuse').disabled = !pending
+  const index = VARIANTS.findIndex(([k]) => k === s.variant)
+  document.getElementById('label').textContent = s.variant.toUpperCase() + ' — ' + VARIANTS[index][1]
+  for (const b of document.querySelectorAll('.bar [data-toggle]')) b.setAttribute('aria-pressed', String(Boolean(s[b.dataset.toggle])))
+  document.getElementById('readout').textContent = `confirmed: ${label(s.confirmed)}\ndesired:   ${s.desired ? label(s.desired) : '—'}\nphase:     ${pending ? 'pending' : 'effective'}\nerror:     ${s.error ? 'shown' : '—'}`
+  const search = new URLSearchParams(); search.set('variant', s.variant)
+  if (s.theme) search.set('theme', 'light'); if (s.narrow) search.set('narrow', '1')
+  history.replaceState(null, '', '?' + search)
+}
+function choose(id) {
+  s.open = false; s.error = null
+  if (id === (s.desired ?? s.confirmed)) { render(); document.getElementById('perm').focus(); return }
+  // A newer press while one is saving replaces the desired value: one further save for the last choice.
+  s.desired = id === s.confirmed ? null : id
+  clearTimeout(timer)
+  if (s.auto && s.desired) timer = setTimeout(confirm, 1200)
+  render(); document.getElementById('perm').focus()
+}
+function confirm() { if (!s.desired) return; s.confirmed = s.desired; s.desired = null; s.error = null; render() }
+function refuse() {
+  if (!s.desired) return
+  const wanted = s.desired
+  s.desired = null
+  s.error = { wanted, text: `Claude did not switch to ${label(wanted)}. The thread stays on ${label(s.confirmed)}; nothing else changed.` }
+  render()
+}
+function step(d) { const i = VARIANTS.findIndex(([k]) => k === s.variant); s.variant = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('confirm').onclick = confirm
+document.getElementById('refuse').onclick = refuse
+document.getElementById('retry').onclick = () => { if (s.error) choose(s.error.wanted) }
+document.getElementById('perm').onclick = () => { s.open = !s.open; render() }
+for (const b of document.querySelectorAll('.bar [data-toggle]')) b.onclick = () => { s[b.dataset.toggle] = !s[b.dataset.toggle]; render() }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && s.open) { s.open = false; render(); document.getElementById('perm').focus(); return }
+  if (e.target.matches('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+document.addEventListener('pointerdown', e => { if (s.open && !e.target.closest('.chip-menu')) { s.open = false; render() } }, true)
+render()
+</script>
+</body>
+</html>
