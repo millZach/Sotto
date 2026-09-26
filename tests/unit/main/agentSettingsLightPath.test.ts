@@ -131,8 +131,12 @@ describe('thread settings light path', () => {
     const f = await fixture()
     f.host.unknown = true
     f.host.lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "Review the diff" stopped with it.'
-    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })).error).toBe(f.host.lost)
+    const reply = await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
+    expect(reply.error).toBe(f.host.lost)
     expect((await f.saved()).outbox).toEqual([expect.objectContaining({ type: 'configure-thread', options: { runtimeMode: 'full-access' } })])
+    // The reply and the shell say which change is kept with no result, so the window keeps it on the chip.
+    expect(reply.unconfirmedSettings).toEqual([{ threadId: 'workshop', runtimeMode: 'full-access' }])
+    expect(f.control.shell().unconfirmedSettings).toEqual([{ threadId: 'workshop', runtimeMode: 'full-access' }])
   })
 
   it('keeps the outbox entry and the not confirmed error when the snapshot handed back does not show the change', async () => {

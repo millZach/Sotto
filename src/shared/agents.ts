@@ -275,6 +275,10 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
  * is left waiting to reconcile, so a window may say that nothing changed; the option chips read this exact sentence.
  */
 export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
+/** What main answers when the provider did not say whether it took an action; Sotto keeps it and checks it later. */
+export const PROVIDER_RESULT_UNCONFIRMED = 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.'
+/** What main answers when the provider took a settings change its thread does not show yet; Sotto keeps it and checks it later. */
+export const THREAD_SETTINGS_UNRECONCILED = 'The provider has not confirmed these thread settings in its state. Refresh to reconcile the existing save; it will not be replayed.'
 /** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
 export const RESTORE_BRANCH_NEEDS_CONFIRMATION = 'This folder has uncommitted changes. They move with the switch, so confirm it first.'
 /** What main answers when reclaiming a worktree would discard uncommitted work; the pane opens its confirmation on this exact sentence. */
@@ -471,6 +475,11 @@ export const agentStateSchema = z.object({
    * surfaces read this instead. Absent when no thread lane is running.
    */
   busyThreadIds: z.array(id).max(1_000).optional(),
+  /**
+   * The thread settings changes whose result the provider never gave: main keeps each one until the thread shows
+   * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
+   */
+  unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),

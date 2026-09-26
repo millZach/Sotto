@@ -93,6 +93,7 @@ export class DesktopHostRouter {
       threadDraftPersistence: entries.flatMap(item => item.state.threadDraftPersistence ?? []),
       deliveries: entries.flatMap(item => item.state.deliveries ?? []), followups: entries.flatMap(item => item.state.followups ?? []),
       busyThreadIds: entries.flatMap(item => item.state.busyThreadIds ?? []),
+      ...(entries.some(item => item.state.unconfirmedSettings?.length) ? { unconfirmedSettings: entries.flatMap(item => item.state.unconfirmedSettings ?? []) } : {}),
       activeThreadId: this.selectedThreadId === undefined ? base.activeThreadId : this.selectedThreadId,
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
       ...(this.notice ? { error: this.notice } : {}),

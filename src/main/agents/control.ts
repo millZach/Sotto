@@ -9,7 +9,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentsSchema, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentAttachment, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -387,6 +387,8 @@ export class AgentControl {
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
+    const unconfirmedSettings = this.unconfirmedSettings()
+    if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     this.attachmentPreviews.decorate(state.host)
     return state
   }
@@ -413,6 +415,12 @@ export class AgentControl {
    * kilobytes and a provider publishes dozens of times a second; the shell is what every window needs, and
    * only the threads it has declared viewed also receive `threadDetail`.
    */
+  /** The settings changes kept in the outbox with no result, as the window marks them on the thread's chips. */
+  private unconfirmedSettings(): NonNullable<AgentState['unconfirmedSettings']> {
+    // An entry whose dispatch is still running has no result yet; the chips are already waiting on it.
+    return this.outbox.flatMap(item => item.type === 'configure-thread' && item.threadId && item.options && !this.settingsDispatching.has(item.id)
+      ? [{ ...item.options, threadId: item.threadId }] : [])
+  }
   shell(): AgentState {
     const threads = this.state.host.threads
     const bare = { ...this.state, host: { ...this.state.host, threads: threads.map(thread => ({
@@ -425,6 +433,8 @@ export class AgentControl {
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
     if (this.busyThreads.size) state.busyThreadIds = [...this.busyThreads.keys()]
+    const unconfirmedSettings = this.unconfirmedSettings()
+    if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     return state
   }
   /**
@@ -2155,7 +2165,7 @@ export class AgentControl {
     }
     if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, result.accepted || result.uncertain ? 'uncertain' : 'failed')
     // An adapter that knows more about what an unconfirmed action cost says it; the intent is kept either way.
-    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error(result.error ?? 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
+    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error(result.error ?? PROVIDER_RESULT_UNCONFIRMED)
     if ((command.type === 'configure-thread' || (command.type === 'send' || command.type === 'steer')) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
       // reconciliation; the thread is read again only when the adapter has none to give.
@@ -2168,7 +2178,7 @@ export class AgentControl {
       await this.persist()
       if (this.outbox.some(item => item.id === command.commandId)) throw new Error((command.type === 'send' || command.type === 'steer')
         ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
-        : 'The provider has not confirmed these thread settings in its state. Refresh to reconcile the existing save; it will not be replayed.')
+        : THREAD_SETTINGS_UNRECONCILED)
       return
     }
     if (command.type === 'answer' && result.accepted) {
