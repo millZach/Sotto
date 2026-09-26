@@ -167,6 +167,7 @@ import { TerminalWorkspaceService } from './terminals/service'
 import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
 import { githubPullRequestMerged } from './agents/worktreeCleanup'
+import type { ClaudeSettingsEvent } from './agents/claude'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
@@ -223,6 +224,7 @@ type NativeDiagnostic =
   | 'worktree-cleanup-skipped'
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
+  | ClaudeSettingsEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -613,6 +615,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    providerLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   let browserService: BrowserService | undefined

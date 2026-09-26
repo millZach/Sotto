@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../src/main/agents/claude'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterFixture, AdapterSessionOptions } from '../integration/adapterContract'
 
@@ -14,7 +14,7 @@ const flag = (args: unknown, name: string): string | undefined => { const list =
 
 // The acknowledgement deadline also covers the fake CLI's process start, which a loaded two-core runner
 // stretches past a second. Tests that need a lost acknowledgement script one instead of shortening this.
-export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
+export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions & Pick<ClaudeStreamJsonHostOptions, 'logEvent'> = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; liveSettings: NonNullable<AdapterFixture['liveSettings']>; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-claude-'))
   const adapter = new ClaudeStreamJsonHost({ userDataPath: root, executable: process.execPath, args: [resolve('tests/fixtures/fakeClaudeThread.mjs'), root], claudeHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...(environment ? { environment } : {}), ...session })
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8'))[id].sessionId
@@ -30,6 +30,16 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
     sideWriting: {
       answer: text => writeFile(join(root, 'oneshot.json'), JSON.stringify({ text })),
       calls: async () => (await oneShots(root)).map(call => ({ cwd: String(call.cwd), model: flag(call.args, '--model'), material: String(call.input) })),
+    },
+    liveSettings: {
+      refuse: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ refuse: true })),
+      silence: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ silent: true })),
+      answer: () => rm(join(root, 'settings-script.json'), { force: true }),
+      effective: async id => {
+        const current = JSON.parse(await readFile(join(root, `settings-${await realId(id)}.json`), 'utf8')) as { model: string; effort: string | null; mode: string; pid: number }
+        const modes: Record<string, string> = { default: 'approval-required', acceptEdits: 'auto-accept-edits', auto: 'auto', bypassPermissions: 'full-access' }
+        return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode }
+      },
     },
     sessions: {
       // One CLI per thread: a launch or a resume is a session start, and the child records its own exit.

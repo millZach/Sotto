@@ -5,7 +5,7 @@ import { ShortTextWriter } from '../llm/shortTextWriter'
 import { threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
 import { CodexAppServerHost } from './codex'
-import { ClaudeStreamJsonHost } from './claude'
+import { ClaudeStreamJsonHost, type ClaudeSettingsEvent } from './claude'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -46,6 +46,8 @@ export interface AgentRuntimeOptions {
   preferences?: ControlDependencies['preferences']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
+  /** How a Claude settings change reached its CLI, as stable event names; never a model, a level or a mode. */
+  providerLog?: (event: ClaudeSettingsEvent) => void
   releaseClient?: ControlDependencies['releaseClient']
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
@@ -70,7 +72,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory }),
-    claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}) }),
+    claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+      ...(options.providerLog ? { logEvent: options.providerLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
   }

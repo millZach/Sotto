@@ -22,7 +22,7 @@ import type { AgentBackgroundWork } from '../../shared/agentMonitoring'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
-import { ClaudeProtocol, object, type ClaudeFrame } from './claudeProtocol'
+import { ClaudeProtocol, ClaudeRejected, object, type ClaudeFrame } from './claudeProtocol'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
@@ -60,12 +60,45 @@ const APPROVAL_SURFACE_TOOL = 'AskUserQuestion'
 const SESSION_ENDED = 'Claude Code stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permission prompts, so it denies them itself and nothing reaches you. No work was lost. Answer in Claude Code until this is fixed, and check for a Sotto or Claude Code update.'
 /**
- * Changing settings or rewinding restarts the CLI, and a restart ends the agents a thread still has running
- * (ADR-0023), so both wait for them rather than end work the user started without saying so.
+ * Rewinding, and a settings change the running CLI cannot take in place, restart the CLI, and a restart ends
+ * the agents a thread still has running (ADR-0023), so both wait for them rather than end work the user
+ * started without saying so.
  */
 /** Names what is still running, because a command such as a dev server may never finish on its own. */
 const backgroundWorkRunning = (work: readonly AgentBackgroundWork[], action: string): string =>
   `${work.length === 1 ? `"${work[0]!.label}" is` : `${work.length} background tasks are`} still running for this thread. Nothing was changed. Wait for ${work.length === 1 ? 'it' : 'them'} to finish, or ask Claude to stop ${work.length === 1 ? 'it' : 'them'}, before ${action}.`
+/** A thread's settings as its CLI runs them: what `--model`, `--effort` and `--permission-mode` said at launch. */
+type ClaudeSettings = { modelId: string; reasoningEffort: string | undefined; runtimeMode: AgentRuntimeMode }
+/** One control request and the setting it changes once the CLI answers success. */
+type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
+/**
+ * How a settings change reached the CLI, for the operational log: applied over the control channel, applied
+ * by starting the CLI again, refused by the CLI (a restart or a refusal follows), or left unconfirmed. Event
+ * names only; a model, a level or a mode never reaches the log.
+ */
+export type ClaudeSettingsEvent = 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
+const settingsOf = (alias: Alias): ClaudeSettings => ({ modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required' })
+const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
+  first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode
+/**
+ * The control requests that take a running CLI from one set of settings to another, in the order they are
+ * sent. A model and its effort are one change: a new model carries the thread's effort with it, the way
+ * `--effort` goes with `--model` at launch, rather than leaving the CLI on whatever it picks for that model.
+ * Undefined when only a restart can make the change. The CLI takes `bypassPermissions` only when bypassing
+ * was allowed at launch, and a CLI started with that allowance keeps it, so full access is entered and left
+ * by starting the CLI again: its launch arguments stay the ones a fresh start in that mode would have.
+ */
+function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettingsStep[] | undefined {
+  if ((from.runtimeMode === 'full-access') !== (to.runtimeMode === 'full-access')) return undefined
+  const steps: ClaudeSettingsStep[] = []
+  const model = from.modelId !== to.modelId
+  if (model) steps.push({ field: 'modelId', request: { subtype: 'set_model', model: to.modelId } })
+  if (from.reasoningEffort !== to.reasoningEffort || model && to.reasoningEffort !== undefined) {
+    steps.push({ field: 'reasoningEffort', request: { subtype: 'apply_flag_settings', settings: { effortLevel: to.reasoningEffort ?? null } } })
+  }
+  if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
+  return steps
+}
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -91,6 +124,8 @@ export interface ClaudeStreamJsonHostOptions {
   historyModulePath?: string
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
+  /** Stable event names only; never a model, a level, a mode or anything a thread said. */
+  logEvent?: (event: ClaudeSettingsEvent) => void
 }
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string> }
 
@@ -443,17 +478,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         return { accepted: true }
       } finally { this.dispatching.delete(id) }
     }
-    if (command.type === 'configure-thread') {
-      validateThreadOptions(this.state, command, alias.modelId)
-      if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
-      // New settings restart the CLI, which would end the agents or commands it is still running for this thread.
-      if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
-      const runtime = this.runtimes.get(id)
-      if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
-      alias.modelId = command.modelId ?? alias.modelId; alias.reasoningEffort = command.reasoningEffort ?? alias.reasoningEffort; if (command.runtimeMode) alias.runtimeMode = command.runtimeMode
-      await this.persist(); thread.modelId = alias.modelId; thread.reasoningEffort = alias.reasoningEffort; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
-      await this.start(id); this.emit(); return { accepted: true }
-    }
+    if (command.type === 'configure-thread') return this.configure(id, command)
     if (command.type === 'send') {
       validatePromptAttachments(this.state, alias.modelId, command.attachments)
       const checkLatestUserMessage = (): void => {
@@ -536,6 +561,96 @@ export class ClaudeStreamJsonHost implements AgentHost {
       catch { return { accepted: false, uncertain: true } }
     }
     throw new Error('Unsupported Claude command.')
+  }
+  /**
+   * A settings change reaches a running CLI over its control channel, so the session, its transcript and any
+   * background work carry on. Only what the CLI answers success to is saved and shown. A CLI that refuses a
+   * request, or no CLI running, falls back to starting the CLI again with the new settings, which is the one
+   * path that waits for background work. Accepted means the CLI confirmed the change or the restart finished.
+   */
+  private async configure(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>): Promise<AgentHostResult> {
+    const alias = this.aliases[id]!, thread = this.threads.get(id)!
+    validateThreadOptions(this.state, command, alias.modelId)
+    if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
+    const before = settingsOf(alias)
+    const after: ClaudeSettings = { modelId: command.modelId ?? before.modelId, reasoningEffort: command.reasoningEffort ?? before.reasoningEffort, runtimeMode: command.runtimeMode ?? before.runtimeMode }
+    this.dispatching.add(id)
+    try {
+      // A CLI still starting is the one the change should reach, once it has.
+      const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
+      const steps = runtime && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
+      if (runtime && steps) {
+        const live = await this.applySteps(runtime, before, after, steps)
+        if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
+        if (live.outcome === 'uncertain') return await this.unconfirmedSettings(id, runtime, command, after)
+        this.options.logEvent?.('claude-settings-live-rejected')
+        // A restart would end the background work, so the refusal below stands. Whatever the CLI already took
+        // is put back first, because the refusal says nothing was changed.
+        if (thread.backgroundWork?.length && !sameSettings(live.reached, before)) {
+          const back = await this.applySteps(runtime, live.reached, before, settingsSteps(live.reached, before)!)
+          if (back.outcome !== 'applied') return await this.unconfirmedSettings(id, runtime, command, after)
+        }
+      }
+      return await this.restartWithSettings(id, command, after)
+    } finally { this.dispatching.delete(id) }
+  }
+  /** Send each step in turn and stop at the first the CLI does not confirm; `reached` is what it confirmed. */
+  private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[]): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings }> {
+    let reached = from
+    for (const step of steps) {
+      try { await runtime.protocol.control(step.request) }
+      catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached } }
+      reached = { ...reached, [step.field]: to[step.field] }
+    }
+    return { outcome: 'applied', reached }
+  }
+  /** Make these the settings the alias records; a thread saved without a mode keeps none until one is chosen. */
+  private recordSettings(alias: Alias, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): void {
+    alias.modelId = settings.modelId; alias.reasoningEffort = settings.reasoningEffort
+    if (command.runtimeMode) alias.runtimeMode = settings.runtimeMode
+  }
+  private showSettings(id: string): void {
+    const alias = this.aliases[id]!, thread = this.threads.get(id)!
+    thread.modelId = alias.modelId; thread.reasoningEffort = alias.reasoningEffort; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
+  }
+  /** The running CLI confirmed every step: save, show and hand back the snapshot that says so. */
+  private async settleSettings(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+    this.recordSettings(this.aliases[id]!, command, settings)
+    let saved = true
+    try { await this.persist() } catch { saved = false }
+    this.showSettings(id); this.emit()
+    this.options.logEvent?.('claude-settings-applied-live')
+    // The CLI runs these whether or not the write landed, and the next write carries them. An unsaved change
+    // is not confirmed: the coordinator reconciles it from the thread, which shows what the CLI runs.
+    return saved ? { accepted: true, snapshot: this.view() } : { accepted: false, uncertain: true }
+  }
+  /**
+   * The CLI may be running either set of settings, so it is stopped: nothing runs on settings the thread does
+   * not show. The change becomes the one the next launch carries, and the thread shows it from that launch,
+   * which is when the coordinator's saved intent reconciles. Until then the thread shows what it had.
+   */
+  private async unconfirmedSettings(id: string, runtime: Runtime, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+    this.options.logEvent?.('claude-settings-unconfirmed')
+    if (this.runtimes.get(id) === runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    this.recordSettings(this.aliases[id]!, command, settings)
+    await this.persist().catch(() => undefined)
+    this.emit()
+    return { accepted: false, uncertain: true }
+  }
+  /**
+   * Start the CLI again with the new settings: the path when no CLI is running or the running one refused a
+   * request. A restart ends the agents or commands the CLI is still running for this thread, so it waits for them.
+   */
+  private async restartWithSettings(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+    const alias = this.aliases[id]!, thread = this.threads.get(id)!
+    if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
+    const runtime = this.runtimes.get(id)
+    if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    this.recordSettings(alias, command, settings)
+    await this.persist(); this.showSettings(id)
+    await this.start(id); this.emit()
+    this.options.logEvent?.('claude-settings-applied-restart')
+    return { accepted: true, snapshot: this.view() }
   }
   async pollSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await log.poll(); await this.readSubagentModels(id, log) } }
   /**
@@ -629,6 +744,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     catch (error) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); throw error }
     if (generation !== this.generation) { runtime.protocol.stop(); throw new Error('Claude connection was cancelled.') }
+    // A change left unconfirmed is shown from the launch that carries it (see `unconfirmedSettings`).
+    const shown = this.threads.get(id)!
+    if (shown.modelId !== alias.modelId || shown.reasoningEffort !== alias.reasoningEffort || shown.runtimeMode !== (alias.runtimeMode ?? 'approval-required')) { this.showSettings(id); this.emit() }
     return runtime
   }
   private frame(id: string, frame: ClaudeFrame): void {

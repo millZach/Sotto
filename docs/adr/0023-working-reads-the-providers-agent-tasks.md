@@ -75,6 +75,31 @@ commands: with both running the dispatcher stays and counts the commands beside 
 reaper and refuses settings changes and rewinds, and the refusal now says "background work" rather than "agents".
 The field keeps its name; `backgroundWork` entries gain an optional `startedAt`.
 
+## Amendment: settings changes reach the running CLI
+
+*September 26, 2026.* Issue #317. A settings change no longer restarts Claude Code as a rule, so it no longer
+ends background work as a rule either. The adapter sends the running CLI the control request for each changed
+setting: `set_model`, `apply_flag_settings` with `effortLevel`, and `set_permission_mode`. A model change carries
+the thread's effort with it in the same operation, the way `--effort` goes with `--model` at launch. The thread
+is saved and shown only once the CLI answers success, and the session, its transcript, its watches and its
+background work carry on. Claude Code 2.1.283 took all three (`docs/verification/2026-09-26-claude-settings-live.md`).
+
+The restart stays as the fallback, and the refusal above now belongs to it alone. The adapter starts the CLI
+again when no CLI is running, when the running one refuses a request, and when the thread enters or leaves full
+access: the CLI takes `bypassPermissions` only when bypassing was allowed at launch, and a CLI launched with that
+allowance keeps it, so those two changes go through a fresh start to keep the launch arguments those of the
+mode. Background work still refuses the fallback, and nothing is changed. If the CLI refused part of a change
+after taking the rest, what it took is set back first, so that stays true.
+
+A request whose answer is lost leaves the CLI on settings Sotto cannot know. The adapter stops that CLI, so
+nothing runs on settings the thread does not show, and saves the change as the one the next launch carries. It
+reports the change unconfirmed, the coordinator keeps its saved intent, and the thread shows the change from
+the launch that runs it, which is what reconciles the intent. Stopping ends any background work: a lost answer
+is the one case where a settings change still can.
+
+The adapter logs which path each change took, as event names and nothing else: `claude-settings-applied-live`,
+`claude-settings-applied-restart`, `claude-settings-live-rejected` and `claude-settings-unconfirmed`.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live

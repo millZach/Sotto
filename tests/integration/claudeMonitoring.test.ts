@@ -79,11 +79,15 @@ it('hides monitoring on native process exit', async () => {
   expect((await thread(f)).monitoring ?? []).toEqual([])
 })
 
-it('drops live watches when changing settings replaces the native session', async () => {
+it('keeps live watches through a settings change the session takes in place, and drops them when it is replaced', async () => {
   const f = await fixture()
   await raw(f, started)
   await expect.poll(async () => (await thread(f)).monitoring?.length).toBe(1)
-  expect(await f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
+  expect((await f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).accepted).toBe(true)
+  expect((await thread(f)).monitoring).toHaveLength(1)
+  // A refused change starts the CLI again, and the watch ends with the session that ran it.
+  await f.liveSettings.refuse()
+  expect((await f.host.execute({ type: 'configure-thread', commandId: 'configure-again', threadId: 'thread', runtimeMode: 'auto' })).accepted).toBe(true)
   expect((await thread(f)).monitoring ?? []).toEqual([])
 })
 
@@ -131,15 +135,17 @@ it.each([['an agent', agent], ['a background command', command]])('holds a sessi
   await expect.poll(() => f.sessions!.stopped('thread')).toBe(true)
 })
 
-it('refuses to change settings or rewind while background work runs, because either would end it', async () => {
+it('refuses to rewind, or to restart for a settings change, while background work runs, because either would end it', async () => {
   const f = await fixture()
   await raw(f, agent)
   await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
+  // Only a change the running CLI refuses needs the restart that would end the work.
+  await f.liveSettings.refuse()
   await expect(f.host.execute({ type: 'configure-thread', commandId: 'configure', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).rejects.toThrow('"Review the diff" is still running for this thread. Nothing was changed. Wait for it to finish, or ask Claude to stop it, before')
   await expect(f.adapter.rollbackThread('thread', 1, ['first'])).rejects.toThrow('"Review the diff" is still running for this thread. Nothing was changed. Wait for it to finish, or ask Claude to stop it, before')
   expect((await thread(f)).backgroundWork).toHaveLength(1)
   expect((await thread(f)).runtimeMode).not.toBe('auto-accept-edits')
   await raw(f, { type: 'system', subtype: 'task_notification', task_id: agent.task_id, status: 'completed' })
   await expect.poll(async () => (await thread(f)).backgroundWork ?? []).toEqual([])
-  expect(await f.host.execute({ type: 'configure-thread', commandId: 'configure-after', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
+  expect((await f.host.execute({ type: 'configure-thread', commandId: 'configure-after', threadId: 'thread', runtimeMode: 'auto-accept-edits' })).accepted).toBe(true)
 })

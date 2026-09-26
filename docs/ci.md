@@ -53,6 +53,19 @@ SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorke
 
 Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.spec.ts` for the Electron provider/permission journey, keyboard path, independent-provider behavior, coordinator separation, and light/dark/minimum-size captures. The verification note records actual platforms and results; a fixture pass is not a native-platform pass.
 
+## Claude settings live check
+
+`tests/integration/claudeSettingsLive.test.ts` is gated by `SOTTO_CLAUDE_LIVE=1`. It starts one thread's CLI in a temporary synthetic project with the installed, signed-in Claude Code and changes that thread's effort, model and permission mode over the control channel, then reads back what the CLI reports. It sends no prompt and runs no model turn. It prints the CLI version, whether each value matched and the timings, never a prompt, a reply or a key. It was last run on Claude Code 2.1.283 (`docs/verification/2026-09-26-claude-settings-live.md`):
+
+```powershell
+$env:SOTTO_CLAUDE_LIVE = '1'
+npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept
+```
+
+```sh
+SOTTO_CLAUDE_LIVE=1 npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept
+```
+
 ## Gated assertions
 
 A shared runner interleaves two vitest workers with everything else on the host, so an absolute
