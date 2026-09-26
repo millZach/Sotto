@@ -560,10 +560,10 @@ describe('a pending setting', () => {
     expect(chip).toHaveTextContent('Auto')
     expect(chip).toHaveAttribute('data-pending', 'true')
     const notice = screen.getByRole('alert')
-    expect(notice).toHaveTextContent(`Claude Code has not confirmed Auto. ${lost}`)
+    expect(notice).toHaveTextContent(lost)
     expect(notice).not.toHaveTextContent('did not switch')
     expect(within(notice).queryByRole('button')).toBeNull()
-    expect(chip).toHaveAccessibleDescription(`Claude Code has not confirmed Auto. ${lost}`)
+    expect(chip).toHaveAccessibleDescription(lost)
     // Nothing else goes to the thread until main knows, so the chips wait with it.
     expect(chip).toBeDisabled()
     expect(screen.getByRole('status')).toBeEmptyDOMElement()

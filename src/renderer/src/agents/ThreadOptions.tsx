@@ -148,13 +148,14 @@ export function settingRefusalText(provider: string, wanted: string, inForce: st
  * The line under the chips when the provider never gave a result. Main keeps the change for the thread's next start
  * and the chip keeps showing it, so this says what happened and what comes next, and offers nothing to press: main
  * takes no other action on the thread until it knows. The provider's own account (a lost answer that stopped the
- * session, and what stopped with it) is shown as it is; main's general one is put in plain words.
+ * session, and what stopped with it) already names the provider and says what happened, so it is shown alone; main's
+ * general one is put in plain words.
  */
 export function unconfirmedSettingText(provider: string, wanted: string, error: string | null): string {
   if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) {
     return `${provider} has not confirmed ${wanted}. The thread starts on ${wanted} the next time it is used, and Sotto checks it then.`
   }
-  return `${provider} has not confirmed ${wanted}. ${error}`
+  return error
 }
 
 /**

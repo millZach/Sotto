@@ -62,8 +62,8 @@ change what the next turn is, not what the provider may do without asking.
   - Any other reason, main's or the provider's, follows the lead as it is, with nothing claimed beside it.
   - No answer came back to the window: "Sotto did not get Claude Code's answer about Full access, so the chip shows
     what the thread last reported. Try again to send it once more." The words ask for the press the button makes.
-- An unconfirmed change leads with "Claude Code has not confirmed Auto." Then the provider's own account where it
-  gives one, such as #317's lost answer: "Claude Code did not confirm the settings change, so Sotto stopped this
+- An unconfirmed change shows the provider's own account alone where it gives one, since it already names the
+  provider and says what happened, such as #317's lost answer: "Claude Code did not confirm the settings change, so Sotto stopped this
   thread's session, and "npm test" stopped with it. The session starts again with the new settings the next time you
   use the thread." Where main has only its general sentence (`PROVIDER_RESULT_UNCONFIRMED`,
   `THREAD_SETTINGS_UNRECONCILED`), it says instead: "The thread starts on Auto the next time it is used, and Sotto

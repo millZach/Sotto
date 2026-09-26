@@ -187,11 +187,11 @@ test('a permission choice shows at once, marked pending with what is in force; a
     await page.evaluate(async text => window.sottoE2E!.agentEvent!({ type: 'settings-unconfirmed', threadId: 'workshop', text }), lost)
     await choose(page, chip, 'Auto')
     const notice = lines.getByRole('alert')
-    await expect(notice).toHaveText(`Claude has not confirmed Auto. ${lost}`)
+    await expect(notice).toHaveText(lost)
     await expect(notice.getByRole('button')).toHaveCount(0)
     await expect(chip).toHaveText('Auto')
     await expect(chip).toHaveAttribute('data-pending', 'true')
-    await expect(chip).toHaveAccessibleDescription(`Claude has not confirmed Auto. ${lost}`)
+    await expect(chip).toHaveAccessibleDescription(lost)
     await expect(caption).toBeEmpty()
     // Main takes no other action on the thread until it knows, so the chips wait with it.
     for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) await expect(page.getByRole('combobox', { name, exact: true })).toBeDisabled()

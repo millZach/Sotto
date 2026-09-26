@@ -46,7 +46,7 @@ other spec and design capture over it shows, so it was left.
 ## Unconfirmed
 
 - A press on **Auto** answered with no result and #317's lost-answer error kept the chip on Auto with the dashed edge
-  and dot. The line under the row read "Claude has not confirmed Auto. Claude Code did not confirm the settings change,
+  and dot. The line under the row read Claude Code's own account: "Claude Code did not confirm the settings change,
   so Sotto stopped this thread's session, and "npm test" stopped with it. The session starts again with the new
   settings the next time you use the thread. Ask Claude to start it again if you still need it." It offered nothing to
   press, the caption was empty, and the chip was described by that line.
