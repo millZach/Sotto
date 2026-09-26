@@ -13,7 +13,8 @@ import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
-import { BrowserTaskPreview } from './BrowserTaskPreview'
+import { BrowserPlayer } from './BrowserPlayer'
+import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
 import { BrowserSurface } from './BrowserSurface'
 import { useBrowserTasks } from './browserStore'
 import { ChangesSurface } from './ChangesSurface'
@@ -52,6 +53,7 @@ export interface ToolsPanelProps {
   /** How a terminal session is drawn; tests pass a light stand-in for xterm. */
   readonly terminalView?: TerminalViewFactory
   readonly store?: ToolsPanelStore
+  readonly playerStore?: BrowserPlayerStore
 }
 
 function bridgeFiles(): FilesBridge | undefined {
@@ -77,7 +79,7 @@ function bridgePlatform(): string | undefined {
 /** The area the panel shares with the panes: its parent, or the parent of a wrapper that holds only the panel. */
 function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   const parent = panel?.parentElement ?? null
-  return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-corner')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
+  return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
 function focusToggle(): void {
@@ -87,8 +89,9 @@ function focusToggle(): void {
 /**
  * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
  * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
- * Its dot means the selected thread has agents working or the working-copy target has a browser request waiting;
- * the corner preview can be off or showing another thread, so a waiting request still appears here.
+ * Its dot means this pane's own thread has agents working or a browser request waiting, never a pinned thread's;
+ * the browser player can be closed, shrunk, hidden or showing another pane's thread, so a waiting request still
+ * appears here (#331).
  */
 export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
   const chrome = useToolsPanelChrome(store)
@@ -109,10 +112,10 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   }, [chrome.open, store])
   const pinned = chrome.pinnedThreadId
   const selectedThreadId = paneThreadId ?? agentState?.activeThreadId
-  const workingCopyThreadId = pinned ?? selectedThreadId
   const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0
   const browserTasks = useBrowserTasks(store.browser)
-  const browserWaiting = browserTasks.some(task => task.threadId === workingCopyThreadId && task.pendingAction !== null)
+  // This pane's own thread, never the pin: a pin shows in another pane's Tools, not by lighting every pane's dot (#331).
+  const browserWaiting = browserTasks.some(task => task.threadId === selectedThreadId && task.pendingAction !== null)
   const pinnedElsewhere = chrome.open && chrome.surface !== 'agents' && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
@@ -220,7 +223,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
  * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
@@ -228,7 +231,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const terminalBridge = terminal ?? bridgeTerminal()
   const browserBridge = browser ?? bridgeBrowser()
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
-  const showBrowserPreviews = useOptionalAgents()?.showBrowserPreviews !== false
+  // showBrowserPreviews keeps its settings key (ADR-0020); in the player it decides whether a new page opens the player on its own.
+  const autoShowBrowser = useOptionalAgents()?.showBrowserPreviews !== false
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
@@ -326,9 +330,12 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')
+  // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
+  // the "Float the browser over the thread" control's own condition, computed once for the surface below.
+  const browserTasks = useBrowserTasks(store.browser)
 
-  const preview = <BrowserTaskPreview state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} enabled={showBrowserPreviews} />
-  if (!open) return preview
+  const player = <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
+  if (!open) return player
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
@@ -343,6 +350,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     if (aside.current?.contains(document.activeElement)) focusToggle()
     store.requestToggleFocus()
     store.setOpen(false)
+  }
+  // Never offered while Tools is pinned elsewhere: that thread has no player here to float back to (the pin,
+  // not this thread, owns what Browser shows), and the control never pins on its own way back either.
+  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && browserTasks.some(item => item.threadId === thread.id)
+  const floatBrowser = (): void => {
+    if (!thread) return
+    close()
+    playerStore.restore(thread.id)
   }
   const pathAction = (action: PathAction, path: string): void => {
     if (!thread) return
@@ -383,7 +398,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus} />
   else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
-  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} />
+  else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
   else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus}
     onOpenFile={path => { store.files.showFile(bridge, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
@@ -391,7 +406,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.
-  return <>{preview}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
+  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label="Tools" data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
     style={{ '--tools-width': `${Math.round(width)}px` } as React.CSSProperties} onKeyDown={onKeyDown}>
     <div className="tools-panel__sheet">
       <div className="tools-panel__resize" role="separator" aria-orientation="vertical" aria-label="Resize tools panel" tabIndex={chrome.expanded ? -1 : 0}

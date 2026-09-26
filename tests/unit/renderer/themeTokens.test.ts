@@ -183,6 +183,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/history/history.css',
       'src/renderer/src/features/memory/memory.css',
       'src/renderer/src/tools/agentsSurface.css',
+      'src/renderer/src/tools/browserPlayer.css',
       'src/renderer/src/tools/browserReview.css',
       'src/renderer/src/tools/changes.css',
       'src/renderer/src/tools/pullRequestSurface.css',

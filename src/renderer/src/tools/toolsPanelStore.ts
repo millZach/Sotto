@@ -17,6 +17,12 @@ export const TOOLS_PANEL_MAX_WIDTH = 1200
 /** The panel docks beside the panes only while they keep at least this much width; otherwise it overlays them. */
 export const TOOLS_PANEL_MIN_PANE_WIDTH = 320
 
+/**
+ * Why `showBrowserPage` did or did not open Tools on the page: opened it, the click was on a pane that is not
+ * focused, or the panel is pinned to a different thread than the page's own.
+ */
+export type ShowBrowserPageResult = 'opened' | 'unfocused' | 'pinned-elsewhere'
+
 export interface ToolsPanelChrome {
   readonly open: boolean
   readonly surface: ToolSurfaceId
@@ -61,15 +67,20 @@ export class ToolsPanelStore {
   setWidth(width: number): void { this.update({ width: clampPanelWidth(width), resized: true }) }
 
   /**
-   * Shows a page main just opened for a thread. The panel opens on Browser; a panel pinned to another thread
-   * keeps its pin, and the answer is false so the caller can say where the page went.
+   * Shows a page main just opened for a thread's own pane. The page is adopted either way, so Tools > Browser has
+   * it once the user gets there; the panel itself only opens on Browser when the click came from the *focused*
+   * pane (a link in an unfocused split pane must never pull the focused thread's Browser open, #331) and the panel
+   * is not pinned to a different thread. When it does not open, the two reasons need their own words: an
+   * unfocused pane's click never touched Tools at all, but a pin means the page opened right here and Tools is
+   * merely looking elsewhere.
    */
-  showBrowserPage(page: BrowserPage): boolean {
+  showBrowserPage(page: BrowserPage, focused: boolean): ShowBrowserPageResult {
     this.browser.adopt(page)
+    if (!focused) return 'unfocused'
     const pinned = this.chrome.pinnedThreadId
-    if (pinned !== null && pinned !== page.workspace.threadId) return false
+    if (pinned !== null && pinned !== page.workspace.threadId) return 'pinned-elsewhere'
     this.update({ open: true, surface: 'browser' })
-    return true
+    return 'opened'
   }
 
   /**
@@ -87,12 +98,16 @@ export class ToolsPanelStore {
   /** Whether the open that just happened was a quiet one, which leaves focus alone; asking clears it. */
   takeQuietOpen(): boolean { const quiet = this.quietOpen; this.quietOpen = false; return quiet }
 
-  /** Clicking a task is an explicit request to inspect that thread's exact retained page. */
+  /**
+   * Moves a task's page into Tools > Browser: what the player's own "Move into Tools" button asks for. It never
+   * pins (only the rail's own pin control pins, ADR-0020's September 25 player amendment); the player shows only
+   * the focused thread's task, so Tools already follows it there once unpinned.
+   */
   async showBrowserTask(task: BrowserTask, bridge: BrowserBridge | undefined): Promise<boolean> {
     await this.browser.activate(bridge, task.threadId)
     if (!this.browser.thread(task.threadId)?.pages.some(page => page.id === task.pageId && page.workspace.workspaceId === task.workspaceId)) return false
     this.browser.select(task.threadId, task.pageId)
-    this.update({ open: true, surface: 'browser', pinnedThreadId: task.threadId })
+    this.update({ open: true, surface: 'browser' })
     return true
   }
 

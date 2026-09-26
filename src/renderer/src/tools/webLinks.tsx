@@ -37,8 +37,12 @@ export function useWebLinkRouter(): WebLinkRouter {
   return useContext(WebLinkRouterContext)
 }
 
-/** Builds the router for one thread's transcript: web links follow the setting, or the reader's choice for one link. */
-export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore): WebLinkRouter {
+/**
+ * Builds the router for one thread's transcript: web links follow the setting, or the reader's choice for one link.
+ * `focused` is whether this is the focused pane (split view can show more than one); an unfocused pane's own click
+ * still opens the page, but never pulls the focused thread's Tools open onto a thread the user is not looking at (#331).
+ */
+export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true): WebLinkRouter {
   return {
     canEmbed: bridge !== undefined,
     async open(url, destination) {
@@ -53,8 +57,11 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
           return { ok: false }
         }
         if (result.value.destination === 'external' || !result.value.page) return { ok: true }
-        const shown = store.showBrowserPage(result.value.page)
-        return shown ? { ok: true } : { ok: true, message: `Opened in ${threadTitle}’s browser. The tools panel is pinned to another thread.` }
+        const shown = store.showBrowserPage(result.value.page, focused)
+        if (shown === 'opened') return { ok: true }
+        // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
+        if (shown === 'pinned-elsewhere') return { ok: true, message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.` }
+        return { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
       } catch {
         return { ok: false }
       }
@@ -62,12 +69,13 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
   }
 }
 
-/** Gives links inside a thread's transcript that thread's browser. */
-export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store }: {
+/** Gives links inside a thread's transcript that thread's browser. `focused` should be the pane's own focus state. */
+export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store, focused = true }: {
   readonly threadId: string; readonly threadTitle: string; readonly children: ReactNode; readonly bridge?: BrowserBridge | undefined; readonly store?: ToolsPanelStore
+  readonly focused?: boolean
 }): ReactNode {
   const resolved = bridge ?? bridgeBrowser()
-  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store), [threadId, threadTitle, resolved, store])
+  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused), [threadId, threadTitle, resolved, store, focused])
   return <WebLinkRouterContext.Provider value={router}>{children}</WebLinkRouterContext.Provider>
 }
 

@@ -61,9 +61,9 @@ test('agents and users share the real browser page, permissions, feedback and vi
     const agent = (name: string, args: unknown) => page.evaluate(async request => window.sottoE2E!.browserAgent!(request), { threadId: 'workshop', name, arguments: args })
     const tasks = () => page.evaluate(async () => { const result = await window.sotto!.browser!.tasks({ threadId: 'workshop' }); return result.ok ? result.value : [] })
     const opening = agent('browser_open', { url, description: 'Checking that a trail can be saved' })
-    const preview = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
-    await expect(preview).toBeVisible()
-    await preview.getByRole('button', { name: /Open browser task/ }).click()
+    const player = page.getByRole('complementary', { name: 'Browser for Workshop' })
+    await expect(player).toBeVisible()
+    await player.getByRole('button', { name: 'Move the browser into Tools' }).click()
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await expect(panel.getByText(`Open and share this page with the thread: ${url}`, { exact: true })).toBeVisible()
     await panel.getByRole('button', { name: 'Allow once' }).click()
@@ -76,7 +76,8 @@ test('agents and users share the real browser page, permissions, feedback and vi
     const action = (action: unknown) => agent('browser_action', { ...target, action })
     const shot = await action({ type: 'screenshot' }); expect(shot.content.some(item => item.type === 'image')).toBe(true)
     await panel.getByRole('button', { name: 'Close tools panel' }).click()
-    await expect(preview.locator('img')).toBeVisible()
+    // Tools no longer shows this thread's page, so the player returns on its own, with the live frame in view.
+    await expect(player.locator('.browser-player__viewport')).toBeVisible()
     const beforeHiddenCapture = await launched.app.evaluate(({ BaseWindow, BrowserWindow }) => ({ windows: BaseWindow.getAllWindows().length, focused: BrowserWindow.getFocusedWindow()?.id ?? null }))
     expect((await action({ type: 'screenshot' })).content.some(item => item.type === 'image')).toBe(true)
     expect(await launched.app.evaluate(({ BaseWindow, BrowserWindow }) => ({ windows: BaseWindow.getAllWindows().length, focused: BrowserWindow.getFocusedWindow()?.id ?? null }))).toEqual(beforeHiddenCapture)
@@ -86,16 +87,16 @@ test('agents and users share the real browser page, permissions, feedback and vi
       for (const mode of ['dark', 'light'] as const) {
         await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), mode)
         await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
-        const box = await preview.boundingBox(); expect(box).not.toBeNull()
+        const box = await player.boundingBox(); expect(box).not.toBeNull()
         expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.y).toBeGreaterThanOrEqual(0)
         expect(box!.x + box!.width).toBeLessThanOrEqual(width!); expect(box!.y + box!.height).toBeLessThan(height!)
-        const contrast = await preview.evaluate(element => {
+        const contrast = await player.evaluate(element => {
           const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
           const context = canvas.getContext('2d')!
           const probe = document.createElement('div'); probe.style.backgroundColor = 'var(--tt-canvas)'; document.body.append(probe)
           const room = getComputedStyle(probe).backgroundColor; probe.remove()
           const luminance = (data: Uint8ClampedArray) => [...data].slice(0, 3).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-          return ['.browser-corner__head > span', '.browser-corner__action > span', '.browser-corner__foot > span'].map(selector => {
+          return ['.browser-player__title', '.browser-player__host', '.browser-player__action'].map(selector => {
             context.fillStyle = room; context.fillRect(0, 0, 1, 1)
             context.fillStyle = getComputedStyle(element).backgroundColor; context.fillRect(0, 0, 1, 1)
             const background = luminance(context.getImageData(0, 0, 1, 1).data)
@@ -106,8 +107,8 @@ test('agents and users share the real browser page, permissions, feedback and vi
         })
         contrast.forEach(ratio => expect(ratio).toBeGreaterThanOrEqual(4.5))
         const key = `${width}x${height}-${mode}`
-        await screenshot(launched, `corner-${key}`, false)
-        await preview.getByRole('button', { name: /Open browser task/ }).click()
+        await screenshot(launched, `player-${key}`, false)
+        await player.getByRole('button', { name: 'Move the browser into Tools' }).click()
         await expect(panel.locator('.browser-viewport')).toBeVisible()
         await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))) })
         const expectedBounds = await panel.locator('.browser-viewport').evaluate(element => { const rect = element.getBoundingClientRect(); const x = Math.round(rect.left), y = Math.round(rect.top); return { x, y, width: Math.round(rect.right) - x, height: Math.round(rect.bottom) - y } })
@@ -118,21 +119,21 @@ test('agents and users share the real browser page, permissions, feedback and vi
         })).toEqual([{ url, bounds: expectedBounds }])
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         await screenshot(launched, `tools-${key}`, true)
-        report[key] = { preview: box, contrast, viewport: await panel.locator('.browser-viewport').boundingBox() }
+        report[key] = { player: box, contrast, viewport: await panel.locator('.browser-viewport').boundingBox() }
         await panel.getByRole('button', { name: 'Close tools panel' }).click()
       }
     }
     await resize(launched, 1280, 800)
     await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark', reducedMotion: 'on' }))
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await expect.poll(() => preview.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
-    await preview.getByRole('button', { name: 'Pause', exact: true }).click()
-    await expect(preview.getByRole('button', { name: 'Resume', exact: true })).toBeVisible()
+    await expect.poll(() => player.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+    await player.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(player.getByRole('button', { name: 'Resume', exact: true })).toBeVisible()
     expect((await action({ type: 'inspect' })).isError).toBe(true)
-    await preview.getByRole('button', { name: 'Resume', exact: true }).click()
-    await expect(preview.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
-    await preview.getByRole('button', { name: 'Dismiss browser preview' }).click()
-    await expect(preview).toBeHidden(); expect((await tasks())[0]?.status).toBe('working')
+    await player.getByRole('button', { name: 'Resume', exact: true }).click()
+    await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+    await player.getByRole('button', { name: 'Hide the browser; the agent keeps working' }).click()
+    await expect(player).toBeHidden(); expect((await tasks())[0]?.status).toBe('working')
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await panel.getByRole('combobox', { name: 'Browser viewport size' }).selectOption('390x844')
     const emulated = await launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript('({width:innerWidth,height:innerHeight})'), url)
@@ -199,7 +200,7 @@ test('agents and users share the real browser page, permissions, feedback and vi
   } finally { await closeSotto(launched); await new Promise<void>(done => server.close(() => done())) }
 })
 
-test('a thread uses the browser without asking by default, the user can stop or turn it off, and previews follow the focused thread', async () => {
+test('a thread uses the browser without asking by default, the user can stop or turn it off, and the player follows the focused thread', async () => {
   test.setTimeout(240_000)
   await mkdir(GRANT_SHOTS, { recursive: true })
   const server = createServer((_request, response) => { response.writeHead(200, { 'content-type': 'text/html' }); response.end(GRANT_CONTENT) })
@@ -234,9 +235,13 @@ test('a thread uses the browser without asking by default, the user can stop or 
       return shown ? `${shown.status} ${shown.url}` : 'missing'
     }, { threadId, pageId })).toBe(`ready ${expectedUrl}`)
     const body = (result: { content: { type: string }[] }) => JSON.parse((result.content[0] as unknown as { text: string }).text) as { approvalRequired: boolean; task: { id: string; pageId: string; pendingAction: unknown } }
+    const nativeViewUrls = () => launched.app.evaluate(({ BrowserWindow, WebContentsView }) => {
+      const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
+      return host.contentView.children.filter(view => view instanceof WebContentsView).map(view => (view as Electron.WebContentsView).webContents.getURL())
+    })
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
-    const workshopPreview = page.getByRole('complementary', { name: 'Browser preview for Workshop' })
-    const docsPreview = page.getByRole('complementary', { name: 'Browser preview for Docs' })
+    const workshopPlayer = page.getByRole('complementary', { name: 'Browser for Workshop' })
+    const docsPlayer = page.getByRole('complementary', { name: 'Browser for Docs' })
     const grantLine = panel.getByText('This thread uses the browser without asking', { exact: true })
     const request = panel.getByRole('group', { name: 'Browser action permission' })
 
@@ -245,8 +250,16 @@ test('a thread uses the browser without asking by default, the user can stop or 
     expect(opened.isError).not.toBe(true)
     expect(body(opened)).toMatchObject({ approvalRequired: false, task: { pendingAction: null } })
     const firstTask = body(opened).task
-    await expect(workshopPreview).toBeVisible()
-    await workshopPreview.getByRole('button', { name: /Open browser task/ }).click()
+    await expect(workshopPlayer).toBeVisible()
+
+    // Focusing another thread draws neither Workshop's player nor its native page there; focusing back returns both (#331).
+    await page.getByRole('button', { name: 'Docs', exact: true }).click()
+    await expect(workshopPlayer).toBeHidden()
+    await expect.poll(nativeViewUrls).not.toContain(url)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+    await expect(workshopPlayer).toBeVisible()
+
+    await workshopPlayer.getByRole('button', { name: 'Move the browser into Tools' }).click()
     await expect(grantLine).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Stop sharing' })).toBeVisible()
     await shot('grant-line')
@@ -318,40 +331,48 @@ test('a thread uses the browser without asking by default, the user can stop or 
     await shot('settings-switch-grant')
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await expect(workshopPreview).toBeVisible()
+    await expect(workshopPlayer).toBeVisible()
     const docs = agent('docs', 'browser_open', { url, description: 'Checking the docs page' })
     await waitingOn('docs')
-    await expect(docsPreview).toBeHidden()
-    await expect(workshopPreview).toBeVisible()
-    await shot('focused-thread-preview')
+    await expect(docsPlayer).toBeHidden()
+    await expect(workshopPlayer).toBeVisible()
+    // Docs waiting for an answer must never make Workshop's own player think itself covered (#331 follow-up):
+    // the player's own data-covers-native-view marker is not an overlay over its own frame.
+    await expect(workshopPlayer.locator('.browser-player__frame-note')).toHaveCount(0)
+    await expect(workshopPlayer.locator('.browser-player__viewport')).toBeVisible()
+    await expect(workshopPlayer.locator('.browser-player__viewport')).not.toHaveAttribute('data-covered')
+    await shot('focused-thread-player')
     await deny('docs'); await docs
 
-    // The preview switch: no preview anywhere, and the work still shows in Tools > Browser.
+    // The auto-show switch: the player does not open on its own anywhere, and the work still shows in Tools > Browser.
     await page.getByRole('link', { name: 'Settings' }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
-    const previewToggle = page.getByRole('switch', { name: 'Show browser previews' })
-    await expect(previewToggle).toBeChecked()
-    await previewToggle.click()
-    await expect(previewToggle).not.toBeChecked()
+    const autoShowToggle = page.getByRole('switch', { name: 'Show the browser when an agent opens a page' })
+    await expect(autoShowToggle).toBeChecked()
+    await autoShowToggle.click()
+    await expect(autoShowToggle).not.toBeChecked()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).showBrowserPreviews)).toBe(false)
-    await previewToggle.scrollIntoViewIfNeeded()
-    await shot('settings-switch-previews')
+    await autoShowToggle.scrollIntoViewIfNeeded()
+    await shot('settings-switch-auto-show')
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await expect(workshopPreview).toBeHidden()
-    const quiet = agent('workshop', 'browser_open', { url: `${url}quiet`, description: 'Checking with previews off' })
+    // The setting only gates a *new* task opening on its own; it does not pull away a player already on screen.
+    await expect(workshopPlayer).toBeVisible()
+    await workshopPlayer.getByRole('button', { name: 'Hide the browser; the agent keeps working' }).click()
+    await expect(workshopPlayer).toBeHidden()
+    const quiet = agent('workshop', 'browser_open', { url: `${url}quiet`, description: 'Checking with the setting off' })
     await waitingOn('workshop')
-    await expect(workshopPreview).toBeHidden()
-    // With no preview, the Tools icon of the thread's pane is what says a request waits.
+    await expect(workshopPlayer).toBeHidden()
+    // With the player not opening on its own, the Tools icon of the thread's pane is what says a request waits.
     await expect(page.getByRole('button', { name: 'Tools', exact: true })).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
     await expect(panel.getByText(`Open and share this page with the thread: ${url}quiet`, { exact: true })).toBeVisible()
-    await shot('previews-off-tools')
+    await shot('auto-show-off-tools')
     await request.getByRole('button', { name: 'Deny' }).click()
     await quiet
     expect(errors).toEqual([])
-    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedByDefault: true, clickAndTypeWithoutAsking: true, stopAsksAgain: true, threadWideAnswerRestoresGrant: true, settingOffAsksOtherThread: true, otherThreadPreviewHidden: true, previewsOffHidden: true, toolsIconMarkedWaiting: true, errors }, null, 2))
+    await writeFile(join(GRANT_SHOTS, 'verification.json'), JSON.stringify({ grantedByDefault: true, clickAndTypeWithoutAsking: true, stopAsksAgain: true, threadWideAnswerRestoresGrant: true, settingOffAsksOtherThread: true, otherThreadPlayerHidden: true, autoShowOffHidden: true, toolsIconMarkedWaiting: true, focusSwitchHidesPlayerAndPage: true, errors }, null, 2))
   } catch (error) {
     await page.screenshot({ path: join(GRANT_SHOTS, 'failure.png') }).catch(() => undefined)
     console.error(await page.locator('body').innerText().catch(() => 'No renderer'))

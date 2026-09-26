@@ -20,7 +20,7 @@ Checked on September 25, 2026, on Windows, in the built app driven by `tests/e2e
 
 ## Unchanged and still checked
 
-- `focused-thread-preview.png`: another thread's task does not show in the focused thread's corner preview (`otherThreadPreviewHidden`). `previews-off-tools.png`: with previews off, nothing shows in the corner and the task stays in Tools > Browser (`previewsOffHidden`). A waiting request marks the Tools icon (`toolsIconMarkedWaiting`).
+- The corner preview checks moved with it: step 1 replaced the preview with the browser player, and `2026-09-25-browser-player.md` records them. A waiting request marks the Tools icon (`toolsIconMarkedWaiting`).
 - The Settings > Application design baseline (`artifacts/design/app-review/baseline/settings-application-privacy.png` and `-light.png`) was regenerated for the new switch row; nothing else in it changed.
 
 ## Unchecked
