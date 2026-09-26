@@ -15,6 +15,11 @@ export class E2EAgentHost implements AgentHost {
   private uncertain = false
   private rejection: string | null = null
   private connectRejection: string | null = null
+  /**
+   * Thread settings changes as a test drives them: `hold` keeps each one waiting for the provider until `release`,
+   * and `refuse` has the next one answered with a plain refusal, as a provider that will not take it does.
+   */
+  private readonly settingsGate: { held: boolean; waiting: (() => void)[]; refuse: boolean } = { held: false, waiting: [], refuse: false }
   private state: AgentHostSnapshot = {
     ...structuredClone(EMPTY_AGENT_HOST), version: 'fixture',
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
@@ -93,6 +98,10 @@ export class E2EAgentHost implements AgentHost {
       this.rejection = null
       throw new Error(message)
     }
+    if (command.type === 'configure-thread') {
+      if (this.settingsGate.held) await new Promise<void>(done => { this.settingsGate.waiting.push(done) })
+      if (this.settingsGate.refuse) { this.settingsGate.refuse = false; return { accepted: false } }
+    }
     this.commands.add(command.commandId)
     if (command.type === 'create-project') this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
     else if (command.type === 'create-thread') {
@@ -126,6 +135,13 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'connect-reject') { this.connectRejection = event.text; return }
     if (event.type === 'uncertain') { this.uncertain = true; return }
     if (event.type === 'reject') { this.rejection = event.text; return }
+    if (event.type === 'settings') {
+      if (event.text === 'hold') this.settingsGate.held = true
+      else if (event.text === 'release') { this.settingsGate.held = false; for (const done of this.settingsGate.waiting.splice(0)) done() }
+      else if (event.text === 'refuse') this.settingsGate.refuse = true
+      else throw new Error('E2E_SETTINGS_EVENT_UNKNOWN')
+      return
+    }
     if (event.type === 'reasoner-release') { pendingReasoning.get(event.threadId)?.(); pendingReasoning.delete(event.threadId); return }
     if (event.type === 'disconnect') { this.state.connected = false; this.emit(); return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
