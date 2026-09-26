@@ -33,6 +33,8 @@ class SettingsHost extends E2EAgentHost {
   handsBackSnapshot = true
   /** Answer with an unknown result without applying the change, carrying a snapshot that claims it anyway. */
   unknown = false
+  /** What the adapter says was lost with an unknown result, when it knows. */
+  lost: string | undefined
   private held: AgentHostCommand | undefined
   /** Acknowledge without applying, so the snapshot handed back does not show the change. */
   cosmetic = false
@@ -46,7 +48,7 @@ class SettingsHost extends E2EAgentHost {
       this.held = command
       const claimed = await this.snapshot()
       for (const item of claimed.threads) if (item.id === command.threadId && command.runtimeMode) item.runtimeMode = command.runtimeMode
-      return { accepted: false, uncertain: true, snapshot: claimed }
+      return { accepted: false, uncertain: true, snapshot: claimed, ...(this.lost ? { error: this.lost } : {}) }
     }
     const result = await super.execute(command)
     return this.handsBackSnapshot ? { ...result, snapshot: await this.snapshot() } : result
@@ -123,6 +125,14 @@ describe('thread settings light path', () => {
     expect((await f.saved()).outbox).toEqual([expect.objectContaining({ type: 'configure-thread', options: { runtimeMode: 'full-access' } })])
     expect(f.host.reads()).toBe(0)
     expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })).error).toMatch(/unknown result/u)
+  })
+
+  it('shows what the adapter says was lost with an uncertain result in place of its own error, and keeps the entry', async () => {
+    const f = await fixture()
+    f.host.unknown = true
+    f.host.lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "Review the diff" stopped with it.'
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })).error).toBe(f.host.lost)
+    expect((await f.saved()).outbox).toEqual([expect.objectContaining({ type: 'configure-thread', options: { runtimeMode: 'full-access' } })])
   })
 
   it('keeps the outbox entry and the not confirmed error when the snapshot handed back does not show the change', async () => {

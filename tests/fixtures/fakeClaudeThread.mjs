@@ -43,6 +43,17 @@ let parentUuid = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').
 const persist = frame => { mkdirSync(folder, { recursive: true }); appendFileSync(log, JSON.stringify({ ...frame, parentUuid, isSidechain: false, cwd: process.cwd(), sessionId: session, timestamp: frame.timestamp ?? new Date().toISOString() }) + '\n'); parentUuid = frame.uuid ?? parentUuid }
 const pending = new Map()
 const violation = reason => appendFileSync(join(root, 'violations.jsonl'), reason + '\n')
+// One CLI per session. Two would both write the session's transcript, so Sotto must not start one while another it
+// let go is still exiting. The running one keeps its pid in alive-<session>.json and removes it as it exits.
+const alive = join(root, `alive-${session}.json`)
+if (!metadata) {
+  const other = existsSync(alive) ? Number(readFileSync(alive, 'utf8')) : 0
+  let running = false
+  try { if (other && other !== process.pid) { process.kill(other, 0); running = true } } catch { running = false }
+  if (running) violation('Two CLIs ran on one session at once')
+  writeFileSync(alive, String(process.pid))
+}
+const leave = () => { try { if (!metadata && readFileSync(alive, 'utf8') === String(process.pid)) unlinkSync(alive) } catch { /* already gone */ } }
 let lastAction = ''
 let initialized = false
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
@@ -188,4 +199,10 @@ lines.on('line', line => {
   } else violation('Unknown input frame')
 })
 // Recorded so a test can see a session end, whether Sotto disconnected or the reaper stopped it.
-lines.on('close', () => { clearInterval(timer); record('exit', { session }); process.exit(0) })
+// exit-delay.json: the `ms` this process takes to exit once its input closes, as a real CLI still finishing its
+// writes may.
+lines.on('close', () => {
+  clearInterval(timer)
+  const delayMs = existsSync(join(root, 'exit-delay.json')) ? JSON.parse(readFileSync(join(root, 'exit-delay.json'), 'utf8')).ms : 0
+  setTimeout(() => { record('exit', { session }); leave(); process.exit(0) }, delayMs)
+})

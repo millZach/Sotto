@@ -89,7 +89,9 @@ again when no CLI is running, when the running one refuses a request, and when t
 access: the CLI takes `bypassPermissions` only when bypassing was allowed at launch, and a CLI launched with that
 allowance keeps it, so those two changes go through a fresh start to keep the launch arguments those of the
 mode. Background work still refuses the fallback, and nothing is changed. If the CLI refused part of a change
-after taking the rest, what it took is set back first, so that stays true. A press that finds the CLI still
+after taking the rest, what it took is set back first, so that stays true. If it will not take that back either,
+the refusal could no longer say nothing was changed, so the adapter stops the CLI as it does for a lost answer,
+below. A press that finds the CLI still
 starting waits for that start and takes the path its result allows. The fallback records the new settings before
 it lets the old CLI go, so a start that comes in meanwhile, such as the window opening the thread, launches with
 them. Either way, an accepted change comes back with the snapshot that shows it, and the coordinator takes that
@@ -98,8 +100,16 @@ snapshot in place of reading the thread (ADR-0007's amendment for #318).
 A request whose answer is lost leaves the CLI on settings Sotto cannot know. The adapter stops that CLI, so
 nothing runs on settings the thread does not show, and saves the change as the one the next launch carries. It
 reports the change unconfirmed, the coordinator keeps its saved intent, and the thread shows the change from
-the launch that runs it, which is what reconciles the intent. Stopping ends any background work: a lost answer
-is the one case where a settings change still can.
+the launch that runs it, which is what reconciles the intent. Stopping ends any background work: a lost answer,
+or a partial change the CLI will not undo, is the one case where a settings change still can. When it does, the
+thread shows it the way it shows a CLI that exited under running work, in error with the work gone, and the
+result carries an error that names the work and says it stopped with the session. The coordinator shows that
+error in place of its own "did not confirm" and keeps the saved intent all the same.
+
+A CLI Sotto lets go can take half a second to exit, and its background work may still be writing to the session
+meanwhile. Every stop the adapter makes is recorded until the process has exited, and a start on that thread
+waits for it, so one session never has two CLIs, whether the stop came from a settings change, a rewind, a
+changed personal context or the session reaper.
 
 The adapter logs which path each change took, as event names and nothing else: `claude-settings-applied-live`,
 `claude-settings-applied-restart`, `claude-settings-live-rejected` and `claude-settings-unconfirmed`.

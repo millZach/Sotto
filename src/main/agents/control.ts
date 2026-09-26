@@ -2140,7 +2140,8 @@ export class AgentControl {
       return
     }
     if ((command.type === 'send' || command.type === 'steer') && draftId) this.setDelivery(command.threadId, draftId, result.accepted || result.uncertain ? 'uncertain' : 'failed')
-    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error('The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
+    // An adapter that knows more about what an unconfirmed action cost says it; the intent is kept either way.
+    if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw new Error(result.error ?? 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.')
     if ((command.type === 'configure-thread' || (command.type === 'send' || command.type === 'steer')) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
       // reconciliation; the thread is read again only when the adapter has none to give (#318).

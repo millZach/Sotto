@@ -28,6 +28,12 @@ export interface AgentHostResult {
    * reads only when it is absent. Never set on an uncertain result, which is reconciled from the outbox.
    */
   readonly snapshot?: AgentHostSnapshot
+  /**
+   * For an uncertain result: what the adapter knows was lost on the way, in words the user reads, such as
+   * background work that ended when an unconfirmed change stopped the provider's process. The coordinator shows
+   * it in place of its own "did not confirm" error, and keeps the outbox entry all the same.
+   */
+  readonly error?: string
 }
 /**
  * What Sotto asks a thread's own client to write on the side: a title, a branch name, a commit message or

@@ -63,6 +63,15 @@ it('changes the model and carries the thread\'s effort with it in one operation 
   expect(events).toEqual(['claude-settings-applied-live', 'claude-settings-applied-live'])
 })
 
+it('refuses a second settings change while the first is still going out, and says that is what is in the way', async () => {
+  const { f, id } = await fixture()
+  const first = f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
+  await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'auto' }))
+    .rejects.toThrow('Wait for this thread’s settings change to finish.')
+  expect((await first).accepted).toBe(true)
+  expect(await sent(f)).toEqual(['apply_flag_settings'])
+})
+
 it('puts back what the CLI took when it refuses the rest and background work rules out a restart', async () => {
   const { f, id, events } = await fixture()
   await f.action(id, { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'agent-task', task_type: 'local_agent', description: 'Review the diff', is_backgrounded: true, spawn_depth: 1 } })
@@ -78,6 +87,40 @@ it('puts back what the CLI took when it refuses the rest and background work rul
   expect(await thread(f, id)).toMatchObject({ modelId: 'fixture-model', reasoningEffort: 'low', backgroundWork: [expect.objectContaining({ label: 'Review the diff' })] })
   expect(await launches(f)).toBe(started)
   expect(events).toEqual(['claude-settings-live-rejected'])
+})
+
+it('says the background work stopped when the CLI will not take back the part of a change it took', async () => {
+  const { f, id, events } = await fixture()
+  await f.action(id, { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'agent-task', task_type: 'local_agent', description: 'Review the diff', is_backgrounded: true, spawn_depth: 1 } })
+  await expect.poll(async () => (await thread(f, id)).backgroundWork?.length).toBe(1)
+  // Every effort request is refused, so the model the CLI took cannot be set back with the level that goes with it.
+  await writeFile(join(f.root, 'settings-script.json'), JSON.stringify({ refuse: ['apply_flag_settings'] }))
+  const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-large', reasoningEffort: 'medium' })
+  expect(result).toMatchObject({ accepted: false, uncertain: true })
+  expect(result.error).toContain('Claude Code took only part of the settings change and would not undo it')
+  expect(result.error).toContain('"Review the diff" stopped with it')
+  expect(result.error).not.toContain('Nothing was changed')
+  expect(await sent(f)).toEqual(['set_model', 'apply_flag_settings', 'set_model', 'apply_flag_settings'])
+  // The thread shows the work ended the way it shows a CLI that exited under it.
+  const shown = await thread(f, id)
+  expect(shown.status).toBe('error')
+  expect(shown.backgroundWork).toBeUndefined()
+  expect(events).toEqual(['claude-settings-live-rejected', 'claude-settings-unconfirmed'])
+})
+
+it('says the background work stopped when a lost answer stops the CLI, and keeps the change unconfirmed', async () => {
+  const { f, id, events } = await fixture()
+  await f.action(id, { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'agent-task', task_type: 'local_agent', description: 'Review the diff', is_backgrounded: true, spawn_depth: 1 } })
+  await expect.poll(async () => (await thread(f, id)).backgroundWork?.length).toBe(1)
+  await f.liveSettings.silence()
+  const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
+  expect(result).toMatchObject({ accepted: false, uncertain: true })
+  expect(result.error).toContain('Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "Review the diff" stopped with it.')
+  expect(result.error).toContain('The session starts again with the new settings the next time you use the thread.')
+  const shown = await thread(f, id)
+  expect(shown.status).toBe('error')
+  expect(shown.backgroundWork).toBeUndefined()
+  expect(events).toEqual(['claude-settings-unconfirmed'])
 })
 
 it('starts the CLI again with the whole change when it takes only part of it and nothing is running', async () => {
@@ -149,6 +192,9 @@ it('reaches a CLI the window started just before the press, once it is up, rathe
 
 it('launches the CLI the window asks for while a restart closes the old one with the new settings, and only that one', async () => {
   const { f, id, events } = await fixture()
+  // The old CLI takes a while to exit, as one finishing its writes may. The fake records a violation if a second
+  // CLI starts on the session before it has, which reading the requests below reports.
+  await writeFile(join(f.root, 'exit-delay.json'), JSON.stringify({ ms: 300 }))
   const started = await launches(f)
   // Entering full access starts the CLI again. The window opening the thread asks for its CLI while the old one
   // is still closing, before the new settings would otherwise be recorded.
@@ -172,9 +218,27 @@ it('launches the CLI the window asks for after an unconfirmed change with the ch
     return log(...logged)
   }
   await f.liveSettings.silence()
+  // The CLI that never answered takes a while to exit; the new one waits for it (see the restart case above).
+  await writeFile(join(f.root, 'exit-delay.json'), JSON.stringify({ ms: 300 }))
   const started = await launches(f)
   expect(await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).toEqual({ accepted: false, uncertain: true })
   await expect.poll(async () => (await thread(f, id)).reasoningEffort).toBe('high')
   expect(await launches(f)).toBe(started + 1)
   expect(await f.liveSettings.effective(id)).toMatchObject({ reasoningEffort: 'high' })
+})
+
+it('starts a thread\'s CLI only once the one the reaper stopped has exited', async () => {
+  const { f, id } = await fixture()
+  await writeFile(join(f.root, 'exit-delay.json'), JSON.stringify({ ms: 300 }))
+  const started = await launches(f)
+  const internals = f.adapter as unknown as { stopSession(id: string): Promise<void> }
+  // The reaper lets the CLI go, and the window asks for the thread again before it has exited.
+  const stopping = internals.stopSession(id)
+  const reopened = f.adapter.refreshThread(id)
+  await Promise.all([stopping, reopened])
+  expect(await launches(f)).toBe(started + 1)
+  const records = await f.driver.requests()
+  const exit = records.findLastIndex(record => record.method === 'exit')
+  expect(exit).toBeGreaterThanOrEqual(0)
+  expect(records.findLastIndex(record => record.method === 'launch' || record.method === 'resume')).toBeGreaterThan(exit)
 })

@@ -67,6 +67,18 @@ const APPROVAL_SURFACE_LOST = 'Claude Code is not letting Sotto answer its permi
 /** Names what is still running, because a command such as a dev server may never finish on its own. */
 const backgroundWorkRunning = (work: readonly AgentBackgroundWork[], action: string): string =>
   `${work.length === 1 ? `"${work[0]!.label}" is` : `${work.length} background tasks are`} still running for this thread. Nothing was changed. Wait for ${work.length === 1 ? 'it' : 'them'} to finish, or ask Claude to stop ${work.length === 1 ? 'it' : 'them'}, before ${action}.`
+/**
+ * Stopping a thread's CLI ends the background work and watches it was running, so a stop Sotto makes on its own
+ * account names what ended with it: the user started that work, and it does not come back by itself.
+ */
+function workStopped(reason: string, work: readonly { label: string }[]): string {
+  const what = work.length === 1 ? `"${work[0]!.label}"` : `${work.length} background tasks`
+  const them = work.length === 1 ? 'it' : 'them'
+  return `${reason}, so Sotto stopped this thread's session, and ${what} stopped with it. The session starts again with the new settings the next time you use the thread. Ask Claude to start ${them} again if you still need ${them}.`
+}
+type ConfigureCommand = Extract<AgentHostCommand, { type: 'configure-thread' }>
+const SETTINGS_UNCONFIRMED = 'Claude Code did not confirm the settings change'
+const SETTINGS_PART_TAKEN = 'Claude Code took only part of the settings change and would not undo it'
 /** A thread's settings as its CLI runs them: what `--model`, `--effort` and `--permission-mode` said at launch. */
 type ClaudeSettings = { modelId: string; reasoningEffort: string | undefined; runtimeMode: AgentRuntimeMode }
 /** One control request and the setting it changes once the CLI answers success. */
@@ -77,7 +89,9 @@ type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
  * names only; a model, a level or a mode never reaches the log.
  */
 export type ClaudeSettingsEvent = 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
-const settingsOf = (alias: Alias): ClaudeSettings => ({ modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required' })
+/** What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required. */
+const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode'>): ClaudeSettings =>
+  ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required' })
 const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode
 /**
@@ -142,6 +156,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly personalContexts = new Map<string, string>()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly starting = new Map<string, Promise<Runtime>>()
+  /**
+   * Per thread: a CLI Sotto let go, until it has exited. It can take half a second, and background work may still
+   * be writing to the session meanwhile, so a start waits for it: one session never has two CLIs.
+   */
+  private readonly closing = new Map<string, Promise<void>>()
   private readonly logs = new Map<string, ClaudeSessionLog>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
@@ -154,6 +173,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   })
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
   private readonly dispatching = new Set<string>()
+  /** The threads whose settings change is being dispatched now: the part of `dispatching` a refusal names as such. */
+  private readonly configuring = new Set<string>()
   private readonly logOrigins = new Map<string, Set<string>>()
   private readonly lastLogDigest = new Map<string, string>()
   private readonly staleContexts = new Set<string>()
@@ -210,12 +231,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private async stopSession(id: string): Promise<void> {
     const runtime = this.runtimes.get(id)
     if (!runtime) return
-    this.runtimes.delete(id)
-    this.clearMonitoring(id)
     this.messageLog.release(id)
-    runtime.protocol.stop()
-    await runtime.protocol.closed
+    await this.stopRuntime(id, runtime)
     this.flushCursors()
+  }
+  /**
+   * Let this thread's CLI go and wait until it has exited; a start that comes in meanwhile waits too. Returns the
+   * background work and watches the CLI was still running for the thread, which ended with it: the CLI's own
+   * exit handler does not see a stop Sotto made, so a caller that may stop work says so itself.
+   */
+  private async stopRuntime(id: string, runtime: Runtime): Promise<{ label: string }[]> {
+    const thread = this.threads.get(id)
+    let ended: { label: string }[] = []
+    if (this.runtimes.get(id) === runtime) {
+      ended = thread?.backgroundWork?.length ? [...thread.backgroundWork] : [...thread?.monitoring ?? []]
+      this.runtimes.delete(id); this.clearMonitoring(id)
+    }
+    runtime.protocol.stop()
+    const closed = runtime.protocol.closed
+    this.closing.set(id, closed)
+    try { await closed } finally { if (this.closing.get(id) === closed) this.closing.delete(id) }
+    return ended
   }
   /** Write the cursors a pending cadence still owes, rather than losing them with the session. */
   private flushCursors(): void {
@@ -368,7 +404,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       alias.rollbackPending = { sourceSessionId, sourceDigest: claudeDigest(JSON.stringify(messages)), ...(boundary ? { boundary } : {}) }
       try { await this.persist() } catch (error) { delete alias.rollbackPending; throw error }
       const runtime = this.runtimes.get(id)
-      if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+      if (runtime) await this.stopRuntime(id, runtime)
       forkDispatched = true
       const targetSessionId = boundary ? await history.fork(sourceSessionId, boundary) : randomUUID()
       alias.rollbackPending.targetSessionId = targetSessionId; await this.persist()
@@ -493,7 +529,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       try {
         if (this.staleContexts.delete(id)) {
           const stale = this.runtimes.get(id)
-          if (stale) { await this.denyPending(id, stale); this.runtimes.delete(id); this.clearMonitoring(id); stale.protocol.stop(); await stale.protocol.closed }
+          if (stale) { await this.denyPending(id, stale); await this.stopRuntime(id, stale) }
         }
         const runtime = await this.start(id)
         verifyFileMentions(command.text, command.files)
@@ -568,13 +604,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * request, or no CLI running, falls back to starting the CLI again with the new settings, which is the one
    * path that waits for background work. Accepted means the CLI confirmed the change or the restart finished.
    */
-  private async configure(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>): Promise<AgentHostResult> {
+  private async configure(id: string, command: ConfigureCommand): Promise<AgentHostResult> {
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
     validateThreadOptions(this.state, command, alias.modelId)
+    if (this.configuring.has(id)) throw new Error('Wait for this thread’s settings change to finish.')
     if (this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Claude turn to finish before changing settings.')
     const before = settingsOf(alias)
     const after: ClaudeSettings = { modelId: command.modelId ?? before.modelId, reasoningEffort: command.reasoningEffort ?? before.reasoningEffort, runtimeMode: command.runtimeMode ?? before.runtimeMode }
-    this.dispatching.add(id)
+    this.dispatching.add(id); this.configuring.add(id)
     try {
       // A CLI still starting is the one the change should reach, once it has.
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
@@ -582,17 +619,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (runtime && steps) {
         const live = await this.applySteps(runtime, before, after, steps)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
-        if (live.outcome === 'uncertain') return await this.unconfirmedSettings(id, runtime, command, after)
+        if (live.outcome === 'uncertain') return await this.unconfirmedSettings(id, runtime, command, after, SETTINGS_UNCONFIRMED)
         this.options.logEvent?.('claude-settings-live-rejected')
         // A restart would end the background work, so the refusal below stands. Whatever the CLI already took
-        // is put back first, because the refusal says nothing was changed.
+        // is put back first, because the refusal says nothing was changed. When the CLI will not take it back
+        // either, that is no longer true, and the CLI is stopped as it is for a lost answer.
         if (thread.backgroundWork?.length && !sameSettings(live.reached, before)) {
           const back = await this.applySteps(runtime, live.reached, before, settingsSteps(live.reached, before)!)
-          if (back.outcome !== 'applied') return await this.unconfirmedSettings(id, runtime, command, after)
+          if (back.outcome !== 'applied') {
+            return await this.unconfirmedSettings(id, runtime, command, after, back.outcome === 'rejected' ? SETTINGS_PART_TAKEN : SETTINGS_UNCONFIRMED)
+          }
         }
       }
       return await this.restartWithSettings(id, command, after)
-    } finally { this.dispatching.delete(id) }
+    } finally { this.dispatching.delete(id); this.configuring.delete(id) }
   }
   /** Send each step in turn and stop at the first the CLI does not confirm; `reached` is what it confirmed. */
   private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[]): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings }> {
@@ -605,16 +645,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return { outcome: 'applied', reached }
   }
   /** Make these the settings the alias records; a thread saved without a mode keeps none until one is chosen. */
-  private recordSettings(alias: Alias, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): void {
+  private recordSettings(alias: Alias, command: ConfigureCommand, settings: ClaudeSettings): void {
     alias.modelId = settings.modelId; alias.reasoningEffort = settings.reasoningEffort
     if (command.runtimeMode) alias.runtimeMode = settings.runtimeMode
   }
   private showSettings(id: string): void {
-    const alias = this.aliases[id]!, thread = this.threads.get(id)!
-    thread.modelId = alias.modelId; thread.reasoningEffort = alias.reasoningEffort; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
+    const shown = settingsOf(this.aliases[id]!), thread = this.threads.get(id)!
+    thread.modelId = shown.modelId; thread.reasoningEffort = shown.reasoningEffort; thread.runtimeMode = shown.runtimeMode
   }
   /** The running CLI confirmed every step: save, show and hand back the snapshot that says so. */
-  private async settleSettings(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+  private async settleSettings(id: string, command: ConfigureCommand, settings: ClaudeSettings): Promise<AgentHostResult> {
     this.recordSettings(this.aliases[id]!, command, settings)
     let saved = true
     try { await this.persist() } catch { saved = false }
@@ -628,29 +668,32 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * The CLI may be running either set of settings, so it is stopped: nothing runs on settings the thread does
    * not show. The change becomes the one the next launch carries, and the thread shows it from that launch,
    * which is when the coordinator's saved intent reconciles. Until then the thread shows what it had.
+   * Stopping ends any background work the CLI was still running. The thread shows that as it shows a CLI that
+   * exited under running work, and the result carries an error naming what stopped, which `reason` begins.
    */
-  private async unconfirmedSettings(id: string, runtime: Runtime, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+  private async unconfirmedSettings(id: string, runtime: Runtime, command: ConfigureCommand, settings: ClaudeSettings, reason: string): Promise<AgentHostResult> {
     this.options.logEvent?.('claude-settings-unconfirmed')
     // Recorded before the CLI is let go, so a start that comes in while it closes launches with the change.
     this.recordSettings(this.aliases[id]!, command, settings)
-    if (this.runtimes.get(id) === runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    const ended = await this.stopRuntime(id, runtime)
+    if (ended.length) this.threads.get(id)!.status = 'error'
     await this.persist().catch(() => undefined)
     this.emit()
-    return { accepted: false, uncertain: true }
+    return ended.length ? { accepted: false, uncertain: true, error: workStopped(reason, ended) } : { accepted: false, uncertain: true }
   }
   /**
    * Start the CLI again with the new settings: the path when no CLI is running or the running one refused a
    * request. A restart ends the agents or commands the CLI is still running for this thread, so it waits for them.
    */
-  private async restartWithSettings(id: string, command: Extract<AgentHostCommand, { type: 'configure-thread' }>, settings: ClaudeSettings): Promise<AgentHostResult> {
+  private async restartWithSettings(id: string, command: ConfigureCommand, settings: ClaudeSettings): Promise<AgentHostResult> {
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
     const runtime = this.runtimes.get(id)
     // Recorded before the old CLI is let go. Once it leaves `runtimes`, anything that opens the thread (the
-    // window watching it, a read) starts a CLI, and that CLI must launch with these settings: the start below
-    // joins it rather than launching another, and accepted has to mean the CLI runs them.
+    // window watching it, a read) starts a CLI once the old one has exited, and that CLI must launch with these
+    // settings: the start below joins it rather than launching another, and accepted has to mean the CLI runs them.
     this.recordSettings(alias, command, settings)
-    if (runtime) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); await runtime.protocol.closed }
+    if (runtime) await this.stopRuntime(id, runtime)
     await this.persist(); this.showSettings(id)
     await this.start(id); this.emit()
     this.options.logEvent?.('claude-settings-applied-restart')
@@ -702,7 +745,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try { const started = await work; this.messageLog.pin(id); return started } finally { this.starting.delete(id) }
   }
   private async launch(id: string): Promise<Runtime> {
-    const alias = this.aliases[id]!; const generation = this.generation
+    const generation = this.generation
+    // A CLI Sotto let go may still be exiting, and this one resumes the same session, so it waits.
+    await this.closing.get(id)
+    if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
+    const alias = this.aliases[id]!
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; reconnect to reconcile its native history.')
     const resume = await this.log(id).exists()
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
@@ -746,11 +793,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (object(pending)) this.frame(id, pending as ClaudeFrame)
       }
     }
-    catch (error) { this.runtimes.delete(id); this.clearMonitoring(id); runtime.protocol.stop(); throw error }
+    catch (error) { void this.stopRuntime(id, runtime); throw error }
     if (generation !== this.generation) { runtime.protocol.stop(); throw new Error('Claude connection was cancelled.') }
     // A change left unconfirmed is shown from the launch that carries it (see `unconfirmedSettings`).
-    const shown = this.threads.get(id)!
-    if (shown.modelId !== alias.modelId || shown.reasoningEffort !== alias.reasoningEffort || shown.runtimeMode !== (alias.runtimeMode ?? 'approval-required')) { this.showSettings(id); this.emit() }
+    if (!sameSettings(settingsOf(this.threads.get(id)!), settingsOf(alias))) { this.showSettings(id); this.emit() }
     return runtime
   }
   private frame(id: string, frame: ClaudeFrame): void {
