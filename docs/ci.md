@@ -21,7 +21,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
 
 - **Playwright end-to-end tests** (`npm run test:e2e`) and the widget design captures — they need a real Electron window and committed reference images captured on a developer machine.
 - **Live provider suites.** Every one of them is gated behind an explicit `SOTTO_*` environment variable (`SOTTO_CLAUDE_LIVE`, `SOTTO_GROK_LIVE`, `SOTTO_NATIVE_THREADS_LIVE`, `SOTTO_SIDE_WRITING_LIVE`, and friends). CI sets none of them and holds no credentials, so they stay skipped.
-- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. The benchmarks that build their own workload and only report timings, `claudeFramer.perf.test.ts`, `commandReply.perf.test.ts`, `previewSend.perf.test.ts`, `screenshotTotal.perf.test.tsx` and `threadCommandLanes.perf.test.tsx`, skip themselves unless `SOTTO_PERF_BENCH=1` is set (`tests/fixtures/perfBench.ts`, which also holds the median they report). They tell a run nothing and cost it seconds, so CI never sets the switch. Two need no data and assert something other than time, so they do run: `markdownRender.perf.test.tsx` renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters; `detailCacheRecency.perf.test.tsx` scripts a session over the window's connection and always checks that coming back to the thread the user works in never fetches its detail again. The markdown file's elapsed-time comparison is opt-in like the other stopwatch budgets below.
+- **Perf benchmarks.** The `tests/perf/*` files that read a real workspace skip themselves when neither `SOTTO_PERF_DATA` nor a `%APPDATA%\sotto` data folder exists. A GitHub runner has neither, so they report as skipped rather than failing. The benchmarks that build their own workload and only report timings, `claudeFramer.perf.test.ts`, `claudeSettings.perf.test.ts`, `commandReply.perf.test.ts`, `previewSend.perf.test.ts`, `screenshotTotal.perf.test.tsx`, `threadCommandLanes.perf.test.tsx` and `threadSettings.perf.test.ts`, skip themselves unless `SOTTO_PERF_BENCH=1` is set (`tests/fixtures/perfBench.ts`, which also holds the median they report). They tell a run nothing and cost it seconds, so CI never sets the switch. Two need no data and assert something other than time, so they do run: `markdownRender.perf.test.tsx` renders the same reply incrementally and whole, logs both timings, and always checks that incremental parsing processes less than a third of the characters; `detailCacheRecency.perf.test.tsx` scripts a session over the window's connection and always checks that coming back to the thread the user works in never fetches its detail again. The markdown file's elapsed-time comparison is opt-in like the other stopwatch budgets below.
 
   Run a timing benchmark by hand on an idle machine. Each prints its medians to the console; the matching note in `docs/perf/` says what they mean:
 
@@ -52,6 +52,19 @@ SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorke
 ```
 
 Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.spec.ts` for the Electron provider/permission journey, keyboard path, independent-provider behavior, coordinator separation, and light/dark/minimum-size captures. The verification note records actual platforms and results; a fixture pass is not a native-platform pass.
+
+## Claude settings live check
+
+`tests/integration/claudeSettingsLive.test.ts` is gated by `SOTTO_CLAUDE_LIVE=1`. It starts one thread's CLI in a temporary synthetic project with the installed, signed-in Claude Code and changes that thread's effort, model and permission mode over the control channel, then reads back what the CLI reports. It sends no prompt and runs no model turn. It prints the CLI version, the IDs of the models it moved between, whether each value matched and the timings, never a prompt, a reply or a key. It was last run on Claude Code 2.1.283 (`docs/verification/2026-09-25-claude-settings-live.md`):
+
+```powershell
+$env:SOTTO_CLAUDE_LIVE = '1'
+npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept
+```
+
+```sh
+SOTTO_CLAUDE_LIVE=1 npx vitest run tests/integration/claudeSettingsLive.test.ts --maxWorkers=1 --disable-console-intercept
+```
 
 ## Gated assertions
 

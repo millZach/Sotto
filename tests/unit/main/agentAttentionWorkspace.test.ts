@@ -320,6 +320,7 @@ describe.each(['send', 'answer'] as const)('supervision %s authority at the dura
     await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix failures' })
     const original = AtomicJsonStore.prototype.write
     let injected = false
+    let refreshed: Promise<unknown> = Promise.resolve()
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value) {
       await original.call(this, value)
       if (injected || !(value as { outbox?: unknown[] }).outbox?.length) return
@@ -332,12 +333,20 @@ describe.each(['send', 'answer'] as const)('supervision %s authority at the dura
         f.host.transform = snapshot => ({ ...snapshot, threads: snapshot.threads.map(thread => thread.id !== 'workshop' ? thread : {
           ...thread, ...(change === 'closed' ? { archivedAt: new Date().toISOString() } : { status: 'running' as const, requests: [] }),
         }) })
-        await f.control.command({ type: 'refresh' })
+        // The refreshed thread lands while the outbox write is outstanding. The refresh changes nothing the
+        // coordinator saves, so its own save waits for this very write and is not awaited inside it.
+        refreshed = f.control.command({ type: 'refresh' })
+        await vi.waitFor(() => {
+          const thread = f.control.get().host.threads.find(item => item.id === 'workshop')
+          if (change === 'closed') expect(thread?.archivedAt).toEqual(expect.any(String))
+          else expect(thread?.status).toBe('running')
+        })
       }
     })
     f.host.event({ type: action === 'send' ? 'failure' : 'question', requestId: 'original-question', threadId: 'workshop', text: 'Needs fixing', status: 'idle' })
     await vi.waitFor(() => expect(injected).toBe(true))
     await vi.waitFor(() => expect((f.control as unknown as { deciding: Set<string> }).deciding.size).toBe(0))
+    await refreshed
     expect(f.host.attempts).toEqual([])
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
     if (change === 'permission') expect(f.control.get().host.threads[0]?.requests.some(request => request.id === 'late')).toBe(true)

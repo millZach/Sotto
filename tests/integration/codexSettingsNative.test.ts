@@ -19,7 +19,9 @@ it.skipIf(process.env.SOTTO_CODEX_SETTINGS_LIVE !== '1').each(['approval-require
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'probe', title: 'Settings probe', path: directory })
     expect(await host.execute({ type: 'create-thread', commandId: randomUUID(), projectId: 'probe', threadId, title: 'Synthetic settings verification', modelId: model!.id, reasoningEffort: 'high', runtimeMode })).toEqual({ accepted: true })
     for (const reasoningEffort of ['ultra', 'high', 'ultra']) {
-      expect(await host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, reasoningEffort })).toEqual({ accepted: true })
+      const result = await host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, reasoningEffort })
+      expect(result.accepted).toBe(true)
+      expect(result.snapshot?.threads.find(thread => thread.id === threadId)).toMatchObject({ reasoningEffort, runtimeMode })
       const changed = await host.snapshot()
       expect(changed.connected).toBe(true)
       expect(changed.threads.find(thread => thread.id === threadId)).toMatchObject({ reasoningEffort, runtimeMode })

@@ -19,7 +19,30 @@ export type AgentHostCommand =
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
-export interface AgentHostResult { readonly accepted: boolean; readonly uncertain?: boolean }
+export interface AgentHostResult {
+  readonly accepted: boolean
+  readonly uncertain?: boolean
+  /**
+   * For `configure-thread`: the snapshot the adapter emitted once the provider confirmed the change, carrying
+   * the thread's effective settings. The coordinator accepts it in place of reading the thread again, and
+   * reads only when it is absent. Never set on an uncertain result, which is reconciled from the outbox.
+   */
+  readonly snapshot?: AgentHostSnapshot
+  /**
+   * For an uncertain result: what the adapter knows was lost on the way, in words the user reads, such as
+   * background work that ended when an unconfirmed change stopped the provider's process. The coordinator shows
+   * it in place of its own "did not confirm" error, and keeps the outbox entry all the same.
+   */
+  readonly error?: string
+}
+/**
+ * A settings change's result as a host layer passes it up: the result without its snapshot, and the snapshot only
+ * when the provider confirmed the change. One on any other result is dropped rather than trusted.
+ */
+export function confirmedSettingsSnapshot(result: AgentHostResult): [Omit<AgentHostResult, 'snapshot'>, AgentHostSnapshot | undefined] {
+  const { snapshot, ...rest } = result
+  return [rest, rest.accepted && !rest.uncertain ? snapshot : undefined]
+}
 /**
  * What Sotto asks a thread's own client to write on the side: a title, a branch name, a commit message or
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a

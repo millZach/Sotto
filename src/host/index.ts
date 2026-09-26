@@ -83,6 +83,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       logFailure: code => options.log?.(code),
       // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0019, ADR-0025).
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
+      claudeSettingsLog: event => options.log?.(event),
     })
     const pairing = new PairedClients(directory)
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined

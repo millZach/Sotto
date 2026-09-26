@@ -43,6 +43,8 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
     await writeFile(join(root, 'control.json'), JSON.stringify({ id: randomUUID(), threadId: await realId(sessionId), ...value }))
   }
   const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId,
+    // A settings change comes back with the snapshot Codex's confirmation produced; a delayed reply loses it (#318).
+    settings: { snapshot: true, loseConfirmation: () => script({ delay: { method: 'thread/settings/update', ms: requestTimeoutMs + 1000 }, suppressNotifications: true }) },
     sideWriting: {
       answer: (text: string) => writeFile(join(root, 'oneshot.json'), JSON.stringify({ text })),
       calls: async () => (await oneShots(root)).map(call => ({ cwd: String(call.cwd), model: flag(call.args, '--model'), material: String(call.input) })),

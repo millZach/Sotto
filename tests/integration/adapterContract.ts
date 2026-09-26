@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentHost, ThreadHostEvent } from '../../src/main/agents/host'
+import type { AgentHost, AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import type { AgentHostSnapshot } from '../../src/shared/agents'
+import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 
@@ -55,6 +55,23 @@ export interface AdapterFixture {
     answer(text: string): Promise<void>
     calls(): Promise<{ cwd: string; model: string | undefined; material: string }[]>
   }
+  /**
+   * Where a provider applies thread settings to its running session in place (#317): script how it answers
+   * settings requests from now on (refuse them, lose the answer, or answer normally), and read what the running
+   * session would use for its next turn and which process that is. Absent where a provider does not.
+   */
+  liveSettings?: {
+    refuse(): Promise<void>
+    silence(): Promise<void>
+    answer(): Promise<void>
+    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string }>
+  }
+  /**
+   * What a thread settings change hands back (#318). `snapshot`: a change the provider confirmed comes back with
+   * the snapshot the adapter emitted for it; absent, a result may leave it out and the coordinator reads the
+   * thread instead. `loseConfirmation`: script the next settings change's confirmation away, where the fixture can.
+   */
+  settings?: { snapshot: boolean; loseConfirmation?(): Promise<void> }
 }
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
@@ -326,6 +343,163 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const quiet = await create('Quiet thread')
       await untilStopped(quiet).toBe(true)
       expect(await stopped(sessionId)).toBe(false)
+    })
+  })
+
+  // Thread settings on a live session (#317). A change reaches the running session in place; a provider that
+  // refuses it falls back to starting the session again; a lost answer is left for the coordinator's saved
+  // intent to reconcile. Runs where the fixture offers `liveSettings`.
+  describe(`${name} settings on a live session`, () => {
+    let f: AdapterFixture
+    let sessionId: string
+    type Change = { reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }
+    const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === sessionId)!
+    const configure = (change: Change) => f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...change })
+    /** One chip press each: an effort level and a permission mode the thread is not on, from what its model offers. */
+    const changes = async (): Promise<Change[]> => {
+      const current = await thread()
+      const model = (await f.host.snapshot()).models.find(candidate => candidate.id === current.modelId)!
+      const reasoningEffort = model.reasoningEfforts?.find(level => level !== current.reasoningEffort)
+      const runtimeMode = (['auto-accept-edits', 'auto', 'approval-required'] as const).find(mode => mode !== current.runtimeMode && model.runtimeModes?.includes(mode))
+      return [...(reasoningEffort ? [{ reasoningEffort }] : []), ...(runtimeMode ? [{ runtimeMode }] : [])]
+    }
+    const shown = (result: AgentHostResult) => result.snapshot?.threads.find(t => t.id === sessionId)
+    /** A thread whose session is running. False when this fixture does not apply settings in place. */
+    const open = async (): Promise<boolean> => {
+      f = await factory(); await f.host.connect()
+      if (!f.liveSettings || !f.sessions) return false
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      sessionId = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
+      f.host.observeThreads?.([sessionId])
+      await f.host.refreshThread?.(sessionId)
+      return true
+    }
+    afterEach(async () => { await f?.cleanup() })
+
+    it('applies each change to the running session without starting another', async context => {
+      if (!await open()) { context.skip(); return }
+      const starts = await f.sessions!.starts(sessionId)
+      const { process } = await f.liveSettings!.effective(sessionId)
+      const presses = await changes()
+      expect(presses.length).toBeGreaterThan(0)
+      for (const press of presses) {
+        const result = await configure(press)
+        expect(result.accepted).toBe(true)
+        // The snapshot handed back is the one the change produced, so the coordinator need not read again.
+        expect(shown(result)).toMatchObject(press)
+        expect(await thread()).toMatchObject(press)
+      }
+      expect(await f.liveSettings!.effective(sessionId)).toMatchObject({ process, ...Object.assign({}, ...presses) })
+      expect(await f.sessions!.starts(sessionId)).toBe(starts)
+    })
+
+    it('starts the session again when the provider refuses a change, and still ends accepted', async context => {
+      if (!await open()) { context.skip(); return }
+      const starts = await f.sessions!.starts(sessionId)
+      const { process } = await f.liveSettings!.effective(sessionId)
+      const [press] = await changes()
+      await f.liveSettings!.refuse()
+      const result = await configure(press!)
+      expect(result.accepted).toBe(true)
+      expect(shown(result)).toMatchObject(press!)
+      expect(await f.sessions!.starts(sessionId)).toBe(starts + 1)
+      const effective = await f.liveSettings!.effective(sessionId)
+      expect(effective).toMatchObject(press!)
+      expect(effective.process).not.toBe(process)
+    })
+
+    it('leaves a change whose answer was lost unconfirmed, until the session that runs it starts', async context => {
+      if (!await open()) { context.skip(); return }
+      const before = await thread()
+      const [press] = await changes()
+      await f.liveSettings!.silence()
+      // No snapshot: an uncertain result is reconciled from the coordinator's saved intent, never accepted.
+      expect(await configure(press!)).toEqual({ accepted: false, uncertain: true })
+      expect(await thread()).toMatchObject({ reasoningEffort: before.reasoningEffort, runtimeMode: before.runtimeMode })
+      await f.liveSettings!.answer()
+      // Nothing is resent: the next session carries the change, and the thread shows it from then on, which is
+      // what the saved intent reconciles against.
+      await f.host.refreshThread?.(sessionId)
+      await expect.poll(async () => thread()).toMatchObject(press!)
+      expect(await f.liveSettings!.effective(sessionId)).toMatchObject(press!)
+    })
+
+    it('applies a change while background work runs, and the work carries on', async context => {
+      if (!await open() || !f.driver.backgroundWork) { context.skip(); return }
+      await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'own-message', text: 'Synthetic prompt' })
+      await f.driver.backgroundWork.completeLeaving(sessionId, 'Started a background agent', 'Review the diff')
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      await expect.poll(async () => (await thread()).status).toBe('idle')
+      const starts = await f.sessions!.starts(sessionId)
+      const [press] = await changes()
+      expect((await configure(press!)).accepted).toBe(true)
+      expect(await thread()).toMatchObject(press!)
+      expect((await thread()).backgroundWork?.map(task => task.label)).toEqual(['Review the diff'])
+      expect(await f.sessions!.starts(sessionId)).toBe(starts)
+      // A refused change would need a restart, which would end the work, so it is refused and nothing changes.
+      await f.liveSettings!.refuse()
+      const settled = await thread()
+      const [again] = await changes()
+      await expect(configure(again!)).rejects.toThrow('still running')
+      expect(await thread()).toMatchObject({ reasoningEffort: settled.reasoningEffort, runtimeMode: settled.runtimeMode })
+      expect((await thread()).backgroundWork).toHaveLength(1)
+      expect(await f.sessions!.starts(sessionId)).toBe(starts)
+    })
+  })
+
+  // Thread settings results (#318): what a settings change hands back for the coordinator to reconcile against,
+  // on every adapter. The section above covers how a live session takes the change.
+  describe(`${name} thread settings result`, () => {
+    let f: AdapterFixture
+    let sessionId: string
+    type Settings = Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode'>
+    /** Connect and make one watched thread. */
+    const open = async (): Promise<void> => {
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      sessionId = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
+      f.host.observeThreads?.([sessionId])
+    }
+    beforeEach(async () => { f = await factory() })
+    afterEach(async () => { await f?.cleanup() })
+    /** A permission setting this thread is not on: the provider's own mode where it names its own, otherwise one of Sotto's. */
+    const change = async (): Promise<Partial<Settings> | undefined> => {
+      await open()
+      const snapshot = await f.host.snapshot()
+      const current = snapshot.threads.find(thread => thread.id === sessionId)!
+      if (!snapshot.capabilities.configureThread) return undefined
+      const model = snapshot.models.find(item => item.id === current.modelId)
+      const providerMode = model?.providerModes?.find(mode => mode.id !== current.providerMode)
+      if (providerMode) return { providerMode: providerMode.id }
+      const runtimeMode = model?.runtimeModes?.find(mode => mode !== current.runtimeMode)
+      return runtimeMode ? { runtimeMode } : undefined
+    }
+    const settingsOf = (thread: AgentThread | undefined): Settings => ({ modelId: thread?.modelId ?? '', reasoningEffort: thread?.reasoningEffort,
+      runtimeMode: thread?.runtimeMode, providerMode: thread?.providerMode })
+
+    it('hands back the snapshot of a confirmed change, carrying the settings the adapter reports', async context => {
+      const requested = await change()
+      if (!requested) { context.skip(); return }
+      const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
+      expect(result.accepted).toBe(true)
+      expect(result.uncertain).toBeFalsy()
+      if (f.settings?.snapshot) expect(result.snapshot).toBeDefined()
+      if (!result.snapshot) return
+      // What came back shows the change, and is what the adapter goes on to report: it can stand in for a read.
+      const handed = result.snapshot.threads.find(thread => thread.id === sessionId)
+      expect(handed).toMatchObject(requested)
+      expect(settingsOf(handed)).toEqual(settingsOf((await f.host.snapshot()).threads.find(thread => thread.id === sessionId)))
+    })
+
+    it('carries no snapshot on an uncertain change', async context => {
+      if (!f.settings?.loseConfirmation) { context.skip(); return }
+      const requested = await change()
+      if (!requested) { context.skip(); return }
+      await f.settings.loseConfirmation()
+      const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: sessionId, ...requested })
+      expect(result).toEqual({ accepted: false, uncertain: true })
     })
   })
 }

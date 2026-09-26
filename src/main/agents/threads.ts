@@ -249,8 +249,10 @@ export class SottoThreadHost implements AgentHost {
     // Persist creation identity before dispatch, including when the provider loses its acknowledgment.
     await this.registry.flush()
     const result = await this.inner.execute(translated)
+    // A settings change's snapshot crosses this boundary the way every snapshot does: under Sotto's thread IDs.
+    const mapped = result.snapshot ? { ...result, snapshot: this.mapSnapshot(result.snapshot) } : result
     await this.registry.flush()
-    return result
+    return mapped
   }
 
   observeThreads(threadIds: readonly string[]): void {

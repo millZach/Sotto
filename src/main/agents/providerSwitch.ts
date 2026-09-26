@@ -7,7 +7,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { cloneActivitySnapshot, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent } from './host'
+import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -299,10 +299,14 @@ export class ConfiguredProviderHost implements AgentHost {
     const capabilities = this.slots.get(id)!.status.capabilities
     const needed = command.type === 'send' ? 'submit' : command.type === 'interrupt' ? 'interrupt' : command.type === 'compact-thread' ? 'compact' : command.type === 'configure-thread' ? 'configureThread' : undefined
     if (needed && !capabilities[needed]) throw new Error('This provider does not support that thread action.')
-    if (command.type === 'configure-thread' && command.modelId !== undefined) {
-      return this.options.hosts[id].execute({ ...command, modelId: nativeEntityId(id, 'model', command.modelId) })
-    }
-    return this.options.hosts[id].execute(command)
+    if (command.type !== 'configure-thread') return this.options.hosts[id].execute(command)
+    const slot = this.slots.get(id)!; const epoch = slot.epoch
+    const [result, snapshot] = confirmedSettingsSnapshot(await this.options.hosts[id].execute(command.modelId !== undefined ? { ...command, modelId: nativeEntityId(id, 'model', command.modelId) } : command))
+    // The provider's snapshot of a confirmed change becomes the whole view, as a read of the thread would.
+    // One from a connection that has since changed is dropped.
+    if (!snapshot || slot.epoch !== epoch) return result
+    this.accept(id, snapshot)
+    return { ...result, snapshot: cloneHostSnapshot(this.aggregate()) }
   }
   observeThreads(ids: readonly string[]): void {
     this.observed = [...ids]

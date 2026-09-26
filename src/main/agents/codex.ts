@@ -26,7 +26,7 @@ import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscri
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
 import { answerRequest, declineRequest, pendingRequest, requestKey, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
-import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { SessionReaper } from './sessionReaper'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type IdentityItem } from './codexMessageIdentity'
@@ -860,8 +860,7 @@ export class CodexAppServerHost implements AgentHost {
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the thread and resolve pending requests before changing settings.')
           validateThreadOptions(this.state, command, alias.modelId)
           const modelId = command.modelId ?? alias.modelId
-          const reasoningEffort = command.reasoningEffort ?? (command.modelId !== undefined
-            ? this.state.models.find(model => model.id === modelId)?.defaultReasoningEffort : alias.reasoningEffort)
+          const reasoningEffort = effortAfterChange(this.state, command, alias.reasoningEffort)
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
           const policy = runtimePolicy(mode)
           const previousPendingSettings = alias.pendingSettings
@@ -893,6 +892,9 @@ export class CodexAppServerHost implements AgentHost {
             confirmation.settle(false)
             if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
           }
+          // Codex's own notification confirmed the effective values and applySettings emitted them: that snapshot
+          // is the reconciliation, so the coordinator does not read the whole transcript again.
+          return { accepted: true, snapshot: this.current() }
         } else if (command.type === 'steer') {
           const thread = this.ensureThread(id)
           const expectedTurnId = this.runningTurns.get(id)

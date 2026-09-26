@@ -225,14 +225,22 @@ describe('Claude recovery and safety', () => {
     await expect.poll(async () => (await launches()).length).toBe(before + 1)
     expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'auto', prompts: 'host', allowBypass: false })
   })
-  it('restarts the native runtime with the configured mode', async () => {
-    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId: id, runtimeMode: 'full-access' })).toEqual({ accepted: true })
+  it('enters and leaves full access by starting the native runtime again, so bypassing is allowed only in that mode', async () => {
+    const before = (await launches()).length
+    expect((await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId: id, runtimeMode: 'full-access' })).accepted).toBe(true)
+    expect(await launches()).toHaveLength(before + 1)
     expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'bypassPermissions', prompts: 'host', allowBypass: true })
     expect((await thread()).runtimeMode).toBe('full-access')
     expect(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id].runtimeMode).toBe('full-access')
-    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config-2', threadId: id, runtimeMode: 'auto-accept-edits' })).toEqual({ accepted: true })
+    expect((await f.host.execute({ type: 'configure-thread', commandId: 'config-2', threadId: id, runtimeMode: 'auto-accept-edits' })).accepted).toBe(true)
+    expect(await launches()).toHaveLength(before + 2)
     expect(permission((await launches()).at(-1)!)).toEqual({ mode: 'acceptEdits', prompts: 'host', allowBypass: false })
     expect((await thread()).runtimeMode).toBe('auto-accept-edits')
+    // Between the other modes the running CLI takes the change in place.
+    expect((await f.host.execute({ type: 'configure-thread', commandId: 'config-3', threadId: id, runtimeMode: 'auto' })).accepted).toBe(true)
+    expect(await launches()).toHaveLength(before + 2)
+    expect((await f.liveSettings.effective(id)).runtimeMode).toBe('auto')
+    expect(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))[id].runtimeMode).toBe('auto')
   })
   it('keeps native and adapter identifiers behind the durable Sotto thread registry', async () => {
     let registry = new ThreadRegistry(f.root)

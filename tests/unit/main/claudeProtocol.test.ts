@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
 
@@ -136,6 +136,24 @@ describe('ClaudeProtocol control requests', () => {
     expect(order).toEqual(['first', 'second'])
     // Every control response is still a frame for the adapter.
     expect(frames.map(frame => frame.type)).toEqual(['control_response', 'control_response', 'control_response'])
+  })
+
+  it('reads a success with no body as empty, and tells a refusal from an answer it cannot read', async () => {
+    const { protocol, written, send } = start()
+    const bodiless = protocol.control({ subtype: 'set_model', model: 'opus' })
+    const refused = protocol.control({ subtype: 'set_permission_mode', mode: 'bypassPermissions' }).catch((error: Error) => error)
+    const unreadable = protocol.control({ subtype: 'apply_flag_settings', settings: { effortLevel: 'high' } }).catch((error: Error) => error)
+    await send()
+    const [a, b, c] = written.map(frame => frame.request_id as string)
+    const response = (id: string, body: ClaudeFrame) => `${JSON.stringify({ type: 'control_response', response: { request_id: id, ...body } })}
+`
+    await send(response(a!, { subtype: 'success' }) + response(b!, { subtype: 'error', error: 'no' }) + response(c!, { subtype: 'success', response: 'text' }))
+    await expect(bodiless).resolves.toEqual({})
+    // A refusal is certain: the CLI heard the request and did not do it, so a caller may try another way.
+    expect(await refused).toBeInstanceOf(ClaudeRejected)
+    // An answer Sotto cannot read leaves the request's outcome unknown, which is not a refusal.
+    expect(await unreadable).not.toBeInstanceOf(ClaudeRejected)
+    expect((await unreadable as Error).message).toBe('Claude Code answered in a form Sotto could not read, so whether it acted is unknown. Sotto did not send it again. Check for a Sotto or Claude Code update.')
   })
 
   it('rejects every waiter when the process closes, and refuses new writes', async () => {

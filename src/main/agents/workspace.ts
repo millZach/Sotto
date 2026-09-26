@@ -11,7 +11,7 @@ import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, R
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AnswerGivenEvent, StoredThreadEvent, ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, StoredMessageIdentity } from './host'
+import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
@@ -1820,7 +1820,8 @@ export class WorkspaceHost implements AgentHost {
       this.dirty = true
       try { await this.flush() }
       catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(thread, previous); throw error }
-      this.publish(); return { accepted: true }
+      // No provider holds these settings yet; the workspace is where they took effect.
+      this.publish(); return { accepted: true, snapshot: this.workspaceSnapshot() }
     }
     if (command.type === 'send' && creation && creation.phase !== 'started') {
       firstSend = true
@@ -1899,6 +1900,13 @@ export class WorkspaceHost implements AgentHost {
     if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
     const result = await this.inner.execute(command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills } : command)
     if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
+    if (command.type === 'configure-thread') {
+      const [confirmed, snapshot] = confirmedSettingsSnapshot(result)
+      if (!snapshot || this.deliveryStopped) return confirmed
+      // Taken in as a provider snapshot is, and handed back as the workspace's view of it.
+      this.accept(snapshot); this.writeSoon(); this.publishSoon()
+      return { ...confirmed, snapshot: this.workspaceSnapshot() }
+    }
     return result
   }
   private requireCreation(provider?: ProviderId): void {

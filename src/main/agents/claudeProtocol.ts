@@ -4,6 +4,11 @@ import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}
+/**
+ * The CLI answered a control request with an error: it heard the request and did not do it. Unlike a lost or
+ * unreadable answer, nothing about the request is unknown, so a caller may try another way.
+ */
+export class ClaudeRejected extends Error {}
 // Native user replay and transcript entries include base64 image data. Honor the
 // shared aggregate attachment limit plus room for prompt/protocol metadata.
 export const CLAUDE_MAX_FRAME_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
@@ -40,8 +45,10 @@ export class ClaudeProtocol {
             const waiter = typeof id === 'string' ? this.waiters.get(id) : undefined
             if (waiter) {
               clearTimeout(waiter.timer); this.waiters.delete(id as string)
-              if (response?.subtype === 'success' && object(response.response)) waiter.resolve(response.response as ClaudeFrame)
-              else waiter.reject(new Error('Claude rejected a control request. Check the native client.'))
+              // A success may carry no body, and the SDK reads a missing one as empty.
+              if (response?.subtype === 'success' && (response.response === undefined || object(response.response))) waiter.resolve((response.response ?? {}) as ClaudeFrame)
+              else if (response?.subtype === 'error') waiter.reject(new ClaudeRejected('Claude rejected a control request. Check the native client.'))
+              else waiter.reject(new ClaudeUncertain('Claude Code answered in a form Sotto could not read, so whether it acted is unknown. Sotto did not send it again. Check for a Sotto or Claude Code update.'))
             }
           }
           onFrame(frame)
