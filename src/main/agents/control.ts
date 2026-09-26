@@ -70,6 +70,8 @@ const savedSchema = z.object({
   })),
 })
 type Saved = z.infer<typeof savedSchema>
+/** A write handed to the store: the state it carries, serialized and by outbox, and its landing. */
+type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promise<void> }
 class SupersededSupervision extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
 /**
@@ -134,11 +136,13 @@ export class AgentControl {
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
   private publishedDraftPersistence = ''
-  // Skip unchanged state only when no writes are pending: an older queued write could otherwise
-  // overwrite a newer state that happens to match the last completed save.
-  private lastWritten = ''
-  /** The outbox as the last completed write left it on disk. */
-  private writtenOutbox: Saved['outbox'] = []
+  /**
+   * The newest write handed to the store, finished or not. The store writes in order, so this is what the disk
+   * holds once every queued write lands. State that matches it waits for that write instead of writing again; it
+   * is compared with the newest write rather than the last finished one, because an older queued write could
+   * otherwise overwrite a newer state that happens to match the last completed save.
+   */
+  private queuedWrite: QueuedWrite | undefined
   /** Thread settings changes being dispatched now: the outbox entries that were added inside this dispatch. */
   private readonly settingsDispatching = new Set<string>()
   /**
@@ -586,17 +590,27 @@ export class AgentControl {
     const saved = this.saved()
     const serialized = JSON.stringify(saved)
     const outbox = [...saved.outbox]
-    if ((serialized !== this.lastWritten || this.pendingDraftWrites.size > 0) && (closing || !this.onlySettledSettings(saved, outbox))) {
+    const queued = this.queuedWrite
+    if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, outbox, queued)))) {
+      // The newest queued write already carries this state, so it is durable when that write lands. A write
+      // still in flight is waited for rather than repeated, and its failure is this call's failure.
+      await queued.written
+    } else {
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
+      const written = this.store.write(saved)
+      const current: QueuedWrite = { serialized, outbox, written }
+      this.queuedWrite = current
       try {
-        await this.store.write(saved)
+        await written
         // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
         // completed, never newer state that changed while this write was outstanding.
         this.persistedDrafts = drafts
-        this.lastWritten = serialized
-        this.writtenOutbox = outbox
         for (const id of this.settledSettings) if (!outbox.some(item => item.id === id)) this.settledSettings.delete(id)
+      } catch (error) {
+        // The disk still holds an older state, so the next persist writes whatever it has.
+        if (this.queuedWrite === current) this.queuedWrite = undefined
+        throw error
       } finally {
         this.pendingDraftWrites.delete(drafts)
       }
@@ -608,14 +622,14 @@ export class AgentControl {
     if (JSON.stringify(this.draftPersistence()) !== this.publishedDraftPersistence) this.publish()
   }
   /**
-   * True when the state differs from the last completed write only by settings entries confirmed inside their own
+   * True when the state differs from the newest queued write only by settings entries confirmed inside their own
    * dispatch. The entry's add was the write that mattered; its removal rides on the next write.
    */
-  private onlySettledSettings(saved: Saved, outbox: Saved['outbox']): boolean {
-    if (!this.settledSettings.size || this.pendingDraftWrites.size > 0) return false
-    const kept = this.writtenOutbox.filter(item => !this.settledSettings.has(item.id))
-    if (kept.length === this.writtenOutbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false
-    return JSON.stringify({ ...saved, outbox: this.writtenOutbox }) === this.lastWritten
+  private onlySettledSettings(saved: Saved, outbox: Saved['outbox'], queued: QueuedWrite): boolean {
+    if (!this.settledSettings.size) return false
+    const kept = queued.outbox.filter(item => !this.settledSettings.has(item.id))
+    if (kept.length === queued.outbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false
+    return JSON.stringify({ ...saved, outbox: queued.outbox }) === queued.serialized
   }
   private draftSignatures(drafts: readonly AgentThreadDraft[]): Map<string, string> {
     return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, files, requestId }) => [threadId,
