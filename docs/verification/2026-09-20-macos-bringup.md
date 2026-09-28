@@ -52,6 +52,12 @@ Unpackaged Electron, isolated profile, PATH forced to the Dock default:
 
 **Connect providers** was still aimed at the saved default, Codex. A bulk connect now checks which of Codex, Claude Code and Grok Build are installed when that selection is missing, and uses Claude Code when Codex is not. On this profile that saved `provider: 'claude'` and `enabledProviders: ['claude', 'grok']`.
 
+## Model name and context window, 28 September 2026
+
+A new Claude thread showed the chip as **Opus (1M context)** and, under the composer, **54,303 tokens context** beside **Estimate unavailable**. Claude Code 2.1.281 names that model "Opus (1M context)" and describes it as "Opus 5.5 with 1M context". The chip uses the description's first clause. The ledger for that thread had no `contextWindow` and no price: the result never named a window, and the entry was saved before Opus 5.5 had a rate. A `[1m]` variant with no reported window is now 1,000,000 tokens, including one already on disk, and an unpriced entry is priced when the ledger is read. Two different reported windows are still left unread.
+
+Rebuilt with `npm run build` and relaunched unpackaged against this profile. The same thread's chip reads **Opus 5.5 with 1M context**. The figures read **5% context** and **$0.36**. The context title is "54,303 of 1,000,000 tokens in the context window (5%)". The saved ledger is `contextWindow` 1000000 and `estimatedUsd` 0.3608356 at rate `2026-09-22-standard-v4`. "Estimate unavailable" is gone.
+
 ## Still open on this machine
 
 - **Packaged Playwright smoke** (`verify-packaged-resources.mjs` → `verifyNormalPackagedLaunch`) launched Sotto, wrote `workspace.json` / `threads.sqlite`, then never returned from `application.firstWindow({ timeout: 45_000 })`. The 45s timeout did not fire. Killed after several minutes. This blocks `package:dir:mac` from completing its last step and therefore blocks `package:mac` until it is fixed or the wait is made to fail.

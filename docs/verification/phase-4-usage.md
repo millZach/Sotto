@@ -1,6 +1,6 @@
 # Phase 4 usage (#66)
 
-Amended September 23, 2026: the context and cost figures this note verified are no longer shown. The owner removed them from under the composer on Threads and on Chats while choosing the workspace and branch layout for #127; the pick is recorded in a comment on that issue. Sotto still records and prices usage as described below, and compaction's recommendation still reads it; nothing on screen shows the figures.
+Amended September 28, 2026: the context and cost figures are under the composer again, on Threads and on Chats. A 1M Claude variant that never reported a window is shown against 1,000,000 tokens, and usage saved before its model had a price is priced when the ledger is read. The September 23 removal, recorded on #127, took the figures off while the window for that variant was still missing.
 
 Target: existing Windows desktop Electron workspace, 1280/1600 wide and minimum 820×560, light/dark, pointer and keyboard. Preserve branding.
 
