@@ -39,6 +39,18 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
   return matches.length === 1 ? rows[matches[0]!] : undefined
 }
 
+/** Claude Code's `[1m]` suffix is the million-token window. Two different reported windows stay unread. */
+const MILLION_TOKEN_WINDOW = 1_000_000
+const LONG_CONTEXT_VARIANT = /\[1m\]$/iu
+function claudeContextWindow(modelUsage: unknown, model: string | undefined, modelId: string | undefined): number | undefined {
+  const reported = model ? count(object(claudeModelUsage(modelUsage, model)).contextWindow) : undefined
+  if (reported) return reported
+  const windows = new Set(Object.values(object(modelUsage)).map(row => count(object(row).contextWindow)).filter((value): value is number => value !== undefined))
+  if (windows.size === 1) return [...windows][0]
+  if (Object.keys(object(modelUsage)).length > 1) return undefined
+  return modelId && LONG_CONTEXT_VARIANT.test(modelId) ? MILLION_TOKEN_WINDOW : undefined
+}
+
 /** Accounting observation only: never changes delivery, native sessions, or billing settings. */
 export class NativeUsage {
   private readonly store: AtomicJsonStore<Record<string, Ledger>>
@@ -67,6 +79,11 @@ export class NativeUsage {
         if (entry.usd !== undefined) continue
         const estimate = estimateUsage(this.provider, entry.model, entry.tokens)
         if (estimate) { ledger.entries[key] = { ...entry, usd: estimate.usd, ...(estimate.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }; changed = true }
+      }
+      // A result that never named the window still leaves a 1M variant with only a raw token count.
+      if (this.provider === 'claude' && ledger.view.contextWindow === undefined && LONG_CONTEXT_VARIANT.test(ledger.view.modelId ?? '')) {
+        ledger.view.contextWindow = MILLION_TOKEN_WINDOW
+        changed = true
       }
       const before = JSON.stringify(ledger.view)
       this.summarize(ledger)
@@ -253,7 +270,7 @@ export class NativeUsage {
   claudeResult(id: string, value: unknown): void {
     const frame = object(value); const ledger = this.data[id]
     const model = ledger?.latestId ? ledger.entries[ledger.latestId]?.model : undefined
-    this.elapsed(id, frame.duration_ms, model ? object(claudeModelUsage(frame.modelUsage, model)).contextWindow : undefined)
+    this.elapsed(id, frame.duration_ms, claudeContextWindow(frame.modelUsage, model, ledger?.view.modelId))
   }
   grok(id: string, selectedModel: string, value: unknown): void {
     const params = object(value); const update = object(params.update); const usage = object(update.usage)

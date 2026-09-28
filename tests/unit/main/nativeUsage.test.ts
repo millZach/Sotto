@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -106,6 +106,32 @@ describe('native usage observations', () => {
     store.claudeResult('thread', { duration_ms: 12, modelUsage: { 'claude-opus-5[1m]': { contextWindow: 1_000_000 }, 'claude-opus-5[200k]': { contextWindow: 200_000 } } })
     expect(store.get('thread')?.contextWindow).toBeUndefined()
     await store.flushed()
+  })
+
+  it('uses the million-token window when a 1M Claude variant reports none, and prices a model that had no rate when it was saved', async () => {
+    const { store, root } = await usage('claude')
+    const message = { id: 'assistant', model: 'claude-opus-5-5', usage: { input_tokens: 1000, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } } }
+    store.claude('thread', { type: 'assistant', message }, 'opus[1m]')
+    store.claudeResult('thread', { duration_ms: 12, modelUsage: {} })
+    expect(store.get('thread')).toMatchObject({ contextWindow: 1_000_000, modelId: 'opus[1m]' })
+    expect(store.get('thread')?.estimatedUsd).toBeCloseTo(0.0042, 8)
+    store.claude('other', { type: 'assistant', message: { ...message, id: 'sonnet', model: 'claude-sonnet-4-6' } }, 'sonnet')
+    store.claudeResult('other', { duration_ms: 8, modelUsage: {} })
+    expect(store.get('other')?.contextWindow).toBeUndefined()
+    await store.flushed()
+    const file = join(root, 'claude-usage.json')
+    const archive = JSON.parse(await readFile(file, 'utf8')) as { thread: { view: { contextWindow?: number; estimatedUsd?: number; partial: boolean; rateVersions: string[] }; entries: Record<string, { usd?: number }> } }
+    delete archive.thread.view.contextWindow
+    delete archive.thread.view.estimatedUsd
+    archive.thread.view.partial = true
+    archive.thread.view.rateVersions = []
+    for (const entry of Object.values(archive.thread.entries)) delete entry.usd
+    await writeFile(file, JSON.stringify(archive))
+    const reopened = new NativeUsage(root, 'claude'); await reopened.load()
+    expect(reopened.get('thread')).toMatchObject({ contextWindow: 1_000_000, partial: false })
+    expect(reopened.get('thread')?.estimatedUsd).toBeCloseTo(0.0042, 8)
+    expect(reopened.get('other')?.contextWindow).toBeUndefined()
+    await reopened.flushed()
   })
 
   it('prices Claude native cache TTLs once across streaming, completed message and durable log replay', async () => {
