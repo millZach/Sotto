@@ -50,6 +50,8 @@ Unpackaged Electron, isolated profile, PATH forced to the Dock default:
 - Threads: alert "Install Codex and sign in before connecting this provider." Button **Connect providers** enabled. `artifacts/macos-bringup/connect-providers-failed.png`
 - Settings → Providers: Claude Code **Connected** (`artifacts/macos-bringup/provider-claude.png`). Grok Build **Needs attention**, because the installed CLI is 1.0.41 and Sotto still requires 1.0.5 (`provider-grok.png`). Codex **Needs attention**, not installed (`provider-codex.png`). None of the three stayed on Connecting.
 
+**Connect providers** was still aimed at the saved default, Codex. A bulk connect now checks which of Codex, Claude Code and Grok Build are installed when that selection is missing, and uses Claude Code when Codex is not. On this profile that saved `provider: 'claude'` and `enabledProviders: ['claude', 'grok']`.
+
 ## Still open on this machine
 
 - **Packaged Playwright smoke** (`verify-packaged-resources.mjs` → `verifyNormalPackagedLaunch`) launched Sotto, wrote `workspace.json` / `threads.sqlite`, then never returned from `application.firstWindow({ timeout: 45_000 })`. The 45s timeout did not fire. Killed after several minutes. This blocks `package:dir:mac` from completing its last step and therefore blocks `package:mac` until it is fixed or the wait is made to fail.

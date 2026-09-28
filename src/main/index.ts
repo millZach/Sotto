@@ -22,6 +22,7 @@ import { e2eSshStandIn } from './e2e/sshStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
 import { PHONES_CHANGED } from '../shared/phones'
 import { discoverSshHosts } from './hosts/sshSuggestions'
+import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { PersonalChatService } from './agents/personalChats'
 import { ChatPromptService } from './agents/chatPrompts'
@@ -645,6 +646,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(memoryProfile === undefined || !agentMemoryEnabled ? {} : { preferences: memoryProfile }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+    ...(e2eConfiguration === null ? { installedProviders: detectInstalledProviders } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(),

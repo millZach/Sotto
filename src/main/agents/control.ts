@@ -9,7 +9,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -310,6 +310,8 @@ export class AgentControl {
      * providers the user connected in Settings → Providers.
      */
     runsAs?: 'desktop' | 'headless-host'
+    /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
+    installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
     this.followupStore = new FollowupStore(dependencies.directory)
     this.clients = dependencies.clients ?? new ProviderClients()
@@ -1990,7 +1992,7 @@ export class AgentControl {
           this.state.configuration = withTurnedOff(this.state.configuration, turnedOff(this.state.configuration, [], [command.provider]))
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           await this.persist()
-        }
+        } else await this.useInstalledProviders()
         if (!this.state.host.connected) this.state.connection = 'connecting'
         this.publish(); this.observe()
         try {
@@ -3148,6 +3150,17 @@ export class AgentControl {
       } else this.presentQueue(false)
       this.publish()
     }
+  }
+  /** Point a missing selection at the clients that are installed, then remember that choice. */
+  private async useInstalledProviders(): Promise<void> {
+    const detect = this.dependencies.installedProviders
+    if (!detect) return
+    let installed: readonly ProviderId[]
+    try { installed = await detect() } catch { return }
+    const selection = selectInstalledProviders(this.state.configuration, installed)
+    if (!selection) return
+    this.state.configuration = { ...this.state.configuration, ...selection }
+    await this.persist()
   }
   private disconnect(): void {
     if (this.reconnect) clearTimeout(this.reconnect)
