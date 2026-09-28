@@ -310,7 +310,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
-        {!paneIds.length ? <EmptyWorkspace state={state} command={command} voice={voice}
+        {!paneIds.length ? <EmptyWorkspace state={state} command={command} voice={voice} error={error}
           onNewThread={() => openNewThread(state.activeProjectId ?? undefined)} onNewThreadWithDraft={draft => startNewThread(state.activeProjectId ?? undefined, draft)}
           onOpenThread={threadId => { focusPane(threadId); focusNewComposer() }} onOpenAgents={onOpenAgents} /> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
