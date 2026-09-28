@@ -72,6 +72,7 @@ import {
   type SessionPermissionAdapter,
 } from './app/bootstrap'
 import { buildApplicationMenuTemplate } from './app/applicationMenu'
+import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
@@ -496,6 +497,8 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
+  // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
+  await installGuiPath()
   const userDataPath = app.getPath('userData')
   const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)

@@ -2006,6 +2006,8 @@ export class AgentControl {
           if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)
         } catch (error) {
           if (!this.state.host.providers) this.disconnect()
+          // Intermediate publishes keep `connecting` until this attempt finishes. A failure has to release it.
+          else if (this.state.connection === 'connecting') this.state.connection = 'disconnected'
           throw error
         }
         return

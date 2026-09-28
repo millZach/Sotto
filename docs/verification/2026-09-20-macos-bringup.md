@@ -37,6 +37,19 @@ Onboarding now lists detected inputs after the first capture (Chromium withholds
 
 The capture itself stayed open after Test (state `ready`, **Retest microphone**). The wave still dropped after ~300 ms of quiet because the dictation voice gate treats low RMS as silence. The onboarding and Settings tests now hold the wave on for the whole open stream; the widget and Dictate room still gate on voice.
 
+## Connect providers, 28 September 2026
+
+The packaged app Tomas had been running was launched from the Dock. Its PATH was `/usr/bin:/bin:/usr/sbin:/sbin`. Claude Code 2.1.281 is at `~/.local/bin/claude` and signed in (`claude.ai`, subscription `max`). Grok 1.0.41 is at `~/.grok/bin/grok`. Codex is not installed. **Connect providers** on an install whose enabled set is only the default provider tries Codex.
+
+A failed connect left the coordinator on `connecting`. With more than one native host, the failure did not clear that flag, so the Threads button stayed **Connecting...** after Codex had already exited. It now returns to **Connect providers**, and the empty workspace shows the error.
+
+A Dock launch now keeps the system PATH and adds the login shell's directories that exist (`~/.local/bin`, `~/.grok/bin`, `/opt/homebrew/bin`, and the rest of that PATH). It does not copy the rest of the login environment. Claude's child also needs `USER` / `LOGNAME`; without them `claude auth status` reports logged out and the connection check failed closed.
+
+Unpackaged Electron, isolated profile, PATH forced to the Dock default:
+
+- Threads: alert "Install Codex and sign in before connecting this provider." Button **Connect providers** enabled. `artifacts/macos-bringup/connect-providers-failed.png`
+- Settings → Providers: Claude Code **Connected** (`artifacts/macos-bringup/provider-claude.png`). Grok Build **Needs attention**, because the installed CLI is 1.0.41 and Sotto still requires 1.0.5 (`provider-grok.png`). Codex **Needs attention**, not installed (`provider-codex.png`). None of the three stayed on Connecting.
+
 ## Still open on this machine
 
 - **Packaged Playwright smoke** (`verify-packaged-resources.mjs` → `verifyNormalPackagedLaunch`) launched Sotto, wrote `workspace.json` / `threads.sqlite`, then never returned from `application.firstWindow({ timeout: 45_000 })`. The 45s timeout did not fire. Killed after several minutes. This blocks `package:dir:mac` from completing its last step and therefore blocks `package:mac` until it is fixed or the wait is made to fail.

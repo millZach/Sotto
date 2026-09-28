@@ -452,4 +452,20 @@ describe('independent thread providers', () => {
     expect(unnamed).toMatchObject({ connection: 'error', error: 'Claude Code did not answer.' })
     expect(unnamed?.problem).toBeUndefined()
   })
+
+  it('releases Connecting when every requested native provider fails, then connects on a later try', async () => {
+    const f = await fixture(); const control = await coordinator(f)
+    await control.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude', 'grok'] } })
+    const message = 'Install Codex and sign in before connecting this provider.'
+    const spies = Object.values(f.adapters).map(adapter => vi.spyOn(adapter, 'connect').mockRejectedValue(new Error(message)))
+    const failed = await control.command({ type: 'connect' })
+    expect(failed.connection).toBe('disconnected')
+    expect(failed.error).toBe(message)
+    expect(failed.host.providers?.filter(provider => provider.id !== 'devin').map(provider => provider.connection)).toEqual(['error', 'error', 'error'])
+    for (const spy of spies) spy.mockRestore()
+    const restored = await control.command({ type: 'connect' })
+    expect(restored.connection).toBe('connected')
+    expect(restored.error).toBeNull()
+    expect(restored.host.providers?.filter(provider => provider.id !== 'devin').every(provider => provider.connection === 'connected')).toBe(true)
+  })
 })
