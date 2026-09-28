@@ -7,7 +7,7 @@ import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agen
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
-import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, type AgentConfiguration, } from '../../../src/shared/agents'
+import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ProviderId, } from '../../../src/shared/agents'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { MemoryProfile } from '../../../src/main/memory/profile'
 import { PolicyStore } from '../../../src/main/memory/policies'
@@ -49,11 +49,12 @@ async function fixture() {
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
   return { root, registry, adapters, host, configuration: (value: AgentConfiguration) => { configuration = value } }
 }
-async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' })) {
+async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' }), installed?: () => Promise<readonly ProviderId[]>) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide },
+    ...(installed ? { installedProviders: installed } : {}),
   })
   control.subscribe(state => f.configuration(state.configuration))
   await control.start(); f.configuration(control.get().configuration)
@@ -92,6 +93,27 @@ describe('independent thread providers', () => {
     expect((await host.snapshot('claude')).threads.find(thread => thread.id === 'session-workshop')?.title).toBe('Current callback')
     expect(events).toHaveLength(1)
     off?.(); host.disconnect()
+  })
+  it('keeps Codex when it is installed and switches to Claude Code when it is not', () => {
+    const codex = { ...defaultAgentConfiguration(), enabledProviders: ['codex' as const] }
+    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders(codex, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
+    expect(selectInstalledProviders(codex, [])).toBeNull()
+    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'devin'] })
+  })
+  it('connects Claude Code when the saved provider is Codex and Codex is not installed', async () => {
+    const f = await fixture()
+    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), async () => ['claude', 'grok'])
+    const state = await control.command({ type: 'connect' })
+    expect(state.configuration.provider).toBe('claude')
+    expect(state.configuration.enabledProviders).toEqual(['claude', 'grok'])
+    expect(state.connection).toBe('connected')
+    expect(state.error).toBeNull()
+    expect(f.adapters.codex.connectCalls).toBe(0)
+    expect(f.adapters.claude.connectCalls).toBe(1)
+    expect(f.adapters.grok.connectCalls).toBe(1)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration).toMatchObject({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
   })
   it('keeps legacy selection and strictly parses scoped commands without injecting configuration defaults', () => {
     const legacy = { ...defaultAgentConfiguration(), provider: 'claude' as const }

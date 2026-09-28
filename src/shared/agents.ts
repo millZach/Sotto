@@ -990,6 +990,24 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
+const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok'] as const
+/**
+ * The clients to connect when the current selection is not installed.
+ * Codex remains the default when its CLI is present; otherwise Claude Code, then Grok Build.
+ * Devin is included only when it was already enabled and its CLI is present.
+ * Returns null when the current selection can already connect.
+ */
+export function selectInstalledProviders(configuration: AgentConfiguration, installed: readonly ProviderId[]): Pick<AgentConfiguration, 'provider' | 'enabledProviders'> | null {
+  const present = new Set(installed)
+  const enabled = enabledThreadProviders(configuration)
+  if (present.has(configuration.provider) && enabled.some(id => present.has(id))) return null
+  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id))
+  if (enabled.includes('devin') && present.has('devin')) enabledProviders.push('devin')
+  const provider = enabledProviders[0]
+  if (!provider) return null
+  if (provider === configuration.provider && enabled.length === enabledProviders.length && enabled.every((id, index) => id === enabledProviders[index])) return null
+  return { provider, enabledProviders }
+}
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
   host = hostForThread(host, thread)
   if (!host.providers || !thread.providerId) return host.capabilities
