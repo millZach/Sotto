@@ -249,7 +249,7 @@ describe('worklet microphone setup test', () => {
     const test = new WorkletMicrophoneTest(createRecorder)
     const onLevel = vi.fn()
 
-    await expect(test.start(onLevel, { selectedDeviceId: 'mic-c922' })).resolves.toBe('ready')
+    await expect(test.start(onLevel, 'mic-c922')).resolves.toBe('ready')
     expect(createRecorder).toHaveBeenCalledWith({ onLevel, selectedDeviceId: 'mic-c922' })
   })
 })

@@ -463,10 +463,10 @@ describe('ThreadsView workspace', () => {
     state.error = 'Install Codex and sign in before connecting this provider.'
     const view = renderThreads(state)
     expect(screen.getByRole('alert')).toHaveTextContent('Install Codex and sign in before connecting this provider.')
-    expect(screen.getByRole('button', { name: 'Connect providers', exact: true })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Connect providers' })).toBeEnabled()
     state.connection = 'connecting'; state.error = null
     view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    expect(screen.getByRole('button', { name: 'Connecting...', exact: true })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Connecting...' })).toBeDisabled()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
