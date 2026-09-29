@@ -11,12 +11,16 @@
   Sotto will not run (unknown channel, Devin) show the command to run by hand.
   Starts from the real tiles (HostProviders.tsx, layout B of prototype/host-providers) and the update card
   words in Settings > Providers and AgentControl.updateClient.
-  Three layouts, switchable with ?variant=A|B|C, the bar at the bottom, or the arrow keys:
+  Four layouts, switchable with ?variant=A|B|C|D, the bar at the bottom, or the arrow keys. D is the default.
     A  In the tile: a line under the version and an Update button beside Disconnect.
     B  One row for the host: above the tiles, visible with them closed, Update all, one row per client.
        The tiles carry only a small marker.
     C  The version opens the update: the version on the tile becomes a chip that opens a small popover
        with the update's steps, its progress and what went wrong.
+    D  Round 2, the owner's combination of A and C: A's Update on each tile (a failed tile stays short,
+       its long parts behind Details), and beside Show providers a chip ("3 updates") that opens a
+       popover to update every client on the host, one after another. A failure inside Update all
+       carries on with the rest and leaves Try again on the one that failed.
   The PROTOTYPE panel in the top right reaches every state. T switches theme, R resets.
   Versions are forge's on September 29, 2026. Updates are simulated; "Next update fails" makes one fail.
 -->
@@ -99,13 +103,13 @@ html[data-motion='reduce'] .spinner { animation: none; border-right-color: var(-
 
 /* The providers under the host's row (the real tiles, hostProviders.css). */
 .providers { display: grid; gap: 10px; min-width: 0; padding-left: 48px; }
-.providers-toggle { justify-self: start; margin-left: -12px; }
+.ptoggle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; justify-self: start; margin-left: -12px; min-width: 0; }
 .panel { display: grid; gap: 10px; min-width: 0; container-type: inline-size; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
 @container (min-width: 700px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container (max-width: 340px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 .foot { margin: 0 0 4px !important; color: var(--tt-text-muted); font-size: 12px !important; }
-@media (max-width: 700px) { .providers { padding-left: 0; } .providers-toggle { margin-left: 0; } }
+@media (max-width: 700px) { .providers { padding-left: 0; } .ptoggle-row { margin-left: 0; } }
 
 .tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); padding: 12px; }
 .tile[data-kind='not-installed'] { border-style: dashed; background: transparent; }
@@ -187,6 +191,20 @@ html[data-motion='reduce'] .spinner { animation: none; border-right-color: var(-
 .steps li[data-s='fail'] .n { border-color: var(--tt-error); color: var(--tt-error); }
 .steps small { display: block; margin-top: 3px; color: var(--tt-text-muted); font-size: 11.5px; }
 
+/* D: A's tile, a short failed tile, and a chip for the host that opens Update all. */
+.tile .more summary { cursor: pointer; color: var(--tt-text-muted); font-size: 12px; width: fit-content; }
+.tile .more summary:hover { color: var(--tt-text); }
+.tile .more-body { display: grid; gap: 8px; margin-top: 6px; min-width: 0; }
+.pop.hp { width: 340px; }
+.hp-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--tt-border-faint); }
+.hp-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--tt-border-faint); min-width: 0; }
+.hp-list .nm { color: var(--tt-text); font-size: 13px; font-weight: 600; }
+.hp-list .vs { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.hp-list .st { display: inline-flex; align-items: center; gap: 6px; justify-self: end; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.hp-list .st.ok { color: var(--tt-success); } .hp-list .st.err { color: var(--tt-error); }
+.hp-list .why { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; min-width: 0; }
+.page .hp-list .why p, .hp-list .why p { flex: 1 1 180px; margin: 0; color: var(--tt-text-muted); font-size: 12px; }
+
 /* The prototype's own controls, not part of the design. */
 .proto-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: #000; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; z-index: 50; }
 .proto-bar button { border: 0; border-radius: 999px; background: #262626; color: #fff; padding: 7px 12px; font: inherit; cursor: pointer; }
@@ -231,7 +249,7 @@ html[data-motion='reduce'] .spinner { animation: none; border-right-color: var(-
   <button type="button" id="motion" aria-pressed="false">Motion</button>
 </div>
 <script>
-const VARIANTS = { A: 'In the tile', B: 'One row for the host', C: 'The version opens the update' }
+const VARIANTS = { A: 'In the tile', B: 'One row for the host', C: 'The version opens the update', D: 'Update on tiles, Update all' }
 const KEYS = Object.keys(VARIANTS)
 const STATES = [
   ['current', 'Up to date'],
@@ -240,11 +258,12 @@ const STATES = [
   ['updating', 'Updating, threads still working'],
   ['updated', 'Updated'],
   ['failed', 'Failed'],
+  ['mixed', 'Update all finished, one failed'],
   ['manual', "An install Sotto won't update"],
   ['down', 'forge not connected'],
 ]
 const params = new URLSearchParams(location.search)
-let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'A'
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'D'
 let scenario = STATES.some(([k]) => k === params.get('state')) ? params.get('state') : 'three'
 let failNext = false
 let state
@@ -253,13 +272,13 @@ const STEP_MS = 1500
 
 /* forge on September 29: every client a mise install, all three behind. Devin is not on forge. */
 const BASE = {
-  claude: { name: 'Claude Code', mark: 'CC', account: 'Claude subscription', from: '2.1.281', to: '2.1.284', threads: 1,
+  claude: { name: 'Claude Code', mark: 'CC', account: 'Claude subscription', from: '2.1.281', to: '2.1.284', threads: 1, tool: 'claude',
     steps: [{ cmd: 'mise upgrade claude' }], manual: ['mise upgrade claude'] },
-  codex: { name: 'Codex', mark: 'Cx', account: 'ChatGPT', from: '0.155.1', to: '0.158.0', threads: 2,
+  codex: { name: 'Codex', mark: 'Cx', account: 'ChatGPT', from: '0.155.1', to: '0.158.0', threads: 2, tool: 'aqua:openai/codex',
     steps: [{ cmd: 'mise upgrade codex' }], manual: ['mise upgrade codex'] },
-  grok: { name: 'Grok Build', mark: 'Gk', account: 'X account', from: '1.0.41', to: '1.0.43', threads: 0,
+  grok: { name: 'Grok Build', mark: 'Gk', account: 'X account', from: '1.0.41', to: '1.0.43', threads: 0, tool: 'npm:@xai-official/grok',
     steps: [{ cmd: 'mise upgrade npm:@xai-official/grok' }, { cmd: 'node bin/postinstall.js', say: "Grok Build's install step, in the new package's folder. It puts the new program in ~/.grok/bin." }],
-    manual: ['mise upgrade npm:@xai-official/grok', 'cd "$(mise where npm:@xai-official/grok)/lib/node_modules/@xai-official/grok"', 'node bin/postinstall.js'] },
+    manual: ['mise upgrade npm:@xai-official/grok', 'cd "$(mise where npm:@xai-official/grok)/node_modules/@xai-official/grok"', 'node bin/postinstall.js'] },
 }
 const ORDER = ['claude', 'codex', 'grok']
 const HOST = 'forge'
@@ -274,6 +293,11 @@ function fresh(s) {
   if (s === 'failed') p.codex.u = 'failed'
   if (s === 'manual') p.codex.u = 'manual'
   if (s === 'updated') p.codex.u = 'updated'
+  if (s === 'mixed') {
+    ORDER.forEach(behind)
+    for (const id of ['claude', 'grok']) Object.assign(p[id], { installed: p[id].to, u: 'updated' })
+    p.codex.u = 'failed'
+  }
   return { providers: p, hostUp: s !== 'down', open: true, bOpen: false, popover: null, copied: null, details: {}, queue: [], running: s === 'updating' ? 'codex' : null, all: null, dismissed: false, note: {} }
 }
 const P = id => state.providers[id]
@@ -292,7 +316,11 @@ const manualWhy = v => `Sotto did not install ${v.name} this way, so it will not
 const updatedLine = v => `${v.name} is now ${v.to}.`
 const printedText = v => v.failStep === 1
   ? `mise npm:@xai-official/grok@${v.to} ✓ installed\nError: EACCES: permission denied, rename '~/.grok/bin/grok' -> '~/.grok/bin/grok.old'\n    at postinstall.js:88`
-  : `mise ERROR Failed to install ${v.name === 'Codex' ? 'aqua:openai/codex' : v.name}@${v.to}\nmise ERROR error sending request for url (https://github.com/openai/codex/releases/download/rust-v${v.to}/codex-x86_64-unknown-linux-musl.tar.gz)\nmise ERROR connection reset by peer`
+  : v.name === 'Codex'
+    ? `mise ERROR Failed to install ${v.tool}@${v.to}\nmise ERROR error sending request for url (https://github.com/openai/codex/releases/download/rust-v${v.to}/codex-x86_64-unknown-linux-musl.tar.gz)\nmise ERROR connection reset by peer`
+    : `mise ERROR Failed to install ${v.tool}@${v.to}\nmise ERROR connection reset by peer`
+/* D: the failure in one line, for the tile and the popover. The rest waits behind Details. */
+const failedShort = v => v.failStep === 1 ? `The install step did not finish, so ${HOST} still starts ${v.from}.` : `The download dropped partway. ${v.from} is still installed.`
 
 function spinner() { return '<span class="spinner" aria-hidden="true"></span>' }
 function cmdBlock(key, lead, lines, what) {
@@ -395,6 +423,7 @@ function steps(v) {
 }
 function popover() {
   const id = state.popover
+  if (variant === 'D' && id === 'host') return hostPopover()
   if (variant !== 'C' || !id) return ''
   const v = P(id)
   const close = label => `<button type="button" class="button ghost" data-act="pop-close" data-k="pop-close">${label}</button>`
@@ -422,6 +451,96 @@ function popover() {
     <div class="pacts">${close('Close')}</div>`
   else return ''
   return `<div class="pop" id="pop" role="dialog" aria-labelledby="pop-t" data-scope="pop">${body}</div>`
+}
+
+/* D: A's tile. A queued tile says what it waits for; a failed tile keeps one line and Try again, the rest behind Details. */
+function tileD(id) {
+  const v = P(id)
+  if (v.u === 'queued') {
+    const i = state.queue.indexOf(id), after = i <= 0 ? state.running : state.queue[i - 1]
+    return tile(id, { line: `<p class="upd quiet">Updates to ${v.to} after ${P(after).name}</p>`,
+      actions: `<button type="button" class="button" data-act="unqueue" data-id="${id}" data-k="upd-${id}" aria-label="Cancel the ${v.name} update on ${HOST}">Cancel update</button>` })
+  }
+  if (v.u === 'failed') {
+    const dk = `dd-${id}`
+    return tile(id, { line: `<p class="upd err">Did not update to ${v.to}</p>`,
+      below: `<p class="failed-words" role="status">${failedShort(v)}</p>
+        <details class="more" data-dkey="${dk}" ${state.details[dk] ? 'open' : ''}><summary data-k="sum-${dk}">Details<span class="sr"> of why ${v.name} did not update</span></summary>
+          <div class="more-body"><p class="failed-words">${failedWhat(v)} ${failedKept(v)}</p>
+          ${cmdBlock(`d-${id}`, `Or run this on ${HOST}:`, v.manual, `updates ${v.name} on ${HOST}`)}${printed(`p-d-${id}`, v)}</div></details>`,
+      actions: `<button type="button" class="button" data-act="update" data-id="${id}" data-k="upd-${id}" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button>` })
+  }
+  return tileA(id)
+}
+
+/* D: the host's chip, beside Show providers, there with the tiles open or closed. */
+function hostChip() {
+  const of = u => ORDER.filter(id => P(id).u === u)
+  const waiting = ORDER.filter(id => ['behind', 'manual'].includes(P(id).u)), failed = of('failed'), updated = of('updated')
+  const open = state.popover === 'host'
+  const s = n => n === 1 ? '' : 's'
+  let cls = '', inner, label
+  if (state.running) {
+    inner = `${spinner()}${state.all ? `Updating ${Math.min(state.all.done + 1, state.all.total)} of ${state.all.total}` : `Updating ${P(state.running).name}`}`
+    label = `Show the client updates running on ${HOST}`
+  } else if (failed.length) {
+    cls = 'err'
+    inner = waiting.length ? `${waiting.length + failed.length} updates · ${failed.length} failed` : `${failed.length} did not update`
+    label = `Show the client updates for ${HOST}. ${names(failed)} did not update`
+  } else if (waiting.length) {
+    inner = `${waiting.length} update${s(waiting.length)}`
+    label = `Show the ${waiting.length} client update${s(waiting.length)} for ${HOST}`
+  } else if (updated.length) {
+    cls = 'quiet'
+    inner = `<span class="ok-mark" aria-hidden="true">✓</span>${updated.length} updated`
+    label = `Show the client updates for ${HOST}. ${names(updated)} updated`
+  } else return ''
+  return `<button type="button" class="chip ${cls}" id="chip-host" data-act="pop" data-id="host" data-k="chip-host" aria-haspopup="dialog" aria-expanded="${open}" ${open ? 'aria-controls="pop"' : ''} aria-label="${label}">${inner}</button>`
+}
+
+/* D: the popover. Update all runs every client Sotto can update, one after another; a failure carries on with the rest. */
+function hostPopover() {
+  const of = u => ORDER.filter(id => P(id).u === u)
+  const items = ORDER.filter(id => P(id).u !== 'current')
+  const behind = of('behind'), failed = of('failed'), updated = of('updated'), manual = of('manual'), queued = of('queued')
+  const running = state.running
+  const settled = !running && !queued.length && !behind.length
+  const n = behind.length + failed.length + manual.length
+  let status
+  if (running) status = `Updating ${P(running).name}${state.all ? `, ${Math.min(state.all.done + 1, state.all.total)} of ${state.all.total}` : ''}…`
+  else if (!settled) status = `${n} client${n === 1 ? ' is' : 's are'} behind on ${HOST}.`
+  else if (failed.length && updated.length) status = `Updated ${names(updated)} on ${HOST}. ${names(failed)} did not update.`
+  else if (failed.length) status = `${names(failed)} did not update.`
+  else if (manual.length && !updated.length) status = `${names(manual)} ${manual.length === 1 ? 'is' : 'are'} behind on ${HOST}.`
+  else status = `Updated ${updated.length} client${updated.length === 1 ? '' : 's'} on ${HOST}.`
+  const row = id => {
+    const v = P(id)
+    const st = {
+      behind: '',
+      queued: '<span class="st">Waiting</span>',
+      updating: `<span class="st">${spinner()}${v.steps.length > 1 ? `Step ${v.step + 1} of ${v.steps.length}` : 'Updating'}</span>`,
+      updated: '<span class="st ok"><span aria-hidden="true">✓</span>Updated</span>',
+      failed: '<span class="st err">Did not update</span>',
+      manual: '<span class="st">By hand</span>',
+    }[v.u]
+    const why = v.u === 'failed'
+      ? `<div class="why"><p>${failedShort(v)}</p><button type="button" class="button sm" data-act="update" data-id="${id}" data-k="hp-${id}" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button></div>`
+      : v.u === 'manual' ? `<div class="why"><p>Sotto did not install it this way, so it will not replace it. Its tile has the command to run.</p></div>` : ''
+    return `<li data-scope="hp-${id}"><div><span class="nm">${v.name}</span> <span class="vs">${v.from}<span aria-hidden="true"> → </span><span class="sr"> to </span>${v.to}</span></div>${st}${why}</li>`
+  }
+  const note = running || !settled ? `<p>One client updates at a time. Your threads keep working, and move to the new version when they are idle.</p>` : ''
+  const canAll = behind.length > 0
+  const allIds = updatable()
+  const end = settled
+    ? `<button type="button" class="button ${canAll ? '' : 'primary'}" data-act="hp-done" data-k="pop-end">Done</button>`
+    : `<button type="button" class="button ghost" data-act="pop-close" data-k="pop-end">${running ? 'Close' : 'Not now'}</button>`
+  const all = canAll ? `<button type="button" class="button primary" data-act="update-all" data-k="pop-go" aria-label="Update ${names(allIds)} on ${HOST}, one after another">Update all</button>` : ''
+  return `<div class="pop hp" id="pop" role="dialog" aria-labelledby="pop-t" data-scope="pop">
+    <h6 id="pop-t">Client updates on ${HOST}</h6>
+    <p class="lead" role="status">${status}</p>
+    <ul class="hp-list" aria-label="Clients on ${HOST}">${items.map(row).join('')}</ul>
+    ${note}
+    <div class="pacts">${end}${all}</div></div>`
 }
 
 /* B: the row for the host. One client reads like the one-line card in ADR-0021; several get a list. */
@@ -506,10 +625,10 @@ function providersBlock() {
   const n = updatable().length + ORDER.filter(id => P(id).u === 'manual').length
   const countText = variant === 'A' && !state.open && n ? ` <span class="toggle-count">· ${n} update${n === 1 ? '' : 's'}</span>` : ''
   const toggle = `<button type="button" class="button ghost providers-toggle" data-act="toggle" data-k="ptoggle" aria-expanded="${state.open}" aria-controls="${state.open ? 'panel' : ''}" aria-label="${state.open ? 'Hide' : 'Show'} providers on ${HOST}${countText ? `, ${n} update${n === 1 ? '' : 's'} available` : ''}">${state.open ? 'Hide providers' : 'Show providers'}${countText}</button>`
-  const tileFn = variant === 'A' ? tileA : variant === 'B' ? tileB : tileC
+  const tileFn = { A: tileA, B: tileB, C: tileC, D: tileD }[variant]
   const panel = state.open ? `<div class="panel" id="panel"><ul class="grid" aria-label="Providers on ${HOST}">${ORDER.map(tileFn).join('')}${devinTile()}</ul>
     <p class="foot">${HOST} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</p></div>` : ''
-  return `<div class="providers">${variant === 'B' ? bRow() : ''}${toggle}${panel}</div>`
+  return `<div class="providers">${variant === 'B' ? bRow() : ''}<div class="ptoggle-row">${toggle}${variant === 'D' ? hostChip() : ''}</div>${panel}</div>`
 }
 
 function render() {
@@ -558,7 +677,8 @@ function tick(id, ms = STEP_MS) {
   later(ms, () => {
     const v = P(id)
     if (state.running !== id || v.u !== 'updating') return
-    if (failNext && v.step === v.steps.length - 1) { v.u = 'failed'; v.failStep = v.step; return finish() }
+    // "Next update fails" fails one update, then clears, so Update all shows the rest carrying on.
+    if (failNext && v.step === v.steps.length - 1) { v.u = 'failed'; v.failStep = v.step; failNext = false; document.getElementById('failnext').checked = false; return finish() }
     if (v.step < v.steps.length - 1) { v.step++; return tick(id) }
     v.installed = v.to; v.u = 'updated'; finish()
   })
@@ -586,12 +706,14 @@ document.addEventListener('click', event => {
   const { act, id } = target.dataset
   if (act === 'toggle') state.open = !state.open
   else if (act === 'host') { state.hostUp = !state.hostUp; state.popover = null; scenario = state.hostUp ? 'custom' : 'down' }
-  else if (act === 'update') { update(id); if (variant !== 'C') state.popover = null }
-  else if (act === 'update-all') { const ids = updatable(); state.all = { total: ids.length, done: 0 }; ids.forEach(update) }
+  else if (act === 'update') { update(id); if (variant !== 'C' && variant !== 'D') state.popover = null }
+  // Update all joins the host's one-at-a-time line: what is already running finishes first.
+  else if (act === 'update-all') { updatable().forEach(update); state.all = { total: 1 + state.queue.length, done: 0 } }
+  else if (act === 'hp-done') { ORDER.forEach(k => { if (P(k).u === 'updated') P(k).u = 'current' }); state.popover = null; render(); returnFocus('host'); return }
   else if (act === 'unqueue') { state.queue = state.queue.filter(q => q !== id); P(id).u = 'behind' }
   else if (act === 'b-toggle') state.bOpen = !state.bOpen
   else if (act === 'dismiss') { state.dismissed = true; ORDER.forEach(k => { if (P(k).u === 'updated') P(k).u = 'current' }) }
-  else if (act === 'pop') { state.popover = state.popover === id ? null : id; render(); if (state.popover) (document.querySelector('#pop [data-k="pop-go"]') || document.querySelector('#pop button'))?.focus(); return }
+  else if (act === 'pop') { state.popover = state.popover === id ? null : id; render(); if (state.popover) (document.querySelector('#pop [data-k="pop-go"]') || document.querySelector('#pop [data-k="pop-end"]') || document.querySelector('#pop button'))?.focus(); return }
   else if (act === 'pop-close') { const was = state.popover; state.popover = null; render(); returnFocus(was); return }
   else if (act === 'copy') { state.copied = target.dataset.key; later(1500, () => { if (state.copied === target.dataset.key) state.copied = null }) }
   else if (act === 'noop') { const scope = target.closest('[data-scope]')?.dataset.scope; if (scope) state.note[scope] = 'Prototype: not part of this question.'; else return }
@@ -621,7 +743,7 @@ document.addEventListener('keydown', event => {
 })
 
 /** Closing the popover puts focus back on its chip, or on the tile's first action once the chip has gone (the update finished). */
-function returnFocus(id) { (document.getElementById(`chip-${id}`) || document.querySelector(`[data-scope="${id}"] button`))?.focus() }
+function returnFocus(id) { (document.getElementById(`chip-${id}`) || document.querySelector(`[data-scope="${id}"] button`) || document.querySelector('[data-k="ptoggle"]'))?.focus() }
 function setScenario(s) { timers.forEach(clearTimeout); timers = []; scenario = s; state = fresh(s); if (s === 'updating') tick('codex', 12000); syncUrl(); render() }
 function syncUrl() { history.replaceState(null, '', `?variant=${variant}${scenario !== 'custom' ? `&state=${scenario}` : ''}`) }
 function go(step) { variant = KEYS[(KEYS.indexOf(variant) + step + KEYS.length) % KEYS.length]; state.popover = null; syncUrl(); render() }
