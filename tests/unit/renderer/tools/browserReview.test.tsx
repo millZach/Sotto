@@ -5,6 +5,7 @@ import type { BrowserBridge, BrowserCapture, BrowserEvent, BrowserPage, BrowserT
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserTaskDetails } from '../../../../src/renderer/src/tools/BrowserTaskDetails'
 import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
+import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { BROWSER_PLAYER_MIN_WIDTH, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE, BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -75,6 +76,36 @@ describe('the browser player', () => {
     act(() => store.unpin())
     rerender(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     expect(screen.getByRole('complementary', { name: 'Browser for Visual gate flake' })).toBeInTheDocument()
+  })
+  it('does not ask this computer’s browser about a thread on another host', async () => {
+    const browser = fake([])
+    const remoteId = 'host:00000000-0000-4000-8000-000000000099:remote-thread'
+    browser.bridge.tasks = vi.fn(async (request: { threadId: string }) => {
+      if (request.threadId === remoteId) throw new Error('This action belongs to another host. Select that host before trying again.')
+      return ok([])
+    })
+    const state = threadsStateFixture()
+    const sample = state.host.threads[0]!
+    state.host.threads = [...state.host.threads, { ...sample, id: remoteId, remoteHost: true, title: 'On DGX' }]
+    const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={state} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await waitFor(() => expect(browser.bridge.tasks).toHaveBeenCalled())
+    const asked = vi.mocked(browser.bridge.tasks).mock.calls.map(call => call[0].threadId)
+    expect(asked).toContain('visual-gate')
+    expect(asked).not.toContain(remoteId)
+  })
+  it('keeps listing the other threads when one browser subscription throws', () => {
+    const store = new BrowserStore()
+    const tasks = vi.fn((request: { threadId: string }) => {
+      if (request.threadId === 'foreign') throw new Error('This action belongs to another host. Select that host before trying again.')
+      return Promise.resolve(ok([]))
+    })
+    const bridge: BrowserBridge = { ...fake([]).bridge, tasks }
+    expect(() => store.watchTasks(bridge, ['foreign', 'local'])).not.toThrow()
+    expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign', 'local'])
+    tasks.mockClear()
+    store.watchTasks(bridge, ['foreign', 'local'])
+    expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign'])
   })
   it('shows its own live page rather than "steps aside", even though its own root carries data-covers-native-view', async () => {
     // Regression: the player marks its own <aside> so a page docked elsewhere steps aside for it (browserOverlay.ts).
