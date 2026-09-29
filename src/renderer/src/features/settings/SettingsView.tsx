@@ -152,6 +152,12 @@ export function SettingsView({
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
+  const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
+  const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
+  if (settings.microphoneId !== savedMicrophoneId) {
+    setSavedMicrophoneId(settings.microphoneId)
+    setMicrophoneId(settings.microphoneId)
+  }
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState | 'closed'>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const microphonePeakRef = useRef(0)
@@ -239,7 +245,7 @@ export function SettingsView({
       return
     }
     microphoneTestRef.current = controller
-    const selectedDeviceId = settingsRef.current.microphoneId ?? undefined
+    const selectedDeviceId = microphoneId ?? undefined
     const outcome = await controller.start((level) => {
       if (microphoneTestRef.current !== controller) return
       const safeLevel = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
@@ -428,7 +434,11 @@ export function SettingsView({
                 <div className="settings-section__heading"><h2>Dictation</h2><p>Microphone & recording</p></div>
                 <div className="settings-rows">
                   <Field label="Microphone" {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
-                    <Select value={settings.microphoneId ?? ''} onChange={(event) => void save({ microphoneId: event.currentTarget.value || null })}>
+                    <Select value={microphoneId ?? ''} onChange={(event) => {
+                      const next = event.currentTarget.value || null
+                      setMicrophoneId(next)
+                      void save({ microphoneId: next })
+                    }}>
                       <option value="">{copy.settingsMicrophoneDefaultOption}</option>
                       {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
                       {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}

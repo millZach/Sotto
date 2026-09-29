@@ -73,6 +73,8 @@ export interface AudioContextAdapter {
   readonly sampleRate: number
   readonly destination: AudioNodeAdapter
   readonly audioWorklet: { addModule(url: string): Promise<void> }
+  readonly state?: 'suspended' | 'running' | 'closed'
+  resume?(): Promise<void>
   createMediaStreamSource(stream: MediaStreamAdapter): AudioNodeAdapter
   createGain(): GainNodeAdapter
   close(): Promise<void>
@@ -225,6 +227,8 @@ export class AudioRecorder {
       // alone can cost seconds on a cold start, silently dropping the
       // speaker's first words). None of this setup needs the stream.
       session.context = this.dependencies.createAudioContext()
+      // A context opened before the permission dialog can be left suspended once that dialog closes.
+      if (session.context.state === 'suspended') await session.context.resume?.()
       await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
       this.assertSessionLive(session)
 
@@ -247,6 +251,8 @@ export class AudioRecorder {
           selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
         )
       }
+      this.assertSessionLive(session)
+      if (session.context.state === 'suspended') await session.context.resume?.()
       this.assertSessionLive(session)
       this.monitorTrackEnd(session)
 

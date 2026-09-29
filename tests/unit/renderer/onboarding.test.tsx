@@ -95,6 +95,40 @@ describe('first-run onboarding', () => {
     expect(onUpdateSettings).toHaveBeenCalledWith({ microphoneId: 'mic-c922' })
   })
 
+  it('retests the microphone just chosen before that choice is saved', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn()
+    const pending = deferred<boolean>()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        settings={{ ...DEFAULT_SETTINGS, microphoneId: 'mic-builtin' }}
+        onUpdateSettings={() => pending.promise}
+        microphoneState="ready"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={request}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
+    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+
+    expect(request).toHaveBeenLastCalledWith('mic-c922')
+    pending.resolve(true)
+  })
+
   it('keeps the microphone test wave running while the stream is open, even in silence', async () => {
     const user = userEvent.setup()
     render(

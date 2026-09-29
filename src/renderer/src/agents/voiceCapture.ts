@@ -52,10 +52,7 @@ interface CaptureSession {
   ended?: () => void
 }
 
-interface VoiceAudioContext extends AudioContextAdapter {
-  readonly state?: string
-  resume?(): Promise<void>
-}
+type VoiceAudioContext = AudioContextAdapter
 
 interface VoiceBrowser {
   readonly document: { readonly baseURI: string }

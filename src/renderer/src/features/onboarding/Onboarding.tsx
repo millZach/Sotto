@@ -57,6 +57,12 @@ export function Onboarding({
   onComplete,
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
+  const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
+  const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
+  if (settings.microphoneId !== savedMicrophoneId) {
+    setSavedMicrophoneId(settings.microphoneId)
+    setMicrophoneId(settings.microphoneId)
+  }
   const [skipRequested, setSkipRequested] = useState(false)
   const [pasteTest, setPasteTest] = useState('')
   const [finishing, setFinishing] = useState(false)
@@ -141,9 +147,10 @@ export function Onboarding({
               {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
             >
               <Select
-                value={settings.microphoneId ?? ''}
+                value={microphoneId ?? ''}
                 onChange={(event) => {
                   const next = event.currentTarget.value || null
+                  setMicrophoneId(next)
                   void onUpdateSettings({ microphoneId: next })
                   void onRequestMicrophone(next)
                 }}
@@ -169,7 +176,7 @@ export function Onboarding({
               <Button
                 variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
                 disabled={microphoneState === 'requesting'}
-                onClick={() => void onRequestMicrophone()}
+                onClick={() => void onRequestMicrophone(microphoneId)}
               >
                 <Mic2 aria-hidden="true" size={18} />
                 {microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error'

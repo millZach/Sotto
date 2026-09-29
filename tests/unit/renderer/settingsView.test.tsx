@@ -671,7 +671,26 @@ describe('SettingsView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
 
-    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), { selectedDeviceId: 'mic-c922' }))
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922'))
+  })
+
+  it('tests the microphone just chosen before that choice is saved', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<boolean>()
+    const start = vi.fn(async () => 'ready' as const)
+    render(<SettingsView {...baseProps({
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, microphoneId: 'mic-builtin' },
+      mediaDevices: createMediaDevices([device('mic-builtin', 'MacBook Pro Microphone'), device('mic-c922', 'C922 Pro Stream Webcam')]),
+      onUpdateSettings: () => pending.promise,
+      createMicrophoneTest: () => ({ start, stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    expect(await screen.findByRole('option', { name: 'C922 Pro Stream Webcam' })).toBeVisible()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), 'mic-c922')
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922'))
+    pending.resolve(true)
   })
 
   it('clears a skipped microphone once the Settings test reports ready', async () => {
