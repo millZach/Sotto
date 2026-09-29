@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- PROTOTYPE: three renderings of the existing native Threads surface, selected by ?variant=A|B|C. Fictional data, no network mutations. -->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Sotto · Thread design study</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="lab-header">
+    <a class="lab-brand" href="?variant=A"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10v4m5-8v12m6-15v18m5-12v6" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg><strong>Sotto</strong><span>iPhone study</span></a>
+    <div class="lab-actions"><button id="compare">Compare</button><button id="large" aria-pressed="false" aria-label="Preview larger text">Aa</button><button id="theme" aria-label="Switch to light appearance">Light</button></div>
+  </header>
+  <main class="studio">
+    <aside class="intro">
+      <p class="eyebrow">THREADS, RECONSIDERED</p>
+      <h1 id="direction"></h1><p id="description" class="description"></p>
+      <div class="principles" id="principles"></div>
+      <div class="study-note"><span class="mini-dot"></span> Interactive prototype<p>Fictional threads. Nothing is sent to your computers.</p></div>
+    </aside>
+    <section class="phone" aria-label="Interactive iPhone preview">
+      <div class="statusbar" aria-hidden="true"><b>9:41</b><span><svg viewBox="0 0 40 12"><path d="M1 10V8m4 2V6m4 4V3m4 7V1" stroke="currentColor" stroke-width="2.5"/><path d="M19 3q6-5 12 0m-10 3q4-3 8 0m-6 3q2-2 4 0" stroke="currentColor" stroke-width="1.6" fill="none"/></svg><svg viewBox="0 0 28 13"><rect x="1" y="1" width="23" height="11" rx="3" fill="none" stroke="currentColor"/><rect x="3" y="3" width="18" height="7" rx="1.4" fill="currentColor"/><path d="M26 4v5" stroke="currentColor" stroke-width="2"/></svg></span></div>
+      <div id="app"></div>
+      <div class="home-indicator" aria-hidden="true"></div>
+    </section>
+    <aside class="try-panel"><p class="eyebrow">TAKE A LOOK AROUND</p><button data-demo="running">Open a working thread <span>↗</span></button><button data-demo="question">Review a question <span>↗</span></button><button data-demo="settled">Expand settled threads <span>↗</span></button><p class="sample-note">Same sample in each direction:<br>2 working · 1 needs you<br>3 recent · 2 settled</p><p class="keyboard-note">← → compare directions<br>Esc returns to the list</p></aside>
+    <section id="comparison" aria-label="All three designs" hidden></section>
+  </main>
+  <nav class="prototype-switcher" aria-label="Prototype direction"><button id="previous" aria-label="Previous direction">←</button><button id="variant-label" title="Cycle to the next direction"></button><button id="next" aria-label="Next direction">→</button></nav>
+  <dialog id="sheet"><div class="sheet-handle" aria-hidden="true"></div><div id="sheet-body"></div><button class="sheet-close" aria-label="Close sheet" id="close-sheet">×</button></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
