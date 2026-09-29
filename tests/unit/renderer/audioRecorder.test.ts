@@ -35,6 +35,8 @@ class FakeContext implements AudioContextAdapter {
   readonly source = new FakeNode()
   readonly gain = Object.assign(new FakeNode(), { gain: { value: 1 } })
   readonly audioWorklet = { addModule: vi.fn(async () => undefined) }
+  state: 'suspended' | 'running' | 'closed' = 'running'
+  readonly resume = vi.fn(async () => { this.state = 'running' })
   readonly createMediaStreamSource = vi.fn(() => this.source)
   readonly createGain = vi.fn(() => this.gain)
   readonly close = vi.fn(async () => undefined)
@@ -196,6 +198,26 @@ describe('audio capture worklet', () => {
 })
 
 describe('AudioRecorder', () => {
+  it('resumes a context the permission dialog left suspended', async () => {
+    const harness = createHarness()
+    const order: string[] = []
+    const context = harness.context
+    context.state = 'suspended'
+    context.resume.mockImplementation(async () => {
+      order.push(context.state)
+      context.state = 'running'
+    })
+    harness.getUserMedia.mockImplementation(async () => {
+      order.push('capture')
+      context.state = 'suspended'
+      return harness.stream
+    })
+
+    await harness.recorder().start()
+
+    expect(order).toEqual(['suspended', 'capture', 'suspended'])
+  })
+
   it('requests exact constraints and wires a silent processing graph', async () => {
     const harness = createHarness()
     const recorder = harness.recorder({ selectedDeviceId: 'mic-2' })
