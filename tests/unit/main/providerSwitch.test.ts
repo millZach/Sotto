@@ -101,6 +101,9 @@ describe('independent thread providers', () => {
     expect(selectInstalledProviders(codex, [])).toBeNull()
     expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toBeNull()
     expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'devin'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['grok'])).toBeNull()
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'], disconnectedProviders: ['devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
   })
   it('connects Claude Code when the saved provider is Codex and Codex is not installed', async () => {
     const f = await fixture()

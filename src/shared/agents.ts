@@ -994,15 +994,16 @@ const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok'] as const
 /**
  * The clients to connect when the current selection is not installed.
  * Codex remains the default when its CLI is present; otherwise Claude Code, then Grok Build.
- * Devin is included only when it was already enabled and its CLI is present.
- * Returns null when the current selection can already connect.
+ * A provider the user turned off stays off. Devin is included only when it was already enabled and its CLI is present.
+ * Returns null when the current selection can already connect, or when every installed client was turned off.
  */
 export function selectInstalledProviders(configuration: AgentConfiguration, installed: readonly ProviderId[]): Pick<AgentConfiguration, 'provider' | 'enabledProviders'> | null {
   const present = new Set(installed)
   const enabled = enabledThreadProviders(configuration)
   if (present.has(configuration.provider) && enabled.some(id => present.has(id))) return null
-  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id))
-  if (enabled.includes('devin') && present.has('devin')) enabledProviders.push('devin')
+  const off = new Set(configuration.disconnectedProviders ?? [])
+  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id) && !off.has(id))
+  if (enabled.includes('devin') && present.has('devin') && !off.has('devin')) enabledProviders.push('devin')
   const provider = enabledProviders[0]
   if (!provider) return null
   if (provider === configuration.provider && enabled.length === enabledProviders.length && enabled.every((id, index) => id === enabledProviders[index])) return null
