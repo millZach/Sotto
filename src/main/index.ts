@@ -498,6 +498,12 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
+  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  // The runtime's hash starts first so it overlaps PATH repair and the stores below.
+  // It is still waited on where it always was, before any window, and a tampered runtime still fails startup.
+  const runtimeVerification = e2eConfiguration === null
+    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
+    : null
   // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
   await installGuiPath()
   const userDataPath = app.getPath('userData')
@@ -506,12 +512,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
-  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
-  // The runtime's hash starts here so it overlaps the stores loading below rather than following them.
-  // It is awaited where it always was, before any window, and a tampered runtime still fails startup.
-  const runtimeVerification = e2eConfiguration === null
-    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
-    : null
   await naturalSpeechModels.initialize()
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.

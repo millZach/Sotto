@@ -2,13 +2,41 @@ import { execFile, execFileSync } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
-import { delimiter, isAbsolute, join } from 'node:path'
+import { isAbsolute, join, posix } from 'node:path'
 
 const LOGIN_PATH_TIMEOUT_MS = 4_000
+/** macOS and Linux separate PATH entries with a colon. These helpers never run for a Windows launch. */
+const POSIX_PATH_DELIMITER = ':'
+
+/** A POSIX home stays POSIX on the Windows test runner. A real Windows home stays a Windows path so the directory exists. */
+function userDirectory(home: string, ...parts: string[]): string {
+  return (/^[A-Za-z]:[\\/]|\\/.test(home) ? join : posix.join)(home, ...parts)
+}
+
+/**
+ * Split a POSIX PATH. The unit suite runs on Windows, where a temp directory is `D:\...`, so a drive
+ * letter and the rest of that directory are one entry rather than two.
+ */
+
+function posixEntries(path: string): string[] {
+  const pieces = path.split(POSIX_PATH_DELIMITER)
+  const entries: string[] = []
+  for (let index = 0; index < pieces.length; index += 1) {
+    const piece = pieces[index]!.replace(/^"|"$/g, '').trim()
+    const next = pieces[index + 1]?.replace(/^"|"$/g, '').trim()
+    if (/^[A-Za-z]$/.test(piece) && next !== undefined && next.startsWith('\\')) {
+      entries.push(`${piece}:${next}`)
+      index += 1
+      continue
+    }
+    if (piece) entries.push(piece)
+  }
+  return entries
+}
 
 /** Directories a Terminal login would search, and a Dock-launched Electron process would not. */
 export function staticPathCandidates(home: string, platform: NodeJS.Platform): string[] {
-  const candidates = [join(home, '.local', 'bin'), join(home, '.grok', 'bin'), join(home, '.codex', 'bin'), join(home, '.cargo', 'bin')]
+  const candidates = [userDirectory(home, '.local', 'bin'), userDirectory(home, '.grok', 'bin'), userDirectory(home, '.codex', 'bin'), userDirectory(home, '.cargo', 'bin')]
   if (platform === 'darwin') candidates.push('/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin')
   else if (platform === 'linux') candidates.push('/usr/local/bin')
   return candidates
@@ -17,23 +45,23 @@ export function staticPathCandidates(home: string, platform: NodeJS.Platform): s
 /** A GUI launch whose PATH is only the system defaults, so Homebrew, nvm and ~/.local/bin are invisible. */
 export function pathLooksTruncated(path: string, home: string, platform: NodeJS.Platform): boolean {
   if (platform === 'win32') return false
-  const entries = new Set(path.split(delimiter).map(entry => entry.replace(/^"|"$/g, '')))
+  const entries = new Set(posixEntries(path))
   const markers = platform === 'darwin'
-    ? [join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin']
-    : [join(home, '.local', 'bin'), '/usr/local/bin']
+    ? [userDirectory(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin']
+    : [userDirectory(home, '.local', 'bin'), '/usr/local/bin']
   return markers.every(marker => !entries.has(marker))
 }
 
 export function mergePath(current: string, additions: readonly string[]): string {
   const seen = new Set<string>()
   const ordered: string[] = []
-  for (const entry of [...(current ? current.split(delimiter) : []), ...additions]) {
+  for (const entry of [...posixEntries(current), ...additions]) {
     const dir = entry.replace(/^"|"$/g, '').trim()
     if (!dir || seen.has(dir)) continue
     seen.add(dir)
     ordered.push(dir)
   }
-  return ordered.join(delimiter)
+  return ordered.join(POSIX_PATH_DELIMITER)
 }
 
 /** The last absolute PATH line. Login scripts sometimes print a greeting before it. */
@@ -41,7 +69,7 @@ export function pathLine(stdout: string): string | null {
   const lines = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index]!
-    if (line.split(delimiter).some(entry => isAbsolute(entry.replace(/^"|"$/g, '')))) return line
+    if (posixEntries(line).some(entry => posix.isAbsolute(entry))) return line
   }
   return null
 }
@@ -113,7 +141,7 @@ export async function installGuiPath(env: NodeJS.ProcessEnv = process.env, deps:
   if (nvm) additions.push(nvm)
   if (pathLooksTruncated(current, home, platform)) {
     const login = await (deps.loginPath ?? (() => readLoginShellPath(deps.shell ?? defaultShell())))().catch(() => null)
-    if (login) additions.push(...login.split(delimiter))
+    if (login) additions.push(...posixEntries(login))
   }
   const present = await existingDirectories(additions)
   const next = mergePath(current, present)
