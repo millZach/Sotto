@@ -1,0 +1,644 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not part of the app; never imported. Issue #480.
+  Question: when a host's client (Claude Code, Codex, Grok Build, Devin) is behind the published version,
+  what does its provider tile in Settings > Hosts say, and how does Update look while it runs, once it
+  worked, and when it failed?
+  Decided before this prototype (#480): the tile says when its client is behind and offers Update, which
+  runs the host's own update-client. For a mise install that is `mise upgrade <tool>`; for Grok Build under
+  mise it is also the package's install step, so ~/.grok/bin gets the new program. It is bumpless
+  (ADR-0021 as amended September 28): threads keep working and move to the new client when idle. Installs
+  Sotto will not run (unknown channel, Devin) show the command to run by hand.
+  Starts from the real tiles (HostProviders.tsx, layout B of prototype/host-providers) and the update card
+  words in Settings > Providers and AgentControl.updateClient.
+  Three layouts, switchable with ?variant=A|B|C, the bar at the bottom, or the arrow keys:
+    A  In the tile: a line under the version and an Update button beside Disconnect.
+    B  One row for the host: above the tiles, visible with them closed, Update all, one row per client.
+       The tiles carry only a small marker.
+    C  The version opens the update: the version on the tile becomes a chip that opens a small popover
+       with the update's steps, its progress and what went wrong.
+  The PROTOTYPE panel in the top right reaches every state. T switches theme, R resets.
+  Versions are forge's on September 29, 2026. Updates are simulated; "Next update fails" makes one fail.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · A host's client updates on its provider tiles</title>
+<style>
+@font-face { font-family: Figtree; src: url('../../assets/fonts/figtree-latin.woff2') format('woff2'); font-weight: 300 900; }
+:root, [data-theme='dark'] {
+  --tt-room: #111214; --tt-surface-elevated: #1c1d20; --tt-surface-sunken: #0f1012; --tt-surface-overlay: #232428;
+  --tt-hairline: rgba(255,255,255,.09); --tt-border: rgba(255,255,255,.16); --tt-border-faint: rgba(255,255,255,.08);
+  --tt-text: #f3f3f4; --tt-text-2: #d6d7da; --tt-text-muted: #a3a5ab; --tt-text-faint: #8a8d94;
+  --tt-accent: #8fb4ff; --tt-accent-text: #a9c4ff; --tt-success: #6fcf97; --tt-error: #e8868f;
+  --tt-pill: #f5f5f6; --tt-pill-ink: #111214; --tt-overlay: rgba(0,0,0,.55); --tt-focus-ring: #8fb4ff;
+  --tt-hover: rgba(255,255,255,.06); --tt-selected: rgba(143,180,255,.12); --tt-error-surface: rgba(232,134,143,.1);
+  --tt-code-bg: #0b0c0e; --tt-code-text: #d6d7da;
+  --tt-shadow-lg: 0 24px 60px rgba(0,0,0,.5);
+}
+[data-theme='light'] {
+  --tt-room: #eceae6; --tt-surface-elevated: #ffffff; --tt-surface-sunken: #f1f0ec; --tt-surface-overlay: #ffffff;
+  --tt-hairline: rgba(0,0,0,.1); --tt-border: rgba(0,0,0,.2); --tt-border-faint: rgba(0,0,0,.1);
+  --tt-text: #17181a; --tt-text-2: #2c2d30; --tt-text-muted: #55585f; --tt-text-faint: #65686f;
+  --tt-accent: #2f5fcf; --tt-accent-text: #2451b8; --tt-success: #1f8a4c; --tt-error: #b3303c;
+  --tt-pill: #17181a; --tt-pill-ink: #ffffff; --tt-overlay: rgba(20,20,20,.35); --tt-focus-ring: #2f5fcf;
+  --tt-hover: rgba(0,0,0,.05); --tt-selected: rgba(47,95,207,.08); --tt-error-surface: rgba(179,48,60,.07);
+  --tt-code-bg: #f1f0ec; --tt-code-text: #2c2d30;
+  --tt-shadow-lg: 0 24px 60px rgba(0,0,0,.18);
+}
+:root { --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-pill: 999px; --tt-font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--tt-room); color: var(--tt-text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The window: a drag strip and Settings with its section list. */
+.strip { height: 34px; border-bottom: 1px solid var(--tt-hairline); display: flex; align-items: center; padding: 0 14px; color: var(--tt-text-faint); font-size: 12px; -webkit-app-region: drag; }
+.shell { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: calc(100vh - 34px); }
+.subnav { display: grid; align-content: start; gap: 2px; padding: 22px 10px; border-right: 1px solid var(--tt-hairline); }
+.subnav span { padding: 7px 10px; border-radius: var(--tt-radius-sm); color: var(--tt-text-muted); font-size: 13.5px; }
+.subnav span[aria-current] { background: var(--tt-hover); color: var(--tt-text); font-weight: 600; }
+@media (max-width: 900px) { .shell { grid-template-columns: 150px minmax(0, 1fr); } }
+
+/* Settings > Hosts, as it is today. */
+.page { max-width: 900px; padding: 30px 28px 150px; display: grid; gap: 18px; min-width: 0; }
+.page h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.page p { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 14px; }
+.local { display: flex; align-items: flex-start; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid var(--tt-hairline); }
+.local .copy { flex: 1; min-width: 0; max-width: 470px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.ico { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-accent-text); }
+.ico.local-ico { color: var(--tt-text-muted); }
+.hrow { border-top: 1px solid var(--tt-hairline); border-bottom: 1px solid var(--tt-hairline); padding-bottom: 6px; }
+.hrow-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 0; }
+.info { flex: 1 1 220px; min-width: 0; }
+.info h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.page .meta { margin-top: 2px; font-size: 13px; }
+.meta .on { color: var(--tt-text); }
+.acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.switch { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--tt-accent); border: 0; cursor: pointer; }
+.track::after { content: ''; position: absolute; top: 3px; left: 19px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-pill-ink); }
+.track[aria-checked='false'] { background: var(--tt-border); } .track[aria-checked='false']::after { left: 3px; }
+
+.button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); padding: 0 14px; background: transparent; color: var(--tt-text-2); cursor: pointer; font: 500 13px Figtree, system-ui, sans-serif; white-space: nowrap; }
+.button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.button:disabled { cursor: not-allowed; opacity: .5; }
+.button.primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.button.ghost { border-color: transparent; }
+.button.sm { min-height: 28px; padding: 0 11px; font-size: 12.5px; }
+.button.icon { width: 32px; padding: 0; }
+.muted { color: var(--tt-text-muted); } .faint { color: var(--tt-text-faint); }
+.spinner { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border: 2px solid var(--tt-border); border-top-color: var(--tt-accent); border-radius: 50%; animation: spin .9s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--tt-accent); border-right-color: var(--tt-accent); } }
+html[data-motion='reduce'] .spinner { animation: none; border-right-color: var(--tt-accent); }
+.ok-mark { color: var(--tt-success); font-weight: 700; }
+.err-mark { color: var(--tt-error); font-weight: 700; }
+
+/* The providers under the host's row (the real tiles, hostProviders.css). */
+.providers { display: grid; gap: 10px; min-width: 0; padding-left: 48px; }
+.providers-toggle { justify-self: start; margin-left: -12px; }
+.panel { display: grid; gap: 10px; min-width: 0; container-type: inline-size; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+@container (min-width: 700px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 340px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.foot { margin: 0 0 4px !important; color: var(--tt-text-muted); font-size: 12px !important; }
+@media (max-width: 700px) { .providers { padding-left: 0; } .providers-toggle { margin-left: 0; } }
+
+.tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); padding: 12px; }
+.tile[data-kind='not-installed'] { border-style: dashed; background: transparent; }
+.tile .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tile h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 11px; font-weight: 700; }
+.page .tile .state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: 13px; }
+.page .tile .detail { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.dot { flex: 0 0 auto; width: 8px; height: 8px; border: 1.5px solid var(--tt-text-faint); border-radius: 50%; }
+.tile[data-kind='connected'] .dot { border-color: var(--tt-success); background: var(--tt-success); }
+.tile[data-kind='not-installed'] .dot { background: var(--tt-text-faint); }
+.tile .act { margin-top: auto; padding-top: 4px; min-width: 0; }
+.tile .act-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tile .act-row .button { max-width: 100%; white-space: normal; text-align: left; }
+.page .tile .note { margin: 0; color: var(--tt-text-muted); font-size: 12px; }
+.page .tile .note:empty { display: none; }
+
+/* Pieces every layout shares: the command to run by hand, what the installer printed, the failure words. */
+.cmd { display: grid; gap: 6px; min-width: 0; }
+.page .cmd p { margin: 0; color: var(--tt-text-muted); font-size: 12px; }
+.cmd code, .steps code { display: block; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: 12px/1.5 var(--tt-font-mono); }
+.cmd .button { justify-self: start; }
+.printed summary { cursor: pointer; color: var(--tt-text-muted); font-size: 12px; width: fit-content; }
+.printed summary:hover { color: var(--tt-text); }
+.printed pre { margin: 6px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: 11.5px/1.5 var(--tt-font-mono); }
+.page .failed-words { margin: 0; color: var(--tt-text); font-size: 12px; }
+.page .failed-words b { color: var(--tt-error); font-weight: 600; }
+
+/* A: the update lives in the tile. */
+.page .upd { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-accent-text); font-size: 12px; font-weight: 500; }
+.page .upd.quiet { color: var(--tt-text-muted); font-weight: 400; }
+.page .upd.err { color: var(--tt-error); }
+.tile .fail-box { display: grid; gap: 8px; border-left: 2px solid var(--tt-error); padding: 2px 0 2px 9px; }
+.tile .manual-box { display: grid; gap: 8px; }
+.toggle-count { color: var(--tt-accent-text); font-weight: 500; }
+
+/* B: one row for the host, above the tiles. */
+.bup { display: grid; gap: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); min-width: 0; }
+.bup[data-tone='error'] { border-left: 2px solid var(--tt-error); }
+.bup-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; }
+.bup-lead { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-accent-text); font-size: 13px; font-weight: 700; }
+.bup-copy { flex: 1 1 220px; min-width: 0; }
+.bup-copy strong { display: block; font-size: 13.5px; font-weight: 600; }
+.page .bup-copy small, .bup-copy small { display: block; margin-top: 1px; color: var(--tt-text-muted); font-size: 12px; }
+.bup-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.bup-more { display: grid; gap: 8px; padding: 0 12px 12px 52px; min-width: 0; }
+.bup-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--tt-border-faint); }
+.bup-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 9px 12px 9px 52px; border-bottom: 1px solid var(--tt-border-faint); min-width: 0; }
+.bup-list li:last-child { border-bottom: 0; }
+.bup-list .name { font-weight: 600; font-size: 13px; min-width: 90px; }
+.bup-list .what { flex: 1 1 160px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.bup-list .what code { font: 11.5px var(--tt-font-mono); color: var(--tt-text-faint); overflow-wrap: anywhere; }
+.bup-list .extra { flex: 1 0 100%; display: grid; gap: 8px; }
+.bup-list .row-act { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 5px; border-radius: var(--tt-radius-pill); background: var(--tt-selected); color: var(--tt-accent-text); padding: 1px 7px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.pill.err { background: var(--tt-error-surface); color: var(--tt-error); }
+.pill.quiet { background: var(--tt-hover); color: var(--tt-text-muted); }
+.pill .spinner { width: 9px; height: 9px; border-width: 1.5px; }
+@media (max-width: 700px) { .bup-more, .bup-list li { padding-left: 12px; } }
+
+/* C: the version opens the update. */
+.chip { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; border: 1px solid color-mix(in srgb, var(--tt-accent) 45%, transparent); border-radius: var(--tt-radius-pill); background: var(--tt-selected); color: var(--tt-accent-text); padding: 0 8px; font: 600 12px Figtree, system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--tt-accent); }
+.chip[aria-expanded='true'] { border-color: var(--tt-accent); background: color-mix(in srgb, var(--tt-accent) 22%, transparent); }
+.chip.err { border-color: color-mix(in srgb, var(--tt-error) 55%, transparent); background: var(--tt-error-surface); color: var(--tt-error); }
+.chip.quiet { border-color: var(--tt-border); background: transparent; color: var(--tt-text-2); }
+.chip .arrow { color: var(--tt-text-muted); font-weight: 500; }
+.chip .spinner { width: 10px; height: 10px; border-width: 1.5px; }
+.pop { position: fixed; z-index: 40; width: 300px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; display: grid; gap: 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-lg); padding: 14px; }
+.pop h6 { margin: 0; font-size: 14px; font-weight: 600; color: var(--tt-text); }
+.page .pop p, .pop p { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.page .pop p.lead, .pop p.lead { color: var(--tt-text); }
+.pop .pacts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 12px; }
+.steps .n { display: grid; place-items: center; width: 18px; height: 18px; margin-top: 3px; border-radius: 50%; border: 1px solid var(--tt-border); color: var(--tt-text-muted); font-size: 10.5px; }
+.steps li[data-s='done'] .n { border-color: var(--tt-success); background: var(--tt-success); color: var(--tt-pill-ink); }
+.steps li[data-s='now'] .n { border-color: transparent; }
+.steps li[data-s='fail'] .n { border-color: var(--tt-error); color: var(--tt-error); }
+.steps small { display: block; margin-top: 3px; color: var(--tt-text-muted); font-size: 11.5px; }
+
+/* The prototype's own controls, not part of the design. */
+.proto-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: #000; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; z-index: 50; }
+.proto-bar button { border: 0; border-radius: 999px; background: #262626; color: #fff; padding: 7px 12px; font: inherit; cursor: pointer; }
+.proto-bar .label { min-width: 230px; text-align: center; }
+.proto-panel { position: fixed; top: 44px; right: 12px; z-index: 50; width: 244px; border-radius: 12px; background: #000; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); font: 12.5px/1.35 system-ui, sans-serif; padding: 10px; display: grid; gap: 8px; }
+.proto-panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.proto-panel header b { color: #fc6; letter-spacing: .06em; font-size: 11px; }
+.proto-panel .now { color: #ddd; } .proto-panel .now strong { color: #fff; }
+.proto-panel .states { display: grid; gap: 3px; }
+.proto-panel button { border: 0; border-radius: 7px; background: #1d1d1d; color: #eee; padding: 6px 9px; font: inherit; text-align: left; cursor: pointer; }
+.proto-panel button[aria-pressed='true'] { background: #fc6; color: #000; font-weight: 700; }
+.proto-panel label { display: flex; gap: 6px; align-items: center; color: #ddd; }
+.proto-panel .body { display: grid; gap: 8px; }
+.proto-panel[data-collapsed='true'] .body { display: none; }
+.proto-panel[data-collapsed='true'] { width: auto; }
+.proto-note { font: 12px system-ui, sans-serif; color: #b8860b; background: rgba(255,200,80,.1); border: 1px dashed rgba(200,150,40,.6); border-radius: 6px; padding: 2px 6px; }
+[data-theme='dark'] .proto-note { color: #fc6; }
+</style>
+</head>
+<body>
+<div class="strip">Sotto</div>
+<div class="shell">
+  <nav class="subnav" aria-label="Settings sections"><span>Dictation</span><span>Transcription</span><span>Cleanup</span><span>Providers</span><span aria-current="page">Hosts</span><span>Phones</span><span>Agents</span><span>Output</span><span>Appearance</span><span>Application</span><span>Git</span></nav>
+  <main class="page" id="page"></main>
+</div>
+<div id="pop-root"></div>
+
+<aside class="proto-panel" id="proto" aria-label="Prototype states">
+  <header><b>PROTOTYPE · #480</b><button type="button" id="collapse" aria-expanded="true" aria-controls="proto-body">Hide</button></header>
+  <div class="body" id="proto-body">
+    <div class="now">State: <strong id="sname"></strong></div>
+    <div class="states" id="states"></div>
+    <label><input type="checkbox" id="failnext"> Next update fails</label>
+  </div>
+</aside>
+<div class="proto-bar" role="toolbar" aria-label="Prototype layouts">
+  <button type="button" id="prev" aria-label="Previous layout">←</button>
+  <span class="label" id="vlabel"></span>
+  <button type="button" id="next" aria-label="Next layout">→</button>
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="theme">Theme</button>
+  <button type="button" id="motion" aria-pressed="false">Motion</button>
+</div>
+<script>
+const VARIANTS = { A: 'In the tile', B: 'One row for the host', C: 'The version opens the update' }
+const KEYS = Object.keys(VARIANTS)
+const STATES = [
+  ['current', 'Up to date'],
+  ['one', 'Update available on one tile'],
+  ['three', 'Updates available on three tiles'],
+  ['updating', 'Updating, threads still working'],
+  ['updated', 'Updated'],
+  ['failed', 'Failed'],
+  ['manual', "An install Sotto won't update"],
+  ['down', 'forge not connected'],
+]
+const params = new URLSearchParams(location.search)
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'A'
+let scenario = STATES.some(([k]) => k === params.get('state')) ? params.get('state') : 'three'
+let failNext = false
+let state
+let timers = []
+const STEP_MS = 1500
+
+/* forge on September 29: every client a mise install, all three behind. Devin is not on forge. */
+const BASE = {
+  claude: { name: 'Claude Code', mark: 'CC', account: 'Claude subscription', from: '2.1.281', to: '2.1.284', threads: 1,
+    steps: [{ cmd: 'mise upgrade claude' }], manual: ['mise upgrade claude'] },
+  codex: { name: 'Codex', mark: 'Cx', account: 'ChatGPT', from: '0.155.1', to: '0.158.0', threads: 2,
+    steps: [{ cmd: 'mise upgrade codex' }], manual: ['mise upgrade codex'] },
+  grok: { name: 'Grok Build', mark: 'Gk', account: 'X account', from: '1.0.41', to: '1.0.43', threads: 0,
+    steps: [{ cmd: 'mise upgrade npm:@xai-official/grok' }, { cmd: 'node bin/postinstall.js', say: "Grok Build's install step, in the new package's folder. It puts the new program in ~/.grok/bin." }],
+    manual: ['mise upgrade npm:@xai-official/grok', 'cd "$(mise where npm:@xai-official/grok)/lib/node_modules/@xai-official/grok"', 'node bin/postinstall.js'] },
+}
+const ORDER = ['claude', 'codex', 'grok']
+const HOST = 'forge'
+
+function fresh(s) {
+  const p = {}
+  for (const id of ORDER) p[id] = { ...BASE[id], installed: BASE[id].to, u: 'current', step: 0, failStep: 0 }
+  const behind = id => Object.assign(p[id], { installed: p[id].from, u: 'behind' })
+  if (s === 'one' || s === 'updating' || s === 'failed' || s === 'manual') behind('codex')
+  if (s === 'three') ORDER.forEach(behind)
+  if (s === 'updating') p.codex.u = 'updating'
+  if (s === 'failed') p.codex.u = 'failed'
+  if (s === 'manual') p.codex.u = 'manual'
+  if (s === 'updated') p.codex.u = 'updated'
+  return { providers: p, hostUp: s !== 'down', open: true, bOpen: false, popover: null, copied: null, details: {}, queue: [], running: s === 'updating' ? 'codex' : null, all: null, dismissed: false, note: {} }
+}
+const P = id => state.providers[id]
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const names = ids => ids.length <= 1 ? ids.map(id => P(id).name).join('') : `${ids.slice(0, -1).map(id => P(id).name).join(', ')} and ${P(ids.at(-1)).name}`
+const pending = () => ORDER.filter(id => P(id).u !== 'current')
+const updatable = () => ORDER.filter(id => ['behind', 'failed'].includes(P(id).u))
+
+/* ---------- The words, shared by every layout ---------- */
+const threadsKeep = v => v.threads === 0 ? 'Your threads keep working.' : v.threads === 1 ? `Your ${v.name} thread on ${HOST} keeps working.` : `Your ${v.threads} ${v.name} threads on ${HOST} keep working.`
+const availableLine = v => `${v.name} ${v.to} is available on ${HOST}.`
+const availableSub = v => `You have ${v.from}. Your threads keep working while it installs.`
+const failedWhat = v => v.failStep === 1 ? `mise installed ${v.to}, but Grok Build's install step did not finish, so ${HOST} still starts ${v.from}.` : `mise could not download ${v.name} ${v.to} on ${HOST}. The connection dropped partway.`
+const failedKept = v => v.failStep === 1 ? 'Nothing was lost, and your threads kept working.' : `Nothing was changed: ${v.from} is still installed, and your threads kept working.`
+const manualWhy = v => `Sotto did not install ${v.name} this way, so it will not replace it. Run this on ${HOST}:`
+const updatedLine = v => `${v.name} is now ${v.to}.`
+const printedText = v => v.failStep === 1
+  ? `mise npm:@xai-official/grok@${v.to} ✓ installed\nError: EACCES: permission denied, rename '~/.grok/bin/grok' -> '~/.grok/bin/grok.old'\n    at postinstall.js:88`
+  : `mise ERROR Failed to install ${v.name === 'Codex' ? 'aqua:openai/codex' : v.name}@${v.to}\nmise ERROR error sending request for url (https://github.com/openai/codex/releases/download/rust-v${v.to}/codex-x86_64-unknown-linux-musl.tar.gz)\nmise ERROR connection reset by peer`
+
+function spinner() { return '<span class="spinner" aria-hidden="true"></span>' }
+function cmdBlock(key, lead, lines, what) {
+  const copied = state.copied === key
+  return `<div class="cmd"><p>${lead}</p><code>${lines.map(esc).join('<br>')}</code>
+    <button type="button" class="button sm" data-act="copy" data-key="${key}" data-k="copy-${key}" aria-label="Copy the command that ${what}">${copied ? '<span class="ok-mark" aria-hidden="true">✓</span> Copied' : 'Copy'}</button>
+    <span class="sr" role="status">${copied ? 'Copied the command' : ''}</span></div>`
+}
+function printed(key, v) {
+  return `<details class="printed" data-dkey="${key}" ${state.details[key] ? 'open' : ''}><summary data-k="sum-${key}">What mise printed</summary><pre>${esc(printedText(v))}</pre></details>`
+}
+function failBlock(key, id, lead = true) {
+  const v = P(id)
+  return `${lead ? `<p class="failed-words"><b>${v.name} did not update.</b> ${failedWhat(v)} ${failedKept(v)}</p>` : ''}
+    ${cmdBlock(`fail-${key}`, `Try again, or run this on ${HOST}:`, v.manual, `updates ${v.name} on ${HOST}`)}
+    ${printed(`p-${key}`, v)}`
+}
+
+/* ---------- The tile, as HostProviders.tsx draws it, with a hook per layout ---------- */
+function tile(id, { version, line = '', below = '', actions = '', note = '' }) {
+  const v = P(id)
+  return `<li class="tile" data-kind="connected" data-id="${id}" data-scope="${id}" aria-labelledby="t-${id}">
+    <div class="top"><span class="mark" aria-hidden="true">${v.mark}</span><h5 id="t-${id}">${v.name}</h5></div>
+    <p class="state"><span class="dot" aria-hidden="true"></span>Connected</p>
+    <p class="detail"><span>${v.account} ·</span>${version ?? `<span>${v.installed}</span>`}</p>
+    ${line}${below}
+    <div class="act"><div class="act-row">${actions}<button type="button" class="button ghost" data-act="noop" data-k="disc-${id}" aria-label="Disconnect ${v.name} on ${HOST}">Disconnect</button></div></div>
+    <p class="note" role="status">${note}${state.note[id] ? esc(state.note[id]) : ''}</p>
+  </li>`
+}
+function devinTile() {
+  return `<li class="tile" data-kind="not-installed" data-scope="devin" aria-labelledby="t-devin">
+    <div class="top"><span class="mark" aria-hidden="true">Dv</span><h5 id="t-devin">Devin</h5></div>
+    <p class="state"><span class="dot" aria-hidden="true"></span>Not installed</p>
+    <p class="detail">Not on ${HOST} yet.</p>
+    <div class="act"><div class="act-row"><button type="button" class="button primary" data-act="noop" data-k="devin-agent" aria-label="Have my agent install Devin on ${HOST}">Have my agent install it</button><button type="button" class="button ghost" data-act="noop" data-k="devin-check" aria-label="Check ${HOST} for Devin again">Check again</button></div></div>
+    <p class="note" role="status">${state.note.devin ? esc(state.note.devin) : ''}</p>
+  </li>`
+}
+const updatedNote = v => `<span class="ok-mark" aria-hidden="true">✓</span> ${updatedLine(v)}`
+
+/* A: a line under the version and Update in the tile's action slot beside Disconnect. */
+function tileA(id) {
+  const v = P(id)
+  switch (v.u) {
+    case 'behind': return tile(id, { line: `<p class="upd">${v.to} available</p>`,
+      actions: `<button type="button" class="button" data-act="update" data-id="${id}" data-k="upd-${id}" aria-label="Update ${v.name} on ${HOST} to ${v.to}">Update</button>` })
+    case 'queued': return tile(id, { line: `<p class="upd quiet">${v.to} next, after ${P(state.running).name}</p>`,
+      actions: `<button type="button" class="button" data-act="unqueue" data-id="${id}" data-k="upd-${id}" aria-label="Cancel the ${v.name} update on ${HOST}">Cancel update</button>` })
+    case 'updating': return tile(id, { line: `<p class="upd">${spinner()}Updating to ${v.to}${v.steps.length > 1 ? ` · step ${v.step + 1} of ${v.steps.length}` : ''}…</p>`, note: threadsKeep(v) })
+    case 'updated': return tile(id, { note: updatedNote(v) })
+    case 'failed': return tile(id, { line: `<p class="upd err">Did not update to ${v.to}</p>`,
+      below: `<div class="fail-box" role="status"><p class="failed-words">${failedWhat(v)} ${failedKept(v)}</p>${failBlock(`a-${id}`, id, false)}</div>`,
+      actions: `<button type="button" class="button" data-act="update" data-id="${id}" data-k="upd-${id}" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button>` })
+    case 'manual': return tile(id, { line: `<p class="upd">${v.to} available</p>`,
+      below: `<div class="manual-box">${cmdBlock(`man-${id}`, manualWhy(v), v.manual, `updates ${v.name} on ${HOST}`)}</div>` })
+    default: return tile(id, {})
+  }
+}
+
+/* B: the tile only carries a marker; the row above does the work. */
+function tileB(id) {
+  const v = P(id)
+  const marker = {
+    behind: `<span class="pill">↑ ${v.to}<span class="sr"> available, see the updates above</span></span>`,
+    manual: `<span class="pill">↑ ${v.to}<span class="sr"> available, see the updates above</span></span>`,
+    queued: '<span class="pill quiet">Waiting to update</span>',
+    updating: `<span class="pill">${spinner()}Updating</span>`,
+    failed: '<span class="pill err">Did not update</span>',
+  }[v.u] ?? ''
+  return tile(id, { version: `<span>${v.installed}</span>${marker}` })
+}
+
+/* C: the version is a chip that opens the update. */
+function tileC(id) {
+  const v = P(id)
+  const open = state.popover === id
+  const chip = (cls, inner, label) => `<button type="button" class="chip ${cls}" id="chip-${id}" data-act="pop" data-id="${id}" data-k="chip-${id}" aria-haspopup="dialog" aria-expanded="${open}" ${open ? `aria-controls="pop"` : ''} aria-label="${label}">${inner}</button>`
+  const version = {
+    behind: chip('', `${v.from}<span class="arrow" aria-hidden="true">→</span>${v.to}`, `Show the ${v.name} update on ${HOST}, ${v.from} to ${v.to}`),
+    manual: chip('', `${v.from}<span class="arrow" aria-hidden="true">→</span>${v.to}`, `Show how to update ${v.name} on ${HOST}, ${v.from} to ${v.to}`),
+    queued: chip('quiet', `${v.from} · waiting`, `Show the ${v.name} update on ${HOST}, waiting for ${state.running ? P(state.running).name : 'another update'}`),
+    updating: chip('', `${spinner()}Updating to ${v.to}`, `Show the ${v.name} update's progress on ${HOST}`),
+    failed: chip('err', `${v.from} · did not update`, `Show why ${v.name} did not update on ${HOST}`),
+  }[v.u]
+  return tile(id, { version, note: v.u === 'updated' ? updatedNote(v) : v.u === 'updating' ? threadsKeep(v) : '' })
+}
+function stepState(v, i) {
+  if (v.u === 'updating') return i < v.step ? 'done' : i === v.step ? 'now' : 'todo'
+  if (v.u === 'failed') return i < v.failStep ? 'done' : i === v.failStep ? 'fail' : 'todo'
+  return 'todo'
+}
+function steps(v) {
+  return `<ol class="steps" aria-label="What Sotto runs on ${HOST}">${v.steps.map((s, i) => {
+    const st = stepState(v, i)
+    const n = st === 'done' ? '✓' : st === 'now' ? spinner() : st === 'fail' ? '✕' : i + 1
+    const sr = { done: 'Done: ', now: 'Running: ', fail: 'Did not finish: ', todo: '' }[st]
+    return `<li data-s="${st}"><span class="n" aria-hidden="true">${n}</span><div><span class="sr">${sr}</span><code>${esc(s.cmd)}</code>${s.say ? `<small>${s.say}</small>` : ''}</div></li>`
+  }).join('')}</ol>`
+}
+function popover() {
+  const id = state.popover
+  if (variant !== 'C' || !id) return ''
+  const v = P(id)
+  const close = label => `<button type="button" class="button ghost" data-act="pop-close" data-k="pop-close">${label}</button>`
+  let body
+  if (v.u === 'behind') body = `<h6 id="pop-t">Update ${v.name} on ${HOST}</h6>
+    <p class="lead">${v.from} is installed; ${v.to} is published.</p>
+    <p>Sotto runs this on ${HOST}:</p>${steps(v)}
+    <p>Your threads keep working while it installs, and move to ${v.to} when they are idle.</p>
+    <div class="pacts">${close('Not now')}<button type="button" class="button primary" data-act="update" data-id="${id}" data-k="pop-go" aria-label="Update ${v.name} on ${HOST} to ${v.to}">Update to ${v.to}</button></div>`
+  else if (v.u === 'queued') body = `<h6 id="pop-t">Update ${v.name} on ${HOST}</h6>
+    <p class="lead">Waiting for ${P(state.running).name} to finish. One client updates at a time on ${HOST}.</p>${steps(v)}
+    <div class="pacts"><button type="button" class="button" data-act="unqueue" data-id="${id}" data-k="pop-go" aria-label="Cancel the ${v.name} update on ${HOST}">Cancel update</button>${close('Close')}</div>`
+  else if (v.u === 'updating') body = `<h6 id="pop-t">Updating ${v.name} on ${HOST}</h6>
+    <p class="lead">${v.from} to ${v.to}.</p>${steps(v)}<p>${threadsKeep(v)}</p>
+    <div class="pacts">${close('Close')}</div>`
+  else if (v.u === 'failed') body = `<h6 id="pop-t">${v.name} did not update</h6>
+    <p class="lead">${failedWhat(v)}</p><p>${failedKept(v)}</p>${steps(v)}
+    ${failBlock(`c-${id}`, id, false)}
+    <div class="pacts">${close('Close')}<button type="button" class="button primary" data-act="update" data-id="${id}" data-k="pop-go" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button></div>`
+  else if (v.u === 'manual') body = `<h6 id="pop-t">Update ${v.name} on ${HOST} yourself</h6>
+    <p class="lead">${v.from} is installed; ${v.to} is published.</p>
+    ${cmdBlock(`man-${id}`, manualWhy(v), v.manual, `updates ${v.name} on ${HOST}`)}
+    <div class="pacts">${close('Close')}</div>`
+  else if (v.u === 'updated') body = `<h6 id="pop-t">${updatedLine(v)}</h6>${steps({ ...v, u: 'updating', step: v.steps.length })}
+    <div class="pacts">${close('Close')}</div>`
+  else return ''
+  return `<div class="pop" id="pop" role="dialog" aria-labelledby="pop-t" data-scope="pop">${body}</div>`
+}
+
+/* B: the row for the host. One client reads like the one-line card in ADR-0021; several get a list. */
+function bRow() {
+  const items = pending()
+  if (!items.length || state.dismissed) return ''
+  const settled = items.every(id => ['updated', 'failed', 'manual'].includes(P(id).u))
+  const dismiss = `<button type="button" class="button ghost sm" data-act="dismiss" data-k="b-dismiss" aria-label="Dismiss the updates for ${HOST}">Dismiss</button>`
+  if (items.length === 1) {
+    const id = items[0], v = P(id)
+    const lead = t => `<span class="bup-lead" aria-hidden="true">${t}</span>`
+    const head = (leadHtml, strong, small, acts, tone = '') => `<div class="bup" data-scope="bup" ${tone ? `data-tone="${tone}"` : ''} role="group" aria-label="${v.name} update on ${HOST}"><div class="bup-head">${leadHtml}<div class="bup-copy" role="status"><strong>${strong}</strong>${small ? `<small>${small}</small>` : ''}</div><div class="bup-acts">${acts}</div></div>`
+    if (v.u === 'behind') return head(lead(v.mark), availableLine(v), availableSub(v), `<button type="button" class="button primary sm" data-act="update" data-id="${id}" data-k="b-go" aria-label="Update ${v.name} on ${HOST} to ${v.to}">Update</button>`) + '</div>'
+    if (v.u === 'updating') return head(lead(spinner()), `Updating ${v.name} on ${HOST} to ${v.to}…`, `${v.steps.length > 1 ? `Step ${v.step + 1} of ${v.steps.length}. ` : ''}${threadsKeep(v)}`, '') + '</div>'
+    if (v.u === 'updated') return head(lead('<span class="ok-mark">✓</span>'), updatedLine(v), '', dismiss) + '</div>'
+    if (v.u === 'failed') return head(lead('<span class="err-mark">!</span>'), `${v.name} did not update.`, `${failedWhat(v)} ${failedKept(v)}`,
+      `<button type="button" class="button primary sm" data-act="update" data-id="${id}" data-k="b-go" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button>${dismiss}`, 'error')
+      + `<div class="bup-more">${failBlock(`b-${id}`, id, false).replace(`Try again, or run this on ${HOST}:`, `Or run this on ${HOST}:`)}</div></div>`
+    if (v.u === 'manual') return head(lead(v.mark), availableLine(v), `You have ${v.from}.`, dismiss)
+      + `<div class="bup-more">${cmdBlock(`man-${id}`, manualWhy(v), v.manual, `updates ${v.name} on ${HOST}`)}</div></div>`
+    return ''
+  }
+  // Several clients.
+  const running = state.running
+  const count = updatable().length
+  const updatedIds = items.filter(id => P(id).u === 'updated'), failedIds = items.filter(id => P(id).u === 'failed')
+  let strong, small, lead = '↑', tone = ''
+  if (running) {
+    strong = state.all ? `Updating ${P(running).name} on ${HOST}… (${state.all.done + 1} of ${state.all.total})` : `Updating ${P(running).name} on ${HOST}…`
+    small = 'Your threads keep working.'; lead = spinner()
+  } else if (settled) {
+    strong = failedIds.length ? `${names(failedIds)} did not update.` : `Updated ${updatedIds.length} clients on ${HOST}.`
+    small = [updatedIds.length && failedIds.length ? `${names(updatedIds)} updated.` : '', failedIds.length ? 'Nothing was changed for what did not update, and your threads kept working.' : updatedIds.map(id => updatedLine(P(id))).join(' ')].filter(Boolean).join(' ')
+    lead = failedIds.length ? '<span class="err-mark">!</span>' : '<span class="ok-mark">✓</span>'; tone = failedIds.length ? 'error' : ''
+  } else {
+    strong = `${count} client update${count === 1 ? '' : 's'} for ${HOST}`
+    small = `${names(updatable())}. Your threads keep working while they install.`
+  }
+  const acts = [
+    !running && count > 1 ? `<button type="button" class="button primary sm" data-act="update-all" data-k="b-all" aria-label="Update ${names(updatable())} on ${HOST}">Update all</button>` : '',
+    !running && count === 1 && failedIds.length === 1 ? `<button type="button" class="button primary sm" data-act="update" data-id="${failedIds[0]}" data-k="b-all" aria-label="Try updating ${P(failedIds[0]).name} on ${HOST} again">Try again</button>` : '',
+    `<button type="button" class="button ghost sm" data-act="b-toggle" data-k="b-toggle" aria-expanded="${state.bOpen}" ${state.bOpen ? 'aria-controls="bup-list"' : ''} aria-label="${state.bOpen ? 'Hide' : 'Show'} each update for ${HOST}">${state.bOpen ? 'Hide updates' : 'Show updates'}</button>`,
+    settled ? dismiss : '',
+  ].join('')
+  const rows = state.bOpen ? `<ul class="bup-list" id="bup-list" aria-label="Client updates for ${HOST}">${items.map(id => {
+    const v = P(id)
+    const cmds = `<code>${esc(v.steps[0].cmd)}</code>${v.steps.length > 1 ? ', then its install step' : ''}`
+    const what = {
+      behind: `${v.from} → ${v.to} · ${cmds}`,
+      queued: `${v.from} → ${v.to} · waiting for ${running ? P(running).name : 'the update before it'}`,
+      updating: `Updating to ${v.to}${v.steps.length > 1 ? `, step ${v.step + 1} of ${v.steps.length}` : ''}…`,
+      updated: `Now ${v.to}`,
+      failed: `<span style="color:var(--tt-error)">Did not update.</span> ${failedWhat(v)} ${failedKept(v)}`,
+      manual: `${v.from} → ${v.to} · Sotto did not install it this way, so it will not replace it.`,
+    }[v.u]
+    const act = {
+      behind: `<button type="button" class="button sm" data-act="update" data-id="${id}" data-k="b-${id}" aria-label="Update ${v.name} on ${HOST} to ${v.to}">Update</button>`,
+      queued: `<button type="button" class="button ghost sm" data-act="unqueue" data-id="${id}" data-k="b-${id}" aria-label="Cancel the ${v.name} update on ${HOST}">Cancel</button>`,
+      updating: spinner(),
+      updated: '<span class="ok-mark" aria-hidden="true">✓</span>',
+      failed: `<button type="button" class="button sm" data-act="update" data-id="${id}" data-k="b-${id}" aria-label="Try updating ${v.name} on ${HOST} again">Try again</button>`,
+      manual: '',
+    }[v.u]
+    const extra = v.u === 'failed' ? `<div class="extra">${failBlock(`bl-${id}`, id, false).replace(`Try again, or run this on ${HOST}:`, `Or run this on ${HOST}:`)}</div>`
+      : v.u === 'manual' ? `<div class="extra">${cmdBlock(`man-${id}`, `Run this on ${HOST}:`, v.manual, `updates ${v.name} on ${HOST}`)}</div>` : ''
+    return `<li data-scope="b-${id}"><span class="name">${v.name}</span><span class="what">${what}</span><span class="row-act">${act}</span>${extra}</li>`
+  }).join('')}</ul>` : ''
+  return `<div class="bup" data-scope="bup" ${tone ? `data-tone="${tone}"` : ''} role="group" aria-label="Client updates for ${HOST}"><div class="bup-head"><span class="bup-lead" aria-hidden="true">${lead}</span><div class="bup-copy" role="status"><strong>${strong}</strong>${small ? `<small>${small}</small>` : ''}</div><div class="bup-acts">${acts}</div></div>${rows}</div>`
+}
+
+function hostHead() {
+  const up = state.hostUp
+  return `<div class="hrow-main">
+    <span class="ico" aria-hidden="true">▤</span>
+    <div class="info"><h4>${HOST}</h4><p class="meta">SSH ${HOST} · <span class="${up ? 'on' : ''}">${up ? 'Connected' : 'Not connected'}</span>${up ? ' · 3 providers' : ''}</p></div>
+    <div class="acts"><span class="switch"><span>${up ? 'On' : 'Off'}</span><button type="button" class="track" role="switch" aria-checked="${up}" aria-label="Keep ${HOST} connected, now and when Sotto starts" data-act="host" data-k="host"></button></span><button type="button" class="button ghost icon" aria-label="More for ${HOST}" data-act="noop" data-k="more">⋯</button></div>
+  </div>`
+}
+
+function providersBlock() {
+  if (!state.hostUp) return ''
+  const n = updatable().length + ORDER.filter(id => P(id).u === 'manual').length
+  const countText = variant === 'A' && !state.open && n ? ` <span class="toggle-count">· ${n} update${n === 1 ? '' : 's'}</span>` : ''
+  const toggle = `<button type="button" class="button ghost providers-toggle" data-act="toggle" data-k="ptoggle" aria-expanded="${state.open}" aria-controls="${state.open ? 'panel' : ''}" aria-label="${state.open ? 'Hide' : 'Show'} providers on ${HOST}${countText ? `, ${n} update${n === 1 ? '' : 's'} available` : ''}">${state.open ? 'Hide providers' : 'Show providers'}${countText}</button>`
+  const tileFn = variant === 'A' ? tileA : variant === 'B' ? tileB : tileC
+  const panel = state.open ? `<div class="panel" id="panel"><ul class="grid" aria-label="Providers on ${HOST}">${ORDER.map(tileFn).join('')}${devinTile()}</ul>
+    <p class="foot">${HOST} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</p></div>` : ''
+  return `<div class="providers">${variant === 'B' ? bRow() : ''}${toggle}${panel}</div>`
+}
+
+function render() {
+  const active = document.activeElement
+  const key = active?.dataset?.k
+  const scope = active?.closest?.('[data-scope]')?.dataset.scope
+  const page = document.getElementById('page')
+  page.innerHTML = `
+    <div class="local"><span class="ico local-ico" aria-hidden="true">▭</span><div class="copy"><h3>This computer</h3><p>Runs threads on this computer beside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.</p></div><span class="switch"><span>On</span><span class="track" aria-hidden="true"></span></span></div>
+    <div class="heading"><h3>Remote hosts</h3><button type="button" class="button" data-act="noop" data-k="add">+ Add host</button></div>
+    <p style="margin-top:-10px">Connect to machines you reach over SSH. Sotto signs in with your SSH setup, starts the host if needed and pairs this computer.</p>
+    <section class="hrow" aria-label="${HOST}">${hostHead()}${providersBlock()}</section>
+    <p><span class="proto-note">Prototype</span> Versions are ${HOST}'s on September 29. Updates are simulated.</p>`
+  document.getElementById('pop-root').innerHTML = popover()
+  placePopover()
+  document.getElementById('vlabel').textContent = `${variant} — ${VARIANTS[variant]}`
+  document.getElementById('sname').textContent = STATES.find(([k]) => k === scenario)?.[1] ?? 'Changed by a press'
+  document.querySelectorAll('#states button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === scenario)))
+  // Focus stays on the control it was on; a control that went moves focus to its tile's first action rather than dropping it.
+  if (key && active !== document.body && !active.isConnected) {
+    const same = document.querySelector(`[data-k="${key}"]:not(:disabled)`)
+    const fallback = scope && document.querySelector(`[data-scope="${scope}"] button:not(:disabled), [data-scope="${scope}"] summary`)
+    ;(same || fallback || document.querySelector('[data-k="ptoggle"]'))?.focus()
+  }
+}
+function placePopover() {
+  const pop = document.getElementById('pop'), chip = state.popover && document.getElementById(`chip-${state.popover}`)
+  if (!pop || !chip) return
+  const r = chip.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight
+  let left = Math.min(Math.max(12, r.left), innerWidth - w - 12)
+  let top = r.bottom + 6
+  if (top + h > innerHeight - 12) top = Math.max(12, r.top - h - 6 >= 12 ? r.top - h - 6 : innerHeight - h - 12)
+  pop.style.left = `${left}px`; pop.style.top = `${top}px`
+}
+addEventListener('resize', placePopover)
+addEventListener('scroll', placePopover, true)
+
+/* ---------- The simulated update: one at a time on a host, the rest wait ---------- */
+function later(ms, fn) { const t = setTimeout(() => { fn(); render() }, ms); timers.push(t) }
+function start(id) {
+  const v = P(id)
+  Object.assign(v, { u: 'updating', step: 0 }); state.running = id; state.note[id] = ''
+  tick(id)
+}
+function tick(id, ms = STEP_MS) {
+  later(ms, () => {
+    const v = P(id)
+    if (state.running !== id || v.u !== 'updating') return
+    if (failNext && v.step === v.steps.length - 1) { v.u = 'failed'; v.failStep = v.step; return finish() }
+    if (v.step < v.steps.length - 1) { v.step++; return tick(id) }
+    v.installed = v.to; v.u = 'updated'; finish()
+  })
+}
+function finish() {
+  state.running = null
+  if (state.all) state.all.done++
+  const next = state.queue.shift()
+  if (next) start(next)
+  else state.all = null
+}
+function update(id) {
+  const v = P(id)
+  scenario = 'custom'; state.dismissed = false
+  if (state.running) { if (!state.queue.includes(id) && state.running !== id) { state.queue.push(id); v.u = 'queued' } }
+  else start(id)
+}
+
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-act]')
+  if (!target) {
+    if (state.popover && !event.target.closest('#pop')) { state.popover = null; render() }
+    return
+  }
+  const { act, id } = target.dataset
+  if (act === 'toggle') state.open = !state.open
+  else if (act === 'host') { state.hostUp = !state.hostUp; state.popover = null; scenario = state.hostUp ? 'custom' : 'down' }
+  else if (act === 'update') { update(id); if (variant !== 'C') state.popover = null }
+  else if (act === 'update-all') { const ids = updatable(); state.all = { total: ids.length, done: 0 }; ids.forEach(update) }
+  else if (act === 'unqueue') { state.queue = state.queue.filter(q => q !== id); P(id).u = 'behind' }
+  else if (act === 'b-toggle') state.bOpen = !state.bOpen
+  else if (act === 'dismiss') { state.dismissed = true; ORDER.forEach(k => { if (P(k).u === 'updated') P(k).u = 'current' }) }
+  else if (act === 'pop') { state.popover = state.popover === id ? null : id; render(); if (state.popover) (document.querySelector('#pop [data-k="pop-go"]') || document.querySelector('#pop button'))?.focus(); return }
+  else if (act === 'pop-close') { const was = state.popover; state.popover = null; render(); returnFocus(was); return }
+  else if (act === 'copy') { state.copied = target.dataset.key; later(1500, () => { if (state.copied === target.dataset.key) state.copied = null }) }
+  else if (act === 'noop') { const scope = target.closest('[data-scope]')?.dataset.scope; if (scope) state.note[scope] = 'Prototype: not part of this question.'; else return }
+  render()
+})
+document.addEventListener('toggle', event => { const key = event.target.dataset?.dkey; if (key) state.details[key] = event.target.open }, true)
+document.addEventListener('focusin', event => {
+  // Focus leaving the popover and its chip closes it, the way a menu does.
+  if (!state.popover) return
+  if (event.target.closest('#pop') || event.target.id === `chip-${state.popover}`) return
+  state.popover = null; render()
+})
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    if (state.popover) { const was = state.popover; state.popover = null; render(); returnFocus(was); event.preventDefault(); return }
+    const details = event.target.closest?.('details[open]')
+    if (details) { details.open = false; details.querySelector('summary').focus(); return }
+    if (variant === 'B' && state.bOpen && event.target.closest?.('[data-scope="bup"], [data-scope^="b-"]')) { state.bOpen = false; render(); document.querySelector('[data-k="b-toggle"]')?.focus(); return }
+    return
+  }
+  if (event.target.closest('input, textarea, select, [contenteditable]') || state.popover) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key === 'ArrowLeft') go(-1)
+  else if (event.key === 'ArrowRight') go(1)
+  else if (event.key === 't' || event.key === 'T') document.getElementById('theme').click()
+  else if (event.key === 'r' || event.key === 'R') document.getElementById('reset').click()
+})
+
+/** Closing the popover puts focus back on its chip, or on the tile's first action once the chip has gone (the update finished). */
+function returnFocus(id) { (document.getElementById(`chip-${id}`) || document.querySelector(`[data-scope="${id}"] button`))?.focus() }
+function setScenario(s) { timers.forEach(clearTimeout); timers = []; scenario = s; state = fresh(s); if (s === 'updating') tick('codex', 12000); syncUrl(); render() }
+function syncUrl() { history.replaceState(null, '', `?variant=${variant}${scenario !== 'custom' ? `&state=${scenario}` : ''}`) }
+function go(step) { variant = KEYS[(KEYS.indexOf(variant) + step + KEYS.length) % KEYS.length]; state.popover = null; syncUrl(); render() }
+document.getElementById('states').innerHTML = STATES.map(([k, label]) => `<button type="button" data-state="${k}" aria-pressed="false">${label}</button>`).join('')
+document.getElementById('states').onclick = event => { const b = event.target.closest('button'); if (b) setScenario(b.dataset.state) }
+document.getElementById('failnext').onchange = event => { failNext = event.target.checked }
+document.getElementById('prev').onclick = () => go(-1)
+document.getElementById('next').onclick = () => go(1)
+document.getElementById('reset').onclick = () => setScenario(scenario === 'custom' ? 'three' : scenario)
+document.getElementById('theme').onclick = () => { const html = document.documentElement; html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark' }
+document.getElementById('motion').onclick = event => { const html = document.documentElement; const on = html.dataset.motion !== 'reduce'; html.dataset.motion = on ? 'reduce' : ''; event.currentTarget.setAttribute('aria-pressed', String(on)) }
+const panel = document.getElementById('proto'), collapse = document.getElementById('collapse')
+function setCollapsed(on) { panel.dataset.collapsed = String(on); collapse.textContent = on ? 'States' : 'Hide'; collapse.setAttribute('aria-expanded', String(!on)) }
+collapse.onclick = () => setCollapsed(panel.dataset.collapsed !== 'true')
+if (params.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+setCollapsed(innerWidth < 1200 || params.get('panel') === 'closed')
+setScenario(scenario)
+</script>
+</body>
+</html>
