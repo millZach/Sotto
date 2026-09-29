@@ -1,0 +1,682 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not part of the app; never imported.
+  Question: what does it look like when a remote host runs an older Sotto host than this desktop, and the
+  user updates it from the main workspace?
+  Decided before this prototype: the notice sits above the threads on the Threads page, not in the sidebar
+  or Settings. Only the user presses Update; nothing updates on its own. When a thread on that host is
+  working, Update asks: wait until the host's threads finish, or update now, which stops those turns (and
+  says how many). Only the turns' work in progress is lost; drafts and history stay. Updating: the host
+  downloads the archive from Sotto's releases (or this computer copies it over SSH when the host cannot
+  reach GitHub), checks its checksum, installs it beside the old one, restarts and reconnects. The host's
+  threads are unavailable for the few seconds of the restart.
+  Three layouts, switchable with ?variant=A|B|C, the bar at the bottom, or the arrow keys:
+    A  Strip: one full-width line above the panes, in the window's top row; it grows inline to confirm,
+       show progress as a step trail, or explain a failure.
+    B  In forge's pane: a card at the top of forge's own thread pane that names forge's working threads
+       and shows progress as a step list. A host with no pane open gets its card above the panes.
+    C  Pill: a small pill in the top row beside the window controls; pressing it opens a panel listing
+       every host that needs an update, each with its own steps.
+  The PROTOTYPE panel (bottom left) jumps to each state. T switches theme, M reduced motion, R resets.
+  The data is invented: forge runs host 0.1.22 with two working threads, atlas is a second host.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · Updating a remote host from Threads</title>
+<style>
+@font-face { font-family: Figtree; src: url('../assets/fonts/figtree-latin.woff2') format('woff2'); font-weight: 300 900; }
+:root, [data-theme='dark'] {
+  --tt-room: #111214; --tt-surface-elevated: #1c1d20; --tt-surface-sunken: #0f1012; --tt-surface-overlay: #232428;
+  --tt-sidebar: #0b0c0d; --tt-field: #0c0d0f; --tt-field-border: #2b2d31;
+  --tt-hairline: rgba(255,255,255,.09); --tt-border: rgba(255,255,255,.16); --tt-border-faint: rgba(255,255,255,.08);
+  --tt-text: #f3f3f4; --tt-text-2: #d6d7da; --tt-text-muted: #a3a5ab; --tt-text-faint: #8a8d94;
+  --tt-accent: #8fb4ff; --tt-accent-text: #a9c4ff; --tt-success: #6fcf97; --tt-error: #e8868f; --tt-warning-text: #f0b45c;
+  --tt-activity: #8fb4ff; --tt-attention: #f0b45c;
+  --tt-pill: #f5f5f6; --tt-pill-ink: #111214; --tt-overlay: rgba(0,0,0,.55); --tt-focus-ring: #8fb4ff;
+  --tt-hover: rgba(255,255,255,.06); --tt-selected: rgba(143,180,255,.12); --tt-selected-border: rgba(143,180,255,.28);
+  --tt-bubble: #17181b; --tt-shadow-lg: 0 24px 60px rgba(0,0,0,.5);
+}
+[data-theme='light'] {
+  --tt-room: #eceae6; --tt-surface-elevated: #ffffff; --tt-surface-sunken: #f1f0ec; --tt-surface-overlay: #ffffff;
+  --tt-sidebar: #e3e1dc; --tt-field: #ffffff; --tt-field-border: rgba(0,0,0,.16);
+  --tt-hairline: rgba(0,0,0,.1); --tt-border: rgba(0,0,0,.2); --tt-border-faint: rgba(0,0,0,.1);
+  --tt-text: #17181a; --tt-text-2: #2c2d30; --tt-text-muted: #55585f; --tt-text-faint: #65686f;
+  --tt-accent: #2f5fcf; --tt-accent-text: #2451b8; --tt-success: #1f8a4c; --tt-error: #b3303c; --tt-warning-text: #9a3f00;
+  --tt-activity: #2f5fcf; --tt-attention: #9a3f00;
+  --tt-pill: #17181a; --tt-pill-ink: #ffffff; --tt-overlay: rgba(20,20,20,.35); --tt-focus-ring: #2f5fcf;
+  --tt-hover: rgba(0,0,0,.05); --tt-selected: rgba(47,95,207,.08); --tt-selected-border: rgba(47,95,207,.3);
+  --tt-bubble: #f6f5f2; --tt-shadow-lg: 0 24px 60px rgba(0,0,0,.18);
+}
+:root { --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-pill: 999px; --tt-font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace; --winctl: 116px; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; overflow: auto; background: var(--tt-room); color: var(--tt-text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.s12 { width: 12px; height: 12px; } svg.i.s14 { width: 14px; height: 14px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.spinner { display: inline-block; flex: none; width: 13px; height: 13px; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; border-radius: 50%; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner, .ring[data-state='working'] { animation: none !important; } .a-bar > i { transition: none !important; } }
+:root[data-reduced-motion='on'] .spinner, :root[data-reduced-motion='on'] .ring[data-state='working'] { animation: none !important; }
+:root[data-reduced-motion='on'] .a-bar > i { transition: none !important; }
+
+/* ---------- The Threads page, as it is today (a static replica). ---------- */
+.app { position: relative; display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100vh; min-height: 560px; min-width: 820px; overflow: hidden; }
+@media (max-width: 1000px) { .app { grid-template-columns: 260px minmax(0, 1fr); } }
+.nav { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
+.nav-top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-weight: 600; }
+.brand-glyph { width: 18px; height: 18px; border-radius: 5px; background: var(--tt-text); }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.seg button[aria-checked='true'], .seg button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.icon-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.icon-btn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.search svg { position: absolute; left: 9px; }
+.search input { width: 100%; height: 100%; padding: 0 10px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.nav-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; }
+.folder { margin: 0 0 12px; }
+.folder-head { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.folder-head:hover { background: var(--tt-hover); }
+.folder-head svg { color: var(--tt-text-muted); }
+.folder-head .chev { transform: rotate(90deg); }
+.folder-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.host-badge { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 4px; min-width: 0; max-width: 110px; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 999px; padding: 0 7px; color: var(--tt-text-muted); font-size: 11px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.host-badge[data-kind='remote'] svg { color: var(--tt-accent-text); }
+.host-badge span { overflow: hidden; text-overflow: ellipsis; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--tt-hover); }
+.row[data-current] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 5px; align-items: center; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; text-align: left; cursor: pointer; }
+.item-title { overflow: hidden; font-size: 14px; font-weight: 500; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.row[data-current] .item-title { color: var(--tt-text); }
+.item-time { color: var(--tt-text-muted); font-size: 12px; }
+.item-meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.item-meta .prov { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-meta .status { margin-left: auto; flex: none; }
+.status[data-state='working'] { color: var(--tt-activity); }
+.status[data-state='needs'], .status[data-state='away'] { color: var(--tt-warning-text); }
+.ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-border); border-radius: 50%; }
+.ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); -webkit-mask: radial-gradient(circle, transparent 38%, #000 42%); mask: radial-gradient(circle, transparent 38%, #000 42%); animation: spin 1.5s linear infinite; }
+.ring[data-state='needs'] { border: 2px solid var(--tt-attention); }
+.ring[data-state='away'] { border: 1.5px dashed var(--tt-warning-text); }
+.ring[data-unseen] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
+.nav-foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
+.nav-foot .seg { display: flex; flex: 1 0 100%; } .nav-foot .seg button { flex: 1; }
+.nav-foot .update-control { margin-left: auto; border: 1px solid var(--tt-hairline); border-radius: 50%; }
+
+.ws { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.ws-body { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.pane { position: relative; display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.pane + .pane { border-left: 1px solid var(--tt-hairline); }
+@media (max-width: 1100px) { .pane[data-secondary] { display: none; } }
+.pane-head { display: flex; flex: none; align-items: center; gap: 4px; height: 44px; padding: 0 6px 0 18px; }
+/* The last pane's header meets the window controls (and, in C, the pill). */
+.pane:last-child .pane-head { padding-right: calc(var(--winctl) + 12px + var(--pill-room, 0px)); }
+.app[data-strip] .pane:last-child .pane-head { padding-right: 6px; }
+.pane-title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.pmark { display: grid; flex: none; place-items: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.pmark[data-p='claude'] { color: #e3b58e; } .pmark[data-p='codex'] { color: var(--tt-text-2); } .pmark[data-p='grok'] { color: #c9baff; }
+[data-theme='light'] .pmark[data-p='claude'] { color: #8a5424; } [data-theme='light'] .pmark[data-p='grok'] { color: #5b44b8; }
+.pane-head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+.crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.crumb::before { content: '/'; }
+.transcript { flex: 1 1 auto; min-height: 72px; overflow-y: auto; padding: 24px max(24px, calc((100% - 760px) / 2)) 8px; }
+.msg { margin: 0 0 16px; font-size: 15px; line-height: 1.55; color: var(--tt-text-2); }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 12px 16px; border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); color: var(--tt-text); }
+.activity { display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.activity[data-state='working'] { color: var(--tt-activity); }
+.marker { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; color: var(--tt-text-muted); font-size: 13px; }
+.marker::before, .marker::after { content: ''; flex: 1; border-top: 1px solid var(--tt-hairline); }
+.compose { flex: none; padding: 8px max(24px, calc((100% - 760px) / 2)) 16px; }
+.prompt { padding: 12px 14px 8px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--tt-field-border)); }
+.prompt:focus-within { border-color: var(--tt-focus-ring); }
+.prompt-notice { margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-warning-text); font-size: 13px; }
+.prompt textarea { display: block; width: 100%; min-height: 52px; resize: none; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.prompt-model { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.disc { display: grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: var(--tt-activity); color: var(--tt-pill-ink); cursor: pointer; }
+.disc:disabled { opacity: .45; cursor: not-allowed; }
+.branchbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; max-width: 100%; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 999px; padding: 0 10px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.chip.end { margin-left: auto; }
+.winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; height: 44px; padding-right: 6px; }
+.winctl button { display: grid; place-items: center; width: 34px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.winctl button:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* ---------- Shared parts of the notice. ---------- */
+.button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); padding: 0 13px; background: transparent; color: var(--tt-text-2); cursor: pointer; font: 500 13px Figtree, system-ui, sans-serif; white-space: nowrap; }
+.button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.button:disabled { cursor: not-allowed; opacity: .45; }
+.button.primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.button.ghost { border-color: transparent; }
+.button.ghost:hover:not(:disabled) { background: var(--tt-hover); }
+.linkish { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.muted { color: var(--tt-text-muted); }
+.ico-accent { color: var(--tt-accent-text); } .ico-ok { color: var(--tt-success); } .ico-err { color: var(--tt-error); } .ico-wait { color: var(--tt-text-muted); }
+.cmd { position: relative; margin: 0; max-height: 170px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; color: var(--tt-text); font: 12px/1.6 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13px; }
+.steps .n { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--tt-border); border-radius: 50%; color: var(--tt-text-muted); font-size: 11px; }
+.steps li[data-s='done'] .n { border-color: var(--tt-success); color: var(--tt-success); }
+.steps li[data-s='now'] .n { border-color: var(--tt-accent); color: var(--tt-accent-text); }
+.steps li[data-s='failed'] .n { border-color: var(--tt-error); color: var(--tt-error); }
+.steps li[data-s='later'] { color: var(--tt-text-muted); }
+.steps .t { font-weight: 600; } .steps li[data-s='later'] .t { font-weight: 500; }
+.steps .d { color: var(--tt-text-muted); font-size: 12.5px; }
+.steps li[data-s='later'] .d { display: none; }
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tlist { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.tlist li { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; }
+.tlist .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text); }
+.tlist .ts { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.tlist .ts[data-state='working'] { color: var(--tt-activity); }
+
+/* ---------- A: one strip above the panes, in the window's top row. ---------- */
+.a-stack { flex: none; display: grid; }
+.a-strip { position: relative; display: grid; gap: 8px; padding: 7px 18px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); }
+.a-stack > .a-strip:first-child { min-height: 44px; padding-right: calc(var(--winctl) + 12px); }
+.a-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 30px; }
+.a-text { display: flex; flex: 1 1 260px; align-items: center; gap: 9px; min-width: 0; margin: 0; font-size: 13.5px; }
+.a-text > span { min-width: 0; }
+.a-more { margin: 0 0 0 25px; color: var(--tt-text-muted); font-size: 13px; }
+.a-rest { display: grid; gap: 8px; margin-left: 25px; }
+.a-trail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.a-trail span { display: inline-flex; align-items: center; gap: 4px; }
+.a-trail [data-s='done'] { color: var(--tt-text-2); } .a-trail [data-s='now'] { color: var(--tt-accent-text); font-weight: 600; }
+.a-trail i { font-style: normal; color: var(--tt-text-faint); }
+.a-bar { position: absolute; left: 0; right: 0; bottom: -1px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; height: 2px; }
+.a-bar > i { background: var(--tt-hairline); transition: background .3s; }
+.a-bar > i[data-s='done'] { background: var(--tt-success); } .a-bar > i[data-s='now'] { background: var(--tt-accent); }
+.a-strip[data-phase='failed'] { box-shadow: inset 3px 0 0 var(--tt-error); }
+.a-strip[data-phase='done'] { box-shadow: inset 3px 0 0 var(--tt-success); }
+@media (max-width: 1100px) { .a-wide { display: none; } }
+
+/* ---------- B: a card at the top of the host's own pane. ---------- */
+.b-card { display: grid; gap: 12px; margin: 4px max(24px, calc((100% - 760px) / 2)) 0; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); }
+.b-card[data-phase='failed'] { border-color: color-mix(in srgb, var(--tt-error) 50%, var(--tt-hairline)); }
+.b-card[data-phase='done'] { border-color: color-mix(in srgb, var(--tt-success) 45%, var(--tt-hairline)); }
+.b-head { display: flex; align-items: flex-start; gap: 10px; }
+.b-head > svg { margin-top: 2px; }
+.b-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; outline-offset: 4px; }
+.b-head p { margin: 2px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.b-body { display: grid; gap: 10px; padding-left: 26px; font-size: 13.5px; }
+.b-body p { margin: 0; }
+.b-above { flex: none; display: grid; gap: 8px; padding: 10px 0 2px; }
+.b-above .b-card { margin-top: 0; }
+.app[data-variant='B'] .b-above:not(:empty) { padding-top: 10px; }
+.app[data-variant='B'] .b-above:not(:empty) + .ws-body .pane:last-child .pane-head { padding-right: 6px; }
+.b-above:not(:empty) { padding-right: calc(var(--winctl) - 10px); }
+
+/* ---------- C: a pill beside the window controls that opens a panel. ---------- */
+.app[data-pill] { --pill-room: 186px; }
+.c-pill { position: absolute; top: 8px; right: calc(var(--winctl) + 6px); z-index: 7; display: inline-flex; align-items: center; gap: 7px; max-width: 176px; height: 28px; padding: 0 11px 0 9px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-surface-elevated); color: var(--tt-text); font: 500 12.5px Figtree, system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+.c-pill > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.c-pill:hover, .c-pill[aria-expanded='true'] { border-color: var(--tt-text-faint); }
+.c-pill[data-tone='failed'] { border-color: color-mix(in srgb, var(--tt-error) 60%, transparent); }
+.c-pill[data-tone='done'] { border-color: color-mix(in srgb, var(--tt-success) 55%, transparent); }
+.c-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tt-accent); }
+.c-panel { position: absolute; top: 42px; right: calc(var(--winctl) + 6px); z-index: 8; display: grid; gap: 0; width: min(400px, calc(100% - 140px)); min-width: 300px; max-height: calc(100% - 56px); overflow: auto; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-lg); }
+.c-panel > h2 { margin: 0; padding: 14px 16px 6px; font-size: 13px; font-weight: 600; color: var(--tt-text-muted); }
+.c-host { display: grid; gap: 10px; padding: 12px 16px 14px; }
+.c-host + .c-host { border-top: 1px solid var(--tt-hairline); }
+.c-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.c-name { display: flex; flex: 1 1 150px; align-items: center; gap: 8px; min-width: 0; }
+.c-name b { font-weight: 600; }
+.c-name small { color: var(--tt-text-muted); font-size: 12.5px; }
+.c-host p { margin: 0; font-size: 13px; }
+.c-host .steps li { font-size: 12.5px; }
+
+/* ---------- The prototype's own controls, not part of the design. ---------- */
+.proto-bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: #000; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; z-index: 50; }
+.proto-bar button { border: 0; border-radius: 999px; background: #262626; color: #fff; padding: 7px 11px; font: inherit; cursor: pointer; }
+.proto-bar .label { min-width: 170px; text-align: center; }
+@media (max-width: 1000px) { .proto-bar { left: auto; right: 10px; transform: none; } }
+.proto-panel { position: fixed; left: 10px; bottom: 12px; z-index: 50; width: 238px; padding: 10px; border: 1px dashed #fc6; border-radius: 10px; background: rgba(12,12,12,.94); color: #eee; font: 12px/1.4 system-ui, sans-serif; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.proto-panel[data-closed] > :not(.pp-head) { display: none; }
+.pp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pp-tag { color: #fc6; font-weight: 700; letter-spacing: .08em; }
+.proto-panel button, .proto-panel select { border: 1px solid #444; border-radius: 6px; background: #222; color: #eee; padding: 3px 7px; font: inherit; cursor: pointer; }
+.proto-panel button[aria-pressed='true'] { border-color: #fc6; color: #fc6; }
+.pp-state { margin: 6px 0; color: #fc6; min-height: 2.8em; }
+.pp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.pp-sub { display: grid; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; }
+.pp-sub label { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pp-sub select { max-width: 130px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<aside class="proto-panel" id="pp" aria-label="Prototype states">
+  <div class="pp-head"><span class="pp-tag">PROTOTYPE</span><button type="button" id="pp-toggle" aria-expanded="true">Hide</button></div>
+  <p class="pp-state" id="pp-state" aria-live="polite"></p>
+  <div class="pp-grid" id="pp-grid">
+    <button type="button" data-jump="current">Up to date</button>
+    <button type="button" data-jump="needs">Needs update</button>
+    <button type="button" data-jump="confirm">Confirm (busy)</button>
+    <button type="button" data-jump="waiting">Waiting</button>
+    <button type="button" data-jump="updating">Updating</button>
+    <button type="button" data-jump="done">Done</button>
+    <button type="button" data-jump="failed">Failed</button>
+    <button type="button" data-jump="two">Two hosts</button>
+  </div>
+  <div class="pp-sub">
+    <button type="button" id="pp-finish">A forge thread finishes</button>
+    <label>Next update <select id="pp-fail">
+      <option value="none">succeeds</option>
+      <option value="download">fails to download</option>
+      <option value="checksum">fails the checksum</option>
+      <option value="restart">fails to restart</option>
+    </select></label>
+    <label>Download <select id="pp-route">
+      <option value="github">from GitHub</option>
+      <option value="ssh">copied over SSH</option>
+    </select></label>
+    <label><span>Hold the current step</span><input type="checkbox" id="pp-pause"></label>
+  </div>
+</aside>
+
+<div class="proto-bar" role="toolbar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous layout">←</button>
+  <span class="label" id="vlabel"></span>
+  <button type="button" id="next" aria-label="Next layout">→</button>
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="theme">Theme</button>
+  <button type="button" id="motion" aria-pressed="false">Less motion</button>
+</div>
+
+<script>
+const VARIANTS = { A: 'Strip above the panes', B: "In forge's pane", C: 'Pill and panel' }
+const KEYS = Object.keys(VARIANTS)
+const params = new URLSearchParams(location.search)
+let variant = KEYS.includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A'
+const DESKTOP = '0.1.24'
+const opts = { fail: 'none', route: 'github', pause: false }
+
+const P = d => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`
+const I = {
+  server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  laptop: '<path d="M18 5a2 2 0 0 1 2 2v8.5l1.3 2.6a1 1 0 0 1-.9 1.4H3.6a1 1 0 0 1-.9-1.4L4 15.5V7a2 2 0 0 1 2-2z"/><path d="M20 16H4"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>', search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folderPlus: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6M9 13h6"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9-3.5 1 1-3.5z"/>',
+  collapse: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M16 15l-3-3 3-3"/>',
+  threads: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  term: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2M11 13h4"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  cog: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4M12 17h.01"/>',
+  up: '<circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>',
+  tools: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  send: '<path d="m5 12 7-7 7 7M12 19V5"/>', stop: '<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  min: '<path d="M5 12h14"/>', max: '<rect x="5" y="5" width="14" height="14" rx="1"/>', download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+}
+const ic = (name, cls = '') => P(I[name]).replace('class="i"', `class="i ${cls}"`)
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+const THREADS = [
+  { id: 't1', host: 'local', project: 'Sotto', title: 'Let a thread name itself from its first exchange', provider: 'Claude Code', p: 'claude', model: 'Opus 5.5', state: 'idle', when: '12m' },
+  { id: 't2', host: 'local', project: 'Sotto', title: 'Fix the notices check on Windows', provider: 'Codex', p: 'codex', model: 'GPT-5.5', state: 'needs', when: '40m' },
+  { id: 't3', host: 'local', project: 'zachmiller.dev', title: 'Tighten the header on small screens', provider: 'Grok Build', p: 'grok', model: 'Grok 4.7', state: 'idle', when: '2d' },
+  { id: 'f1', host: 'forge', project: 'render-farm', title: 'Bake the hero shot lighting', provider: 'Claude Code', p: 'claude', model: 'Opus 5.5', state: 'working', when: 'now' },
+  { id: 'f2', host: 'forge', project: 'render-farm', title: 'Move finished renders to the NAS', provider: 'Codex', p: 'codex', model: 'GPT-5.5', state: 'working', when: 'now' },
+  { id: 'f3', host: 'forge', project: 'render-farm', title: 'Tidy the scene library', provider: 'Grok Build', p: 'grok', model: 'Grok 4.7', state: 'idle', when: '3h' },
+  { id: 'a1', host: 'atlas', project: 'home-lab', title: 'Rotate the backup keys', provider: 'Codex', p: 'codex', model: 'GPT-5.5', state: 'idle', when: '1d' },
+]
+const PROJECTS = [['Sotto', 'local'], ['zachmiller.dev', 'local'], ['render-farm', 'forge'], ['home-lab', 'atlas']]
+const PANES = [{ id: 't1', secondary: true }, { id: 'f1' }]
+const HOST_NAME = { local: 'This computer', forge: 'forge', atlas: 'atlas' }
+
+let S
+function fresh() {
+  return {
+    hosts: {
+      forge: { id: 'forge', version: '0.1.22', phase: 'needs', step: 0, hidden: false, cmd: false, kind: 'download', gen: 0 },
+      atlas: { id: 'atlas', version: DESKTOP, phase: 'current', step: 0, hidden: false, cmd: false, kind: 'download', gen: 0 },
+    },
+    threads: THREADS.map(t => ({ ...t })),
+    cOpen: false, focus: null,
+  }
+}
+const H = id => S.hosts[id]
+const hostList = () => Object.values(S.hosts)
+const outdated = () => hostList().filter(h => h.phase !== 'current' && !h.hidden)
+const working = id => S.threads.filter(t => t.host === id && t.state === 'working')
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+const restarting = id => { const h = H(id); return h && h.phase === 'updating' && h.step === 3 }
+
+/* ---------- The words, the same in every layout. ---------- */
+const STEPS = h => [
+  { t: `Download ${DESKTOP}`, d: opts.route === 'github' ? "From Sotto's releases on GitHub." : `${h.id} could not reach GitHub, so this computer is copying it over SSH.`, ing: opts.route === 'github' ? 'downloading' : 'copying it over SSH', fail: 'download' },
+  { t: 'Check the download', d: "Its checksum has to match the release's.", ing: 'checking the download', fail: 'checksum' },
+  { t: `Install beside ${h.version}`, d: `${h.version} stays in place until ${DESKTOP} is running.`, ing: 'installing', fail: null },
+  { t: `Restart ${h.id}'s host`, d: `${h.id}'s threads are unavailable for a few seconds.`, ing: 'restarting its host', fail: 'restart' },
+]
+const W = {
+  needs: h => `<b>${h.id}</b> runs Sotto host ${h.version}.<span class="a-wide"> This computer runs ${DESKTOP}.</span>`,
+  needsMore: h => `${h.id}'s threads keep working until you update. Updating restarts its host, so they are unavailable for a few seconds.`,
+  busy: h => { const n = working(h.id).length; return `${plural(n, 'thread', 'threads')} on ${h.id} ${n === 1 ? 'is' : 'are'} working. Updating restarts ${h.id}'s host, which stops ${n === 1 ? 'it' : 'them'}.` },
+  busyMore: h => { const n = working(h.id).length; return `Only the work in progress on ${n === 1 ? 'that turn' : 'those turns'} is lost. Drafts and history stay.` },
+  waiting: h => { const n = working(h.id).length; return `${h.id} updates when its threads finish. ${n} still working.` },
+  updating: h => `Updating ${h.id} to ${DESKTOP}: ${STEPS(h)[h.step].ing}.`,
+  done: h => `${h.id} runs Sotto ${DESKTOP}.`,
+  failed: h => ({
+    download: `${h.id} could not download ${DESKTOP}. GitHub did not answer from ${h.id}, and copying it from this computer over SSH stopped partway.`,
+    checksum: `The download on ${h.id} did not match the release's checksum, so Sotto deleted it and installed nothing.`,
+    restart: `${DESKTOP} installed on ${h.id}, but its host did not start, so Sotto started ${h.version} again.`,
+  })[h.kind],
+  kept: h => h.kind === 'restart' ? `${h.id}'s threads are back. Nothing was lost.` : `${h.id} still runs ${h.version}. Nothing was lost.`,
+  next: h => ({
+    download: `Check that ${h.id} is online, then try again, or update it by hand on ${h.id}.`,
+    checksum: `Try again to download it fresh, or update it by hand on ${h.id}.`,
+    restart: `Try again, or start the new host by hand to see what it says: press Stop host for ${h.id} in Settings > Hosts, then run the command on ${h.id}.`,
+  })[h.kind],
+}
+function commands(h) {
+  const base = `https://github.com/millZach/Sotto-releases/releases/download/v${DESKTOP}`, file = `Sotto-host-${DESKTOP}-linux-x64.tar.gz`
+  if (h.kind === 'restart') return `cd ~/.local/share/sotto-host/${DESKTOP}\nnode host/index.js --data ~/.sotto`
+  return `# Run on ${h.id}\ncd ~/.local/share/sotto-host\ncurl -fLO ${base}/${file}\ncurl -fLO ${base}/${file}.sha256\nsha256sum -c ${file}.sha256\nmkdir -p ${DESKTOP} && tar -xzf ${file} -C ${DESKTOP}\nln -sfn ${DESKTOP} current\n# Then press Stop host for ${h.id} in Settings > Hosts and switch it on again.`
+}
+
+/* Every control carries a focus key (data-fk) so focus survives a re-render. */
+const btn = (act, host, label, cls = '', aria = '', extra = '') => `<button type="button" class="button ${cls}" data-act="${act}" data-host="${host}" data-fk="${act}:${host}"${aria ? ` aria-label="${esc(aria)}"` : ''} ${extra}>${label}</button>`
+function actions(h, where) {
+  const n = working(h.id).length
+  switch (h.phase) {
+    case 'needs': return [btn('update', h.id, `Update ${h.id}`, 'primary', `Update ${h.id}'s host to ${DESKTOP}`), btn('notnow', h.id, 'Not now', 'ghost', `Hide this until Sotto next starts`)]
+    case 'confirm': return [btn('wait', h.id, 'Update when they finish', 'primary', `Update ${h.id} when its ${plural(n, 'working thread finishes', 'working threads finish')}`),
+      btn('stopnow', h.id, `Stop ${plural(n, 'thread', 'threads')} and update`, '', `Stop ${h.id}'s ${plural(n, 'working thread', 'working threads')} and update now`),
+      btn('cancel', h.id, 'Cancel', 'ghost', `Cancel, and leave ${h.id} on ${h.version}`)]
+    case 'waiting': return [btn('stopnow', h.id, `Stop ${plural(n, 'thread', 'threads')} and update now`, '', `Stop ${h.id}'s ${plural(n, 'working thread', 'working threads')} and update now`), btn('cancelupdate', h.id, 'Cancel update', 'ghost', `Cancel the update and leave ${h.id} on ${h.version}`)]
+    case 'updating': return h.step < 2 ? [btn('cancelupdate', h.id, 'Cancel update', 'ghost', `Cancel the update and leave ${h.id} on ${h.version}`)] : []
+    case 'done': return [btn('dismiss', h.id, 'Dismiss', 'ghost', `Dismiss the note that ${h.id} was updated`)]
+    case 'failed': return [btn('update', h.id, 'Try again', 'primary', `Try updating ${h.id} again`),
+      btn('copy', h.id, `${ic('copy', 's14')}Copy commands`, '', `Copy the commands that update ${h.id} by hand`),
+      btn('cmd', h.id, h.cmd ? 'Hide commands' : 'Show commands', 'ghost', '', `aria-expanded="${h.cmd}" aria-controls="cmd-${where}-${h.id}"`),
+      btn('notnow', h.id, 'Not now', 'ghost', `Hide this until Sotto next starts`)]
+  }
+  return []
+}
+const cmdBlock = (h, where) => h.phase === 'failed' && h.cmd ? `<pre class="cmd" id="cmd-${where}-${h.id}" tabindex="0" aria-label="Commands to update ${h.id} by hand">${esc(commands(h))}</pre>` : ''
+function stepList(h) {
+  const steps = STEPS(h)
+  const failedAt = h.phase === 'failed' ? steps.findIndex(s => s.fail === h.kind) : -1
+  return `<ol class="steps" aria-label="Update steps">${steps.map((s, i) => {
+    const st = h.phase === 'failed' ? (i < failedAt ? 'done' : i === failedAt ? 'failed' : 'later') : i < h.step ? 'done' : i === h.step ? 'now' : 'later'
+    const mark = st === 'done' ? ic('check', 's12') : st === 'now' ? '<span class="spinner" aria-hidden="true"></span>' : st === 'failed' ? ic('x', 's12') : i + 1
+    const d = st === 'done' && i === 1 ? 'The checksum matches.' : s.d
+    return `<li data-s="${st}"><span class="n">${mark}</span><div><div class="t">${s.t}<span class="vh">${st === 'done' ? ', done' : st === 'now' ? ', in progress' : st === 'failed' ? ', failed' : ', not started'}</span></div><div class="d">${d}</div></div></li>`
+  }).join('')}</ol>`
+}
+function threadList(h) {
+  const ts = S.threads.filter(t => t.host === h.id && (t.state === 'working' || t.finishedWhileWaiting))
+  return `<ul class="tlist" aria-label="Working threads on ${h.id}">${ts.map(t => `<li><span class="ring" data-state="${t.state}" ${t.finishedWhileWaiting ? 'data-unseen' : ''} aria-hidden="true"></span><span class="tt">${esc(t.title)}</span><span class="ts" data-state="${t.state}">${t.state === 'working' ? 'Working' : 'Finished'}</span></li>`).join('')}</ul>`
+}
+const phaseIcon = h => ({ needs: ic('up', 'ico-accent'), confirm: ic('alert', 'ico-accent'), waiting: ic('clock', 'ico-wait'), updating: '<span class="spinner ico-accent" aria-hidden="true"></span>', done: ic('check', 'ico-ok'), failed: ic('alert', 'ico-err') })[h.phase]
+
+/* ---------- A ---------- */
+function aStrip(h) {
+  const a = actions(h, 'a').join('')
+  let text = '', rest = ''
+  if (h.phase === 'needs') text = W.needs(h)
+  if (h.phase === 'confirm') { text = W.busy(h); rest = `<p class="a-more">${W.busyMore(h)}</p>` }
+  if (h.phase === 'waiting') text = W.waiting(h)
+  if (h.phase === 'updating') {
+    text = W.updating(h)
+    rest = `<div class="a-trail a-wide" aria-hidden="true">${STEPS(h).map((s, i) => `<span data-s="${i < h.step ? 'done' : i === h.step ? 'now' : 'later'}">${i < h.step ? ic('check', 's12') : ''}${s.t}</span>`).join('<i>·</i>')}</div>`
+  }
+  if (h.phase === 'done') text = W.done(h)
+  if (h.phase === 'failed') { text = `<b>${h.id} was not updated.</b> ${W.kept(h)}`; rest = `<div class="a-rest"><p style="margin:0;font-size:13px" class="muted">${W.failed(h)} ${W.next(h)}</p>${cmdBlock(h, 'a')}</div>` }
+  const inline = ['needs', 'waiting', 'updating', 'done'].includes(h.phase)
+  const bar = h.phase === 'updating' ? `<div class="a-bar" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i data-s="${i < h.step ? 'done' : i === h.step ? 'now' : ''}"></i>`).join('')}</div>` : ''
+  return `<section class="a-strip" data-phase="${h.phase}" data-notice="${h.id}" aria-label="Host update for ${h.id}">
+    <div class="a-line"><p class="a-text" tabindex="-1" data-fk="notice:${h.id}">${phaseIcon(h)}<span aria-live="polite">${text}</span></p>${inline ? `<div class="acts">${a}</div>` : ''}</div>
+    ${rest}${inline ? '' : `<div class="acts" style="margin-left:25px">${a}</div>`}${bar}</section>`
+}
+
+/* ---------- B ---------- */
+function bCard(h) {
+  const n = working(h.id).length
+  let title = '', sub = '', body = ''
+  if (h.phase === 'needs') { title = `${h.id} runs an older Sotto host`; sub = `Host ${h.version} on ${h.id} · ${DESKTOP} on this computer`; body = `<p class="muted">${W.needsMore(h)}</p>` }
+  if (h.phase === 'confirm') { title = `${plural(n, 'thread', 'threads')} on ${h.id} ${n === 1 ? 'is' : 'are'} working`; sub = `Updating to ${DESKTOP} restarts ${h.id}'s host, which stops ${n === 1 ? 'it' : 'them'}.`; body = `${threadList(h)}<p class="muted">${W.busyMore(h)}</p>` }
+  if (h.phase === 'waiting') { title = `Waiting for ${h.id}'s threads to finish`; sub = `${h.id} updates to ${DESKTOP} as soon as none of its threads is working.`; body = threadList(h) }
+  if (h.phase === 'updating') { title = `Updating ${h.id} to ${DESKTOP}`; sub = `Step ${h.step + 1} of 4`; body = stepList(h) }
+  if (h.phase === 'done') { title = W.done(h); sub = `Its threads are back.` }
+  if (h.phase === 'failed') { title = `${h.id} was not updated`; sub = W.kept(h); body = `${stepList(h)}<p>${W.failed(h)}</p><p class="muted">${W.next(h)}</p>${cmdBlock(h, 'b')}` }
+  const a = actions(h, 'b')
+  return `<section class="b-card" data-phase="${h.phase}" data-notice="${h.id}" aria-labelledby="b-t-${h.id}">
+    <div class="b-head">${phaseIcon(h)}<div><h3 id="b-t-${h.id}" tabindex="-1" data-fk="notice:${h.id}">${title}</h3><p aria-live="polite">${sub}</p></div></div>
+    ${body || a.length ? `<div class="b-body">${body}${a.length ? `<div class="acts">${a.join('')}</div>` : ''}</div>` : ''}</section>`
+}
+
+/* ---------- C ---------- */
+function cPill() {
+  const hs = outdated()
+  if (!hs.length) return ''
+  const pick = ['updating', 'failed', 'waiting', 'confirm', 'done', 'needs']
+  const h = [...hs].sort((x, y) => pick.indexOf(x.phase) - pick.indexOf(y.phase))[0]
+  let icon = '<span class="c-dot" aria-hidden="true"></span>', text = `Update for ${h.id}`, tone = ''
+  if (hs.length > 1 && !['updating', 'failed'].includes(h.phase)) text = `Updates for ${hs.length} hosts`
+  else if (h.phase === 'waiting') { icon = ic('clock', 's14 ico-wait'); text = `${h.id} waits to update` }
+  else if (h.phase === 'updating') { icon = '<span class="spinner ico-accent" aria-hidden="true"></span>'; text = `Updating ${h.id} · ${h.step + 1} of 4` }
+  else if (h.phase === 'done') { icon = ic('check', 's14 ico-ok'); text = `${h.id} updated`; tone = 'done' }
+  else if (h.phase === 'failed') { icon = ic('alert', 's14 ico-err'); text = `${h.id} not updated`; tone = 'failed' }
+  return `<button type="button" class="c-pill" data-act="pill" data-fk="pill" data-tone="${tone}" aria-expanded="${S.cOpen}" aria-controls="c-panel" aria-label="${esc(text)}. ${S.cOpen ? 'Hide' : 'Show'} host updates">${icon}<span>${esc(text)}</span></button>`
+}
+function cHost(h) {
+  const n = working(h.id).length
+  let body = ''
+  if (h.phase === 'needs') body = `<p class="muted">${W.needsMore(h)}</p>`
+  if (h.phase === 'confirm') body = `<p>${W.busy(h)}</p><p class="muted">${W.busyMore(h)}</p>`
+  if (h.phase === 'waiting') body = `<p>${W.waiting(h)}</p>`
+  if (h.phase === 'updating') body = stepList(h)
+  if (h.phase === 'done') body = `<p>${W.done(h)}</p>`
+  if (h.phase === 'failed') body = `<p><b>${h.id} was not updated.</b> ${W.failed(h)}</p><p>${W.kept(h)}</p><p class="muted">${W.next(h)}</p>${cmdBlock(h, 'c')}`
+  const state = { needs: `${h.version} → ${DESKTOP}`, confirm: `${h.version} → ${DESKTOP}`, waiting: `${n} working`, updating: `Step ${h.step + 1} of 4`, done: DESKTOP, failed: `Still ${h.version}` }[h.phase]
+  const a = actions(h, 'c')
+  return `<section class="c-host" data-notice="${h.id}" aria-labelledby="c-t-${h.id}">
+    <div class="c-line"><span class="c-name">${ic('server', 'ico-accent')}<b id="c-t-${h.id}" tabindex="-1" data-fk="notice:${h.id}">${h.id}</b><small>${state}</small></span></div>
+    <div aria-live="polite" style="display:grid;gap:8px">${body}</div>${a.length ? `<div class="acts">${a.join('')}</div>` : ''}</section>`
+}
+function cPanel() {
+  const hs = outdated()
+  if (!S.cOpen || !hs.length) return ''
+  return `<div class="c-panel" id="c-panel" role="dialog" aria-label="Host updates"><h2>Hosts running an older Sotto</h2>${hs.map(cHost).join('')}</div>`
+}
+
+/* ---------- The frame ---------- */
+function rowStatus(t) {
+  if (restarting(t.host)) return { state: 'away', text: 'Reconnecting' }
+  if (t.state === 'working') return { state: 'working', text: 'Working' }
+  if (t.state === 'needs') return { state: 'needs', text: 'Waiting on you' }
+  if (t.stopped) return { state: 'idle', text: 'Stopped' }
+  if (t.finishedWhileWaiting) return { state: 'idle', text: 'Finished', unseen: true }
+  return { state: 'idle', text: '' }
+}
+function sidebar() {
+  const folders = PROJECTS.map(([name, host]) => {
+    const rows = S.threads.filter(t => t.project === name)
+    const kind = host === 'local' ? 'local' : 'remote'
+    return `<div class="folder"><button type="button" class="folder-head" aria-expanded="true" data-fk="folder:${name}">${ic('chev', 's12 chev')}${ic('folder', 's14')}<span class="folder-title">${name}</span><span class="host-badge" data-kind="${kind}" aria-hidden="true">${ic(kind === 'local' ? 'laptop' : 'server', 's12')}<span>${HOST_NAME[host]}</span></span><span class="folder-count" aria-hidden="true">${rows.length}</span></button>
+      <ul class="rows">${rows.map(t => { const st = rowStatus(t); return `<li class="row" ${t.id === 'f1' ? 'data-current' : ''}><button type="button" class="item" data-fk="row:${t.id}" aria-label="${esc(t.title)}, ${t.provider}${st.text ? ', ' + st.text : ''}, on ${HOST_NAME[t.host]}" ${t.id === 'f1' ? 'aria-current="page"' : ''}>
+        <span class="ring" data-state="${st.state === 'away' ? 'away' : t.state}" ${st.unseen ? 'data-unseen' : ''} aria-hidden="true"></span><span class="item-title">${esc(t.title)}</span><span class="item-time">${t.when === 'now' ? '' : t.when}</span>
+        <span class="item-meta"><span class="prov">${t.provider}</span><span class="status" data-state="${st.state}">${st.text}</span></span></button></li>` }).join('')}</ul></div>`
+  }).join('')
+  return `<aside class="nav" aria-label="Threads sidebar">
+    <div class="nav-top"><span class="brand"><span class="brand-glyph" aria-hidden="true"></span>Sotto</span>
+      <div class="seg" role="radiogroup" aria-label="Sidebar mode"><button type="button" role="radio" aria-checked="true" aria-label="Threads">${ic('threads', 's14')}</button><button type="button" role="radio" aria-checked="false" aria-label="Terminal" tabindex="-1">${ic('term', 's14')}</button></div>
+      <button type="button" class="icon-btn" aria-label="Add project">${ic('folderPlus')}</button><button type="button" class="icon-btn" aria-label="New thread">${ic('pen')}</button><button type="button" class="icon-btn" aria-label="Collapse sidebar">${ic('collapse')}</button></div>
+    <label class="search">${ic('search', 's14')}<span class="vh">Search threads</span><input type="search" placeholder="Search threads"></label>
+    <div class="nav-scroll"><nav aria-label="Threads">${folders}</nav></div>
+    <div class="nav-foot"><div class="seg" role="tablist" aria-label="Page"><button type="button" role="tab" aria-selected="false" tabindex="-1">Dictate</button><button type="button" role="tab" aria-selected="true">Threads</button></div>
+      ${[['chat', 'Chats'], ['clock', 'History'], ['cog', 'Settings'], ['help', 'Help']].map(([i, l]) => `<a href="#" class="icon-btn" title="${l}" aria-label="${l}">${ic(i)}</a>`).join('')}
+      <button type="button" class="icon-btn update-control" aria-label="Check for updates to Sotto on this computer">${ic('download', 's14')}</button></div>
+  </aside>`
+}
+function pane(p) {
+  const t = S.threads.find(x => x.id === p.id)
+  const away = restarting(t.host), run = t.state === 'working'
+  const msgs = t.id === 't1'
+    ? `<p class="msg" data-role="user">Give new threads a title from the first exchange instead of the first line.</p><p class="msg">Done. The title now comes from the provider's side call after the first reply, and a title you set yourself is never replaced. The unit suite passes.</p>`
+    : `<p class="msg" data-role="user">Bake the lighting for the hero shot at 4K and keep the old bake.</p><p class="msg">Baking now. The old bake is in <code>bakes/hero-2026-09-28</code>. This takes about 20 minutes on forge's GPU.</p>`
+  const tail = t.stopped ? `<p class="marker">Stopped for ${t.host}'s host update</p>`
+    : run ? `<p class="activity" data-state="working"><span class="spinner" aria-hidden="true"></span>Working · 6m</p>`
+    : t.finishedWhileWaiting ? `<p class="activity">${ic('check', 's14 ico-ok')}Finished · 7m</p>` : ''
+  const placeholder = away ? '' : run ? `${t.provider} is working. Write a follow-up to queue it.` : 'What would you like to do next?'
+  const bCardHere = variant === 'B' && t.host !== 'local' && H(t.host) && outdated().includes(H(t.host)) ? bCard(H(t.host)) : ''
+  return `<section class="pane" ${p.secondary ? 'data-secondary' : ''} aria-label="${esc(t.title)}">
+    <header class="pane-head"><div class="pane-title"><span class="pmark" data-p="${t.p}" aria-hidden="true">${t.provider[0]}</span><h2>${esc(t.title)}</h2><span class="crumb"><span>${t.project}</span></span></div>
+      <button type="button" class="icon-btn" aria-label="Show tools">${ic('tools')}</button><button type="button" class="icon-btn" aria-label="More for this thread">${ic('more')}</button></header>
+    ${bCardHere}
+    <div class="transcript">${msgs}${tail}</div>
+    <div class="compose"><div class="prompt" ${run ? 'data-running' : ''}>
+      ${away ? `<p class="prompt-notice" role="status">${t.host}'s host is restarting after its update. This thread is back in a few seconds; your draft is kept.</p>` : ''}
+      <label class="vh" for="prompt-${t.id}">Prompt</label><textarea id="prompt-${t.id}" data-fk="prompt:${t.id}" rows="2" placeholder="${placeholder}" ${away ? 'disabled' : ''}></textarea>
+      <div class="prompt-foot"><span class="prompt-model"><span class="pmark" data-p="${t.p}" aria-hidden="true">${t.provider[0]}</span>${t.provider} · ${t.model}</span>
+        ${run ? `<button type="button" class="disc" aria-label="Stop ${esc(t.title)}" ${away ? 'disabled' : ''}>${ic('stop', 's14')}</button>` : `<button type="button" class="disc" aria-label="Send" disabled>${ic('send', 's14')}</button>`}</div></div>
+      <div class="branchbar"><span class="chip">${ic(t.host === 'local' ? 'laptop' : 'server', 's12')}${HOST_NAME[t.host]}</span><span class="chip">Current checkout</span><span class="chip end">${ic('branch', 's12')}main</span></div></div>
+  </section>`
+}
+function render() {
+  const app = document.getElementById('app')
+  const prior = document.activeElement?.dataset?.fk
+  const hs = outdated()
+  if (!hs.length) S.cOpen = false
+  const strip = variant === 'A' && hs.length ? `<div class="a-stack">${hs.map(aStrip).join('')}</div>` : ''
+  const shownPaneHosts = new Set(PANES.map(p => S.threads.find(t => t.id === p.id).host))
+  const bAbove = variant === 'B' ? hs.filter(h => !shownPaneHosts.has(h.id)).map(bCard).join('') : ''
+  app.innerHTML = `<div class="app" data-variant="${variant}" ${strip ? 'data-strip' : ''} ${variant === 'C' && hs.length ? 'data-pill' : ''}>
+    ${sidebar()}
+    <main class="ws" aria-label="Thread workspace">
+      ${strip}${variant === 'B' ? `<div class="b-above">${bAbove}</div>` : ''}${variant === 'C' ? cPill() + cPanel() : ''}
+      <div class="ws-body">${PANES.map(pane).join('')}</div>
+    </main>
+    <div class="winctl"><button type="button" aria-label="Minimize">${ic('min', 's14')}</button><button type="button" aria-label="Maximize">${ic('max', 's12')}</button><button type="button" aria-label="Close">${ic('x', 's14')}</button></div>
+  </div>`
+  const want = S.focus || prior
+  S.focus = null
+  if (want) { const el = app.querySelector(`[data-fk="${CSS.escape(want)}"]`); if (el) el.focus({ preventScroll: false }) }
+  document.getElementById('vlabel').textContent = `${variant} · ${VARIANTS[variant]}`
+  document.getElementById('pp-state').textContent = stateName()
+  for (const b of document.querySelectorAll('[data-jump]')) b.setAttribute('aria-pressed', String(b.dataset.jump === S.jumped))
+  document.getElementById('pp-fail').value = opts.fail
+}
+function stateName() {
+  const PH = { needs: 'Needs update', confirm: 'Confirm while busy', waiting: 'Waiting for threads to finish', updating: 'Updating', done: 'Done', failed: 'Failed' }
+  const parts = hostList().filter(h => h.phase !== 'current').map(h => `${h.id}: ${PH[h.phase]}${h.phase === 'updating' ? ` (${STEPS(h)[h.step].t.toLowerCase()})` : ''}${h.phase === 'failed' ? ` (${h.kind})` : ''}${h.phase === 'waiting' ? ` (${working(h.id).length} working)` : ''}${h.hidden ? ' · hidden by Not now' : ''}`)
+  return 'State: ' + (parts.length ? parts.join(' · ') : 'Up to date, nothing shows')
+}
+
+/* ---------- Behaviour ---------- */
+const DUR = [1700, 1200, 1200, 2600]
+function later(h, ms, fn) { const g = h.gen; setTimeout(() => { if (h.gen !== g || S.hosts[h.id] !== h) return; fn(); render() }, ms) }
+function runStep(h) {
+  later(h, DUR[h.step], () => {
+    if (opts.pause) { h.gen++; runStep(h); return }
+    const s = STEPS(h)[h.step]
+    if (s.fail && opts.fail === s.fail) { h.phase = 'failed'; h.kind = s.fail; opts.fail = 'none'; h.cmd = false; return }
+    h.step++
+    if (h.step >= 4) { h.phase = 'done'; h.version = DESKTOP; scheduleHide(h) } else runStep(h)
+  })
+}
+function scheduleHide(h) {
+  later(h, 8000, () => {
+    // Stays while the pointer is over it or a control in it has focus; the heading Sotto focused itself does not count.
+    const box = document.querySelector(`[data-notice="${h.id}"]`), active = document.activeElement
+    const held = box && (box.matches(':hover') || (box.contains(active) && !active.matches('[data-fk^="notice:"]')))
+    if (held) { h.gen++; scheduleHide(h); return }
+    if (box?.contains(active)) S.focus = 'prompt:f1'
+    h.phase = 'current'
+  })
+}
+function startUpdate(h) { h.gen++; h.phase = 'updating'; h.step = 0; h.cmd = false; S.focus = `notice:${h.id}`; runStep(h) }
+function finishOne(hostId) {
+  const t = working(hostId)[0]
+  if (!t) return
+  t.state = 'idle'; t.finishedWhileWaiting = true; t.when = 'now'
+  const h = H(hostId)
+  if (h?.phase === 'waiting' && !working(hostId).length) startUpdate(h)
+}
+function act(a, h, el) {
+  if (a === 'update') { h.gen++; if (working(h.id).length) { h.phase = 'confirm'; S.focus = `wait:${h.id}` } else startUpdate(h) }
+  else if (a === 'wait') { h.phase = 'waiting'; S.focus = `notice:${h.id}` }
+  else if (a === 'stopnow') { for (const t of working(h.id)) { t.state = 'idle'; t.stopped = true; t.when = 'now' } startUpdate(h) }
+  else if (a === 'cancel' || a === 'cancelupdate') { h.gen++; h.phase = 'needs'; S.focus = `update:${h.id}` }
+  else if (a === 'notnow' || a === 'dismiss') { h.gen++; h.hidden = a === 'notnow'; if (a === 'dismiss') h.phase = 'current'; S.focus = variant === 'C' && outdated().length ? `notice:${outdated()[0].id}` : `row:f1` }
+  else if (a === 'cmd') h.cmd = !h.cmd
+  else if (a === 'copy') { navigator.clipboard?.writeText(commands(h)).catch(() => {}); el.lastChild.textContent = 'Copied'; setTimeout(() => { if (el.isConnected) el.lastChild.textContent = 'Copy commands' }, 1500); return }
+  render()
+}
+document.addEventListener('click', event => {
+  const el = event.target.closest('[data-act]')
+  if (variant === 'C' && S.cOpen && !event.target.closest('.c-panel, .c-pill') && document.getElementById('app').contains(event.target)) { S.cOpen = false; render() }
+  if (!el) return
+  if (el.dataset.act === 'pill') { S.cOpen = !S.cOpen; if (S.cOpen) S.focus = `notice:${outdated()[0].id}`; render(); return }
+  act(el.dataset.act, H(el.dataset.host), el)
+})
+
+function jump(to) {
+  S = fresh(); S.jumped = to
+  const f = H('forge')
+  if (to === 'current') { f.phase = 'current'; f.version = DESKTOP }
+  if (to === 'confirm') f.phase = 'confirm'
+  if (to === 'waiting') f.phase = 'waiting'
+  if (to === 'updating') { for (const t of working('forge')) { t.state = 'idle'; t.stopped = true } f.phase = 'updating'; runStep(f) }
+  if (to === 'done') { for (const t of working('forge')) { t.state = 'idle'; t.stopped = true } f.phase = 'done'; f.version = DESKTOP; scheduleHide(f) }
+  if (to === 'failed') { f.phase = 'failed'; f.kind = opts.fail !== 'none' ? opts.fail : 'download'; opts.fail = 'none' }
+  if (to === 'two') { const a = H('atlas'); a.version = '0.1.23'; a.phase = 'needs' }
+  S.cOpen = variant === 'C' && !['current', 'needs', 'two'].includes(to)
+  render()
+}
+function go(step) { variant = KEYS[(KEYS.indexOf(variant) + step + KEYS.length) % KEYS.length]; history.replaceState(null, '', `?variant=${variant}`); S.cOpen = false; render() }
+document.getElementById('prev').onclick = () => go(-1)
+document.getElementById('next').onclick = () => go(1)
+document.getElementById('reset').onclick = () => { S = fresh(); render() }
+document.getElementById('theme').onclick = () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark' }
+document.getElementById('motion').onclick = e => { const r = document.documentElement, on = r.dataset.reducedMotion !== 'on'; r.dataset.reducedMotion = on ? 'on' : 'off'; e.currentTarget.setAttribute('aria-pressed', String(on)) }
+document.getElementById('pp-grid').onclick = e => { const b = e.target.closest('[data-jump]'); if (b) jump(b.dataset.jump) }
+document.getElementById('pp-finish').onclick = () => { finishOne('forge'); render() }
+document.getElementById('pp-fail').onchange = e => { opts.fail = e.target.value; render() }
+document.getElementById('pp-route').onchange = e => { opts.route = e.target.value; render() }
+document.getElementById('pp-pause').onchange = e => { opts.pause = e.target.checked }
+document.getElementById('pp-toggle').onclick = e => { const p = document.getElementById('pp'), closed = !p.hasAttribute('data-closed'); p.toggleAttribute('data-closed', closed); e.currentTarget.textContent = closed ? 'Show' : 'Hide'; e.currentTarget.setAttribute('aria-expanded', String(!closed)) }
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    if (variant === 'C' && S.cOpen) { S.cOpen = false; for (const h of hostList()) if (h.phase === 'confirm') h.phase = 'needs'; S.focus = 'pill'; render(); event.preventDefault(); return }
+    const c = hostList().find(h => h.phase === 'confirm')
+    if (c) { c.phase = 'needs'; S.focus = `update:${c.id}`; render(); event.preventDefault(); return }
+    const m = hostList().find(h => h.cmd)
+    if (m) { m.cmd = false; S.focus = `cmd:${m.id}`; render(); event.preventDefault(); return }
+    return
+  }
+  if (event.target.closest('input, textarea, select, [contenteditable]')) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key === 'ArrowLeft') go(-1)
+  else if (event.key === 'ArrowRight') go(1)
+  else if (event.key === 't' || event.key === 'T') document.getElementById('theme').click()
+  else if (event.key === 'm' || event.key === 'M') document.getElementById('motion').click()
+  else if (event.key === 'r' || event.key === 'R') document.getElementById('reset').click()
+})
+S = fresh()
+render()
+</script>
+</body>
+</html>
