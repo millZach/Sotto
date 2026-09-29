@@ -2,7 +2,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
-import { isAbsolute, join, posix } from 'node:path'
+import { isAbsolute, join, posix, win32 } from 'node:path'
 
 const LOGIN_PATH_TIMEOUT_MS = 4_000
 /** macOS and Linux separate PATH entries with a colon. These helpers never run for a Windows launch. */
@@ -94,13 +94,38 @@ async function nvmDefaultBin(home: string): Promise<string | null> {
   } catch { return null }
 }
 
+const LOGIN_SHELL_ARGS = ['-ilc', 'printf %s "$PATH"']
+
+/**
+ * Windows cannot run a shebang, so a script that names an absolute interpreter runs under it.
+ * The suite's stand-in is such a script. Anywhere else the shell path is executed directly.
+ */
+export function windowsShebangCommand(shell: string, firstLine: string): { command: string; args: string[] } | null {
+  const interpreter = /^#!\s*(.+)$/.exec(firstLine.trim())?.[1]?.trim()
+  if (!interpreter || !win32.isAbsolute(interpreter)) return null
+  return { command: interpreter, args: [shell, ...LOGIN_SHELL_ARGS] }
+}
+
+async function shellCommand(shell: string): Promise<{ command: string; args: string[] }> {
+  if (process.platform === 'win32') {
+    try {
+      const first = (await readFile(shell, 'utf8')).split(/\r?\n/, 1)[0] ?? ''
+      const interpreted = windowsShebangCommand(shell, first)
+      if (interpreted) return interpreted
+    } catch { /* Launch the shell path itself. */ }
+  }
+  return { command: shell, args: [...LOGIN_SHELL_ARGS] }
+}
+
 export function readLoginShellPath(shell: string, timeoutMs = LOGIN_PATH_TIMEOUT_MS): Promise<string | null> {
-  if (!isAbsolute(shell) || /\/(false|nologin)$/.test(shell)) return Promise.resolve(null)
+  if (!isAbsolute(shell) || /[/\\](false|nologin)$/.test(shell)) return Promise.resolve(null)
   const home = homedir()
-  return new Promise(resolve => {
-    execFile(shell, ['-ilc', 'printf %s "$PATH"'], {
+  return shellCommand(shell).then(invocation => new Promise(resolve => {
+    execFile(invocation.command, invocation.args, {
       timeout: timeoutMs,
+      killSignal: 'SIGKILL',
       windowsHide: true,
+      encoding: 'utf8',
       env: {
         HOME: home,
         USER: process.env.USER || userInfo().username,
@@ -110,7 +135,7 @@ export function readLoginShellPath(shell: string, timeoutMs = LOGIN_PATH_TIMEOUT
         PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
       },
     }, (error, stdout) => { resolve(error ? null : pathLine(stdout)) })
-  })
+  }))
 }
 
 function defaultShell(): string {

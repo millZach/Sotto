@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { installGuiPath, mergePath, pathLine, pathLooksTruncated, readLoginShellPath, staticPathCandidates } from '../../../src/main/app/guiPath'
+import { installGuiPath, mergePath, pathLine, pathLooksTruncated, readLoginShellPath, staticPathCandidates, windowsShebangCommand } from '../../../src/main/app/guiPath'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -54,11 +54,23 @@ describe('GUI process PATH', () => {
     expect(already.PATH).toContain(grokBin)
   })
 
+  it('runs a Windows shebang under the interpreter it names', () => {
+    const shell = 'D:\\a\\_temp\\sotto-login-path\\shell'
+    const node = 'C:\\Program Files\\nodejs\\node.exe'
+    const args = [shell, '-ilc', 'printf %s "$PATH"']
+    expect(windowsShebangCommand(shell, `#!${node}`)).toEqual({ command: node, args })
+    expect(windowsShebangCommand(shell, '#!C:\\hostedtoolcache\\windows\\node\\24.2.0\\x64\\node.exe')).toEqual({
+      command: 'C:\\hostedtoolcache\\windows\\node\\24.2.0\\x64\\node.exe', args,
+    })
+    expect(windowsShebangCommand(shell, 'printf "%s" "$PATH"')).toBeNull()
+  })
+
   it('reads PATH from a login shell and gives up when that shell does not finish', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-login-path-'))
     roots.push(root)
     const shell = join(root, 'shell')
-    await writeFile(shell, '#!/bin/sh\nprintf \'%s\\n\' "hello"\nprintf \'%s\' "/opt/homebrew/bin:/usr/bin:/bin"\n')
+    // A node shebang runs on macOS directly and, on Windows, under the interpreter the file names.
+    await writeFile(shell, `#!${process.execPath}\nprocess.stdout.write('hello\\n/opt/homebrew/bin:/usr/bin:/bin')\n`)
     await chmod(shell, 0o755)
     expect(await readLoginShellPath(shell, 2_000)).toBe('/opt/homebrew/bin:/usr/bin:/bin')
     const hung = join(root, 'hung')
