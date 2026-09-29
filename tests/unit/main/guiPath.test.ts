@@ -21,6 +21,7 @@ describe('GUI process PATH', () => {
 
   it('keeps the system PATH first and adds each directory once', () => {
     expect(mergePath('/usr/bin:/bin', ['/opt/homebrew/bin', '/usr/bin', '/Users/tomas/.local/bin'])).toBe('/usr/bin:/bin:/opt/homebrew/bin:/Users/tomas/.local/bin')
+    expect(mergePath('D:\\temp\\bin:/usr/bin:/bin', ['/opt/homebrew/bin'])).toBe('D:\\temp\\bin:/usr/bin:/bin:/opt/homebrew/bin')
     expect(pathLine('welcome\n/opt/homebrew/bin:/usr/bin:/bin\n')).toBe('/opt/homebrew/bin:/usr/bin:/bin')
     expect(pathLine('not a path')).toBeNull()
   })
@@ -41,9 +42,10 @@ describe('GUI process PATH', () => {
     })
     const entries = env.PATH?.split(':') ?? []
     expect(entries.slice(0, 4)).toEqual(['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
-    expect(entries).toContain(localBin)
-    expect(entries).toContain(grokBin)
-    expect(entries).not.toContain(join(root, 'from-login'))
+    // A Windows temp path contains a drive colon, so membership is read from the whole PATH.
+    expect(env.PATH).toContain(localBin)
+    expect(env.PATH).toContain(grokBin)
+    expect(env.PATH).not.toContain(join(root, 'from-login'))
     const already: NodeJS.ProcessEnv = { PATH: `${localBin}:/usr/bin:/bin` }
     let asked = false
     await installGuiPath(already, { platform: 'linux', home, loginPath: async () => { asked = true; return '/opt/extra' } })
