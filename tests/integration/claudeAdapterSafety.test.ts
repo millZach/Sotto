@@ -195,6 +195,11 @@ describe('Claude recovery and safety', () => {
     await expect.poll(async () => (await launches()).length).toBeGreaterThan(0)
     expect((await f.host.snapshot()).error ?? '').not.toContain('permission prompts')
   })
+  // The label is what the thread sidebar and the model picker show; the other adapters name themselves the same way.
+  it('names its models for Claude Code, as the sidebar and model picker show them', async () => {
+    const labels = new Set((await f.host.snapshot()).models.map(model => model.provider))
+    expect([...labels]).toEqual(['Claude Code'])
+  })
   it('advertises every runtime mode on Claude models', async () => {
     expect((await f.host.snapshot()).models.every(model => model.runtimeModes?.join() === 'approval-required,auto-accept-edits,auto,full-access')).toBe(true)
   })
