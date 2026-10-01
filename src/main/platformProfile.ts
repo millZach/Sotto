@@ -4,8 +4,6 @@ export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
 export type ApplicationMenuTemplate = 'none' | 'macos'
 
-export type DockPresence = 'regular' | 'hidden'
-
 export type WidgetAlwaysOnTopLevel = 'normal' | 'floating' | 'screen-saver'
 
 /** The system material a frosted main window draws behind the room (ADR-0048). */
@@ -35,11 +33,14 @@ export interface PlatformProfile {
   readonly mainWindowChrome: MainWindowChrome
   readonly trafficLightPosition: TrafficLightPosition | null
   readonly applicationMenu: ApplicationMenuTemplate
-  readonly dockPresence: DockPresence
   readonly widgetAlwaysOnTopLevel: WidgetAlwaysOnTopLevel
   readonly widgetFocusable: boolean
   readonly widgetVisibleOnAllWorkspaces: boolean
-  /** A macOS panel can float over another app's full-screen desktop while the app keeps its Dock icon. */
+  /**
+   * A macOS panel can float over another app's full-screen desktop while the app keeps its Dock icon.
+   * Never hide the Dock instead: once macOS has treated Sotto as an accessory app, every Sotto window can
+   * sit on other apps' full-screen desktops for the rest of the run (ADR-0045).
+   */
   readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
   readonly pasteRequiresAccessibilityTrust: boolean
@@ -68,7 +69,6 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
       applicationMenu: 'none',
-      dockPresence: 'regular',
       // 'floating' silently fails to apply WS_EX_TOPMOST on current Windows 11
       // builds; 'normal' sticks and survives hide/show.
       widgetAlwaysOnTopLevel: 'normal',
@@ -86,10 +86,6 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       mainWindowChrome: 'hidden-inset',
       trafficLightPosition: { x: 16, y: 16 },
       applicationMenu: 'macos',
-      // Never hide the Dock, even for a moment. Once macOS has treated the app
-      // as an accessory, every Sotto window can sit on another app's
-      // full-screen desktop for the rest of the run, not only the pill.
-      dockPresence: 'regular',
       widgetAlwaysOnTopLevel: 'floating',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: true,
