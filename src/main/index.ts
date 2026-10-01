@@ -93,6 +93,8 @@ import {
 } from './output/pasteAccessibility'
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
+import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
+import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
@@ -242,6 +244,7 @@ type NativeDiagnostic =
   | 'thread-auto-settle-skipped'
   | ClaudeAdapterEvent
   | PhoneAccessEvent
+  | OsascriptPasteEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -542,7 +545,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await credentials.load()
   const grokSpeech = new GrokSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eGrokSpeechFetch }) })
   const kokoroSpeech = new KokoroSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eKokoroSpeechFetch }) })
-  const settings = new SecureSettings(plainSettings, credentials)
+  const settings = new SecureSettings(plainSettings, credentials, () => recoveryNotices.publish({ code: 'OPENROUTER_KEY_UNREADABLE' }))
   await migrateDesktopKey(settings, recoveryNotices, logOperational)
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
@@ -857,7 +860,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('will-quit', () => warmPaste?.dispose())
   const basePaste: PasteProcessAdapter = e2eConfiguration === null
     ? warmPaste
-      ?? createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options))
+      ?? (platform === 'darwin'
+        // osascript's stderr says which permission refused the paste; it is read, never logged.
+        ? createOsascriptPasteAdapter({
+            spawn: (executable, args, options) => spawn(executable, [...args], { ...options, stdio: [...options.stdio] }),
+            onDenied: denial => recoveryNotices.publish({
+              code: denial === 'automation' ? 'AUTOMATION_PERMISSION_REQUIRED' : 'ACCESSIBILITY_PERMISSION_REQUIRED',
+            }),
+            log: logOperational,
+          })
+        : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === APP_NAME,
@@ -1174,6 +1186,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
       }, grokSpeech, kokoroSpeech, { voiceCoordinatorEnabled: startupSettings.voiceCoordinatorEnabled, wakeControl: agentControl, encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      // An E2E run never leaves the app for System Settings.
+      const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),
@@ -1200,6 +1214,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         trustedSenders: () => windows.getTrustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
+        ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {
           request(command): void {
             dispatchDictation(command)

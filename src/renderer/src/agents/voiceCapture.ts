@@ -99,7 +99,10 @@ export class BrowserVoiceCapture implements VoiceCapture {
       session.worklet.connect(session.gain)
       session.gain.connect(context.destination)
       if (!await ensureMicrophoneAccess()) {
-        throw new Error('Microphone access is blocked.')
+        // Named as getUserMedia names a refusal, so callers classify it as denied.
+        const error = new Error('Microphone access is blocked.')
+        error.name = 'NotAllowedError'
+        throw error
       }
       session.stream = await browser.navigator.mediaDevices.getUserMedia({
         audio: {

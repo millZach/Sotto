@@ -289,12 +289,19 @@ export class WorkletMicrophoneTest implements MicrophoneTestController {
       new AudioRecorder(options),
   ) {}
 
-  async start(onLevel: (level: number) => void, selectedDeviceId?: string): Promise<MicrophoneTestOutcome> {
+  async start(onLevel: (level: number) => void, selectedDeviceId?: string, onEnded?: (outcome: 'missing') => void): Promise<MicrophoneTestOutcome> {
     const generation = ++this.generation
     await this.stopRecorder()
     if (generation !== this.generation) return 'error'
-    const recorder = this.createRecorder({
+    const recorder: LevelRecorder = this.createRecorder({
       onLevel,
+      levelsOnly: true,
+      // The recorder has already released the input; drop it and say so once.
+      onDeviceUnavailable: () => {
+        if (generation !== this.generation || this.recorder !== recorder) return
+        this.recorder = null
+        onEnded?.('missing')
+      },
       ...(selectedDeviceId ? { selectedDeviceId } : {}),
     })
     this.recorder = recorder

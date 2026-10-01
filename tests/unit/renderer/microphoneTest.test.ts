@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { AudioRecorderError } from '../../../src/renderer/src/audio/audioRecorder'
+import {
+  AudioRecorder,
+  AudioRecorderError,
+  type AudioRecorderDependencies,
+  type AudioRecorderOptions,
+} from '../../../src/renderer/src/audio/audioRecorder'
 import {
   BrowserMicrophoneTest,
   WorkletMicrophoneTest,
@@ -250,6 +255,81 @@ describe('worklet microphone setup test', () => {
     const onLevel = vi.fn()
 
     await expect(test.start(onLevel, 'mic-c922')).resolves.toBe('ready')
-    expect(createRecorder).toHaveBeenCalledWith({ onLevel, selectedDeviceId: 'mic-c922' })
+    expect(createRecorder).toHaveBeenCalledWith(expect.objectContaining({ onLevel, selectedDeviceId: 'mic-c922' }))
+  })
+
+  it('opens the recorder in levels-only mode so the test keeps no audio', async () => {
+    const createRecorder = vi.fn<(options: AudioRecorderOptions) => { start(): Promise<void>; cancel(): Promise<void> }>(() => ({
+      start: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    }))
+    const test = new WorkletMicrophoneTest(createRecorder)
+
+    await expect(test.start(vi.fn())).resolves.toBe('ready')
+    expect(createRecorder.mock.calls[0]?.[0]).toMatchObject({ levelsOnly: true })
+  })
+
+  it('reports missing when the input is unplugged mid-test', async () => {
+    let options: AudioRecorderOptions | undefined
+    const cancel = vi.fn(async () => undefined)
+    const test = new WorkletMicrophoneTest((received) => {
+      options = received
+      return { start: vi.fn(async () => undefined), cancel }
+    })
+    const onEnded = vi.fn()
+
+    await expect(test.start(vi.fn(), undefined, onEnded)).resolves.toBe('ready')
+    options?.onDeviceUnavailable?.()
+
+    expect(onEnded).toHaveBeenCalledExactlyOnceWith('missing')
+  })
+
+  it('ignores device loss from a test that was already stopped', async () => {
+    let options: AudioRecorderOptions | undefined
+    const test = new WorkletMicrophoneTest((received) => {
+      options = received
+      return { start: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) }
+    })
+    const onEnded = vi.fn()
+
+    await test.start(vi.fn(), undefined, onEnded)
+    await test.stop()
+    options?.onDeviceUnavailable?.()
+
+    expect(onEnded).not.toHaveBeenCalled()
+  })
+
+  it('unplugging the input of a real recorder ends the test as missing', async () => {
+    const trackListeners = new Set<() => void>()
+    const track = {
+      stop: vi.fn(),
+      addEventListener: vi.fn((_type: string, listener: () => void) => { trackListeners.add(listener) }),
+      removeEventListener: vi.fn((_type: string, listener: () => void) => { trackListeners.delete(listener) }),
+    }
+    const node = () => ({ connect: vi.fn((target: unknown) => target), disconnect: vi.fn() })
+    const dependencies: AudioRecorderDependencies = {
+      audioWorkletModuleUrl: 'file:///worklet.js',
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })) },
+      createAudioContext: () => ({
+        sampleRate: 48_000,
+        destination: node(),
+        audioWorklet: { addModule: async () => undefined },
+        state: 'running',
+        createMediaStreamSource: () => node(),
+        createGain: () => ({ ...node(), gain: { value: 1 } }),
+        close: async () => undefined,
+      }) as unknown as ReturnType<AudioRecorderDependencies['createAudioContext']>,
+      createAudioWorkletNode: () => ({ ...node(), port: { onmessage: null } }) as unknown as ReturnType<AudioRecorderDependencies['createAudioWorkletNode']>,
+      setTimer: () => 1,
+      clearTimer: () => undefined,
+    }
+    const test = new WorkletMicrophoneTest((options) => new AudioRecorder(options, dependencies))
+    const onEnded = vi.fn()
+
+    await expect(test.start(vi.fn(), undefined, onEnded)).resolves.toBe('ready')
+    for (const listener of [...trackListeners]) listener()
+
+    await vi.waitFor(() => expect(onEnded).toHaveBeenCalledExactlyOnceWith('missing'))
+    expect(track.stop).toHaveBeenCalledOnce()
   })
 })

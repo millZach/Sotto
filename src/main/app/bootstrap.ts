@@ -179,10 +179,11 @@ export function installSessionPermissionPolicy(
       findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
     if (!trusted) return false
     if (mediaAccessGranted === undefined) return true
+    // Fail closed: true skips the OS prompt, so an unreadable grant is a no.
     try {
       return mediaAccessGranted()
     } catch {
-      return true
+      return false
     }
   }
 

@@ -150,4 +150,16 @@ describe('createMicrophoneAccessGate', () => {
     await expect(createMicrophoneAccessGate(adapter).ensure()).resolves.toBe(true)
     expect(adapter.request).not.toHaveBeenCalled()
   })
+
+  it('never reports a grant it could not read', () => {
+    const adapter: MicrophoneAccessAdapter = {
+      status: () => {
+        throw new Error('secret native bridge detail')
+      },
+      request: vi.fn(async () => true),
+    }
+
+    expect(createMicrophoneAccessGate(adapter).isGranted()).toBe(false)
+    expect(adapter.request).not.toHaveBeenCalled()
+  })
 })
