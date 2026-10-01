@@ -1,4 +1,4 @@
-import type { PasteProcessAdapter } from './outputService'
+import { PASTE_PROCESS_TIMEOUT_MS, type PasteProcessAdapter } from './outputService'
 
 /** The macOS permission a failed `osascript` paste reported as missing. */
 export type PastePermissionDenial = 'automation' | 'accessibility'
@@ -35,13 +35,6 @@ export interface OsascriptPasteOptions {
   readonly timeoutMs?: number
 }
 
-/**
- * The first Automation prompt ("Sotto wants to control System Events") holds
- * osascript open until the user answers it, so the darwin paste waits far
- * longer than the Windows one before giving up and leaving the text copied.
- */
-export const DARWIN_PASTE_PROCESS_TIMEOUT_MS = 60_000
-
 // Only enough of stderr to find the error number; it is never logged or kept.
 const STDERR_LIMIT = 4_096
 
@@ -64,7 +57,7 @@ export function classifyOsascriptFailure(stderr: string): PastePermissionDenial 
 }
 
 export function createOsascriptPasteAdapter(options: OsascriptPasteOptions): PasteProcessAdapter {
-  const timeoutMs = options.timeoutMs ?? DARWIN_PASTE_PROCESS_TIMEOUT_MS
+  const timeoutMs = options.timeoutMs ?? PASTE_PROCESS_TIMEOUT_MS
   const report = (callback: () => void): void => {
     try {
       callback()
@@ -120,8 +113,14 @@ export function createOsascriptPasteAdapter(options: OsascriptPasteOptions): Pas
             finish(false)
           })
           if (!settled) {
+            // An unanswered first Automation prompt ("Sotto wants to control
+            // System Events") holds osascript open. Waiting for it would keep the
+            // dictation in delivery with the widget hidden and every later
+            // delivery queued behind it, so the paste gives up on the usual
+            // deadline, leaves the text copied and names Automation as the cause.
             timeout = setTimeout(() => {
               report(() => options.log('paste-osascript-timeout'))
+              report(() => options.onDenied('automation'))
               finish(false)
               try {
                 child.kill()
