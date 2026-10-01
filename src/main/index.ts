@@ -459,6 +459,14 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     return this.window.isMinimized()
   }
 
+  isFullScreen(): boolean {
+    return this.window.isFullScreen()
+  }
+
+  isVisible(): boolean {
+    return this.window.isVisible()
+  }
+
   restore(): void {
     this.window.restore()
   }
@@ -473,7 +481,10 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
 
   setVisibleOnAllWorkspaces(
     visible: boolean,
-    options?: { readonly visibleOnFullScreen: boolean },
+    options?: {
+      readonly visibleOnFullScreen?: boolean
+      readonly skipTransformProcessType?: boolean
+    },
   ): void {
     this.window.setVisibleOnAllWorkspaces(visible, options)
   }

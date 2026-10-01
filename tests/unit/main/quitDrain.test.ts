@@ -58,7 +58,7 @@ it('keeps the native windows and tray until the drain settles despite bootstrap 
   function quitEvent() {
     return { defaultPrevented: false, preventDefault() { this.defaultPrevented = true } }
   }
-  const runtime = { start: vi.fn(async () => undefined), showMain: vi.fn(), beginQuit: vi.fn(), dispose: vi.fn() }
+  const runtime = { start: vi.fn(async () => undefined), showMain: vi.fn(), showFromActivation: vi.fn(), beginQuit: vi.fn(), dispose: vi.fn() }
   await bootstrapSotto({ app, initialize: () => runtime, log: vi.fn() })
   let resolve = (): void => undefined
   const pending = new Promise<void>(done => { resolve = done })

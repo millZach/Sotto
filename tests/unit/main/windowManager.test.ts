@@ -39,6 +39,8 @@ class FakeWindow implements BrowserWindowLike {
   readonly isMaximized = vi.fn(() => false)
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
+  readonly isFullScreen = vi.fn(() => false)
+  readonly isVisible = vi.fn(() => true)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setAlwaysOnTop = vi.fn()
@@ -529,7 +531,73 @@ describe('WindowManager construction', () => {
     expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
       visibleOnFullScreen: true,
+      skipTransformProcessType: true,
     })
+  })
+
+  it('does not reassert the macOS widget level while the pill is already visible', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.showWidget()
+    const widget = windows[0]!
+    expect(widget.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+    widget.setAlwaysOnTop.mockClear()
+
+    await manager.showWidget()
+
+    expect(widget.setAlwaysOnTop).not.toHaveBeenCalled()
+  })
+
+  it('leaves a visible full-screen main window where it is when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.show.mockClear()
+    main.focus.mockClear()
+
+    await manager.showMainFromActivation()
+
+    expect(main.show).not.toHaveBeenCalled()
+    expect(main.focus).not.toHaveBeenCalled()
+  })
+
+  it('still raises a full-screen main window when show is asked for directly', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+
+    await manager.showMain()
+
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
+  })
+
+  it('restores a minimized full-screen main window when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.isMinimized.mockReturnValue(true)
+
+    await manager.showMainFromActivation()
+
+    expect(main.restore).toHaveBeenCalledOnce()
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
+  })
+
+  it('opens a hidden full-screen main window when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.isVisible.mockReturnValue(false)
+
+    await manager.showMainFromActivation()
+
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
   })
 
   it('leaves workspace spanning alone where the profile does not ask for it', async () => {

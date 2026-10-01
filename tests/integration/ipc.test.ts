@@ -2461,6 +2461,7 @@ function createRuntime(start: () => Promise<void> = async () => undefined) {
   return {
     start: vi.fn<() => Promise<void>>(start),
     showMain: vi.fn<() => void>(),
+    showFromActivation: vi.fn<() => void>(),
     beginQuit: vi.fn<() => void>(),
     dispose: vi.fn<() => void>(),
   } satisfies RuntimeController
@@ -2727,9 +2728,10 @@ describe('bootstrap failure containment', () => {
 
     expect(result.started).toBe(true)
     app.emit('activate')
-    expect(runtime.showMain).toHaveBeenCalledOnce()
+    expect(runtime.showFromActivation).toHaveBeenCalledOnce()
+    expect(runtime.showMain).not.toHaveBeenCalled()
     app.emit('activate')
-    expect(runtime.showMain).toHaveBeenCalledTimes(2)
+    expect(runtime.showFromActivation).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces activation intent raised before startup completes into one show', async () => {
@@ -2770,6 +2772,7 @@ describe('bootstrap failure containment', () => {
     app.emit('activate')
 
     expect(runtime.showMain).not.toHaveBeenCalled()
+    expect(runtime.showFromActivation).not.toHaveBeenCalled()
   })
 
   it('drops pending activation intent when startup fails', async () => {
