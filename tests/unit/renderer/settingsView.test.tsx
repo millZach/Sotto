@@ -671,7 +671,7 @@ describe('SettingsView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
 
-    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922'))
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922', expect.any(Function)))
   })
 
   it('tests the microphone just chosen before that choice is saved', async () => {
@@ -689,7 +689,7 @@ describe('SettingsView', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), 'mic-c922')
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
 
-    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922'))
+    await waitFor(() => expect(start).toHaveBeenCalledWith(expect.any(Function), 'mic-c922', expect.any(Function)))
     pending.resolve(true)
   })
 
