@@ -48,7 +48,7 @@ A Dock launch now keeps the system PATH and adds the login shell's directories t
 Unpackaged Electron, isolated profile, PATH forced to the Dock default:
 
 - Threads: alert "Install Codex and sign in before connecting this provider." Button **Connect providers** enabled. `artifacts/macos-bringup/connect-providers-failed.png`
-- Settings → Providers: Claude Code **Connected** (`artifacts/macos-bringup/provider-claude.png`). Grok Build **Needs attention**, because the installed CLI is 1.0.41 and Sotto still requires 1.0.5 (`provider-grok.png`). Codex **Needs attention**, not installed (`provider-codex.png`). None of the three stayed on Connecting.
+- Settings → Providers: Claude Code **Connected** (`artifacts/macos-bringup/provider-claude.png`). Grok Build **Needs attention** (`provider-grok.png`). That capture's error, "Sotto requires Grok CLI 1.0.5, ACP 1 … Grok sent an invalid response", is the exact pin from before ADR-0042, when the handshake schema accepted only agent version 1.0.5, so 1.0.41 failed to parse. The build captured predates the floor; current code treats 1.0.5 as the oldest accepted client, and the installed Grok (1.0.46 on 1 October) answers `initialize` with ACP 1, `loadSession`, and a `cached_token` sign-in, which it accepts. Codex **Needs attention**, not installed (`provider-codex.png`). None of the three stayed on Connecting.
 
 **Connect providers** was still aimed at the saved default, Codex. A bulk connect now checks which of Codex, Claude Code and Grok Build are installed when that selection is missing, and uses Claude Code when Codex is not. On this profile that saved `provider: 'claude'` and `enabledProviders: ['claude', 'grok']`.
 
