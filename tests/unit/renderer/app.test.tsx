@@ -440,7 +440,7 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it.each([
-    ['darwin', /Allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
+    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
     ['win32', /Nothing was deleted. Enter the key again in Settings → Transcription/],
   ] as const)('explains an unreadable saved OpenRouter key on %s', async (platform, text) => {
     const bridge = createBridge({
@@ -871,6 +871,42 @@ describe('Sotto application onboarding integration', () => {
     await userEvent.click(await screen.findByRole('button', { name: /continue/i }))
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset', expect.any(Function)))
+  })
+
+  it('stops a ready onboarding test and asks for a new one when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
+    expect(microphone.start).toHaveBeenCalledOnce()
+    expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(microphone.start).toHaveBeenLastCalledWith(expect.any(Function), undefined, expect.any(Function))
+  })
+
+  it('clears a blocked onboarding result when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText('Microphone access is blocked.')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    expect(await screen.findByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.queryByText('Microphone access is blocked.')).not.toBeInTheDocument()
+    expect(microphone.start).toHaveBeenCalledOnce()
   })
 
   it('reports an ended onboarding input and ignores an older ended callback after retry', async () => {

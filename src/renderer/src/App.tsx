@@ -247,6 +247,14 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     else await microphoneReleaseTailRef.current
   }, [commitMicrophoneState, releaseMicrophone])
 
+  // A test result belongs to one input: choosing another stops the test and
+  // returns it to idle without opening the microphone.
+  const resetMicrophone = useCallback(async (): Promise<void> => {
+    const stopping = stopMicrophone()
+    if (microphoneMountedRef.current) commitMicrophoneState('idle')
+    await stopping
+  }, [commitMicrophoneState, stopMicrophone])
+
   const requestMicrophone = useCallback(async (selectedDeviceId?: string | null): Promise<void> => {
     const generation = ++microphoneGenerationRef.current
     if (!microphoneMountedRef.current) return
@@ -331,6 +339,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
+          onResetMicrophone={resetMicrophone}
           onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
