@@ -1,10 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PASTE_PROCESS_TIMEOUT_MS } from '../../../src/main/output/outputService'
 import { buildDarwinPasteInvocation } from '../../../src/main/output/pasteCommand.darwin'
+import { OutputService, PASTE_PROCESS_TIMEOUT_MS, PASTE_SETTLE_MS } from '../../../src/main/output/outputService'
 import {
-  DARWIN_PASTE_PROCESS_TIMEOUT_MS,
   classifyOsascriptFailure,
   createOsascriptPasteAdapter,
   type OsascriptChildLike,
@@ -129,30 +128,52 @@ describe('createOsascriptPasteAdapter', () => {
     await expect(result).resolves.toBe(false)
   })
 
-  it('waits through a first Automation prompt longer than the Windows paste would', async () => {
+  it('gives up on an unanswered Automation prompt on the usual paste deadline', async () => {
     vi.useFakeTimers()
     const h = harness()
-    const result = h.adapter.run(buildDarwinPasteInvocation())
+    let resolved: boolean | undefined
+    void Promise.resolve(h.adapter.run(buildDarwinPasteInvocation())).then((value) => { resolved = value })
 
-    await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS * 2)
+    await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS - 1)
+    expect(resolved).toBeUndefined()
     expect(h.kill).not.toHaveBeenCalled()
-    h.close(0)
 
-    await expect(result).resolves.toBe(true)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(resolved).toBe(false)
+    expect(h.kill).toHaveBeenCalledTimes(1)
+    expect(h.log).toHaveBeenCalledExactlyOnceWith('paste-osascript-timeout')
+    expect(h.onDenied).toHaveBeenCalledExactlyOnceWith('automation')
+
+    // The killed child closing afterwards changes nothing.
+    h.close(null, 'SIGTERM')
+    expect(h.onDenied).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('kills osascript and leaves the text copied when the prompt is never answered', async () => {
+  it('leaves a timed-out paste copied, restores the widget and lets the next delivery through', async () => {
     vi.useFakeTimers()
     const h = harness()
-    const result = h.adapter.run(buildDarwinPasteInvocation())
+    const clipboard: string[] = []
+    const widget = { hideWidget: vi.fn(), showWidget: vi.fn() }
+    const output = new OutputService({
+      clipboard: { writeText: (text) => { clipboard.push(text) } },
+      widget,
+      delay: (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds) }),
+      process: h.adapter,
+      buildPasteInvocation: buildDarwinPasteInvocation,
+    })
+    const settled: string[] = []
+    void output.deliver('first', { autoPaste: true, pasteDelayMs: 0, restoreWidget: true })
+      .then((outcome) => { settled.push(`first:${outcome}`) })
+    void output.deliver('second', { autoPaste: false, pasteDelayMs: 0 })
+      .then((outcome) => { settled.push(`second:${outcome}`) })
 
-    await vi.advanceTimersByTimeAsync(DARWIN_PASTE_PROCESS_TIMEOUT_MS)
-    expect(h.kill).toHaveBeenCalledTimes(1)
-    await expect(result).resolves.toBe(false)
-    expect(h.log).toHaveBeenCalledExactlyOnceWith('paste-osascript-timeout')
+    await vi.advanceTimersByTimeAsync(PASTE_PROCESS_TIMEOUT_MS + PASTE_SETTLE_MS)
 
-    h.close(0)
-    expect(h.onDenied).not.toHaveBeenCalled()
+    expect(settled).toEqual(['first:copied', 'second:copied'])
+    expect(clipboard).toEqual(['first', 'second'])
+    expect(widget.showWidget).toHaveBeenCalledTimes(1)
+    expect(h.onDenied).toHaveBeenCalledExactlyOnceWith('automation')
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
