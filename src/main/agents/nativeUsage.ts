@@ -7,7 +7,7 @@ import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
 
 const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd: z.number().optional(), lowerBound: z.boolean().optional(), rate: z.string() })
 const ledgerSchema = z.object({ view: threadUsageSchema, entries: z.record(z.string(), entrySchema),
-  total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false), contextCompacted: z.boolean().optional(), contextWindowDisputed: z.boolean().optional() })
+  total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false), contextCompacted: z.boolean().optional() })
 type Ledger = z.infer<typeof ledgerSchema>
 const SYNTHETIC = '<synthetic>'
 const GROK_REPORTED_COST = 'grok-reported-cost'
@@ -39,28 +39,6 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
   return matches.length === 1 ? rows[matches[0]!] : undefined
 }
 
-/** Claude Code's `[1m]` suffix is the million-token window. Two different reported windows stay unread, and so does another model's window. */
-const MILLION_TOKEN_WINDOW = 1_000_000
-const LONG_CONTEXT_VARIANT = /\[1m\]$/iu
-function reportedWindows(modelUsage: unknown): Set<number> {
-  return new Set(Object.values(object(modelUsage)).map(row => count(object(row).contextWindow)).filter((value): value is number => value !== undefined))
-}
-function claudeContextWindow(modelUsage: unknown, model: string | undefined, modelId: string | undefined): number | undefined {
-  const rows = object(modelUsage)
-  const matched = model === undefined ? undefined : claudeModelUsage(rows, model)
-  const reported = matched === undefined ? undefined : count(object(matched).contextWindow)
-  if (reported) return reported
-  // No named model: the only reported window is the one the result gave us.
-  if (model === undefined && reportedWindows(rows).size === 1) return [...reportedWindows(rows)][0]
-  // Several rows and none of them is this model, so the result disagreed with itself or described a different one.
-  if (Object.keys(rows).length > 1 && matched === undefined) return undefined
-  return modelId && LONG_CONTEXT_VARIANT.test(modelId) ? MILLION_TOKEN_WINDOW : undefined
-}
-/** True when this model's rows disagree, so a later reopen must not invent the million-token window. */
-function claudeContextDisputed(modelUsage: unknown, model: string | undefined): boolean {
-  return model !== undefined && Object.keys(object(modelUsage)).length > 1 && claudeModelUsage(object(modelUsage), model) === undefined
-}
-
 /** Accounting observation only: never changes delivery, native sessions, or billing settings. */
 export class NativeUsage {
   private readonly store: AtomicJsonStore<Record<string, Ledger>>
@@ -89,12 +67,6 @@ export class NativeUsage {
         if (entry.usd !== undefined) continue
         const estimate = estimateUsage(this.provider, entry.model, entry.tokens)
         if (estimate) { ledger.entries[key] = { ...entry, usd: estimate.usd, ...(estimate.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }; changed = true }
-      }
-      // A result that never named the window still leaves a 1M variant with only a raw token count.
-      // A result that named two windows is left unread, including after it is reopened.
-      if (this.provider === 'claude' && ledger.view.contextWindow === undefined && ledger.contextWindowDisputed !== true && LONG_CONTEXT_VARIANT.test(ledger.view.modelId ?? '')) {
-        ledger.view.contextWindow = MILLION_TOKEN_WINDOW
-        changed = true
       }
       const before = JSON.stringify(ledger.view)
       this.summarize(ledger)
@@ -281,13 +253,7 @@ export class NativeUsage {
   claudeResult(id: string, value: unknown): void {
     const frame = object(value); const ledger = this.data[id]
     const model = ledger?.latestId ? ledger.entries[ledger.latestId]?.model : undefined
-    const disputed = claudeContextDisputed(frame.modelUsage, model)
-    if (ledger && disputed) {
-      ledger.contextWindowDisputed = true
-      ledger.view.contextWindow = undefined
-    } else if (ledger?.contextWindowDisputed) delete ledger.contextWindowDisputed
-    this.elapsed(id, frame.duration_ms, claudeContextWindow(frame.modelUsage, model, ledger?.view.modelId))
-    if (ledger && disputed) this.save(id, true)
+    this.elapsed(id, frame.duration_ms, model ? object(claudeModelUsage(frame.modelUsage, model)).contextWindow : undefined)
   }
   grok(id: string, selectedModel: string, value: unknown): void {
     const params = object(value); const update = object(params.update); const usage = object(update.usage)

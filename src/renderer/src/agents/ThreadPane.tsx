@@ -24,7 +24,6 @@ import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
-import { ThreadUsage } from './ThreadUsage'
 
 type Command = AgentConnection['command']
 
@@ -291,12 +290,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           : managed ? <AgentComposer state={state} command={command} ornament={ornament} enterToSend footerControls={capabilities.configureThread || thread.nativeSessionStarted === false ? options : undefined}
             footerAfter={<div ref={setSettingsNotices} className="thread-options-notices" />} />
             : <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} handingOff={handingOff} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)} />}
-      {/* Compaction's word at the start of the row, the context and cost figures at the end. Side by side the row
-          keeps one line, so composers stay level whether or not a pane has been compacted. */}
+      {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
+          nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
-        <ThreadUsage usage={thread.usage} modelId={thread.modelId} />
       </div>
     </div>
   </>
