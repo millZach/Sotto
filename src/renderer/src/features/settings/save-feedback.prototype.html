@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Throwaway: compare save feedback beside the control (A), above the page (B), or in a footer (C). -->
+<html lang="en"><meta charset="utf-8"><title>Save feedback prototype</title>
+<link rel="stylesheet" href="../../styles/tokens.css"><link rel="stylesheet" href="../../styles/global.css"><link rel="stylesheet" href="hosts.css"><link rel="stylesheet" href="phones.css">
+<style>
+body { background: var(--tt-bg); color: var(--tt-text); font-family: Figtree, sans-serif; padding: 40px; }
+main { max-width: 700px; margin: auto; } button { color: var(--tt-text); background: var(--tt-surface); border: 1px solid var(--tt-hairline); padding: 8px; }
+nav { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--tt-surface); padding: 12px; }
+.error { color: var(--tt-error); } .hide { display: none; }
+</style>
+<main class="hosts-settings"><h1>Phones</h1><p>Prototype. No settings are saved.</p>
+<p id="top" class="error hide" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p>
+<div class="phones-switch"><button role="switch" aria-checked="false" onclick="fail()">Let phones connect</button>
+<p>Sotto adds this computer to Tailscale Serve on port 8443. Only phones you pair can connect.</p>
+<p id="inline" class="error hide" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p></div>
+<h3>Pair a phone</h3><p>On your iPhone, open Sotto and tap Add computer.</p><button disabled>Show a pairing code</button>
+<label>Name on phones <input class="tt-input" placeholder="this computer"></label>
+<p id="bottom" class="error hide" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p>
+</main><nav><button onclick="cycle(-1)">←</button> <span id="variant"></span> <button onclick="cycle(1)">→</button></nav>
+<script>
+const variants = ['A', 'B', 'C']; let current = new URLSearchParams(location.search).get('variant') || 'A'; let failed = false;
+function render() { document.getElementById('variant').textContent = current + ' — ' + ({A:'Beside the control',B:'Page summary',C:'Footer notice'}[current]); ['inline','top','bottom'].forEach((id,i) => document.getElementById(id).classList.toggle('hide', !failed || current !== variants[[0,1,2][i]])); }
+function fail() { failed = true; render(); } function cycle(by) { current = variants[(variants.indexOf(current)+by+3)%3]; history.replaceState(null,'','?variant='+current); render(); }
+document.addEventListener('keydown', e => { if (e.target.matches('input,textarea,[contenteditable]')) return; if(e.key==='ArrowLeft') cycle(-1); if(e.key==='ArrowRight') cycle(1); }); render();
+</script></html>
