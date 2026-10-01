@@ -118,6 +118,16 @@ describe('independent thread providers', () => {
     expect(f.adapters.grok.connectCalls).toBe(1)
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration).toMatchObject({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
   })
+  it('leaves the saved providers alone when Sotto connects on its own at startup', async () => {
+    const f = await fixture()
+    const detect = vi.fn(async () => ['claude', 'grok'] as const)
+    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    await control.command({ type: 'configure', patch: { enabled: true } })
+    control.dispose()
+    const restarted = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    expect(restarted.get().configuration.provider).toBe('codex')
+    expect(detect).not.toHaveBeenCalled()
+  })
   it('keeps legacy selection and strictly parses scoped commands without injecting configuration defaults', () => {
     const legacy = { ...defaultAgentConfiguration(), provider: 'claude' as const }
     expect(enabledThreadProviders(agentConfigurationSchema.parse(legacy))).toEqual(['claude'])
