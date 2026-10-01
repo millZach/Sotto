@@ -125,7 +125,6 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
     theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
-    ...(platform === 'darwin' ? { macOptionIsMeta: true } : {}),
   })
   const fit = new FitAddon()
   terminal.loadAddon(fit)

@@ -72,13 +72,14 @@ describe('terminal keys', () => {
     view.dispose()
   })
 
-  it('leaves ⌘C and ⌘V to the Edit menu on macOS and treats Option as Meta', () => {
+  it('leaves ⌘C and ⌘V to the Edit menu on macOS and Option to the keyboard layout', () => {
     const { view, terminal, press, onInterrupt, writeText } = terminalOn('darwin')
     expect(press('c', { metaKey: true })).toBe(true)
     expect(press('v', { metaKey: true })).toBe(true)
     expect(onInterrupt).not.toHaveBeenCalled()
     expect(writeText).not.toHaveBeenCalled()
-    expect(terminal.options.macOptionIsMeta).toBe(true)
+    // Option types @, | and [ on Spanish, German and French layouts; Meta would swallow them.
+    expect(terminal.options.macOptionIsMeta).toBeUndefined()
     view.dispose()
   })
 })
