@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Throwaway prototype: sidebar settlement and refused drafts</title>
+<style>
+:root{--tt-bg:#18191c;--tt-surface:#25262b;--tt-text:#f3f3f4;--tt-border:#74757c;--tt-accent:#b5e1d6}body{background:var(--tt-bg);color:var(--tt-text);font:16px Figtree,system-ui;max-width:820px;margin:60px auto;padding:24px}button,textarea,dialog{background:var(--tt-surface);color:var(--tt-text);border:1px solid var(--tt-border);padding:12px;border-radius:6px}button{cursor:pointer;margin:6px}button:focus-visible{outline:2px solid var(--tt-accent)}textarea{display:block;width:90%;margin:16px 0}dl{display:grid;grid-template-columns:200px 1fr;gap:12px}dialog{max-width:500px}h1{font-size:24px}
+</style>
+<h1>Sidebar settlement and refused drafts</h1>
+<p>Throwaway logic prototype. Keep the existing look and copy. Does the question survive when the row moves, and does a refused creation retain the prompt and screenshot after Send?</p>
+<nav aria-label="Guided walkthroughs"><button data-scenario="settle">Settle and keep folder</button><button data-scenario="refuse">Send, then refuse creation</button></nav>
+<dl id="state"></dl>
+<textarea aria-label="Prompt" id="prompt" placeholder="Prompt"></textarea>
+<div id="actions"><button data-action="image">Attach screenshot</button><button data-action="send">Send</button><button data-action="refuse">Refuse creation</button><button data-action="new">New thread</button><button data-action="settle">Settle thread</button></div>
+<p id="guide"></p>
+<dialog><h2>Remove its worktree too?</h2><p>This thread’s worktree folder and everything installed in it is removed. The branch sotto/test keeps its commits, and sending to this thread puts the folder back.</p><button id="keep">Keep folder</button><button id="remove">Remove worktree</button></dialog>
+<script>
+const initial=()=>({shelf:'Open',text:'',images:[],sent:[],carried:[],folder:'Present',asking:false});
+function transition(s,a,text){s={...s,text};if(a==='image')s.images=[...s.images,'screenshot.png'];if(a==='send'){s.sent=[...s.sent,{text:s.text,images:s.images}];s.text='';s.images=[]}if(a==='refuse'){s.carried=[...s.sent,{text:s.text,images:s.images}];s.sent=[];s.text='';s.images=[];s.shelf='Creation refused'}if(a==='new'){s.text=s.carried.map(d=>d.text).filter(Boolean).join('\n\n');s.images=s.carried.flatMap(d=>d.images);s.carried=[];s.shelf='Open'}if(a==='settle'){s.shelf='Settled';s.asking=true}if(a==='keep')s.asking=false;if(a==='remove'){s.asking=false;s.folder='Removed'}return s}
+let state=initial();const prompt=document.querySelector('#prompt'),dialog=document.querySelector('dialog');
+function render(){prompt.value=state.text;document.querySelector('#state').replaceChildren(...Object.entries(state).flatMap(([k,v])=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=typeof v==='string'?v:JSON.stringify(v);return[dt,dd]}));if(state.asking&&!dialog.open){dialog.showModal();document.querySelector('#keep').focus()}else if(!state.asking&&dialog.open)dialog.close()}
+function act(action){state=transition(state,action,prompt.value);render()}
+document.querySelector('#actions').onclick=e=>{if(e.target.dataset.action)act(e.target.dataset.action)};
+document.querySelector('nav').onclick=e=>{state=initial();document.querySelector('#guide').textContent=e.target.dataset.scenario==='settle'?'Press Settle thread, then Keep folder or Escape. The question stays after the row moves.':'Write a prompt, attach a screenshot, press Send, Refuse creation, then New thread. Both return for you to send.';render()};
+document.querySelector('#keep').onclick=()=>act('keep');document.querySelector('#remove').onclick=()=>act('remove');dialog.oncancel=()=>act('keep');render();
+</script>
