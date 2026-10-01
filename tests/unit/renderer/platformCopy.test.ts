@@ -28,7 +28,7 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
   settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
   widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
   widgetPermissionPromptDetail: 'Approve access in Windows',
-  widgetProcessingDetail: 'Audio stays on this PC',
+  widgetProcessingDetail: 'Sent to OpenRouter, never saved',
 }
 
 describe('platformCopy', () => {

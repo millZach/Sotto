@@ -62,6 +62,21 @@ afterEach(() => {
 })
 
 describe('WidgetApp', () => {
+  it('says dictated audio goes to OpenRouter while it is processed, on both platforms', () => {
+    for (const platform of ['win32', 'darwin'] as const) {
+      render(
+        <WidgetApp
+          snapshot={snapshot({ status: 'processing', sessionId: platform, startedAt: 0, stage: 'transcribing', progress: 0.5, cancellable: true })}
+          platform={platform}
+          now={0}
+        />,
+      )
+      // ADR-0006: the audio is uploaded to OpenRouter for transcription, and it is never written to disk.
+      expect(screen.getByText('Transcribing')).toHaveAttribute('title', 'Sent to OpenRouter, never saved')
+      cleanup()
+    }
+  })
+
   it('renders the macOS copy row and glyph shortcut on darwin', () => {
     const macCopy = platformCopy('darwin')
     const { rerender } = render(

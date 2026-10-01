@@ -50,7 +50,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access in Windows Settings.',
     widgetPermissionPromptDetail: 'Approve access in Windows',
-    widgetProcessingDetail: 'Audio stays on this PC',
+    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
   }),
   darwin: Object.freeze({
     platform: 'darwin',
@@ -78,7 +78,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsStartMinimizedDescription: 'Open directly in the menu bar when Sotto launches.',
     widgetMicrophoneBlockedDetail: 'Allow microphone access in System Settings.',
     widgetPermissionPromptDetail: 'Approve access in macOS',
-    widgetProcessingDetail: 'Audio stays on this Mac',
+    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
   }),
 })
 
