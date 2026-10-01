@@ -64,7 +64,7 @@ describe('platformCopy', () => {
 
   it('names the Keychain only where the saved key lives in it', () => {
     expect(platformCopy('win32').openRouterKeyUnreadable).not.toContain('Keychain')
-    expect(platformCopy('darwin').openRouterKeyUnreadable).toContain('Allow Keychain access')
+    expect(platformCopy('darwin').openRouterKeyUnreadable).toContain('allow Keychain access')
     for (const platform of platforms) expect(platformCopy(platform).openRouterKeyUnreadable).toContain('Nothing was deleted')
   })
 

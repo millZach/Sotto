@@ -68,7 +68,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     accessibilityHelp:
       'Automatic paste needs two macOS permissions: System Settings > Privacy & Security > Accessibility, and System Settings > Privacy & Security > Automation, where Sotto must be allowed to control System Events. Until both are granted, transcripts are copied to the clipboard instead and you can paste them manually with ⌘V. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.',
     openRouterKeyUnreadable:
-      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Allow Keychain access when macOS asks, or enter the key again in Settings → Transcription.',
+      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit and reopen Sotto, then allow Keychain access when macOS asks, or enter the key again in Settings → Transcription.',
     homeMicrophonePermissionDenied:
       'Microphone access is off. Check System Settings > Privacy & Security > Microphone, then try again.',
     homeRequestingPermissionDetail: 'macOS may ask for access.',
