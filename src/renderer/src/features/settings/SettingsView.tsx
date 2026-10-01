@@ -561,7 +561,11 @@ export function SettingsView({
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
-                    setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: copy.settingsStartupFailureNotice, error: true })
+                    setNotice(result?.enabled !== checked
+                      ? { text: copy.settingsStartupFailureNotice, error: true }
+                      : result.approvalRequired === true
+                        ? { text: 'Sotto starts at login once you allow it in System Settings > General > Login Items.', error: false }
+                        : { text: 'Startup setting saved.', error: false })
                   }} />
                   <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
                   <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse. Turning this off also deletes saved checkpoints at once." />

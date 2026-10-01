@@ -960,6 +960,15 @@ describe('SettingsView', () => {
     expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(message)
   })
 
+  it('says where to allow the login item when macOS waits for approval', async () => {
+    const user = userEvent.setup()
+    const startup = vi.fn(async (enabled: boolean) => ({ enabled, approvalRequired: true }))
+    render(<SettingsView {...baseProps({ onSetStartup: startup })} />)
+    await selectCategory('Application')
+    await user.click(screen.getByRole('switch', { name: copy.settingsLaunchAtStartupLabel }))
+    expect(await screen.findByText('Sotto starts at login once you allow it in System Settings > General > Login Items.')).toBeVisible()
+  })
+
   it('wires startup, auto-paste, retention, reset, and clear-history controls', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)

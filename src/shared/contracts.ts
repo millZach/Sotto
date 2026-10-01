@@ -292,6 +292,8 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
+  /** macOS only: the login item is on but waits for the user to allow it in System Settings > General > Login Items. */
+  readonly approvalRequired?: boolean | undefined
 }
 
 export type OutputOutcome = 'pasted' | 'copied' | 'empty'

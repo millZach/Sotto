@@ -45,6 +45,7 @@ import {
   Menu,
   nativeImage,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -802,7 +803,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     hostRouter.dispose()
     const failure = results.find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason
-  }, () => console.error('[Sotto] host-shutdown-failed'))
+  }, () => console.error('[Sotto] host-shutdown-failed'), platform === 'darwin' ? powerMonitor : undefined)
   const showTurnRecords = (): void => {
     void (async () => {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
@@ -825,7 +826,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    onCheckForUpdates: requestUpdateCheck,
+    // Updates install only on Windows today, so the macOS app menu leaves the command out.
+    ...(platform === 'win32' ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
