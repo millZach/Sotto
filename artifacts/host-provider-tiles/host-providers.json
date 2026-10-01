@@ -1,8 +1,0 @@
-{
-  "providers": {
-    "codex": "connected",
-    "claude": "connected",
-    "grok": "connected",
-    "devin": "error"
-  }
-}
