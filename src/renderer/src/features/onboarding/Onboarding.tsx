@@ -32,6 +32,8 @@ export interface OnboardingProps {
   readonly mediaDevices?: MediaDevicesAdapter | undefined
   readonly onRequestMicrophone: (selectedDeviceId?: string | null) => void | Promise<void>
   readonly onStopMicrophone?: () => void | Promise<void>
+  /** Stops any running test and forgets its result, without opening the microphone. */
+  readonly onResetMicrophone?: () => void | Promise<void>
   readonly onComplete: (
     outcome: { readonly microphoneSkipped: boolean },
   ) => boolean | void | Promise<boolean | void>
@@ -55,6 +57,7 @@ export function Onboarding({
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
   onRequestMicrophone,
   onStopMicrophone,
+  onResetMicrophone,
   onComplete,
 }: OnboardingProps): ReactNode {
   const [step, setStep] = useState(1)
@@ -99,12 +102,15 @@ export function Onboarding({
 
   const skipMicrophone = (): void => setSkipRequested(true)
 
-  // A picker change only records the choice. Opening the microphone waits for
-  // the Test button: arrowing through a closed picker must not open capture or
-  // raise the system's permission prompt once per option.
+  // A picker change records the choice and retires the previous input's test:
+  // a result belongs to one input, so Continue waits for a test of the new one.
+  // Opening the microphone waits for the Test button: arrowing through a closed
+  // picker must not open capture or raise the system's permission prompt once
+  // per option.
   const chooseMicrophone = async (next: string | null): Promise<void> => {
     const sequence = ++microphoneSaveRef.current
     setMicrophoneId(next)
+    void Promise.resolve(onResetMicrophone?.()).catch(() => undefined)
     setMicrophoneSaveFailed(false)
     const saved = await onUpdateSettings({ microphoneId: next }).catch(() => false)
     if (sequence !== microphoneSaveRef.current || saved) return

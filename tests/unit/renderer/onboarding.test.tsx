@@ -128,6 +128,37 @@ describe('first-run onboarding', () => {
     expect(request).toHaveBeenCalledExactlyOnceWith('mic-c922')
   })
 
+  it('retires the previous input\'s test when another input is chosen, without opening the new one', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn()
+    const reset = vi.fn()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="ready"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={request}
+        onResetMicrophone={reset}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
+    expect(reset).toHaveBeenCalledOnce()
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('says so and goes back to the saved microphone when the choice cannot be saved', async () => {
     const user = userEvent.setup()
     const mediaDevices = {
