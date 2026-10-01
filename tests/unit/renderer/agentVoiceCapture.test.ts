@@ -160,3 +160,29 @@ describe('agent microphone PCM boundary', () => {
     expect(audio.length).toBeLessThanOrEqual(132_000)
   })
 })
+
+describe('agent microphone access', () => {
+  it('reports a blocked microphone as a denial, before opening it', async () => {
+    class Node implements AudioNodeAdapter {
+      connect(node: AudioNodeAdapter) { return node }
+      disconnect() {}
+    }
+    vi.stubGlobal('AudioContext', class {
+      readonly sampleRate = 48_000
+      readonly destination = new Node()
+      readonly audioWorklet = { addModule: async () => undefined }
+      createMediaStreamSource() { return new Node() }
+      createGain() { return Object.assign(new Node(), { gain: { value: 1 } }) }
+      async close() {}
+    })
+    vi.stubGlobal('AudioWorkletNode', class extends Node { readonly port = { onmessage: null } })
+    const getUserMedia = vi.fn()
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } })
+    vi.stubGlobal('sotto', { ensureMicrophoneAccess: async () => false })
+    const capture = new BrowserVoiceCapture({ onUtterance: vi.fn(), onError: vi.fn() })
+    captures.push(capture)
+
+    await expect(capture.start()).rejects.toMatchObject({ name: 'NotAllowedError' })
+    expect(getUserMedia).not.toHaveBeenCalled()
+  })
+})

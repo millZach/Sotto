@@ -693,6 +693,70 @@ describe('SettingsView', () => {
     pending.resolve(true)
   })
 
+  it('goes back to the saved microphone when a new choice cannot be saved', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps({
+      settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, microphoneId: 'mic-builtin' },
+      mediaDevices: createMediaDevices([device('mic-builtin', 'MacBook Pro Microphone'), device('mic-c922', 'C922 Pro Stream Webcam')]),
+      onUpdateSettings: vi.fn(async () => false),
+    })} />)
+
+    expect(await screen.findByRole('option', { name: 'C922 Pro Stream Webcam' })).toBeVisible()
+    const picker = screen.getByRole('combobox', { name: 'Microphone' })
+    await user.selectOptions(picker, 'mic-c922')
+
+    expect(await screen.findByText('That setting could not be saved. Your previous setting is still active.')).toBeVisible()
+    expect(picker).toHaveValue('mic-builtin')
+  })
+
+  it('keeps the test wave still while access is still being asked for', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps({
+      createMicrophoneTest: () => ({ start: () => new Promise<never>(() => undefined), stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    await waitFor(() => expect(document.querySelector('.settings-microphone-test')).toHaveAttribute('data-state', 'requesting'))
+    expect(screen.getByTestId('listening-bars')).not.toHaveAttribute('data-speaking')
+  })
+
+  it('tells a Mac user where to turn the microphone back on when the test is blocked', async () => {
+    const user = userEvent.setup()
+    render(<SettingsView {...baseProps({
+      platform: 'darwin',
+      createMicrophoneTest: () => ({ start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }),
+    })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+
+    expect(await screen.findByText(platformCopy('darwin').settingsMicrophoneDenied)).toBeVisible()
+  })
+
+  it.each(['darwin', 'win32'] as const)('offers System Settings for a blocked microphone only on macOS (%s)', async platform => {
+    const user = userEvent.setup()
+    const openSystemSettings = vi.fn(async () => ({ ok: true as const }))
+    window.sotto = { openSystemSettings } as never
+    try {
+      render(<SettingsView {...baseProps({
+        platform,
+        createMicrophoneTest: () => ({ start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }),
+      })} />)
+      await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+      await screen.findByText(platformCopy(platform).settingsMicrophoneDenied)
+
+      const open = screen.queryByRole('button', { name: 'Open System Settings at Privacy & Security, Microphone' })
+      if (platform === 'win32') {
+        expect(open).toBeNull()
+        return
+      }
+      await user.click(open!)
+      expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith('microphone')
+    } finally {
+      delete window.sotto
+    }
+  })
+
   it('clears a skipped microphone once the Settings test reports ready', async () => {
     const user = userEvent.setup()
     const onUpdateSettings = vi.fn(async () => true)

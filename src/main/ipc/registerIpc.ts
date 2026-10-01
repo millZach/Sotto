@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { externalLinkSchema } from '../../shared/externalLinks'
+import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
 import {
   APP_HIDE,
@@ -10,6 +11,7 @@ import {
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
+  SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -295,6 +297,8 @@ export interface RegisterIpcDependencies {
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
+  /** Present only on macOS, where a permission lives in a System Settings pane. */
+  readonly openSystemSettings?: (pane: SystemSettingsPane) => Promise<void>
   readonly dictation?: DictationIpcService
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
@@ -514,6 +518,10 @@ export function registerIpc(
     register(EXTERNAL_LINK_OPEN, externalLinkSchema, 1, async url => {
       if (!dependencies.openExternalLink) return UNAVAILABLE
       try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
+    })
+    register(SYSTEM_SETTINGS_OPEN, systemSettingsPaneSchema, 1, async pane => {
+      if (!dependencies.openSystemSettings) return UNAVAILABLE
+      try { await dependencies.openSystemSettings(pane); return OK } catch { return UNAVAILABLE }
     })
     register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
     register(APP_RELOAD, noPayloadSchema, 0, () => dependencies.app.reload())

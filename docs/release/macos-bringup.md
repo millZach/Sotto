@@ -40,7 +40,8 @@ Launch `release/mac-arm64/Sotto.app` and work through:
 
 - [ ] Onboarding completes; microphone prompt appears on first dictation; dictation transcribes.
 - [ ] Auto-paste into TextEdit and Chrome: the "Sotto wants to control System Events" (Automation) prompt fires; grant Accessibility in System Settings when prompted. Note end-to-end paste latency — if it feels > ~250 ms, file an issue (a warm osascript helper is the planned follow-up).
-- [ ] Deny-path check: with Accessibility or Automation denied, dictation still lands on the clipboard and the explanatory toast appears.
+- [ ] Deny-path check: with Accessibility or Automation denied, dictation still lands on the clipboard and the toast names the permission that is missing. Its **Open System Settings** button opens that pane; so does the one beside a blocked microphone test in setup and Settings.
+- [ ] Keychain: after a rebuild, the first transcription may ask to use the "Sotto Safe Storage" Keychain item. Deny once: the toast says the saved OpenRouter key could not be read and `credentials.json` is unchanged. Dictate again and allow: transcription works with the same key.
 - [ ] Menu-bar icon renders correctly in light AND dark menu bar (template image, not a color blob).
 - [ ] Dock: the icon stays while Sotto runs, including after the red close button; a Dock click reopens the window, and so does the menu-bar icon. Sotto never hides its Dock icon: once macOS has treated it as an accessory app, every Sotto window can sit on other apps' full-screen desktops for the rest of the run.
 - [ ] App menu: ⌘C/⌘V in Sotto's own text fields, ⌘M minimize, ⌘Q quits cleanly, Settings… (⌘,) opens the window.

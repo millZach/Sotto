@@ -12,6 +12,7 @@ import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { Button } from '../../components/Button'
+import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
@@ -63,6 +64,10 @@ export function Onboarding({
     setSavedMicrophoneId(settings.microphoneId)
     setMicrophoneId(settings.microphoneId)
   }
+  const savedMicrophoneRef = useRef(settings.microphoneId)
+  savedMicrophoneRef.current = settings.microphoneId
+  const microphoneSaveRef = useRef(0)
+  const [microphoneSaveFailed, setMicrophoneSaveFailed] = useState(false)
   const [skipRequested, setSkipRequested] = useState(false)
   const [pasteTest, setPasteTest] = useState('')
   const [finishing, setFinishing] = useState(false)
@@ -93,6 +98,19 @@ export function Onboarding({
   const microphoneSkipped = skipRequested && microphoneState !== 'ready'
 
   const skipMicrophone = (): void => setSkipRequested(true)
+
+  // A picker change only records the choice. Opening the microphone waits for
+  // the Test button: arrowing through a closed picker must not open capture or
+  // raise the system's permission prompt once per option.
+  const chooseMicrophone = async (next: string | null): Promise<void> => {
+    const sequence = ++microphoneSaveRef.current
+    setMicrophoneId(next)
+    setMicrophoneSaveFailed(false)
+    const saved = await onUpdateSettings({ microphoneId: next }).catch(() => false)
+    if (sequence !== microphoneSaveRef.current || saved) return
+    setMicrophoneId(savedMicrophoneRef.current)
+    setMicrophoneSaveFailed(true)
+  }
 
   const finish = async (): Promise<void> => {
     if (finishing || (microphoneState !== 'ready' && !microphoneSkipped)) return
@@ -145,15 +163,11 @@ export function Onboarding({
               className="onboarding-microphone-picker"
               label="Microphone"
               {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
+              {...(microphoneSaveFailed ? { error: 'Sotto could not save that microphone. The previous one is still selected.' } : {})}
             >
               <Select
                 value={microphoneId ?? ''}
-                onChange={(event) => {
-                  const next = event.currentTarget.value || null
-                  setMicrophoneId(next)
-                  void onUpdateSettings({ microphoneId: next })
-                  void onRequestMicrophone(next)
-                }}
+                onChange={(event) => void chooseMicrophone(event.currentTarget.value || null)}
               >
                 <option value="">{copy.settingsMicrophoneDefaultOption}</option>
                 {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
@@ -164,7 +178,7 @@ export function Onboarding({
             </Field>
             <div className="onboarding-microphone-test" data-state={microphoneState}>
               {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
-              <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking />
+              <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
               <p role="status">
                 {microphoneState === 'ready' ? 'Microphone ready. Access is confirmed; retest any time to check current input activity.' : null}
                 {microphoneState === 'requesting' ? 'Checking the microphone...' : null}
@@ -191,7 +205,10 @@ export function Onboarding({
               <p className="onboarding-aside">Microphone test skipped. Dictation waits until you run the test in Settings.</p>
             ) : null}
             {microphoneState === 'denied' ? (
-              <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
+              <>
+                <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
+                <OpenSystemSettingsButton platform={platform} pane="microphone" />
+              </>
             ) : null}
             {microphoneState === 'missing' ? (
               <p className="onboarding-recovery">{copy.onboardingMicrophoneMissing}</p>

@@ -456,9 +456,9 @@ Locally built artifacts are not code-signed because no Windows signing certifica
    xattr -dr com.apple.quarantine /Applications/Sotto.app
    ```
 
-3. **Grant the permissions Sotto asks for.** The first dictation asks for microphone access. The first automatic paste asks for Automation ("Sotto wants to control System Events") and needs Sotto enabled in **System Settings → Privacy & Security → Accessibility** as well. Denying or missing either grant never loses a transcript: Sotto shows **Copied — paste manually** and leaves the complete text in the clipboard, and automatic paste starts working as soon as both grants are in place.
+3. **Grant the permissions Sotto asks for.** The first dictation asks for microphone access. The first automatic paste asks for Automation ("Sotto wants to control System Events") and needs Sotto enabled in **System Settings → Privacy & Security → Accessibility** as well. Denying or missing either grant never loses a transcript: Sotto shows **Copied — paste manually** and leaves the complete text in the clipboard, and automatic paste starts working as soon as both grants are in place. A notice names the permission that stopped the paste, and its **Open System Settings** button opens that pane. The same button appears next to a blocked microphone test in setup and in Settings. Sotto waits up to a minute for you to answer the first Automation prompt before it gives up on that paste.
 
-4. **Expect the permission prompts again after every update.** macOS keys these grants to the app's code signature, and an ad-hoc signed build gets a fresh identity on every rebuild. After installing a new version, macOS treats Sotto as a new app and asks for microphone, Automation, and Accessibility again; a stale entry may need to be removed from the list before the new one takes effect. This stops once Sotto ships Developer ID-signed builds.
+4. **Expect the permission prompts again after every update.** macOS keys these grants to the app's code signature, and an ad-hoc signed build gets a fresh identity on every rebuild. After installing a new version, macOS treats Sotto as a new app and asks for microphone, Automation, and Accessibility again; a stale entry may need to be removed from the list before the new one takes effect. The saved OpenRouter key is in a Keychain item named "Sotto Safe Storage", tied to the same signature, so the first transcription after an update may ask whether Sotto can use it. Choose **Always Allow**. If you deny it, nothing is deleted: Sotto says it could not read the saved OpenRouter key, and allowing access the next time macOS asks brings the key back. This stops once Sotto ships Developer ID-signed builds.
 
 ### After install
 
@@ -589,6 +589,7 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
 - **Shortcut conflict:** Choose another accelerator in Settings. Sotto keeps the last working shortcut if registration fails.
 - **No speech detected:** Move closer to the microphone and confirm the level meter responds. Silence does not replace the clipboard or create history.
 - **The OpenRouter key could not be stored securely:** If a key saved by an older version of Sotto cannot be moved into the credential store, Sotto removes the plaintext key from settings anyway. Settings says it could not be stored securely and asks you to enter it again.
+- **"Sotto could not read the saved OpenRouter key":** The operating system credential store would not unlock the saved key. Nothing was deleted. Enter the key again in Settings → Transcription; on macOS, allowing Keychain access also works (see below).
 - **"Add your OpenRouter API key":** Transcription needs a key. Paste one under Settings → Transcription and press **Verify key**.
 - **"OpenRouter rejected the API key":** The key is wrong or revoked. Check it at [openrouter.ai/keys](https://openrouter.ai/keys) and verify it again in Settings.
 - **"Sotto could not reach OpenRouter":** Check the internet connection and any proxy or firewall, then dictate again. Nothing was lost except that recording.
@@ -611,7 +612,8 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
 
 - **"Sotto is damaged and can't be opened":** This is Gatekeeper refusing an unsigned download, not a corrupted file. Use **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Sotto.app`, then launch Sotto again.
 - **Microphone denied:** Open System Settings → Privacy & Security → Microphone, allow Sotto, then retry.
-- **Paste does nothing:** Sotto needs both System Settings → Privacy & Security → **Automation** (Sotto allowed to control System Events) and → **Accessibility**. Enable both, then dictate again; meanwhile the transcript is already in the clipboard, so `⌘V` works.
+- **Paste does nothing:** Sotto needs both System Settings → Privacy & Security → **Automation** (Sotto allowed to control System Events) and → **Accessibility**. The notice says which one stopped the paste; press **Open System Settings** on it to go to that pane. Enable both, then dictate again; meanwhile the transcript is already in the clipboard, so `⌘V` works. After an update, if Sotto is already on the Accessibility list and paste still fails, remove it from the list and add it again.
+- **"Sotto could not read the saved OpenRouter key":** macOS asked whether Sotto may use its "Sotto Safe Storage" Keychain item and the answer was no, or the prompt was missed. The key is still saved. Dictate again and choose **Always Allow** when macOS asks, or enter the key again in Settings → Transcription.
 - **A permission prompt never reappears:** macOS remembers the denial. Reset the grants in Terminal and relaunch Sotto:
 
   ```bash

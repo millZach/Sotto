@@ -11,6 +11,8 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
     'If recording cannot start, open Windows Settings, then Privacy or Privacy & security, then Microphone, and allow desktop apps. Choose an available input in Sotto Settings.',
   helpPasteFallback:
     'Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in elevated, protected, or password fields and applications with custom input handling. When that happens, paste manually with Ctrl+V.',
+  openRouterKeyUnreadable:
+    'Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Transcription.',
   homeMicrophonePermissionDenied:
     'Microphone access is off. Check Windows privacy settings, then try again.',
   homeRequestingPermissionDetail: 'Windows may ask for access.',
@@ -20,6 +22,7 @@ const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
     'Connect or enable an input device in Windows Settings > System > Sound, then try again.',
   settingsReducedMotionDescription: 'Follow Windows or minimize non-essential motion.',
   settingsMicrophoneUnavailable: 'Microphones are unavailable. Check Windows privacy settings.',
+  settingsMicrophoneDenied: 'Microphones are unavailable. Check Windows privacy settings.',
   settingsMicrophoneDefaultOption: 'Windows default',
   settingsGlobalShortcutDescription: 'Used anywhere in Windows to start and stop dictation.',
   settingsAutoPasteDescription: 'Best-effort Ctrl+V into the previously focused application.',
@@ -56,6 +59,20 @@ describe('platformCopy', () => {
     expect(help).toContain('Accessibility')
     expect(help).toContain('Automation')
     expect(help).toContain('clipboard')
+    expect(help).toContain('remove Sotto from the Accessibility list and add it again')
+  })
+
+  it('names the Keychain only where the saved key lives in it', () => {
+    expect(platformCopy('win32').openRouterKeyUnreadable).not.toContain('Keychain')
+    expect(platformCopy('darwin').openRouterKeyUnreadable).toContain('Allow Keychain access')
+    for (const platform of platforms) expect(platformCopy(platform).openRouterKeyUnreadable).toContain('Nothing was deleted')
+  })
+
+  it('tells a Mac user where to turn the microphone back on', () => {
+    const copy = platformCopy('darwin')
+    for (const line of [copy.onboardingMicrophoneDenied, copy.settingsMicrophoneDenied]) {
+      expect(line).toContain('Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again.')
+    }
   })
 
   it('never mentions the other platform in a row', () => {

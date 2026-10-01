@@ -319,6 +319,25 @@ describe('AudioRecorder', () => {
     expect(await recorder.stop()).toBeNull()
   })
 
+  it('keeps no audio in levels-only mode but still reports levels', async () => {
+    const harness = createHarness()
+    const onLevel = vi.fn()
+    const onSegment = vi.fn()
+    const recorder = harness.recorder({ onLevel, onSegment, levelsOnly: true })
+    await recorder.start()
+
+    for (let index = 0; index < 400; index += 1) {
+      harness.worklet.port.onmessage?.({ data: new Float32Array(4_800).fill(0.5) })
+    }
+
+    expect(onLevel).toHaveBeenCalledWith(0.5)
+    expect(onSegment).not.toHaveBeenCalled()
+    await expect(recorder.stop()).resolves.toBeNull()
+    expect(recorder.getLastResult()).toBeNull()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.close).toHaveBeenCalledOnce()
+  })
+
   it('allows only one active or start-in-flight session', async () => {
     const media = deferred<MediaStreamAdapter>()
     const getUserMedia = vi.fn(() => media.promise)

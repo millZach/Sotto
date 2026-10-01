@@ -18,6 +18,7 @@ import {
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
 import { platformProfile } from '../../src/main/platformProfile'
+import { createSystemSettingsOpener } from '../../src/main/app/systemSettings'
 import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
@@ -35,6 +36,7 @@ import {
 } from '../../src/main/tray/trayController'
 import {
   APP_HIDE,
+  SYSTEM_SETTINGS_OPEN,
   APP_MINIMIZE,
   APP_RELOAD,
   APP_QUIT,
@@ -239,7 +241,7 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   }
 }
 
-function createIpcHarness() {
+function createIpcHarness(extra: Partial<Parameters<typeof registerIpc>[1]> = {}) {
   const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
   const trustedFrame = { parent: null, url: trustedUrl }
   const trustedContents = {
@@ -293,6 +295,7 @@ function createIpcHarness() {
     trustedSenders: () => [
       { role: 'main', webContents: trustedContents, url: trustedUrl },
     ],
+    ...extra,
   })
   return {
     app,
@@ -347,6 +350,43 @@ describe('typed preload bridge', () => {
     } finally { harness.cleanup() }
   })
 
+  it('opens only the three macOS privacy panes, and nothing on Windows', async () => {
+    const opened: string[] = []
+    const darwinOpener = createSystemSettingsOpener('darwin', async url => { opened.push(url) })
+    expect(createSystemSettingsOpener('win32', async () => undefined)).toBeNull()
+    const harness = createIpcHarness({ openSystemSettings: darwinOpener! })
+    const bridge = createSottoBridge({
+      invoke: (channel, ...args) => harness.ipc.invokeArgs(channel, args),
+      on: () => undefined, removeListener: () => undefined,
+    }, 'darwin')
+    try {
+      for (const pane of ['microphone', 'accessibility', 'automation'] as const) {
+        await expect(bridge.openSystemSettings!(pane)).resolves.toEqual({ ok: true })
+      }
+      expect(opened).toEqual([
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
+      ])
+      for (const pane of ['camera', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera', '', 'Microphone']) {
+        expect(() => bridge.openSystemSettings!(pane as never)).toThrow()
+        await expect(harness.ipc.invoke(SYSTEM_SETTINGS_OPEN, pane)).rejects.toThrow('Invalid IPC payload')
+      }
+      await expect(darwinOpener!('camera' as never)).rejects.toThrow()
+      expect(opened).toHaveLength(3)
+      const frame = { parent: null, url: 'file:///C:/Sotto/out/renderer/widget.html' }
+      await expect(harness.ipc.invoke(SYSTEM_SETTINGS_OPEN, 'microphone', {
+        sender: { mainFrame: frame, getURL: () => frame.url, isDestroyed: () => false }, senderFrame: frame,
+      })).rejects.toThrow('Unauthorized IPC sender')
+      expect(opened).toHaveLength(3)
+    } finally { harness.cleanup() }
+
+    const windows = createIpcHarness()
+    try {
+      await expect(windows.ipc.invoke(SYSTEM_SETTINGS_OPEN, 'microphone')).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    } finally { windows.cleanup() }
+  })
+
   beforeEach(() => {
     electronMock.ipcRenderer.invoke.mockClear()
     electronMock.ipcRenderer.on.mockClear()
@@ -395,6 +435,7 @@ describe('typed preload bridge', () => {
         'onWindowMaximized',
         'onWindowHidden',
         'openExternalLink',
+        'openSystemSettings',
         'personalChats',
         'phones',
         'platform',
@@ -2341,6 +2382,46 @@ describe('permission policy', () => {
     ).not.toThrow()
 
     await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
+  })
+
+  it('checks a trusted microphone request against the OS grant', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    let granted = false
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => granted,
+    )
+    const check = (): boolean => harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+      isMainFrame: true,
+      mediaType: 'audio',
+      requestingUrl: gatedUrl,
+    })
+
+    expect(check()).toBe(false)
+    granted = true
+    expect(check()).toBe(true)
+  })
+
+  it('fails closed when the OS grant cannot be read, so the check never pre-grants', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => {
+        throw new Error('secret TCC failure C:/Users/private')
+      },
+    )
+
+    expect(harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+      isMainFrame: true,
+      mediaType: 'audio',
+      requestingUrl: gatedUrl,
+    })).toBe(false)
   })
 })
 

@@ -37,10 +37,12 @@ export function createMicrophoneAccessGate(
 
   return {
     isGranted: (): boolean => {
+      // Fail closed: a true here skips the OS prompt, so an unreadable status
+      // must never become a grant. The request handler can still ask.
       try {
         return adapter.status() === 'granted'
       } catch {
-        return true
+        return false
       }
     },
     ensure: async (): Promise<boolean> => {

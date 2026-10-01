@@ -25,6 +25,7 @@ import type {
 import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { Button } from '../../components/Button'
+import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
@@ -180,6 +181,7 @@ export function SettingsView({
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
+  const microphoneSaveRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -438,8 +440,12 @@ export function SettingsView({
                   <Field label="Microphone" {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
                     <Select value={microphoneId ?? ''} onChange={(event) => {
                       const next = event.currentTarget.value || null
+                      const sequence = ++microphoneSaveRef.current
                       setMicrophoneId(next)
-                      void save({ microphoneId: next })
+                      void save({ microphoneId: next }).then((saved) => {
+                        // The notice says the previous setting is still active; show it.
+                        if (!saved && sequence === microphoneSaveRef.current) setMicrophoneId(settingsRef.current.microphoneId)
+                      })
                     }}>
                       <option value="">{copy.settingsMicrophoneDefaultOption}</option>
                       {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
@@ -449,13 +455,13 @@ export function SettingsView({
                   <Field label="Microphone test" description="Check that Sotto can hear you. Access is asked for only while the test runs.">
                     <div className="settings-microphone-test" data-state={microphoneState}>
                       {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
-                      <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking />
+                      <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
                       <p role="status">
                         {microphoneState === 'ready' ? 'Listening. Say something.' : null}
                         {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_TEST_HEARD_THRESHOLD ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
                         {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
                         {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
-                        {microphoneState === 'denied' ? copy.settingsMicrophoneUnavailable : null}
+                        {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}
                         {microphoneState === 'missing' ? !microphoneKnown && microphones.length > 0 ? 'The chosen microphone is not connected. Plug it in or choose another.' : 'No microphone was found.' : null}
                         {microphoneState === 'error' ? 'The microphone test could not start.' : null}
                       </p>
@@ -466,6 +472,7 @@ export function SettingsView({
                       >
                         {microphoneState === 'ready' ? 'Stop test' : microphoneState === 'closed' ? 'Test again' : 'Test microphone'}
                       </Button>
+                      {microphoneState === 'denied' ? <OpenSystemSettingsButton platform={platform} pane="microphone" /> : null}
                     </div>
                   </Field>
                   <div className="settings-input-action">
