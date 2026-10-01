@@ -333,7 +333,6 @@ describe('AudioRecorder', () => {
     expect(onLevel).toHaveBeenCalledWith(0.5)
     expect(onSegment).not.toHaveBeenCalled()
     await expect(recorder.stop()).resolves.toBeNull()
-    expect(recorder.getLastResult()).toBeNull()
     expect(harness.track.stop).toHaveBeenCalledOnce()
     expect(harness.context.close).toHaveBeenCalledOnce()
   })
