@@ -23,8 +23,11 @@ describe('reading tailscale status --json', () => {
     expect(reading.peers.find(peer => peer.hostName === 'omarchy')?.lastSeen).toBe('2026-09-19T04:52:53.100Z')
     expect(reading.peers.find(peer => peer.hostName === 'pihole')).toMatchObject({ ssh: false, online: true })
   })
-  it('reads a tailnet with no other devices as running with none', () => {
-    expect(readTailscaleStatus(TAILSCALE_NO_PEERS)).toEqual({ summary: { state: 'running', user: 'millZach', loginName: 'millZach@github', deviceCount: 0 }, peers: [] })
+  it('reads a tailnet with no other devices as running with none, knowing this computer’s tailnet name and addresses', () => {
+    expect(readTailscaleStatus(TAILSCALE_NO_PEERS)).toEqual({
+      summary: { state: 'running', user: 'millZach', loginName: 'millZach@github', deviceCount: 0 }, peers: [],
+      self: ['laptop-russh2j5.tail5728ca.ts.net', '100.64.0.1', 'fd7a:115c:a1e0::1'],
+    })
   })
   it('reads stopped, signed out and a service that is not answering as off, with no devices', () => {
     for (const output of [TAILSCALE_STOPPED, TAILSCALE_NEEDS_LOGIN, TAILSCALE_NOT_ANSWERING, '', 'null']) expect(readTailscaleStatus(output)).toEqual({ summary: { state: 'off' }, peers: [] })
@@ -91,6 +94,52 @@ function cli(answers: Record<string, (options: TailscaleRunOptions) => Promise<A
   })
 }
 const done = (code: number, stdout = '', stderr = '') => async () => ({ code, stdout, stderr })
+
+describe('what Add host cannot use: this computer and Git services', () => {
+  it('greys out an SSH entry that goes to this computer: one of its addresses or its full tailnet name', () => {
+    const devices = mergeDevices(readTailscaleStatus(TAILSCALE_RUNNING), [
+      // This computer's tailnet address and full MagicDNS name, from the Self entry of the status.
+      { alias: 'laptop', source: 'config', detail: 'zach@100.64.0.1', hostname: '100.64.0.1' },
+      { alias: 'desk', source: 'config', hostname: 'Laptop-RUSSH2J5.tail5728ca.ts.net.' },
+      // A known host that is one of this computer's own interface addresses.
+      { alias: '192.168.1.180', source: 'known-hosts' },
+      { alias: 'spark', source: 'config', detail: 'zach@spark.lan', hostname: 'spark.lan' },
+    ], ['192.168.1.180'])
+    expect(devices.filter(device => device.unavailable === 'this-computer').map(device => device.target)).toEqual(['laptop', 'desk', '192.168.1.180'])
+    expect(devices.find(device => device.target === 'spark')?.unavailable).toBeUndefined()
+  })
+  it('never decides by a name only a lookup could place: an alias or known host that shares this computer’s host name stays usable', () => {
+    // Two machines that kept a default host name such as pop-os: the alias is the user's label, and the
+    // HostName is where SSH goes. Neither the host name nor Self's short names say which machine answers.
+    const devices = mergeDevices(readTailscaleStatus(TAILSCALE_RUNNING), [
+      { alias: 'laptop-russh2j5', source: 'config', detail: 'zach@192.168.1.11', hostname: '192.168.1.11' },
+      { alias: 'pop-os', source: 'config' },
+      { alias: 'LAPTOP-RUSSH2J5', source: 'known-hosts' },
+    ], ['192.168.1.180'])
+    const setup = devices.filter(device => ['laptop-russh2j5', 'pop-os', 'LAPTOP-RUSSH2J5'].includes(device.target))
+    expect(setup.map(device => [device.target, device.unavailable])).toEqual([['laptop-russh2j5', undefined], ['pop-os', undefined], ['LAPTOP-RUSSH2J5', undefined]])
+  })
+  it('keeps an alias to a loopback address usable: a VM such as Colima is reached through a port forwarded there', () => {
+    const devices = mergeDevices(readTailscaleStatus(TAILSCALE_STOPPED), [
+      { alias: 'colima', source: 'config', hostname: '127.0.0.1' },
+      { alias: 'lima-box', source: 'config', hostname: 'localhost' },
+      { alias: '::1', source: 'known-hosts' },
+    ], ['127.0.0.1', '::1', 'localhost'])
+    expect(devices.map(device => device.unavailable)).toEqual([undefined, undefined, undefined])
+  })
+  it('greys out an SSH entry that goes to a Git service, which is not a computer', () => {
+    const devices = mergeDevices(readTailscaleStatus(TAILSCALE_STOPPED), [
+      { alias: 'github-hermetic', source: 'config', detail: 'git@github.com', hostname: 'github.com' },
+      { alias: 'gitlab.com', source: 'known-hosts' },
+      { alias: 'forge', source: 'config', detail: 'zach@forge.tail5728ca.ts.net', hostname: 'forge.tail5728ca.ts.net' },
+    ])
+    expect(devices.map(device => [device.target, device.unavailable])).toEqual([['forge', undefined], ['github-hermetic', 'git-service'], ['gitlab.com', 'git-service']])
+  })
+  it('hands Add host the addresses this computer has', async () => {
+    const tailscale = new HostTailscale({ invoke: async () => 'missing', suggestions: async () => [{ alias: 'sun', source: 'config', hostname: '10.10.100.235' }], openExternal: vi.fn(), thisComputer: () => ['10.10.100.235'] })
+    expect((await tailscale.devices()).devices).toEqual([expect.objectContaining({ target: 'sun', unavailable: 'this-computer' })])
+  })
+})
 
 describe('Tailscale on this computer', () => {
   it('reads the status and the SSH setup together for Add host', async () => {
