@@ -170,13 +170,20 @@ export interface BrowserWindowLike {
   isMaximized(): boolean
   minimize(): void
   isMinimized(): boolean
+  /** True when the green button has given this window its own desktop. */
+  isFullScreen?(): boolean
+  /** False when the window was hidden. A full-screen window on another desktop is still visible. */
+  isVisible?(): boolean
   restore(): void
   showInactive(): void
   setAlwaysOnTop(flag: boolean, level?: WidgetAlwaysOnTopLevel): void
   /** Absent on window backends that cannot span workspaces. */
   setVisibleOnAllWorkspaces?(
     visible: boolean,
-    options?: { readonly visibleOnFullScreen: boolean },
+    options?: {
+      readonly visibleOnFullScreen?: boolean
+      readonly skipTransformProcessType?: boolean
+    },
   ): void
   /** Managed widget geometry uses the renderer content area in Electron DIPs. */
   getBounds(): Rectangle
@@ -498,7 +505,14 @@ export class WindowManager {
     window.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
     if (this.dependencies.chrome.widgetVisibleOnAllWorkspaces) {
       try {
-        window.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true })
+        // Without skipTransformProcessType, Electron hides the Dock for the
+        // whole app so one window can cover full-screen apps. Every window
+        // then can, including the main one. The collection behavior below
+        // stays on this window only.
+        window.setVisibleOnAllWorkspaces?.(true, {
+          visibleOnFullScreen: true,
+          skipTransformProcessType: true,
+        })
       } catch {
         // Spanning workspaces is best effort; the widget stays usable on the
         // active one.
@@ -565,6 +579,25 @@ export class WindowManager {
     window.focus()
   }
 
+  /**
+   * Dock and Command-Tab already move to a full-screen window's desktop.
+   * Focusing it again does too, and activation also arrives when nothing
+   * asked for that desktop. A hidden or minimized window still opens.
+   */
+  async showMainFromActivation(): Promise<void> {
+    const window = this.mainWindow
+    if (
+      window !== null &&
+      !window.isDestroyed() &&
+      !window.isMinimized() &&
+      window.isFullScreen?.() === true &&
+      window.isVisible?.() !== false
+    ) {
+      return
+    }
+    await this.showMain()
+  }
+
   hideMain(): void {
     const main = this.mainWindow
     if (main === null) return
@@ -607,10 +640,14 @@ export class WindowManager {
       if (visibilityGeneration !== this.widgetVisibilityGeneration) return
       if (this.widgetDrag !== null) return
 
-      // Reassert on every reveal (and every no-op show while already visible).
-      // Windows 11 can drop WS_EX_TOPMOST after competing foreground windows or
-      // showInactive races; create-time setAlwaysOnTop alone is not enough.
-      widget.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+      // Windows 11 drops WS_EX_TOPMOST after competing foreground windows or
+      // showInactive races, so a show while the pill is already up sets the
+      // level again. On macOS that call reorders the app's windows, and a
+      // full-screen main window then takes its desktop back. The level set
+      // at creation stays.
+      if (!this.widgetVisible || this.dependencies.platform !== 'darwin') {
+        widget.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+      }
 
       this.loadWidgetPlacement()
       const workArea = this.resolveCurrentWidgetWorkArea()
