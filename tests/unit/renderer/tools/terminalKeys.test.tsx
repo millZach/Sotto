@@ -16,12 +16,18 @@ vi.mock('@xterm/xterm', () => ({
     hasSelection(): boolean { return this.selection.length > 0 }
     getSelection(): string { return this.selection }
     clearSelection(): void { this.selection = ''; this.cleared += 1 }
+    onSelectionChange(): { dispose(): void } { return { dispose() {} } }
+    getSelectionPosition(): { start: { x: number; y: number }; end: { x: number; y: number } } | undefined {
+      return this.selection ? { start: { x: 0, y: 0 }, end: { x: 13, y: 0 } } : undefined
+    }
     open(): void {}
     dispose(): void {}
   },
 }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions(): undefined { return undefined } } }))
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
+const clipboard = vi.hoisted(() => ({ writeText: undefined as undefined | ((text: string) => Promise<void>) }))
+vi.mock('../../../../src/renderer/src/agents/richActions', () => ({ writeClipboard: (text: string) => clipboard.writeText!(text) }))
 
 const { createXtermView } = await import('../../../../src/renderer/src/tools/terminalView')
 
@@ -29,7 +35,7 @@ function terminalOn(platform: 'win32' | 'darwin') {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   vi.stubGlobal('sotto', { platform })
   const writeText = vi.fn(async () => undefined)
-  vi.stubGlobal('navigator', { clipboard: { writeText } })
+  clipboard.writeText = writeText
   const onInterrupt = vi.fn()
   const view = createXtermView({ onInput() {}, onInterrupt }, { resolveColor: css => css.startsWith('#') ? css : null })
   view.setInputEnabled(true)
@@ -42,11 +48,13 @@ function terminalOn(platform: 'win32' | 'darwin') {
 afterEach(() => { vi.unstubAllGlobals(); xterm.instances.length = 0 })
 
 describe('terminal keys', () => {
-  it('copies a selection with Ctrl+C on Windows, interrupts without one, and leaves Ctrl+V to the paste event', () => {
+  it('copies a selection with Ctrl+C on Windows, interrupts without one, and leaves Ctrl+V to the paste event', async () => {
     const { view, terminal, press, onInterrupt, writeText } = terminalOn('win32')
     expect(press('c', { ctrlKey: true })).toBe(false)
     expect(writeText).toHaveBeenCalledWith('selected text')
     expect(onInterrupt).not.toHaveBeenCalled()
+    // The copied selection clears once the clipboard write lands.
+    await vi.waitFor(() => expect(terminal.cleared).toBe(1))
     expect(press('c', { ctrlKey: true })).toBe(false)
     expect(onInterrupt).toHaveBeenCalledTimes(1)
     expect(press('v', { ctrlKey: true })).toBe(false)
