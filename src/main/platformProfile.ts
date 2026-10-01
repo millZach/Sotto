@@ -4,7 +4,7 @@ export type MainWindowChrome = 'frameless' | 'hidden-inset'
 
 export type ApplicationMenuTemplate = 'none' | 'macos'
 
-export type DockPresence = 'regular' | 'dynamic' | 'hidden'
+export type DockPresence = 'regular' | 'hidden'
 
 export type WidgetAlwaysOnTopLevel = 'normal' | 'floating' | 'screen-saver'
 
@@ -39,6 +39,8 @@ export interface PlatformProfile {
   readonly widgetAlwaysOnTopLevel: WidgetAlwaysOnTopLevel
   readonly widgetFocusable: boolean
   readonly widgetVisibleOnAllWorkspaces: boolean
+  /** A macOS panel can float over another app's full-screen desktop while the app keeps its Dock icon. */
+  readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
   readonly pasteRequiresAccessibilityTrust: boolean
   readonly pasteUsesWarmHelper: boolean
@@ -72,6 +74,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
+      widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
@@ -83,10 +86,14 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       mainWindowChrome: 'hidden-inset',
       trafficLightPosition: { x: 16, y: 16 },
       applicationMenu: 'macos',
-      dockPresence: 'dynamic',
+      // Never hide the Dock, even for a moment. Once macOS has treated the app
+      // as an accessory, every Sotto window can sit on another app's
+      // full-screen desktop for the rest of the run, not only the pill.
+      dockPresence: 'regular',
       widgetAlwaysOnTopLevel: 'floating',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: true,
+      widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,

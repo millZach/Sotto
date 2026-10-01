@@ -122,7 +122,6 @@ import {
   parseDevelopmentRendererSources,
   WindowManager,
   type BrowserWindowLike,
-  type DockAdapter,
   type NavigationEventName,
   type Rectangle,
   type RendererDiagnostic,
@@ -588,33 +587,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
-  const nativeDock = app.dock
-  const dock: DockAdapter | null =
-    e2eConfiguration === null && profile.dockPresence === 'dynamic' && nativeDock !== undefined
-      ? {
-          show: () => {
-            void nativeDock.show()
-          },
-          hide: () => {
-            nativeDock.hide()
-          },
-        }
-      : null
-  if (dock !== null) {
-    // The Dock icon is owned by main-window visibility, so it starts hidden and
-    // WindowManager reveals it with the first window.
-    try {
-      dock.hide()
-    } catch {
-      // A Dock that refuses to hide is cosmetic and must not fail startup.
-    }
-  }
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
     display: screen,
     platform: profile.platform,
     chrome: profile,
-    dock,
     preloadPath: join(__dirname, '../preload/index.js'),
     mainHtmlPath: join(__dirname, '../renderer/index.html'),
     widgetHtmlPath: join(__dirname, '../renderer/widget.html'),
