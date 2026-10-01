@@ -222,7 +222,8 @@ export async function installGuiPath(env: NodeJS.ProcessEnv = process.env, deps:
   const current = env.PATH ?? env.Path ?? ''
   const fallback = [...staticPathCandidates(home, platform)]
   const nvm = await (deps.nvmBin ?? (() => nvmDefaultBin(env.NVM_DIR && posix.isAbsolute(env.NVM_DIR) ? env.NVM_DIR : posix.join(home, '.nvm'))))().catch(() => null)
-  if (nvm) fallback.push(nvm)
+  // nvm's default node goes ahead of Homebrew's, as a Terminal with nvm loaded would have it.
+  if (nvm) fallback.unshift(nvm)
   if (!pathLooksTruncated(current, home, platform)) {
     const next = mergePath(current, await existing(fallback))
     if (next) env.PATH = next

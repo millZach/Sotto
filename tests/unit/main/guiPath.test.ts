@@ -46,7 +46,7 @@ describe('GUI process PATH', () => {
     expect(env.PATH).toBe(`/opt/homebrew/bin:/usr/bin:/bin:${home}/.local/bin:/usr/sbin:/sbin`)
   })
 
-  it('still puts Homebrew first when the login shell cannot be read', async () => {
+  it('puts nvm and Homebrew ahead of the system folders when the login shell cannot be read', async () => {
     const home = '/Users/tomas'
     const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/bin' }
     await installGuiPath(env, {
@@ -54,7 +54,7 @@ describe('GUI process PATH', () => {
       loginPath: async () => null,
       existing: only('/opt/homebrew/bin', `${home}/.nvm/versions/node/v22.3.0/bin`),
     })
-    expect(env.PATH).toBe(`/opt/homebrew/bin:${home}/.nvm/versions/node/v22.3.0/bin:/usr/bin:/bin`)
+    expect(env.PATH).toBe(`${home}/.nvm/versions/node/v22.3.0/bin:/opt/homebrew/bin:/usr/bin:/bin`)
   })
 
   it('keeps a full PATH in its order, adds missing folders after it and never asks the login shell', async () => {
