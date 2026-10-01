@@ -1,12 +1,21 @@
 // @vitest-environment node
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { installGuiPath, mergePath, pathLine, pathLooksTruncated, readLoginShellPath, staticPathCandidates, windowsShebangCommand } from '../../../src/main/app/guiPath'
+import { installGuiPath, loginShellCommand, mergePath, nvmDefaultBin, pathLine, pathLooksTruncated, readShellPath, staticPathCandidates } from '../../../src/main/app/guiPath'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+
+async function scratch(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  roots.push(root)
+  return root
+}
+
+/** Pretends exactly these POSIX directories exist, so the merge logic runs the same on the Windows runner. */
+const only = (...dirs: string[]) => async (candidates: readonly string[]) => candidates.filter(dir => dirs.includes(dir))
 
 describe('GUI process PATH', () => {
   it('treats the macOS Dock PATH as truncated and a login PATH as complete', () => {
@@ -19,63 +28,132 @@ describe('GUI process PATH', () => {
     expect(staticPathCandidates(home, 'darwin')).toContain(`${home}/.local/bin`)
   })
 
-  it('keeps the system PATH first and adds each directory once', () => {
+  it('puts leading directories before the current PATH, trailing ones after, and each directory once', () => {
     expect(mergePath('/usr/bin:/bin', ['/opt/homebrew/bin', '/usr/bin', '/Users/tomas/.local/bin'])).toBe('/usr/bin:/bin:/opt/homebrew/bin:/Users/tomas/.local/bin')
-    expect(mergePath('D:\\temp\\bin:/usr/bin:/bin', ['/opt/homebrew/bin'])).toBe('D:\\temp\\bin:/usr/bin:/bin:/opt/homebrew/bin')
+    expect(mergePath('/usr/bin:/bin', [], ['/opt/homebrew/bin', '/usr/bin', '/Users/tomas/.local/bin'])).toBe('/opt/homebrew/bin:/usr/bin:/Users/tomas/.local/bin:/bin')
     expect(pathLine('welcome\n/opt/homebrew/bin:/usr/bin:/bin\n')).toBe('/opt/homebrew/bin:/usr/bin:/bin')
     expect(pathLine('not a path')).toBeNull()
   })
 
-  it('adds directories that exist and a login PATH only when the process PATH is truncated', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'sotto-gui-path-'))
-    roots.push(root)
-    const home = join(root, 'home')
-    const localBin = join(home, '.local', 'bin')
-    const grokBin = join(home, '.grok', 'bin')
-    await writeFile(join(root, 'skip'), '')
-    const { mkdir } = await import('node:fs/promises')
-    await mkdir(localBin, { recursive: true })
-    await mkdir(grokBin, { recursive: true })
+  it('puts the login PATH ahead of the system folders on a Dock launch, as Terminal does', async () => {
+    const home = '/Users/tomas'
     const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }
     await installGuiPath(env, {
-      platform: 'linux', home, loginPath: async () => `${join(root, 'from-login')}:${localBin}`,
+      platform: 'darwin', home, nvmBin: async () => null,
+      loginPath: async () => '/opt/homebrew/bin:/usr/bin:/bin:/missing/bin',
+      existing: only('/opt/homebrew/bin', '/usr/bin', '/bin', `${home}/.local/bin`),
     })
-    const entries = env.PATH?.split(':') ?? []
-    expect(entries.slice(0, 4)).toEqual(['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
-    // A Windows temp path contains a drive colon, so membership is read from the whole PATH.
-    expect(env.PATH).toContain(localBin)
-    expect(env.PATH).toContain(grokBin)
-    expect(env.PATH).not.toContain(join(root, 'from-login'))
-    const already: NodeJS.ProcessEnv = { PATH: `${localBin}:/usr/bin:/bin` }
+    expect(env.PATH).toBe(`/opt/homebrew/bin:/usr/bin:/bin:${home}/.local/bin:/usr/sbin:/sbin`)
+  })
+
+  it('still puts Homebrew first when the login shell cannot be read', async () => {
+    const home = '/Users/tomas'
+    const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/bin' }
+    await installGuiPath(env, {
+      platform: 'darwin', home, nvmBin: async () => `${home}/.nvm/versions/node/v22.3.0/bin`,
+      loginPath: async () => null,
+      existing: only('/opt/homebrew/bin', `${home}/.nvm/versions/node/v22.3.0/bin`),
+    })
+    expect(env.PATH).toBe(`/opt/homebrew/bin:${home}/.nvm/versions/node/v22.3.0/bin:/usr/bin:/bin`)
+  })
+
+  it('keeps a full PATH in its order, adds missing folders after it and never asks the login shell', async () => {
+    const home = '/home/tomas'
+    const env: NodeJS.ProcessEnv = { PATH: `${home}/.local/bin:/usr/bin:/bin` }
     let asked = false
-    await installGuiPath(already, { platform: 'linux', home, loginPath: async () => { asked = true; return '/opt/extra' } })
-    expect(asked).toBe(false)
-    expect(already.PATH?.startsWith(`${localBin}:/usr/bin:/bin`)).toBe(true)
-    expect(already.PATH).toContain(grokBin)
-  })
-
-  it('runs a Windows shebang under the interpreter it names', () => {
-    const shell = 'D:\\a\\_temp\\sotto-login-path\\shell'
-    const node = 'C:\\Program Files\\nodejs\\node.exe'
-    const args = [shell, '-ilc', 'printf %s "$PATH"']
-    expect(windowsShebangCommand(shell, `#!${node}`)).toEqual({ command: node, args })
-    expect(windowsShebangCommand(shell, '#!C:\\hostedtoolcache\\windows\\node\\24.2.0\\x64\\node.exe')).toEqual({
-      command: 'C:\\hostedtoolcache\\windows\\node\\24.2.0\\x64\\node.exe', args,
+    await installGuiPath(env, {
+      platform: 'linux', home, nvmBin: async () => null,
+      loginPath: async () => { asked = true; return '/opt/extra' },
+      existing: only(`${home}/.local/bin`, `${home}/.grok/bin`),
     })
-    expect(windowsShebangCommand(shell, 'printf "%s" "$PATH"')).toBeNull()
+    expect(asked).toBe(false)
+    expect(env.PATH).toBe(`${home}/.local/bin:/usr/bin:/bin:${home}/.grok/bin`)
   })
 
-  it('reads PATH from a login shell and gives up when that shell does not finish', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'sotto-login-path-'))
-    roots.push(root)
-    const shell = join(root, 'shell')
-    // A node shebang runs on macOS directly and, on Windows, under the interpreter the file names.
-    await writeFile(shell, `#!${process.execPath}\nprocess.stdout.write('hello\\n/opt/homebrew/bin:/usr/bin:/bin')\n`)
-    await chmod(shell, 0o755)
-    expect(await readLoginShellPath(shell, 2_000)).toBe('/opt/homebrew/bin:/usr/bin:/bin')
-    const hung = join(root, 'hung')
-    await writeFile(hung, `#!${process.execPath}\nsetTimeout(() => {}, 30000)\n`)
-    await chmod(hung, 0o755)
-    expect(await readLoginShellPath(hung, 200)).toBeNull()
+  it('leaves a Windows PATH alone', async () => {
+    const env: NodeJS.ProcessEnv = { Path: 'C:\\Windows' }
+    await installGuiPath(env, { platform: 'win32', home: 'C:\\Users\\tomas' })
+    expect(env).toEqual({ Path: 'C:\\Windows' })
+  })
+
+  it('launches only an absolute login shell, interactively', () => {
+    expect(loginShellCommand('/bin/zsh')).toEqual({ command: '/bin/zsh', args: ['-ilc', 'printf %s "$PATH"'] })
+    expect(loginShellCommand('zsh')).toBeNull()
+    expect(loginShellCommand('/usr/bin/false')).toBeNull()
+    expect(loginShellCommand('/sbin/nologin')).toBeNull()
+  })
+})
+
+describe('nvm default Node', () => {
+  async function nvm(aliases: Record<string, string>, versions: string[]): Promise<string> {
+    const dir = await scratch('sotto-nvm-')
+    for (const version of versions) await mkdir(join(dir, 'versions', 'node', version, 'bin'), { recursive: true })
+    for (const [name, value] of Object.entries(aliases)) {
+      await mkdir(join(dir, 'alias', ...name.split('/').slice(0, -1)), { recursive: true })
+      await writeFile(join(dir, 'alias', ...name.split('/')), `${value}\n`)
+    }
+    return dir
+  }
+  const bin = (dir: string, version: string): string => posix.join(dir, 'versions', 'node', version, 'bin')
+  const versions = ['v18.20.4', 'v22.3.0', 'v22.11.0', 'v24.2.0']
+
+  it('resolves an exact version, a major, a minor and the newest installed Node', async () => {
+    expect(await nvmDefaultBin(await nvm({ default: 'v22.3.0' }, versions))).toBe(bin(roots.at(-1)!, 'v22.3.0'))
+    expect(await nvmDefaultBin(await nvm({ default: '22' }, versions))).toBe(bin(roots.at(-1)!, 'v22.11.0'))
+    expect(await nvmDefaultBin(await nvm({ default: 'v22.3' }, versions))).toBe(bin(roots.at(-1)!, 'v22.3.0'))
+    expect(await nvmDefaultBin(await nvm({ default: 'node' }, versions))).toBe(bin(roots.at(-1)!, 'v24.2.0'))
+    expect(await nvmDefaultBin(await nvm({ default: 'stable' }, versions))).toBe(bin(roots.at(-1)!, 'v24.2.0'))
+  })
+
+  it('follows lts and named aliases to the version they name', async () => {
+    expect(await nvmDefaultBin(await nvm({ default: 'lts/jod', 'lts/jod': 'v22.11.0' }, versions))).toBe(bin(roots.at(-1)!, 'v22.11.0'))
+    expect(await nvmDefaultBin(await nvm({ default: 'work', work: '18' }, versions))).toBe(bin(roots.at(-1)!, 'v18.20.4'))
+  })
+
+  // nvm's `lts/*` alias is a file named `*`, which Windows cannot create; nvm does not run there either.
+  it.skipIf(process.platform === 'win32')('follows default -> lts/* to the newest LTS nvm recorded', async () => {
+    expect(await nvmDefaultBin(await nvm({ default: 'lts/*', 'lts/*': 'lts/jod', 'lts/jod': 'v22.11.0' }, versions))).toBe(bin(roots.at(-1)!, 'v22.11.0'))
+  })
+
+  it('finds nothing for an uninstalled version, a system alias, a loop or no alias at all', async () => {
+    expect(await nvmDefaultBin(await nvm({ default: '20' }, versions))).toBeNull()
+    expect(await nvmDefaultBin(await nvm({ default: 'system' }, versions))).toBeNull()
+    expect(await nvmDefaultBin(await nvm({ default: 'a', a: 'b', b: 'a' }, versions))).toBeNull()
+    expect(await nvmDefaultBin(await nvm({ default: '../../etc' }, versions))).toBeNull()
+    expect(await nvmDefaultBin(await nvm({}, versions))).toBeNull()
+    expect(await nvmDefaultBin(join(await scratch('sotto-no-nvm-'), 'missing'))).toBeNull()
+  })
+})
+
+describe('reading the login shell PATH', () => {
+  /** A Node script stands in for the shell, run by the test's own Node so no shebang is needed on Windows. */
+  async function shell(source: string): Promise<{ command: string; args: string[] }> {
+    const script = join(await scratch('sotto-login-path-'), 'shell.js')
+    await writeFile(script, source)
+    return { command: process.execPath, args: [script] }
+  }
+  const env = { ...process.env }
+
+  it('reads the last PATH line the shell prints', async () => {
+    expect(await readShellPath(await shell(`process.stdout.write('hello\\n/opt/homebrew/bin:/usr/bin:/bin')`), 5_000, env)).toBe('/opt/homebrew/bin:/usr/bin:/bin')
+    expect(await readShellPath(await shell(`process.stdout.write('/usr/bin'); process.exitCode = 1`), 5_000, env)).toBeNull()
+  })
+
+  it('gives up when the shell does not finish', async () => {
+    const started = Date.now()
+    expect(await readShellPath(await shell('setTimeout(() => {}, 30000)'), 300, env)).toBeNull()
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
+
+  it('does not wait for a background process the shell left holding its output', async () => {
+    const started = Date.now()
+    // The shell prints PATH and exits, but its child inherits stdout and keeps it open, as gitstatusd or tmux would.
+    const source = [
+      `const { spawn } = require('node:child_process')`,
+      `spawn(process.execPath, ['-e', 'setTimeout(() => {}, 8000)'], { stdio: ['ignore', 'inherit', 'ignore'] })`,
+      `process.stdout.write('/opt/homebrew/bin:/usr/bin:/bin', () => process.exit(0))`,
+    ].join('\n')
+    expect(await readShellPath(await shell(source), 6_000, env)).toBe('/opt/homebrew/bin:/usr/bin:/bin')
+    expect(Date.now() - started).toBeLessThan(5_000)
   })
 })

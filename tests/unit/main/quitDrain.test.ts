@@ -75,3 +75,46 @@ it('keeps the native windows and tray until the drain settles despite bootstrap 
   await vi.advanceTimersByTimeAsync(10_000)
   expect(app.exit).not.toHaveBeenCalled()
 })
+
+it('lets a macOS log out, restart or shutdown quit at once and still starts the drain', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
+  const power = new EventEmitter()
+  const drain = vi.fn(() => new Promise<void>(() => undefined)), event = { preventDefault: vi.fn() }
+  registerQuitDrain(app, drain, vi.fn(), power)
+  power.emit('shutdown')
+  app.emit('before-quit', event)
+  app.emit('before-quit', event)
+  await Promise.resolve()
+  expect(event.preventDefault).not.toHaveBeenCalled()
+  expect(drain).toHaveBeenCalledTimes(1)
+  expect(app.quit).not.toHaveBeenCalled()
+  expect(app.exit).not.toHaveBeenCalled()
+})
+
+it('stops holding a quit already draining when the system starts to log out', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
+  const power = new EventEmitter()
+  let resolve = (): void => undefined
+  const drain = vi.fn(() => new Promise<void>(done => { resolve = done }))
+  registerQuitDrain(app, drain, vi.fn(), power)
+  const first = { preventDefault: vi.fn() }
+  app.emit('before-quit', first)
+  expect(first.preventDefault).toHaveBeenCalledTimes(1)
+  power.emit('shutdown')
+  const second = { preventDefault: vi.fn() }
+  app.emit('before-quit', second)
+  expect(second.preventDefault).not.toHaveBeenCalled()
+  resolve()
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  expect(app.quit).not.toHaveBeenCalled()
+  expect(drain).toHaveBeenCalledTimes(1)
+})
+
+it('still drains an ordinary quit when the shutdown source never fires', async () => {
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
+  const event = { preventDefault: vi.fn() }
+  registerQuitDrain(app, async () => undefined, vi.fn(), new EventEmitter())
+  app.emit('before-quit', event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(1)
+  await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(1))
+})

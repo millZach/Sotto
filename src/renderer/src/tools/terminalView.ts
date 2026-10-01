@@ -112,8 +112,10 @@ function monoFont(): string {
 }
 
 /**
- * The real terminal: xterm over the main-process PTY. Ctrl+C copies a selection and otherwise interrupts;
- * Ctrl+V pastes; Ctrl+Tab and Ctrl+Shift+Tab leave the terminal, since Tab itself belongs to the shell.
+ * The real terminal: xterm over the main-process PTY. On Windows Ctrl+C copies a selection and otherwise
+ * interrupts, and Ctrl+V pastes. On macOS Ctrl+C always interrupts and Ctrl+V goes to the shell, as in Terminal;
+ * ⌘C and ⌘V copy and paste through the Edit menu, and Option works as Meta. Ctrl+Tab and Ctrl+Shift+Tab leave the
+ * terminal, since Tab itself belongs to the shell.
  */
 export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor = defaultResolver() }: { readonly resolveColor?: ColorResolver } = {}): TerminalViewLike => {
   const platform = (window.sotto as { platform?: string } | undefined)?.platform
@@ -127,6 +129,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
     theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false, allowTransparency: handlers.followsFrost === true,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
+    ...(platform === 'darwin' ? { macOptionIsMeta: true } : {}),
   })
   const fit = new FitAddon()
   terminal.loadAddon(fit)
@@ -178,7 +181,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       return false
     }
     if (ctrl && !event.shiftKey && (event.key === 'c' || event.key === 'C')) {
-      if (terminal.hasSelection()) {
+      if (platform !== 'darwin' && terminal.hasSelection()) {
         const selection = terminal.getSelection()
         if (!selection.trim()) { handlers.onNotice?.('Nothing to copy. Select some text first.'); return false }
         const copiedRevision = selectionRevision
@@ -196,7 +199,8 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       if (inputEnabled) handlers.onInterrupt()
       return false
     }
-    if (ctrl && (event.key === 'v' || event.key === 'V')) {
+    // On macOS Ctrl+V is the shell's own (quoted insert); ⌘V pastes through the Edit menu's paste event.
+    if (platform !== 'darwin' && ctrl && (event.key === 'v' || event.key === 'V')) {
       // The browser's paste event reaches xterm's textarea and arrives through onData once.
       return false
     }

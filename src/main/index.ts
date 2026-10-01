@@ -46,6 +46,7 @@ import {
   Menu,
   nativeImage,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -689,7 +690,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'))
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' ? powerMonitor : undefined)
   let browserService: BrowserService | undefined
   let cloudIphoneService: CloudIphoneService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
@@ -866,7 +867,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    onCheckForUpdates: requestUpdateCheck,
+    // Updates install only on Windows today, so the macOS app menu leaves the command out.
+    ...(platform === 'win32' ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
