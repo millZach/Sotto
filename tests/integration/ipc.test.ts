@@ -3551,7 +3551,6 @@ describe('widget presentation and drag channels', () => {
       },
       platform: 'win32',
       chrome: platformProfile('win32'),
-      dock: null,
       preloadPath: 'C:/Sotto/out/preload/index.js',
       mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
       widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',

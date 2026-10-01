@@ -162,7 +162,6 @@ function createHarness(
     },
     platform: 'win32',
     chrome: platformProfile('win32'),
-    dock: null,
     preloadPath: 'C:/Sotto/out/preload/index.js',
     mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
     widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
@@ -468,11 +467,23 @@ describe('WindowManager construction', () => {
     await manager.createWidgetWindow()
 
     expect(options[0]?.focusable).toBe(false)
+    // A regular app's ordinary window cannot join another app's full-screen desktop; a panel can.
+    expect(options[0]?.type).toBe('panel')
     expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
       visibleOnFullScreen: true,
       skipTransformProcessType: true,
     })
+  })
+
+  it('keeps the Windows widget an ordinary window and the main window never a panel', async () => {
+    const { manager, options } = createHarness()
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).not.toHaveProperty('type')
+    expect(options[1]).not.toHaveProperty('type')
   })
 
   it('does not reassert the macOS widget level while the pill is already visible', async () => {
@@ -1381,62 +1392,8 @@ describe('WindowManager lifecycle', () => {
     )
   })
 
-  it('brackets main-window visibility with dock presence', async () => {
-    const events: string[] = []
-    const dock = {
-      show: vi.fn(() => {
-        events.push('dock:show')
-      }),
-      hide: vi.fn(() => {
-        events.push('dock:hide')
-      }),
-    }
-    const { manager, windows } = createHarness({ dock }, (window) => {
-      window.show.mockImplementation(() => {
-        events.push('window:show')
-      })
-      window.hide.mockImplementation(() => {
-        events.push('window:hide')
-      })
-    })
-
-    await manager.showMain()
-    manager.hideMain()
-    await manager.showMain()
-    windows[0]!.emit('close')
-
-    expect(events).toEqual([
-      'dock:show',
-      'window:show',
-      'window:hide',
-      'dock:hide',
-      'dock:show',
-      'window:show',
-      'window:hide',
-      'dock:hide',
-    ])
-  })
-
-  it('keeps showing and hiding the main window where there is no runtime dock', async () => {
-    const { manager, windows } = createHarness({ dock: null })
-
-    await manager.showMain()
-    manager.hideMain()
-
-    expect(windows[0]!.show).toHaveBeenCalledOnce()
-    expect(windows[0]!.hide).toHaveBeenCalledOnce()
-  })
-
-  it('contains a failing dock so window visibility still changes', async () => {
-    const dock = {
-      show: vi.fn(() => {
-        throw new Error('dock unavailable')
-      }),
-      hide: vi.fn(() => {
-        throw new Error('dock unavailable')
-      }),
-    }
-    const { manager, windows } = createHarness({ dock })
+  it('shows and hides the main window', async () => {
+    const { manager, windows } = createHarness()
 
     await manager.showMain()
     manager.hideMain()

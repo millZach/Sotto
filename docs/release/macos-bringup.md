@@ -42,10 +42,10 @@ Launch `release/mac-arm64/Sotto.app` and work through:
 - [ ] Auto-paste into TextEdit and Chrome: the "Sotto wants to control System Events" (Automation) prompt fires; grant Accessibility in System Settings when prompted. Note end-to-end paste latency — if it feels > ~250 ms, file an issue (a warm osascript helper is the planned follow-up).
 - [ ] Deny-path check: with Accessibility or Automation denied, dictation still lands on the clipboard and the explanatory toast appears.
 - [ ] Menu-bar icon renders correctly in light AND dark menu bar (template image, not a color blob).
-- [ ] Dynamic Dock: Dock icon appears when the main window opens, disappears when it closes; reopen works from the menu-bar icon; Dock click while visible re-shows the window.
+- [ ] Dock: the icon stays while Sotto runs, including after the red close button; a Dock click reopens the window, and so does the menu-bar icon. Sotto never hides its Dock icon: once macOS has treated it as an accessory app, every Sotto window can sit on other apps' full-screen desktops for the rest of the run.
 - [ ] App menu: ⌘C/⌘V in Sotto's own text fields, ⌘M minimize, ⌘Q quits cleanly, Settings… (⌘,) opens the window.
 - [ ] Hotkey: Control+Shift+Space (literal Control) toggles dictation; rebinding in Settings works and labels render as mac glyphs.
-- [ ] Widget: floats above normal windows, follows across Spaces, visible over a full-screen app; drag gesture works. Known escape hatches if not: `widgetFocusable` and `widgetAlwaysOnTopLevel: 'screen-saver'` in `src/main/platformProfile.ts`.
+- [ ] Widget: floats above normal windows, follows across Spaces, visible over a full-screen app; drag gesture works. It is a nonactivating panel (`widgetIsPanel` in `src/main/platformProfile.ts`), which is what lets it join a full-screen desktop while Sotto keeps its Dock icon. Known escape hatches if not: `widgetFocusable` and `widgetAlwaysOnTopLevel: 'screen-saver'`.
 - [ ] Desktops: a full-screen Sotto stays on its desktop until you go there. When the main window is not full screen, it does not sit on another app's full-screen desktop. The pill still may.
 - [ ] Red traffic-light close hides to menu bar (app keeps running); traffic lights sit correctly in the title bar.
 - [ ] "Launch when your Mac starts" toggle registers a login item (System Settings → General → Login Items) and survives relaunch.

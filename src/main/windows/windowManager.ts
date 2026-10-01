@@ -77,6 +77,8 @@ export interface WindowConstructorOptions {
   readonly skipTaskbar?: true
   readonly focusable?: boolean
   readonly hasShadow?: true
+  /** macOS only: a nonactivating panel that can join other apps' full-screen desktops. */
+  readonly type?: 'panel'
   /** Absolute path to a window icon file; omitted where the platform ignores it. */
   readonly icon?: string
   readonly webPreferences: WindowWebPreferences
@@ -215,12 +217,7 @@ export interface WindowChromeProfile {
   readonly widgetAlwaysOnTopLevel: WidgetAlwaysOnTopLevel
   readonly widgetFocusable: boolean
   readonly widgetVisibleOnAllWorkspaces: boolean
-}
-
-/** Runtime Dock presence; null where the platform has no runtime-controlled Dock. */
-export interface DockAdapter {
-  show(): void
-  hide(): void
+  readonly widgetIsPanel: boolean
 }
 
 export interface WindowManagerDependencies {
@@ -228,7 +225,6 @@ export interface WindowManagerDependencies {
   readonly display: DisplayAdapter
   readonly platform: SottoPlatform
   readonly chrome: WindowChromeProfile
-  readonly dock: DockAdapter | null
   readonly preloadPath: string
   readonly mainHtmlPath: string
   readonly widgetHtmlPath: string
@@ -485,6 +481,7 @@ export class WindowManager {
       focusable: this.dependencies.chrome.widgetFocusable,
       hasShadow: true,
       autoHideMenuBar: true,
+      ...(this.dependencies.chrome.widgetIsPanel ? { type: 'panel' as const } : {}),
       ...windowIconOptions(this.dependencies),
       webPreferences: {
         ...securePreferences(
@@ -574,7 +571,6 @@ export class WindowManager {
     if (window.isMinimized()) {
       window.restore()
     }
-    this.showDock()
     window.show()
     window.focus()
   }
@@ -602,7 +598,6 @@ export class WindowManager {
     const main = this.mainWindow
     if (main === null) return
     main.hide()
-    this.hideDock()
   }
 
   isMainMaximized(): boolean {
@@ -930,32 +925,11 @@ export class WindowManager {
     }
   }
 
-  private showDock(): void {
-    const dock = this.dependencies.dock
-    if (dock === null) return
-    try {
-      dock.show()
-    } catch {
-      // Dock presence is cosmetic; the window still opens without it.
-    }
-  }
-
-  private hideDock(): void {
-    const dock = this.dependencies.dock
-    if (dock === null) return
-    try {
-      dock.hide()
-    } catch {
-      // Dock presence is cosmetic; the window still hides without it.
-    }
-  }
-
   private installMainLifecycle(window: BrowserWindowLike): void {
     const onClose = (event: CloseEventLike): void => {
       if (!this.quitting) {
         event.preventDefault()
         window.hide()
-        this.hideDock()
       }
     }
     const onClosed = (): void => {
