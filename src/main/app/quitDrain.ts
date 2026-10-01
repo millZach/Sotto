@@ -8,12 +8,19 @@ export interface SystemShutdownSource { on(event: 'shutdown', listener: () => vo
  * When the system is logging out, restarting or shutting down, the quit goes through at once and the drain only
  * gets a head start: holding that quit would make macOS report that Sotto interrupted the log out.
  */
+/** How long a system shutdown notice lets the next quit through without draining. */
+export const SYSTEM_ENDING_WINDOW_MS = 30_000
+
 export function registerQuitDrain(app: QuitApp, drain: () => Promise<void>, failed: () => void, systemShutdown?: SystemShutdownSource): void {
   let pending: Promise<void> | undefined
   let complete = false
   let systemEnding = false
   // Not prevented: preventing it on macOS stops the terminate that follows, and the log out with it.
-  systemShutdown?.on('shutdown', () => { systemEnding = true })
+  // Another app can cancel the log out, and then no quit follows; a later Command-Q drains again.
+  systemShutdown?.on('shutdown', () => {
+    systemEnding = true
+    setTimeout(() => { systemEnding = false }, SYSTEM_ENDING_WINDOW_MS).unref?.()
+  })
   // Intercept quit before bootstrap disposes the native windows and tray.
   app.prependListener('before-quit', event => {
     if (complete) return

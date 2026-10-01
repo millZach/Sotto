@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bootstrapSotto } from '../../../src/main/app/bootstrap'
-import { registerQuitDrain } from '../../../src/main/app/quitDrain'
+import { registerQuitDrain, SYSTEM_ENDING_WINDOW_MS } from '../../../src/main/app/quitDrain'
 afterEach(() => vi.useRealTimers())
 it('prevents repeated quits until the host drain settles, then allows the real quit', async () => {
   const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
@@ -117,4 +117,16 @@ it('still drains an ordinary quit when the shutdown source never fires', async (
   app.emit('before-quit', event)
   expect(event.preventDefault).toHaveBeenCalledTimes(1)
   await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(1))
+})
+
+it('drains a later Command-Q again when a log out is cancelled', async () => {
+  vi.useFakeTimers()
+  const app = Object.assign(new EventEmitter(), { quit: vi.fn(), exit: vi.fn() })
+  const power = new EventEmitter()
+  registerQuitDrain(app, async () => undefined, vi.fn(), power)
+  power.emit('shutdown')
+  await vi.advanceTimersByTimeAsync(SYSTEM_ENDING_WINDOW_MS)
+  const event = { preventDefault: vi.fn() }
+  app.emit('before-quit', event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(1)
 })
