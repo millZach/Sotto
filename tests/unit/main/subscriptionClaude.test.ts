@@ -117,6 +117,15 @@ describe('Claude reasoning shutdown', () => {
 })
 
 describe('Claude native subscription client', () => {
+  it('forwards the OS account name and drops provider keys', () => {
+    const client = new ClaudeSubscriptionClient(join(tmpdir(), 'sotto-claude-env'), {
+      environment: { USER: 'tomas', LOGNAME: 'tomas', HOME: '/Users/tomas', PATH: '/usr/bin', ANTHROPIC_API_KEY: 'secret', NODE_OPTIONS: '--inspect' },
+    })
+    expect(client.environment()).toMatchObject({ USER: 'tomas', LOGNAME: 'tomas', HOME: '/Users/tomas', PATH: '/usr/bin', NO_COLOR: '1' })
+    expect(client.environment()).not.toHaveProperty('ANTHROPIC_API_KEY')
+    expect(client.environment()).not.toHaveProperty('NODE_OPTIONS')
+  })
+
   it('reports only public account readiness and keeps prompts in stdin with all native tools disabled', async () => {
     const f = await fixture()
     const account = await f.client.status()

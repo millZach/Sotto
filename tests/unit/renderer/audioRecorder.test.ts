@@ -35,6 +35,8 @@ class FakeContext implements AudioContextAdapter {
   readonly source = new FakeNode()
   readonly gain = Object.assign(new FakeNode(), { gain: { value: 1 } })
   readonly audioWorklet = { addModule: vi.fn(async () => undefined) }
+  state: 'suspended' | 'running' | 'closed' = 'running'
+  readonly resume = vi.fn(async () => { this.state = 'running' })
   readonly createMediaStreamSource = vi.fn(() => this.source)
   readonly createGain = vi.fn(() => this.gain)
   readonly close = vi.fn(async () => undefined)
@@ -196,6 +198,26 @@ describe('audio capture worklet', () => {
 })
 
 describe('AudioRecorder', () => {
+  it('resumes a context the permission dialog left suspended', async () => {
+    const harness = createHarness()
+    const order: string[] = []
+    const context = harness.context
+    context.state = 'suspended'
+    context.resume.mockImplementation(async () => {
+      order.push(context.state)
+      context.state = 'running'
+    })
+    harness.getUserMedia.mockImplementation(async () => {
+      order.push('capture')
+      context.state = 'suspended'
+      return harness.stream
+    })
+
+    await harness.recorder().start()
+
+    expect(order).toEqual(['suspended', 'capture', 'suspended'])
+  })
+
   it('requests exact constraints and wires a silent processing graph', async () => {
     const harness = createHarness()
     const recorder = harness.recorder({ selectedDeviceId: 'mic-2' })
@@ -237,6 +259,19 @@ describe('AudioRecorder', () => {
         autoGainControl: true,
       },
     })
+  })
+
+  it('keeps the selected input when extra constraints are rejected', async () => {
+    const harness = createHarness()
+    const overconstrained = new Error('constraints')
+    overconstrained.name = 'OverconstrainedError'
+    harness.getUserMedia
+      .mockRejectedValueOnce(overconstrained)
+      .mockResolvedValueOnce(harness.stream)
+
+    await harness.recorder({ selectedDeviceId: 'mic-c922' }).start()
+
+    expect(harness.getUserMedia).toHaveBeenNthCalledWith(2, { audio: { deviceId: { exact: 'mic-c922' } } })
   })
 
   it('throttles level callbacks to the emit interval while chunks arrive at audio rate', async () => {
@@ -282,6 +317,24 @@ describe('AudioRecorder', () => {
     expect(result?.samples[0]).toBeCloseTo(0.5)
     expect(result?.durationMs).toBe(100)
     expect(await recorder.stop()).toBeNull()
+  })
+
+  it('keeps no audio in levels-only mode but still reports levels', async () => {
+    const harness = createHarness()
+    const onLevel = vi.fn()
+    const onSegment = vi.fn()
+    const recorder = harness.recorder({ onLevel, onSegment, levelsOnly: true })
+    await recorder.start()
+
+    for (let index = 0; index < 400; index += 1) {
+      harness.worklet.port.onmessage?.({ data: new Float32Array(4_800).fill(0.5) })
+    }
+
+    expect(onLevel).toHaveBeenCalledWith(0.5)
+    expect(onSegment).not.toHaveBeenCalled()
+    await expect(recorder.stop()).resolves.toBeNull()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.close).toHaveBeenCalledOnce()
   })
 
   it('allows only one active or start-in-flight session', async () => {

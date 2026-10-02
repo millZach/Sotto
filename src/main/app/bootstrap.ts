@@ -132,6 +132,10 @@ export function installSessionPermissionPolicy(
   // Omitted means no OS-level microphone gate exists on this platform, and the
   // grant stays synchronous exactly as it was before the gate was introduced.
   mediaAccess?: MediaAccessGate,
+  // Chromium's check handler skips the prompt when it returns true. On macOS
+  // that must wait until the OS has actually granted the microphone, or
+  // getUserMedia succeeds with silence and no TCC dialog.
+  mediaAccessGranted?: () => boolean,
 ): () => void {
   const previous = permissionOwners.get(session) ?? null
 
@@ -167,11 +171,21 @@ export function installSessionPermissionPolicy(
     permission,
     _requestingOrigin,
     details,
-  ) =>
-    permission === 'media' &&
-    details.isMainFrame === true &&
-    details.mediaType === 'audio' &&
-    findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
+  ) => {
+    const trusted =
+      permission === 'media' &&
+      details.isMainFrame === true &&
+      details.mediaType === 'audio' &&
+      findTrustedRenderer(webContents, details.requestingUrl, trustedRenderers) !== undefined
+    if (!trusted) return false
+    if (mediaAccessGranted === undefined) return true
+    // Fail closed: true skips the OS prompt, so an unreadable grant is a no.
+    try {
+      return mediaAccessGranted()
+    } catch {
+      return false
+    }
+  }
 
   const installed: InstalledPermissionPolicy = {
     checkHandler,
@@ -257,6 +271,8 @@ export interface BootstrapApplication {
 export interface RuntimeController {
   start(): Promise<void>
   showMain(): void
+  /** macOS activation. Must not focus a full-screen window that is already up. */
+  showFromActivation(): void
   beginQuit(): void
   dispose(): void
 }
@@ -264,6 +280,7 @@ export interface RuntimeController {
 export interface NativeRuntimeWindowService {
   createWindows(): Promise<void>
   showMain(): Promise<void>
+  showMainFromActivation?(): Promise<void>
   showWidget(): Promise<void>
   beginQuit(): void
   dispose(): void
@@ -343,6 +360,19 @@ export class NativeRuntimeController implements RuntimeController {
       return
     }
     void this.dependencies.windows.showMain().catch(() => {
+      this.dependencies.log('native-main-show-failed')
+    })
+  }
+
+  showFromActivation(): void {
+    if (this.isStopped()) {
+      return
+    }
+    const windows = this.dependencies.windows
+    const raise = windows.showMainFromActivation
+      ? windows.showMainFromActivation()
+      : windows.showMain()
+    void raise.catch(() => {
       this.dependencies.log('native-main-show-failed')
     })
   }
@@ -545,6 +575,16 @@ export async function bootstrapSotto(
     }
     pendingShowRequest = true
   }
+  const onActivate = (): void => {
+    if (disposed) {
+      return
+    }
+    if (runtimeStarted && runtime !== null) {
+      runtime.showFromActivation()
+      return
+    }
+    pendingShowRequest = true
+  }
   const consumePendingShowRequest = (): boolean => {
     const pending = pendingShowRequest
     pendingShowRequest = false
@@ -558,7 +598,7 @@ export async function bootstrapSotto(
     pendingShowRequest = false
     runtimeStarted = false
     app.removeListener('second-instance', onShowRequest)
-    app.removeListener('activate', onShowRequest)
+    app.removeListener('activate', onActivate)
     app.removeListener('before-quit', onBeforeQuit)
     const activeRuntime = runtime
     runtime = null
@@ -573,10 +613,11 @@ export async function bootstrapSotto(
     dispose()
   }
 
-  // 'activate' (macOS Dock/menu-bar reopen) and 'second-instance' (Windows
-  // relaunch) are the same intent: the user asked for the main window.
+  // A second instance asked for the window. Activation is separate: on macOS
+  // it also arrives while a full-screen window is already up, and focusing
+  // that window switches desktops.
   app.on('second-instance', onShowRequest)
-  app.on('activate', onShowRequest)
+  app.on('activate', onActivate)
   app.on('before-quit', onBeforeQuit)
 
   try {

@@ -22,6 +22,7 @@ import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, gitPullRequestResu
 import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, hostFoldersResultSchema } from '../shared/hostFolders'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
+import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
@@ -35,6 +36,7 @@ import {
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
+  SYSTEM_SETTINGS_OPEN,
   DICTATION_COMMAND,
   DICTATION_REQUEST,
   HISTORY_ADD,
@@ -50,6 +52,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -128,7 +131,7 @@ const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('un
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'empty']), unavailableSchema])
-const startupStateSchema = z.object({ enabled: z.boolean() }).strict()
+const startupStateSchema = z.object({ enabled: z.boolean(), approvalRequired: z.boolean().optional() }).strict()
 const voidSchema = z.undefined()
 
 async function invokeParsed<Output>(
@@ -404,6 +407,7 @@ export function createSottoBridge(
     cancelTranscription: (requestId) =>
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
     checkTranscriptionKey: () => invokeParsed(renderer, TRANSCRIPTION_CHECK_KEY, transcriptionKeyCheckSchema),
+    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
@@ -417,6 +421,7 @@ export function createSottoBridge(
 
     showApp: () => invokeParsed(renderer, APP_SHOW, voidSchema),
     openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    openSystemSettings: pane => invokeParsed(renderer, SYSTEM_SETTINGS_OPEN, commandResultSchema, systemSettingsPaneSchema.parse(pane)),
     hideApp: () => invokeParsed(renderer, APP_HIDE, voidSchema),
     reloadApp: () => invokeParsed(renderer, APP_RELOAD, voidSchema),
     minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),

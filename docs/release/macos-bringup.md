@@ -6,7 +6,8 @@ First-time validation of the macOS build, run on an Apple Silicon Mac. Backgroun
 
 - Apple Silicon Mac (arm64). Intel is not supported.
 - Xcode command-line tools: `xcode-select --install`
-- Node 22+, `gh` authenticated (for the release upload at the end).
+- Node 24 (same as CI in `.github/workflows/ci.yml`). Node 22 can install and typecheck; the unit suite needs Node 24's `node:sqlite` builtin listing.
+- `gh` authenticated (for the release upload at the end).
 - Network on first build (~400 MB: Electron darwin-arm64, electron-builder icns/dmg toolsets, the bundled model) and ~5 GB free disk.
 - A real `git clone` (not a source zip) — build provenance runs `git rev-parse HEAD`.
 
@@ -39,12 +40,14 @@ Launch `release/mac-arm64/Sotto.app` and work through:
 
 - [ ] Onboarding completes; microphone prompt appears on first dictation; dictation transcribes.
 - [ ] Auto-paste into TextEdit and Chrome: the "Sotto wants to control System Events" (Automation) prompt fires; grant Accessibility in System Settings when prompted. Note end-to-end paste latency — if it feels > ~250 ms, file an issue (a warm osascript helper is the planned follow-up).
-- [ ] Deny-path check: with Accessibility or Automation denied, dictation still lands on the clipboard and the explanatory toast appears.
+- [ ] Deny-path check: with Accessibility or Automation denied, dictation still lands on the clipboard and the toast names the permission that is missing. Its **Open System Settings** button opens that pane; so does the one beside a blocked microphone test in setup and Settings.
+- [ ] Keychain: after a rebuild, the first transcription may ask to use the "Sotto Safe Storage" Keychain item. Deny once: the toast says the saved OpenRouter key could not be read and `credentials.json` is unchanged. Quit, reopen, dictate and allow: transcription works with the same key. Also note whether a second dictation in the same run asks again; the copy assumes it does not.
 - [ ] Menu-bar icon renders correctly in light AND dark menu bar (template image, not a color blob).
-- [ ] Dynamic Dock: Dock icon appears when the main window opens, disappears when it closes; reopen works from the menu-bar icon; Dock click while visible re-shows the window.
+- [ ] Dock: the icon stays while Sotto runs, including after the red close button; a Dock click reopens the window, and so does the menu-bar icon. Sotto never hides its Dock icon: once macOS has treated it as an accessory app, every Sotto window can sit on other apps' full-screen desktops for the rest of the run.
 - [ ] App menu: ⌘C/⌘V in Sotto's own text fields, ⌘M minimize, ⌘Q quits cleanly, Settings… (⌘,) opens the window.
 - [ ] Hotkey: Control+Shift+Space (literal Control) toggles dictation; rebinding in Settings works and labels render as mac glyphs.
-- [ ] Widget: floats above normal windows, follows across Spaces, visible over a full-screen app; drag gesture works. Known escape hatches if not: `widgetFocusable` and `widgetAlwaysOnTopLevel: 'screen-saver'` in `src/main/platformProfile.ts`.
+- [ ] Widget: floats above normal windows, follows across Spaces, visible over a full-screen app; drag gesture works. It is a nonactivating panel (`widgetIsPanel` in `src/main/platformProfile.ts`), which is what lets it join a full-screen desktop while Sotto keeps its Dock icon. Known escape hatches if not: `widgetFocusable` and `widgetAlwaysOnTopLevel: 'screen-saver'`.
+- [ ] Desktops: a full-screen Sotto stays on its desktop until you go there. When the main window is not full screen, it does not sit on another app's full-screen desktop. The pill still may.
 - [ ] Red traffic-light close hides to menu bar (app keeps running); traffic lights sit correctly in the title bar.
 - [ ] "Launch when your Mac starts" toggle registers a login item (System Settings → General → Login Items) and survives relaunch.
 
@@ -63,7 +66,7 @@ tccutil reset Accessibility com.sotto.desktop
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier'      release/mac-arm64/Sotto.app/Contents/Info.plist  # expect com.sotto.desktop
 ```
 
-The README's Requirements table says macOS 12, the minimum for Electron 38 and later. If `LSMinimumSystemVersion` says otherwise, correct the README to the bundle's value and commit.
+The README's Requirements table says macOS 12, the minimum for Electron 38 and later. If `LSMinimumSystemVersion` says otherwise, correct the README to the bundle's value and commit. The 0.1.10 arm64 bundle reported `12.0`.
 
 ## 5. Hardened-runtime measurement (one-time decision)
 

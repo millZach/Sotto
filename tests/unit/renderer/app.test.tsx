@@ -130,6 +130,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -396,6 +397,60 @@ describe('Sotto application onboarding integration', () => {
     expect(toast).toBeVisible()
     expect(toast).toHaveTextContent(/Privacy & Security > Accessibility/i)
     expect(toast).toHaveTextContent(/Privacy & Security > Automation/i)
+    expect(toast).toHaveTextContent(/After an update, if paste still fails, remove Sotto from the Accessibility list and add it again/)
+  })
+
+  it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'accessibility', 'Accessibility'],
+    ['AUTOMATION_PERMISSION_REQUIRED', 'automation', 'Automation'],
+  ] as const)('opens the macOS pane a %s notice is about', async (code, pane, paneName) => {
+    const openSystemSettings = vi.fn(async () => ({ ok: true as const }))
+    const bridge = createBridge({
+      platform: 'darwin',
+      openSystemSettings,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code }]),
+    })
+    // The button opens the pane through the window bridge, as external links do.
+    window.sotto = bridge
+    try {
+      renderApp(bridge)
+
+      const button = await screen.findByRole('button', { name: `Open System Settings at Privacy & Security, ${paneName}` })
+      expect(button).toHaveTextContent('Open System Settings')
+      button.focus()
+      await userEvent.setup().keyboard('{Enter}')
+      expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith(pane)
+    } finally {
+      delete window.sotto
+    }
+  })
+
+  it('says a denied Automation permission left the text copied', async () => {
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'AUTOMATION_PERMISSION_REQUIRED' as const }]),
+    })
+    renderApp(bridge)
+
+    const toast = await screen.findByText(/copied the transcript instead of pasting it/i)
+    expect(toast).toHaveTextContent(/control System Events in System Settings > Privacy & Security > Automation/)
+    expect(screen.queryByRole('button', { name: /Open System Settings/ })).toBeNull()
+  })
+
+  it.each([
+    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
+    ['win32', /Nothing was deleted. Enter the key again in Settings → Transcription/],
+  ] as const)('explains an unreadable saved OpenRouter key on %s', async (platform, text) => {
+    const bridge = createBridge({
+      platform,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'OPENROUTER_KEY_UNREADABLE' as const }]),
+    })
+    renderApp(bridge)
+
+    expect(await screen.findByText(text)).toBeVisible()
   })
 
   it('renders loading and a finite recovery state when settings cannot load', async () => {
@@ -816,6 +871,42 @@ describe('Sotto application onboarding integration', () => {
     await userEvent.click(await screen.findByRole('button', { name: /continue/i }))
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset', expect.any(Function)))
+  })
+
+  it('stops a ready onboarding test and asks for a new one when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
+    expect(microphone.start).toHaveBeenCalledOnce()
+    expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(microphone.start).toHaveBeenLastCalledWith(expect.any(Function), undefined, expect.any(Function))
+  })
+
+  it('clears a blocked onboarding result when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText('Microphone access is blocked.')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    expect(await screen.findByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.queryByText('Microphone access is blocked.')).not.toBeInTheDocument()
+    expect(microphone.start).toHaveBeenCalledOnce()
   })
 
   it('reports an ended onboarding input and ignores an older ended callback after retry', async () => {

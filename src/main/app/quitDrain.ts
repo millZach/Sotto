@@ -1,12 +1,34 @@
 interface QuitEvent { preventDefault(): void }
 interface QuitApp { prependListener(event: 'before-quit', listener: (event: QuitEvent) => void): unknown; quit(): void; exit(): void }
-/** Give accepted writes and owned child processes ten seconds to settle before forcing exit. */
-export function registerQuitDrain(app: QuitApp, drain: () => Promise<void>, failed: () => void): void {
+/** Electron's powerMonitor on macOS: 'shutdown' comes before the quit that logout, restart or shutdown sends. */
+export interface SystemShutdownSource { on(event: 'shutdown', listener: () => void): unknown }
+
+/**
+ * Give accepted writes and owned child processes ten seconds to settle before forcing exit.
+ * When the system is logging out, restarting or shutting down, the quit goes through at once and the drain only
+ * gets a head start: holding that quit would make macOS report that Sotto interrupted the log out.
+ */
+/** How long a system shutdown notice lets the next quit through without draining. */
+export const SYSTEM_ENDING_WINDOW_MS = 30_000
+
+export function registerQuitDrain(app: QuitApp, drain: () => Promise<void>, failed: () => void, systemShutdown?: SystemShutdownSource): void {
   let pending: Promise<void> | undefined
   let complete = false
+  let systemEnding = false
+  // Not prevented: preventing it on macOS stops the terminate that follows, and the log out with it.
+  // Another app can cancel the log out, and then no quit follows; a later Command-Q drains again.
+  systemShutdown?.on('shutdown', () => {
+    systemEnding = true
+    setTimeout(() => { systemEnding = false }, SYSTEM_ENDING_WINDOW_MS).unref?.()
+  })
   // Intercept quit before bootstrap disposes the native windows and tray.
   app.prependListener('before-quit', event => {
     if (complete) return
+    if (systemEnding) {
+      complete = true
+      pending ??= Promise.resolve().then(drain).catch(() => failed())
+      return
+    }
     event.preventDefault()
     if (pending) return
     let timedOut = false
@@ -16,6 +38,7 @@ export function registerQuitDrain(app: QuitApp, drain: () => Promise<void>, fail
     })
     pending = Promise.race([Promise.resolve().then(drain), timeout]).catch(() => failed()).finally(() => {
       clearTimeout(timer)
+      if (complete) return
       complete = true
       if (timedOut) app.exit()
       else app.quit()
