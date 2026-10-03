@@ -1,0 +1,205 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not production code.
+  Question: how should the iPhone's Threads list show a finished thread you have not looked at yet?
+  Settled already (owner, 2026-10-03): a dot plus "Just finished"; seen = opened on the phone OR the desktop;
+  a count badge on the Threads tab. Three variants of where the emphasis sits, switchable with ?variant=A|B|C,
+  the arrows in the bottom bar, or the ← → keys. Colours are the app's asset catalog (light and dark).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · iPhone unread finished threads</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap');
+  :root {
+    --canvas:#040507; --surface:#090a0e; --raised:#111316; --ink:#f9fafd; --muted:#a0a5ae; --border:#2a2f39;
+    --hairline:#181b20; --accent:#47b8a9; --warning:#ffb900; --warning-surface:#3a301f; --danger:#ff6467;
+  }
+  body.light {
+    --canvas:#f9f8f5; --surface:#fdfcf9; --raised:#f2f0ec; --ink:#221d17; --muted:#68625b; --border:#d5d0c8;
+    --hairline:#e6e2dd; --accent:#007d74; --warning:#b64b00; --warning-surface:#f7efe3; --danger:#c10007;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:#1c1d21; font-family:Figtree, -apple-system, system-ui, sans-serif;
+    display:flex; gap:28px; justify-content:center; align-items:flex-start; padding:28px 20px 110px; color:#e8e8ea; }
+  body.light { background:#d9d6d0; color:#221d17; }
+  .phone { width:390px; height:844px; border-radius:48px; background:var(--canvas); color:var(--ink); position:relative;
+    overflow:hidden; box-shadow:0 0 0 10px #0b0b0d, 0 30px 60px rgba(0,0,0,.45); display:flex; flex-direction:column; }
+  .statusbar { height:50px; display:flex; justify-content:space-between; align-items:flex-end; padding:0 30px 6px; font-weight:600; font-size:15px; }
+  .navtitle { display:flex; justify-content:space-between; align-items:center; padding:4px 22px 0; }
+  .navtitle h1 { margin:0; font-size:34px; font-weight:700; }
+  .plus { color:var(--accent); font-size:28px; width:44px; height:44px; display:grid; place-items:center; }
+  .scroll { flex:1; overflow-y:auto; padding:0 22px 24px; }
+  .computer { color:var(--muted); font-size:14px; min-height:44px; display:flex; align-items:center; gap:7px; }
+  .search { min-height:48px; border-radius:999px; background:var(--raised); border:1px solid var(--hairline);
+    display:flex; align-items:center; gap:10px; padding:0 16px; color:var(--muted); font-size:16px; margin-bottom:12px; }
+  .counts { color:var(--muted); font-size:13px; display:flex; gap:18px; padding-bottom:8px; }
+  .counts b { color:var(--accent); font-weight:400; }
+  .heading { display:flex; justify-content:space-between; color:var(--muted); font-size:13px; font-weight:600; padding:22px 0 12px; }
+  .card { background:var(--surface); border:1px solid var(--hairline); border-radius:17px; padding:16px; margin-bottom:10px; cursor:pointer; }
+  .q { background:var(--warning-surface); border-radius:0 14px 14px 0; border-left:2px solid var(--warning); padding:16px; margin-bottom:10px; cursor:pointer; }
+  .q .tag, .q .go { color:var(--warning); font-size:12px; }
+  .q .go { font-size:14px; font-weight:600; display:flex; justify-content:space-between; padding-top:3px; }
+  .title { font-weight:600; font-size:16px; line-height:1.25; }
+  .card .title { font-size:18px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .sub { color:var(--muted); font-size:15px; }
+  .stamp { color:var(--muted); font-size:11px; white-space:nowrap; }
+  .status { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--accent); }
+  .dot { width:5px; height:5px; border-radius:50%; background:currentColor; flex:none; }
+  .row { padding:14px 0; min-height:56px; border-bottom:1px solid var(--hairline); cursor:pointer; display:flex; flex-direction:column; gap:7px; position:relative; }
+  .row .top { display:flex; gap:12px; align-items:baseline; justify-content:space-between; }
+  .unreaddot { width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  /* Variant A: Mail-style gutter dot */
+  .vA .row.unread { padding-left:0; }
+  .vA .row .gutter { position:absolute; left:-15px; top:21px; }
+  .vA .row.unread .title { font-weight:700; }
+  /* Variant B: unread rows take a raised card */
+  .vB .row.unread { background:var(--surface); border:1px solid var(--hairline); border-radius:14px; padding:14px 14px; margin:6px 0; }
+  /* Variant C: unread lifted to the top of Recent, read ones after an 'Earlier' rule */
+  .earlier { color:var(--muted); font-size:12px; padding:14px 0 2px; display:flex; align-items:center; gap:10px; }
+  .earlier::after { content:''; flex:1; height:1px; background:var(--hairline); }
+  .tabbar { height:84px; background:var(--surface); border-top:1px solid var(--hairline); display:flex; justify-content:space-around; padding-top:8px; }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; color:var(--muted); position:relative; width:90px; cursor:pointer; }
+  .tab.on { color:var(--accent); }
+  .tab svg { width:26px; height:26px; }
+  .badge { position:absolute; top:-4px; left:52px; min-width:18px; height:18px; border-radius:9px; background:#ff3b30; color:#fff;
+    font-size:12px; font-weight:600; display:grid; place-items:center; padding:0 5px; }
+  /* thread view */
+  .thread { position:absolute; inset:0; background:var(--canvas); display:flex; flex-direction:column; transform:translateX(100%); transition:transform .25s; }
+  .thread.open { transform:none; }
+  body.still .thread { transition:none; }
+  .back { color:var(--accent); font-size:17px; padding:8px 14px; cursor:pointer; }
+  .bubble { background:var(--raised); border-radius:18px; padding:12px 14px; margin:8px 0; font-size:15px; }
+  /* side panel */
+  .panel { width:330px; font-size:13px; line-height:1.5; }
+  .panel h2 { font-size:15px; margin:0 0 6px; }
+  .panel p { margin:0 0 12px; opacity:.85; }
+  .panel button { font:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #555; background:#2a2c31; color:#eee; cursor:pointer; margin:0 6px 6px 0; }
+  body.light .panel button { background:#fff; color:#222; border-color:#aaa; }
+  .state { background:#000; color:#9fe0d6; border-radius:10px; padding:10px 12px; font-family:ui-monospace, monospace; font-size:12px; white-space:pre-wrap; }
+  body.light .state { background:#fff; color:#0a5c55; border:1px solid #bbb; }
+  .switcher { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:#fff; color:#111; border-radius:999px;
+    box-shadow:0 8px 28px rgba(0,0,0,.45); display:flex; align-items:center; gap:4px; padding:6px; font-size:14px; font-weight:600; z-index:9; border:2px solid #ff2d87; }
+  .switcher button { border:0; background:#111; color:#fff; width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:16px; }
+  .switcher span { padding:0 14px; min-width:260px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="statusbar"><span>9:41</span><span>▂▄▆ ▮</span></div>
+  <div id="list" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="navtitle"><h1>Threads</h1><span class="plus">+</span></div>
+    <div class="scroll" id="scroll"></div>
+  </div>
+  <div class="thread" id="thread">
+    <div class="back" onclick="closeThread()">‹ Threads</div>
+    <div style="padding:0 22px">
+      <div class="title" id="tTitle" style="font-size:22px;margin:6px 0 14px"></div>
+      <div class="bubble">Run the full audit and write the report.</div>
+      <div class="sub" style="font-size:15px;color:var(--ink)">Done. The report is in <code>docs/qa/</code>. Seven findings, two of them P1.</div>
+    </div>
+  </div>
+  <div class="tabbar" id="tabbar"></div>
+</div>
+
+<div class="panel">
+  <h2 id="vname"></h2>
+  <p id="vdesc"></p>
+  <h2>Try it</h2>
+  <p>Tap a row to open it on the phone. Use the buttons to stand in for the desktop.</p>
+  <div id="buttons"></div>
+  <button onclick="toggleTheme()">Light / dark</button>
+  <button onclick="reset()">Reset</button>
+  <h2 style="margin-top:14px">State</h2>
+  <div class="state" id="state"></div>
+</div>
+
+<div class="switcher"><button onclick="cycle(-1)">←</button><span id="vlabel"></span><button onclick="cycle(1)">→</button></div>
+
+<script>
+const VARIANTS = {
+  A: { name: 'A — Dot in the margin', desc: 'Rows stay where they are, newest first. An unread finished thread gets a dot in the left margin, a bold title, and "Just finished" under it. Closest to Mail.' },
+  B: { name: 'B — Raised row', desc: 'Same order as today. An unread finished thread sits on a raised surface with the dot and "Just finished", like a smaller Working now card, so it reads at a glance while scrolling.' },
+  C: { name: 'C — Unread first in Recent', desc: 'Inside Recent, unread finished threads come first, each with the dot and "Just finished"; the rest follow under a quiet "Earlier" rule. No new section, but nothing unread is buried.' },
+}
+const initial = () => ([
+  { id: 'audit', title: 'Codebase bug audit report in opus_5_5 markdown', project: 'Talk to Text Application', provider: 'Claude Code', ago: '4 min', group: 'recent', unread: true },
+  { id: 'ebusy', title: 'Fix Codex update failing from EBUSY file lock', project: 'Talk to Text Application', provider: 'Codex', ago: '22 min', group: 'recent', unread: false },
+  { id: 'palette', title: 'Sotto palettes for day and night', project: 'Talk to Text Application', provider: 'Codex', ago: '1 hr', group: 'recent', unread: true },
+  { id: 'grok', title: 'Fix the Grok connector bug', project: 'Talk to Text Application', provider: 'Grok Build', ago: '3 hr', group: 'recent', unread: false },
+  { id: 'launch', title: 'Launch video capture rig and storyboard', project: 'Talk to Text Application', provider: 'Claude Code', ago: 'now', group: 'working', unread: false },
+  { id: 'defaults', title: 'New thread defaults', project: 'Talk to Text Application', provider: 'Codex', ago: '2 min', group: 'question', unread: false, ask: 'May I run npm ci in the worktree?' },
+])
+let threads = initial(), log = ['Start: two finished threads are unread.']
+let variant = new URLSearchParams(location.search).get('variant') || 'A'
+if (!VARIANTS[variant]) variant = 'A'
+const meta = t => `${t.project} · ${t.provider} · Desk PC`
+const unreadCount = () => threads.filter(t => t.group === 'recent' && t.unread).length
+
+function row(t) {
+  const unread = t.unread
+  const status = unread ? `<div class="status"><span class="unreaddot" style="width:7px;height:7px"></span>Just finished</div>` : ''
+  const gutter = unread && variant === 'A' ? `<span class="unreaddot gutter"></span>` : ''
+  const lead = unread && variant !== 'A' ? '' : ''
+  return `<div class="row ${unread ? 'unread' : ''}" onclick="openThread('${t.id}')" aria-label="${t.title}${unread ? ', just finished, not opened yet' : ''}">
+    ${gutter}<div class="top"><span class="title">${lead}${t.title}</span><span class="stamp">${t.ago}</span></div>${status}<div class="meta">${meta(t)}</div></div>`
+}
+function render() {
+  const q = threads.filter(t => t.group === 'question'), w = threads.filter(t => t.group === 'working')
+  let r = threads.filter(t => t.group === 'recent')
+  let recentHtml
+  if (variant === 'C') {
+    const u = r.filter(t => t.unread), rest = r.filter(t => !t.unread)
+    recentHtml = u.map(row).join('') + (u.length && rest.length ? `<div class="earlier">Earlier</div>` : '') + rest.map(row).join('')
+  } else recentHtml = r.map(row).join('')
+  document.getElementById('scroll').className = 'scroll v' + variant
+  document.getElementById('scroll').innerHTML = `
+    <div class="computer">💻 All computers ▾</div>
+    <div class="search">🔍 Search threads</div>
+    <div class="counts"><span><b>${w.length}</b> working</span><span>${q.length} ${q.length === 1 ? 'needs' : 'need'} you</span></div>
+    ${q.length ? `<div class="heading"><span>Needs your answer</span><span>${q.length}</span></div>` + q.map(t => `<div class="q" onclick="openThread('${t.id}')"><div class="tag">ⓘ Needs you</div><div class="title" style="margin:9px 0">${t.title}</div><div class="sub">${t.ask}</div><div class="meta" style="margin:9px 0">${meta(t)}</div><div class="go"><span>Review permission</span><span>›</span></div></div>`).join('') : ''}
+    ${w.length ? `<div class="heading"><span>Working now</span><span>${w.length}</span></div>` + w.map(t => `<div class="card" onclick="openThread('${t.id}')"><div class="top" style="display:flex;justify-content:space-between"><span class="status"><span class="dot"></span>Working</span><span class="stamp">${t.ago}</span></div><div class="title" style="margin:10px 0">${t.title}</div><div class="sub">${t.provider} is working on Desk PC.</div><div style="height:1px;background:var(--hairline);margin:13px 0 10px"></div><div class="meta">${meta(t)}</div></div>`).join('') : ''}
+    ${r.length ? `<div class="heading"><span>Recent</span><span>${r.length}</span></div>` + recentHtml : ''}
+    <div style="color:var(--muted);font-size:15px;min-height:52px;display:flex;align-items:center;gap:9px;margin-top:16px">› Settled <span style="margin-left:auto">14</span></div>`
+  const n = unreadCount()
+  const icon = { tray: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 13l2.5-7h13L21 13v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></svg>',
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>',
+    mac: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>' }
+  document.getElementById('tabbar').innerHTML = `
+    <div class="tab">${icon.tray}<span>Needs you</span><span class="badge">1</span></div>
+    <div class="tab on">${icon.list}<span>Threads</span>${n ? `<span class="badge" aria-label="${n} finished threads not opened yet">${n}</span>` : ''}</div>
+    <div class="tab">${icon.mac}<span>Computers</span></div>`
+  const v = VARIANTS[variant]
+  document.getElementById('vlabel').textContent = v.name
+  document.getElementById('vname').textContent = v.name
+  document.getElementById('vdesc').textContent = v.desc
+  document.getElementById('buttons').innerHTML =
+    threads.filter(t => t.group === 'recent' && t.unread).map(t => `<button onclick="openOnDesktop('${t.id}')">Open “${t.title.slice(0, 22)}…” on the desktop</button>`).join('') +
+    threads.filter(t => t.group === 'working').map(t => `<button onclick="finish('${t.id}')">Let “${t.title.slice(0, 22)}…” finish</button>`).join('')
+  document.getElementById('state').textContent =
+    `variant: ${variant}\nThreads tab badge: ${n || 'none'}\n` +
+    threads.map(t => `${t.group.padEnd(8)} ${t.unread ? 'UNREAD' : 'seen  '} ${t.title.slice(0, 34)}`).join('\n') +
+    `\n\nlast: ${log.at(-1)}`
+}
+function openThread(id) {
+  const t = threads.find(x => x.id === id)
+  document.getElementById('tTitle').textContent = t.title
+  document.getElementById('thread').classList.add('open')
+  if (t.unread) { t.unread = false; log.push(`Opened on the phone: "${t.title}" is seen on both devices.`) }
+  else log.push(`Opened "${t.title}" (already seen).`)
+  render()
+}
+function closeThread() { document.getElementById('thread').classList.remove('open') }
+function openOnDesktop(id) { const t = threads.find(x => x.id === id); t.unread = false; log.push(`Opened on the desktop: "${t.title}" stops being highlighted on the phone.`); render() }
+function finish(id) { const t = threads.find(x => x.id === id); t.group = 'recent'; t.unread = true; t.ago = 'now'; threads = [t, ...threads.filter(x => x !== t)]; log.push(`"${t.title}" finished while nobody was looking: unread.`); render() }
+function reset() { threads = initial(); log = ['Reset.']; closeThread(); render() }
+function toggleTheme() { document.body.classList.toggle('light') }
+function cycle(d) { const keys = Object.keys(VARIANTS); variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; const u = new URL(location); u.searchParams.set('variant', variant); history.replaceState(null, '', u); render() }
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1) })
+render()
+</script>
+</body>
+</html>
