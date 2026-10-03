@@ -1,0 +1,279 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: how should the Codex update card (ClientUpdateCard.tsx) and Settings → Providers → Installed client
+  (ProvidersSettings.tsx) read once updating Codex never stops a working thread?
+
+  Settled before this prototype (2 October 2026):
+    1. Updating never stops a thread. Threads mid-turn finish on the old version; Sotto reconnects Codex by
+       itself the moment nothing is working. "Update anyway" goes away for Codex.
+    2. After the install the card says it once, plainly, and goes away on its own once the threads have switched.
+    3. Codex only for now; Claude Code and Grok Build keep today's disconnect-first update.
+
+  Variants differ in how the card carries the wait between "installed" and "every thread switched over":
+    a  One line.      The card says the sentence and nothing else until it closes itself.
+    b  Who is left.   The card lists the threads still finishing on the old version; each drops off as it finishes.
+    c  Corner pill.   The sentence shows once, then the card folds into a small pill that counts the threads left.
+
+  States (menu in the bar): behind, updating, installed with 2 threads still working, 1 left, all switched, failed.
+  Play runs the whole flow. ← → cycle variants. Light flips the palette.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — no-stop Codex update, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-update: oklch(0.714 0.104 183);
+  --tt-error: oklch(0.68 0.17 25);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 70%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.82 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-update: oklch(0.52 0.13 235);
+  --tt-error: oklch(0.52 0.18 25);
+  --tt-hover: color-mix(in srgb, oklch(0.9 0.03 230) 70%, transparent);
+  --tt-shadow: 0 18px 50px rgb(20 24 22 / 18%);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font: 15px/1.5 var(--tt-font); }
+.strip { height: 38px; border-bottom: 1px solid var(--tt-hairline); display: flex; align-items: center; padding: 0 16px; gap: 18px; color: var(--tt-text-muted); font-size: 13px; }
+.strip b { color: var(--tt-text); font-weight: 600; }
+.room { display: grid; grid-template-columns: 250px 1fr; min-height: calc(100vh - 38px); }
+
+/* Sidebar: the threads, so the wait has something to point at */
+.side { border-right: 1px solid var(--tt-hairline); padding: 16px 10px; }
+.side h4 { margin: 0 0 8px 8px; font-size: 12px; font-weight: 600; color: var(--tt-text-muted); }
+.thread { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; font-size: 13.5px; }
+.thread small { color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-border); justify-self: center; }
+.thread[data-working='true'] .dot { background: var(--tt-update); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .thread .dot, .spin { animation: none !important; } }
+
+/* Settings → Providers, as in the screenshot */
+.settings { padding: 40px 56px 160px; max-width: 980px; }
+.settings h1 { margin: 0; font-size: 30px; font-weight: 650; letter-spacing: -0.01em; }
+.settings .sub { margin: 4px 0 22px; color: var(--tt-text-2); font-size: 17px; padding-bottom: 22px; border-bottom: 1px solid var(--tt-hairline); }
+.detail-head { display: flex; align-items: center; gap: 12px; margin: 8px 0 18px; }
+.detail-head h3 { margin: 0; font-size: 22px; font-weight: 600; }
+.chip { color: var(--tt-text-muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.block { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; }
+.block h4 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.block p { margin: 0; max-width: 34em; color: var(--tt-text-2); font-size: 14.5px; line-height: 1.6; }
+.actions { display: flex; gap: 8px; flex: none; }
+.note { color: var(--tt-text-2); font-size: 14.5px; margin: 14px 0 0; }
+
+.btn { font: inherit; font-size: 14px; font-weight: 550; border-radius: 999px; padding: 7px 16px; border: 1px solid var(--tt-border); background: transparent; color: var(--tt-text); cursor: pointer; }
+.btn:hover { background: var(--tt-hover); }
+.btn:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.btn.primary { background: var(--tt-text); color: var(--tt-canvas); border-color: transparent; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.btn.small { font-size: 12px; padding: 4px 10px; }
+.btn.icon { width: 28px; height: 28px; padding: 0; border-color: transparent; }
+
+/* The card, after clientUpdates.css */
+.card { position: fixed; right: 20px; bottom: 76px; width: min(360px, calc(100vw - 40px)); border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-update); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow); font-size: 12.5px; overflow: hidden; }
+.card[data-tone='error'] { border-left-color: var(--tt-error); }
+.row { display: flex; align-items: center; gap: 10px; padding: 12px 10px 12px 14px; }
+.row > div { flex: 1; display: grid; gap: 1px; min-width: 0; }
+.row span { color: var(--tt-text); }
+.row small { color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.45; }
+.mark { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px solid var(--tt-text-2); }
+.spin { width: 12px; height: 12px; flex: none; border: 2px solid var(--tt-border); border-top-color: var(--tt-update); border-radius: 50%; animation: s 900ms linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+.list { list-style: none; margin: 0; padding: 0 14px 10px 40px; display: grid; gap: 4px; }
+.list li { display: flex; justify-content: space-between; gap: 10px; color: var(--tt-text-2); font-size: 12px; }
+.list li small { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+details { border-top: 1px solid var(--tt-hairline); }
+summary { padding: 8px 14px; color: var(--tt-text-muted); font-size: 11.5px; cursor: pointer; }
+details p { margin: 0; padding: 0 14px 10px; color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.5; }
+.pill { position: fixed; right: 20px; bottom: 76px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-update); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow); font-size: 12px; color: var(--tt-text-2); cursor: pointer; }
+.pill:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+/* Prototype bar — not part of the design */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 999px; background: #f5d90a; color: #1a1a1a; font: 600 13px/1 system-ui, sans-serif; box-shadow: 0 8px 24px rgb(0 0 0 / 40%); z-index: 50; }
+.bar button, .bar select { font: inherit; border: 0; border-radius: 999px; background: rgb(0 0 0 / 10%); color: inherit; padding: 6px 10px; cursor: pointer; }
+.bar .label { min-width: 190px; text-align: center; }
+.state-log { position: fixed; left: 270px; bottom: 60px; font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--tt-text-muted); }
+</style>
+</head>
+<body>
+<div class="strip"><b>Sotto</b><span>Threads</span><span>Settings</span></div>
+<div class="room">
+  <aside class="side">
+    <h4>Threads</h4>
+    <div id="threads"></div>
+  </aside>
+  <main class="settings">
+    <h1>Providers</h1>
+    <p class="sub">Accounts &amp; connections</p>
+    <div class="detail-head"><span class="mark"></span><h3>Codex</h3><span class="chip" id="chip"></span></div>
+    <div class="block">
+      <div><h4>Local connection</h4><p>Uses your sign-in in Codex on this computer.</p></div>
+      <div class="actions"><button class="btn">Disconnect</button></div>
+    </div>
+    <div class="block">
+      <div><h4>Installed client</h4><p id="clientLine"></p></div>
+      <div class="actions" id="clientActions"></div>
+    </div>
+    <p class="note">New threads use the agent selected in Settings → Agents.</p>
+  </main>
+</div>
+<div id="corner"></div>
+<div class="state-log" id="log"></div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="label" id="variantLabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <select id="stateSelect" aria-label="State"></select>
+  <button id="play">Play</button>
+  <button id="theme">Light</button>
+</div>
+
+<script>
+const VARIANTS = { a: 'One line', b: 'Who is left', c: 'Corner pill' }
+const STATES = {
+  behind: 'Behind', updating: 'Updating', waiting2: 'Installed, 2 working', waiting1: 'Installed, 1 left',
+  switched: 'All switched', failed: 'Failed',
+}
+const OLD = '0.159.3', NEW = '0.160.0'
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'a'
+let state = STATES[params.get('state')] ? params.get('state') : 'behind'
+let pillOpen = false
+let playing = null
+
+const baseThreads = [
+  { title: 'Fix the tray icon on resume', provider: 'Codex' },
+  { title: 'Name branches from the first send', provider: 'Codex' },
+  { title: 'Widget focus ring audit', provider: 'Claude Code' },
+  { title: 'Release notes for 0.1.22', provider: 'Codex' },
+]
+function threadsFor(s) {
+  // Which Codex threads are mid-turn, and the version each is running.
+  const working = s === 'waiting1' ? [1] : ['behind', 'updating', 'waiting2'].includes(s) ? [0, 1] : s === 'failed' ? [0, 1] : []
+  const installed = ['waiting2', 'waiting1', 'switched'].includes(s) ? NEW : OLD
+  return baseThreads.map((t, i) => ({
+    ...t, working: working.includes(i),
+    version: t.provider !== 'Codex' ? '' : working.includes(i) ? OLD : installed,
+  }))
+}
+
+function settingsLine(s) {
+  switch (s) {
+    case 'behind': return `${OLD} is installed; ${NEW} is published. Threads that are working keep going while it updates.`
+    case 'updating': return `Updating to ${NEW}… Threads that are working keep going.`
+    case 'waiting2': return `${NEW} is installed. 2 threads are finishing on ${OLD} and switch over when they do.`
+    case 'waiting1': return `${NEW} is installed. 1 thread is finishing on ${OLD} and switches over when it does.`
+    case 'switched': return `${NEW} is installed, and that is what is published.`
+    case 'failed': return `${OLD} is installed. The last update did not run: Windows would not let Sotto replace a Codex file. Nothing was changed.`
+  }
+}
+function settingsActions(s) {
+  const update = s === 'behind' ? '<button class="btn primary">Update</button>'
+    : s === 'failed' ? '<button class="btn primary">Try again</button>' : ''
+  return `${update}<button class="btn" ${s === 'updating' ? 'disabled' : ''}>Check again</button>`
+}
+
+const x = '<button class="btn icon" aria-label="Dismiss">✕</button>'
+function card(s, v) {
+  const waiting = s === 'waiting2' ? 2 : s === 'waiting1' ? 1 : 0
+  if (s === 'switched') return ''
+  if (s === 'behind') return `<div class="card" role="status"><div class="row"><span class="mark"></span>
+    <div><span>Codex ${NEW} is published.</span><small>Threads that are working keep going while it updates.</small></div>
+    <button class="btn small">Update</button>${x}</div></div>`
+  if (s === 'updating') return `<div class="card" role="status"><div class="row"><span class="mark"></span>
+    <div><span>Updating Codex to ${NEW}…</span><small>Threads that are working keep going.</small></div><span class="spin" aria-label="Updating"></span></div></div>`
+  if (s === 'failed') return `<div class="card" role="status" data-tone="error"><div class="row"><span class="mark"></span>
+    <div><span>Codex did not update.</span><small>Nothing was changed, and your threads kept working.</small></div>
+    <button class="btn small">Try again</button>${x}</div>
+    <details><summary>Details</summary><p>Windows would not let Sotto replace a Codex file, because another app has it open.
+    If it fails again, close other apps that use Codex, then try again. The installer said: EBUSY: resource busy or locked.</p></details></div>`
+  // Installed, threads still finishing
+  const sentence = `Codex updated to ${NEW}.`
+  const under = 'Threads that are working switch over when they finish.'
+  if (v === 'a') return `<div class="card" role="status"><div class="row"><span class="mark"></span>
+    <div><span>${sentence}</span><small>${under}</small></div>${x}</div></div>`
+  if (v === 'b') {
+    const left = threadsFor(s).filter(t => t.working)
+    return `<div class="card" role="status"><div class="row"><span class="mark"></span>
+      <div><span>${sentence}</span><small>${left.length === 1 ? 'This thread switches over when it finishes:' : 'These threads switch over when they finish:'}</small></div>${x}</div>
+      <ul class="list">${left.map(t => `<li>${t.title}<small>${OLD}</small></li>`).join('')}</ul></div>`
+  }
+  // c: the sentence once, then a pill
+  if (s === 'waiting2' && !pillOpen) return `<div class="card" role="status"><div class="row"><span class="mark"></span>
+    <div><span>${sentence}</span><small>${under}</small></div>${x}</div></div>`
+  return `<button class="pill" id="pill" aria-label="Codex ${NEW}: ${waiting} ${waiting === 1 ? 'thread' : 'threads'} still on ${OLD}">
+    <span class="spin" style="animation-duration:1.8s"></span>Codex ${NEW} · ${waiting} to switch</button>`
+}
+
+function render() {
+  const threads = threadsFor(state)
+  document.getElementById('threads').innerHTML = threads.map(t => `<div class="thread" data-working="${t.working}">
+    <span class="dot"></span><span>${t.title}</span><small>${t.version}</small></div>`).join('')
+  const running = threads.filter(t => t.provider === 'Codex').map(t => t.version)
+  document.getElementById('chip').textContent = ['waiting2', 'waiting1', 'switched'].includes(state) ? NEW : OLD
+  document.getElementById('clientLine').textContent = settingsLine(state)
+  document.getElementById('clientActions').innerHTML = settingsActions(state)
+  document.getElementById('corner').innerHTML = card(state, variant)
+  document.getElementById('variantLabel').textContent = `${variant.toUpperCase()} — ${VARIANTS[variant]}`
+  document.getElementById('stateSelect').value = state
+  document.getElementById('log').textContent = `variant=${variant}  state=${state}  codex threads running: ${running.join(', ')}`
+  const url = new URL(location); url.searchParams.set('variant', variant); url.searchParams.set('state', state); history.replaceState(null, '', url)
+}
+
+const select = document.getElementById('stateSelect')
+select.innerHTML = Object.entries(STATES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')
+select.onchange = () => { stop(); state = select.value; pillOpen = false; render() }
+const keys = Object.keys(VARIANTS)
+const cycle = d => { variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; pillOpen = false; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') cycle(-1)
+  if (e.key === 'ArrowRight') cycle(1)
+})
+document.getElementById('theme').onclick = e => {
+  const light = document.documentElement.dataset.theme === 'light'
+  document.documentElement.dataset.theme = light ? 'dark' : 'light'
+  e.target.textContent = light ? 'Light' : 'Dark'
+}
+function stop() { if (playing) { playing.forEach(clearTimeout); playing = null } }
+document.getElementById('play').onclick = () => {
+  stop(); pillOpen = false
+  const steps = [['behind', 0], ['updating', 1600], ['waiting2', 4200], ['pill', 7200], ['waiting1', 9000], ['switched', 12500]]
+  playing = steps.map(([s, at]) => setTimeout(() => { if (s === 'pill') pillOpen = true; else state = s; render() }, at))
+}
+render()
+</script>
+</body>
+</html>
