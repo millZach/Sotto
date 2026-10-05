@@ -5,7 +5,7 @@ final class ThreadAlertsTests: XCTestCase {
     private let host = "00000000-0000-4000-8000-000000000001"
     private let all = AlertSwitches(needsYou: true, finished: true, failed: true)
 
-    private func thread(_ id: String = "t", status: String = "idle", requests: [(String, String)] = [],
+    private func thread(id: String = "t", status: String = "idle", requests: [(String, String)] = [],
                         finishedUnread: Bool? = nil, title: String = "Fix the build") throws -> ThreadSummary {
         let rows = requests.map { #"{"id":"\#($0.0)","kind":"\#($0.1)","text":"Run npm ci?","options":[]}"# }.joined(separator: ",")
         let unread = finishedUnread.map { #","finishedUnread":\#($0)"# } ?? ""
