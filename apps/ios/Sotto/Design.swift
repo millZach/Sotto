@@ -463,72 +463,114 @@ struct Wash: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        GeometryReader { proxy in
-            let image = WashImage(size: proxy.size, primary: primary, secondary: secondary, warmth: warmth, warm: warm)
-            if drifting {
-                // Core Animation drifts the flattened picture, so the app does nothing while it moves.
-                LoopingHost(loop: .drift) { image }
-            } else {
-                image
-            }
-        }
-        .frame(height: height)
-        .clipped()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        // Drawn by Core Animation, which also drifts it, so the app does nothing while it moves.
+        WashCanvas(primary: primary, secondary: secondary, warmth: warmth, warm: warm, drifting: drifting)
+            .frame(height: height)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
     private var drifting: Bool { !reduceMotion && !DebugFlags.still }
     private var dark: Bool { scheme == .dark }
-    private var primary: Color {
+    private var primary: UIColor {
         switch tone {
-        case .normal: return theme.color(.accent).opacity(dark ? 0.34 : 0.22)
-        case .quiet: return theme.color(.accent).opacity(0.16)
-        case .failed: return theme.color(.danger).opacity(0.16)
+        case .normal: return theme.rgb(.accent).uiColor(dark ? 0.34 : 0.22)
+        case .quiet: return theme.rgb(.accent).uiColor(0.16)
+        case .failed: return theme.rgb(.danger).uiColor(0.16)
         }
     }
-    private var secondary: Color {
-        theme.color(.accent).opacity(tone == .normal ? (dark ? 0.16 : 0.11) : 0.08)
+    private var secondary: UIColor {
+        theme.rgb(.accent).uiColor(tone == .normal ? (dark ? 0.16 : 0.11) : 0.08)
     }
-    private var warmth: Color { theme.color(.warning).opacity(dark ? 0.22 : 0.2) }
+    private var warmth: UIColor { theme.rgb(.warning).uiColor(dark ? 0.22 : 0.2) }
 }
 
-/// The wash's three blobs, flattened into one image. Takes resolved colours, so it draws the same inside a
-/// `LoopingHost`, where the environment above does not reach.
-private struct WashImage: View {
-    let size: CGSize
-    let primary: Color
-    let secondary: Color
-    let warmth: Color
+/// The wash as layers. Takes resolved colours; new ones repaint it without restarting the drift.
+private struct WashCanvas: UIViewRepresentable {
+    let primary: UIColor
+    let secondary: UIColor
+    let warmth: UIColor
     let warm: Bool
-    var body: some View {
-        let width = size.width
-        let tall = size.height
-        return ZStack(alignment: .topLeading) {
-            WashBlob(color: primary, center: CGPoint(x: width * 0.116, y: 0), radii: CGSize(width: width * 0.72, height: tall * 0.52), fade: 0.72)
-            WashBlob(color: secondary, center: CGPoint(x: width * 0.956, y: tall * 0.06), radii: CGSize(width: width * 0.576, height: tall * 0.44), fade: 0.72)
-            WashBlob(color: warmth, center: CGPoint(x: width * 0.932, y: tall * 0.02), radii: CGSize(width: width * 0.552, height: tall * 0.40), fade: 0.70)
-                .opacity(warm ? 1 : 0)
-                .animation(.easeInOut(duration: 1.6), value: warm)
-        }
-        .frame(width: width, height: tall, alignment: .topLeading)
-        // Flattened into one image so the drift moves a picture instead of redrawing three gradients every frame.
-        .drawingGroup()
+    let drifting: Bool
+    func makeUIView(context: Context) -> WashLoopView { WashLoopView(frame: .zero) }
+    func updateUIView(_ view: WashLoopView, context: Context) {
+        view.paint(primary: primary, secondary: secondary, warmth: warmth)
+        view.showWarmth(warm)
+        view.running = drifting
     }
 }
 
-/// One soft ellipse of the wash, fading out at `fade` of its radii.
-private struct WashBlob: View {
-    let color: Color
-    let center: CGPoint
-    let radii: CGSize
-    let fade: CGFloat
-    var body: some View {
-        EllipticalGradient(gradient: Gradient(stops: [
-            Gradient.Stop(color: color, location: 0),
-            Gradient.Stop(color: color.opacity(0), location: fade)
-        ]), center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-            .frame(width: radii.width * 2, height: radii.height * 2)
-            .position(x: center.x, y: center.y)
+/// The wash's three soft ellipses, each a radial gradient from its colour to clear at `fade` of its radii. Centres and
+/// radii are fractions of the view's width and height. The warm one fades in and out over 1.6 seconds. While running,
+/// the whole picture drifts: 26 seconds each way to 7% larger from its top edge, 3% of its width left and 2% of its
+/// height down.
+final class WashLoopView: LoopingView {
+    private let primaryBlob = CAGradientLayer()
+    private let secondaryBlob = CAGradientLayer()
+    private let warmBlob = CAGradientLayer()
+    private var warmShown: Bool? = nil
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // The drift grows the picture past the frame, so it is clipped there.
+        clipsToBounds = true
+        warmBlob.opacity = 0
+        let blobs: [(CAGradientLayer, Double)] = [(primaryBlob, 0.72), (secondaryBlob, 0.72), (warmBlob, 0.70)]
+        for (blob, fade) in blobs {
+            blob.type = .radial
+            blob.startPoint = CGPoint(x: 0.5, y: 0.5)
+            blob.endPoint = CGPoint(x: 1, y: 1)
+            blob.locations = [NSNumber(value: 0.0), NSNumber(value: fade)]
+            stage.layer.addSublayer(blob)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("WashLoopView is made in code") }
+    func paint(primary: UIColor, secondary: UIColor, warmth: UIColor) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        primaryBlob.colors = [primary.cgColor, primary.withAlphaComponent(0).cgColor]
+        secondaryBlob.colors = [secondary.cgColor, secondary.withAlphaComponent(0).cgColor]
+        warmBlob.colors = [warmth.cgColor, warmth.withAlphaComponent(0).cgColor]
+        CATransaction.commit()
+    }
+    /// Shows or hides the warm blob: at once the first time, then easing over 1.6 seconds from wherever it is.
+    func showWarmth(_ warm: Bool) {
+        if warmShown == warm { return }
+        let first = warmShown == nil
+        warmShown = warm
+        let target: Float = warm ? 1 : 0
+        let from: Float = warmBlob.presentation()?.opacity ?? warmBlob.opacity
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        warmBlob.opacity = target
+        CATransaction.commit()
+        if first { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = NSNumber(value: from)
+        fade.toValue = NSNumber(value: target)
+        fade.duration = 1.6
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        warmBlob.add(fade, forKey: "warmth")
+    }
+    override func layoutStage() {
+        let width = bounds.width
+        let tall = bounds.height
+        place(primaryBlob, center: CGPoint(x: width * 0.116, y: 0), radii: CGSize(width: width * 0.72, height: tall * 0.52))
+        place(secondaryBlob, center: CGPoint(x: width * 0.956, y: tall * 0.06), radii: CGSize(width: width * 0.576, height: tall * 0.44))
+        place(warmBlob, center: CGPoint(x: width * 0.932, y: tall * 0.02), radii: CGSize(width: width * 0.552, height: tall * 0.40))
+    }
+    private func place(_ blob: CALayer, center: CGPoint, radii: CGSize) {
+        blob.frame = CGRect(x: center.x - radii.width, y: center.y - radii.height, width: radii.width * 2, height: radii.height * 2)
+    }
+    override var loopSignature: [CGFloat] { [bounds.width, bounds.height] }
+    override func makeLoops() -> [String: CAAnimation] {
+        // SwiftUI's scale from the top edge then offset, as one transform about the stage's centre: growing by
+        // `scale` from the top moves the centre down by half the growth in height.
+        let scale: CGFloat = 1.07
+        let shiftX = -bounds.width * 0.03
+        let shiftY = bounds.height * (scale - 1) / 2 + bounds.height * 0.02
+        let drifted = CATransform3DScale(CATransform3DMakeTranslation(shiftX, shiftY, 0), scale, scale, 1)
+        return ["drift": Loops.basic("transform", from: NSValue(caTransform3D: CATransform3DIdentity), to: NSValue(caTransform3D: drifted),
+                                     duration: 26, autoreverses: true)]
     }
 }
 
@@ -695,13 +737,13 @@ struct CardSurface: ViewModifier {
             .clipShape(shape)
             .overlay(shape.strokeBorder(ring, lineWidth: 1))
             .overlay(shape.strokeBorder(LinearGradient(colors: [highlight, highlight.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.2)), lineWidth: 1))
-            .background { glow(shape) }
+            .background { glow }
     }
-    @ViewBuilder private func glow(_ shape: RoundedRectangle) -> some View {
+    @ViewBuilder private var glow: some View {
         switch tone {
-        case .needsYou: GlowLayer(shape: shape, color: theme.color(.warning).opacity(0.5), base: theme.color(.surface), period: 6)
-        case .working: GlowLayer(shape: shape, color: theme.color(.accent).opacity(0.5), base: theme.color(.surface), period: 4.4)
-        case .answered: GlowLayer(shape: shape, color: theme.color(.accent).opacity(0.6), base: theme.color(.surface), period: nil)
+        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: theme.rgb(.surface), period: 6)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: theme.rgb(.surface), period: 4.4)
+        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: theme.rgb(.surface), period: nil)
         case .plain, .online: EmptyView()
         }
     }
@@ -767,22 +809,25 @@ extension View {
     }
 }
 
-/// The light behind a card, breathing slowly when it has a period. Still under Reduce Motion.
+/// The light behind a card, breathing slowly when it has a period. Still under Reduce Motion. Takes the card's corner
+/// radius and resolved colours: the glow's colour opaque, with how strongly it shows as `alpha`.
 private struct GlowLayer: View {
-    let shape: RoundedRectangle
-    let color: Color
-    let base: Color
+    let radius: CGFloat
+    let color: ThemeRGB
+    let alpha: CGFloat
+    let base: ThemeRGB
     let period: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
             if breathing {
-                // Core Animation fades it between 0.55 and full, half the period each way.
-                LoopingHost(loop: .breathe(from: 0.55, to: 1, duration: (period ?? 4) / 2)) {
-                    GlowImage(shape: shape, color: color, base: base)
-                }
+                // Drawn by Core Animation, which fades it between 0.55 and full, half the period each way. It spills
+                // past the card on purpose, so nothing here clips it.
+                BreathingGlow(radius: radius, color: color, alpha: alpha, base: base, breath: (period ?? 4) / 2)
             } else {
-                GlowImage(shape: shape, color: color, base: base).opacity(level)
+                GlowImage(shape: RoundedRectangle(cornerRadius: radius, style: .continuous), color: color.color.opacity(Double(alpha)),
+                          base: base.color)
+                    .opacity(level)
             }
         }
         .allowsHitTesting(false)
@@ -797,13 +842,76 @@ private struct GlowLayer: View {
     }
 }
 
-/// The glow itself: the card's shape with a soft shadow drawn once. Takes resolved colours (see `LoopingHost`).
+/// The still glow: the card's shape with a soft shadow drawn once.
 private struct GlowImage: View {
     let shape: RoundedRectangle
     let color: Color
     let base: Color
     var body: some View {
         shape.fill(base).softShadow(shape, color: color, radius: 18, y: 10)
+    }
+}
+
+/// The breathing glow as layers.
+private struct BreathingGlow: UIViewRepresentable {
+    let radius: CGFloat
+    let color: ThemeRGB
+    let alpha: CGFloat
+    let base: ThemeRGB
+    /// Seconds each way.
+    let breath: Double
+    func makeUIView(context: Context) -> GlowLoopView { GlowLoopView(frame: .zero) }
+    func updateUIView(_ view: GlowLoopView, context: Context) {
+        view.paint(radius: radius, glow: color, alpha: alpha, base: base)
+        view.breath = breath
+        view.running = true
+    }
+}
+
+/// `GlowImage` as one layer: the card's shape filled with the surface, and the glow as its shadow. The shadow has an
+/// explicit path, so Core Animation draws it without an offscreen pass. Its shadow radius of 9 stands in for the still
+/// glow's blur of 18: the two radii are not the same measure, and half is the nearest match. The loop fades the whole
+/// of it between 0.55 and full, `breath` seconds each way.
+final class GlowLoopView: LoopingView {
+    private let card = CALayer()
+    /// Seconds each way.
+    var breath: Double = 2 {
+        didSet { if breath != oldValue { refreshLoops(force: false) } }
+    }
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // The glow spills past the card on purpose.
+        clipsToBounds = false
+        stage.clipsToBounds = false
+        card.masksToBounds = false
+        card.cornerCurve = .continuous
+        card.shadowOffset = CGSize(width: 0, height: 10)
+        card.shadowRadius = 9
+        stage.layer.addSublayer(card)
+    }
+    required init?(coder: NSCoder) { fatalError("GlowLoopView is made in code") }
+    func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        card.backgroundColor = base.uiColor(1).cgColor
+        card.shadowColor = glow.uiColor(1).cgColor
+        card.shadowOpacity = Float(alpha)
+        if card.cornerRadius != radius {
+            card.cornerRadius = radius
+            shapeShadow()
+        }
+        CATransaction.commit()
+    }
+    override func layoutStage() {
+        card.frame = bounds
+        shapeShadow()
+    }
+    private func shapeShadow() {
+        card.shadowPath = UIBezierPath(roundedRect: card.bounds, cornerRadius: card.cornerRadius).cgPath
+    }
+    override var loopSignature: [CGFloat] { [CGFloat(breath)] }
+    override func makeLoops() -> [String: CAAnimation] {
+        ["breathe": Loops.basic("opacity", from: NSNumber(value: 0.55), to: NSNumber(value: 1.0), duration: breath, autoreverses: true)]
     }
 }
 
@@ -1001,82 +1109,6 @@ class LoopingView: UIView {
         }
         builtKeys = []
         builtSignature = nil
-    }
-}
-
-/// What a `LoopingHost` does to its content.
-enum HostedLoop: Equatable {
-    /// Fades between two opacities, `duration` seconds each way.
-    case breathe(from: Double, to: Double, duration: Double)
-    /// The wash's drift: 26 seconds each way to 7% larger from its top edge, 3% of its width left and 2% of its
-    /// height down.
-    case drift
-}
-
-/// SwiftUI content in a `LoopingView`, so Core Animation can loop it. The content is hosted on its own, so the
-/// environment above does not reach it: pass it resolved colours and values, never theme roles.
-struct LoopingHost<Content: View>: UIViewRepresentable {
-    let loop: HostedLoop
-    let content: Content
-    init(loop: HostedLoop, @ViewBuilder content: () -> Content) {
-        self.loop = loop
-        self.content = content()
-    }
-    func makeUIView(context: Context) -> HostedLoopView { HostedLoopView(content: AnyView(content), loop: loop) }
-    func updateUIView(_ view: HostedLoopView, context: Context) {
-        view.show(AnyView(content), loop: loop)
-        view.running = true
-    }
-}
-
-/// A `LoopingView` that shows SwiftUI content through a hosting controller.
-final class HostedLoopView: LoopingView {
-    private let host: UIHostingController<AnyView>
-    private var loop: HostedLoop
-    init(content: AnyView, loop: HostedLoop) {
-        host = UIHostingController(rootView: content)
-        self.loop = loop
-        super.init(frame: .zero)
-        // The drift grows the picture past its frame, so it is clipped there; a glow spills past its card on purpose.
-        clipsToBounds = loop == .drift
-        host.safeAreaRegions = []
-        host.view.backgroundColor = .clear
-        host.view.isUserInteractionEnabled = false
-        host.view.accessibilityElementsHidden = true
-        stage.addSubview(host.view)
-    }
-    required init?(coder: NSCoder) { fatalError("HostedLoopView is made in code") }
-    func show(_ content: AnyView, loop: HostedLoop) {
-        host.rootView = content
-        if loop != self.loop {
-            self.loop = loop
-            clipsToBounds = loop == .drift
-            refreshLoops(force: true)
-        }
-    }
-    override func layoutStage() {
-        host.view.frame = stage.bounds
-    }
-    override var loopSignature: [CGFloat] {
-        switch loop {
-        case .breathe: return []
-        case .drift: return [bounds.width, bounds.height]
-        }
-    }
-    override func makeLoops() -> [String: CAAnimation] {
-        switch loop {
-        case .breathe(let from, let to, let duration):
-            return ["breathe": Loops.basic("opacity", from: NSNumber(value: from), to: NSNumber(value: to), duration: duration, autoreverses: true)]
-        case .drift:
-            // SwiftUI's scale from the top edge then offset, as one transform about the layer's centre: growing by
-            // `scale` from the top moves the centre down by half the growth in height.
-            let scale: CGFloat = 1.07
-            let shiftX = -bounds.width * 0.03
-            let shiftY = bounds.height * (scale - 1) / 2 + bounds.height * 0.02
-            let drifted = CATransform3DScale(CATransform3DMakeTranslation(shiftX, shiftY, 0), scale, scale, 1)
-            return ["drift": Loops.basic("transform", from: NSValue(caTransform3D: CATransform3DIdentity), to: NSValue(caTransform3D: drifted),
-                                         duration: 26, autoreverses: true)]
-        }
     }
 }
 
