@@ -39,7 +39,7 @@ export interface PlatformProfile {
   /**
    * A macOS panel can float over another app's full-screen desktop while the app keeps its Dock icon.
    * Never hide the Dock instead: once macOS has treated Sotto as an accessory app, every Sotto window can
-   * sit on other apps' full-screen desktops for the rest of the run (ADR-0045).
+   * sit on other apps' full-screen desktops for the rest of the run (ADR-0051).
    */
   readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
