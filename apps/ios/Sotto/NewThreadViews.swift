@@ -411,7 +411,7 @@ struct NewThreadSheet: View {
 
 extension WorkingCopy {
     /// Where a new thread works, as New thread and Settings name it.
-    var title: String { self == .shared ? "Shared folder" : "New worktree" }
+    var title: String { self == .shared ? "Project folder" : "New worktree" }
     var summary: String {
         self == .shared
             ? "Works in the project’s own folder, beside its other threads."

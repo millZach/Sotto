@@ -76,7 +76,7 @@ enum PhoneDensity: String, CaseIterable {
 /// Where a new thread works: the project's shared folder or a new worktree.
 enum PhoneWorkingCopy: String, CaseIterable {
     case shared, independent
-    var title: String { self == .shared ? "Shared project folder" : "New worktree" }
+    var title: String { self == .shared ? "Project folder" : "New worktree" }
 }
 
 /// Reads and writes the preferences outside SwiftUI.

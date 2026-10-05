@@ -578,7 +578,7 @@ import XCTest
 
         let copy = app.buttons["new-thread-working-copy"]
         reveal(copy)
-        XCTAssertEqual(copy.value as? String, "Shared folder")
+        XCTAssertEqual(copy.value as? String, "Project folder")
         copy.tap()
         let worktree = app.buttons["New worktree"]
         XCTAssertTrue(worktree.waitForExistence(timeout: 5))
