@@ -410,7 +410,9 @@ import XCTest
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
         let end = byID("step-long-final")
-        let last = threadText("Final comparison:")
+        // The last reply is taller than the screen, so its heading sits above the view at the end; its closing command
+        // is what must be on screen.
+        let last = threadText("python compare_drives.py --option 12")
         waitForEnd(end, last: last, above: reply, "A long thread opens showing its end, with no scroll needed")
         capture("thread-long-open")
     }
