@@ -360,7 +360,7 @@ Turning **Let phones connect** off removes Sotto's Serve setting on 8443 and clo
 
 ### Phones on a host
 
-A host you added in **Settings › Hosts** can serve its own threads to your iPhone too, so a machine with no screen, such as `forge`, never needs one (ADR-0050). Each connected host's row says **Phones off**, **Phones on**, with how many are paired, or **Phones need you**, and **Phones…** opens **Phones on forge**. Escape or **Done** closes it.
+A host you added in **Settings › Hosts** can serve its own threads to your iPhone too, so a machine with no screen, such as `forge`, never needs one (ADR-0050). Each connected host's row says **Phones off**, **Phones starting…**, **Phones on**, with how many are paired, or **Phones need you**, and **Phones…** opens **Phones on forge**. Escape or **Done** closes it.
 
 Turn on **Let phones reach forge**. The host checks the same three steps the Phones page does, on its own machine: **Tailscale on forge**, **Tailscale Serve on port 8443** and **Address phones use**. Sotto installs nothing there. If Tailscale is not installed on the host, or not signed in, the first step says so and **Try again** checks again once it is. If the tailnet has not turned Serve on, **Turn on Serve in Tailscale** opens Tailscale's page on this computer. On Linux, Tailscale lets an account change Serve only once that account is its operator; the step says so and shows `sudo tailscale set --operator=$USER`, with **Copy command**, to run on the host. Sotto never runs it.
 

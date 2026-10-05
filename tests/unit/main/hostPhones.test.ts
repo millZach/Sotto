@@ -69,6 +69,21 @@ it('reads an open dialog’s host every couple of seconds, and stops when the di
   phones.close()
 })
 
+it('reads a host that is still starting its phone access again until it says how that went, with no dialog open', async () => {
+  vi.useFakeTimers()
+  const { phones, answer, requests } = fixture()
+  answer(() => ({ body: { v: 1, hostId: HOST_ID, state: state({ enabled: true, phase: 'starting' }) } }))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(phones.state()[0]!.state).toMatchObject({ phase: 'starting' })
+  answer(() => ({ body: { v: 1, hostId: HOST_ID, state: state({ enabled: true, phase: 'on' }) } }))
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(phones.state()[0]!.state).toMatchObject({ phase: 'on' })
+  const settled = requests.length
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(requests.length).toBe(settled)
+  phones.close()
+})
+
 it('asks the connection for the token again once when the host no longer takes the one held', async () => {
   const { phones, requests, answer, connection } = fixture()
   await vi.waitFor(() => expect(phones.state()[0]?.state).toBeDefined())

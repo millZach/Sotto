@@ -29,7 +29,6 @@ export interface HostSetupSource {
   command(command: Extract<HostsCommand, { type: 'start-setup' | 'stop-setup' | 'dismiss-setup' }>): Promise<void>
   subscribe(listener: () => void): () => void
 }
-/** What the Threads page's host update panel asks of the host updates (ADR-0040), which follow the saved hosts. */
 /** Each remote host's phone access (ADR-0050): Settings > Hosts shows it, and its Phones dialog sends it presses. */
 export interface HostPhonesSource {
   state(): HostPhonesView[]
@@ -37,7 +36,7 @@ export interface HostPhonesSource {
   watch(id: string, watching: boolean): void
   subscribe(listener: () => void): () => void
 }
-
+/** What the Threads page's host update panel asks of the host updates (ADR-0040), which follow the saved hosts. */
 export interface HostUpdateSource {
   state(): HostUpdateState[]
   command(id: string, action: HostUpdateAction): Promise<void>
@@ -164,7 +163,8 @@ export class DesktopHosts {
       ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
       ...(setup ? { setup } : {}), ...(setupChoice ? { setupChoice } : {}), ...(providerJob ? { providerJob } : {}),
       ...(this.updates ? { updates: this.updates.state() } : {}),
-      ...(this.phones ? { phones: this.phones.state() } : {}),
+      // A forgotten host's last answer is left out with its row.
+      ...(this.phones ? { phones: this.phones.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
   /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */

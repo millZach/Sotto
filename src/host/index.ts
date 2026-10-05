@@ -17,7 +17,7 @@ import { startSocketServer } from './socketServer'
 import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HostLockError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
-import { startHostPhones, type HostPhones } from './phones'
+import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 
 export interface HeadlessHostOptions {
@@ -123,13 +123,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
-    let phones: HostPhones | undefined
+    let phones: HostPhoneAccess | undefined
     try {
       await pairing.load()
       if (options.port !== undefined) {
         // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry; this one,
         // with the administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
-        phones = startHostPhones({ directory, service: runtime.hostService, pairing, policy, settings, startup,
+        phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: phones.administration,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
@@ -144,7 +144,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }
-    } catch (error) { signIns.close(); await phones?.close(); await listener?.close(); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined

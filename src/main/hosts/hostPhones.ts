@@ -12,8 +12,9 @@ import { isTailscaleApprovalUrl } from './tailscaleApproval'
  * back and which stays in memory here. Every SSH command is a full sign-in, so nothing here runs one.
  *
  * A host is read once when it connects, so its row can say whether phones reach it, and again every couple of seconds
- * while the dialog is open, so a phone pairing or connecting shows up there. Nothing is read for a host nobody is
- * looking at. What a host last said stays when it disconnects; the dialog says it cannot change anything then.
+ * while it is still setting up, or while the dialog is open, so a phone pairing or connecting shows up there. Nothing
+ * else is read for a host nobody is looking at. What a host last said stays when it disconnects; the dialog says it
+ * cannot change anything then.
  */
 
 /** The connection to a saved host, while it is connected. */
@@ -47,7 +48,8 @@ const POLL_MS = 2_000
 /** An open dialog says so again well inside this, so a window that went away without closing it stops the reads. */
 export const HOST_PHONES_WATCH_MS = 60_000
 
-class Unauthorized extends Error {}
+/** The host answered, but not with phone access: it has no such route, or answered with something else. */
+class HostRefused extends Error {}
 
 interface Entry {
   view: HostPhonesView
@@ -125,7 +127,7 @@ export class HostPhones {
     for (const entry of this.entries.values()) if (entry.timer) clearInterval(entry.timer)
   }
 
-  /** Follows the saved hosts: a new connection is read once, and a host no longer saved is dropped. */
+  /** Follows the connected hosts: a new connection is read once, and a dropped one keeps what it last said. */
   private sync(): void {
     if (this.closed) return
     const links = this.options.hosts.links()
@@ -149,7 +151,11 @@ export class HostPhones {
       await entry.commands
       try {
         const answer = await this.post(entry, link, 'phones', {}, READ_TIMEOUT_MS)
-        if (entry.connection === link.connection) this.set(id, { state: answer.state, error: undefined, readAt: new Date().toISOString() })
+        if (entry.connection !== link.connection) return
+        this.set(id, { state: answer.state, error: undefined, readAt: new Date().toISOString() })
+        // A host that has just started is still checking Tailscale: read it again until it says how that went, so the
+        // row does not keep saying it is starting.
+        if (answer.state.phase === 'starting' && !entry.timer) setTimeout(() => { if (!this.closed && entry.connection === link.connection) void this.read(id) }, this.options.pollMs ?? POLL_MS).unref?.()
       } catch (error) {
         this.options.log?.('host-phones-read-failed')
         if (entry.connection === link.connection) this.set(id, { error: this.failure(link.name, error) })
@@ -173,17 +179,19 @@ export class HostPhones {
     if (response.status === 401) {
       if (entry.token === token) entry.token = undefined
       if (again) return this.post(entry, link, route, body, timeoutMs, false)
-      throw new Unauthorized('The host refused the administrative token.')
+      throw new Error('The host refused the administrative token.')
     }
-    if (!response.ok) throw new Error('The host refused the request.')
-    const answer = answerSchema.parse(await response.json())
+    if (!response.ok) throw new HostRefused('The host refused the request.')
+    const parsed = answerSchema.safeParse(await response.json())
+    if (!parsed.success) throw new HostRefused('The host answered with something else.')
+    const answer = parsed.data
     if (answer.hostId !== connection.hostId) throw new Error('The host identity changed.')
     return answer
   }
 
   private failure(name: string, error: unknown): string {
     if (error instanceof Error && error.name === 'TimeoutError') return `${name} did not answer about phone access in time. Nothing was changed. Try again.`
-    if (error instanceof z.ZodError || (error instanceof Error && error.message === 'The host refused the request.')) {
+    if (error instanceof HostRefused) {
       return `The host on ${name} can’t share phone access with this computer. Nothing was changed. Update the host on ${name} from the Threads page, then try again.`
     }
     return `Phone access on ${name} could not be reached. Nothing was changed. Check that ${name} is connected, then try again.`

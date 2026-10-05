@@ -16,7 +16,7 @@ import type { HostPhonesAdministration, HostPhonesAnswer } from './socketServer'
  * Nothing here has a page. The desktop that reaches this host over SSH reads and changes it on the administrative
  * routes, and opens Tailscale's consent page, when there is one, on its own computer.
  */
-export interface HostPhonesOptions {
+export interface HostPhoneAccessOptions {
   readonly directory: string
   readonly service: HostService
   readonly pairing: PairedClients
@@ -28,7 +28,7 @@ export interface HostPhonesOptions {
   readonly log?: ((event: PhoneAccessEvent | 'phone-access-setting-failed') => void) | undefined
 }
 
-export interface HostPhones {
+export interface HostPhoneAccess {
   readonly administration: HostPhonesAdministration
   close(): Promise<void>
 }
@@ -36,7 +36,7 @@ export interface HostPhones {
 const NO_PAGE = 'Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.'
 const NOT_SAVED = 'Phone access could not be saved on this host. Nothing was changed. Try again.'
 
-export function startHostPhones(options: HostPhonesOptions): HostPhones {
+export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhoneAccess {
   let current = { phoneAccess: options.startup.phoneAccess, phoneAccessName: options.startup.phoneAccessName }
   const access = new PhoneAccess({
     directory: options.directory, service: options.service, pairing: options.pairing,

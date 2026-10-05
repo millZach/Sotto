@@ -1,5 +1,9 @@
 # A Node host on Forge, with clients that keep the host's identity
 
+## October 4 amendment: a host's phone access
+
+[ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md) lets a headless host serve its own threads to paired phones through Tailscale Serve, as the desktop does (ADR-0033). The host opens a second loopback listener for phones, with no administrative routes. A launch hands the host's administrative token back to the desktop over SSH, and the desktop uses it, through the forward and only in memory, to turn the host's phone access on and off, pair its phones and set their Can answer. The remote command list below is unchanged.
+
 ## September 29 amendment: an SSH desktop can answer at setup
 
 Zach chose automatic desktop authority when setting up a remote PC, without another prompt. This amends the earlier requirement to run `--allow-answers` separately for a desktop that connects through the user's authenticated SSH session. After the host confirms the desktop's actual paired client ID, the SSH launch script creates one `remote-answer` policy record for that client if it has never had one. The record, with source `user` and a note naming the authenticated SSH connection, is still what authorizes answers, permissive thread modes and the other commands that require it; pairing alone never does.

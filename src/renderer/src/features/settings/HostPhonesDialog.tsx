@@ -208,7 +208,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
               <Button variant="danger" disabled={busy} onClick={() => void run({ type: 'remove', clientId: phone.clientId }).then(done => { if (done) { setRemoveId(null); queueMicrotask(() => pairButton.current?.focus()) } })}>Remove phone</Button>
             </div> : null}
           </React.Fragment>)}
-        </div> : <p>No phones paired with {name} yet.</p>}
+        </div> : <p>No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here.</p>}
       </section> : null}
       {error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{error}</p></div> : null}
     </div>

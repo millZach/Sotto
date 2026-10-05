@@ -5,9 +5,9 @@ import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
 /**
  * The launch script: fixed Node source the desktop pipes to one `ssh` command per operation. It finds or
  * starts the host, asks it for a pairing code, revokes a client, stops a host Sotto started, or takes one
- * step of a host update, writes one JSON result line to stdout and exits.
- * The source travels on stdin, so it is never in the remote process list; the configuration, which holds no
- * secret, is a separately quoted JSON argument.
+ * step of a host update, writes one JSON result line to stdout and exits. The source travels on stdin, so
+ * it is never in the remote process list; the configuration, which holds no secret, is a separately
+ * quoted JSON argument.
  *
  * A host the script starts is told so through SOTTO_HOST_STARTED_BY, and records it in its own
  * listener descriptor once it holds the data folder's lock. That descriptor is what makes a host

@@ -58,11 +58,15 @@ it('starts an owned host, issues a code and a revocation, and exits after each r
   const configuration = await fixture()
   const ready = await launch(configuration)
   expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
-  expect(JSON.stringify(ready)).not.toContain('remote-only-secret')
+  // Only a launch hands back the administrative token, for the desktop's phone routes (ADR-0050); no other result does.
+  expect(ready).toMatchObject({ adminToken: 'remote-only-secret' })
   const pairing = await run(configuration, { op: 'pairing-code', hostId: HOST_ID })
   expect(pairing).toMatchObject({ code: 0, errors: '' })
   expect(pairing.messages.at(-1)).toMatchObject({ type: 'pairing-code', code: 'ABC123', hostId: HOST_ID })
-  expect((await run(configuration, { op: 'revoke-client', hostId: HOST_ID, clientId: 'client' })).messages.at(-1)).toMatchObject({ type: 'revoked', revoked: true })
+  expect(JSON.stringify(pairing.messages)).not.toContain('remote-only-secret')
+  const revoked = await run(configuration, { op: 'revoke-client', hostId: HOST_ID, clientId: 'client' })
+  expect(revoked.messages.at(-1)).toMatchObject({ type: 'revoked', revoked: true })
+  expect(JSON.stringify(revoked.messages)).not.toContain('remote-only-secret')
   expect(() => process.kill(ready.pid as number, 0)).not.toThrow()
   // The host wrote the mark itself; the launch script keeps no record of its own.
   expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8'))).toMatchObject({ startedBy: 'launch-script', pid: ready.pid })

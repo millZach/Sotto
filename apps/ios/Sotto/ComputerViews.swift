@@ -117,7 +117,7 @@ private struct ComputerDetails: View {
         .confirmationDialog("Remove \(computer.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove from this iPhone", role: .destructive) { Task { await model.remove(hostID) } }
         } message: {
-            Text("This iPhone stops showing its threads. If \(computer.name) can’t be reached, remove this iPhone there too: in Settings › Phones, or with a host’s --revoke-client command.")
+            Text("This iPhone stops showing its threads. If \(computer.name) can’t be reached, remove this iPhone there too: in Settings › Phones, or for a computer without a screen, with Phones on its row in Settings › Hosts on your main computer.")
         }
         .alert("Rename \(computer.name)", isPresented: $renaming) {
             TextField("Name", text: $newName)
@@ -191,7 +191,7 @@ private struct AllowAnswersHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("To answer questions and permissions from this iPhone, open Sotto on \(name), go to Settings › Phones and turn on Can answer for this iPhone.")
-            Text("For a host without a screen, turn it on in Sotto on your main computer: Settings › Hosts, then Phones on its row. Or run the host’s --allow-answers command with this iPhone’s client ID.")
+            Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts, then Phones on its row. Or run its --allow-answers command with this iPhone’s client ID.")
         }
         .font(.subheadline).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
     }
