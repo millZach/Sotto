@@ -70,8 +70,14 @@ final class AlertModelTests: XCTestCase {
     }
     @MainActor func testNewsAlertsOnceWithItsComputerAndSound() async throws {
         var switches = allOn; switches[PhonePreferenceKey.notifySound] = true
-        let (_, alerts, _) = try await fixture([("a", "running", [], false), ("b", "running", [], false)], switches: switches)
+        let (model, alerts, _) = try await fixture([("a", "running", [], false), ("b", "running", [], false)], switches: switches)
+        XCTAssertEqual(model.status(laptop), .online, "The laptop is connected before anything is pushed")
+        XCTAssertNil(model.feedback)
+        XCTAssertTrue(model.preferences.notifyNeedsYou && model.preferences.notifySound)
+        XCTAssertNotNil(model.alerts)
         try push([("a", "running", ["r1"], false), ("b", "running", [], false)])
+        XCTAssertNil(model.feedback, "The pushed list was accepted")
+        XCTAssertEqual(model.thread(ThreadRef(hostID: laptop, threadID: "a"))?.requests.map(\.id), ["r1"], "The pushed list reached the model")
         XCTAssertEqual(alerts.posted.map(\.alert.kind), [.question])
         XCTAssertEqual(alerts.posted.first?.alert.body, "Claude Code is asking a question on LAPTOP-RUSSH2J5.")
         XCTAssertEqual(alerts.posted.first?.alert.title, "Thread a")
