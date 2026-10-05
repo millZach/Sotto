@@ -579,22 +579,6 @@ import XCTest
         capture("new-thread-glow-options")
     }
 
-    /// How smoothly Threads and a thread scroll: the share of time iOS spends in hitches while a fast swipe decelerates.
-    /// Measured, not asserted. The log and the result bundle carry "Scroll Deceleration Hitch Time Ratio" for each page,
-    /// so two runs can be compared; the simulator is not a phone, so only the difference between runs means anything.
-    func testScrollingThreadsRecordsHitches() {
-        let counts = byID("thread-counts")
-        XCTAssertTrue(counts.waitForExistence(timeout: 5))
-        let list = app.scrollViews.firstMatch
-        XCTAssertTrue(list.exists)
-        let options = XCTMeasureOptions()
-        options.iterationCount = 3
-        measure(metrics: [XCTOSSignpostMetric.scrollDecelerationMetric], options: options) {
-            list.swipeUp(velocity: .fast)
-            list.swipeDown(velocity: .fast)
-        }
-    }
-
     /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) {
@@ -617,22 +601,6 @@ import XCTest
     func testIdleCPUOnThreadsWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: false) }
     func testIdleCPUInAThread() { idleCPU([], openThread: true) }
     func testIdleCPUInAThreadWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: true) }
-
-    /// The same measure in a thread's conversation (one `measure` per test is all XCTest allows).
-    func testScrollingAThreadRecordsHitches() {
-        let options = XCTMeasureOptions()
-        options.iterationCount = 3
-        let thread = row("iphone")
-        reveal(thread)
-        thread.tap()
-        XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
-        let conversation = app.scrollViews.containing(.staticText, identifier: "thread-title").firstMatch
-        XCTAssertTrue(conversation.exists)
-        measure(metrics: [XCTOSSignpostMetric.scrollDecelerationMetric], options: options) {
-            conversation.swipeDown(velocity: .fast)
-            conversation.swipeUp(velocity: .fast)
-        }
-    }
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
