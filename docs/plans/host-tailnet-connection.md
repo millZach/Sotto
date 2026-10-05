@@ -33,6 +33,9 @@ Implementation shapes the ADRs leave open, recorded here so the pull requests ag
 ## 2. The unit
 
 ```
+[Unit]
+StartLimitIntervalSec=120
+StartLimitBurst=5
 [Service]
 ExecStart=/bin/sh %h/.local/share/sotto-host/boot-start.sh
 Environment=SOTTO_HOST_STARTED_BY=boot
@@ -57,7 +60,7 @@ WantedBy=default.target
 
 A launch checks the unit before it spawns anything:
 
-- Unit enabled, `Linger=yes`: if `systemctl --user is-active sotto-host` says active, it finds and reuses that host. Otherwise it runs `discover()` first and reuses a running host with the expected `hostId`, the state `boot-install` leaves when the running host is not Sotto's; only when none runs does it run `systemctl --user start sotto-host` and wait for the host. It never spawns a detached host. A host refused because another live host holds the lock (`src/host/lock.ts`'s `heldMessage` refusal, and only that one) exits with its own code, 75, which the unit lists in `RestartPreventExitStatus=`, so a unit that loses the lock stops rather than retrying every 5 seconds, below systemd's start limit. Every other `HostLockError`, including the reclaim contention whose message says to wait a moment and start again, keeps exit code 1, so `Restart=on-failure` retries it.
+- Unit enabled, `Linger=yes`: if `systemctl --user is-active sotto-host` says active, it finds and reuses that host. Otherwise it runs `discover()` first and reuses a running host with the expected `hostId`, the state `boot-install` leaves when the running host is not Sotto's; only when none runs does it run `systemctl --user start sotto-host` and wait for the host. It never spawns a detached host. A host refused because another live host holds the lock (`src/host/lock.ts`'s `heldMessage` refusal, and only that one) exits with its own code, 75, which the unit lists in `RestartPreventExitStatus=`, so a unit that loses the lock stops rather than retrying every 5 seconds, below systemd's start limit. Every other `HostLockError`, including the reclaim contention whose message says to wait a moment and start again, keeps exit code 1, so `Restart=on-failure` retries it. The `[Unit]` start limit (5 starts in 120 seconds, which a 5-second cadence reaches) stops the refusals waiting cannot fix, such as an empty `host-listener.lock` left by a crash between `open(path, 'wx')` and its write, and any other crash loop.
 - Unit enabled, `Linger=no`: the launch's own sign-in may have started the unit through `default.target`. It runs `systemctl --user disable --now sotto-host`, which stops the unit's host if one is running and keeps `Restart=on-failure` from bringing it back, then spawns a detached host as today. The unit's files stay. Its result reports start at boot as off (`enabled: false, linger: false`) with the `fix` line. The stop asks no busy-host question, so turns in progress on the unit's host stop once; ADR-0054's consequences say so.
 - Unit not enabled: today's launch.
 
@@ -143,6 +146,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
      - unit enabled, `Linger=yes`, `is-active` active: the launch reuses the unit's host, runs no `start` and spawns nothing;
      - unit enabled, `Linger=yes`, inactive, no host running: `start sotto-host`, then the host the unit started, and no detached spawn;
      - unit enabled, `Linger=yes`, inactive, with a host Sotto did not start holding the lock: the launch reuses that host, runs no `start` and spawns nothing;
+     - the written unit carries `StartLimitIntervalSec=120` and `StartLimitBurst=5` under `[Unit]`;
      - a host refused because another live host holds the lock exits with code 75, and a host refused by reclaim contention (another host kept its turn to clear the lock, or hosts kept taking and releasing it) exits with 1;
      - unit enabled, `Linger=no`, with the fake unit's host running: `disable --now sotto-host` before one detached spawn, the unit's host gone, the unit's files still there, and the result reporting start at boot off with the `fix` line;
      - `boot-install` with `Linger=no` and `enable-linger` refused never calls `enable`;
