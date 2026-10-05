@@ -164,7 +164,10 @@
 .thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }
 .thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
 .thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
-.thread-nav__provider { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after it. */
+.thread-nav__provider { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
+.thread-nav__provider .thread-nav__model { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .thread-nav__metadata .thread-nav__status { display: block; margin-left: auto; min-width: 0; flex-shrink: 0; max-width: 70%; text-overflow: ellipsis; }
 .thread-nav__model, .thread-nav__copy-kind { display: none; }
 .thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
