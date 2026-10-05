@@ -152,6 +152,10 @@ class AppModel(
 
     init { loadComputers() }
 
+    // Runs an action in the model's own scope, so it finishes even when the screen that started it goes
+    // away: pairing replaces the pairing screen with the tabs, and leaving a thread must not cut off a reply.
+    fun launch(action: suspend AppModel.() -> Unit): Job = scope.launch { action() }
+
     // MARK: Reading
 
     fun computer(hostID: String): SavedComputer? = computers.firstOrNull { it.hostID == hostID }

@@ -153,7 +153,7 @@ fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove ${computer.name}?") },
             text = { Text("This phone stops showing its threads. If ${computer.name} can’t be reached, remove this phone there too: in Settings › Phones, or with a host’s --revoke-client command.") },
-            confirmButton = { TextButton(onClick = { confirmRemove = false; scope.launch { model.remove(hostID) } }) { Text("Remove from this phone", color = p.danger) } },
+            confirmButton = { TextButton(onClick = { confirmRemove = false; model.launch { remove(hostID) } }) { Text("Remove from this phone", color = p.danger) } },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
             containerColor = p.surface,
         )
@@ -185,7 +185,6 @@ private fun answers(model: AppModel, hostID: String, status: ComputerStatus) = w
 @Composable
 private fun StatusCard(model: AppModel, hostID: String, status: ComputerStatus) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ComputerDot(status, 10.dp)
@@ -194,7 +193,7 @@ private fun StatusCard(model: AppModel, hostID: String, status: ComputerStatus) 
         if (status == ComputerStatus.Unreachable) {
             Text(model.problem(hostID) ?: "Check that it’s on and that Tailscale is connected on this phone.", style = figtree(15), color = p.muted)
             Text("Work carries on there. Your drafts are kept.", style = figtree(15), color = p.muted)
-            ActionButton("Reconnect", { scope.launch { model.connect(hostID) } },
+            ActionButton("Reconnect", { model.launch { connect(hostID) } },
                 Modifier.semantics { contentDescription = "Reconnect to ${model.name(hostID)}" }, wide = true)
         }
     }

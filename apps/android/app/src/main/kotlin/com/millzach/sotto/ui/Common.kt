@@ -32,7 +32,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -54,7 +53,6 @@ import com.millzach.sotto.core.ComputerStatus
 import com.millzach.sotto.core.HostedThread
 import com.millzach.sotto.core.Stamp
 import com.millzach.sotto.core.ThreadState
-import kotlinx.coroutines.launch
 
 object Words {
     fun provider(id: String?): String =
@@ -208,7 +206,6 @@ fun FeedbackBanner(model: AppModel, modifier: Modifier = Modifier) {
 @Composable
 fun ComputerBanner(model: AppModel, hostID: String, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     if (model.status(hostID) == ComputerStatus.Unreachable) {
         Row(
             modifier.fillMaxWidth().background(p.warningSurface, RoundedCornerShape(14.dp)).padding(12.dp),
@@ -219,7 +216,7 @@ fun ComputerBanner(model: AppModel, hostID: String, modifier: Modifier = Modifie
                 Text("Can’t reach ${model.name(hostID)}", style = figtree(16, FontWeight.SemiBold), color = p.ink)
                 Text("Work carries on there. Your drafts are kept.", style = figtree(14), color = p.muted)
             }
-            PlainButton("Reconnect", { scope.launch { model.connect(hostID) } },
+            PlainButton("Reconnect", { model.launch { connect(hostID) } },
                 Modifier.semantics { contentDescription = "Reconnect to ${model.name(hostID)}" })
         }
     } else {

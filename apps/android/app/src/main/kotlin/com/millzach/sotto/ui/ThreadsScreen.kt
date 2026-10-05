@@ -29,7 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Laptop
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -242,14 +242,13 @@ private fun ComputerMenu(model: AppModel) {
 @Composable
 private fun ConnectionNote(model: AppModel, computer: ComputerThreads) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     Column(Modifier.padding(top = 12.dp)) {
         Text(
             if (computer.status == ComputerStatus.Connecting) "Checking ${computer.name}…" else "Can’t reach ${computer.name}. Showing its last shared threads.",
             style = figtree(13), color = p.muted,
         )
         if (computer.status == ComputerStatus.Unreachable) {
-            TextButton(onClick = { scope.launch { model.connect(computer.hostID) } }) {
+            TextButton(onClick = { model.launch { connect(computer.hostID) } }) {
                 Text("Reconnect to ${computer.name}", style = figtree(14), color = p.accent)
             }
         }
@@ -291,7 +290,7 @@ private fun QuestionRow(row: HostedThread, modifier: Modifier) {
         Box(Modifier.width(2.dp).fillMaxHeight().background(p.warning))
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.HelpOutline, contentDescription = null, tint = p.warning, modifier = Modifier.size(14.dp))
+                Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null, tint = p.warning, modifier = Modifier.size(14.dp))
                 Text(" Needs you", style = figtree(12), color = p.warning)
             }
             Text(row.thread.title, style = figtree(16, FontWeight.SemiBold), color = p.ink, maxLines = 3)
@@ -370,7 +369,6 @@ private fun RecentRow(row: HostedThread, unread: Boolean, modifier: Modifier) {
 @Composable
 fun CreationPendingRow(model: AppModel, operation: PendingOperation, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     var dismissing by remember { mutableStateOf(false) }
     Card(modifier) {
         Text(
@@ -378,7 +376,7 @@ fun CreationPendingRow(model: AppModel, operation: PendingOperation, modifier: M
             style = figtree(16, FontWeight.SemiBold), color = p.ink,
         )
         Text("Nothing was resent. Check this computer before trying again.", style = figtree(14), color = p.muted)
-        PlainButton("Check again", { scope.launch { model.checkDelivery(operation.hostID) } }, enabled = model.online(operation.hostID))
+        PlainButton("Check again", { model.launch { checkDelivery(operation.hostID) } }, enabled = model.online(operation.hostID))
         TextButton(onClick = { dismissing = true }) { Text("Dismiss unconfirmed action", style = figtree(15), color = p.accent) }
     }
     if (dismissing) {

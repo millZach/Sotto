@@ -52,14 +52,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,7 +84,6 @@ import com.millzach.sotto.core.RequestOption
 import com.millzach.sotto.core.ThreadDetail
 import com.millzach.sotto.core.ThreadRef
 import com.millzach.sotto.core.ThreadSummary
-import kotlinx.coroutines.launch
 
 // One thread: its messages as a conversation, or its activity, with the reply box under both. A waiting
 // question or permission opens as a sheet; dismissed, the reply box offers it again. Everything here goes to
@@ -94,7 +91,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     var pane by rememberSaveable { mutableStateOf("Messages") }
     var open by remember { mutableStateOf<AgentRequest?>(null) }
     val setAside = remember { mutableStateMapOf<String, Boolean>() }
@@ -108,11 +104,11 @@ fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
     }
     LaunchedEffect(ref) { model.select(ref); offer() }
     LaunchedEffect(thread?.requests?.map { it.id }) { offer() }
-    BackHandler { scope.launch { if (model.selected == ref) model.select(null) }; close() }
+    BackHandler { model.launch { if (selected == ref) select(null) }; close() }
 
     Column(Modifier.fillMaxSize().background(p.canvas).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { scope.launch { if (model.selected == ref) model.select(null) }; close() }) {
+            IconButton(onClick = { model.launch { if (selected == ref) select(null) }; close() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to threads", tint = p.ink)
             }
             Text(model.name(ref.hostID), style = figtree(16, FontWeight.SemiBold), color = p.ink, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
@@ -139,7 +135,7 @@ fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
         if (problem != null && model.online(ref.hostID)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(problem, style = figtree(16), color = p.muted)
-                PlainButton("Try again", { scope.launch { model.select(ref) } })
+                PlainButton("Try again", { model.launch { select(ref) } })
             }
         }
         Box(Modifier.weight(1f)) {
@@ -163,7 +159,6 @@ fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
 @Composable
 private fun MessagesPane(model: AppModel, ref: ThreadRef, detail: ThreadDetail?, thread: ThreadSummary?) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     val online = model.online(ref.hostID)
     val list = rememberLazyListState()
     var dismissMarker by remember { mutableStateOf<PendingOperation?>(null) }
@@ -180,7 +175,7 @@ private fun MessagesPane(model: AppModel, ref: ThreadRef, detail: ThreadDetail?,
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (detail?.earlierAvailable == true || thread?.earlierAvailable == true) item {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                PlainButton("Show earlier messages", { scope.launch { model.earlier(ref) } }, enabled = online)
+                PlainButton("Show earlier messages", { model.launch { earlier(ref) } }, enabled = online)
             }
         }
         if (detail != null) {
@@ -255,7 +250,6 @@ private fun MessageContent(message: Message, ink: androidx.compose.ui.graphics.C
 @Composable
 private fun UnconfirmedRow(model: AppModel, item: PendingOperation, text: String?, dismiss: () -> Unit) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (text != null) {
             Text(
@@ -277,7 +271,7 @@ private fun UnconfirmedRow(model: AppModel, item: PendingOperation, text: String
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PlainButton("I checked", dismiss)
-            PlainButton("Check again", { scope.launch { model.checkDelivery(item.hostID) } }, enabled = model.online(item.hostID))
+            PlainButton("Check again", { model.launch { checkDelivery(item.hostID) } }, enabled = model.online(item.hostID))
         }
     }
 }
@@ -341,7 +335,6 @@ private fun ActivityRow(record: Activity) {
 @Composable
 private fun Composer(model: AppModel, ref: ThreadRef, openRequest: (AgentRequest) -> Unit) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     val requests = model.thread(ref)?.requests ?: emptyList()
     Column(Modifier.fillMaxWidth().background(p.canvas).navigationBarsPadding()) {
         Hairline()
@@ -387,12 +380,12 @@ private fun Composer(model: AppModel, ref: ThreadRef, openRequest: (AgentRequest
                 HGap(8.dp)
                 if (model.canInterrupt(ref)) {
                     IconButton(
-                        onClick = { scope.launch { model.interrupt(ref) } },
+                        onClick = { model.launch { interrupt(ref) } },
                         modifier = Modifier.size(44.dp).background(p.raised, CircleShape),
                     ) { Icon(Icons.Filled.Stop, contentDescription = "Stop this turn", tint = p.ink) }
                 } else {
                     IconButton(
-                        onClick = { scope.launch { model.send(ref) } }, enabled = canSend,
+                        onClick = { model.launch { send(ref) } }, enabled = canSend,
                         modifier = Modifier.size(44.dp).background(if (canSend) p.action else p.raised, CircleShape),
                     ) { Icon(Icons.Filled.ArrowUpward, contentDescription = "Send reply", tint = if (canSend) p.actionInk else p.muted) }
                 }
@@ -409,8 +402,6 @@ private fun Composer(model: AppModel, ref: ThreadRef, openRequest: (AgentRequest
 @Composable
 private fun RequestSheet(model: AppModel, ref: ThreadRef, request: AgentRequest, dismiss: () -> Unit) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val answers = remember { mutableStateMapOf<String, QuestionAnswer>() }
     var choice by remember { mutableStateOf<String?>(null) }
     var text by remember { mutableStateOf("") }
@@ -420,12 +411,12 @@ private fun RequestSheet(model: AppModel, ref: ThreadRef, request: AgentRequest,
     val current = thread?.requests?.firstOrNull { it.id == request.id }
     LaunchedEffect(current == null && model.pending(ref).isEmpty()) { if (current == null && model.pending(ref).isEmpty()) dismiss() }
 
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheet, containerColor = p.surface) {
+    ModalBottomSheet(onDismissRequest = dismiss, containerColor = p.surface) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (current == null || thread == null) {
+            if (current == null) {
                 Text("This request was answered or changed.", style = figtree(17, FontWeight.SemiBold), color = p.ink)
                 PlainButton("Close", dismiss, wide = true)
                 return@Column
@@ -446,13 +437,13 @@ private fun RequestSheet(model: AppModel, ref: ThreadRef, request: AgentRequest,
                     val choices = current.permissionChoices
                     if (choices != null) {
                         choices.sortedBy { rank(it) }.forEach { option ->
-                            val send = { scope.launch { model.answer(current, ref, choice = option.id) }; Unit }
+                            val send = { model.launch { answer(current, ref, choice = option.id) }; Unit }
                             if (option.kind == "allow-once") ChoiceAction(option, send, enabled, primary = true)
                             else ChoiceAction(option, send, enabled, primary = false)
                         }
                     } else {
-                        ActionButton("Allow", { scope.launch { model.answer(current, ref, choice = "allow") } }, enabled = enabled, wide = true)
-                        PlainButton("Deny", { scope.launch { model.answer(current, ref, choice = "deny") } }, enabled = enabled, wide = true)
+                        ActionButton("Allow", { model.launch { answer(current, ref, choice = "allow") } }, enabled = enabled, wide = true)
+                        PlainButton("Deny", { model.launch { answer(current, ref, choice = "deny") } }, enabled = enabled, wide = true)
                     }
                 }
                 else -> {
@@ -472,11 +463,12 @@ private fun RequestSheet(model: AppModel, ref: ThreadRef, request: AgentRequest,
                         ActionButton(
                             "Send answer",
                             {
-                                scope.launch {
+                                val picked = answers.toMap()
+                                model.launch {
                                     when {
-                                        !current.questions.isNullOrEmpty() -> model.answer(current, ref, answers = answers.toMap())
-                                        current.options.isNotEmpty() -> model.answer(current, ref, choice = choice)
-                                        else -> model.answer(current, ref, text = text)
+                                        !current.questions.isNullOrEmpty() -> answer(current, ref, answers = picked)
+                                        current.options.isNotEmpty() -> answer(current, ref, choice = choice)
+                                        else -> answer(current, ref, text = text)
                                     }
                                 }
                             },

@@ -117,7 +117,7 @@ object NewThreads {
         val offered = model.reasoningEfforts
         if (desired.isNullOrEmpty() || offered.isNullOrEmpty()) return model.startingEffort
         if (desired in offered) return desired
-        val reference = shell.host.models?.firstOrNull { it.id == shell.configuration?.newThreadModelId }?.reasoningEfforts ?: offered
+        val reference = shell.host.models?.firstOrNull { it.id == shell.configuration.newThreadModelId }?.reasoningEfforts ?: offered
         val position = reference.indexOf(desired)
         if (position < 0 || reference.size < 2) return model.startingEffort
         return offered[Math.round(position.toDouble() / (reference.size - 1) * (offered.size - 1)).toInt()]

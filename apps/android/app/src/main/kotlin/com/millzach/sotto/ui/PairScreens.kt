@@ -28,7 +28,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,7 +51,6 @@ import androidx.compose.ui.unit.sp
 import com.millzach.sotto.app.AppModel
 import com.millzach.sotto.app.FoundHost
 import com.millzach.sotto.core.PairingCode
-import kotlinx.coroutines.launch
 
 // Adding a computer in two steps: find it by its name on the tailnet, then enter the code it shows.
 // Full screen until one computer is paired; after that, Add computer over the tabs.
@@ -85,10 +83,9 @@ private fun PairFeedback(model: AppModel) {
 @Composable
 private fun NameStep(model: AppModel) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf("") }
     val focus = remember { FocusRequester() }
-    fun find() { if (name.isNotBlank()) scope.launch { model.find(name) } }
+    fun find() { if (name.isNotBlank()) model.launch { find(name) } }
     Column(Modifier.fillMaxSize().imePadding()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 48.dp),
@@ -120,16 +117,12 @@ private fun NameStep(model: AppModel) {
 @Composable
 private fun CodeStep(model: AppModel, found: FoundHost) {
     val p = LocalPalette.current
-    val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf("") }
     var focused by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     fun pair() {
         if (code.length != PairingCode.LENGTH) return
-        scope.launch {
-            model.pair(code)
-            if (model.found == null) code = ""
-        }
+        model.launch { pair(code) }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         Column(
