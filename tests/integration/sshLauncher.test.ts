@@ -43,6 +43,9 @@ async function failure(promise: Promise<unknown>): Promise<SshFailure> {
   return error as SshFailure
 }
 
+// This is a readiness and ownership journey, not a latency assertion. Windows compiles the askpass helper
+// with its own 15-second budget before four real SSH children connect, verify and close. Match the existing
+// password journey's deadline so a loaded runner cannot fail the whole journey at the helper's deadline.
 it.each(['started', 'discovered'])('discovers readiness, verifies the forward and leaves the host running on close: %s', async mode => {
   const { launcher, spawns } = await fixture(mode)
   const status: string[] = []
@@ -59,7 +62,7 @@ it.each(['started', 'discovered'])('discovers readiness, verifies the forward an
   // -G, launch, forward, pairing code: four ssh processes, and only the forward outlives its answer.
   expect(spawned.map(item => item.resolve ? 'resolve' : item.tunnel ? 'forward' : item.op)).toEqual(['resolve', 'launch', 'forward', 'pairing-code'])
   expect(spawned.find(item => item.tunnel)?.args).toContainEqual(expect.stringMatching(/^127\.0\.0\.1:\d+:127\.0\.0\.1:4317$/u))
-})
+}, 150_000)
 it('starts the sign-in deadline after the askpass helper is ready', async () => {
   const { launcher } = await fixture('started', { authenticationTimeoutMs: 10_000 })
   const preparing = Promise.withResolvers<void>(), ready = Promise.withResolvers<void>()
