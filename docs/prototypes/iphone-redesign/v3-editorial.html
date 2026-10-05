@@ -1,0 +1,1463 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Variant 3 of 5: Editorial.
+
+  Typography carries the hierarchy. One strict Figtree scale (34 / 26 / 20 / 17 / 16 / 15 / 13 / 11) with
+  weight and tracking chosen per role: heavy, tight display headings that condense into the nav bar as you
+  scroll; airy tracked section labels with a hairline running to their count; a 16 px reading size at 1.55
+  for messages. Everything sits on an 8-pt rhythm and a 24 px gutter. There are no cards: rows are divided
+  by hairlines, and importance comes from surface contrast (the Needs you band, raised sheets, filled
+  fields) and from small doses of theme colour that mean something: a coloured rail at a row's edge, a
+  coloured status word, and the accent on the one thing to press. Motion is crisp: the list reveals in a
+  short stagger, screens push and slide with the page, sheets rise, and a sent answer leaves the list.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · Sotto iPhone · Editorial</title>
+<style>
+@font-face { font-family: Figtree; src: url(../../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2"); font-weight: 300 900; }
+
+/* ---------- Scales: type and space. Nothing below uses a size outside these. ---------- */
+:root {
+  --ts: 1;                                   /* text size step, set from Settings */
+  --f-display: calc(34px * var(--ts));       /* large page titles */
+  --f-title:   calc(26px * var(--ts));       /* a thread's title */
+  --f-heading: calc(20px * var(--ts));       /* sheet and step headings */
+  --f-row:     calc(17px * var(--ts));       /* row titles, field values, nav titles */
+  --f-body:    calc(16px * var(--ts));       /* reading: messages, questions */
+  --f-small:   calc(15px * var(--ts));       /* secondary lines, buttons */
+  --f-meta:    calc(13px * var(--ts));       /* who, where, when */
+  --f-label:   calc(11px * var(--ts));       /* section labels */
+  --f-mono:    calc(13px * var(--ts));
+  --lh-tight: 1.08; --lh-snug: 1.3; --lh-read: 1.55;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --s-h: 4px;  --s-1: 8px;  --s-2: 16px; --s-3: 24px; --s-4: 32px; --s-5: 40px; --s-6: 48px; --s-8: 64px;
+  --gutter: var(--s-3);
+  --tap: 44px;
+  --rail: 3px;
+  --nav-h: 44px;
+  --tab-h: calc(56px + max(env(safe-area-inset-bottom), 8px));
+  --kb-h: calc(296px + env(safe-area-inset-bottom));
+  --kb: 0px;
+
+  /* density (Settings) */
+  --row-y: var(--s-2);
+  --msg-gap: var(--s-4);
+
+  --ease: cubic-bezier(.2, .75, .15, 1);
+  --ease-io: cubic-bezier(.6, 0, .25, 1);
+  --t-push: 420ms;
+  --t-sheet: 440ms;
+
+  /* derived roles, all from the theme */
+  --rule: color-mix(in oklch, var(--border) 78%, transparent);
+  --rule-strong: var(--border);
+  --press: color-mix(in oklch, var(--ink) 7%, transparent);
+  --accent-text: var(--accent);
+  --warn-ink: var(--warning);
+  --danger-ink: var(--danger);
+  --knob: var(--ink);
+  --veil: color-mix(in oklch, var(--canvas) 78%, transparent);
+}
+:root[data-appearance="light"] {
+  --accent-text: color-mix(in oklch, var(--accent) 78%, var(--ink));
+  --warn-ink: color-mix(in oklch, var(--warning) 52%, var(--ink));
+  --danger-ink: color-mix(in oklch, var(--danger) 72%, var(--ink));
+  --knob: var(--surface);
+}
+:root[data-density="compact"] { --row-y: var(--s-1); --msg-gap: var(--s-2); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--canvas); color: var(--ink);
+  font-family: Figtree, -apple-system, system-ui, sans-serif; font-size: var(--f-body);
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  overflow: hidden; -webkit-text-size-adjust: 100%;
+  font-optical-sizing: auto;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; -webkit-user-select: none; user-select: none; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3, p { margin: 0; }
+[hidden] { display: none !important; }
+.tnum { font-variant-numeric: tabular-nums; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- Frame ---------- */
+#phone { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; overflow: clip; background: var(--canvas); }
+.statusbar {
+  flex: none; position: relative; z-index: 400; height: calc(50px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 28px 0 40px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: var(--ink); background: var(--canvas);
+}
+.statusbar .icons { display: flex; align-items: center; gap: 6px; }
+.statusbar svg { display: block; }
+#stage { position: relative; flex: 1; overflow: hidden; overflow: clip; }
+
+/* ---------- Screens ---------- */
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--canvas); overflow: hidden; overflow: clip; }
+.tabscreen { z-index: 1; transition: transform var(--t-push) var(--ease), opacity 260ms ease; }
+.tabscreen::after { content: ""; position: absolute; inset: 0; background: rgba(0,0,0,.28); opacity: 0; pointer-events: none; transition: opacity var(--t-push) var(--ease); z-index: 20; }
+.tabscreen.behind { transform: translateX(-30%); }
+.tabscreen.behind::after { opacity: 1; }
+.tabscreen.off { visibility: hidden; opacity: 0; }
+.tabscreen.arrive { animation: arrive 320ms var(--ease) both; }
+@keyframes arrive { from { opacity: 0; transform: translateY(8px); } }
+
+.pushed { z-index: 10; transform: translateX(100%); visibility: hidden; box-shadow: -16px 0 40px rgba(0,0,0,.28);
+  transition: transform var(--t-push) var(--ease), visibility 0s linear var(--t-push); }
+.pushed.in { transform: none; visibility: visible; transition: transform var(--t-push) var(--ease), visibility 0s; }
+
+.navbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--nav-h); z-index: 5;
+  display: grid; grid-template-columns: minmax(var(--tap), auto) 1fr minmax(var(--tap), auto); align-items: center; padding: 0 var(--s-1);
+  transition: background-color 200ms ease;
+}
+.navbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--rule); opacity: 0; transition: opacity 200ms ease; }
+.condensed .navbar, .compact .navbar { background: color-mix(in oklch, var(--surface) 93%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); }
+.condensed .navbar::after, .compact .navbar::after { opacity: 1; }
+.nav-title { grid-column: 2; justify-self: center; min-width: 0; max-width: 100%; font-size: var(--f-row); font-weight: 700; letter-spacing: -.012em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateY(8px); transition: opacity 220ms ease, transform 260ms var(--ease); }
+.condensed .nav-title, .compact .nav-title { opacity: 1; transform: none; }
+#scr-thread .nav-title { justify-self: stretch; display: flex; align-items: baseline; gap: var(--s-1); padding-right: var(--s-1); }
+#scr-thread .nav-title .ct { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#scr-thread .nav-title .word { flex: none; margin: 0; font-size: var(--f-meta); }
+#scr-thread .navbar { grid-template-columns: auto 1fr; }
+.back-btn .bl { transition: opacity 200ms ease, max-width 260ms var(--ease); max-width: 120px; overflow: hidden; white-space: nowrap; }
+.condensed .back-btn .bl, .compact .back-btn .bl { opacity: 0; max-width: 0; }
+.nav-end { grid-column: 3; justify-self: end; display: flex; }
+
+.scroller { position: relative; flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+  padding-top: var(--nav-h); padding-bottom: calc(var(--tab-h) + var(--s-5)); }
+
+.mast { padding: 0 var(--gutter); }
+.largetitle {
+  font-size: var(--f-display); font-weight: 800; letter-spacing: -.034em; line-height: var(--lh-tight);
+  transform-origin: 0 100%;
+  transform: translateY(calc(var(--p, 0) * 6px)) scale(calc(1 - var(--p, 0) * .12)); opacity: calc(1 - var(--p, 0) * .95);
+}
+.standfirst { margin-top: var(--s-1); font-size: var(--f-small); line-height: var(--lh-snug); color: var(--muted); font-weight: 450; }
+.standfirst b { font-weight: 750; font-variant-numeric: tabular-nums; }
+.c-accent { color: var(--accent-text); } .c-warn { color: var(--warn-ink); } .c-danger { color: var(--danger-ink); } .c-muted { color: var(--muted); }
+
+/* ---------- Buttons ---------- */
+.press { transition: transform 140ms var(--ease), background-color 160ms ease, opacity 160ms ease, color 160ms ease, border-color 160ms ease; }
+.press:active:not(:disabled) { transform: scale(.965); }
+.btn { min-height: var(--tap); padding: 0 var(--s-2); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-1);
+  font-size: var(--f-small); font-weight: 680; letter-spacing: -.005em; white-space: nowrap; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:disabled { background: color-mix(in oklch, var(--ink) 12%, transparent); color: var(--muted); }
+.btn-line { border: 1px solid var(--rule-strong); color: var(--ink); }
+.btn-danger { border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent); color: var(--danger-ink); }
+.btn-text { color: var(--accent-text); padding: 0 var(--s-1); font-weight: 650; }
+.btn-wide { width: 100%; min-height: 52px; font-size: var(--f-row); border-radius: 14px; }
+.icon-btn { width: var(--tap); height: var(--tap); display: grid; place-items: center; border-radius: 50%; }
+.plus-btn { width: var(--tap); height: var(--tap); display: grid; place-items: center; }
+.plus-btn span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 4px 14px color-mix(in oklch, var(--accent) 35%, transparent); transition: transform 160ms var(--ease); }
+.plus-btn:active span { transform: scale(.88) rotate(90deg); }
+.back-btn { height: var(--tap); display: inline-flex; align-items: center; gap: 2px; padding-right: var(--s-1); color: var(--accent-text); font-size: var(--f-row); font-weight: 560; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Threads ---------- */
+.selector { margin-top: var(--s-1); height: var(--tap); display: inline-flex; align-items: center; gap: var(--s-h); margin-left: calc(-1 * var(--s-1)); padding: 0 var(--s-1);
+  border-radius: 10px; font-size: var(--f-small); font-weight: 680; color: var(--ink); }
+.selector svg { color: var(--muted); transition: transform 220ms var(--ease); }
+.selector[aria-expanded="true"] svg { transform: rotate(180deg); }
+.search { margin-top: var(--s-2); display: flex; align-items: center; gap: var(--s-1); height: var(--tap); padding: 0 var(--s-1) 0 var(--s-2);
+  background: var(--surface); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--rule); transition: box-shadow 200ms ease, background-color 200ms ease; }
+.search:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--raised); }
+.search svg { color: var(--muted); flex: none; }
+.search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-size: var(--f-body); }
+.search input::placeholder { color: var(--placeholder); }
+.search input::-webkit-search-cancel-button, .search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.search .clear { width: 36px; height: 36px; display: grid; place-items: center; color: var(--muted); border-radius: 50%; }
+
+.note { position: relative; margin-top: var(--s-2); padding: 0 var(--s-1) 0 var(--gutter); display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s-2); }
+.note::before { content: ""; position: absolute; left: 0; top: var(--s-h); bottom: var(--s-h); width: var(--rail); background: var(--danger); border-radius: 0 2px 2px 0; }
+.note p { flex: 1 1 200px; min-width: 0; font-size: var(--f-meta); line-height: var(--lh-snug); color: var(--muted); }
+.note p b { font-weight: 700; color: var(--danger-ink); }
+.note .btn-text { flex: none; }
+
+.sec { margin-top: var(--s-4); }
+.sec-h { display: flex; align-items: center; gap: var(--s-2); height: var(--s-5); padding: 0 var(--gutter);
+  font-size: var(--f-label); font-weight: 720; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.sec-h .rule { flex: 1; height: 1px; background: var(--rule); }
+.sec-h .n { letter-spacing: 0; font-variant-numeric: tabular-nums; font-size: var(--f-meta); font-weight: 700; }
+.sec[data-tone="warn"] .sec-h { color: var(--warn-ink); }
+.sec[data-tone="accent"] .sec-h { color: var(--accent-text); }
+.sec-band { background: color-mix(in oklch, var(--warning-surface) 48%, var(--canvas)); border-block: 1px solid color-mix(in oklch, var(--warning) 22%, transparent); padding-bottom: var(--s-1); }
+.sec-band .sec-h .rule { background: color-mix(in oklch, var(--warning) 28%, transparent); }
+
+.row { position: relative; --tone: transparent; }
+.row::before { content: ""; position: absolute; left: 0; top: var(--row-y); bottom: var(--row-y); width: var(--rail); border-radius: 0 2px 2px 0; background: var(--tone); }
+.row + .row::after, .row-sep::after { content: ""; position: absolute; top: 0; left: var(--gutter); right: 0; height: 1px; background: var(--rule); }
+.row[data-tone="warn"] { --tone: var(--warning); } .row[data-tone="accent"] { --tone: var(--accent); } .row[data-tone="danger"] { --tone: var(--danger); }
+.row-hit { display: block; width: 100%; padding: var(--row-y) var(--gutter); transition: background-color 160ms ease; }
+.row-hit:active { background: var(--press); }
+.row-top { display: flex; align-items: baseline; gap: var(--s-2); }
+.row-title { flex: 1; min-width: 0; font-size: var(--f-row); font-weight: 650; letter-spacing: -.012em; line-height: var(--lh-snug);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row-time { flex: none; font-size: var(--f-meta); color: var(--muted); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: var(--s-1); }
+.row-time.live { color: var(--accent-text); font-weight: 650; }
+.row-line { display: block; margin-top: var(--s-h); font-size: var(--f-small); line-height: var(--lh-snug); color: color-mix(in oklch, var(--ink) 86%, var(--muted)); overflow-wrap: break-word; }
+.row-meta { display: block; margin-top: var(--s-h); font-size: var(--f-meta); color: var(--muted); }
+.word { font-weight: 720; margin-right: var(--s-1); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent); }
+.live-text { transition: opacity 260ms ease, transform 260ms var(--ease); display: inline-block; }
+.live-text.swap { opacity: 0; transform: translateY(-6px); }
+.row-line code, .inline-code { font-family: var(--mono); font-size: .9em; background: var(--code-bg); color: var(--code-ink); border: 1px solid var(--rule); border-radius: 5px; padding: 0 .35em; }
+
+.ind { display: block; height: 2px; margin-top: var(--s-1); border-radius: 1px; background: color-mix(in oklch, var(--accent) 18%, transparent); position: relative; overflow: hidden; }
+.ind::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 32%; background: var(--accent); border-radius: 1px; animation: ind 1.7s var(--ease-io) infinite; }
+.row:nth-of-type(2n) .ind::after { animation-delay: -.7s; } .row:nth-of-type(3n) .ind::after { animation-delay: -1.2s; }
+@keyframes ind { from { transform: translateX(-100%); } to { transform: translateX(320%); } }
+
+.ask { padding: 0 var(--gutter) var(--row-y); }
+.ask-q { font-size: var(--f-body); font-weight: 560; line-height: var(--lh-snug); margin-bottom: var(--s-2); }
+.opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-1); }
+.opt { min-height: var(--tap); padding: 0 var(--s-1); border-radius: 12px; border: 1px solid var(--rule-strong); background: color-mix(in oklch, var(--surface) 70%, transparent);
+  font-size: var(--f-small); font-weight: 680; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); margin-top: var(--s-1); }
+.ask-actions .grow { flex: 1; }
+.reveal-h { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 300ms var(--ease); }
+.reveal-h > div { min-height: 0; overflow: hidden; }
+.reveal-h.open { grid-template-rows: 1fr; }
+.ask-send { margin-top: var(--s-1); }
+.resolved { display: flex; align-items: center; gap: var(--s-1); min-height: var(--tap); font-size: var(--f-small); font-weight: 700; color: var(--accent-text); }
+.resolved .check { animation: pop 360ms var(--ease) both; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+
+.settled-btn { display: flex; align-items: center; gap: var(--s-2); width: 100%; height: var(--s-6); padding: 0 var(--gutter);
+  font-size: var(--f-label); font-weight: 720; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.settled-btn .rule { flex: 1; height: 1px; background: var(--rule); }
+.settled-btn svg { transition: transform 260ms var(--ease); }
+.settled-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+.settled-btn:active { background: var(--press); }
+.empty { padding: var(--s-5) var(--gutter); color: var(--muted); font-size: var(--f-small); line-height: var(--lh-read); }
+.empty b { color: var(--ink); font-weight: 650; }
+
+.reveal { animation: rise 520ms var(--ease) both; animation-delay: calc(var(--i, 0) * 38ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+.arrived { animation: arrivedRow 1400ms ease both; }
+@keyframes arrivedRow { 0% { background: color-mix(in oklch, var(--accent) 16%, transparent); } 100% { background: transparent; } }
+
+/* ---------- Popover menu (computer selector) ---------- */
+.catcher { position: absolute; inset: 0; z-index: 240; }
+.popover { position: absolute; z-index: 250; min-width: 264px; padding: var(--s-1) 0; border-radius: 14px; background: var(--overlay);
+  box-shadow: 0 0 0 1px var(--rule), 0 18px 48px rgba(0,0,0,.38); transform-origin: 24px 0; animation: popIn 240ms var(--ease) both; }
+.popover.out { animation: popOut 160ms ease both; }
+@keyframes popIn { from { opacity: 0; transform: scale(.92) translateY(-6px); } }
+@keyframes popOut { to { opacity: 0; transform: scale(.96) translateY(-4px); } }
+.menu-item { display: grid; grid-template-columns: 24px 1fr; gap: var(--s-1); align-items: center; width: 100%; min-height: var(--tap); padding: var(--s-1) var(--s-2); }
+.menu-item:active { background: var(--press); }
+.menu-item .mi-label { font-size: var(--f-small); font-weight: 620; }
+.menu-item .mi-sub { display: block; font-size: var(--f-meta); color: var(--muted); font-weight: 500; margin-top: 2px; }
+.menu-item svg { color: var(--accent-text); }
+.menu-item .mi-sub.c-danger { color: var(--danger-ink); }
+.menu-sep { height: 1px; background: var(--rule); margin: var(--s-h) 0; }
+
+/* ---------- Tab bar ---------- */
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; height: var(--tab-h); padding-bottom: max(env(safe-area-inset-bottom), 8px);
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: color-mix(in oklch, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4);
+  border-top: 1px solid var(--rule); transition: transform var(--t-push) var(--ease); }
+.tabbar.behind { transform: translateX(-30%); }
+.tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted); font-size: var(--f-label); font-weight: 650; letter-spacing: .01em; }
+.tab[aria-current="page"] { color: var(--accent-text); }
+.tab[aria-current="page"]::before { content: ""; position: absolute; top: -1px; left: 34%; right: 34%; height: 2px; background: var(--accent); border-radius: 0 0 2px 2px; animation: grow 300ms var(--ease) both; }
+@keyframes grow { from { transform: scaleX(0); } }
+.tab:active .tab-ic { transform: scale(.88); }
+.tab-ic { position: relative; transition: transform 160ms var(--ease); }
+.badge { position: absolute; top: -5px; left: 16px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink);
+  font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--surface); }
+.badge.bump { animation: bump 420ms var(--ease); }
+@keyframes bump { 40% { transform: scale(1.35); } }
+
+/* ---------- Thread ---------- */
+.th-scroller { padding-bottom: var(--s-3); }
+.th-headwrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 340ms var(--ease), opacity 240ms ease; }
+.th-headwrap > div { min-height: 0; overflow: hidden; }
+.compact .th-headwrap { grid-template-rows: 0fr; opacity: 0; }
+.th-head { padding: var(--s-1) var(--gutter) 0; }
+.th-meta { font-size: var(--f-meta); color: var(--muted); font-weight: 560; }
+.th-title { margin-top: var(--s-1); font-size: var(--f-title); font-weight: 800; letter-spacing: -.026em; line-height: 1.12; text-wrap: balance;
+  transform-origin: 0 100%; transform: scale(calc(1 - var(--p, 0) * .06)); opacity: calc(1 - var(--p, 0) * .9); }
+.th-status { margin-top: var(--s-2); display: flex; align-items: center; gap: var(--s-1); font-size: var(--f-small); }
+.th-status .word { margin: 0; }
+.th-status .tnum { color: var(--muted); }
+.th-git { margin-top: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); font-size: var(--f-meta); }
+.chip { display: inline-flex; align-items: center; gap: var(--s-h); max-width: 100%; height: 28px; padding: 0 10px 0 var(--s-1); border-radius: 8px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule); font-family: var(--mono); font-size: calc(12px * var(--ts)); color: var(--ink); }
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip svg { color: var(--muted); flex: none; }
+.diff { color: var(--muted); font-variant-numeric: tabular-nums; }
+.diff b { font-weight: 700; margin-left: var(--s-h); }
+.plus { color: var(--accent-text); } .minus { color: var(--danger-ink); }
+.th-pr { display: flex; align-items: center; gap: var(--s-1); width: 100%; color: var(--muted); }
+.th-pr b { color: var(--ink); font-weight: 680; }
+.meter { display: inline-flex; gap: 3px; margin-left: auto; }
+.meter i { width: 14px; height: 4px; border-radius: 2px; background: var(--accent); }
+.meter i.run { background: color-mix(in oklch, var(--accent) 25%, transparent); position: relative; overflow: hidden; }
+.meter i.run::after { content: ""; position: absolute; inset: 0; background: var(--accent); animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .15; } }
+
+.th-tabs { position: sticky; top: 0; z-index: 3; margin-top: var(--s-3); display: flex; gap: var(--s-3); padding: 0 var(--gutter); background: var(--canvas); border-bottom: 1px solid var(--rule); }
+.th-tab { position: relative; height: var(--tap); font-size: var(--f-small); font-weight: 650; color: var(--muted); display: inline-flex; align-items: center; gap: var(--s-1); }
+.th-tab[aria-selected="true"] { color: var(--ink); font-weight: 750; }
+.th-tab .n { font-size: var(--f-meta); color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.th-ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px 2px 0 0; transition: transform 340ms var(--ease), width 340ms var(--ease); left: 0; }
+.compact .th-tabs { display: none; }
+
+.pane { padding: var(--s-3) var(--gutter) 0; }
+.m { margin-bottom: var(--msg-gap); }
+.m-who { display: flex; align-items: center; gap: var(--s-1); margin-bottom: var(--s-1); font-size: var(--f-meta); font-weight: 680; color: var(--muted); }
+.m-who i { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); }
+.m-quote { position: relative; padding: var(--s-2) var(--s-2) var(--s-2) calc(var(--s-2) + var(--rail)); background: var(--bubble); color: var(--bubble-ink);
+  border-radius: 4px 14px 14px 4px; font-size: var(--f-body); line-height: var(--lh-read); font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
+.m-quote::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--rail); background: var(--accent); border-radius: 2px; }
+.m-status { margin-top: var(--s-1); font-size: var(--f-meta); color: var(--muted); display: flex; align-items: center; gap: var(--s-1); justify-content: flex-end; min-height: 16px; }
+.m-new { animation: msgIn 420ms var(--ease) both; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(16px); } }
+
+.prose { font-size: var(--f-body); line-height: var(--lh-read); color: var(--ink); overflow-wrap: break-word; }
+.prose p { margin: 0 0 var(--s-2); }
+.prose h4 { margin: var(--s-3) 0 var(--s-1); font-size: var(--f-row); font-weight: 760; letter-spacing: -.012em; line-height: var(--lh-snug); }
+.prose h4:first-child { margin-top: 0; }
+.prose ul, .prose ol { margin: 0 0 var(--s-2); padding: 0; list-style: none; }
+.prose li { position: relative; padding-left: var(--s-3); margin-bottom: var(--s-1); }
+.prose ul > li::before { content: ""; position: absolute; left: 4px; top: .78em; width: 8px; height: 2px; border-radius: 1px; background: var(--muted); }
+.prose ol { counter-reset: n; }
+.prose ol > li { counter-increment: n; }
+.prose ol > li::before { content: counter(n); position: absolute; left: 0; top: 0; width: 16px; font-weight: 800; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.prose strong { font-weight: 700; }
+.prose em { font-style: italic; }
+.prose code { font-family: var(--mono); font-size: .86em; background: var(--code-bg); color: var(--code-ink); border: 1px solid var(--rule); border-radius: 5px; padding: .05em .35em; white-space: break-spaces; overflow-wrap: anywhere; }
+.prose kbd { display: inline-block; font-family: Figtree, sans-serif; font-size: .82em; font-weight: 700; line-height: 1.35; letter-spacing: .01em; padding: 0 .45em; margin: 0 .05em;
+  border-radius: 6px; background: var(--raised); color: var(--ink); box-shadow: inset 0 0 0 1px var(--border), inset 0 -2px 0 var(--border); white-space: nowrap; vertical-align: .08em; }
+.prose pre { margin: 0 0 var(--s-2); padding: var(--s-2); background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; }
+.prose pre code { display: block; background: none; border: 0; padding: 0; font-size: var(--f-mono); line-height: 1.6; white-space: pre; color: var(--code-ink); }
+.prose pre[data-lang]:not([data-lang=""])::before { content: attr(data-lang); display: block; margin-bottom: var(--s-1); font-family: Figtree, sans-serif; font-size: var(--f-label); font-weight: 720; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.prose > :last-child { margin-bottom: 0; }
+
+.liveline { position: relative; padding: var(--s-2) 0 var(--s-2) calc(var(--s-2) + var(--rail)); border-block: 1px solid var(--rule); font-size: var(--f-small); line-height: var(--lh-snug); }
+.liveline::before { content: ""; position: absolute; left: 0; top: var(--s-2); bottom: var(--s-2); width: var(--rail); background: var(--accent); border-radius: 2px; }
+.liveline .top { display: flex; gap: var(--s-2); align-items: baseline; }
+.liveline .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.liveline .what code { font-family: var(--mono); font-size: .88em; }
+.liveline .tnum { color: var(--accent-text); font-weight: 650; font-size: var(--f-meta); }
+.waiting { position: relative; padding: var(--s-2) 0 var(--s-2) calc(var(--s-2) + var(--rail)); border-block: 1px solid var(--rule); }
+.waiting::before { content: ""; position: absolute; left: 0; top: var(--s-2); bottom: var(--s-2); width: var(--rail); background: var(--warning); border-radius: 2px; }
+.waiting p { font-size: var(--f-small); line-height: var(--lh-snug); margin-bottom: var(--s-1); }
+.empty-thread { padding: var(--s-4) 0; }
+.empty-thread h2 { font-size: var(--f-heading); font-weight: 760; letter-spacing: -.016em; line-height: var(--lh-snug); }
+.empty-thread p { margin-top: var(--s-1); color: var(--muted); font-size: var(--f-small); line-height: var(--lh-read); }
+
+.act-sum { font-size: var(--f-small); color: var(--muted); margin-bottom: var(--s-2); }
+.act-sum b { color: var(--ink); font-weight: 700; }
+.act { position: relative; display: grid; grid-template-columns: var(--s-3) 1fr auto; gap: 0 var(--s-2); padding: var(--row-y) 0; border-top: 1px solid var(--rule); align-items: start; }
+.act::before { content: ""; position: absolute; left: calc(-1 * var(--gutter)); top: var(--row-y); bottom: var(--row-y); width: var(--rail); border-radius: 0 2px 2px 0; background: transparent; }
+.act.running::before { background: var(--accent); }
+.act .ic { color: var(--muted); padding-top: 1px; }
+.act.running .ic { color: var(--accent-text); }
+.act .t { font-size: var(--f-small); font-weight: 680; line-height: var(--lh-snug); }
+.act .sub { display: block; margin-top: 2px; font-family: var(--mono); font-size: calc(12px * var(--ts)); line-height: 1.5; color: var(--muted); overflow-wrap: break-word; font-weight: 400; }
+.act .r { font-size: var(--f-meta); color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; padding-top: 2px; white-space: nowrap; }
+.act .r b { font-weight: 700; }
+.act.running .r { color: var(--accent-text); font-weight: 650; }
+.act .ind { grid-column: 2 / 4; }
+.act-enter { animation: rise 420ms var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
+
+.composer { flex: none; position: relative; z-index: 4; display: flex; align-items: flex-end; gap: var(--s-1); padding: var(--s-1) var(--s-2);
+  background: color-mix(in oklch, var(--surface) 92%, transparent); border-top: 1px solid var(--rule); }
+.field { flex: 1; min-width: 0; min-height: var(--tap); max-height: 120px; overflow-y: auto; padding: 11px var(--s-2); border-radius: 22px; background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--rule-strong); font-size: var(--f-body); line-height: 1.35; cursor: text; transition: box-shadow 200ms ease; white-space: pre-wrap; overflow-wrap: anywhere; }
+.field.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.field .ph { color: var(--placeholder); }
+.caret { display: inline-block; width: 2px; height: 1.15em; margin-left: 1px; vertical-align: text-bottom; background: var(--accent); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.stop { height: var(--tap); padding: 0 var(--s-2); border-radius: 22px; display: inline-flex; align-items: center; gap: var(--s-1); flex: none;
+  border: 1px solid color-mix(in oklch, var(--danger) 45%, transparent); color: var(--danger-ink); font-size: var(--f-small); font-weight: 700; }
+.stop i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.send { width: var(--tap); height: var(--tap); border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--accent); color: var(--accent-ink);
+  animation: popIn2 260ms var(--ease) both; }
+@keyframes popIn2 { from { transform: scale(.5); opacity: 0; } }
+.kb-spacer { flex: none; height: max(var(--kb), env(safe-area-inset-bottom)); transition: height 360ms var(--ease); }
+
+/* ---------- Keyboard ---------- */
+.keyboard { position: absolute; left: 0; right: 0; bottom: 0; z-index: 60; height: var(--kb-h); padding: var(--s-1) 3px env(safe-area-inset-bottom);
+  background: color-mix(in oklch, var(--overlay) 92%, var(--ink) 4%); border-top: 1px solid var(--rule);
+  transform: translateY(100%); transition: transform 360ms var(--ease); visibility: hidden; }
+.keyboard.open { transform: none; visibility: visible; }
+.kb-row { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+.kb-row:first-child { margin-top: var(--s-1); }
+.key { flex: 1; max-width: 34px; height: 42px; border-radius: 6px; display: grid; place-items: center; font-size: 22px; font-weight: 400;
+  background: color-mix(in oklch, var(--ink) 20%, var(--raised)); color: var(--ink); box-shadow: 0 1px 0 rgba(0,0,0,.3); transition: background-color 80ms ease; }
+:root[data-appearance="light"] .key { background: var(--surface); }
+.key:active { background: color-mix(in oklch, var(--ink) 34%, var(--raised)); }
+.key.fn { max-width: 46px; flex: 1.4; font-size: 15px; background: color-mix(in oklch, var(--ink) 10%, var(--raised)); }
+:root[data-appearance="light"] .key.fn { background: color-mix(in oklch, var(--ink) 16%, var(--surface)); }
+.key.space { max-width: none; flex: 5; font-size: 15px; }
+.key.go { max-width: 92px; flex: 2.2; font-size: 15px; font-weight: 650; background: var(--accent); color: var(--accent-ink); }
+.kb-row.mid { padding: 0 18px; }
+
+/* ---------- Sheets ---------- */
+.scrim { position: absolute; inset: 0; z-index: 100; background: rgba(0,0,0,.46); opacity: 0; visibility: hidden; transition: opacity 320ms ease, visibility 0s linear 320ms; }
+.scrim.on { opacity: 1; visibility: visible; transition: opacity 320ms ease, visibility 0s; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 101; max-height: calc(100% - var(--s-2)); display: flex; flex-direction: column;
+  background: var(--raised); border-radius: 22px 22px 0 0; box-shadow: 0 -1px 0 var(--rule), 0 -24px 60px rgba(0,0,0,.32);
+  transform: translateY(105%); visibility: hidden; transition: transform var(--t-sheet) var(--ease), visibility 0s linear var(--t-sheet);
+  padding-bottom: max(env(safe-area-inset-bottom), var(--s-2)); }
+.sheet.on { transform: none; visibility: visible; transition: transform var(--t-sheet) var(--ease), visibility 0s; }
+.sheet.tall { top: var(--s-2); }
+.grab { flex: none; height: 24px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.grab::before { content: ""; width: 36px; height: 5px; border-radius: 3px; background: color-mix(in oklch, var(--ink) 24%, transparent); }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--gutter); }
+.sheet-meta { font-size: var(--f-meta); color: var(--muted); font-weight: 560; }
+.sheet-h { margin-top: var(--s-1); font-size: var(--f-heading); font-weight: 780; letter-spacing: -.018em; line-height: 1.22; }
+.sheet-foot { flex: none; display: grid; grid-template-columns: 1fr 2fr; gap: var(--s-1); padding: var(--s-2) var(--gutter) 0; border-top: 1px solid var(--rule); margin-top: var(--s-2); }
+.sheet-foot.stack { grid-template-columns: 1fr; }
+
+.choice { position: relative; display: grid; grid-template-columns: var(--s-3) 1fr; gap: var(--s-2); width: 100%; padding: var(--s-2) var(--s-2) var(--s-2) var(--s-2);
+  border-radius: 12px; transition: background-color 200ms ease; align-items: start; }
+.choice + .choice { margin-top: 2px; }
+.choice:active { background: var(--press); }
+.choice .radio { width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--rule-strong); display: grid; place-items: center; transition: box-shadow 200ms ease; }
+.choice .radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent-ink); transform: scale(0); transition: transform 240ms var(--ease); }
+.choice[aria-checked="true"] { background: color-mix(in oklch, var(--accent-surface) 70%, transparent); }
+.choice[aria-checked="true"] .radio { box-shadow: inset 0 0 0 11px var(--accent); }
+.choice[aria-checked="true"] .radio::after { transform: scale(1); }
+.choice .cl { font-size: var(--f-row); font-weight: 680; letter-spacing: -.01em; line-height: var(--lh-snug); }
+.choice .cd { display: block; margin-top: var(--s-h); font-size: var(--f-small); color: var(--muted); line-height: var(--lh-snug); font-weight: 450; }
+.choice-list { margin: var(--s-2) calc(-1 * var(--s-2)) 0; }
+.own { width: 100%; margin-top: var(--s-1); min-height: 88px; padding: 12px var(--s-2); border: 0; outline: 0; border-radius: 12px; background: var(--canvas); color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--rule-strong); font: inherit; font-size: var(--f-body); line-height: var(--lh-snug); resize: none; }
+.own:focus { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.own::placeholder { color: var(--placeholder); }
+
+.cmd { margin-top: var(--s-2); padding: var(--s-2); background: var(--code-bg); color: var(--code-ink); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--rule);
+  font-family: var(--mono); font-size: calc(18px * var(--ts)); font-weight: 600; overflow-x: auto; white-space: pre; }
+.cmd .pr { color: var(--muted); font-weight: 400; margin-right: var(--s-1); }
+.kv { margin-top: var(--s-2); display: grid; grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-2); font-size: var(--f-small); line-height: var(--lh-snug); }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.kv dd.path { font-family: var(--mono); font-size: var(--f-meta); overflow-wrap: break-word; }
+.perm-actions { display: grid; gap: var(--s-1); margin-top: var(--s-3); }
+.perm-note { margin-top: var(--s-2); font-size: var(--f-meta); color: var(--muted); line-height: var(--lh-snug); }
+
+/* New thread */
+.nt-top { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 var(--s-1); }
+.nt-top .lead { justify-self: start; }
+.nt-top .mid { font-size: var(--f-row); font-weight: 720; letter-spacing: -.01em; }
+.nt-top .end { justify-self: end; padding-right: var(--s-2); font-size: var(--f-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.steps { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-1); padding: var(--s-1) var(--gutter) 0; }
+.steps i { height: 3px; border-radius: 2px; background: color-mix(in oklch, var(--ink) 14%, transparent); position: relative; overflow: hidden; }
+.steps i::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: 0 50%; transition: transform 420ms var(--ease); }
+.steps i.on::after { transform: none; }
+.nt-viewport { flex: 1; min-height: 0; overflow: hidden; overflow: clip; position: relative; }
+.nt-track { display: flex; height: 100%; transition: transform 460ms var(--ease); }
+.nt-panel { flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: var(--s-3) var(--gutter) var(--s-3); }
+.nt-panel .lede { margin-top: var(--s-1); font-size: var(--f-small); color: var(--muted); line-height: var(--lh-snug); }
+.pick { position: relative; display: grid; grid-template-columns: 1fr auto; gap: var(--s-2); align-items: center; width: 100%; padding: var(--s-2) 0; border-top: 1px solid var(--rule); }
+.pick:last-child { border-bottom: 1px solid var(--rule); }
+.pick:active:not(:disabled) { background: var(--press); }
+.pick .pl { font-size: var(--f-row); font-weight: 680; letter-spacing: -.01em; }
+.pick .ps { display: block; margin-top: var(--s-h); font-size: var(--f-meta); color: var(--muted); line-height: var(--lh-snug); overflow-wrap: anywhere; }
+.pick .ps.mono { font-family: var(--mono); font-size: calc(12px * var(--ts)); }
+.pick .pr { font-size: var(--f-meta); color: var(--muted); display: inline-flex; align-items: center; gap: var(--s-1); }
+.pick:disabled .pl { color: var(--muted); }
+.pick[aria-checked="true"] .pr { color: var(--accent-text); }
+.pick-list { margin-top: var(--s-3); }
+.recap { margin-top: var(--s-1); font-size: var(--f-small); color: var(--muted); }
+.recap b { color: var(--ink); font-weight: 680; }
+
+.fields { margin-top: var(--s-3); background: var(--surface); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.fieldrow { position: relative; display: grid; grid-template-columns: 1fr auto; gap: var(--s-2); align-items: center; width: 100%; min-height: 64px; padding: var(--s-1) var(--s-2); transition: background-color 160ms ease; }
+.fieldrow + .fieldrow::after { content: ""; position: absolute; top: 0; left: var(--s-2); right: 0; height: 1px; background: var(--rule); }
+.fieldrow:active { background: var(--press); }
+.fieldrow .fl { display: block; font-size: var(--f-meta); color: var(--muted); font-weight: 600; }
+.fieldrow .fv { display: block; margin-top: 2px; font-size: var(--f-row); font-weight: 650; letter-spacing: -.01em; line-height: var(--lh-snug); }
+.fieldrow .fd { display: block; margin-top: 2px; font-size: var(--f-meta); color: var(--muted); line-height: var(--lh-snug); }
+.fieldrow svg { color: var(--muted); }
+.fieldrow.flash { animation: flash 900ms ease; }
+@keyframes flash { 0% { background: color-mix(in oklch, var(--accent) 22%, transparent); } 100% { background: transparent; } }
+.nt-foot { flex: none; padding: var(--s-2) var(--gutter) 0; border-top: 1px solid var(--rule); transition: opacity 260ms ease, transform 300ms var(--ease); }
+.nt-foot.away { opacity: 0; transform: translateY(12px); pointer-events: none; }
+
+.menu-sheet .sheet-body { padding-bottom: var(--s-1); }
+.mrow { display: grid; grid-template-columns: 1fr 24px; gap: var(--s-2); align-items: center; width: 100%; min-height: 52px; padding: var(--s-1) var(--s-2); margin: 0 calc(-1 * var(--s-2)); width: calc(100% + var(--s-4)); border-radius: 12px; }
+.mrow:active { background: var(--press); }
+.mrow .ml { font-size: var(--f-row); font-weight: 620; }
+.mrow .md { display: block; font-size: var(--f-meta); color: var(--muted); margin-top: 2px; line-height: var(--lh-snug); }
+.mrow svg { color: var(--accent-text); opacity: 0; transform: scale(.5); transition: opacity 180ms ease, transform 260ms var(--ease); }
+.mrow[aria-checked="true"] svg { opacity: 1; transform: none; }
+.mrow[aria-checked="true"] .ml { color: var(--accent-text); font-weight: 700; }
+
+/* ---------- Settings ---------- */
+.set-sec { margin-top: var(--s-4); }
+.set-body { padding: 0 var(--gutter); }
+.set-note { margin-top: var(--s-2); font-size: var(--f-meta); color: var(--muted); line-height: var(--lh-snug); }
+.seg { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--rule); }
+.seg button { position: relative; z-index: 1; height: 38px; border-radius: 9px; font-size: var(--f-small); font-weight: 620; color: var(--muted); text-align: center; transition: color 200ms ease; }
+.seg button[aria-checked="true"] { color: var(--ink); font-weight: 720; }
+.seg .thumb { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; border-radius: 9px; background: var(--overlay); box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 0 0 1px var(--rule);
+  transition: transform 340ms var(--ease); }
+.themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2) var(--s-1); }
+.swatch { display: flex; flex-direction: column; gap: var(--s-1); align-items: stretch; text-align: left; }
+.sw { position: relative; height: 88px; border-radius: 12px; background: var(--canvas); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; padding: 10px 10px 10px 13px; transition: transform 200ms var(--ease), box-shadow 200ms ease; }
+.sw .b1 { display: block; height: 6px; width: 62%; border-radius: 3px; background: var(--ink); }
+.sw .b2 { display: block; height: 4px; width: 84%; margin-top: 7px; border-radius: 2px; background: var(--muted); opacity: .8; }
+.sw .b3 { display: block; position: relative; height: 22px; margin: 9px -10px 0 -13px; background: var(--surface); border-block: 1px solid var(--border); }
+.sw .b3::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 3px; background: var(--accent); }
+.sw .b3::after { content: ""; position: absolute; left: 13px; top: 8px; width: 46%; height: 4px; border-radius: 2px; background: var(--muted); }
+.sw .b4 { position: absolute; right: 10px; bottom: 9px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); }
+.sw .b5 { position: absolute; left: 13px; bottom: 15px; width: 34%; height: 6px; border-radius: 3px; background: var(--warning); opacity: .9; }
+.swatch[aria-checked="true"] .sw { box-shadow: inset 0 0 0 1px var(--border), 0 0 0 2px var(--canvas-page), 0 0 0 4px var(--accent-page); }
+.swatch .sn { font-size: var(--f-meta); font-weight: 650; color: var(--muted); padding-left: 2px; display: flex; align-items: center; gap: var(--s-h); }
+.swatch[aria-checked="true"] .sn { color: var(--accent-text); font-weight: 760; }
+.swatch:active .sw { transform: scale(.96); }
+.sizes { display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; position: relative; padding-bottom: var(--s-2); }
+.sizes::after { content: ""; position: absolute; left: 10%; right: 10%; bottom: 7px; height: 2px; border-radius: 1px; background: var(--rule-strong); }
+.size { position: relative; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: var(--s-1); color: var(--muted); font-weight: 650; }
+.size .a { line-height: 1; }
+.size::after { content: ""; position: absolute; bottom: -16px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--canvas); box-shadow: inset 0 0 0 2px var(--rule-strong); z-index: 1; transition: transform 240ms var(--ease), background-color 200ms ease, box-shadow 200ms ease; }
+.size[aria-checked="true"] { color: var(--accent-text); }
+.size[aria-checked="true"]::after { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 24%, transparent); transform: scale(1.3); }
+.size-name { margin-top: var(--s-2); display: flex; justify-content: space-between; font-size: var(--f-meta); color: var(--muted); }
+.size-name b { color: var(--ink); font-weight: 700; }
+.preview { margin-top: var(--s-2); padding: var(--s-2) 0 0; border-top: 1px solid var(--rule); font-size: var(--f-body); line-height: var(--lh-read); }
+.preview .pt { font-size: var(--f-row); font-weight: 650; letter-spacing: -.012em; }
+.preview .pm { font-size: var(--f-meta); color: var(--muted); margin-top: var(--s-h); }
+.toggle { position: relative; display: grid; grid-template-columns: 1fr auto; gap: var(--s-2); align-items: center; width: 100%; min-height: 56px; padding: var(--s-1) var(--s-2); transition: background-color 160ms ease; }
+.toggle + .toggle::after { content: ""; position: absolute; top: 0; left: var(--s-2); right: 0; height: 1px; background: var(--rule); }
+.toggle:active { background: var(--press); }
+.toggle .tl { font-size: var(--f-small); font-weight: 650; line-height: var(--lh-snug); }
+.toggle .td { display: block; margin-top: 2px; font-size: var(--f-meta); color: var(--muted); line-height: var(--lh-snug); font-weight: 450; }
+.switch { width: 51px; height: 31px; border-radius: 16px; background: color-mix(in oklch, var(--ink) 18%, transparent); position: relative; transition: background-color 240ms ease; flex: none; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--knob); box-shadow: 0 2px 4px rgba(0,0,0,.25); transition: transform 300ms var(--ease); }
+.toggle[aria-checked="true"] .switch { background: var(--accent); }
+.toggle[aria-checked="true"] .switch::after { transform: translateX(20px); }
+.toggle .fields { margin: 0; }
+.about { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); padding: var(--s-2) 0; border-bottom: 1px solid var(--rule); font-size: var(--f-small); }
+.about:first-child { border-top: 1px solid var(--rule); }
+.about span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ---------- Computers ---------- */
+.comp { position: relative; padding: var(--s-3) var(--gutter); }
+.comp + .comp::after { content: ""; position: absolute; top: 0; left: var(--gutter); right: 0; height: 1px; background: var(--rule); }
+.comp::before { content: ""; position: absolute; left: 0; top: var(--s-3); bottom: var(--s-3); width: var(--rail); border-radius: 0 2px 2px 0; background: var(--tone, transparent); }
+.comp[data-tone="accent"] { --tone: var(--accent); } .comp[data-tone="danger"] { --tone: var(--danger); }
+.comp-top { display: flex; align-items: baseline; gap: var(--s-2); }
+.comp-name { flex: 1; min-width: 0; font-size: var(--f-row); font-weight: 720; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.comp-state { font-size: var(--f-meta); font-weight: 720; }
+.comp dl { margin: var(--s-2) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); font-size: var(--f-small); }
+.comp dt { color: var(--muted); }
+.comp dd { margin: 0; }
+.comp .actions { margin-top: var(--s-2); display: flex; gap: var(--s-1); flex-wrap: wrap; }
+
+/* ---------- Toast ---------- */
+.toast { position: absolute; z-index: 500; left: var(--s-2); right: var(--s-2); top: calc(50px + env(safe-area-inset-top) + var(--s-1));
+  display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-2) var(--s-2) calc(var(--s-2) + var(--rail)); border-radius: 14px; background: var(--overlay);
+  box-shadow: 0 0 0 1px var(--rule), 0 16px 40px rgba(0,0,0,.36); font-size: var(--f-small); font-weight: 600; line-height: var(--lh-snug);
+  transform: translateY(calc(-100% - 70px)); opacity: 0; transition: transform 460ms var(--ease), opacity 0s linear 460ms; overflow: hidden; pointer-events: none; }
+.toast::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--rail); background: var(--accent); }
+.toast.on { transform: none; opacity: 1; transition: transform 460ms var(--ease), opacity 0s; }
+.toast svg { color: var(--accent-text); flex: none; }
+
+/* ---------- Reduced motion: fades instead of travel ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-push: 200ms; --t-sheet: 200ms; }
+  .tabscreen.behind, .tabbar.behind { transform: none; }
+  .pushed { transform: none; opacity: 0; transition: opacity 200ms ease, visibility 0s linear 200ms; }
+  .pushed.in { opacity: 1; transition: opacity 200ms ease, visibility 0s; }
+  .sheet { transform: none; opacity: 0; transition: opacity 200ms ease, visibility 0s linear 200ms; }
+  .sheet.on { opacity: 1; transition: opacity 200ms ease, visibility 0s; }
+  .toast { transform: none; opacity: 0; transition: opacity 200ms ease; }
+  .toast.on { opacity: 1; }
+  .keyboard { transform: none; opacity: 0; transition: opacity 150ms ease, visibility 0s linear 150ms; }
+  .keyboard.open { opacity: 1; transition: opacity 150ms ease, visibility 0s; }
+  .reveal, .act-enter, .m-new, .tabscreen.arrive { animation: fade 200ms ease both; animation-delay: 0ms; }
+  @keyframes fade { from { opacity: 0; } }
+  .ind::after { animation: none; width: 100%; opacity: .55; }
+  .meter i.run::after, .caret { animation: none; }
+  .spin { animation: none; border-right-color: currentColor; opacity: .6; }
+  .largetitle, .th-title { transform: none; }
+  .nav-title { transform: none; }
+  .nt-track, .th-ink, .seg .thumb, .switch::after, .size::after, .kb-spacer { transition-duration: 0ms; }
+  .press:active:not(:disabled) { transform: none; }
+  .plus-btn:active span { transform: none; }
+  .popover { animation: fade 150ms ease both; }
+  .badge.bump, .resolved .check, .send { animation: none; }
+}
+</style>
+</head>
+<body>
+<div id="phone">
+  <div class="statusbar" aria-hidden="true">
+    <span>9:41</span>
+    <span class="icons">
+      <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.2c2.2 0 4.2.8 5.7 2.2l1.1-1.2C13 1.5 10.6.6 8 .6S3 1.5 1.2 3.2l1.1 1.2C3.8 3 5.8 2.2 8 2.2Zm0 3.3c1.3 0 2.5.5 3.4 1.3l1.1-1.2A6.7 6.7 0 0 0 8 3.9c-1.7 0-3.3.6-4.5 1.7l1.1 1.2c.9-.8 2.1-1.3 3.4-1.3Zm0 3.3c-.5 0-1 .2-1.3.5L8 10.8l1.3-1.5c-.3-.3-.8-.5-1.3-.5Z"/></svg>
+      <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="20" height="9" rx="2" fill="currentColor"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2Z" fill="currentColor" opacity=".45"/></svg>
+    </span>
+  </div>
+
+  <div id="stage">
+    <!-- Threads -->
+    <section class="screen tabscreen" id="scr-threads" aria-label="Threads">
+      <div class="navbar">
+        <span></span>
+        <div class="nav-title" aria-hidden="true">Threads</div>
+        <div class="nav-end"><button class="plus-btn" id="btn-new" aria-label="Start a new thread"><span><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 3v12M3 9h12"/></svg></span></button></div>
+      </div>
+      <div class="scroller" id="threads-scroller">
+        <div class="mast">
+          <h1 class="largetitle">Threads</h1>
+          <button class="selector press" id="btn-computer" aria-haspopup="menu" aria-expanded="false"><span id="computer-label">All computers</span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 5.5 3.5 3.5 3.5-3.5"/></svg></button>
+          <p class="standfirst" id="standfirst"></p>
+          <label class="search" id="search">
+            <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7.5" cy="7.5" r="5.2"/><path d="m11.4 11.4 3.6 3.6"/></svg>
+            <input id="q" type="search" placeholder="Search threads" aria-label="Search threads" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+            <button class="clear" id="q-clear" aria-label="Clear search" hidden><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm2.8 8.6-1.2 1.2L8 9.2l-1.6 1.6-1.2-1.2L6.8 8 5.2 6.4l1.2-1.2L8 6.8l1.6-1.6 1.2 1.2L9.2 8l1.6 1.6Z"/></svg></button>
+          </label>
+        </div>
+        <div id="thread-list"></div>
+      </div>
+    </section>
+
+    <!-- Computers -->
+    <section class="screen tabscreen off" id="scr-computers" aria-label="Computers">
+      <div class="navbar"><span></span><div class="nav-title" aria-hidden="true">Computers</div><span></span></div>
+      <div class="scroller"><div class="mast"><h1 class="largetitle">Computers</h1><p class="standfirst" id="comp-standfirst"></p></div><div id="comp-list" style="margin-top: var(--s-3)"></div></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="screen tabscreen off" id="scr-settings" aria-label="Settings">
+      <div class="navbar"><span></span><div class="nav-title" aria-hidden="true">Settings</div><span></span></div>
+      <div class="scroller" id="settings-scroller"><div class="mast"><h1 class="largetitle">Settings</h1><p class="standfirst">These choices change this iPhone only. Your computers keep their own.</p></div><div id="settings-body"></div></div>
+    </section>
+
+    <nav class="tabbar" id="tabbar" aria-label="Sections">
+      <button class="tab" data-tab="threads" aria-current="page"><span class="tab-ic"><svg width="26" height="24" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h16M5 12h16M5 18h10"/></svg><span class="badge" id="badge">3</span></span><span>Threads</span></button>
+      <button class="tab" data-tab="computers"><span class="tab-ic"><svg width="26" height="24" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><rect x="4" y="4" width="18" height="12" rx="2"/><path d="M9 20h8M13 16v4"/></svg></span><span>Computers</span></button>
+      <button class="tab" data-tab="settings"><span class="tab-ic"><svg width="26" height="24" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h9M18 7h3M5 17h3M12 17h9"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg></span><span>Settings</span></button>
+    </nav>
+
+    <!-- Thread -->
+    <section class="screen pushed" id="scr-thread" aria-label="Thread">
+      <div class="navbar">
+        <button class="back-btn press" id="btn-back" aria-label="Back to Threads"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m13.5 4.5-6.5 6.5 6.5 6.5"/></svg><span class="bl">Threads</span></button>
+        <div class="nav-title" id="th-compact"></div>
+      </div>
+      <div class="scroller th-scroller" id="th-scroller">
+        <div class="th-headwrap"><div><div class="th-head" id="th-head"></div></div></div>
+        <div class="th-tabs" role="tablist" id="th-tabs">
+          <button class="th-tab" role="tab" id="tab-messages" aria-selected="true" aria-controls="pane-messages">Messages</button>
+          <button class="th-tab" role="tab" id="tab-activity" aria-selected="false" aria-controls="pane-activity">Activity <span class="n" id="act-n"></span></button>
+          <span class="th-ink" id="th-ink"></span>
+        </div>
+        <div class="pane" id="pane-messages" role="tabpanel" aria-labelledby="tab-messages"></div>
+        <div class="pane" id="pane-activity" role="tabpanel" aria-labelledby="tab-activity" hidden></div>
+      </div>
+      <div class="composer" id="composer"></div>
+      <div class="kb-spacer"></div>
+    </section>
+
+    <div class="scrim" id="scrim"></div>
+
+    <!-- Question sheet -->
+    <section class="sheet" id="sh-question" role="dialog" aria-modal="true" aria-labelledby="q-h">
+      <div class="grab" aria-hidden="true"></div>
+      <div class="sheet-body" id="q-body"></div>
+      <div class="sheet-foot">
+        <button class="btn btn-line press" data-close>Not now</button>
+        <button class="btn btn-primary press" id="q-send" disabled>Send answer</button>
+      </div>
+    </section>
+
+    <!-- Permission sheet -->
+    <section class="sheet" id="sh-permission" role="dialog" aria-modal="true" aria-labelledby="p-h">
+      <div class="grab" aria-hidden="true"></div>
+      <div class="sheet-body" id="p-body"></div>
+    </section>
+
+    <!-- New thread -->
+    <section class="sheet tall" id="sh-new" role="dialog" aria-modal="true" aria-labelledby="nt-h">
+      <div class="grab" aria-hidden="true"></div>
+      <div class="nt-top">
+        <button class="btn btn-text lead press" id="nt-lead">Cancel</button>
+        <h2 class="mid" id="nt-h">New thread</h2>
+        <span class="end" id="nt-step"></span>
+      </div>
+      <div class="steps" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="nt-viewport"><div class="nt-track" id="nt-track">
+        <div class="nt-panel" id="nt-1"></div>
+        <div class="nt-panel" id="nt-2"></div>
+        <div class="nt-panel" id="nt-3"></div>
+      </div></div>
+      <div class="nt-foot away" id="nt-foot"><button class="btn btn-primary btn-wide press" id="nt-open"></button></div>
+    </section>
+
+    <!-- Choice menu (stacks over other sheets) -->
+    <section class="sheet menu-sheet" id="sh-menu" role="dialog" aria-modal="true" aria-labelledby="menu-h">
+      <div class="grab" aria-hidden="true"></div>
+      <div class="sheet-body"><h2 class="sheet-h" id="menu-h" style="margin: 0 0 var(--s-2)"></h2><div id="menu-list" role="radiogroup"></div></div>
+    </section>
+  </div>
+
+  <div class="keyboard" id="kb" aria-hidden="true"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 9.5 3.5 3.5 7.5-8"/></svg><span id="toast-text"></span></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+window.VARIANT = { name: 'Editorial', intent: 'Type carries the hierarchy: one strict Figtree scale, an 8-point rhythm, hairlines instead of cards, and theme colour only where it means something (a status word, a row’s rail, the one thing to press). Headings condense into the nav bar, lists reveal in a short stagger, and answered requests leave the list.' }
+
+const D = window.SOTTO
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+const esc = s => D.esc(String(s))
+const RMq = matchMedia('(prefers-reduced-motion: reduce)')
+const rm = () => RMq.matches
+const COARSE = matchMedia('(hover: none) and (pointer: coarse)').matches
+const wait = ms => new Promise(r => setTimeout(r, ms))
+const comp = id => D.computers.find(c => c.id === id)
+const prov = id => D.providers[id]
+const root = document.documentElement
+
+const IC = {
+  check: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10.5 4 4 8-9"/></svg>',
+  chev: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 3.5 4.5 4.5L6 12.5"/></svg>',
+  updown: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 6 3-3 3 3M5 10l3 3 3-3"/></svg>',
+  branch: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="3" r="1.6"/><circle cx="4" cy="11" r="1.6"/><circle cx="10.5" cy="4.5" r="1.6"/><path d="M4 4.6v4.8M10.5 6.1c0 2.4-2.2 3-6.1 3.5"/></svg>',
+  pr: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="12.5" r="1.6"/><path d="M4 5.1v5.8M12 10.9V6.5c0-1.2-.8-2-2-2H7.5M9 3l-1.5 1.5L9 6"/></svg>',
+  reasoning: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2.5v3M9 12.5v3M2.5 9h3M12.5 9h3M4.4 4.4l2 2M11.6 11.6l2 2M13.6 4.4l-2 2M6.4 11.6l-2 2"/></svg>',
+  tool: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h6.5L14 6v9.5H4z"/><path d="M10 2.5V6h4"/></svg>',
+  'file-change': '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.5 14.5 6.5 6.5 14.5H3.5V11.5z"/></svg>',
+  command: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 5 4 4-4 4M9.5 13.5h5"/></svg>',
+  plan: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 5h8M7 9h8M7 13h8M3.5 5h.01M3.5 9h.01M3.5 13h.01"/></svg>',
+  send: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M5 9l5-5 5 5"/></svg>',
+}
+
+// ---------------- State ----------------
+const now = Date.now()
+const S = {
+  threads: D.threads.map(t => ({ ...t })),
+  filter: 'all', query: '', settledOpen: false,
+  theme: 'sotto', appearance: 'dark', textSize: 1, density: 'Comfortable',
+  notifications: D.settings.notifications.map(n => ({ ...n })),
+  defaults: { model: 'opus', effort: 'High', perm: 'ask', wc: 'shared' },
+  starts: { t3: now - (14 * 60 + 5) * 1000, t4: now - (3 * 60 + 12) * 1000 },
+  inline: {}, busy: {}, desktopTries: 0,
+  open: null, view: 'messages', kb: null, draft: '', shift: false, tab: 'threads',
+  msgs: {}, stopping: false,
+}
+const SIZES = [0.88, 1, 1.12, 1.24, 1.36]
+const thread = id => S.threads.find(t => t.id === id)
+const elapsed = id => { const s = Math.max(0, Math.floor((Date.now() - (S.starts[id] || Date.now())) / 1000)); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s` }
+
+// ---------------- Theme ----------------
+function resolvedAppearance() { return S.appearance === 'System' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : S.appearance.toLowerCase() }
+function paint(animate) {
+  const apply = () => {
+    D.applyTheme(S.theme, resolvedAppearance(), root)
+    root.style.setProperty('--canvas-page', getComputedStyle(root).getPropertyValue('--canvas'))
+    root.style.setProperty('--accent-page', getComputedStyle(root).getPropertyValue('--accent'))
+    $$('.swatch').forEach(b => D.applyTheme(b.dataset.theme, resolvedAppearance(), $('.sw', b)))
+  }
+  if (animate && !rm() && document.startViewTransition) document.startViewTransition(apply)
+  else apply()
+}
+S.appearance = 'Dark'
+paint(false)
+
+// ---------------- Threads list ----------------
+const groupOf = t => t.state === 'needs-you' ? 'needs' : t.state === 'working' ? 'working' : t.state === 'settled' ? 'settled' : 'recent'
+const RECENT_WORD = { 'finished-unread': ['Finished', 'c-accent', 'accent'], done: ['Done', 'c-muted', ''], failed: ['Stopped', 'c-danger', 'danger'], stopped: ['Stopped', 'c-muted', ''], settled: ['Settled', 'c-muted', ''], new: ['New', 'c-accent', 'accent'] }
+function matches(t) {
+  if (S.filter !== 'all' && t.computer !== S.filter) return false
+  if (!S.query) return true
+  const q = S.query.toLowerCase()
+  return [t.title, t.line, t.project, prov(t.provider), comp(t.computer).name].some(s => s && s.toLowerCase().includes(q))
+}
+const where = t => `${prov(t.provider)} on ${comp(t.computer).name}`
+
+function rowNeeds(t, i) {
+  const inl = S.inline[t.id]
+  const hit = `<button class="row-hit" data-open="${t.id}" aria-label="Open ${esc(t.title)}"><span class="row-top"><span class="row-title">${esc(t.title)}</span><span class="row-time">${esc(t.ago)}</span></span><span class="row-meta">${esc(where(t))}</span></button>`
+  let body
+  if (t.id === D.question.thread) {
+    body = `<div class="ask"><p class="ask-q">${esc(D.question.text)}</p>
+      <div class="opts" role="group" aria-label="Choices">${D.question.options.map(o => `<button class="opt press" data-pick="${o.id}" aria-pressed="${inl === o.id}" aria-label="Choose ${esc(o.label)}">${esc(o.label)}</button>`).join('')}</div>
+      <div class="reveal-h ${inl ? 'open' : ''}" id="ask-send-${t.id}"><div><button class="btn btn-primary btn-wide press ask-send" data-send-inline="${t.id}" ${inl ? '' : 'tabindex="-1"'}>Send answer</button></div></div>
+      <div class="ask-actions"><span class="grow"></span><button class="btn btn-text press" data-sheet="${t.id}">Open question</button></div></div>`
+  } else {
+    body = `<div class="ask"><p class="ask-q">Wants to run <span class="inline-code">${esc(t.command || D.permission.command)}</span></p>
+      <div class="ask-actions"><button class="btn btn-primary press" data-perm="once" data-t="${t.id}">Allow once</button><button class="btn btn-line press" data-perm="deny" data-t="${t.id}">Deny</button><span class="grow"></span><button class="btn btn-text press" data-sheet="${t.id}">More choices</button></div></div>`
+  }
+  return `<article class="row" data-row="${t.id}" data-tone="warn" style="--i:${i}">${hit}${body}</article>`
+}
+function rowWorking(t, i) {
+  const [w, ...rest] = (t.line || '').split(' ')
+  return `<article class="row" data-row="${t.id}" data-tone="accent" style="--i:${i}"><button class="row-hit" data-open="${t.id}" aria-label="Open ${esc(t.title)}, working">
+    <span class="row-top"><span class="row-title">${esc(t.title)}</span><span class="row-time live" data-elapsed="${t.id}">${elapsed(t.id)}</span></span>
+    <span class="row-line"><span class="live-text" data-live="${t.id}"><span class="word c-accent">${esc(w)}</span>${esc(rest.join(' '))}</span></span>
+    <span class="ind" aria-hidden="true"></span>
+    <span class="row-meta">${esc(where(t))}</span></button></article>`
+}
+function rowRecent(t, i) {
+  const [word, cls, tone] = RECENT_WORD[t.state] || RECENT_WORD.done
+  const line = (t.line || '').replace(/^(Finished|Done|Stopped|Settled): ?/, '').replace(/^Settled$/, 'Nothing left to do')
+  const unread = t.state === 'finished-unread'
+  return `<article class="row" data-row="${t.id}" data-tone="${tone}" style="--i:${i}"><button class="row-hit" data-open="${t.id}" aria-label="Open ${esc(t.title)}, ${word}${unread ? ', unread' : ''}">
+    <span class="row-top"><span class="row-title">${esc(t.title)}</span><span class="row-time">${unread ? '<span class="dot" aria-hidden="true"></span>' : ''}${esc(t.ago)}</span></span>
+    <span class="row-line"><span class="word ${cls}">${word}</span>${esc(line)}</span>
+    <span class="row-meta">${esc(where(t))}</span></button></article>`
+}
+function section(key, label, tone, rows, band) {
+  return `<section class="sec ${band ? 'sec-band' : ''}" data-sec="${key}" data-tone="${tone}" aria-label="${label}"><h2 class="sec-h"><span>${label}</span><span class="rule"></span><span class="n">${rows.length}</span></h2>${rows.join('')}</section>`
+}
+function renderThreads(stagger) {
+  const vis = S.threads.filter(matches)
+  const by = g => vis.filter(t => groupOf(t) === g)
+  const needs = by('needs'), working = by('working'), recent = by('recent'), settled = by('settled')
+  const scoped = S.threads.filter(t => S.filter === 'all' || t.computer === S.filter)
+  const wN = scoped.filter(t => t.state === 'working').length, nN = scoped.filter(t => t.state === 'needs-you').length
+  $('#standfirst').innerHTML = `<b class="c-accent">${wN}</b> ${wN === 1 ? 'thread is' : 'threads are'} working${nN ? ` and <b class="c-warn">${nN}</b> ${nN === 1 ? 'needs' : 'need'} you.` : '. Nothing needs you.'}`
+  let i = 0, html = ''
+  const desk = comp('desktop')
+  if (S.filter === 'all' || S.filter === 'desktop') {
+    html += `<div class="note reveal" style="--i:${i++}" id="desk-note"><p>${S.desktopTries ? `<b>Still can’t reach ${desk.name}.</b> Check that Sotto is open on it, then try again.` : `<b>Can’t reach ${desk.name}.</b> Its threads show what it last shared.`}</p>
+      <button class="btn btn-text press" id="desk-retry">Try again</button></div>`
+  }
+  if (!vis.length) html += `<p class="empty">${S.query ? `No threads match <b>“${esc(S.query)}”</b>. Try a project or computer name.` : 'No threads on this computer yet. Tap + to start one.'}</p>`
+  if (needs.length) html += section('needs', 'Needs you', 'warn', needs.map(t => rowNeeds(t, i++)), true)
+  if (working.length) html += section('working', 'Working now', 'accent', working.map(t => rowWorking(t, i++)))
+  if (recent.length) html += section('recent', 'Recent', '', recent.map(t => rowRecent(t, i++)))
+  if (settled.length) {
+    const open = S.settledOpen || !!S.query
+    html += `<section class="sec" data-sec="settled" style="margin-top: var(--s-3)">
+      ${S.query ? `<h2 class="sec-h"><span>Settled</span><span class="rule"></span><span class="n">${settled.length}</span></h2>` :
+      `<button class="settled-btn" id="settled-btn" aria-expanded="${open}" aria-label="${open ? 'Hide' : 'Show'} settled threads"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg><span>Settled</span><span class="rule"></span><span class="sec-h" style="padding:0;height:auto"><span class="n">${settled.length}</span></span></button>`}
+      <div class="reveal-h ${open ? 'open' : ''}" id="settled-body"><div>${settled.map(t => rowRecent(t, 0)).join('')}</div></div></section>`
+  }
+  const list = $('#thread-list')
+  list.innerHTML = html
+  if (stagger) $$('.row, .note, .sec-h', list).forEach((el, k) => { el.style.setProperty('--i', k); el.classList.add('reveal') })
+  else $$('.note', list).forEach(n => n.classList.remove('reveal'))
+  updateBadge()
+}
+function updateBadge() {
+  const n = S.threads.filter(t => t.state === 'needs-you' || t.state === 'finished-unread').length
+  const b = $('#badge')
+  if (b.textContent !== String(n)) { b.textContent = n; b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump') }
+  b.hidden = !n
+  $('[data-tab="threads"]').setAttribute('aria-label', n ? `Threads, ${n} need attention` : 'Threads')
+}
+
+// list interactions
+$('#thread-list').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.open) return openThread(b.dataset.open)
+  if (b.dataset.pick) {
+    const t = b.closest('[data-row]').dataset.row
+    S.inline[t] = S.inline[t] === b.dataset.pick ? null : b.dataset.pick
+    $$('.opt', b.parentElement).forEach(o => o.setAttribute('aria-pressed', o.dataset.pick === S.inline[t]))
+    const r = $('#ask-send-' + t); r.classList.toggle('open', !!S.inline[t]); $('button', r).tabIndex = S.inline[t] ? 0 : -1
+    return
+  }
+  if (b.dataset.sendInline) {
+    const t = b.dataset.sendInline, opt = D.question.options.find(o => o.id === S.inline[t])
+    return answerQuestion(thread(t), opt.label, b)
+  }
+  if (b.dataset.perm) return answerPermission(thread(b.dataset.t), b.dataset.perm, b)
+  if (b.dataset.sheet) { const t = thread(b.dataset.sheet); return openThread(t.id) }
+  if (b.id === 'settled-btn') {
+    S.settledOpen = !S.settledOpen
+    b.setAttribute('aria-expanded', S.settledOpen); b.setAttribute('aria-label', `${S.settledOpen ? 'Hide' : 'Show'} settled threads`)
+    $('#settled-body').classList.toggle('open', S.settledOpen)
+    if (S.settledOpen) $$('#settled-body .row').forEach((r, k) => { r.style.setProperty('--i', k + 2); r.classList.remove('reveal'); void r.offsetWidth; r.classList.add('reveal') })
+    return
+  }
+  if (b.id === 'desk-retry') {
+    b.disabled = true; b.innerHTML = '<span class="spin"></span>Trying…'
+    await wait(1400)
+    S.desktopTries++
+    renderThreads(false)
+    toast(`Still can’t reach ${comp('desktop').name}.`)
+  }
+})
+
+async function setBusy(btn, label) {
+  if (!btn) return
+  const w = btn.offsetWidth
+  btn.style.minWidth = w + 'px'; btn.disabled = true
+  btn.innerHTML = `<span class="spin"></span>${label}`
+}
+async function resolveRow(t, doneWord, nextLine, toastText) {
+  const row = $(`#thread-list [data-row="${t.id}"]`)
+  if (row) {
+    const ask = $('.ask', row)
+    if (ask) ask.innerHTML = `<div class="resolved"><span class="check">${IC.check}</span>${esc(doneWord)}</div>`
+    await wait(rm() ? 300 : 700)
+    const h = row.offsetHeight
+    await row.animate([{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: rm() ? 160 : 380, easing: 'cubic-bezier(.6,0,.25,1)' }).finished
+  }
+  t.state = 'working'; t.line = nextLine; t.ago = 'now'; S.starts[t.id] = Date.now()
+  renderThreads(false)
+  const nr = $(`#thread-list [data-row="${t.id}"]`); if (nr && !rm()) nr.classList.add('arrived')
+  toast(toastText)
+  if (S.open === t.id) renderThread()
+}
+async function answerQuestion(t, label, btn) {
+  if (S.busy[t.id]) return; S.busy[t.id] = true
+  await setBusy(btn, 'Sending…'); await wait(900)
+  await resolveRow(t, `Answered: ${label}`, label === 'No shortcut' ? 'Removing the drawer shortcut' : `Moving the drawer to ${label}`, `Answer sent: ${label}`)
+}
+async function answerPermission(t, kind, btn) {
+  if (S.busy[t.id]) return; S.busy[t.id] = true
+  const cmd = t.command || D.permission.command
+  const words = { once: ['Allowing…', 'Allowed once', `Running ${cmd}`, `Allowed ${cmd} once`],
+    always: ['Allowing…', `Always allowed`, `Running ${cmd}`, `${cmd} is allowed from now on`],
+    deny: ['Denying…', 'Denied', `Continuing without ${cmd}`, `Denied ${cmd}`] }[kind]
+  await setBusy(btn, words[0]); await wait(800)
+  await resolveRow(t, words[1], words[2], words[3])
+}
+
+// search: closes the keyboard on a tap anywhere outside it, or on scroll
+const q = $('#q')
+q.addEventListener('input', () => { S.query = q.value.trim(); $('#q-clear').hidden = !q.value; renderThreads(false) })
+q.addEventListener('keydown', e => { if (e.key === 'Enter') q.blur() })
+q.addEventListener('focus', () => { if (!COARSE) showKb('search') })
+q.addEventListener('blur', () => { if (S.kb === 'search') hideKb() })
+$('#q-clear').addEventListener('pointerdown', e => e.preventDefault())
+$('#q-clear').addEventListener('click', () => { q.value = ''; S.query = ''; $('#q-clear').hidden = true; renderThreads(false); q.focus() })
+document.addEventListener('pointerdown', e => {
+  if (document.activeElement === q && !e.target.closest('#search') && !e.target.closest('#kb')) q.blur()
+}, true)
+$('#threads-scroller').addEventListener('scroll', () => { if (document.activeElement === q) q.blur() }, { passive: true })
+$('#threads-scroller').addEventListener('touchmove', () => { if (document.activeElement === q) q.blur() }, { passive: true })
+
+// computer selector
+$('#btn-computer').addEventListener('click', e => {
+  const b = e.currentTarget, r = b.getBoundingClientRect(), st = $('#stage').getBoundingClientRect()
+  b.setAttribute('aria-expanded', 'true')
+  const items = [{ id: 'all', name: 'All computers', sub: `${S.threads.length} threads` }, ...D.computers.map(c => ({ id: c.id, name: c.name, sub: c.status === 'online' ? `Online, ${S.threads.filter(t => t.computer === c.id).length} threads` : 'Can’t be reached' }))]
+  const catcher = document.createElement('div'); catcher.className = 'catcher'
+  const pop = document.createElement('div'); pop.className = 'popover'; pop.setAttribute('role', 'menu'); pop.setAttribute('aria-label', 'Show threads from')
+  pop.style.left = (r.left - st.left) + 'px'; pop.style.top = (r.bottom - st.top + 4) + 'px'
+  pop.innerHTML = items.map((it, k) => `${k === 1 ? '<div class="menu-sep"></div>' : ''}<button class="menu-item" role="menuitemradio" aria-checked="${S.filter === it.id}" data-c="${it.id}"><span>${S.filter === it.id ? IC.check : ''}</span><span><span class="mi-label">${esc(it.name)}</span><span class="mi-sub ${it.sub.startsWith('Can’t') ? 'c-danger' : ''}">${esc(it.sub)}</span></span></button>`).join('')
+  const close = () => { b.setAttribute('aria-expanded', 'false'); catcher.remove(); pop.classList.add('out'); setTimeout(() => pop.remove(), 160); b.focus() }
+  catcher.onclick = close
+  pop.onclick = ev => { const it = ev.target.closest('[data-c]'); if (!it) return; setFilter(it.dataset.c); close() }
+  pop.onkeydown = ev => { if (ev.key === 'Escape') close() }
+  $('#stage').append(catcher, pop); $('.menu-item', pop).focus()
+})
+function setFilter(id) {
+  S.filter = id
+  $('#computer-label').textContent = id === 'all' ? 'All computers' : comp(id).name
+  renderThreads(true)
+}
+
+// ---------------- Large titles that condense ----------------
+function bindCondense(screen, titleSel = '.largetitle') {
+  const sc = $('.scroller', screen)
+  sc.addEventListener('scroll', () => {
+    const lt = $(titleSel, screen); if (!lt) return
+    const end = Math.max(lt.offsetTop + lt.offsetHeight - 44 - 4, 1)
+    const p = Math.min(Math.max(sc.scrollTop / end, 0), 1)
+    screen.style.setProperty('--p', p.toFixed(3))
+    screen.classList.toggle('condensed', sc.scrollTop >= end)
+  }, { passive: true })
+}
+['#scr-threads', '#scr-computers', '#scr-settings'].forEach(s => bindCondense($(s)))
+bindCondense($('#scr-thread'), '.th-title')
+
+// ---------------- Tabs ----------------
+$('#tabbar').addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) switchTab(b.dataset.tab) })
+function switchTab(tab) {
+  if (tab === S.tab) { const sc = $(`#scr-${tab} .scroller`); sc.scrollTo({ top: 0, behavior: rm() ? 'auto' : 'smooth' }); return }
+  const from = $(`#scr-${S.tab}`), to = $(`#scr-${tab}`)
+  S.tab = tab
+  $$('.tab').forEach(t => t.toggleAttribute('aria-current', t.dataset.tab === tab)); $$('.tab').forEach(t => { if (t.dataset.tab === tab) t.setAttribute('aria-current', 'page') })
+  from.classList.add('off'); to.classList.remove('off'); to.classList.remove('arrive'); void to.offsetWidth; to.classList.add('arrive')
+  if (tab === 'threads') renderThreads(true)
+  if (tab === 'computers') renderComputers(true)
+  if (tab === 'settings') $$('#settings-body .set-sec').forEach((s, k) => { s.style.setProperty('--i', k); s.classList.remove('reveal'); void s.offsetWidth; s.classList.add('reveal') })
+}
+
+// ---------------- Thread ----------------
+const screenT = $('#scr-thread')
+function msgsFor(t) { return S.msgs[t.id] ??= (t.state === 'new' ? [] : D.messages.map(m => ({ ...m }))) }
+function statusFor(t) {
+  return { 'needs-you': ['Needs you', 'c-warn'], working: ['Working', 'c-accent'], 'finished-unread': ['Finished', 'c-accent'], done: ['Done', 'c-muted'], failed: ['Stopped with an error', 'c-danger'], stopped: ['Stopped by you', 'c-muted'], settled: ['Settled', 'c-muted'], new: ['Ready for a first message', 'c-accent'] }[t.state]
+}
+function openThread(id) {
+  const t = thread(id)
+  S.open = id; S.view = 'messages'; S.draft = ''
+  if (t.state === 'finished-unread') { t.state = 'done'; setTimeout(() => renderThreads(false), 450) }
+  renderThread(true)
+  $('#th-scroller').scrollTop = 0; screenT.style.setProperty('--p', 0); screenT.classList.remove('condensed', 'compact')
+  screenT.classList.add('in'); $(`#scr-${S.tab}`).classList.add('behind'); $('#tabbar').classList.add('behind')
+  setTabInk(false)
+  setTimeout(() => $('#btn-back').focus({ preventScroll: true }), 50)
+  if (t.state === 'needs-you') setTimeout(() => openRequest(t), rm() ? 120 : 460)
+}
+function popThread() {
+  hideKb()
+  screenT.classList.remove('in'); $(`#scr-${S.tab}`).classList.remove('behind'); $('#tabbar').classList.remove('behind')
+  const id = S.open; S.open = null
+  setTimeout(() => { const r = $(`#thread-list [data-row="${id}"] .row-hit`); if (r) r.focus({ preventScroll: true }) }, 60)
+}
+$('#btn-back').addEventListener('click', popThread)
+
+function renderThread(fresh) {
+  const t = thread(S.open); if (!t) return
+  const [sw, sc] = statusFor(t)
+  const isT3 = t.id === 't3'
+  const g = D.git
+  $('#th-compact').innerHTML = `<span class="ct">${esc(t.title)}</span><span class="word ${sc}">${sw}</span>`
+  $('#th-compact').setAttribute('aria-label', t.title)
+  let git = ''
+  if (t.branch) {
+    git = `<div class="th-git"><span class="chip" title="${esc(t.branch)}">${IC.branch}<span>${esc(t.branch)}</span></span>`
+    if (isT3) git += `<span class="diff">${g.files} files<b class="plus">+${g.added}</b><b class="minus">−${g.removed}</b></span>
+      <span class="th-pr">${IC.pr}<span><b>#${g.pr.number}</b> draft, checks ${g.pr.checks.passed} of ${g.pr.checks.total}</span><span class="meter" aria-hidden="true">${Array.from({ length: g.pr.checks.total }, (_, k) => `<i class="${k >= g.pr.checks.passed ? 'run' : ''}"></i>`).join('')}</span></span>`
+    else if (t.pr) git += `<span class="th-pr">${IC.pr}<span><b>#${t.pr}</b> merged into main</span></span>`
+    git += '</div>'
+  }
+  $('#th-head').innerHTML = `<p class="th-meta">${esc(prov(t.provider))} · ${esc(comp(t.computer).name)}</p>
+    <h1 class="th-title">${esc(t.title)}</h1>
+    <p class="th-status"><span class="word ${sc}">${sw}</span>${t.state === 'working' ? `<span class="tnum" data-elapsed="${t.id}">${elapsed(t.id)}</span>` : ''}</p>${git}`
+  // messages
+  const ms = msgsFor(t)
+  let mh = ms.length ? ms.map((m, k) => msgHTML(m, t, k)).join('') : `<div class="empty-thread"><h2>No messages yet.</h2><p>Tell ${esc(prov(t.provider))} what to do in ${esc(t.project)}. It starts when you send.</p></div>`
+  if (t.state === 'working') {
+    const [w, ...rest] = (t.id === 't3' ? 'Running npm test -- terminalDrawer.test.ts' : t.line).split(' ')
+    mh += `<div class="liveline" aria-live="polite"><div class="top"><span class="what"><span class="word c-accent">${esc(w)}</span><span data-live="${t.id}">${esc(rest.join(' '))}</span></span><span class="tnum" data-elapsed="${t.id}">${elapsed(t.id)}</span></div><span class="ind" aria-hidden="true"></span></div>`
+  }
+  if (t.state === 'needs-you') {
+    const isQ = t.id === D.question.thread
+    mh += `<div class="waiting"><p>${esc(prov(t.provider))} is waiting for you to ${isQ ? 'answer a question' : 'allow or deny a command'}.</p><button class="btn btn-primary press" id="th-answer">${isQ ? 'Answer the question' : 'Review the command'}</button></div>`
+  }
+  $('#pane-messages').innerHTML = mh
+  // activity
+  const acts = isT3 ? D.activity : D.activity.slice(0, 5)
+  const running = t.state === 'working' && isT3
+  $('#act-n').textContent = acts.length
+  $('#pane-activity').innerHTML = `<p class="act-sum"><b>${acts.length} steps</b>${running ? ', one running' : ''}. 2 files edited <b class="plus">+59</b> <b class="minus">−18</b></p>` + acts.map((a, k) => {
+    const run = a.status === 'running' && running
+    const right = run ? `<span data-elapsed="t3">${elapsed('t3')}</span>` : a.added != null ? `<b class="plus">+${a.added}</b> <b class="minus">−${a.removed}</b>` : a.duration ? a.duration : ''
+    const title = a.status === 'running' && !running ? 'Ran' : a.title
+    return `<div class="act ${run ? 'running' : ''}" style="--i:${k}"><span class="ic">${IC[a.kind] || IC.tool}</span><span><span class="t">${esc(title)}</span>${a.subject ? `<span class="sub">${esc(a.subject).replace(/([\/\\])/g, '$1<wbr>')}</span>` : ''}</span><span class="r">${right}</span>${run ? '<span class="ind" aria-hidden="true"></span>' : ''}</div>`
+  }).join('')
+  showPane(S.view, false)
+  renderComposer()
+  const ab = $('#th-answer'); if (ab) ab.onclick = () => openRequest(t)
+}
+function msgHTML(m, t, k) {
+  if (m.role === 'user') return `<div class="m ${m.fresh ? 'm-new' : ''}" data-k="${k}"><div class="m-who">You</div><div class="m-quote">${esc(m.text)}</div>${m.status ? `<div class="m-status" data-status="${k}">${m.status}</div>` : ''}</div>`
+  return `<div class="m"><div class="m-who"><i></i>${esc(prov(t.provider))}</div><div class="prose">${D.markdown(m.text)}</div></div>`
+}
+function showPane(view, animate) {
+  S.view = view
+  const on = view === 'messages' ? $('#pane-messages') : $('#pane-activity'), off = view === 'messages' ? $('#pane-activity') : $('#pane-messages')
+  $('#tab-messages').setAttribute('aria-selected', view === 'messages'); $('#tab-activity').setAttribute('aria-selected', view === 'activity')
+  off.hidden = true; on.hidden = false
+  if (animate && !rm()) on.animate([{ opacity: 0, transform: `translateX(${view === 'activity' ? 32 : -32}px)` }, { opacity: 1, transform: 'none' }], { duration: 360, easing: 'cubic-bezier(.2,.75,.15,1)' })
+  if (animate && view === 'activity') $$('.act', on).forEach(a => { a.classList.remove('act-enter'); void a.offsetWidth; a.classList.add('act-enter') })
+  setTabInk(animate)
+}
+function setTabInk() {
+  const sel = $(`#tab-${S.view}`), ink = $('#th-ink')
+  requestAnimationFrame(() => { ink.style.width = sel.offsetWidth + 'px'; ink.style.transform = `translateX(${sel.offsetLeft}px)` })
+}
+$('#tab-messages').onclick = () => showPane('messages', true)
+$('#tab-activity').onclick = () => showPane('activity', true)
+$('#th-tabs').addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const v = S.view === 'messages' ? 'activity' : 'messages'; showPane(v, true); $(`#tab-${v}`).focus() } })
+
+function renderComposer() {
+  const t = thread(S.open); if (!t) return
+  const on = S.kb === 'composer'
+  const working = t.state === 'working'
+  $('#composer').innerHTML = `<div class="field ${on ? 'on' : ''}" id="field" role="textbox" tabindex="0" aria-label="Write a reply" aria-multiline="true">${S.draft ? esc(S.draft) : (on ? '' : `<span class="ph">Write a reply</span>`)}${on ? '<span class="caret"></span>' : ''}${!S.draft && on ? '<span class="ph"> Write a reply</span>' : ''}</div>
+    ${working ? `<button class="stop press" id="btn-stop" aria-label="Stop the thread"${S.stopping ? ' disabled' : ''}>${S.stopping ? '<span class="spin"></span>Stopping…' : '<i></i>Stop'}</button>` : ''}
+    ${S.draft.trim() ? `<button class="send press" id="btn-send" aria-label="Send reply">${IC.send}</button>` : ''}`
+  $('#field').onclick = () => { if (S.kb !== 'composer') showKb('composer') }
+  $('#field').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showKb('composer') } }
+  const st = $('#btn-stop'); if (st) st.onclick = stopThread
+  const sd = $('#btn-send'); if (sd) sd.onclick = sendReply
+}
+async function stopThread() {
+  const t = thread(S.open); S.stopping = true; renderComposer()
+  await wait(1000)
+  t.state = 'stopped'; t.line = 'Stopped: by you'; t.ago = 'now'; S.stopping = false
+  const ll = $('.liveline'); if (ll && !rm()) await ll.animate([{ opacity: 1, height: ll.offsetHeight + 'px' }, { opacity: 0, height: '0px' }], { duration: 320, easing: 'ease' }).finished
+  renderThread(); renderThreads(false)
+  toast('Stopped. Changes made so far are kept.')
+}
+async function sendReply() {
+  const t = thread(S.open); const text = S.draft.trim(); if (!text) return
+  const ms = msgsFor(t); ms.forEach(m => delete m.fresh)
+  const k = ms.push({ role: 'user', text, status: '<span class="spin"></span>Sending…', fresh: true }) - 1
+  S.draft = ''
+  const wasNew = t.state === 'new'
+  if (wasNew || t.state !== 'working') { t.state = 'working'; t.line = wasNew ? 'Reading the project' : 'Reading your reply'; S.starts[t.id] = Date.now() }
+  renderThread()
+  const sc = $('#th-scroller'); sc.scrollTo({ top: sc.scrollHeight, behavior: rm() ? 'auto' : 'smooth' })
+  await wait(900)
+  ms[k].status = 'Sent'; delete ms[k].fresh
+  const s = $(`[data-status="${k}"]`); if (s) s.textContent = 'Sent'
+  await wait(1600)
+  ms[k].status = ''
+  const s2 = $(`[data-status="${k}"]`); if (s2) s2.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' })
+  renderThreads(false)
+}
+
+// tapping the messages closes the keyboard and restores the top
+$('#th-scroller').addEventListener('click', e => { if (S.kb === 'composer' && !e.target.closest('button')) hideKb() })
+
+// edge swipe back
+;(() => {
+  let sw = null
+  screenT.addEventListener('touchstart', e => { const x = e.touches[0].clientX; if (x < 24 && screenT.classList.contains('in') && !S.kb) sw = { x0: x, t: Date.now(), dx: 0 } }, { passive: true })
+  screenT.addEventListener('touchmove', e => {
+    if (!sw) return; sw.dx = Math.max(0, e.touches[0].clientX - sw.x0)
+    screenT.style.transition = 'none'; screenT.style.transform = `translateX(${sw.dx}px)`
+    const under = $(`#scr-${S.tab}`); under.style.transition = 'none'; under.style.transform = `translateX(${-30 + sw.dx / innerWidth * 30}%)`
+  }, { passive: true })
+  screenT.addEventListener('touchend', () => {
+    if (!sw) return; const go = sw.dx > innerWidth * .35 || sw.dx / (Date.now() - sw.t) > .6
+    const under = $(`#scr-${S.tab}`)
+    ;[screenT, under].forEach(el => { el.style.transition = ''; el.style.transform = '' })
+    if (go) popThread(); sw = null
+  })
+})()
+
+// ---------------- Keyboard (drawn) ----------------
+const KB = [['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['⇧','z','x','c','v','b','n','m','⌫'], ['123', ',', 'space', '.', 'go']]
+$('#kb').innerHTML = KB.map((r, i) => `<div class="kb-row ${i === 1 ? 'mid' : ''}">${r.map(k => {
+  const cls = k === 'space' ? 'key space' : k === 'go' ? 'key go' : ['⇧', '⌫', '123'].includes(k) ? 'key fn' : 'key'
+  return `<button class="${cls}" data-k="${k}" tabindex="-1">${k === 'go' ? '<span class="go-l">send</span>' : k}</button>`
+}).join('')}</div>`).join('')
+$('#kb').addEventListener('pointerdown', e => e.preventDefault())
+$('#kb').addEventListener('click', e => {
+  const b = e.target.closest('[data-k]'); if (!b) return
+  const k = b.dataset.k
+  if (S.kb === 'search') {
+    if (k === 'go') return q.blur()
+    let v = q.value
+    if (k === '⌫') v = v.slice(0, -1); else if (k === 'space') v += ' '; else if (k.length === 1 && k !== '⇧') v += k
+    q.value = v; q.dispatchEvent(new Event('input')); return
+  }
+  if (k === 'go') return sendReply()
+  if (k === '⇧') { S.shift = !S.shift; return }
+  if (k === '123') return
+  if (k === '⌫') S.draft = S.draft.slice(0, -1)
+  else if (k === 'space') S.draft += ' '
+  else { S.draft += S.shift ? k.toUpperCase() : k; S.shift = false }
+  renderComposer()
+})
+function showKb(target) {
+  S.kb = target
+  const goL = $('#kb .go-l'); if (goL) goL.textContent = target === 'search' ? 'search' : 'send'
+  $('#kb').classList.add('open')
+  if (target === 'composer') {
+    if (!S.draft && S.open && thread(S.open).state === 'new') S.shift = true
+    root.style.setProperty('--kb', 'var(--kb-h)')
+    screenT.classList.add('compact')
+    renderComposer()
+    const sc = $('#th-scroller')
+    const end = () => sc.scrollTo({ top: sc.scrollHeight, behavior: rm() ? 'auto' : 'smooth' })
+    setTimeout(end, 40); setTimeout(end, 380)
+  }
+}
+function hideKb() {
+  const was = S.kb; S.kb = null
+  $('#kb').classList.remove('open')
+  root.style.setProperty('--kb', '0px')
+  if (was === 'composer') { screenT.classList.remove('compact'); renderComposer() }
+}
+
+// ---------------- Sheets ----------------
+const stack = []
+function openSheet(el) {
+  stack.push(el)
+  stack.forEach((s, k) => s.style.zIndex = 102 + k * 2)
+  const scrim = $('#scrim'); scrim.style.zIndex = 101 + (stack.length - 1) * 2; scrim.classList.add('on')
+  el.classList.add('on')
+  el._return = document.activeElement
+  setTimeout(() => { const f = el.querySelector('[data-autofocus]') || el.querySelector('button:not([disabled]), textarea'); if (f) f.focus({ preventScroll: true }) }, 80)
+}
+function closeSheet(el = stack[stack.length - 1]) {
+  if (!el) return
+  const i = stack.indexOf(el); if (i < 0) return
+  stack.splice(i, 1); el.classList.remove('on')
+  const scrim = $('#scrim')
+  if (!stack.length) scrim.classList.remove('on'); else scrim.style.zIndex = 101 + (stack.length - 1) * 2
+  if (el._return && document.contains(el._return)) el._return.focus({ preventScroll: true })
+}
+$('#scrim').addEventListener('click', () => closeSheet())
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return
+  if (S.kb) return hideKb()
+  if (stack.length) return closeSheet()
+  if (S.open) popThread()
+})
+$$('[data-close]').forEach(b => b.addEventListener('click', () => closeSheet(b.closest('.sheet'))))
+// drag a sheet down by its grabber to close it
+$$('.sheet .grab').forEach(g => {
+  let y0 = null, dy = 0; const sh = g.closest('.sheet')
+  g.addEventListener('pointerdown', e => { y0 = e.clientY; dy = 0; g.setPointerCapture(e.pointerId); sh.style.transition = 'none' })
+  g.addEventListener('pointermove', e => { if (y0 == null) return; dy = Math.max(0, e.clientY - y0); sh.style.transform = `translateY(${dy}px)` })
+  const end = () => { if (y0 == null) return; y0 = null; sh.style.transition = ''; sh.style.transform = ''; if (dy > 90) closeSheet(sh) }
+  g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end)
+})
+
+function openRequest(t) {
+  if (t.state !== 'needs-you') return
+  if (t.id === D.question.thread) openQuestion(t); else openPermission(t)
+}
+let qChoice = null
+function openQuestion(t) {
+  qChoice = S.inline[t.id] || null
+  $('#q-body').innerHTML = `<p class="sheet-meta">${esc(prov(t.provider))} asks, in ${esc(t.title)}</p>
+    <h2 class="sheet-h" id="q-h">${esc(D.question.text)}</h2>
+    <div class="choice-list" role="radiogroup" aria-labelledby="q-h">
+      ${D.question.options.map(o => `<button class="choice press" role="radio" aria-checked="${qChoice === o.id}" data-c="${o.id}"><span class="radio"></span><span><span class="cl">${esc(o.label)}</span><span class="cd">${esc(o.description)}</span></span></button>`).join('')}
+      <button class="choice press" role="radio" aria-checked="${qChoice === 'own'}" data-c="own"><span class="radio"></span><span><span class="cl">Write your own answer</span><span class="cd">Say it in your words instead.</span></span></button>
+    </div>
+    <div class="reveal-h ${qChoice === 'own' ? 'open' : ''}" id="own-wrap"><div><textarea class="own" id="own" placeholder="Your answer" aria-label="Your answer"></textarea></div></div>`
+  const send = $('#q-send'); send.disabled = !qChoice || qChoice === 'own'; send.textContent = 'Send answer'; send.style.minWidth = ''
+  $('#q-body').onclick = e => {
+    const c = e.target.closest('[data-c]'); if (!c) return
+    qChoice = c.dataset.c
+    $$('.choice', $('#q-body')).forEach(x => x.setAttribute('aria-checked', x.dataset.c === qChoice))
+    $('#own-wrap').classList.toggle('open', qChoice === 'own')
+    if (qChoice === 'own') setTimeout(() => $('#own').focus(), 200)
+    send.disabled = qChoice === 'own' ? !$('#own').value.trim() : false
+  }
+  $('#own').oninput = () => { send.disabled = !$('#own').value.trim() }
+  send.onclick = async () => {
+    const label = qChoice === 'own' ? $('#own').value.trim() : D.question.options.find(o => o.id === qChoice).label
+    await setBusy(send, 'Sending…'); await wait(900)
+    send.innerHTML = `${IC.check}Answered`
+    await wait(rm() ? 200 : 500)
+    closeSheet($('#sh-question'))
+    S.busy[t.id] = true
+    await resolveRow(t, `Answered: ${label}`, `Moving the drawer to ${label}`, `Answer sent: ${label}`)
+    send.disabled = false
+  }
+  openSheet($('#sh-question'))
+}
+function openPermission(t) {
+  const p = D.permission
+  $('#p-body').innerHTML = `<p class="sheet-meta">${esc(prov(t.provider))}, in ${esc(t.title)}</p>
+    <h2 class="sheet-h" id="p-h">${esc(prov(t.provider))} wants to run a command</h2>
+    <div class="cmd"><span class="pr">$</span>${esc(p.command)}</div>
+    <dl class="kv"><dt>On</dt><dd>${esc(comp(t.computer).name)}</dd><dt>In</dt><dd class="path">${esc(p.cwd).replace(/\\/g, '\\<wbr>')}</dd></dl>
+    <div class="perm-actions">
+      <button class="btn btn-primary btn-wide press" data-pk="once">Allow once</button>
+      <button class="btn btn-line btn-wide press" data-pk="always">Always allow npm ci</button>
+      <button class="btn btn-danger btn-wide press" data-pk="deny">Deny</button>
+      <button class="btn btn-text btn-wide press" data-close-p>Not now</button>
+    </div>
+    <p class="perm-note">Always allow saves a rule on ${esc(comp(t.computer).name)} for this command in this project. You can remove it there in Settings.</p>`
+  $('#p-body').onclick = async e => {
+    if (e.target.closest('[data-close-p]')) return closeSheet($('#sh-permission'))
+    const b = e.target.closest('[data-pk]'); if (!b) return
+    const kind = b.dataset.pk
+    await setBusy(b, kind === 'deny' ? 'Denying…' : 'Allowing…'); await wait(800)
+    closeSheet($('#sh-permission'))
+    S.busy[t.id] = true
+    const words = { once: ['Allowed once', `Running ${p.command}`, `Allowed ${p.command} once`], always: ['Always allowed', `Running ${p.command}`, `${p.command} is allowed from now on`], deny: ['Denied', `Continuing without ${p.command}`, `Denied ${p.command}`] }[kind]
+    await resolveRow(t, ...words)
+  }
+  openSheet($('#sh-permission'))
+}
+
+// ---------------- Menu sheet ----------------
+function openMenu({ title, options, value, onPick }) {
+  $('#menu-h').textContent = title
+  $('#menu-list').innerHTML = options.map(o => `<button class="mrow" role="radio" aria-checked="${o.id === value}" data-m="${esc(o.id)}"><span><span class="ml">${esc(o.label)}</span>${o.description ? `<span class="md">${esc(o.description)}</span>` : ''}</span>${IC.check}</button>`).join('')
+  $('#menu-list').onclick = async e => {
+    const r = e.target.closest('[data-m]'); if (!r) return
+    $$('.mrow', $('#menu-list')).forEach(x => x.setAttribute('aria-checked', x === r))
+    await wait(rm() ? 60 : 200)
+    closeSheet($('#sh-menu')); onPick(r.dataset.m)
+  }
+  openSheet($('#sh-menu'))
+}
+const OPTS = {
+  model: { title: 'Model', list: () => D.newThread.models.map(m => ({ id: m.id, label: m.label })), label: id => D.newThread.models.find(m => m.id === id).label },
+  effort: { title: 'Effort', list: () => D.newThread.efforts.map(e => ({ id: e, label: e })), label: id => id },
+  perm: { title: 'Permissions', list: () => D.newThread.permissions.map(p => ({ id: p.id, label: p.label, description: p.id === 'ask' ? 'You answer each command and edit.' : p.id === 'edits' ? 'Edits go ahead. Commands wait for you.' : 'Nothing waits for you. Use on projects you trust.' })), label: id => D.newThread.permissions.find(p => p.id === id).label },
+  wc: { title: 'Working copy', list: () => D.newThread.workingCopy.map(w => ({ id: w.id, label: w.label, description: w.description })), label: id => D.newThread.workingCopy.find(w => w.id === id).label, desc: id => D.newThread.workingCopy.find(w => w.id === id).description },
+}
+function fieldRows(src, prefix) {
+  return Object.entries(OPTS).map(([k, o]) => `<button class="fieldrow" data-f="${k}" data-src="${prefix}" aria-label="${o.title}: ${esc(o.label(src[k]))}. Change"><span><span class="fl">${o.title}</span><span class="fv">${esc(o.label(src[k]))}</span>${o.desc ? `<span class="fd">${esc(o.desc(src[k]))}</span>` : ''}</span>${IC.updown}</button>`).join('')
+}
+function pickField(btn, src, after) {
+  const k = btn.dataset.f, o = OPTS[k]
+  openMenu({ title: o.title, options: o.list(), value: src[k], onPick: v => { src[k] = v; after(); const nb = $(`[data-f="${k}"][data-src="${btn.dataset.src}"]`); if (nb && !rm()) nb.classList.add('flash') } })
+}
+
+// ---------------- New thread ----------------
+const NT = {}
+$('#btn-new').addEventListener('click', () => {
+  Object.assign(NT, { step: 1, computer: null, project: null, ...S.defaults })
+  $('#nt-open').disabled = false
+  renderNT(); openSheet($('#sh-new'))
+})
+function renderNT() {
+  const c = NT.computer && comp(NT.computer)
+  $('#nt-step').textContent = `Step ${NT.step} of 3`
+  $('#nt-lead').textContent = NT.step === 1 ? 'Cancel' : 'Back'
+  $('#nt-lead').setAttribute('aria-label', NT.step === 1 ? 'Cancel new thread' : 'Back to the previous step')
+  $$('#sh-new .steps i').forEach((s, k) => s.classList.toggle('on', k < NT.step))
+  $('#nt-track').style.transform = `translateX(${-(NT.step - 1) * 100}%)`
+  $('#nt-1').innerHTML = `<h3 class="sheet-h" style="margin:0">Choose a computer</h3><p class="lede">The thread runs there, in one of its projects.</p>
+    <div class="pick-list" role="radiogroup" aria-label="Computer">${D.computers.map(x => {
+      const n = D.newThread.projects.filter(p => p.computer === x.id).length
+      const off = x.status !== 'online'
+      return `<button class="pick" role="radio" aria-checked="${NT.computer === x.id}" data-nc="${x.id}" ${off ? 'disabled' : ''}><span><span class="pl">${esc(x.name)}</span><span class="ps ${off ? 'c-danger' : ''}">${off ? 'Can’t be reached. Try again from Computers.' : `Online, ${n} ${n === 1 ? 'project' : 'projects'}`}</span></span><span class="pr">${NT.computer === x.id ? IC.check : off ? '' : IC.chev}</span></button>`
+    }).join('')}</div>`
+  const projects = c ? D.newThread.projects.filter(p => p.computer === c.id) : []
+  $('#nt-2').innerHTML = `<h3 class="sheet-h" style="margin:0">Choose a project</h3><p class="lede">${c ? `On ${esc(c.name)}.` : ''}</p>
+    <div class="pick-list" role="radiogroup" aria-label="Project">${projects.map(p => `<button class="pick" role="radio" aria-checked="${NT.project === p.path}" data-np="${esc(p.path)}"><span><span class="pl">${esc(p.name)}</span><span class="ps mono">${esc(p.path)}</span></span><span class="pr tnum">${p.threads} ${p.threads === 1 ? 'thread' : 'threads'} ${NT.project === p.path ? IC.check : IC.chev}</span></button>`).join('')}</div>`
+  const proj = projects.find(p => p.path === NT.project)
+  $('#nt-3').innerHTML = `<h3 class="sheet-h" style="margin:0">Choose how it works</h3><p class="recap">${proj ? `<b>${esc(proj.name)}</b> on <b>${esc(c.name)}</b>` : ''}</p>
+    <div class="fields">${fieldRows(NT, 'nt')}</div>
+    <p class="set-note" style="margin-top: var(--s-2)">These start from your defaults in Settings. A new worktree gets its own <span class="inline-code">sotto/</span> branch when you first send.</p>`
+  $('#nt-foot').classList.toggle('away', NT.step !== 3)
+  $('#nt-open').textContent = c ? `Open thread on ${c.name}` : 'Open thread'
+  $$('#sh-new .nt-panel').forEach((p, k) => p.inert = k !== NT.step - 1)
+}
+$('#nt-lead').onclick = () => { if (NT.step === 1) return closeSheet($('#sh-new')); NT.step--; renderNT() }
+$('#sh-new').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.nc) { NT.computer = b.dataset.nc; NT.project = null; renderNT(); await wait(rm() ? 0 : 200); NT.step = 2; renderNT() }
+  else if (b.dataset.np) { NT.project = b.dataset.np; renderNT(); await wait(rm() ? 0 : 200); NT.step = 3; renderNT() }
+  else if (b.dataset.f) pickField(b, NT, renderNT)
+})
+$('#nt-open').addEventListener('click', async () => {
+  const b = $('#nt-open'), c = comp(NT.computer), proj = D.newThread.projects.find(p => p.path === NT.project)
+  await setBusy(b, `Opening on ${c.name}…`); await wait(1100)
+  const model = D.newThread.models.find(m => m.id === NT.model)
+  const id = 'n' + Date.now()
+  S.threads.splice(S.threads.findIndex(t => groupOf(t) === 'recent'), 0, { id, title: `New thread in ${proj.name}`, provider: model.provider, computer: c.id, project: proj.name, state: 'new', ago: 'now', line: 'No messages yet', branch: NT.wc === 'worktree' ? 'sotto/new' : undefined })
+  closeSheet($('#sh-new'))
+  b.style.minWidth = ''; b.disabled = false
+  renderThreads(false)
+  await wait(rm() ? 60 : 260)
+  if (S.tab !== 'threads') switchTab('threads')
+  openThread(id)
+  toast(`Opened a thread on ${c.name}`)
+  setTimeout(() => showKb('composer'), rm() ? 50 : 480)
+})
+
+// ---------------- Computers ----------------
+function renderComputers(stagger) {
+  const on = D.computers.filter(c => c.status === 'online').length
+  $('#comp-standfirst').innerHTML = `<b class="c-accent">${on}</b> of ${D.computers.length} computers are online.`
+  $('#comp-list').innerHTML = D.computers.map((c, k) => {
+    const n = D.newThread.projects.filter(p => p.computer === c.id).length, tn = S.threads.filter(t => t.computer === c.id).length
+    const online = c.status === 'online'
+    return `<article class="comp ${stagger ? 'reveal' : ''}" style="--i:${k}" data-tone="${online ? 'accent' : 'danger'}">
+      <div class="comp-top"><h2 class="comp-name">${esc(c.name)}</h2><span class="comp-state ${online ? 'c-accent' : 'c-danger'}">${online ? 'Online' : 'Can’t be reached'}</span></div>
+      <dl><dt>Can answer</dt><dd>${c.canAnswer ? 'Yes, questions and permissions' : 'Not while it can’t be reached'}</dd>
+      <dt>Projects</dt><dd class="tnum">${online ? `${n} ${n === 1 ? 'project' : 'projects'}` : 'Shown when it reconnects'}</dd>
+      <dt>Threads</dt><dd class="tnum">${tn} ${tn === 1 ? 'thread' : 'threads'}${online ? '' : ', as last shared'}</dd></dl>
+      <div class="actions"><button class="btn btn-line press" data-show="${c.id}">Show its threads</button>${online ? '' : '<button class="btn btn-text press" data-retry>Try again</button>'}</div></article>`
+  }).join('')
+}
+$('#comp-list').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.show) { setFilter(b.dataset.show); switchTab('threads') }
+  if (b.dataset.retry != null) { await setBusy(b, 'Trying…'); await wait(1400); S.desktopTries++; renderComputers(false); toast(`Still can’t reach ${comp('desktop').name}.`) }
+})
+
+// ---------------- Settings ----------------
+function seg(name, options, value) {
+  return `<div class="seg" role="radiogroup" aria-label="${name}" data-seg="${name}">${options.map(o => `<button role="radio" aria-checked="${o === value}" data-v="${o}">${o}</button>`).join('')}<span class="thumb"></span></div>`
+}
+function placeThumbs() {
+  $$('.seg').forEach(s => { const on = $('[aria-checked="true"]', s), th = $('.thumb', s); if (!on) return; th.style.width = on.offsetWidth + 'px'; th.style.transform = `translateX(${on.offsetLeft - 3}px)` })
+}
+function renderSettings() {
+  const sec = (label, body, note) => `<section class="set-sec" aria-label="${label}"><h2 class="sec-h"><span>${label}</span><span class="rule"></span></h2><div class="set-body">${body}${note ? `<p class="set-note">${note}</p>` : ''}</div></section>`
+  const sizeIdx = SIZES.indexOf(S.textSize)
+  $('#settings-body').innerHTML =
+    sec('Appearance', seg('Appearance', D.settings.appearance, S.appearance), S.appearance === 'System' ? 'Follows this iPhone’s light and dark setting.' : '') +
+    sec('Theme', `<div class="themes" role="radiogroup" aria-label="Theme">${Object.entries(D.THEMES).map(([id, th]) => `<button class="swatch" role="radio" aria-checked="${S.theme === id}" data-theme="${id}" aria-label="${th.label} theme"><span class="sw"><span class="b1"></span><span class="b2"></span><span class="b3"></span><span class="b5"></span><span class="b4"></span></span><span class="sn">${th.label}</span></button>`).join('')}</div>`, 'The same six palettes as Sotto on your computers, in light and dark.') +
+    sec('Text size', `<div class="sizes" role="radiogroup" aria-label="Text size">${D.settings.textSizes.map((n, k) => `<button class="size" role="radio" aria-checked="${k === sizeIdx}" data-size="${k}" aria-label="${n}"><span class="a" style="font-size:${[15, 18, 21, 25, 29][k]}px">A</span></button>`).join('')}</div>
+      <p class="size-name"><span>Text size</span><b>${D.settings.textSizes[sizeIdx]}</b></p>
+      <div class="preview"><p class="pt">Transparent theme and bottom-third project terminal</p><p class="pm">Claude Code on LAPTOP-RUSSH2J5</p></div>`) +
+    sec('Message density', seg('Message density', D.settings.density, S.density), S.density === 'Compact' ? 'Less space between rows and messages. More of a thread fits on screen.' : 'Room between rows and messages for easy reading.') +
+    sec('Notifications', `<div class="fields" style="margin-top:0">${S.notifications.map(n => `<button class="toggle" role="switch" aria-checked="${n.on}" data-n="${n.id}"><span><span class="tl">${esc(n.label)}</span>${n.description ? `<span class="td">${esc(n.description)}</span>` : ''}</span><span class="switch" aria-hidden="true"></span></button>`).join('')}</div>`, esc(D.settings.notificationNote)) +
+    sec('New thread defaults', `<div class="fields" style="margin-top:0">${fieldRows(S.defaults, 'set')}</div>`, 'New thread starts with these. You can change them for each thread.') +
+    sec('About', `<div><p class="about"><span>Sotto for iPhone</span><span>0.1.28</span></p><p class="about"><span>Computers</span><span>${D.computers.filter(c => c.status === 'online').length} of ${D.computers.length} online</span></p></div>`)
+  requestAnimationFrame(placeThumbs)
+  paint(false)
+}
+$('#settings-body').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  const s = b.closest('[data-seg]')
+  if (s) {
+    const name = s.dataset.seg, v = b.dataset.v
+    $$('button', s).forEach(x => x.setAttribute('aria-checked', x === b)); placeThumbs()
+    if (name === 'Appearance') { S.appearance = v; paint(true); setTimeout(renderSettings, rm() ? 0 : 300); toast(v === 'System' ? 'Appearance follows this iPhone' : `${v} appearance`) }
+    if (name === 'Message density') { S.density = v; root.dataset.density = v.toLowerCase(); setTimeout(renderSettings, 340) }
+    return
+  }
+  if (b.dataset.theme) {
+    S.theme = b.dataset.theme
+    $$('.swatch').forEach(x => x.setAttribute('aria-checked', x === b))
+    paint(true); toast(`${D.THEMES[S.theme].label} theme`); return
+  }
+  if (b.dataset.size) {
+    S.textSize = SIZES[+b.dataset.size]; root.style.setProperty('--ts', S.textSize)
+    renderSettings(); requestAnimationFrame(() => { const nb = $(`[data-size="${b.dataset.size}"]`); nb && nb.focus({ preventScroll: true }) }); return
+  }
+  if (b.dataset.n) { const n = S.notifications.find(x => x.id === b.dataset.n); n.on = !n.on; b.setAttribute('aria-checked', n.on); return }
+  if (b.dataset.f) pickField(b, S.defaults, renderSettings)
+})
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (S.appearance === 'System') paint(true) })
+
+// ---------------- Toast ----------------
+let toastT
+function toast(text) {
+  const el = $('#toast'); $('#toast-text').textContent = text
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on')
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2600)
+}
+
+// ---------------- Life: elapsed time and the live line ----------------
+const T4 = ['Editing src/connectors/grok.ts', 'Reading src/connectors/reconnect.ts', 'Running npm test -- grok']
+let t4i = 0
+setInterval(() => { $$('[data-elapsed]').forEach(el => el.textContent = elapsed(el.dataset.elapsed)) }, 1000)
+setInterval(() => {
+  const t = thread('t4'); if (t.state !== 'working') return
+  t4i = (t4i + 1) % T4.length; t.line = T4[t4i]
+  $$('[data-live="t4"]').forEach(el => {
+    el.classList.add('swap')
+    setTimeout(() => { const [w, ...r] = t.line.split(' '); el.innerHTML = el.closest('.liveline') ? esc(r.join(' ')) : `<span class="word c-accent">${esc(w)}</span>${esc(r.join(' '))}`; el.classList.remove('swap') }, rm() ? 0 : 260)
+  })
+}, 5200)
+
+document.addEventListener('touchstart', () => {}, { passive: true }) // lets :active show on iOS
+window.addEventListener('resize', () => { placeThumbs(); if (S.open) setTabInk() })
+
+// ---------------- Start ----------------
+renderSettings()
+renderComputers(false)
+renderThreads(true)
+</script>
+</body>
+</html>

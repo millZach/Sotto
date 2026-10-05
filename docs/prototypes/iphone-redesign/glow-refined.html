@@ -1,0 +1,1828 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Glow, refined (Zach picked Glow from the five variants; this copy refines it page by page).
+  Refinements over v2-glow.html:
+  - Threads, Computers and Settings scroll as one page, like Soft: the heading, the + button, the computer picker,
+    the summary, search and the wash all move up with the list; content fades out under the status bar.
+  - The thread page: Zach chose version B (title scrolls away, steps inline) on 2026-10-04. A and C stay behind ?thread=A|C for the record; the prototype-only
+    pill in the status bar, or the left and right arrow keys. None has a Messages/Activity switch; the agent's steps
+    sit in the conversation in time order. A · Folded steps, B · Title scrolls away, C · Live strip.
+  What Glow was:
+  Light is status. Every screen has a soft wash at the top, mixed from the chosen theme's accent into the canvas, so the
+  theme colours the whole room rather than sitting in buttons. A thread that is working breathes with a slow accent halo,
+  a thread that needs the user carries a warm glow (and warms the Threads wash while anything waits), and a thread that
+  stopped with an error has a faint danger edge. Bars that float over content (tab bar, thread header, reply box, menus)
+  are frosted glass with a hairline highlight, echoing the desktop's frosted window. The reply box glows while it is
+  focused. Glows stay low and slow: depth and hierarchy, never neon.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · iPhone redesign · Glow, refined</title>
+<script src="data.js"></script>
+<style>
+@font-face { font-family: Figtree; src: url(../../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2"); font-weight: 300 900; }
+
+/* ---------- Scales ---------- */
+:root {
+  --ts: 1;          /* text size step */
+  --dens: 1;        /* message density */
+  --fs-cap: calc(12px * var(--ts));
+  --fs-sm: calc(13.5px * var(--ts));
+  --fs-body: calc(15.5px * var(--ts));
+  --fs-lead: calc(17px * var(--ts));
+  --fs-title: calc(21px * var(--ts));
+  --fs-display: calc(28px * var(--ts));
+  --lh-tight: 1.22;
+  --lh: 1.45;
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 44px;
+  --gutter: var(--sp-5);
+  --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px;
+
+  --sb-h: calc(50px + env(safe-area-inset-top));
+  --safe-b: max(env(safe-area-inset-bottom), 18px);
+  --kb-h: 296px;
+  --tab-h: 62px;
+
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --spring: cubic-bezier(.32, .72, 0, 1);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* Derived from theme roles only */
+  --accent-text: color-mix(in oklab, var(--accent) 84%, var(--ink));
+  --warn-text: color-mix(in oklab, var(--warning) 62%, var(--ink));
+  --danger-text: color-mix(in oklab, var(--danger) 78%, var(--ink));
+  --glass: color-mix(in oklch, var(--surface) 58%, transparent);
+  --glass-strong: color-mix(in oklch, var(--overlay) 76%, transparent);
+  --hairline: color-mix(in oklch, var(--ink) 10%, transparent);
+  --hl: color-mix(in oklch, var(--ink) 10%, transparent);
+  --wash-a: color-mix(in oklch, var(--accent) 34%, transparent);
+  --wash-b: color-mix(in oklch, var(--accent) 16%, transparent);
+  --wash-w: color-mix(in oklch, var(--warning) 22%, transparent);
+  --fill-soft: color-mix(in oklch, var(--ink) 7%, transparent);
+  --fill-softer: color-mix(in oklch, var(--ink) 4.5%, transparent);
+  --shadow-far: 0 24px 60px -20px rgba(0, 0, 0, .6);
+}
+[data-appearance="light"] {
+  --warn-text: color-mix(in oklab, var(--warning) 48%, var(--ink));
+  --danger-text: color-mix(in oklab, var(--danger) 70%, var(--ink));
+  --accent-text: color-mix(in oklab, var(--accent) 78%, var(--ink));
+  --glass: color-mix(in oklch, var(--surface) 68%, transparent);
+  --glass-strong: color-mix(in oklch, var(--surface) 80%, transparent);
+  --hl: color-mix(in oklch, var(--surface) 95%, transparent);
+  --wash-a: color-mix(in oklch, var(--accent) 22%, transparent);
+  --wash-b: color-mix(in oklch, var(--accent) 11%, transparent);
+  --wash-w: color-mix(in oklch, var(--warning) 20%, transparent);
+  --shadow-far: 0 24px 50px -22px rgba(0, 0, 0, .28);
+}
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); }
+body { font-family: Figtree, -apple-system, system-ui, sans-serif; color: var(--ink); font-size: var(--fs-body); line-height: var(--lh);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 0; -webkit-user-select: none; user-select: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+h1, h2, h3, h4, p { margin: 0; }
+code, pre { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+svg.i { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 16px; height: 16px; }
+svg.i.lg { width: 24px; height: 24px; }
+
+#phone { position: fixed; inset: 0; overflow: hidden; overflow: clip; background: rgb(0 0 0); }
+#stage { position: absolute; inset: 0; overflow: hidden; overflow: clip; background: var(--canvas); transform-origin: 50% 100%;
+  transition: transform .5s var(--spring), border-radius .5s var(--spring); }
+.sheet-open #stage { transform: scale(.94) translateY(6px); border-radius: 26px; }
+
+/* ---------- Status bar ---------- */
+.statusbar { position: absolute; z-index: 60; top: 0; left: 0; right: 0; height: var(--sb-h); padding: env(safe-area-inset-top) 28px 0 34px;
+  display: flex; align-items: center; justify-content: space-between; pointer-events: none; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.statusbar .right { display: flex; gap: 6px; align-items: center; }
+.statusbar svg { fill: currentColor; stroke: none; }
+
+/* ---------- Wash: the theme colours the room ---------- */
+.wash { position: absolute; z-index: 0; left: -10%; right: -10%; top: 0; height: 520px; pointer-events: none; overflow: hidden; }
+.wash::before, .wash::after { content: ""; position: absolute; inset: 0; }
+.wash::before {
+  background:
+    radial-gradient(60% 52% at 18% 0%, var(--wash-a), transparent 72%),
+    radial-gradient(48% 44% at 88% 6%, var(--wash-b), transparent 72%);
+  animation: drift 26s ease-in-out infinite alternate;
+}
+.wash::after { background: radial-gradient(46% 40% at 86% 2%, var(--wash-w), transparent 70%); opacity: 0; transition: opacity 1.6s ease; }
+.wash.warm::after { opacity: 1; animation: drift 31s ease-in-out infinite alternate-reverse; }
+.wash.short { height: 330px; }
+.wash.quiet { --wash-a: color-mix(in oklch, var(--accent) 16%, transparent); --wash-b: color-mix(in oklch, var(--accent) 8%, transparent); }
+.wash.failed { --wash-a: color-mix(in oklch, var(--danger) 16%, transparent); --wash-b: color-mix(in oklch, var(--accent) 8%, transparent); }
+@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-3%, 2%, 0) scale(1.07); } }
+
+/* ---------- Glass ---------- */
+.glass { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); }
+
+/* ---------- Screens ---------- */
+.screen { position: absolute; inset: 0; overflow: hidden; overflow: clip; background: var(--canvas); }
+.tab-root::after { content: ""; position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; height: calc(var(--tab-h) + var(--safe-b) + 36px); pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in oklch, var(--canvas) 88%, transparent) 55%); }
+.tab-root { opacity: 0; visibility: hidden; transform: scale(.985); transition: opacity .28s ease, transform .36s var(--ease), visibility 0s .36s; }
+.tab-root.on { opacity: 1; visibility: visible; transform: none; transition: opacity .28s ease, transform .36s var(--ease), visibility 0s; }
+.tab-root.under { transform: translateX(-24%); transition: transform .46s var(--spring); }
+.tab-root .dim { position: absolute; inset: 0; z-index: 30; background: rgba(0, 0, 0, .32); opacity: 0; pointer-events: none; transition: opacity .46s var(--spring); }
+.tab-root.under .dim { opacity: 1; }
+#scr-thread { z-index: 20; transform: translateX(102%); visibility: hidden; box-shadow: -18px 0 40px -18px rgba(0, 0, 0, .55);
+  transition: transform .46s var(--spring), visibility 0s .46s; }
+#scr-thread.in { transform: none; visibility: visible; transition: transform .46s var(--spring), visibility 0s; }
+.scroll { position: absolute; inset: 0; z-index: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
+/* A tab page is one scrolling sheet: the wash, the heading and its controls all move up with the list. The page clips
+   the wash sideways so the drift never widens the scroll. */
+.page { padding: var(--sb-h) var(--gutter) calc(var(--tab-h) + var(--safe-b) + var(--sp-8)); position: relative; isolation: isolate; overflow-x: clip; }
+.page > .wash { z-index: -1; }
+
+/* Content fades out under the status bar once the page moves, so text never meets the clock. At rest it is clear
+   and the wash reaches the top edge. */
+.sb-fade { position: absolute; z-index: 8; top: 0; left: 0; right: 0; height: calc(var(--sb-h) + 10px); pointer-events: none;
+  background: linear-gradient(var(--canvas) 62%, color-mix(in oklch, var(--canvas) 0%, transparent)); opacity: var(--sbf, 0); }
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 52px; margin-top: 0; }
+.page-title { font-size: var(--fs-display); font-weight: 720; letter-spacing: -.025em; line-height: 1.1; }
+.page-sub { color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-1); }
+
+.fab { position: relative; flex: none; margin-right: calc(var(--sp-1) * -1); width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; color: var(--accent-text);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 28%, transparent), 0 8px 26px -8px color-mix(in oklch, var(--accent) 55%, transparent); }
+
+/* ---------- Press feedback ---------- */
+.press { transition: transform .16s var(--ease), background-color .2s ease, box-shadow .3s ease, opacity .2s ease; }
+.press:active:not(:disabled) { transform: scale(.972); }
+
+/* ---------- Buttons ---------- */
+.btn { min-height: 44px; padding: 0 var(--sp-4); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  font-weight: 640; font-size: var(--fs-body); white-space: nowrap; }
+.btn.primary { background: var(--accent); color: var(--accent-ink);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--accent-ink) 14%, transparent), 0 8px 22px -10px color-mix(in oklch, var(--accent) 80%, transparent); }
+.btn.soft { background: var(--fill-soft); color: var(--ink); }
+.btn.ghost { color: var(--accent-text); }
+.btn.warn { background: color-mix(in oklab, var(--warning) 88%, var(--canvas)); color: var(--accent-ink); }
+.btn.danger { background: color-mix(in oklch, var(--danger) 13%, transparent); color: var(--danger-text); }
+.btn:disabled { opacity: .42; box-shadow: none; }
+.btn.wide { width: 100%; }
+.btn.busy { pointer-events: none; }
+.btn .spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Lights ---------- */
+.light { width: 8px; height: 8px; border-radius: 50%; flex: none; background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 18%, transparent), 0 0 12px color-mix(in oklch, currentColor 70%, transparent); }
+.light.acc { color: var(--accent); }
+.light.warn { color: var(--warning); }
+.light.bad { color: var(--danger); }
+.light.off { color: var(--muted); background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.light.breathe { animation: breathe 2.6s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: .55; transform: scale(.88); } 50% { opacity: 1; transform: scale(1); } }
+
+/* ---------- Threads home ---------- */
+.controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-3); }
+.selector { min-height: 44px; padding: 0 var(--sp-3) 0 var(--sp-3); border-radius: 999px; display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-weight: 620; font-size: var(--fs-sm); background: var(--fill-soft); box-shadow: inset 0 0 0 1px var(--hairline); max-width: 100%; }
+.selector .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary { display: flex; gap: var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
+.summary span { display: inline-flex; align-items: center; white-space: nowrap; }
+.summary .light { margin-right: var(--sp-2); }
+.summary b { color: var(--ink); font-weight: 650; margin-right: .3em; }
+
+.search { margin-top: var(--sp-3); min-height: 46px; border-radius: 999px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-4);
+  background: color-mix(in oklch, var(--surface) 70%, transparent); box-shadow: inset 0 0 0 1px var(--hairline); color: var(--muted); transition: box-shadow .3s ease, background .3s ease; }
+.search.focus { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 60%, transparent), 0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent), 0 0 26px -6px color-mix(in oklch, var(--accent) 45%, transparent); }
+.search .field { flex: 1; min-height: 46px; display: flex; align-items: center; font-size: var(--fs-body); color: var(--ink); min-width: 0; overflow: hidden; white-space: nowrap; }
+.search .ph { color: var(--placeholder); }
+.caret { display: none; width: 2px; height: 1.15em; background: var(--accent); margin-left: 1px; border-radius: 1px; animation: blink 1.05s steps(1) infinite; flex: none; }
+.focus .caret { display: inline-block; }
+@keyframes blink { 50% { opacity: 0; } }
+.search .clear { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); }
+
+.note { margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); border-radius: var(--r-md); display: flex; gap: var(--sp-3); align-items: center;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--danger) 9%, var(--surface)), var(--surface) 70%); box-shadow: inset 0 0 0 1px var(--hairline); font-size: var(--fs-sm); color: var(--muted); }
+.note p { flex: 1; min-width: 0; }
+.note b { color: var(--ink); font-weight: 640; }
+.note .btn { min-height: 40px; padding: 0 var(--sp-3); font-size: var(--fs-sm); flex: none; }
+
+.sec { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-7) 0 var(--sp-3); font-size: var(--fs-sm); font-weight: 650; color: var(--ink); }
+.sec .count { color: var(--muted); font-weight: 500; }
+.sec + .stack { margin-top: 0; }
+.stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* Cards that need you: warm glow */
+.card { position: relative; isolation: isolate; display: block; width: 100%; border-radius: var(--r-lg); background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); }
+.card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none; }
+.card.need { background: linear-gradient(180deg, color-mix(in oklab, var(--warning) 11%, var(--surface)), var(--surface) 72%);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--warning) 30%, transparent); }
+.card.need::before { box-shadow: 0 14px 44px -16px color-mix(in oklch, var(--warning) 60%, transparent); animation: glow 6s ease-in-out infinite; }
+.card.need.answered { background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 14%, var(--surface)), var(--surface) 72%);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent); transition: background .4s ease, box-shadow .4s ease; }
+.card.need.answered::before { box-shadow: 0 14px 44px -14px color-mix(in oklch, var(--accent) 70%, transparent); animation: none; }
+@keyframes glow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+.card-open { display: block; width: 100%; padding: var(--sp-4) var(--sp-4) var(--sp-2); border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.card-top { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-cap); color: var(--muted); font-weight: 600; min-height: 18px; }
+.card-top .tag { color: var(--warn-text); }
+.card.working .card-top .tag { color: var(--accent-text); }
+.card-top .ago { margin-left: auto; font-weight: 500; }
+.card-title { font-size: var(--fs-lead); font-weight: 650; line-height: var(--lh-tight); margin-top: var(--sp-2); letter-spacing: -.01em; }
+.card-meta { font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-ask { font-size: var(--fs-body); margin-top: var(--sp-3); line-height: 1.38; }
+.card-ask code, .inline-code { font-size: .9em; padding: 2px 7px; border-radius: 7px; background: var(--code-bg); color: var(--code-ink); box-shadow: inset 0 0 0 1px var(--hairline); white-space: nowrap; }
+.choices { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4) 0; }
+.chip { min-height: 44px; padding: 0 var(--sp-4); border-radius: 999px; font-size: var(--fs-sm); font-weight: 620; background: var(--fill-soft);
+  box-shadow: inset 0 0 0 1px var(--hairline); display: inline-flex; align-items: center; gap: var(--sp-2); }
+.chip[aria-checked="true"] { background: color-mix(in oklab, var(--accent) 20%, var(--surface)); color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 18px -4px color-mix(in oklch, var(--accent) 55%, transparent); }
+.card-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; padding: var(--sp-3) var(--sp-3) var(--sp-3); flex-wrap: wrap; }
+.card-actions .btn { min-height: 44px; font-size: var(--fs-sm); }
+.card-actions .spacer { flex: 1; }
+
+/* Working cards: a breathing accent halo and a light that runs along the bottom edge */
+.card.working { text-align: left; padding: var(--sp-4); overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 9%, var(--surface)), var(--surface) 70%);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 26%, transparent); }
+.card-wrap { position: relative; isolation: isolate; border-radius: var(--r-lg); }
+.card-wrap.working::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none;
+  box-shadow: 0 12px 40px -14px color-mix(in oklch, var(--accent) 70%, transparent), 0 0 0 1px color-mix(in oklch, var(--accent) 22%, transparent);
+  animation: glow 4.4s ease-in-out infinite; }
+.runner { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
+.runner::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -40%;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 90%, transparent), transparent); animation: run 2.8s var(--ease) infinite; }
+@keyframes run { to { left: 100%; } }
+.live { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-sm); min-width: 0; }
+.live .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheen { background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 38%, var(--ink) 50%, var(--muted) 62%, var(--muted) 100%);
+  background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 3.2s linear infinite; }
+@keyframes sheen { from { background-position: 100% 0; } to { background-position: -160% 0; } }
+.elapsed { font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--fs-cap); font-weight: 550; white-space: nowrap; }
+
+/* Recent: a quiet list on one surface */
+.list { border-radius: var(--r-lg); background: color-mix(in oklch, var(--surface) 88%, transparent); box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); overflow: hidden; }
+.row { position: relative; display: flex; gap: var(--sp-3); align-items: flex-start; width: 100%; padding: calc(var(--sp-3) * var(--dens) + 2px) var(--sp-4); min-height: 60px; text-align: left; }
+.row + .row::after { content: ""; position: absolute; top: 0; left: calc(var(--sp-4) + 20px); right: 0; height: 1px; background: var(--hairline); }
+.row:active { background: var(--fill-softer); }
+.row .light { margin-top: 7px; }
+.row .body { flex: 1; min-width: 0; }
+.row .t { display: block; font-weight: 560; font-size: var(--fs-body); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row.unread .t { font-weight: 680; }
+.row .l { display: block; font-size: var(--fs-sm); color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .a { font-size: var(--fs-cap); color: var(--muted); white-space: nowrap; margin-top: 3px; }
+.row.failed { background: linear-gradient(90deg, color-mix(in oklch, var(--danger) 10%, transparent), transparent 55%); }
+.row.failed::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--danger); box-shadow: 0 0 14px var(--danger); opacity: .8; }
+.row.failed .l { color: var(--danger-text); }
+
+.settled-toggle { width: 100%; min-height: 52px; display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-6); padding: 0 var(--sp-1); color: var(--muted); font-size: var(--fs-sm); font-weight: 650; }
+.settled-toggle .chev { transition: transform .3s var(--ease); }
+.settled-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.settled-toggle .count { margin-left: auto; font-weight: 500; }
+.expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .38s var(--ease), opacity .3s ease; opacity: 0; }
+.expand.open { grid-template-rows: 1fr; opacity: 1; }
+.expand > div { overflow: hidden; }
+.empty { color: var(--muted); padding: var(--sp-7) var(--sp-1); font-size: var(--fs-body); }
+
+.leaving { overflow: hidden; transition: height .42s var(--ease), opacity .3s ease, transform .42s var(--ease), margin .42s var(--ease) !important; opacity: 0 !important; transform: scale(.96) translateX(6%) !important; }
+.arrive { animation: arrive .7s var(--ease) both; }
+@keyframes arrive { from { opacity: 0; transform: translateY(-10px) scale(.98); } }
+
+/* ---------- Tab bar ---------- */
+.tabbar { position: absolute; z-index: 40; left: var(--sp-4); right: var(--sp-4); bottom: var(--safe-b); height: var(--tab-h); border-radius: 999px;
+  display: flex; padding: 5px; box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline), 0 14px 40px -12px rgba(0, 0, 0, .5);
+  transition: transform .46s var(--spring), opacity .3s ease; }
+.tabbar.away { transform: translateY(calc(100% + var(--safe-b) + 10px)); }
+.tab { flex: 1; border-radius: 999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative;
+  font-size: calc(11.5px * min(var(--ts), 1.15)); font-weight: 620; color: var(--muted); transition: color .25s ease, background .3s ease, box-shadow .3s ease; }
+.tab[aria-current="page"] { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 20%, transparent), 0 0 22px -6px color-mix(in oklch, var(--accent) 50%, transparent); }
+.badge { position: absolute; top: 5px; left: calc(50% + 6px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  display: grid; place-items: center; background: var(--warning); color: var(--accent-ink); box-shadow: 0 0 12px -2px color-mix(in oklch, var(--warning) 80%, transparent); }
+[data-appearance="light"] .badge { color: var(--ink); }
+.badge.pop { animation: pop .45s var(--ease); }
+@keyframes pop { 40% { transform: scale(1.3); } }
+
+.homebar { position: absolute; z-index: 90; bottom: 7px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: var(--ink); opacity: .55; pointer-events: none; }
+
+/* ---------- Thread ---------- */
+/* Shared by all three versions: a glass header that is one line tall, a back button and a status pill. */
+.thead { position: absolute; z-index: 13; top: 0; left: 0; right: 0; padding: var(--sb-h) var(--sp-4) var(--sp-2);
+  border-radius: 0 0 var(--r-lg) var(--r-lg); box-shadow: inset 0 -1px 0 var(--hairline), 0 10px 30px -18px rgba(0, 0, 0, .5); }
+.thead .bar { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; }
+.back { width: 44px; height: 44px; margin-left: -10px; border-radius: 50%; display: grid; place-items: center; color: var(--accent-text); flex: none; }
+.ttl { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: var(--sp-1); margin-left: calc(var(--sp-1) * -1); padding: 0 var(--sp-1); border-radius: 12px; }
+.ttl .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; font-size: var(--fs-body); }
+.ttl .chev { color: var(--muted); transition: transform .4s var(--spring); }
+.ttl[aria-expanded="true"] .chev { transform: rotate(180deg); }
+button.ttl:active { background: var(--fill-softer); }
+.state-pill { display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); min-height: 30px; border-radius: 999px; font-size: var(--fs-cap); font-weight: 620;
+  background: var(--fill-soft); color: var(--muted); flex: none; white-space: nowrap; }
+.state-pill.working { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 13%, transparent); }
+.state-pill.working .elapsed { color: var(--accent-text); }
+/* A and C: while it works, the breathing light and the timer say it; the word stays for screen readers */
+.thead.glass .state-pill.working .word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.state-pill.failed { color: var(--danger-text); background: color-mix(in oklch, var(--danger) 12%, transparent); }
+.plus { color: var(--accent-text); font-weight: 650; }
+.minus { color: var(--danger-text); font-weight: 650; }
+.seg { display: flex; padding: 3px; border-radius: 999px; background: var(--fill-soft); margin-top: var(--sp-3); position: relative; }
+.seg button { flex: 1; text-align: center; min-height: 38px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 620; color: var(--muted); position: relative; z-index: 1; transition: color .25s ease; }
+.seg button[aria-pressed="true"], .seg button[aria-checked="true"] { color: var(--ink); }
+.seg .knob { position: absolute; top: 3px; bottom: 3px; left: 3px; border-radius: 999px; background: var(--raised);
+  box-shadow: inset 0 1px 0 var(--hl), 0 2px 8px -2px rgba(0, 0, 0, .35), 0 0 0 1px var(--hairline); transition: transform .38s var(--spring), width .38s var(--spring); }
+[data-appearance="light"] .seg .knob { background: var(--surface); }
+
+/* One step the agent took. The same line is dressed differently by each version's container. */
+.steplist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.step { display: flex; align-items: center; gap: var(--sp-2); min-height: 34px; font-size: var(--fs-sm); color: var(--muted); min-width: 0; }
+.step .si { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--fill-soft); color: var(--muted); }
+.step .si svg.i.sm { width: 14px; height: 14px; }
+.step.k-file-change .si { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 13%, transparent); }
+.step .sv { color: var(--ink); font-weight: 600; white-space: nowrap; flex: none; }
+.step .ss { flex: 1; min-width: 0; font-family: var(--mono); font-size: calc(12px * var(--ts)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .sm { flex: none; font-size: var(--fs-cap); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; gap: 5px; margin-left: auto; }
+.step.k-reasoning .sv { font-weight: 560; color: var(--muted); }
+.step.running .si { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 16%, transparent); }
+.step.running .sv, .step.running .sm, .step.running .elapsed { color: var(--accent-text); }
+.step.halt .sv { color: var(--muted); }
+.step.bad .sv, .step.bad .si { color: var(--danger-text); }
+.step.bad .si { background: color-mix(in oklch, var(--danger) 12%, transparent); }
+.mini-spin { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid currentColor; border-right-color: transparent; animation: spin .9s linear infinite; display: block; }
+.mini-sq { width: 9px; height: 9px; border-radius: 2.5px; background: currentColor; display: block; }
+
+/* Details: provider, computer, project, branch, pull request and checks. A's title panel and C's drawer both use it. */
+.tdrop { position: absolute; z-index: 12; left: var(--sp-3); right: var(--sp-3); top: calc(var(--thead-h, 100px) + var(--sp-2)); border-radius: var(--r-lg);
+  padding: var(--sp-4); background: var(--glass-strong); -webkit-backdrop-filter: blur(26px) saturate(1.8); backdrop-filter: blur(26px) saturate(1.8);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline), var(--shadow-far);
+  max-height: calc(100% - var(--thead-h, 100px) - var(--dock-h, 70px) - var(--safe-b) - var(--sp-6)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  opacity: 0; visibility: hidden; transform: translateY(-14px) scale(.96); transform-origin: 50% 0; pointer-events: none;
+  transition: opacity .2s ease, transform .46s var(--spring), visibility 0s .46s; }
+.tdrop.on { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition: opacity .22s ease, transform .5s cubic-bezier(.3, 1.25, .5, 1), visibility 0s; }
+.tcatch { position: absolute; z-index: 11; inset: 0; display: none; }
+.tcatch.on { display: block; }
+.dd-who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.mark { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; flex: none; background: color-mix(in oklch, var(--accent) 22%, transparent); color: var(--accent-text); font-size: 10px; font-weight: 800; }
+.dd-who .mark { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+.dd-who .tx { min-width: 0; display: flex; flex-direction: column; }
+.dd-who b { font-weight: 650; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-who .tx > span { color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-sec { margin-top: var(--sp-3); padding-top: var(--sp-3); box-shadow: inset 0 1px 0 var(--hairline); }
+.dd-h { font-size: var(--fs-cap); font-weight: 650; color: var(--muted); margin: 0 0 var(--sp-1); display: flex; gap: var(--sp-2); }
+.dd-h .count { margin-left: auto; font-weight: 550; }
+.dd-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 38px; font-size: var(--fs-sm); min-width: 0; }
+.dd-row .ib { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--fill-soft); color: var(--muted); }
+.dd-row .v { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dd-row .v small { color: var(--muted); font-size: var(--fs-cap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-row .mono { font-family: var(--mono); font-size: calc(12.5px * var(--ts)); word-break: break-all; line-height: 1.35; }
+.dd-row .r { flex: none; color: var(--muted); font-size: var(--fs-cap); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; gap: 5px; }
+.dd-later { margin-top: var(--sp-2); font-size: var(--fs-cap); color: var(--muted); }
+.dd-turn { margin-top: var(--sp-3); font-size: var(--fs-cap); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-h + .dd-turn { margin-top: 0; }
+.dd-turn q { color: var(--ink); }
+.tdrop .steplist { margin: var(--sp-1) 0 0; }
+
+/* ---- A · Folded steps ---- */
+.fold { align-self: flex-start; max-width: 100%; margin: calc(var(--sp-2) * -1) 0; }
+.fold-row { max-width: 100%; min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-1); border-radius: 999px;
+  color: var(--muted); font-size: var(--fs-sm); font-weight: 580; text-align: left; }
+.fold-row .stackic { display: flex; flex: none; }
+.fold-row .stackic span { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--ink) 9%, var(--canvas)); color: var(--muted);
+  box-shadow: 0 0 0 2px var(--canvas); }
+.fold-row .stackic span + span { margin-left: -7px; }
+.fold-row .stackic svg.i.sm { width: 13px; height: 13px; }
+.fold-row .stackic .k-file-change { color: var(--accent-text); background: color-mix(in oklab, var(--accent) 16%, var(--canvas)); }
+.fold-row .ft { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-row .fm { flex: none; display: inline-flex; gap: 5px; font-size: var(--fs-cap); font-variant-numeric: tabular-nums; }
+.fold-row .chev { flex: none; transition: transform .45s var(--spring); }
+.fold-row[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.fold-row[aria-expanded="true"] { color: var(--ink); }
+.fold-row:active { background: var(--fill-softer); }
+.fold-x { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--spring); }
+.fold-x > div { overflow: hidden; min-height: 0; }
+.fold.open .fold-x { grid-template-rows: 1fr; }
+.fold-body { margin: var(--sp-1) 0 var(--sp-2) 0; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-md); background: var(--fill-softer); box-shadow: inset 0 0 0 1px var(--hairline);
+  opacity: 0; transform: translateY(-8px) scale(.97); transform-origin: 0 0; transition: opacity .2s ease, transform .55s cubic-bezier(.3, 1.35, .5, 1); }
+.fold.open { align-self: stretch; }
+.fold.open .fold-body { opacity: 1; transform: none; }
+.liverow { display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; margin: 0 var(--sp-3) var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-2); border-radius: 999px; font-size: var(--fs-sm);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 26%, transparent), 0 10px 26px -14px color-mix(in oklch, var(--accent) 70%, transparent); }
+.liverow .orb { width: 20px; height: 20px; border-radius: 50%; flex: none; position: relative; }
+.liverow .orb::before, .liverow .orb::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--accent); }
+.liverow .orb::after { inset: 0; background: color-mix(in oklch, var(--accent) 40%, transparent); animation: ripple 2.2s ease-out infinite; }
+.liverow .lh { flex: none; font-weight: 650; white-space: nowrap; }
+.liverow .ld { flex: 1; min-width: 0; font-family: var(--mono); font-size: calc(12px * var(--ts)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.liverow .lh.only { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.liverow .elapsed { color: var(--accent-text); }
+.liverow.stopped { box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); }
+.liverow.stopped .orb::before { background: var(--muted); }
+.liverow.failed { box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--danger) 34%, transparent); }
+.liverow.failed .orb::before { background: var(--danger); }
+.liverow.failed .lh { color: var(--danger-text); }
+.liverow.stopped .orb::after, .liverow.failed .orb::after { display: none; }
+
+/* ---- B · Title scrolls away ---- */
+.thead.slim { border-radius: 0; background: transparent; box-shadow: none; transition: background-color .3s ease, box-shadow .3s ease; }
+.thead.slim.stuck { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7); box-shadow: inset 0 -1px 0 var(--hairline); }
+.thead.slim .mini { flex: 1; min-width: 0; font-weight: 650; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  opacity: 0; transform: translateY(8px); transition: opacity .25s ease, transform .35s var(--ease); }
+.thead.slim.titled .mini { opacity: 1; transform: none; }
+.thead.slim .state-pill { min-height: 28px; padding: 0 var(--sp-2) 0 var(--sp-3); }
+.thead.slim.titled .state-pill.working .word { display: none; }
+.tscroll { position: relative; isolation: isolate; overflow-x: clip; }
+#tScroll { scroll-padding: calc(var(--thead-h, 100px) + var(--sp-2)) 0 calc(var(--dock-h, 70px) + var(--safe-b) + var(--sp-3)); }
+.kb-open #tScroll { scroll-padding-bottom: calc(var(--dock-h, 70px) + var(--kb-h) + var(--sp-3)); }
+.tscroll > .wash { z-index: -1; }
+.thero { padding: var(--sp-1) 0 var(--sp-2); }
+.ttitle { font-size: var(--fs-display); font-weight: 720; line-height: 1.12; letter-spacing: -.025em; }
+.tmeta { font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chiprow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin-top: var(--sp-2); border-radius: 999px; text-align: left; }
+.gchip { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 var(--sp-3) 0 var(--sp-2); border-radius: 999px; flex: none; white-space: nowrap;
+  font-size: var(--fs-cap); font-weight: 620; color: var(--muted); background: color-mix(in oklch, var(--surface) 70%, transparent); box-shadow: inset 0 0 0 1px var(--hairline); }
+.gchip.br { flex: 0 1 auto; min-width: 0; font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.gchip.br span { overflow: hidden; text-overflow: ellipsis; }
+.gchip.num { padding-left: var(--sp-3); }
+.gchip .light { width: 6px; height: 6px; margin: 0 2px; }
+.chiprow:active .gchip { background: var(--fill-soft); }
+.trail { list-style: none; position: relative; margin: calc(var(--sp-2) * -1) 0 calc(var(--sp-2) * -1) var(--sp-2); padding: 2px 0 2px var(--sp-4); display: flex; flex-direction: column; }
+.trail::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 1.5px; border-radius: 1px; background: color-mix(in oklch, var(--ink) 14%, transparent); }
+.trail .step { min-height: 26px; font-size: var(--fs-cap); gap: 7px; }
+.trail .step .si { width: 16px; height: 16px; background: none; border-radius: 0; }
+.trail .step .ss { font-size: calc(11.5px * var(--ts)); }
+.trail .step .sv { font-weight: 620; }
+
+/* ---- C · Live strip ---- */
+.strip-x { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .42s var(--spring), opacity .25s ease; }
+.strip-x > div { overflow: hidden; min-height: 0; }
+.kb-open #scr-thread[data-v="C"] .strip-x { grid-template-rows: 0fr; opacity: 0; }
+.strip { width: 100%; min-height: 44px; margin-top: var(--sp-1); display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-3); border-radius: 999px;
+  font-size: var(--fs-sm); text-align: left; position: relative; overflow: hidden;
+  background: color-mix(in oklch, var(--accent) 10%, transparent); box-shadow: inset 0 1px 0 var(--hl), inset 0 0 0 1px color-mix(in oklch, var(--accent) 24%, transparent); }
+.strip .sic { width: 16px; display: grid; place-items: center; flex: none; color: var(--accent-text); }
+.strip .stx { flex: 1; min-width: 0; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip .elapsed { color: var(--accent-text); }
+.strip .sheen { background-image: linear-gradient(90deg, var(--ink) 0%, var(--ink) 38%, var(--muted) 50%, var(--ink) 62%, var(--ink) 100%); }
+.strip .scount { flex: none; display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 0 var(--sp-2) 0 var(--sp-3); border-radius: 999px;
+  font-size: var(--fs-cap); font-weight: 650; color: var(--ink); background: var(--fill-soft); }
+.strip .scount .chev { color: var(--muted); transition: transform .4s var(--spring); }
+.strip[aria-expanded="true"] .scount .chev { transform: rotate(180deg); }
+.strip.idle { background: var(--fill-softer); box-shadow: inset 0 1px 0 var(--hl), inset 0 0 0 1px var(--hairline); }
+.strip.idle .sic { color: var(--muted); }
+.strip.bad { background: color-mix(in oklch, var(--danger) 10%, transparent); box-shadow: inset 0 1px 0 var(--hl), inset 0 0 0 1px color-mix(in oklch, var(--danger) 28%, transparent); }
+.strip.bad .sic, .strip.bad .stx { color: var(--danger-text); }
+.stepchip { display: inline-flex; align-items: center; min-height: 44px; margin: calc(var(--sp-3) * -1) 0 calc(var(--sp-1) * -1); border-radius: 999px; }
+.stepchip .pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 var(--sp-2); border-radius: 999px; font-size: var(--fs-cap); font-weight: 640; color: var(--muted);
+  background: var(--fill-soft); box-shadow: inset 0 0 0 1px var(--hairline); transition: background .25s ease, color .25s ease; }
+.stepchip .pill svg.i.sm { width: 14px; height: 14px; }
+.stepchip .chev { transition: transform .4s var(--spring); }
+.stepchip[aria-expanded="true"] .pill { color: var(--ink); background: color-mix(in oklch, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+.stepchip[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.chip-x { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--spring); }
+.chip-x > div { overflow: hidden; min-height: 0; }
+.chip-x.open { grid-template-rows: 1fr; }
+.chip-body { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-md); background: var(--fill-softer); box-shadow: inset 0 0 0 1px var(--hairline);
+  opacity: 0; transform: translateY(-6px); transition: opacity .2s ease, transform .5s cubic-bezier(.3, 1.35, .5, 1); }
+.chip-x.open .chip-body { opacity: 1; transform: none; }
+
+/* Prototype only: picks the thread version. Sits where the iPhone's island is, so it never reads as part of the design. */
+.proto { position: absolute; z-index: 70; top: calc(env(safe-area-inset-top) + 3px); left: 50%; transform: translateX(-50%); display: none; align-items: center; height: 44px;
+  padding: 0 2px 0 var(--sp-3); border-radius: 999px; background: color-mix(in oklch, var(--canvas) 86%, transparent); box-shadow: 0 0 0 1px var(--border);
+  outline: 1.5px dashed color-mix(in oklch, var(--warning) 70%, transparent); outline-offset: 2px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.thread-on .proto { display: flex; }
+.proto .pl { margin-right: var(--sp-1); letter-spacing: .02em; }
+.proto button { width: 40px; height: 44px; display: grid; place-items: center; font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--muted); }
+.proto button span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.proto button[aria-pressed="true"] { color: var(--ink); }
+.proto button[aria-pressed="true"] span { background: color-mix(in oklch, var(--warning) 26%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 55%, transparent); }
+
+.tscroll { padding: var(--thead-h, 260px) var(--sp-4) calc(var(--dock-h, 70px) + var(--safe-b) + var(--sp-6)); }
+.kb-open .tscroll { padding-bottom: calc(var(--dock-h, 70px) + var(--kb-h) + var(--sp-5)); }
+.msgs { display: flex; flex-direction: column; gap: calc(var(--sp-5) * var(--dens)); padding-top: var(--sp-3); }
+.msg.user { align-self: flex-end; max-width: 84%; background: var(--bubble); color: var(--bubble-ink); padding: calc(var(--sp-3) * var(--dens)) var(--sp-4);
+  border-radius: 20px 20px 6px 20px; box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 12%, transparent); font-size: var(--fs-body); line-height: 1.4; }
+.msg.user.sending { opacity: .62; }
+.msg-state { align-self: flex-end; font-size: var(--fs-cap); color: var(--muted); margin-top: calc(var(--sp-4) * var(--dens) * -1 + 2px); display: flex; gap: 5px; align-items: center; }
+.msg.bot { font-size: var(--fs-body); line-height: 1.5; -webkit-user-select: text; user-select: text; }
+.who { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-cap); color: var(--muted); font-weight: 620; margin-bottom: var(--sp-2); }
+.who .mark { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in oklch, var(--accent) 22%, transparent); color: var(--accent-text); font-size: 10px; font-weight: 800; }
+.md > * + * { margin-top: calc(var(--sp-3) * var(--dens)); }
+.md h4 { font-size: var(--fs-body); font-weight: 700; letter-spacing: -.005em; margin-top: calc(var(--sp-5) * var(--dens)); }
+.md h4:first-child { margin-top: 0; }
+.md ul, .md ol { padding: 0; margin-left: 0; list-style: none; }
+.md li { position: relative; padding-left: 22px; }
+.md li + li { margin-top: calc(var(--sp-2) * var(--dens)); }
+.md ul > li::before { content: ""; position: absolute; left: 6px; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .85; }
+.md ol { counter-reset: n; }
+.md ol > li { counter-increment: n; }
+.md ol > li::before { content: counter(n); position: absolute; left: 0; top: .1em; font-size: var(--fs-cap); font-weight: 700; color: var(--accent-text); font-variant-numeric: tabular-nums;
+  width: 17px; height: 17px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in oklch, var(--accent) 15%, transparent); line-height: 1; }
+.md strong { font-weight: 680; }
+.md code { font-size: .86em; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); color: var(--code-ink); box-shadow: inset 0 0 0 1px var(--hairline); white-space: break-spaces; word-break: break-word; }
+.md kbd, .card-ask kbd { font-family: Figtree, system-ui, sans-serif; font-size: .82em; font-weight: 650; padding: 1px 7px 2px; margin: 0 1px; border-radius: 6px; white-space: nowrap;
+  background: var(--raised); color: var(--ink); box-shadow: inset 0 0 0 1px var(--border), inset 0 -2px 0 var(--border), 0 1px 2px rgba(0, 0, 0, .25); }
+[data-appearance="light"] .md kbd { background: var(--surface); }
+.codebox { border-radius: var(--r-md); background: var(--code-bg); box-shadow: inset 0 0 0 1px var(--hairline); overflow: hidden; }
+.codebox .ch { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-1) 0 var(--sp-3); font-size: var(--fs-cap); color: var(--muted); border-bottom: 1px solid var(--hairline); }
+.codebox .ch button { min-height: 36px; padding: 0 var(--sp-3); border-radius: 999px; font-weight: 620; color: var(--accent-text); }
+.md pre { margin: 0; padding: var(--sp-3); overflow-x: auto; font-size: calc(13px * var(--ts)); line-height: 1.5; color: var(--code-ink); -webkit-user-select: text; user-select: text; }
+.md pre code { background: none; box-shadow: none; padding: 0; font-size: inherit; white-space: pre; word-break: normal; }
+
+@keyframes ripple { from { transform: scale(.35); opacity: .9; } to { transform: scale(1.15); opacity: 0; } }
+.thread-empty { text-align: center; color: var(--muted); padding: var(--sp-8) var(--sp-5); font-size: var(--fs-body); }
+
+/* The reply dock and, in A, the live step that rides on top of it */
+.dockarea { position: absolute; z-index: 15; left: var(--sp-3); right: var(--sp-3); bottom: var(--safe-b); transition: bottom .42s var(--spring); }
+.kb-open .dockarea { bottom: calc(var(--kb-h) + var(--sp-2)); }
+.dock { position: relative; border-radius: 26px; padding: 6px 6px 6px var(--sp-4);
+  display: flex; align-items: flex-end; gap: var(--sp-2); transition: box-shadow .5s ease;
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline), 0 14px 40px -14px rgba(0, 0, 0, .5); }
+.dock.focus { box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent), 0 0 0 5px color-mix(in oklch, var(--accent) 12%, transparent), 0 0 34px -4px color-mix(in oklch, var(--accent) 50%, transparent); }
+.dock .field { flex: 1; min-width: 0; min-height: 44px; padding: 11px 0; font-size: var(--fs-body); line-height: 1.4; max-height: 120px; overflow-y: auto; word-break: break-word; cursor: text; }
+.dock .field .ph { color: var(--placeholder); }
+.round { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.round.send { background: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 18px -6px color-mix(in oklch, var(--accent) 80%, transparent); }
+.round.stop { background: var(--fill-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hairline); }
+.round.stop .sq { width: 13px; height: 13px; border-radius: 3.5px; background: currentColor; }
+.round.pop-in { animation: popin .3s var(--ease); }
+@keyframes popin { from { transform: scale(.6); opacity: 0; } }
+
+/* ---------- Keyboard ---------- */
+#kb { position: absolute; z-index: 80; left: 0; right: 0; bottom: 0; height: var(--kb-h); padding: 8px 3px 0;
+  background: color-mix(in oklch, var(--overlay) 86%, transparent); -webkit-backdrop-filter: blur(30px) saturate(1.5); backdrop-filter: blur(30px) saturate(1.5);
+  box-shadow: inset 0 1px 0 var(--hairline); transform: translateY(102%); transition: transform .42s var(--spring); }
+[data-appearance="light"] #kb { background: color-mix(in oklab, var(--border) 62%, var(--canvas)); }
+.kb-open #kb { transform: none; }
+.kr { display: flex; justify-content: center; gap: 6px; margin-bottom: 11px; }
+.k { height: 42px; flex: 0 1 calc((100% - 54px) / 10); border-radius: 6px; font-size: 22px; font-weight: 420; display: grid; place-items: center;
+  background: color-mix(in oklab, var(--ink) 30%, var(--overlay)); color: var(--ink); box-shadow: 0 1px 0 rgba(0, 0, 0, .4); }
+[data-appearance="light"] .k { background: var(--surface); box-shadow: 0 1px 0 rgba(0, 0, 0, .25); }
+.k.fn { background: color-mix(in oklab, var(--ink) 14%, var(--overlay)); font-size: 15px; flex: 0 0 auto; padding: 0 11px; min-width: 44px; }
+[data-appearance="light"] .k.fn { background: color-mix(in oklab, var(--border) 92%, var(--ink)); }
+.k.space { flex: 1 1 auto; font-size: 15px; }
+.k.ret { flex: 0 0 88px; font-size: 15px; }
+.k.ret.go { background: var(--accent); color: var(--accent-ink); }
+.k.on { background: var(--ink); color: var(--canvas); }
+.k:active { background: color-mix(in oklab, var(--ink) 45%, var(--overlay)); }
+.kr.mid { padding: 0 18px; }
+.kb-foot { display: flex; justify-content: space-between; padding: 0 26px; color: var(--ink); opacity: .75; }
+
+/* ---------- Scrim, sheets, menus, toast ---------- */
+#scrim { position: absolute; z-index: 50; inset: 0; background: rgba(0, 0, 0, .46); opacity: 0; pointer-events: none; transition: opacity .4s ease; }
+.sheet-open #scrim { opacity: 1; pointer-events: auto; }
+#sheet { position: absolute; z-index: 55; left: 0; right: 0; bottom: 0; max-height: calc(100% - var(--sb-h) - 6px); display: flex; flex-direction: column;
+  border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface); overflow: hidden; isolation: isolate;
+  box-shadow: inset 0 1px 0 var(--hl), 0 -20px 60px -20px rgba(0, 0, 0, .55); transform: translateY(104%); visibility: hidden; transition: transform .5s var(--spring), visibility 0s .5s; }
+[data-appearance="dark"] #sheet { background: var(--raised); }
+.sheet-open #sheet { transform: none; visibility: visible; transition: transform .5s var(--spring), visibility 0s; }
+#sheet.tall { height: calc(100% - var(--sb-h) - 6px); }
+#sheet .wash { height: 300px; z-index: -1; }
+.grab { width: 38px; height: 5px; border-radius: 3px; background: var(--ink); opacity: .22; margin: 8px auto 2px; flex: none; }
+.sbody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) var(--gutter) var(--sp-4); scrollbar-width: none; }
+.sfoot { padding: var(--sp-3) var(--gutter) calc(var(--safe-b) + var(--sp-2)); display: flex; gap: var(--sp-2); flex: none; box-shadow: inset 0 1px 0 var(--hairline); }
+.sfoot .btn { flex: 1; }
+.kb-open .sfoot { padding-bottom: calc(var(--kb-h) + var(--sp-3)); }
+.from { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--muted); min-width: 0; }
+.from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-title { font-size: var(--fs-title); font-weight: 690; line-height: var(--lh-tight); letter-spacing: -.02em; margin-top: var(--sp-3); }
+.s-sub { color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-2); }
+.opts { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-5); }
+.opt { width: 100%; display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); text-align: left; min-height: 56px;
+  background: var(--fill-softer); box-shadow: inset 0 0 0 1px var(--hairline); transition: box-shadow .3s ease, background .3s ease, transform .16s var(--ease); }
+.opt .radio { width: 22px; height: 22px; border-radius: 50%; flex: none; margin-top: 1px; box-shadow: inset 0 0 0 1.5px var(--border); display: grid; place-items: center; transition: box-shadow .25s ease, background .25s ease; }
+.opt .radio svg { opacity: 0; transform: scale(.5); transition: opacity .2s ease, transform .25s var(--ease); color: var(--accent-ink); }
+.opt[aria-checked="true"] { background: color-mix(in oklch, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--accent) 80%, transparent), 0 0 26px -8px color-mix(in oklch, var(--accent) 60%, transparent); }
+.opt[aria-checked="true"] .radio { background: var(--accent); box-shadow: 0 0 10px -1px color-mix(in oklch, var(--accent) 70%, transparent); }
+.opt[aria-checked="true"] .radio svg { opacity: 1; transform: none; }
+.opt .ot { font-weight: 650; font-size: var(--fs-body); }
+.opt .od { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; line-height: 1.38; }
+.opt:disabled { opacity: .55; }
+.own { margin-top: var(--sp-2); min-height: 76px; border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); background: var(--code-bg); box-shadow: inset 0 0 0 1px var(--hairline); font-size: var(--fs-body); }
+.own.focus { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 60%, transparent), 0 0 24px -6px color-mix(in oklch, var(--accent) 50%, transparent); }
+.own .ph { color: var(--placeholder); }
+.cmd { margin-top: var(--sp-5); border-radius: var(--r-md); background: var(--code-bg); color: var(--code-ink); padding: var(--sp-4); font-family: var(--mono); font-size: calc(16px * var(--ts));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--warning) 30%, transparent), 0 10px 34px -18px color-mix(in oklch, var(--warning) 70%, transparent); }
+.cmd .p { color: var(--muted); margin-right: 10px; }
+.where { margin-top: var(--sp-4); font-size: var(--fs-sm); color: var(--muted); }
+.where .path { display: block; font-family: var(--mono); font-size: calc(12.5px * var(--ts)); color: var(--ink); word-break: break-all; margin: 3px 0; line-height: 1.45; }
+.stackbtns { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-6); }
+
+/* New thread */
+.nt-head { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 var(--sp-2); flex: none; }
+.nt-head .btn { min-width: 74px; }
+.nt-head h2 { font-size: var(--fs-lead); font-weight: 680; }
+.steps { display: flex; gap: 6px; padding: 0 var(--gutter); flex: none; }
+.steps i { flex: 1; height: 4px; border-radius: 2px; background: var(--fill-soft); position: relative; overflow: hidden; }
+.steps i::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .5s var(--ease); box-shadow: 0 0 10px var(--accent); }
+.steps i.on::after { transform: none; }
+.step-label { padding: var(--sp-2) var(--gutter) 0; font-size: var(--fs-cap); color: var(--muted); font-weight: 600; flex: none; }
+.nt-pages { flex: 1; position: relative; overflow: hidden; overflow: clip; }
+.nt-page { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-4) var(--gutter) var(--sp-6); transition: transform .44s var(--spring), opacity .3s ease; scrollbar-width: none; }
+.nt-page.right { transform: translateX(100%); opacity: 0; pointer-events: none; }
+.nt-page.left { transform: translateX(-30%); opacity: 0; pointer-events: none; }
+.pick { width: 100%; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-md); text-align: left; min-height: 64px;
+  background: var(--fill-softer); box-shadow: inset 0 0 0 1px var(--hairline); }
+.pick + .pick { margin-top: var(--sp-2); }
+.pick .tx { flex: 1; min-width: 0; }
+.pick .pt { font-weight: 650; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; }
+.pick .pd { font-size: var(--fs-sm); color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick .chev { color: var(--muted); }
+.pick:disabled { opacity: .62; }
+.crumbs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+.crumb { min-height: 36px; padding: 0 var(--sp-3); border-radius: 999px; background: var(--fill-soft); font-size: var(--fs-sm); font-weight: 620; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.crumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fieldbox { width: 100%; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); text-align: left; min-height: 64px;
+  background: var(--fill-softer); box-shadow: inset 0 0 0 1px var(--hairline); }
+.fieldbox + .fieldbox { margin-top: var(--sp-2); }
+.fieldbox.open { box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--accent) 70%, transparent), 0 0 24px -8px color-mix(in oklch, var(--accent) 60%, transparent); }
+.fieldbox .tx { flex: 1; min-width: 0; }
+.fieldbox .fl { font-size: var(--fs-cap); color: var(--muted); font-weight: 600; }
+.fieldbox .fv { font-size: var(--fs-body); font-weight: 620; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fieldbox .ud { color: var(--muted); }
+.opening { position: relative; overflow: hidden; }
+.opening::after { content: ""; position: absolute; top: 0; bottom: 0; width: 45%; left: -45%; background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent-ink) 35%, transparent), transparent); animation: run 1.1s linear infinite; }
+
+#menuCatch { position: absolute; z-index: 85; inset: 0; display: none; }
+#menuCatch.on { display: block; }
+#menu { position: absolute; z-index: 86; min-width: 240px; max-width: calc(100% - 24px); border-radius: 18px; padding: 6px; background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8); backdrop-filter: blur(26px) saturate(1.8);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline), var(--shadow-far); opacity: 0; transform: scale(.9); pointer-events: none;
+  transition: opacity .2s ease, transform .3s var(--spring); max-height: 70%; overflow-y: auto; }
+#menu.on { opacity: 1; transform: none; pointer-events: auto; }
+.mi { width: 100%; display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; text-align: left; }
+.mi:active, .mi:focus-visible { background: var(--fill-soft); }
+.mi .tx { flex: 1; min-width: 0; }
+.mi .mt { font-weight: 600; font-size: var(--fs-body); }
+.mi .md2 { font-size: var(--fs-cap); color: var(--muted); margin-top: 1px; }
+.mi .ck { width: 20px; color: var(--accent-text); flex: none; }
+.mi:disabled { opacity: .5; }
+.msep { height: 1px; background: var(--hairline); margin: 4px 10px; }
+.minfo { padding: var(--sp-3); font-size: var(--fs-sm); }
+.minfo .mrow { display: flex; justify-content: space-between; gap: var(--sp-3); padding: 5px 0; color: var(--muted); }
+.minfo .mrow b { color: var(--ink); font-weight: 600; text-align: right; }
+.minfo h5 { margin: 0 0 var(--sp-2); font-size: var(--fs-body); font-weight: 680; line-height: 1.3; }
+.minfo .later { margin-top: var(--sp-2); font-size: var(--fs-cap); color: var(--muted); }
+
+#toast { position: absolute; z-index: 95; top: calc(var(--sb-h) + 2px); left: 50%; max-width: calc(100% - 32px); transform: translate(-50%, -140%) scale(.6);
+  opacity: 0; display: flex; align-items: center; gap: var(--sp-2); padding: 10px 18px 10px 12px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 620;
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline), var(--shadow-far), 0 0 30px -10px color-mix(in oklch, var(--accent) 60%, transparent);
+  transition: transform .5s var(--spring), opacity .3s ease; pointer-events: none; }
+#toast.on { transform: translate(-50%, 0) scale(1); opacity: 1; }
+#toast .ok { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); flex: none; }
+#toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Settings ---------- */
+.group { margin-top: var(--sp-7); }
+.group > h2 { font-size: var(--fs-sm); font-weight: 650; color: var(--muted); margin: 0 var(--sp-1) var(--sp-2); }
+.panel { border-radius: var(--r-lg); background: color-mix(in oklch, var(--surface) 88%, transparent); box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); padding: var(--sp-4); }
+.panel + .panel { margin-top: var(--sp-3); }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.plabel { font-weight: 640; font-size: var(--fs-body); }
+.pvalue { color: var(--muted); font-size: var(--fs-sm); }
+.phint { color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-2); line-height: 1.4; }
+.panel .seg { margin-top: var(--sp-3); }
+.themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin-top: var(--sp-3); }
+.theme { display: flex; flex-direction: column; gap: 6px; align-items: stretch; text-align: left; border-radius: 16px; padding: 0; }
+.theme .room { position: relative; height: 92px; border-radius: 14px; overflow: hidden; background: var(--tc);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ti) 12%, transparent); transition: box-shadow .3s ease, transform .2s var(--ease); }
+.theme .room::before { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 70% at 15% 0%, color-mix(in oklch, var(--ta) 45%, transparent), transparent 70%); }
+.theme .room i { position: absolute; display: block; border-radius: 4px; }
+.theme .l1 { left: 10px; top: 14px; width: 54%; height: 7px; background: var(--ti); opacity: .9; }
+.theme .l2 { left: 10px; top: 27px; width: 38%; height: 5px; background: var(--tm); opacity: .9; }
+.theme .bb { right: 10px; top: 44px; width: 46%; height: 14px; border-radius: 7px !important; background: var(--tb); }
+.theme .dot { left: 10px; bottom: 10px; width: 26px; height: 12px; border-radius: 6px !important; background: var(--ta); box-shadow: 0 0 12px var(--ta); }
+.theme .name { font-size: var(--fs-sm); font-weight: 620; display: flex; align-items: center; gap: 6px; padding: 0 2px; min-height: 22px; }
+.theme .name svg { color: var(--accent-text); opacity: 0; transition: opacity .2s ease; }
+.theme[aria-checked="true"] .room { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ti) 12%, transparent), 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent), 0 0 28px -4px color-mix(in oklch, var(--accent) 65%, transparent); }
+.theme[aria-checked="true"] .name svg { opacity: 1; }
+.sizes { display: flex; align-items: flex-end; justify-content: space-between; margin-top: var(--sp-3); padding: 4px; border-radius: 16px; background: var(--fill-softer); position: relative; }
+.sizes::before { content: ""; position: absolute; left: 30px; right: 30px; top: 50%; height: 2px; background: var(--hairline); }
+.size { position: relative; z-index: 1; flex: 1; min-height: 52px; display: grid; place-items: center; border-radius: 12px; font-weight: 650; color: var(--muted); transition: color .25s ease, background .3s ease, box-shadow .3s ease; }
+.size span { line-height: 1; }
+.size[aria-checked="true"] { color: var(--accent-text); background: var(--raised); box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent), 0 0 20px -6px color-mix(in oklch, var(--accent) 60%, transparent); }
+[data-appearance="light"] .size[aria-checked="true"] { background: var(--surface); }
+.preview { margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--canvas); box-shadow: inset 0 0 0 1px var(--hairline); }
+.preview .t { font-weight: 650; font-size: var(--fs-body); }
+.preview .l { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
+.toggle-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left; min-height: 60px; padding: var(--sp-2) 0; }
+.toggle-row + .toggle-row { box-shadow: inset 0 1px 0 var(--hairline); }
+.toggle-row .tx { flex: 1; min-width: 0; }
+.toggle-row .d { color: var(--muted); font-size: var(--fs-sm); margin-top: 1px; line-height: 1.35; }
+.sw { width: 51px; height: 31px; border-radius: 999px; background: var(--fill-soft); box-shadow: inset 0 0 0 1px var(--hairline); position: relative; flex: none; transition: background .3s ease, box-shadow .3s ease; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--ink); opacity: .82; box-shadow: 0 2px 6px rgba(0, 0, 0, .35); transition: transform .35s var(--spring), background .3s ease; }
+[data-appearance="light"] .sw::after { background: var(--surface); opacity: 1; }
+[aria-checked="true"] > .sw { background: var(--accent); box-shadow: 0 0 16px -3px color-mix(in oklch, var(--accent) 70%, transparent); }
+[aria-checked="true"] > .sw::after { transform: translateX(20px); background: var(--accent-ink); opacity: 1; }
+.note-line { color: var(--muted); font-size: var(--fs-sm); margin: var(--sp-2) var(--sp-1) 0; line-height: 1.4; }
+.def-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 54px; text-align: left; padding: var(--sp-2) 0; }
+.def-row + .def-row { box-shadow: inset 0 1px 0 var(--hairline); }
+.def-row .k1 { flex: 1; font-weight: 600; }
+.def-row .v1 { color: var(--muted); font-size: var(--fs-sm); max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.about { display: flex; align-items: center; gap: var(--sp-3); }
+.about .logo { width: 44px; height: 44px; border-radius: 13px; flex: none; background: radial-gradient(70% 70% at 30% 20%, color-mix(in oklab, var(--accent) 80%, var(--ink)), var(--accent-surface));
+  box-shadow: 0 0 24px -6px color-mix(in oklch, var(--accent) 70%, transparent), inset 0 1px 0 var(--hl); display: grid; place-items: center; color: var(--accent-ink); font-weight: 800; font-size: 20px; }
+
+/* ---------- Computers ---------- */
+.pc { padding: var(--sp-4); border-radius: var(--r-lg); background: color-mix(in oklch, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 var(--hl), 0 0 0 1px var(--hairline); position: relative; overflow: hidden; }
+.pc.online { background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 7%, var(--surface)), var(--surface) 70%); }
+.pc.down { background: linear-gradient(90deg, color-mix(in oklab, var(--danger) 9%, var(--surface)), var(--surface) 60%); }
+.pc.down::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--danger); box-shadow: 0 0 14px var(--danger); opacity: .75; }
+.pc-h { display: flex; align-items: center; gap: var(--sp-3); }
+.pc-h .ic { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: var(--fill-soft); flex: none; }
+.pc.online .pc-h .ic { color: var(--accent-text); background: color-mix(in oklch, var(--accent) 14%, transparent); }
+.pc-h .tx { flex: 1; min-width: 0; }
+.pc-h .n { font-weight: 680; font-size: var(--fs-lead); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-h .s { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--muted); margin-top: 2px; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); margin-top: var(--sp-4); }
+.fact { padding: var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--fill-softer); font-size: var(--fs-sm); }
+.fact b { display: block; font-size: var(--fs-body); font-weight: 650; }
+.fact span { color: var(--muted); }
+.pc-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); flex-wrap: wrap; }
+.pc-actions .btn { font-size: var(--fs-sm); }
+
+/* ---------- Reduced motion: fades or nothing ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+  .tab-root, .tab-root.on, .tab-root.under, #scr-thread, #scr-thread.in, #sheet, .sheet-open #sheet, #kb, .kb-open #kb, .tabbar, .tabbar.away, #toast, #toast.on, #menu, .nt-page, .dockarea, .tdrop, .tdrop.on, .fold-body, .chip-body, #stage, .sheet-open #stage {
+    transform: none !important; }
+  #scr-thread { opacity: 0; transition: opacity .2s ease, visibility 0s .2s !important; }
+  #scr-thread.in { opacity: 1; transition: opacity .2s ease, visibility 0s !important; }
+  #sheet { opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s !important; }
+  .sheet-open #sheet { opacity: 1; visibility: visible; transition: opacity .2s ease, visibility 0s !important; }
+  #kb { opacity: 0; visibility: hidden; transition: opacity .15s ease !important; }
+  .kb-open #kb { opacity: 1; visibility: visible; }
+  .tabbar.away { opacity: 0; pointer-events: none; }
+  .sheen { color: var(--muted); background: none; }
+  .runner { display: none; }
+  .leaving { transform: none !important; }
+  .fold-x, .chip-x, .strip-x, .sb-fade { transition: none !important; }
+  .tdrop { transition: opacity .15s ease, visibility 0s .15s !important; }
+  .tdrop.on { transition: opacity .15s ease, visibility 0s !important; }
+}
+</style>
+</head>
+<body>
+<div id="phone">
+  <div class="statusbar" aria-hidden="true">
+    <span class="num">9:41</span>
+    <span class="right">
+      <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 2.2c2.4 0 4.6.9 6.2 2.5l1.2-1.2C13.4 1.5 10.8.5 8 .5S2.6 1.5.6 3.5l1.2 1.2C3.4 3.1 5.6 2.2 8 2.2zm0 3.4c1.5 0 2.8.6 3.8 1.5L13 5.9C11.7 4.7 9.9 3.9 8 3.9s-3.7.8-5 2l1.2 1.2c1-.9 2.3-1.5 3.8-1.5zm0 3.4c.6 0 1.1.2 1.5.6L8 11.1 6.5 9.6c.4-.4.9-.6 1.5-.6z"/></svg>
+      <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.6" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="20" height="9" rx="2.2"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2z" opacity=".45"/></svg>
+    </span>
+  </div>
+
+  <div class="proto" id="proto" role="group" aria-label="Prototype only: thread page version"><span class="pl" aria-hidden="true">proto</span><button data-v="A" aria-label="Thread version A, folded steps"><span>A</span></button><button data-v="B" aria-label="Thread version B, title scrolls away"><span>B</span></button><button data-v="C" aria-label="Thread version C, live strip"><span>C</span></button></div>
+
+  <main id="stage">
+    <section class="screen tab-root on" id="scr-threads" aria-label="Threads">
+      <div class="scroll" id="threadsScroll"><div class="page"><div class="wash" id="threadsWash"></div><div id="threadsPage"></div></div></div>
+      <div class="sb-fade" aria-hidden="true"></div>
+      <div class="dim"></div>
+    </section>
+    <section class="screen tab-root" id="scr-computers" aria-label="Computers">
+      <div class="scroll"><div class="page"><div class="wash short"></div><div id="computersPage"></div></div></div>
+      <div class="sb-fade" aria-hidden="true"></div>
+    </section>
+    <section class="screen tab-root" id="scr-settings" aria-label="Settings">
+      <div class="scroll"><div class="page"><div class="wash"></div><div id="settingsPage"></div></div></div>
+      <div class="sb-fade" aria-hidden="true"></div>
+    </section>
+    <section class="screen" id="scr-thread" aria-label="Thread"></section>
+
+    <nav class="tabbar glass" id="tabbar" aria-label="Tabs"></nav>
+  </main>
+
+  <div id="scrim"></div>
+  <div id="sheet" role="dialog" aria-modal="true" aria-label="Sheet"></div>
+  <div id="menuCatch"></div>
+  <div id="menu" role="menu"></div>
+  <div id="kb" aria-label="Keyboard"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div class="homebar"></div>
+</div>
+
+<script>
+window.VARIANT = { name: 'Glow, refined', intent: 'Glow, refined page by page. Tab pages scroll as one sheet with the wash, and the thread page comes in three versions (?thread=A|B|C) that keep the top to one line and put the agent’s steps in the conversation. Light is status. The chosen theme washes the top of every screen, working threads breathe with a soft accent halo, anything that needs you glows warm, and the bars that float over content are frosted glass.' }
+
+const D = window.SOTTO
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+const esc = s => D.esc(String(s))
+const reduce = matchMedia('(prefers-reduced-motion: reduce)')
+const wait = ms => new Promise(r => setTimeout(r, ms))
+const phone = $('#phone')
+
+/* ---------- Icons ---------- */
+const P = {
+  plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  chevL: '<path d="M15 5l-7 7 7 7"/>', chevR: '<path d="M9 5l7 7-7 7"/>', chevD: '<path d="M7 10l5 5 5-5"/>',
+  updown: '<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  x: '<path d="M7 7l10 10M17 7L7 17"/>',
+  threads: '<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-7.5L7 19.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5z"/>',
+  computer: '<rect x="3" y="4.5" width="18" height="11.5" rx="2"/><path d="M8.5 20h7M12 16v4"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
+  branch: '<circle cx="6.5" cy="5.5" r="2"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="7.5" r="2"/><path d="M6.5 7.5v9M17.5 9.5c0 4-11 2.5-11 7"/>',
+  pr: '<circle cx="6.5" cy="5.5" r="2"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="18.5" r="2"/><path d="M6.5 7.5v9M17.5 16.5V10a3 3 0 0 0-3-3H11M13 5l-2 2 2 2"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  terminal: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7.5 10l3 2.5-3 2.5M13 15h4"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/>',
+  file: '<path d="M7 3h7l5 5v13H7zM14 3v5h5"/>',
+  spark: '<path d="M12 4v4M12 16v4M4 12h4M16 12h4M7 7l2 2M15 15l2 2M7 17l2-2M15 9l2-2"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+  retry: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15"/>',
+  shift: '<path d="M12 4.5l7.5 7.5H15.5v7h-7v-7H4.5z"/>',
+  del: '<path d="M9 6h11v12H9l-6-6zM12 9.5l5 5M17 9.5l-5 5"/>',
+  shield: '<path d="M12 3.5l7 2.8V11c0 4.4-2.9 7.8-7 9.5-4.1-1.7-7-5.1-7-9.5V6.3z"/>',
+  q: '<circle cx="12" cy="12" r="8.5"/><path d="M9.8 9.6a2.3 2.3 0 1 1 3.2 2.1c-.6.3-1 .8-1 1.5v.6M12 16.6v.1"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/>',
+  mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5v3"/>',
+  steps: '<path d="M10 6.5h9.5M10 12h9.5M10 17.5h9.5"/><circle cx="5.5" cy="6.5" r="1.6"/><circle cx="5.5" cy="12" r="1.6"/><circle cx="5.5" cy="17.5" r="1.6"/>',
+  folder: '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+}
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`
+
+/* ---------- State ---------- */
+const mins = s => (/^(\d+)m$/.exec(s || '') || [0, 0])[1] * 60
+const now = () => Date.now()
+const S = {
+  theme: 'sotto', appearance: 'Dark', textSize: 1, density: 'Comfortable',
+  tab: 'threads', filter: 'all', query: '', settledOpen: false,
+  threads: D.threads.map(t => ({ ...t, since: t.started ? now() - mins(t.started) * 1000 : null })),
+  picked: {},            // threadId -> option id on the inline card
+  msgs: {},              // threadId -> messages
+  open: null, kb: null, reply: '', shift: true,
+  stopped: {}, live: {},
+  notifications: D.settings.notifications.map(n => ({ ...n })),
+  defaults: { model: 'opus', effort: 'High', permissions: 'ask', working: 'shared' },
+  desktopTry: 'idle', menuFor: null, nt: null, q: null, ownText: '',
+}
+const compName = id => (D.computers.find(c => c.id === id) || {}).name || id
+const provName = id => D.providers[id] || id
+const thread = id => S.threads.find(t => t.id === id)
+
+/* ---------- Theme ---------- */
+function resolvedAppearance() {
+  if (S.appearance === 'System') return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  return S.appearance.toLowerCase()
+}
+function paint() { D.applyTheme(S.theme, resolvedAppearance(), document.documentElement) }
+paint()
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if (S.appearance === 'System') { paint(); renderSettings() } })
+
+/* ---------- Toast ---------- */
+let toastTimer
+function toast(text) {
+  const t = $('#toast')
+  t.innerHTML = `<i class="ok">${ic('check', 'sm')}</i><span>${esc(text)}</span>`
+  t.classList.remove('on'); void t.offsetWidth; t.classList.add('on')
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600)
+}
+
+/* ---------- Elapsed tickers ---------- */
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec))
+  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`
+}
+setInterval(() => { $$('[data-since]').forEach(el => { el.textContent = fmt((now() - +el.dataset.since) / 1000) }) }, 1000)
+const elapsed = t => t.since ? `<span class="elapsed" data-since="${t.since}">${fmt((now() - t.since) / 1000)}</span>` : ''
+
+/* ---------- Tabs ---------- */
+function badgeCount() { return S.threads.filter(t => t.state === 'needs-you' || t.state === 'finished-unread').length }
+let lastBadge = null
+function renderTabs() {
+  const n = badgeCount()
+  const tabs = [['threads', 'Threads', 'threads'], ['computers', 'Computers', 'computer'], ['settings', 'Settings', 'settings']]
+  $('#tabbar').innerHTML = tabs.map(([id, label, icon]) => `
+    <button class="tab press" data-tab="${id}" ${S.tab === id ? 'aria-current="page"' : ''} aria-label="${label}${id === 'threads' && n ? `, ${n} waiting` : ''}">
+      ${ic(icon)}<span>${label}</span>${id === 'threads' && n ? `<b class="badge ${lastBadge !== null && lastBadge !== n ? 'pop' : ''}">${n}</b>` : ''}
+    </button>`).join('')
+  lastBadge = n
+}
+function setTab(id) {
+  if (S.tab === id) { const sc = $(`#scr-${id} .scroll`); sc?.scrollTo({ top: 0, behavior: 'smooth' }); return }
+  closeKb(); S.tab = id
+  $$('.tab-root').forEach(s => s.classList.toggle('on', s.id === `scr-${id}`))
+  if (id === 'settings') renderSettings()
+  if (id === 'computers') renderComputers()
+  renderTabs()
+}
+$('#tabbar').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab) })
+
+/* Each tab page scrolls as one sheet; the status-bar fade comes in over the first few points of travel */
+$$('.tab-root').forEach(scr => {
+  const sc = $('.scroll', scr), fade = $('.sb-fade', scr)
+  sc.addEventListener('scroll', () => fade.style.setProperty('--sbf', Math.min(1, Math.max(0, sc.scrollTop / 24)).toFixed(3)), { passive: true })
+})
+
+/* ---------- Threads home ---------- */
+function groups() {
+  const q = S.query.trim().toLowerCase()
+  const inComp = S.threads.filter(t => S.filter === 'all' || t.computer === S.filter)
+  const list = inComp.filter(t => !q || [t.title, t.project, t.line, compName(t.computer), provName(t.provider)].join(' ').toLowerCase().includes(q))
+  return {
+    all: inComp, list, q,
+    needs: list.filter(t => t.state === 'needs-you'),
+    working: list.filter(t => t.state === 'working'),
+    recent: list.filter(t => ['finished-unread', 'done', 'failed'].includes(t.state)),
+    settled: list.filter(t => t.state === 'settled'),
+  }
+}
+
+function needCard(t) {
+  const isQ = t.id === D.question.thread
+  const picked = S.picked[t.id]
+  if (isQ) return `
+  <article class="card need" data-card="${t.id}">
+    <button class="card-open press" data-question="${t.id}" aria-label="Open the question from ${esc(t.title)}">
+      <div class="card-top"><span class="light warn"></span><span class="tag">Question</span><span class="ago">${esc(t.ago)}</span></div>
+      <h3 class="card-title">${esc(t.title)}</h3>
+      <p class="card-meta">${esc(provName(t.provider))} on ${esc(compName(t.computer))}</p>
+      <p class="card-ask">${esc(D.question.text)}</p>
+    </button>
+    <div class="choices" role="radiogroup" aria-label="Answers">
+      ${D.question.options.map(o => `<button class="chip press" role="radio" aria-checked="${picked === o.id}" data-pick="${t.id}:${o.id}">${esc(o.label)}</button>`).join('')}
+    </div>
+    <div class="card-actions">
+      <button class="btn ghost press" data-question="${t.id}" data-own="1">Write your own</button><span class="spacer"></span>
+      <button class="btn primary press" data-send-inline="${t.id}" ${picked ? '' : 'disabled'}>Send answer</button>
+    </div>
+  </article>`
+  return `
+  <article class="card need" data-card="${t.id}">
+    <button class="card-open press" data-permission="${t.id}" aria-label="Open the permission request from ${esc(t.title)}">
+      <div class="card-top"><span class="light warn"></span><span class="tag">Permission</span><span class="ago">${esc(t.ago)}</span></div>
+      <h3 class="card-title">${esc(t.title)}</h3>
+      <p class="card-meta">${esc(provName(t.provider))} on ${esc(compName(t.computer))}</p>
+      <p class="card-ask">Wants to run <code>${esc(D.permission.command)}</code> in its worktree.</p>
+    </button>
+    <div class="card-actions">
+      <button class="btn ghost press" data-permission="${t.id}">More choices</button><span class="spacer"></span>
+      <button class="btn soft press" data-perm-inline="${t.id}:deny">Deny</button>
+      <button class="btn primary press" data-perm-inline="${t.id}:once">Allow once</button>
+    </div>
+  </article>`
+}
+function workingCard(t, arrive) {
+  return `<div class="card-wrap working ${arrive ? 'arrive' : ''}" data-card="${t.id}">
+    <button class="card working press" data-open="${t.id}" aria-label="Open thread: ${esc(t.title)}, working">
+      <div class="card-top"><span class="light acc breathe"></span><span class="tag">Working</span><span class="ago">${elapsed(t)}</span></div>
+      <h3 class="card-title">${esc(t.title)}</h3>
+      <p class="card-meta">${esc(provName(t.provider))} on ${esc(compName(t.computer))} · ${esc(t.project)}</p>
+      <p class="live"><span class="txt sheen">${esc(t.line)}</span></p>
+      <span class="runner" aria-hidden="true"></span>
+    </button></div>`
+}
+function row(t) {
+  const cls = t.state === 'finished-unread' ? 'unread' : t.state === 'failed' ? 'failed' : ''
+  const light = t.state === 'finished-unread' ? 'acc' : t.state === 'failed' ? 'bad' : 'off'
+  const said = t.state === 'finished-unread' ? 'finished, unread' : t.state === 'failed' ? 'stopped with an error' : t.state === 'settled' ? 'settled' : 'finished'
+  return `<button class="row press ${cls}" data-open="${t.id}" aria-label="Open thread: ${esc(t.title)}, ${said}">
+    <span class="light ${light}"></span>
+    <span class="body"><span class="t">${esc(t.title)}</span><span class="l">${esc(t.line)} · ${esc(compName(t.computer))}</span></span>
+    <span class="a">${esc(t.ago)}</span></button>`
+}
+
+let arriveId = null
+function renderThreads() {
+  const g = groups()
+  const needN = g.all.filter(t => t.state === 'needs-you').length, workN = g.all.filter(t => t.state === 'working').length
+  const showDesk = S.filter === 'all' || S.filter === 'desktop'
+  const fName = S.filter === 'all' ? 'All computers' : compName(S.filter)
+  const fLight = S.filter === 'all' ? 'acc' : (D.computers.find(c => c.id === S.filter).status === 'online' ? 'acc' : 'bad')
+  const searchHTML = `
+    <div class="search ${S.kb === 'search' ? 'focus' : ''}" id="search">
+      ${ic('search')}
+      <div class="field" role="searchbox" tabindex="0" aria-label="Search threads" id="searchField">
+        ${S.query ? `<span>${esc(S.query)}</span>` : (S.kb === 'search' ? '' : '<span class="ph">Search threads</span>')}<i class="caret"></i>
+        ${!S.query && S.kb === 'search' ? '<span class="ph">Search threads</span>' : ''}
+      </div>
+      ${S.query ? `<button class="clear press" id="clearSearch" aria-label="Clear search">${ic('x')}</button>` : ''}
+    </div>`
+  let html = `
+    <div class="page-head"><h1 class="page-title">Threads</h1>
+      <button class="fab glass press" id="newBtn" aria-label="New thread">${ic('plus', 'lg')}</button></div>
+    <div class="controls">
+      <button class="selector press" id="compSel" aria-haspopup="menu" aria-label="Show threads from: ${esc(fName)}"><span class="light ${fLight}"></span><span class="lbl">${esc(fName)}</span>${ic('chevD', 'sm')}</button>
+      <div class="summary" aria-label="${workN} working, ${needN} need you">
+        <span><i class="light acc ${workN ? 'breathe' : 'off'}"></i><b>${workN}</b> working</span>
+        <span><i class="light ${needN ? 'warn' : 'off'}"></i><b>${needN}</b> ${needN === 1 ? 'needs' : 'need'} you</span>
+      </div>
+    </div>
+    ${searchHTML}
+    ${showDesk && !g.q ? `<div class="note" role="status">${ic('computer')}<p>${S.desktopTry === 'failed' ? '<b>Still can’t reach DESKTOP-8NPFSBM.</b> Check that Sotto is open on it.' : '<b>Can’t reach DESKTOP-8NPFSBM.</b> Showing its last shared threads.'}</p>
+      <button class="btn soft press" id="retryDesk" ${S.desktopTry === 'trying' ? 'disabled' : ''}>${S.desktopTry === 'trying' ? '<i class="spin"></i>Trying' : 'Try again'}</button></div>` : ''}`
+  if (!g.list.length) html += `<p class="empty">${g.q ? `No threads match “${esc(S.query)}”.` : 'No threads here yet. Tap New thread to start one.'}</p>`
+  if (g.needs.length) html += `<h2 class="sec"><span class="light warn"></span>Needs you <span class="count">${g.needs.length}</span></h2><div class="stack">${g.needs.map(needCard).join('')}</div>`
+  if (g.working.length) html += `<h2 class="sec"><span class="light acc"></span>Working now <span class="count">${g.working.length}</span></h2><div class="stack">${g.working.map(t => workingCard(t, t.id === arriveId)).join('')}</div>`
+  if (g.recent.length) html += `<h2 class="sec">Recent <span class="count">${g.recent.length}</span></h2><div class="list">${g.recent.map(row).join('')}</div>`
+  if (g.settled.length) {
+    const open = S.settledOpen || !!g.q
+    html += g.q ? `<h2 class="sec">Settled <span class="count">${g.settled.length}</span></h2>` :
+      `<button class="settled-toggle press" id="settledToggle" aria-expanded="${open}" aria-label="${open ? 'Hide' : 'Show'} settled threads">${ic('chevR', 'sm chev')}Settled<span class="count">${g.settled.length}</span></button>`
+    html += `<div class="expand ${open ? 'open' : ''}" id="settledBox"><div><div class="list">${g.settled.map(row).join('')}</div></div></div>`
+  }
+  $('#threadsPage').innerHTML = html
+  $('#threadsWash').classList.toggle('warm', needN > 0)
+  arriveId = null
+  renderTabs()
+}
+
+$('#threadsPage').addEventListener('click', async e => {
+  const b = e.target.closest('button, [role=searchbox]'); if (!b) return
+  if (b.id === 'newBtn') return openNewThreadSheet()
+  if (b.id === 'compSel') return openMenu(b, computerMenu())
+  if (b.id === 'searchField') return openKb('search')
+  if (b.id === 'clearSearch') { S.query = ''; renderThreads(); return }
+  if (b.id === 'settledToggle') {
+    S.settledOpen = !S.settledOpen
+    b.setAttribute('aria-expanded', S.settledOpen); b.setAttribute('aria-label', `${S.settledOpen ? 'Hide' : 'Show'} settled threads`)
+    $('#settledBox').classList.toggle('open', S.settledOpen); return
+  }
+  if (b.id === 'retryDesk') {
+    S.desktopTry = 'trying'; renderThreads(); await wait(1600); S.desktopTry = 'failed'; renderThreads(); return
+  }
+  if (b.dataset.pick) {
+    const [tid, oid] = b.dataset.pick.split(':'); S.picked[tid] = S.picked[tid] === oid ? null : oid
+    const card = b.closest('.card')
+    $$('.chip', card).forEach(c => c.setAttribute('aria-checked', c.dataset.pick === `${tid}:${S.picked[tid]}`))
+    $('[data-send-inline]', card).disabled = !S.picked[tid]; return
+  }
+  if (b.dataset.sendInline) {
+    const t = thread(b.dataset.sendInline), opt = D.question.options.find(o => o.id === S.picked[t.id])
+    return resolveRequest(t, b, { busy: 'Sending', done: 'Answered', next: { state: 'working', line: `Using your answer: ${opt.label}` }, toastText: `Answer sent to ${t.title}.` })
+  }
+  if (b.dataset.permInline) {
+    const [tid, kind] = b.dataset.permInline.split(':'); return permAction(thread(tid), kind, b)
+  }
+  if (b.dataset.question) return openQuestion(thread(b.dataset.question), !!b.dataset.own)
+  if (b.dataset.permission) return openPermission(thread(b.dataset.permission))
+  if (b.dataset.open) return openThread(b.dataset.open)
+})
+
+function permAction(t, kind, btn) {
+  const map = {
+    once: { busy: 'Allowing', done: 'Allowed', next: { state: 'working', line: 'Running npm ci' }, toastText: 'Allowed npm ci once.' },
+    always: { busy: 'Allowing', done: 'Allowed', next: { state: 'working', line: 'Running npm ci' }, toastText: 'npm ci is now always allowed.' },
+    deny: { busy: 'Denying', done: 'Denied', next: { state: 'done', line: 'You denied npm ci', ago: 'now' }, toastText: 'Denied npm ci.' },
+  }
+  return resolveRequest(t, btn, map[kind])
+}
+
+/* Sending → done → the card leaves Needs you and arrives where the thread now belongs */
+async function resolveRequest(t, btn, { busy, done, next, toastText }, fromSheet) {
+  const card = $(`[data-card="${t.id}"]`)
+  if (btn) { btn.classList.add('busy'); btn.innerHTML = `<i class="spin"></i>${busy}…`; btn.closest('.card, #sheet')?.querySelectorAll('button').forEach(x => { if (x !== btn) x.disabled = true }) }
+  await wait(900)
+  if (btn) btn.innerHTML = `${ic('check', 'sm')}${done}`
+  if (!fromSheet && card) card.classList.add('answered')
+  await wait(fromSheet ? 450 : 650)
+  if (fromSheet) { closeSheet(); await wait(380) }
+  const live = $(`[data-card="${t.id}"]`)
+  if (live && S.tab === 'threads') {
+    live.classList.add('answered')
+    live.style.height = live.offsetHeight + 'px'; void live.offsetHeight
+    live.classList.add('leaving'); live.style.height = '0px'; live.style.marginBottom = `-${getComputedStyle(live.parentElement).rowGap}`
+    await wait(reduce.matches ? 150 : 430)
+  }
+  Object.assign(t, next); if (next.state === 'working') t.since = now(); else t.since = null
+  delete S.picked[t.id]
+  arriveId = next.state === 'working' ? t.id : null
+  renderThreads(); toast(toastText)
+}
+
+/* ---------- Computer menu ---------- */
+function computerMenu() {
+  const item = (id, name, desc, light) => `<button class="mi" role="menuitemradio" aria-checked="${S.filter === id}" data-filter="${id}">
+    <span class="light ${light}"></span><span class="tx"><div class="mt">${esc(name)}</div>${desc ? `<div class="md2">${esc(desc)}</div>` : ''}</span>
+    <span class="ck">${S.filter === id ? ic('check', 'sm') : ''}</span></button>`
+  return item('all', 'All computers', '', 'acc') + '<div class="msep"></div>' +
+    D.computers.map(c => item(c.id, c.name, c.status === 'online' ? 'Online' : 'Can’t be reached', c.status === 'online' ? 'acc' : 'bad')).join('')
+}
+
+/* ---------- Menu (popover) ---------- */
+let menuHandler = null, menuAnchor = null
+function openMenu(anchor, html, handler) {
+  const m = $('#menu'), stageRect = phone.getBoundingClientRect(), r = anchor.getBoundingClientRect()
+  m.innerHTML = html; menuHandler = handler || null; menuAnchor = anchor
+  anchor.classList.add('open'); anchor.setAttribute('aria-expanded', 'true')
+  m.style.width = Math.min(Math.max(r.width, 250), stageRect.width - 24) + 'px'
+  m.style.left = '0px'; m.style.top = '0px'; m.classList.remove('on')
+  const mh = Math.min(m.scrollHeight, stageRect.height * .7), mw = m.offsetWidth
+  let left = Math.min(Math.max(r.left - stageRect.left, 12), stageRect.width - mw - 12)
+  let top = r.bottom - stageRect.top + 8, origin = 'top'
+  if (top + mh > stageRect.height - 24) { top = r.top - stageRect.top - mh - 8; origin = 'bottom' }
+  m.style.left = left + 'px'; m.style.top = Math.max(top, 56) + 'px'
+  m.style.transformOrigin = `${r.left - stageRect.left - left + r.width / 2}px ${origin}`
+  $('#menuCatch').classList.add('on')
+  requestAnimationFrame(() => { m.classList.add('on'); ($('.mi[aria-checked="true"]', m) || $('.mi', m))?.focus({ preventScroll: true }) })
+}
+function closeMenu() {
+  $('#menu').classList.remove('on'); $('#menuCatch').classList.remove('on')
+  if (menuAnchor) { menuAnchor.classList.remove('open'); menuAnchor.setAttribute('aria-expanded', 'false'); menuAnchor.focus?.({ preventScroll: true }) }
+  menuAnchor = null
+}
+$('#menuCatch').addEventListener('pointerdown', e => { e.preventDefault(); closeMenu() })
+$('#menu').addEventListener('click', e => {
+  const b = e.target.closest('.mi'); if (!b || b.disabled) return
+  if (b.dataset.filter) { S.filter = b.dataset.filter; closeMenu(); renderThreads(); return }
+  if (menuHandler) { menuHandler(b.dataset.value); closeMenu() }
+})
+
+/* ---------- Keyboard (drawn) ---------- */
+function renderKb() {
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+  const k = c => `<button class="k" data-key="${c}" aria-label="${c}">${S.shift ? c.toUpperCase() : c}</button>`
+  const ret = S.kb === 'search' ? 'search' : S.kb === 'own' ? 'done' : 'return'
+  $('#kb').innerHTML = `
+    <div class="kr">${[...rows[0]].map(k).join('')}</div>
+    <div class="kr mid">${[...rows[1]].map(k).join('')}</div>
+    <div class="kr"><button class="k fn ${S.shift ? 'on' : ''}" data-key="shift" aria-label="Shift">${ic('shift')}</button>${[...rows[2]].map(k).join('')}<button class="k fn" data-key="del" aria-label="Delete">${ic('del')}</button></div>
+    <div class="kr"><button class="k fn" data-key="123" aria-label="Numbers">123</button><button class="k space" data-key=" " aria-label="Space">space</button><button class="k fn ret ${S.kb !== 'reply' ? 'go' : ''}" data-key="ret" aria-label="${ret}">${ret}</button></div>
+    <div class="kb-foot" aria-hidden="true">${ic('globe', 'lg')}${ic('mic', 'lg')}</div>`
+}
+function openKb(mode) {
+  S.kb = mode; S.shift = mode !== 'search' && !(mode === 'reply' ? S.reply : S.ownText)
+  renderKb(); phone.classList.add('kb-open')
+  if (mode === 'search') { kbOpenedAt = now(); renderThreads() }
+  if (mode === 'reply') { setDrop(false); renderDock(); setTimeout(() => { const sc = $('#tScroll'); sc && sc.scrollTo({ top: sc.scrollHeight, behavior: reduce.matches ? 'auto' : 'smooth' }) }, 60) }
+  if (mode === 'own') { renderOwn(); setTimeout(() => $('#own')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80) }
+}
+let kbOpenedAt = 0
+function closeKb() {
+  if (!S.kb) return
+  const mode = S.kb; S.kb = null; phone.classList.remove('kb-open')
+  if (mode === 'search') renderThreads()
+  if (mode === 'reply') renderDock()
+  if (mode === 'own') renderOwn()
+}
+function typeKey(key) {
+  const mode = S.kb; if (!mode) return
+  let val = mode === 'search' ? S.query : mode === 'reply' ? S.reply : S.ownText
+  if (key === 'shift') { S.shift = !S.shift; renderKb(); return }
+  if (key === '123') return
+  if (key === 'ret') {
+    if (mode === 'reply') { if (S.reply.trim()) sendReply(); return }
+    closeKb(); return
+  }
+  if (key === 'del') val = val.slice(0, -1)
+  else { val += S.shift ? key.toUpperCase() : key; if (S.shift) { S.shift = false; renderKb() } }
+  if (mode === 'search') { S.query = val; renderThreads() }
+  else if (mode === 'reply') { S.reply = val; renderDock() }
+  else { S.ownText = val; renderOwn(); updateQuestionSend() }
+}
+$('#kb').addEventListener('pointerdown', e => e.preventDefault())
+$('#kb').addEventListener('click', e => { const b = e.target.closest('[data-key]'); if (b) typeKey(b.dataset.key) })
+
+/* Tap anywhere outside the search field, or scroll, and the keyboard goes */
+document.addEventListener('pointerdown', e => {
+  if (!S.kb) return
+  if (e.target.closest('#kb')) return
+  if (S.kb === 'search' && !e.target.closest('#search')) closeKb()
+  if (S.kb === 'reply' && e.target.closest('#tScroll, .back')) closeKb()
+  if (S.kb === 'own' && !e.target.closest('#own') && !e.target.closest('.sfoot')) closeKb()
+}, true)
+const scrollCloses = () => { if (S.kb === 'search' && now() - kbOpenedAt > 350) closeKb() }
+$('#threadsScroll').addEventListener('wheel', scrollCloses, { passive: true })
+$('#threadsScroll').addEventListener('touchmove', scrollCloses, { passive: true })
+
+/* Physical keys work too, for the prototype on a computer */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if ($('#menu').classList.contains('on')) return closeMenu()
+    if (S.drop) return setDrop(false)
+    if (S.kb) return closeKb()
+    if (phone.classList.contains('sheet-open')) return closeSheet()
+    if (S.open) return closeThread()
+    return
+  }
+  /* Prototype only: left and right arrows cycle the thread versions, unless something is being typed */
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && S.open && !S.kb && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+    && !document.activeElement?.closest?.('input, textarea, [contenteditable], [role=textbox], [role=searchbox]')) {
+    e.preventDefault(); setVersion(VERSIONS[(VERSIONS.indexOf(S.tv) + (e.key === 'ArrowRight' ? 1 : 2)) % 3]); return
+  }
+  if (!S.kb || e.metaKey || e.ctrlKey || e.altKey) return
+  if (e.key === 'Backspace') { e.preventDefault(); typeKey('del') }
+  else if (e.key === 'Enter') { e.preventDefault(); typeKey('ret') }
+  else if (e.key.length === 1) { e.preventDefault(); const wasShift = S.shift; S.shift = false; typeKey(e.key); if (wasShift) renderKb() }
+})
+
+/* ---------- Thread ---------- */
+/* The open thread's history in time order: messages and the steps between them. Indexes point into D.messages and
+   D.activity; the last step is still running. Other threads reuse this content, as before. */
+const TIMELINE = [{ msg: 0 }, { steps: [0, 1] }, { msg: 1 }, { msg: 2 }, { steps: [2, 3, 4] }, { msg: 3 }, { running: 5 }]
+const STEP_SINCE = now() - 41 * 1000
+const VERSIONS = ['A', 'B', 'C']
+S.tv = (() => { const v = (new URLSearchParams(location.search).get('thread') || 'B').toUpperCase(); return VERSIONS.includes(v) ? v : 'B' })()
+S.fold = {}      // fold or chip key -> open
+S.drop = false   // A's details panel or C's steps drawer
+const KIND_ICON = { command: 'terminal', 'file-change': 'pencil', tool: 'file', reasoning: 'spark', plan: 'file' }
+const baseName = p => p.split(/[\\/]/).pop()
+const sinceHTML = since => `<span class="elapsed" data-since="${since}">${fmt((now() - since) / 1000)}</span>`
+
+function msgsFor(t) {
+  if (!S.msgs[t.id]) S.msgs[t.id] = t.fresh ? [] : D.messages.map(m => ({ ...m }))
+  return S.msgs[t.id]
+}
+/** What the thread is doing right now, if anything: the running step, a stop, or an error. */
+function liveFor(t) {
+  if (S.stopped[t.id]) return { cls: 'stopped', h: 'Stopped', d: 'Send a message to continue.' }
+  if (S.live[t.id]) return S.live[t.id]
+  if (t.state === 'working') {
+    if (t.id === 't3') { const a = D.activity[TIMELINE.at(-1).running]; return { cls: '', h: 'Running npm test…', verb: a.title, d: a.subject, step: a, since: STEP_SINCE } }
+    return { cls: '', h: t.line, d: '', since: t.since }
+  }
+  if (t.state === 'failed') return { cls: 'failed', h: t.line, d: 'Reply to try again.' }
+  return null
+}
+function stateWord(t) {
+  if (S.stopped[t.id]) return ['', 'Stopped', 'off']
+  return { 'working': ['working', 'Working', 'acc breathe'], 'failed': ['failed', 'Stopped', 'bad'], 'needs-you': ['', 'Needs you', 'warn'], 'settled': ['', 'Settled', 'off'] }[t.state] || ['', 'Finished', 'off']
+}
+/** Messages and finished step runs, in time order. A fresh thread has only its own messages. */
+function itemsFor(t) {
+  const msgs = msgsFor(t)
+  if (t.fresh) return msgs.map(m => ({ m }))
+  const out = TIMELINE.filter(x => !('running' in x)).map(x => 'msg' in x ? { m: msgs[x.msg] } : { steps: x.steps.map(i => D.activity[i]), g: x.steps.join('') })
+  msgs.slice(4).forEach(m => out.push({ m }))
+  return out
+}
+function stepCount(t) {
+  const l = liveFor(t)
+  return itemsFor(t).reduce((n, x) => n + (x.steps ? x.steps.length : 0), 0) + (l && l.step ? 1 : 0)
+}
+const washCls = t => t.state === 'failed' ? 'failed' : t.state === 'working' ? '' : 'quiet'
+
+/* One step: icon, verb, subject in monospace (a file's name, or the whole command), and its duration or line counts */
+function stepHTML(a) {
+  const isPath = a.kind === 'file-change' || a.kind === 'tool'
+  const subj = a.subject ? (isPath ? baseName(a.subject) : a.subject) : ''
+  const meta = a.added != null ? `<b class="plus">+${a.added}</b><b class="minus">−${a.removed}</b>` : a.kind === 'command' && a.duration ? esc(a.duration) : ''
+  return `<li class="step k-${a.kind}"><span class="si" aria-hidden="true">${ic(KIND_ICON[a.kind] || 'file', 'sm')}</span><span class="sv">${esc(a.title)}</span>${subj ? `<code class="ss" title="${esc(a.subject)}">${esc(subj)}</code>` : ''}${meta ? `<span class="sm">${meta}</span>` : ''}</li>`
+}
+function liveStepHTML(live) {
+  if (live.cls === 'stopped') return `<li class="step halt"><span class="si" aria-hidden="true"><i class="mini-sq"></i></span><span class="sv">Stopped by you</span></li>`
+  if (live.cls === 'failed') return `<li class="step bad"><span class="si" aria-hidden="true">${ic('x', 'sm')}</span><span class="sv">${esc(live.h)}</span></li>`
+  return `<li class="step running" role="status"><span class="si" aria-hidden="true"><i class="mini-spin"></i></span><span class="sv">${esc(live.step ? live.verb : live.h)}</span>${live.step ? `<code class="ss" title="${esc(live.d)}">${esc(live.d)}</code>` : ''}${live.since ? `<span class="sm">${sinceHTML(live.since)}</span>` : ''}</li>`
+}
+function summarize(steps) {
+  const c = k => steps.filter(a => a.kind === k).length
+  const parts = []
+  if (c('reasoning')) parts.push('thought')
+  const r = c('tool'); if (r) parts.push(`read ${r} ${r === 1 ? 'file' : 'files'}`)
+  const e = c('file-change'); if (e) parts.push(`edited ${e} ${e === 1 ? 'file' : 'files'}`)
+  const n = c('command'); if (n) parts.push(`ran ${n} ${n === 1 ? 'command' : 'commands'}`)
+  return { text: parts.join(', ').replace(/^./, ch => ch.toUpperCase()),
+    add: steps.reduce((s, a) => s + (a.added || 0), 0), rem: steps.reduce((s, a) => s + (a.removed || 0), 0) }
+}
+
+/* ---- Header ---- */
+function pillHTML(t) {
+  const [pcls, pword, plight] = stateWord(t)
+  return `<span class="state-pill ${pcls}"><i class="light ${plight}"></i><span class="word">${pword}</span>${t.since && !S.stopped[t.id] ? elapsed(t) : ''}</span>`
+}
+function headHTML(t) {
+  const back = `<button class="back press" aria-label="Back to threads">${ic('chevL', 'lg')}</button>`
+  if (S.tv === 'A') return `<div class="bar">${back}
+    <button class="ttl press" id="ttlBtn" aria-expanded="${S.drop}" aria-controls="tDrop" data-label="${esc(t.title)}" aria-label="${esc(t.title)}. ${S.drop ? 'Hide' : 'Show'} thread details">
+      <span class="tt">${esc(t.title)}</span>${ic('chevD', 'sm chev')}</button>${pillHTML(t)}</div>`
+  if (S.tv === 'B') return `<div class="bar">${back}<span class="mini" aria-hidden="true">${esc(t.title)}</span>${pillHTML(t)}</div>`
+  return `<div class="bar">${back}<h1 class="ttl"><span class="tt">${esc(t.title)}</span></h1>${pillHTML(t)}</div>${stripHTML(t)}`
+}
+/* C: the current step, live, and how many steps the thread has taken. Opens the drawer. */
+function stripHTML(t) {
+  const live = liveFor(t), n = stepCount(t)
+  if (!n && !live) return ''
+  let cls = 'idle', icon = ic('check', 'sm'), text = 'Finished', said = 'Finished', tail = ''
+  if (live && !live.cls) { cls = ''; icon = '<i class="mini-spin"></i>'; text = `<span class="sheen">${esc(live.h)}</span>`; said = live.h; tail = live.since ? sinceHTML(live.since) : '' }
+  else if (live && live.cls === 'failed') { cls = 'bad'; icon = ic('x', 'sm'); text = esc(live.h); said = live.h }
+  else if (live && live.cls === 'stopped') { icon = '<i class="mini-sq"></i>'; text = said = 'Stopped by you' }
+  const label = `${said.replace(/…$/, '')}. ${n} ${n === 1 ? 'step' : 'steps'}.`
+  return `<div class="strip-x"><div><button class="strip press ${cls}" id="stripBtn" aria-expanded="${S.drop}" aria-controls="tDrop" data-label="${esc(label)}" aria-label="${esc(label)} ${S.drop ? 'Hide' : 'Show'} every step and the branch">
+    <span class="sic" aria-hidden="true">${icon}</span><span class="stx">${text}</span>${tail}<span class="scount">${n} ${n === 1 ? 'step' : 'steps'}${ic('chevD', 'sm chev')}</span>
+    ${cls === '' ? '<span class="runner" aria-hidden="true"></span>' : ''}</button></div></div>`
+}
+
+/* ---- Details panel (A) and steps drawer (C) ---- */
+function whoHTML(t) {
+  return `<div class="dd-who"><span class="mark" aria-hidden="true">${esc(provName(t.provider)[0])}</span><span class="tx"><b>${esc(provName(t.provider))} on ${esc(compName(t.computer))}</b><span>${esc(t.project)}</span></span></div>`
+}
+function branchHTML(t) {
+  const g = D.git, rich = t.id === 't3'
+  if (!t.branch) return `<div class="dd-row"><span class="ib">${ic('folder', 'sm')}</span><span class="v">Works in the project’s own folder<small>No branch of its own</small></span></div>`
+  let h = `<div class="dd-row"><span class="ib">${ic('branch', 'sm')}</span><span class="v"><span class="mono">${esc(t.branch)}</span>${rich ? `<small>From ${g.base}, ${g.ahead} commits ahead</small>` : ''}</span></div>`
+  if (rich) h += `<div class="dd-row"><span class="ib">${ic('file', 'sm')}</span><span class="v">${g.files} files changed</span><span class="r"><b class="plus">+${g.added}</b><b class="minus">−${g.removed}</b></span></div>
+    <div class="dd-row"><span class="ib">${ic('pr', 'sm')}</span><span class="v">Pull request #${g.pr.number}, draft<small>${esc(g.pr.title)}</small></span></div>
+    <div class="dd-row"><span class="ib"><i class="light acc breathe"></i></span><span class="v">Checks: ${g.pr.checks.passed} of ${g.pr.checks.total} passed</span><span class="r">${g.pr.checks.running} running</span></div>`
+  else h += `<div class="dd-row"><span class="ib">${ic('pr', 'sm')}</span><span class="v">${t.pr ? `Pull request #${t.pr}, merged` : 'No pull request yet'}</span></div>`
+  return h
+}
+function dropHTML(t) {
+  if (S.tv === 'A') return `${whoHTML(t)}<div class="dd-sec">${branchHTML(t)}<p class="dd-later">Branch and pull request details will have their own page.</p></div>`
+  /* C: every step, under the message it answered, then where the work sits */
+  const live = liveFor(t), groups = []
+  let lastUser = ''
+  itemsFor(t).forEach(x => { if (x.m && x.m.role === 'user') lastUser = x.m.text; if (x.steps) groups.push({ after: lastUser, steps: x.steps }) })
+  if (live && (!groups.length || groups.at(-1).after !== lastUser)) groups.push({ after: lastUser, steps: [] })
+  const steps = groups.map((gp, i) => `${gp.after ? `<p class="dd-turn">For <q>${esc(gp.after)}</q></p>` : ''}<ol class="steplist">${gp.steps.map(stepHTML).join('')}${i === groups.length - 1 && live ? liveStepHTML(live) : ''}</ol>`).join('')
+  return `${whoHTML(t)}<div class="dd-sec"><h3 class="dd-h">Steps<span class="count">${stepCount(t)}</span></h3>${steps || '<p class="dd-later">No steps yet.</p>'}</div>
+    <div class="dd-sec"><h3 class="dd-h">Branch</h3>${branchHTML(t)}</div>`
+}
+function setDrop(on) {
+  const t = thread(S.open), d = $('#tDrop'); if (!t || !d) { S.drop = false; return }
+  S.drop = on
+  if (on) { closeKb(); d.innerHTML = dropHTML(t); d.scrollTop = 0 }
+  d.classList.toggle('on', on); d.setAttribute('aria-hidden', !on); $('#tCatch').classList.toggle('on', on)
+  const trig = $('#ttlBtn') || $('#stripBtn')
+  if (trig) {
+    trig.setAttribute('aria-expanded', on)
+    trig.setAttribute('aria-label', `${trig.dataset.label}${S.tv === 'A' ? '.' : ''} ${on ? 'Hide' : 'Show'} ${S.tv === 'A' ? 'thread details' : 'every step and the branch'}`)
+  }
+}
+
+/* ---- Conversation ---- */
+function msgHTML(t, m, showWho, extra = '') {
+  if (m.role === 'user') return `<div class="msg user ${m.pending ? 'sending' : ''}">${esc(m.text)}</div>` +
+    (m.pending || m.sent ? `<div class="msg-state">${m.pending ? '<i class="spin" style="width:11px;height:11px;border-width:1.5px"></i>Sending…' : ic('check', 'sm') + 'Sent'}</div>` : '')
+  const md = D.markdown(m.text).replace(/<pre data-lang="([^"]*)">([\s\S]*?)<\/pre>/g, (_, lang, code) =>
+    `<div class="codebox"><div class="ch"><span>${lang || 'code'}</span><button class="press" data-copy aria-label="Copy this code">Copy</button></div><pre>${code}</pre></div>`)
+  return `<div class="msg bot">${showWho ? `<div class="who"><span class="mark">${esc(provName(t.provider)[0])}</span>${esc(provName(t.provider))}</div>` : ''}${extra}<div class="md">${md}</div></div>`
+}
+/* A: a run of steps folds into one quiet row that opens in place */
+function foldHTML(t, x) {
+  const key = `f-${t.id}-${x.g}`, open = !!S.fold[key], s = summarize(x.steps)
+  const kinds = [...new Set(x.steps.map(a => a.kind))]
+  const lines = s.add || s.rem ? `, ${s.add} lines added, ${s.rem} removed` : ''
+  return `<div class="fold ${open ? 'open' : ''}">
+    <button class="fold-row press" data-fold="${key}" aria-expanded="${open}" aria-controls="${key}" data-label="${esc(s.text + lines)}" aria-label="${esc(s.text + lines)}. ${open ? 'Hide' : 'Show'} the steps">
+      <span class="stackic" aria-hidden="true">${kinds.map(k => `<span class="k-${k}">${ic(KIND_ICON[k] || 'file', 'sm')}</span>`).join('')}</span>
+      <span class="ft">${esc(s.text)}</span>${lines ? `<span class="fm"><span aria-hidden="true">·</span><b class="plus">+${s.add}</b><b class="minus">−${s.rem}</b></span>` : ''}${ic('chevR', 'sm chev')}</button>
+    <div class="fold-x" id="${key}" aria-hidden="${!open}"><div><ol class="fold-body steplist">${x.steps.map(stepHTML).join('')}</ol></div></div></div>`
+}
+/* C: a reply carries the steps that led to it */
+function chipHTML(t, x) {
+  const key = `c-${t.id}-${x.g}`, open = !!S.fold[key], n = x.steps.length
+  const label = `${n} ${n === 1 ? 'step' : 'steps'} led to this reply.`
+  return `<button class="stepchip press" data-chip="${key}" aria-expanded="${open}" aria-controls="${key}" data-label="${label}" aria-label="${label} ${open ? 'Hide' : 'Show'} them">
+      <span class="pill">${ic('steps', 'sm')}${n} ${n === 1 ? 'step' : 'steps'}${ic('chevD', 'sm chev')}</span></button>
+    <div class="chip-x ${open ? 'open' : ''}" id="${key}" aria-hidden="${!open}"><div><ol class="chip-body steplist">${x.steps.map(stepHTML).join('')}</ol></div></div>`
+}
+/* B: the big title, who and where, and the branch as one chip row, all at the top of the conversation */
+function heroHTML(t) {
+  const g = D.git, rich = t.id === 't3'
+  const chips = !t.branch ? '' : `<button class="chiprow press" id="gitHint" aria-haspopup="dialog" aria-label="Branch ${esc(t.branch)}${rich ? `, ${g.files} files changed, ${g.added} lines added, ${g.removed} removed, pull request ${g.pr.number} draft, ${g.pr.checks.passed} of ${g.pr.checks.total} checks passed` : ''}. Show details">
+      <span class="gchip br">${ic('branch', 'sm')}<span>${esc(t.branch)}</span></span>
+      ${rich ? `<span class="gchip num"><b class="plus">+${g.added}</b><b class="minus">−${g.removed}</b></span><span class="gchip">${ic('pr', 'sm')}#${g.pr.number} draft</span><span class="gchip"><i class="light acc breathe"></i>${g.pr.checks.passed}/${g.pr.checks.total}</span>`
+        : t.pr ? `<span class="gchip">${ic('pr', 'sm')}#${t.pr} merged</span>` : ''}</button>`
+  return `<div class="thero"><h1 class="ttitle" id="bigTitle">${esc(t.title)}</h1>
+    <p class="tmeta">${esc(provName(t.provider))} on ${esc(compName(t.computer))} · ${esc(t.project)}</p>${chips}</div>`
+}
+function renderTBody() {
+  const t = thread(S.open), body = $('#tBody'); if (!t || !body) return
+  const v = S.tv, live = liveFor(t)
+  let html = v === 'B' ? `<div class="wash ${washCls(t)}"></div>${heroHTML(t)}` : ''
+  html += '<div class="msgs">'
+  if (!msgsFor(t).length) html += `<p class="thread-empty">This thread is open on ${esc(compName(t.computer))}. Write the first message below.</p>`
+  let prevRole = null, waiting = null
+  itemsFor(t).forEach(x => {
+    if (x.steps) {
+      if (v === 'A') html += foldHTML(t, x)
+      else if (v === 'B') html += `<ol class="trail" aria-label="Steps">${x.steps.map(stepHTML).join('')}</ol>`
+      else waiting = x
+      return
+    }
+    let extra = ''
+    if (v === 'C' && x.m.role === 'assistant' && waiting) { extra = chipHTML(t, waiting); waiting = null }
+    html += msgHTML(t, x.m, x.m.role === 'assistant' && prevRole !== 'assistant', extra)
+    prevRole = x.m.role
+  })
+  if (v === 'B' && live) html += `<ol class="trail" aria-label="Now">${liveStepHTML(live)}</ol>`
+  body.innerHTML = html + '</div>'
+}
+/* A: the running step rides just above the reply box */
+function renderLive() {
+  const slot = $('#liveSlot'); if (!slot) return
+  const t = thread(S.open), live = liveFor(t)
+  if (S.tv !== 'A' || !live) { slot.innerHTML = ''; return }
+  const body = live.step ? `<span class="lh">${esc(live.verb)}</span><code class="ld">${esc(live.d)}</code>`
+    : `<span class="lh ${live.d ? '' : 'only'}">${esc(live.h)}</span>${live.d ? `<span class="ld" style="font-family:inherit;font-size:var(--fs-cap)">${esc(live.d)}</span>` : ''}`
+  slot.innerHTML = `<div class="liverow glass ${live.cls}" role="status"><span class="orb" aria-hidden="true"></span>${body}${!live.cls && live.since ? sinceHTML(live.since) : ''}</div>`
+}
+function onThreadScroll() {
+  if (S.tv !== 'B') return
+  const sc = $('#tScroll'), head = $('#thead'), big = $('#bigTitle'); if (!sc || !head) return
+  head.classList.toggle('stuck', sc.scrollTop > 4)
+  head.classList.toggle('titled', !!big && sc.scrollTop > big.offsetTop + big.offsetHeight - head.offsetHeight)
+}
+
+function openThread(id) {
+  const t = thread(id); if (!t) return
+  if (t.state === 'needs-you') return t.id === D.question.thread ? openQuestion(t) : openPermission(t)
+  closeKb(); closeMenu()
+  if (t.state === 'finished-unread') { t.state = 'done'; renderThreads() }
+  S.open = id; S.reply = ''
+  renderThread(); $('#tScroll').scrollTop = 1e6; onThreadScroll()
+  $('#scr-threads').classList.add('under'); $('#tabbar').classList.add('away'); phone.classList.add('thread-on')
+  requestAnimationFrame(() => $('#scr-thread').classList.add('in'))
+  setTimeout(() => $('#scr-thread .back')?.focus({ preventScroll: true }), 480)
+}
+function closeThread() {
+  closeKb(); setDrop(false); S.open = null
+  $('#scr-thread').classList.remove('in'); $('#scr-threads').classList.remove('under'); $('#tabbar').classList.remove('away'); phone.classList.remove('thread-on')
+  renderThreads()
+}
+function renderThread() {
+  const t = thread(S.open); if (!t) return
+  const scr = $('#scr-thread'), v = S.tv
+  scr.dataset.v = v; S.drop = false
+  scr.innerHTML = `
+    ${v === 'B' ? '' : `<div class="wash ${washCls(t)}"></div>`}
+    <header class="thead ${v === 'B' ? 'slim' : 'glass'}" id="thead"></header>
+    <div class="tcatch" id="tCatch"></div>
+    ${v === 'B' ? '' : `<div class="tdrop" id="tDrop" role="region" aria-label="${v === 'A' ? 'Thread details' : 'Every step and the branch'}" aria-hidden="true"></div>`}
+    <div class="scroll" id="tScroll"><div class="tscroll" id="tBody"></div></div>
+    <div class="dockarea" id="dockArea"><div id="liveSlot"></div><div class="dock glass" id="dock"></div></div>`
+  refreshThread()
+  const sc = $('#tScroll'), head = $('#thead'), area = $('#dockArea')
+  const measure = () => { scr.style.setProperty('--thead-h', head.offsetHeight + 'px'); scr.style.setProperty('--dock-h', area.offsetHeight + 'px') }
+  measure(); new ResizeObserver(measure).observe(head); new ResizeObserver(measure).observe(area)
+  sc.addEventListener('scroll', onThreadScroll, { passive: true })
+  $('#tCatch').addEventListener('pointerdown', e => { e.preventDefault(); setDrop(false) })
+}
+/** Re-renders the parts that change while the thread is open, keeping the page and its scroll. */
+function refreshThread() {
+  const t = thread(S.open); if (!t || !$('#thead')) return
+  $('#thead').innerHTML = headHTML(t); renderTBody(); renderLive(); renderDock(); onThreadScroll()
+  if (S.drop && $('#tDrop')) $('#tDrop').innerHTML = dropHTML(t)
+}
+function renderDock() {
+  const t = thread(S.open), dock = $('#dock'); if (!t || !dock) return
+  const working = t.state === 'working' && !S.stopped[t.id]
+  const text = S.reply
+  dock.classList.toggle('focus', S.kb === 'reply')
+  dock.innerHTML = `
+    <div class="field ${S.kb === 'reply' ? 'focus' : ''}" role="textbox" tabindex="0" aria-multiline="true" aria-label="Reply to this thread" id="replyField">${text ? esc(text) : ''}<i class="caret"></i>${text ? '' : `<span class="ph">${working ? 'Reply while it works' : 'Reply to this thread'}</span>`}</div>
+    ${text ? `<button class="round send press pop-in" id="sendBtn" aria-label="Send reply">${ic('up')}</button>`
+      : working ? `<button class="round stop press" id="stopBtn" aria-label="Stop this turn"><i class="sq"></i></button>` : ''}`
+}
+$('#scr-thread').addEventListener('click', async e => {
+  const b = e.target.closest('button, #replyField'); if (!b) return
+  if (b.classList.contains('back')) return closeThread()
+  if (b.id === 'replyField') return openKb('reply')
+  if (b.id === 'ttlBtn' || b.id === 'stripBtn') return setDrop(!S.drop)
+  if (b.id === 'gitHint') return openMenu(b, gitInfo(), null)
+  if (b.dataset.fold || b.dataset.chip) {
+    const key = b.dataset.fold || b.dataset.chip, open = !S.fold[key]; S.fold[key] = open
+    const box = document.getElementById(key)
+    b.setAttribute('aria-expanded', open)
+    b.setAttribute('aria-label', `${b.dataset.label}${b.dataset.fold ? '.' : ''} ${open ? 'Hide' : 'Show'} ${b.dataset.fold ? 'the steps' : 'them'}`)
+    box.setAttribute('aria-hidden', !open)
+    if (b.dataset.fold) b.closest('.fold').classList.toggle('open', open); else box.classList.toggle('open', open)
+    if (open) setTimeout(() => box.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }), reduce.matches ? 0 : 460)
+    return
+  }
+  if (b.id === 'sendBtn') return sendReply()
+  if (b.id === 'stopBtn') {
+    const t = thread(S.open)
+    b.disabled = true; b.innerHTML = '<i class="spin"></i>'; b.setAttribute('aria-label', 'Stopping')
+    await wait(900); S.stopped[t.id] = true; t.state = 'done'; t.line = 'Stopped by you'; t.ago = 'now'
+    refreshThread(); renderThreads(); toast('Stopped this turn.'); return
+  }
+  if (b.dataset.copy !== undefined) {
+    const code = b.closest('.codebox').querySelector('pre').textContent
+    try { await navigator.clipboard.writeText(code); b.textContent = 'Copied' } catch { b.textContent = 'Couldn’t copy' }
+    setTimeout(() => { b.textContent = 'Copy' }, 1600)
+  }
+})
+async function sendReply() {
+  const t = thread(S.open), text = S.reply.trim(); if (!text) return
+  const list = msgsFor(t); const m = { role: 'user', text, pending: true }; list.push(m)
+  S.reply = ''; S.shift = true; renderKb(); renderDock()
+  renderTBody(); const sc = $('#tScroll'); sc.scrollTo({ top: sc.scrollHeight, behavior: reduce.matches ? 'auto' : 'smooth' })
+  await wait(850); m.pending = false; m.sent = true
+  if (t.state !== 'working' || S.stopped[t.id]) { delete S.stopped[t.id]; t.state = 'working'; t.since = now(); t.line = 'Reading your message'; renderThreads() }
+  S.live[t.id] = { cls: '', h: 'Reading your message…', d: '', since: now() }
+  if (S.open === t.id) { refreshThread(); $('#tScroll').scrollTop = 1e6 }
+  toast(`Sent to ${t.title}.`)
+  await wait(2600); delete S.live[t.id]; m.sent = false
+  if (S.open === t.id) refreshThread()
+}
+function gitInfo() {
+  const t = thread(S.open), g = D.git, rich = t.id === 't3'
+  return `<div class="minfo">
+    <h5>${rich ? esc(g.pr.title) : esc(t.branch)}</h5>
+    <div class="mrow"><span>Branch</span><b style="font-family:var(--mono);font-size:.9em;word-break:break-all">${esc(t.branch)}</b></div>
+    ${rich ? `<div class="mrow"><span>From</span><b>${g.base}, ${g.ahead} commits ahead</b></div>
+    <div class="mrow"><span>Changes</span><b>${g.files} files <span class="plus">+${g.added}</span> <span class="minus">−${g.removed}</span></b></div>
+    <div class="mrow"><span>Pull request</span><b>#${g.pr.number}, draft</b></div>
+    <div class="mrow"><span>Checks</span><b>${g.pr.checks.passed} of ${g.pr.checks.total} passed, ${g.pr.checks.running} running</b></div>` : ''}
+    <p class="later">Branch and pull request details will have their own page.</p></div>`
+}
+
+function placeKnob(seg) {
+  if (!seg) return
+  const btns = $$('button', seg), i = Math.max(0, btns.findIndex(b => b.getAttribute('aria-pressed') === 'true' || b.getAttribute('aria-checked') === 'true'))
+  const k = $('.knob', seg); if (!k) return
+  const w = (seg.clientWidth - 6) / btns.length
+  k.style.width = w + 'px'; k.style.transform = `translateX(${w * i}px)`
+}
+
+/* ---------- Thread version switch (prototype only) ---------- */
+function renderProto() { $$('#proto [data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.tv)) }
+function setVersion(v) {
+  if (!VERSIONS.includes(v) || v === S.tv) return
+  S.tv = v; renderProto()
+  try { const u = new URL(location.href); u.searchParams.set('thread', v); history.replaceState(null, '', u) } catch {}
+  if (S.open) { renderThread(); $('#tScroll').scrollTop = 1e6; onThreadScroll() }
+}
+$('#proto').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setVersion(b.dataset.v) })
+renderProto()
+
+/* ---------- Sheets ---------- */
+let sheetOnClose = null
+function openSheet(html, { tall = false, warm = false, label = 'Sheet', onClose = null } = {}) {
+  const s = $('#sheet'); closeMenu()
+  s.className = tall ? 'tall' : ''
+  s.setAttribute('aria-label', label)
+  s.innerHTML = `<div class="wash ${warm ? 'warm' : ''}"></div><div class="grab" aria-hidden="true"></div>${html}`
+  sheetOnClose = onClose
+  phone.classList.add('sheet-open')
+  setTimeout(() => ($('[data-autofocus]', s) || $('button', s))?.focus({ preventScroll: true }), 420)
+}
+function closeSheet() {
+  if (S.kb === 'own') closeKb()
+  phone.classList.remove('sheet-open'); sheetOnClose?.(); sheetOnClose = null
+}
+$('#scrim').addEventListener('click', () => closeSheet())
+
+/* Question */
+function openQuestion(t, own) {
+  S.q = { thread: t.id, choice: S.picked[t.id] || (own ? 'own' : null) }; S.ownText = ''
+  const o = D.question.options
+  openSheet(`
+    <div class="sbody">
+      <div class="from"><i class="light warn"></i><span>Question from ${esc(provName(t.provider))} in ${esc(t.title)}</span></div>
+      <h2 class="s-title" id="qTitle">${esc(D.question.text)}</h2>
+      <div class="opts" role="radiogroup" aria-labelledby="qTitle">
+        ${o.map(x => `<button class="opt press" role="radio" aria-checked="${S.q.choice === x.id}" data-qopt="${x.id}">
+          <span class="radio">${ic('check', 'sm')}</span><span><div class="ot">${esc(x.label)}</div><div class="od">${esc(x.description)}</div></span></button>`).join('')}
+        <button class="opt press" role="radio" aria-checked="${S.q.choice === 'own'}" data-qopt="own">
+          <span class="radio">${ic('check', 'sm')}</span><span><div class="ot">Write your own answer</div><div class="od">Say it in your own words.</div></span></button>
+        <div id="ownWrap"></div>
+      </div>
+    </div>
+    <div class="sfoot"><button class="btn soft press" id="qLater">Not now</button><button class="btn primary press" id="qSend" disabled>Send answer</button></div>`,
+    { warm: true, label: 'Question' })
+  renderOwn(); updateQuestionSend()
+  if (own) setTimeout(() => openKb('own'), 450)
+}
+function renderOwn() {
+  const w = $('#ownWrap'); if (!w || !S.q) return
+  w.innerHTML = S.q.choice === 'own' ? `<div class="own ${S.kb === 'own' ? 'focus' : ''}" id="own" role="textbox" tabindex="0" aria-label="Your answer">${S.ownText ? esc(S.ownText) : ''}<i class="caret"></i>${S.ownText ? '' : '<span class="ph">Type your answer</span>'}</div>` : ''
+}
+function updateQuestionSend() {
+  const b = $('#qSend'); if (!b || !S.q) return
+  b.disabled = !S.q.choice || (S.q.choice === 'own' && !S.ownText.trim())
+}
+$('#sheet').addEventListener('click', async e => {
+  const b = e.target.closest('button, #own'); if (!b) return
+  if (b.id === 'own') return openKb('own')
+  if (b.dataset.qopt) {
+    S.q.choice = b.dataset.qopt
+    $$('[data-qopt]').forEach(x => x.setAttribute('aria-checked', x.dataset.qopt === S.q.choice))
+    renderOwn(); updateQuestionSend()
+    if (S.q.choice === 'own') openKb('own'); else closeKb()
+    return
+  }
+  if (b.id === 'qLater' || b.id === 'pLater') return closeSheet()
+  if (b.id === 'qSend') {
+    closeKb()
+    const t = thread(S.q.thread), opt = D.question.options.find(o => o.id === S.q.choice)
+    const label = opt ? opt.label : `“${S.ownText.trim()}”`
+    return resolveRequest(t, b, { busy: 'Sending', done: 'Answered', next: { state: 'working', line: `Using your answer: ${label}` }, toastText: `Answer sent to ${t.title}.` }, true)
+  }
+  if (b.dataset.perm) { const [tid, kind] = b.dataset.perm.split(':'); return resolveRequest(thread(tid), b, permActionSpec(kind), true) }
+  /* New thread */
+  if (b.id === 'ntCancel') return closeSheet()
+  if (b.id === 'ntBack') { S.nt.step = Math.max(1, S.nt.step - 1); return renderNT() }
+  if (b.dataset.ntComputer) { S.nt.computer = b.dataset.ntComputer; S.nt.project = null; S.nt.step = 2; return renderNT() }
+  if (b.dataset.ntProject) { S.nt.project = b.dataset.ntProject; S.nt.step = 3; return renderNT() }
+  if (b.dataset.ntStep) { S.nt.step = +b.dataset.ntStep; return renderNT() }
+  if (b.dataset.ntField) return openFieldMenu(b, b.dataset.ntField, S.nt, () => renderNTOptions())
+  if (b.id === 'ntOpen') return openNewThread(b)
+})
+function permActionSpec(kind) {
+  return {
+    once: { busy: 'Allowing', done: 'Allowed', next: { state: 'working', line: 'Running npm ci' }, toastText: 'Allowed npm ci once.' },
+    always: { busy: 'Allowing', done: 'Allowed', next: { state: 'working', line: 'Running npm ci' }, toastText: 'npm ci is now always allowed.' },
+    deny: { busy: 'Denying', done: 'Denied', next: { state: 'done', line: 'You denied npm ci', ago: 'now' }, toastText: 'Denied npm ci.' },
+  }[kind]
+}
+
+/* Permission */
+function openPermission(t) {
+  const p = D.permission
+  openSheet(`
+    <div class="sbody">
+      <div class="from"><i class="light warn"></i><span>Permission for ${esc(provName(t.provider))} in ${esc(t.title)}</span></div>
+      <h2 class="s-title">${esc(provName(t.provider))} wants to run a command</h2>
+      <div class="cmd" aria-label="Command: ${esc(p.command)}"><span class="p">$</span>${esc(p.command)}</div>
+      <p class="where">It runs in<span class="path">${esc(p.cwd)}</span>on ${esc(compName(t.computer))}, the thread’s own worktree.</p>
+      <div class="stackbtns">
+        <button class="btn primary wide press" data-perm="${t.id}:once" data-autofocus>${esc(p.choices[0].label)}</button>
+        <button class="btn soft wide press" data-perm="${t.id}:always">${esc(p.choices[1].label)}</button>
+        <button class="btn danger wide press" data-perm="${t.id}:deny">${esc(p.choices[2].label)}</button>
+        <button class="btn ghost wide press" id="pLater">Not now</button>
+      </div>
+      <div style="height:calc(var(--safe-b))"></div>
+    </div>`, { warm: true, label: 'Permission' })
+}
+
+/* ---------- New thread ---------- */
+const optLists = {
+  model: () => D.newThread.models.map(m => ({ value: m.id, label: m.label })),
+  effort: () => D.newThread.efforts.map(x => ({ value: x, label: x })),
+  permissions: () => D.newThread.permissions.map(p => ({ value: p.id, label: p.label })),
+  working: () => D.newThread.workingCopy.map(w => ({ value: w.id, label: w.label, desc: w.description })),
+}
+const fieldNames = { model: 'Model', effort: 'Effort', permissions: 'Permissions', working: 'Working copy' }
+const labelOf = (field, v) => (optLists[field]().find(o => o.value === v) || {}).label || v
+function openFieldMenu(anchor, field, target, after) {
+  const cur = target[field]
+  const html = optLists[field]().map(o => `<button class="mi" role="menuitemradio" aria-checked="${o.value === cur}" data-value="${esc(o.value)}">
+    <span class="tx"><div class="mt">${esc(o.label)}</div>${o.desc ? `<div class="md2">${esc(o.desc)}</div>` : ''}</span><span class="ck">${o.value === cur ? ic('check', 'sm') : ''}</span></button>`).join('')
+  openMenu(anchor, html, v => { target[field] = v; after() })
+}
+function openNewThreadSheet() {
+  closeKb()
+  S.nt = { step: 1, computer: null, project: null, ...S.defaults }
+  openSheet(`<div class="nt-head" id="ntHead"></div>
+    <div class="steps" aria-hidden="true"><i></i><i></i><i></i></div><p class="step-label" id="ntLabel"></p>
+    <div class="nt-pages"><div class="nt-page" id="nt1"></div><div class="nt-page right" id="nt2"></div><div class="nt-page right" id="nt3"></div></div>
+    <div class="sfoot" id="ntFoot"></div>`, { tall: true, label: 'New thread' })
+  renderNT()
+}
+function renderNT() {
+  const n = S.nt
+  $('#ntHead').innerHTML = n.step > 1
+    ? `<button class="btn ghost press" id="ntBack" aria-label="Back to step ${n.step - 1}">${ic('chevL', 'sm')}Back</button><h2>New thread</h2><button class="btn ghost press" id="ntCancel">Cancel</button>`
+    : `<button class="btn ghost press" id="ntCancel">Cancel</button><h2>New thread</h2><span style="min-width:74px"></span>`
+  $$('#sheet .steps i').forEach((el, i) => el.classList.toggle('on', i < n.step))
+  $('#ntLabel').textContent = ['Step 1 of 3: computer', 'Step 2 of 3: project', 'Step 3 of 3: options'][n.step - 1]
+  ;[1, 2, 3].forEach(i => { const p = $(`#nt${i}`); p.classList.toggle('left', i < n.step); p.classList.toggle('right', i > n.step); p.inert = i !== n.step })
+  $('#nt1').innerHTML = `<h3 class="s-title" style="margin-top:0">Where should it run?</h3><p class="s-sub">Threads run on a computer with Sotto open.</p><div style="margin-top:var(--sp-5)">` +
+    D.computers.map(c => {
+      const count = D.newThread.projects.filter(p => p.computer === c.id).length
+      return `<button class="pick press" data-nt-computer="${c.id}" ${c.status !== 'online' ? 'disabled' : ''} aria-label="${esc(c.name)}${c.status !== 'online' ? ', can’t be reached' : ''}">
+        <span class="light ${c.status === 'online' ? 'acc' : 'bad'}"></span><span class="tx"><div class="pt">${esc(c.name)}</div>
+        <div class="pd">${c.status === 'online' ? `Online · ${count} ${count === 1 ? 'project' : 'projects'}` : 'Can’t be reached right now'}</div></span>${c.status === 'online' ? ic('chevR', 'chev') : ''}</button>`
+    }).join('') + '</div>'
+  if (n.computer) {
+    $('#nt2').innerHTML = `<div class="crumbs"><button class="crumb press" data-nt-step="1" aria-label="Change computer, now ${esc(compName(n.computer))}">${ic('computer', 'sm')}<span>${esc(compName(n.computer))}</span></button></div>
+      <h3 class="s-title" style="margin-top:0">Which project?</h3><p class="s-sub">The thread works in this folder.</p><div style="margin-top:var(--sp-5)">` +
+      D.newThread.projects.filter(p => p.computer === n.computer).map(p => `<button class="pick press" data-nt-project="${esc(p.name)}">
+        <span class="ic" style="color:var(--accent-text)">${ic('folder')}</span><span class="tx"><div class="pt">${esc(p.name)}</div><div class="pd">${esc(p.path)} · ${p.threads} threads</div></span>${ic('chevR', 'chev')}</button>`).join('') + '</div>'
+  }
+  if (n.project) renderNTOptions()
+  const foot = $('#ntFoot')
+  foot.innerHTML = n.step === 1 ? `<p class="phint" style="margin:0;min-height:44px;display:flex;align-items:center">Choose a computer to continue.</p>`
+    : n.step === 2 ? `<p class="phint" style="margin:0;min-height:44px;display:flex;align-items:center">Choose a project to continue.</p>`
+    : `<button class="btn primary wide press" id="ntOpen">Open thread on ${esc(compName(n.computer))}</button>`
+}
+function renderNTOptions() {
+  const n = S.nt
+  $('#nt3').innerHTML = `<div class="crumbs">
+      <button class="crumb press" data-nt-step="1" aria-label="Change computer, now ${esc(compName(n.computer))}">${ic('computer', 'sm')}<span>${esc(compName(n.computer))}</span></button>
+      <button class="crumb press" data-nt-step="2" aria-label="Change project, now ${esc(n.project)}">${ic('folder', 'sm')}<span>${esc(n.project)}</span></button></div>
+    <h3 class="s-title" style="margin-top:0">How should it work?</h3><p class="s-sub">These start from your new thread defaults.</p><div style="margin-top:var(--sp-5)">` +
+    ['model', 'effort', 'permissions', 'working'].map(f => `<button class="fieldbox press" data-nt-field="${f}" aria-haspopup="menu" aria-label="${fieldNames[f]}: ${esc(labelOf(f, n[f]))}. Change">
+      <span class="tx"><div class="fl">${fieldNames[f]}</div><div class="fv">${esc(labelOf(f, n[f]))}</div></span>${ic('updown', 'ud')}</button>`).join('') + '</div>' +
+    (n.permissions === 'full' ? `<p class="phint">Full access runs commands without asking. You can still stop the thread from here.</p>` : '')
+}
+async function openNewThread(b) {
+  const n = S.nt
+  b.classList.add('busy', 'opening'); b.innerHTML = '<i class="spin"></i>Opening…'
+  $$('#ntHead button').forEach(x => x.disabled = true)
+  await wait(1300)
+  const model = D.newThread.models.find(m => m.id === n.model)
+  const t = { id: 'n' + now(), title: 'New thread', provider: model.provider, computer: n.computer, project: n.project, state: 'done', ago: 'now', line: 'Waiting for your first message', fresh: true, since: null,
+    branch: n.working === 'worktree' ? 'sotto/k3x9' : null }
+  S.threads.unshift(t); renderThreads()
+  closeSheet(); await wait(300)
+  openThread(t.id); toast(`Opened on ${compName(n.computer)}.`)
+  setTimeout(() => openKb('reply'), 560)
+}
+
+/* ---------- Settings ---------- */
+const sizes = [0.9, 1, 1.1, 1.2, 1.32]
+function renderSettings() {
+  const app = resolvedAppearance()
+  const seg = (name, opts, cur, key) => `<div class="seg" role="radiogroup" aria-label="${name}"><i class="knob"></i>${opts.map(o => `<button role="radio" aria-checked="${o === cur}" data-${key}="${o}">${o}</button>`).join('')}</div>`
+  $('#settingsPage').innerHTML = `
+    <div class="page-head"><h1 class="page-title">Settings</h1></div>
+    <p class="page-sub">These are kept on this iPhone. They don’t change any computer’s settings.</p>
+
+    <section class="group"><h2>Look</h2>
+      <div class="panel">
+        <div class="prow"><span class="plabel">Appearance</span><span class="pvalue">${S.appearance === 'System' ? `Following the iPhone: ${app}` : ''}</span></div>
+        ${seg('Appearance', D.settings.appearance, S.appearance, 'appearance')}
+      </div>
+      <div class="panel">
+        <div class="prow"><span class="plabel">Theme</span><span class="pvalue">${esc(D.THEMES[S.theme].label)}, ${app}</span></div>
+        <div class="themes" role="radiogroup" aria-label="Theme">
+          ${Object.entries(D.THEMES).map(([id, th]) => { const r = th[app]; return `<button class="theme press" role="radio" aria-checked="${S.theme === id}" data-theme="${id}" aria-label="${th.label} theme"
+            style="--tc:${r.canvas};--ta:${r.accent};--ti:${r.ink};--tm:${r.muted};--tb:${r.bubble}">
+            <span class="room"><i class="l1"></i><i class="l2"></i><i class="bb"></i><i class="dot"></i></span>
+            <span class="name">${th.label}${ic('check', 'sm')}</span></button>` }).join('')}
+        </div>
+        <p class="phint">The theme colours the light at the top of each screen, what’s working and what you can tap.</p>
+      </div>
+      <div class="panel">
+        <div class="prow"><span class="plabel">Text size</span><span class="pvalue">${D.settings.textSizes[S.textSize]}</span></div>
+        <div class="sizes" role="radiogroup" aria-label="Text size">
+          ${D.settings.textSizes.map((l, i) => `<button class="size press" role="radio" aria-checked="${S.textSize === i}" data-size="${i}" aria-label="${l}"><span style="font-size:${13 + i * 3}px">A</span></button>`).join('')}
+        </div>
+        <div class="preview" aria-hidden="true"><div class="t">Pick the drawer shortcut</div><div class="l">Asks: which shortcut should open the terminal drawer?</div></div>
+      </div>
+      <div class="panel">
+        <div class="prow"><span class="plabel">Message density</span></div>
+        ${seg('Message density', D.settings.density, S.density, 'density')}
+        <p class="phint">${S.density === 'Compact' ? 'Tighter spacing fits more of a thread on screen.' : 'Room between messages, lists and steps.'}</p>
+      </div>
+    </section>
+
+    <section class="group"><h2>Notifications</h2>
+      <div class="panel" style="padding-top:var(--sp-1);padding-bottom:var(--sp-1)">
+        ${S.notifications.map(n => `<button class="toggle-row" role="switch" aria-checked="${n.on}" data-notif="${n.id}">
+          <span class="tx"><div class="plabel">${esc(n.label)}</div>${n.description ? `<div class="d">${esc(n.description)}</div>` : ''}</span><span class="sw" aria-hidden="true"></span></button>`).join('')}
+      </div>
+      <p class="note-line">${esc(D.settings.notificationNote)}</p>
+    </section>
+
+    <section class="group"><h2>New thread defaults</h2>
+      <div class="panel" style="padding-top:var(--sp-1);padding-bottom:var(--sp-1)">
+        ${['model', 'effort', 'permissions', 'working'].map(f => `<button class="def-row press" data-def="${f}" aria-haspopup="menu" aria-label="${fieldNames[f]}: ${esc(labelOf(f, S.defaults[f]))}. Change">
+          <span class="k1">${fieldNames[f]}</span><span class="v1">${esc(labelOf(f, S.defaults[f]))}</span>${ic('updown', 'sm')}</button>`).join('')}
+      </div>
+      <p class="note-line">A computer that can’t let this iPhone grant permission starts every thread by asking.</p>
+    </section>
+
+    <section class="group"><h2>About</h2>
+      <div class="panel about"><span class="logo" aria-hidden="true">S</span><span><div class="plabel">Sotto 0.1.28</div><div class="pvalue">Connected to 2 of 3 computers</div></span></div>
+    </section>`
+  $$('#settingsPage .seg').forEach(placeKnob)
+}
+$('#settingsPage').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.appearance) { S.appearance = b.dataset.appearance; paint(); renderSettings(); return }
+  if (b.dataset.theme) { S.theme = b.dataset.theme; paint(); renderSettings(); toast(`${D.THEMES[S.theme].label} theme on.`); return }
+  if (b.dataset.size) { S.textSize = +b.dataset.size; document.documentElement.style.setProperty('--ts', sizes[S.textSize]); renderSettings(); return }
+  if (b.dataset.density) { S.density = b.dataset.density; document.documentElement.style.setProperty('--dens', S.density === 'Compact' ? .62 : 1); renderSettings(); return }
+  if (b.dataset.notif) { const n = S.notifications.find(x => x.id === b.dataset.notif); n.on = !n.on; b.setAttribute('aria-checked', n.on); return }
+  if (b.dataset.def) return openFieldMenu(b, b.dataset.def, S.defaults, () => { renderSettings(); toast('New thread defaults saved.') })
+})
+
+/* ---------- Computers ---------- */
+function renderComputers() {
+  $('#computersPage').innerHTML = `
+    <div class="page-head"><h1 class="page-title">Computers</h1></div>
+    <p class="page-sub">Each computer runs Sotto and shares its threads with this iPhone.</p>
+    <div class="stack" style="margin-top:var(--sp-6)">
+    ${D.computers.map(c => {
+      const projects = new Set([...D.newThread.projects.filter(p => p.computer === c.id).map(p => p.name), ...S.threads.filter(t => t.computer === c.id).map(t => t.project)])
+      const nThreads = S.threads.filter(t => t.computer === c.id).length
+      const up = c.status === 'online'
+      return `<article class="pc ${up ? 'online' : 'down'}">
+        <div class="pc-h"><span class="ic">${ic('computer')}</span><span class="tx"><div class="n">${esc(c.name)}</div>
+          <div class="s"><i class="light ${up ? 'acc' : 'bad'}"></i>${up ? 'Online' : 'Can’t be reached'}</div></span></div>
+        <div class="facts">
+          <div class="fact"><b>${c.canAnswer ? 'Can answer' : 'Can’t answer'}</b><span>${c.canAnswer ? 'Questions and permissions' : 'Answer on the computer'}</span></div>
+          <div class="fact"><b class="num">${projects.size} ${projects.size === 1 ? 'project' : 'projects'}</b><span>${nThreads} ${nThreads === 1 ? 'thread' : 'threads'}</span></div>
+        </div>
+        <div class="pc-actions">
+          <button class="btn soft press" data-show="${c.id}">Show its threads</button>
+          ${up ? '' : `<button class="btn ghost press" data-retry="${c.id}" ${S.desktopTry === 'trying' ? 'disabled' : ''}>${S.desktopTry === 'trying' ? '<i class="spin"></i>Trying' : `${ic('retry', 'sm')}Try again`}</button>`}
+        </div>
+        ${!up && S.desktopTry === 'failed' ? '<p class="phint">Still can’t reach it. Check that Sotto is open on DESKTOP-8NPFSBM and that it’s on the same network.</p>' : ''}
+      </article>`
+    }).join('')}</div>`
+}
+$('#computersPage').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.show) { S.filter = b.dataset.show; renderThreads(); setTab('threads'); $('#threadsScroll').scrollTop = 0; return }
+  if (b.dataset.retry) { S.desktopTry = 'trying'; renderComputers(); await wait(1600); S.desktopTry = 'failed'; renderComputers(); renderThreads() }
+})
+
+addEventListener('resize', () => { $$('.seg').forEach(placeKnob) })
+document.addEventListener('touchstart', () => {}, { passive: true })
+renderThreads(); renderTabs()
+</script>
+</body>
+</html>

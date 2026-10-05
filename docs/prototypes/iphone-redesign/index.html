@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Five directions for the iPhone app's look, all in Sotto's own character.
+  ?v=1..5 picks one; the bar (or the arrow keys) switches. On a phone the variant fills the screen under a thin bar;
+  on a computer it sits in a 393 x 852 iPhone 15 Pro frame.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · iPhone redesign</title>
+<style>
+  @font-face { font-family: Figtree; src: url(../../../src/renderer/src/assets/fonts/figtree-latin.woff2) format("woff2"); font-weight: 300 900; }
+  html, body { margin: 0; height: 100%; background: #121317; font-family: Figtree, -apple-system, system-ui, sans-serif; color: #eceef2; }
+  .bar { height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 8px; padding-top: env(safe-area-inset-top); background: #fff; color: #111; font-size: 14px; font-weight: 600; box-sizing: content-box; }
+  .bar button { font: inherit; width: 36px; height: 36px; border-radius: 50%; border: 0; background: #ececec; color: #111; cursor: pointer; flex: none; }
+  .bar .label { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .label small { font-weight: 500; color: #666; margin-left: 6px; }
+  .dots { display: flex; gap: 5px; justify-content: center; margin-top: 2px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: #ccc; }
+  .dots i.on { background: #111; }
+  .frame { position: fixed; inset: calc(44px + env(safe-area-inset-top)) 0 0 0; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+  @media (min-width: 700px) {
+    body { display: flex; flex-direction: column; align-items: center; }
+    .bar { width: 520px; margin: 18px auto 0; border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+    .frame { position: static; margin: 22px auto 30px; width: 393px; height: 852px; border: 12px solid #000; border-radius: 58px; overflow: hidden; box-shadow: 0 30px 90px rgba(0,0,0,.6); }
+    .intent { width: 560px; margin: 0 auto 40px; font-size: 14px; line-height: 1.55; color: #b9bec8; text-align: center; }
+  }
+  @media (max-width: 699px) { .intent { display: none; } }
+</style>
+</head>
+<body>
+  <div class="bar" role="toolbar" aria-label="Prototype variants">
+    <button id="prev" aria-label="Previous variant">←</button>
+    <div class="label"><div id="label"></div><div class="dots" id="dots"></div></div>
+    <button id="next" aria-label="Next variant">→</button>
+  </div>
+  <div class="frame"><iframe id="view" title="Variant"></iframe></div>
+  <p class="intent" id="intent"></p>
+<script>
+const VARIANTS = [
+  { file: 'v1-layers.html', name: 'Layers' },
+  { file: 'v2-glow.html', name: 'Glow' },
+  { file: 'v3-editorial.html', name: 'Editorial' },
+  { file: 'v4-soft.html', name: 'Soft' },
+  { file: 'v5-timeline.html', name: 'Timeline' },
+]
+const view = document.getElementById('view')
+let index = Math.min(Math.max((parseInt(new URLSearchParams(location.search).get('v')) || 1) - 1, 0), VARIANTS.length - 1)
+function show() {
+  const v = VARIANTS[index]
+  view.src = v.file
+  document.getElementById('label').innerHTML = `${index + 1} · ${v.name}<small>of ${VARIANTS.length}</small>`
+  document.getElementById('dots').innerHTML = VARIANTS.map((_, i) => `<i class="${i === index ? 'on' : ''}"></i>`).join('')
+  const url = new URL(location); url.searchParams.set('v', index + 1); history.replaceState(null, '', url)
+  document.getElementById('intent').textContent = ''
+}
+view.addEventListener('load', () => {
+  try { const meta = view.contentWindow.VARIANT; if (meta) document.getElementById('intent').textContent = meta.intent } catch {}
+})
+const cycle = step => { index = (index + step + VARIANTS.length) % VARIANTS.length; show() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1) })
+show()
+</script>
+</body>
+</html>
