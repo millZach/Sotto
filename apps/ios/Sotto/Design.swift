@@ -262,12 +262,23 @@ extension PhoneAppearance {
 }
 
 extension PhoneTextSize {
+    /// The smallest size a step gives, whatever the iPhone's own size. Larger keeps what the earlier Larger text switch
+    /// gave (at least extra extra extra large), and the steps stay in order at every system size.
+    private var least: DynamicTypeSize? {
+        switch self {
+        case .large: return .xLarge
+        case .larger: return .xxxLarge
+        case .largest: return .accessibility1
+        case .smaller, .standard: return nil
+        }
+    }
     /// The iPhone's own size moved by this step. Smaller never shrinks an accessibility size iOS asks for.
     func applied(to system: DynamicTypeSize) -> DynamicTypeSize {
         let sizes = DynamicTypeSize.allCases
         guard let index = sizes.firstIndex(of: system) else { return system }
         if offset < 0 && system.isAccessibilitySize { return system }
-        let target = min(max(index + offset, 0), sizes.count - 1)
+        var target = min(max(index + offset, 0), sizes.count - 1)
+        if let least, let floor = sizes.firstIndex(of: least) { target = max(target, floor) }
         return sizes[target]
     }
 }
