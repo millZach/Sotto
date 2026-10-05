@@ -51,7 +51,9 @@ struct ThreadsView: View {
         let unsearched = query.isEmpty ? groups : FocusThreads(model.lists, show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0, onScroll: { top in
             scrolled.top = top
-            if searching && abs(top - scrolled.searchOpenedAt) > 12 { searching = false }
+            guard searching else { return }
+            if Date().timeIntervalSince(scrolled.openedTime) < 0.6 { scrolled.searchOpenedAt = top; return }
+            if abs(top - scrolled.searchOpenedAt) > 12 { searching = false }
         }) {
             heading
             controls(unsearched)
@@ -63,7 +65,7 @@ struct ThreadsView: View {
         .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
             if searching && !searchBox.frame.contains(tap.location) { searching = false }
         })
-        .onChange(of: searching) { _, open in if open { scrolled.searchOpenedAt = scrolled.top } }
+        .onChange(of: searching) { _, open in if open { scrolled.searchOpenedAt = scrolled.top; scrolled.openedTime = Date() } }
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await model.refresh() }
         .navigationTitle("Threads")
@@ -719,4 +721,6 @@ private struct ThreadRow: View {
 private final class PageMarks {
     var top: CGFloat = 0
     var searchOpenedAt: CGFloat = 0
+    /// When search opened. iOS may move the page to keep the field in view just after; that isn't the user scrolling.
+    var openedTime = Date.distantPast
 }

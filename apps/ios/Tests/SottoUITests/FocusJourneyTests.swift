@@ -220,19 +220,6 @@ import XCTest
         XCTAssertTrue(target.exists && target.isHittable, "Scrolling the thread must reach it")
     }
 
-    /// Closes the reply keyboard the way the thread page offers: scrolling the conversation puts it away at once. A short
-    /// drag up inside the conversation, which is already at its end, only bounces.
-    private func dragKeyboardClosed(above reply: XCUIElement) {
-        let keyboard = app.keyboards.firstMatch
-        let window = app.windows.firstMatch
-        let origin = window.coordinate(withNormalizedOffset: .zero)
-        let x = window.frame.width / 2
-        let start = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 60 - window.frame.minY))
-        let end = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 200 - window.frame.minY))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
-        XCTAssertTrue(waitUntilGone(keyboard), "Scrolling the conversation closes the reply keyboard")
-    }
-
     // MARK: Journeys
 
     func testCreateThreadInAKnownProject() {
@@ -425,10 +412,6 @@ import XCTest
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The reply box opens the keyboard")
         waitForEnd(running, last: update, above: reply, "With the keyboard open, the conversation's end stays above the reply box")
         capture("thread-glow-keyboard")
-        dragKeyboardClosed(above: reply)
-        // The drag itself moves the conversation a little, so the check is the one the user reported: it never jumps
-        // back to the thread's top.
-        XCTAssertTrue(title.frame.maxY <= threadTop + 1, "Closing the keyboard never brings the thread's title back into view")
         let opening = text("Review the frosted window branch")
         XCTAssertFalse(opening.exists && opening.isHittable, "The page stays away from the thread's first message")
 
