@@ -245,7 +245,7 @@ struct ThreadsView: View {
             HStack(spacing: Space.s2) {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
                     .rotationEffect(.degrees(settledExpanded ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.3), value: settledExpanded)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: settledExpanded)
                 Text("Settled")
                 Spacer()
                 Text("\(count)").fontWeight(.regular)
