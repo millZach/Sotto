@@ -136,3 +136,6 @@ artifacts/computer-use-guidance/
 
 # Hidden-player verification; retain only the capture cited by the note.
 artifacts/hidden-player-typing/
+
+# Disabled-coordinator verification; retain only the capture cited by the note.
+artifacts/disabled-coordinator-voice/

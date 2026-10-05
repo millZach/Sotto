@@ -53,6 +53,8 @@ Codex model, effort and permission changes use its native settings update and wa
 
 ### The voice coordinator (off for the beta)
 
+While it is off, opening a remote thread does not start or check voice. Dictation still works. Turning the coordinator back on restores voice; it waits for the previous microphone session to close before listening again.
+
 The **Agents** room coordinates threads by voice. It collects prompts until you say **“send it,”** supervises only the threads you assign, queues questions one at a time, and yields a thread to manual control when you send directly in the native client. Replies can be spoken: Grok Altair sends reply text to xAI on a separately saved xAI key, Kokoro Heart sends it through OpenRouter on your existing key, and the natural voice runs on this computer after a one-time download. The voice coordinator and memory are switched off for the beta, so the Agents room, the reply voices and the Memory page stay hidden until they are turned back on.
 
 Native clients retain their own subscription sign-in and model catalogs. Wake control requires separately supplied compatible local model/runtime files; their distribution, real microphone acceptance, and macOS live checks remain release gates. Sotto has no account or subscription. Agent actions use your connected provider accounts.

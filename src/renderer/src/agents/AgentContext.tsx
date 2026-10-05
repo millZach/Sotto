@@ -334,12 +334,18 @@ export function AgentProvider({ children, settings, dictation }: {
   const [personalAudio, setPersonalAudio] = useState(false)
   const personalAudioRef = useRef(false)
   const personalRelease = useRef(Promise.resolve())
+  const stopVoiceSession = useCallback((session: AgentVoiceSession) => {
+    // A second stop can finish before the first microphone release. Keep both
+    // promises so the next audio owner waits for the actual input to close.
+    personalRelease.current = Promise.all([personalRelease.current, session.stop()]).then(() => undefined)
+    return personalRelease.current
+  }, [])
   const claimPersonalAudio = useCallback(() => {
     personalAudioRef.current = true
     setPersonalAudio(true)
-    personalRelease.current = voiceRef.current?.stop() ?? Promise.resolve()
+    if (voiceRef.current !== null) stopVoiceSession(voiceRef.current)
     return () => { personalAudioRef.current = false; setPersonalAudio(false) }
-  }, [])
+  }, [stopVoiceSession])
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const stateRef = useRef(connection.state)
@@ -347,6 +353,7 @@ export function AgentProvider({ children, settings, dictation }: {
   const spoken = useRef<number | null>(null)
   const voiceAction = useRef<number | null>(null)
   const stopSpeech = useCallback(() => {
+    if (settingsRef.current?.voiceCoordinatorEnabled !== true) return
     voiceRef.current?.stopSpeaking()
     void connection.command({ type: 'voice', action: 'stop-speaking' })
   }, [connection.command])
@@ -357,7 +364,11 @@ export function AgentProvider({ children, settings, dictation }: {
   }, [connection.state?.configuration.speak])
 
   useEffect(() => {
-    if (window.sotto?.agents === undefined) return
+    if (settings?.voiceCoordinatorEnabled !== true || window.sotto?.agents === undefined) {
+      setVoice({ status: 'off' })
+      return
+    }
+    let current = true
     const agentBridge = window.sotto.agents
     const speech = createConfiguredSpeech(agentBridge, () => stateRef.current?.configuration)
     const session = new AgentVoiceSession({
@@ -380,6 +391,7 @@ export function AgentProvider({ children, settings, dictation }: {
         return current
       },
       onState: (next) => {
+        if (!current || settingsRef.current?.voiceCoordinatorEnabled !== true) return
         setVoice(next)
         void connection.command({ type: 'voice-state', status: next.status, error: next.error ?? null })
       },
@@ -387,7 +399,7 @@ export function AgentProvider({ children, settings, dictation }: {
         if (settingsRef.current?.soundCues) playWakeCue()
       },
       onUtterance: async (text, voiceTiming) => {
-        if (!personalAudioRef.current) await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) })
+        if (current && settingsRef.current?.voiceCoordinatorEnabled === true && !personalAudioRef.current) await connection.command({ type: 'utterance', text, ...(voiceTiming ? { voiceTiming } : {}) })
       },
       // A long composition must keep accepting speech after the user pauses to think.
       conversationTimeoutMs: 0,
@@ -399,8 +411,16 @@ export function AgentProvider({ children, settings, dictation }: {
       stop() { speech.output.stop() },
     }))
     voiceRef.current = session
-    return () => { session.dispose(); speech.dispose(); voiceRef.current = null }
-  }, [connection.command])
+    return () => {
+      current = false
+      // Keep the microphone release available to a personal chat even after the
+      // coordinator's setting has removed its session.
+      void stopVoiceSession(session)
+      session.dispose()
+      speech.dispose()
+      voiceRef.current = null
+    }
+  }, [connection.command, settings?.voiceCoordinatorEnabled, stopVoiceSession])
 
   // Setup finished without a microphone leaves wake listening off; the threads
   // themselves stay fully usable by typing. The coordinator is hidden for the
@@ -417,13 +437,15 @@ export function AgentProvider({ children, settings, dictation }: {
     if (session === null) return
     let current = true
     void (async () => {
+      await personalRelease.current
+      if (!current) return
       await session.setDictationActive(dictationActive)
       if (!current) return
       if (voiceEnabled && !personalAudio) await session.start()
-      else await session.stop()
+      else await stopVoiceSession(session)
     })()
-    return () => { current = false; void session.stop() }
-  }, [voiceEnabled, personalAudio, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory])
+    return () => { current = false; void stopVoiceSession(session) }
+  }, [voiceEnabled, personalAudio, dictationActive, settings?.microphoneId, connection.state?.configuration.wakeModelDirectory, connection.state?.configuration.wakeRuntimeDirectory, stopVoiceSession])
 
   useEffect(() => {
     const request = connection.state?.voice
@@ -465,7 +487,7 @@ export function AgentProvider({ children, settings, dictation }: {
     showBrowserPreviews: settings?.showBrowserPreviews ?? true,
     attention,
     voice,
-    muteVoice: () => { void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },
+    muteVoice: () => { if (settingsRef.current?.voiceCoordinatorEnabled === true) void connection.command({ type: 'voice', action: voiceRef.current?.getState().status === 'muted' ? 'unmute' : 'mute' }) },
     stopSpeech,
     retryVoice: () => { if (!personalAudioRef.current) void voiceRef.current?.start() },
   }}>{children}</AgentContext.Provider>
