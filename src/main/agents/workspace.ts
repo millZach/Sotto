@@ -792,8 +792,16 @@ export class WorkspaceHost implements AgentHost {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    // Threads often share a project folder. Discover that exact path once for this
+    // decision; the next rename/removal must revalidate every path from scratch.
+    const identities = new Map<string, Promise<string>>()
+    const identify = (path: string): Promise<string> => {
+      let pending = identities.get(path)
+      if (!pending) { pending = this.worktrees.checkoutIdentity(path); identities.set(path, pending) }
+      return pending
+    }
     try {
-      const identity = await this.worktrees.checkoutIdentity(metadata.path)
+      const identity = await identify(metadata.path)
       const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
@@ -802,7 +810,7 @@ export class WorkspaceHost implements AgentHost {
           ?? this.state.snapshot.projects.find(project => project.id === other.projectId)?.path
         if (!path) return false
         try {
-          if (await this.worktrees.checkoutIdentity(path) === identity) return false
+          if (await identify(path) === identity) return false
         } catch (error) {
           // Resolve missing subfolders through their nearest available parent. Other failures leave ownership unproven.
           const cause = error instanceof Error ? error.cause : undefined
@@ -810,7 +818,7 @@ export class WorkspaceHost implements AgentHost {
           let parent = dirname(path)
           while (true) {
             try {
-              if (await this.worktrees.checkoutIdentity(parent) === identity) return false
+              if (await identify(parent) === identity) return false
               break
             } catch (parentError) {
               const parentCause = parentError instanceof Error ? parentError.cause : undefined
