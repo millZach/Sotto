@@ -38,7 +38,7 @@ sealed class ClientError(message: String) : Exception(message) {
     class Rejected(message: String) : ClientError(message)
     class HostNotFound(name: String) : ClientError("Couldn't find $name on your tailnet. Check that Tailscale is connected on this phone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net.")
     class HostUnreachable(name: String) : ClientError("Couldn't reach $name. Check that it's online and that Tailscale is connected on this phone.")
-    class NotASottoHost(name: String) : ClientError("$name answered, but Sotto isn't listening there. In Sotto on $name, turn on phone access in Settings > Phones. For a host without a screen, check that Tailscale Serve forwards to it.")
+    class NotASottoHost(name: String) : ClientError("$name answered, but Sotto isn't listening there. If $name has no screen, turn on Let phones reach $name in Sotto on your main computer: Settings > Hosts, then Phones on its row. Otherwise, in Sotto on $name, turn on phone access in Settings > Phones.")
     class SottoNotRunning(name: String) : ClientError("$name answered, but Sotto isn't running there. Nothing was lost. Open Sotto on $name and try again.")
 }
 

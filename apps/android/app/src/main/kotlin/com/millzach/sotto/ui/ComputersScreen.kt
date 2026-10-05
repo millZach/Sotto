@@ -128,7 +128,7 @@ fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
                 if (status == ComputerStatus.Online && !model.mayAnswer(hostID)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("To answer questions and permissions from this phone, open Sotto on ${computer.name}, go to Settings › Phones and turn on Can answer for this phone.", style = figtree(15), color = p.muted)
-                        Text("On a host without a screen, run its --allow-answers command with this phone’s client ID.", style = figtree(15), color = p.muted)
+                        Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts, then Phones on its row. Or run its --allow-answers command with this phone’s client ID.", style = figtree(15), color = p.muted)
                     }
                 }
                 Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(16.dp))) {
@@ -152,7 +152,7 @@ fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove ${computer.name}?") },
-            text = { Text("This phone stops showing its threads. If ${computer.name} can’t be reached, remove this phone there too: in Settings › Phones, or with a host’s --revoke-client command.") },
+            text = { Text("This phone stops showing its threads. If ${computer.name} can’t be reached, remove this phone there too: in Settings › Phones, or for a computer without a screen, with Phones on its row in Settings › Hosts on your main computer.") },
             confirmButton = { TextButton(onClick = { confirmRemove = false; model.launch { remove(hostID) } }) { Text("Remove from this phone", color = p.danger) } },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
             containerColor = p.surface,

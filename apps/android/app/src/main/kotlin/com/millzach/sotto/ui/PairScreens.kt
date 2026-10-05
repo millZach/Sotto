@@ -92,7 +92,7 @@ private fun NameStep(model: AppModel) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            StepHeader(1, "Add computer", "Read its name in Sotto on that computer: Settings › Phones. For a host without a screen, use its name on your tailnet.")
+            StepHeader(1, "Add computer", "Read its name in Sotto on that computer: Settings › Phones. For a computer without a screen, first turn on Let phones reach it in Sotto on your main computer: Settings › Hosts, then Phones on its row. Then use its name on your tailnet.")
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Computer name on your tailnet", style = figtree(15, FontWeight.SemiBold), color = p.muted)
                 Field(
@@ -132,7 +132,7 @@ private fun CodeStep(model: AppModel, found: FoundHost) {
         ) {
             StepHeader(
                 2, "Enter the pairing code",
-                "In Sotto on ${found.name}: Settings › Phones › Pair a phone. A host without a screen prints one from its pairing command. A code works once, for five minutes.",
+                "In Sotto on ${found.name}: Settings › Phones › Pair a phone. For a computer without a screen, it is in Sotto on your main computer: Settings › Hosts, then Phones on its row, then Pair a phone. A code works once, for five minutes.",
             )
             // The field takes the typing; the boxes show it. TalkBack reads the field.
             BasicTextField(
