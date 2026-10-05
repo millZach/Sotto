@@ -18,9 +18,15 @@ Messages render as blocks (headings, lists, code blocks, paragraphs) with inline
 
 Settings now holds the theme (Sotto's six palettes, each in light and dark, drawn from the desktop's own definitions), appearance (Dark, Light or System, Dark by default), text size in five steps, message density, notifications, defaults for new threads, and About. Everything stays on this iPhone and changes no computer's settings. Text size never goes below a size iOS asks for through its accessibility settings; the earlier Larger text switch carries over as the Larger step.
 
-Notifications are local. While Sotto is open it can alert when a thread needs the user, when one finishes, or when one stops with an error, and never for the thread on screen. Sotto drops its connections when it leaves the screen, so nothing arrives after that. Each is off until the user turns it on, and turning the first one on is when iOS asks for permission. An alert while the app is closed would need Apple's push service and a relay the computer reports to, which is a new host; that is a separate decision and not made here.
+Notifications are local. While Sotto is open it can alert when a thread needs the user, when one finishes, or when one stops with an error, and never for the thread on screen. Sotto drops its connections when it leaves the screen, so nothing arrives after that. Each is off until the user turns it on, and turning the first one on is when iOS asks for permission. An alert while the app is closed would need Apple's push service and a relay the computer reports to, which is a new host; that is a separate decision and not made here. **Play a sound**, from the approved study, adds a sound to the alerts that are on; it asks iOS for nothing itself and waits until one of them is on.
 
 New-thread defaults choose the model, effort, permissions and working copy that New thread starts on. A default applies only where the chosen computer offers it; otherwise the computer's own saved choice applies, as before. A permission default that lets a thread act without asking applies only while that computer lets this iPhone answer (ADR-0033); otherwise the thread starts asking and New thread says why. Working copy may be the project's shared folder or a new worktree, which sends the `workingCopy` field the host's allow-list already accepts.
+
+## Answering on a card
+
+A question with a few one-tap choices, or a permission, can be answered on its card in Threads again, as the approved study draws it. This amends ADR-0039's "Requests are opened and answered in their thread": the card's top still opens the thread to read the whole request first, and the sheet in the thread is unchanged. A card reads Sending, then Answered when the computer confirms the answer through its own receipt, or No longer waiting when the request left without that (a desktop answer, a stopped turn), before it leaves. Nothing here answers for the user; ADR-0004 and ADR-0033 decide who may answer, as before.
+
+Working cards show the step running now only for a thread whose detail this iPhone has read, because the thread list the computer sends carries no steps; otherwise they show the thread's state and how long it has been working.
 
 ## What this does not change
 

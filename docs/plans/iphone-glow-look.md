@@ -22,3 +22,5 @@ The same pull request carries the fixes Zach reported from daily use: a message'
 ## Limits
 
 This Windows machine cannot build iOS. The macOS CI job compiles the app, runs the package tests and runs the UI journeys on two simulators; its screenshots are the visual evidence. Live behaviour on Zach's iPhone comes through TestFlight after merge and is reported separately.
+
+Working cards on Threads show the step running now only for a thread whose detail the iPhone has read, because the thread list the computer sends carries no steps. Showing it for every working thread would mean observing each one or a protocol change, which this pull request does not make.
