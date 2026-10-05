@@ -1,0 +1,527 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Two questions, one file:
+
+  1. Browser sharing. With "Let agents use the browser without asking" on, every page in a thread's browser is
+     shared with that thread's agent: the pages it opens and the pages you open, and a page stays shared when it
+     moves to another site. (Zach, October 5, 2026: "Every page in the thread".) How should Tools > Browser say a
+     page is shared, and how do you make one page private?
+  2. Forge thread tools. A thread on a paired host gets Agents, Changes and Files in Tools instead of
+     "<Tool> is on the host machine." (Zach, October 5, 2026: these three first.) Changes starts with Working tree and
+     Branch changes; Latest turn and Checkpoints need turn checkpoints on the host, which come later. Files cannot
+     reveal a folder on another computer. How much of that should the surfaces say?
+
+  Scenes via ?scene=browser|remote. Variants via ?variant=A|B|C. ?theme=light. Browser page via ?page=agent|yours|private|off.
+  Forge surface via ?surface=files|changes|agents|browser|terminal|iphone.
+  The window copies the Tools panel (artifacts/browser-grant, artifacts/tools-rail, artifacts/changes-diff,
+  artifacts/agents-view) and the Sotto theme's resolved --tt-* values. No host calls, no persistence.
+  Open the file directly, or serve the repo root and open /docs/prototypes/remote-tools-and-browser-sharing-prototype.html
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto: browser sharing and forge thread tools (prototype)</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900}
+@font-face{font-family:'Spline Sans Mono';src:url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2');font-weight:300 700}
+
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-text-faint:oklch(0.675 0.012 270);
+  --tt-hairline:oklch(0.305 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-sidebar-row-active:oklch(0.32 0.025 190);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-success:oklch(0.79 0.13 165);
+  --tt-diff-add:color-mix(in oklab,oklch(0.79 0.13 165) 16%,transparent);--tt-diff-del:color-mix(in oklab,oklch(0.702 0.189 22) 16%,transparent);
+  --tt-shadow-overlay:0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+  --win-edge:#2a2a30;--page:#161618;--page-text:#e8e8ea;--page-muted:#a0a0a8;
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-text-faint:oklch(0.535 0.015 78);
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-sidebar-row-active:oklch(0.915 0.02 190);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-success:oklch(0.5 0.11 158);
+  --tt-diff-add:color-mix(in oklab,oklch(0.5 0.11 158) 14%,transparent);--tt-diff-del:color-mix(in oklab,oklch(0.51 0.21 28) 12%,transparent);
+  --tt-shadow-overlay:0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+  --win-edge:#c9c9cf;--page:#e7e7ea;--page-text:#1c1c1f;--page-muted:#5a5a62;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:24px 32px 120px}
+.page-head{max-width:1280px;margin:0 0 14px}
+.page-head .kicker{font-size:13px;color:var(--page-muted);margin:0 0 4px}
+.page-head h1{font-size:24px;margin:0 0 6px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin:0;max-width:1100px;color:var(--page-muted)}
+.page-head p b{color:var(--page-text);font-weight:600}
+.controls{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:12px 0 14px}
+.seg{display:inline-flex;border:1px solid var(--win-edge);border-radius:9px;overflow:hidden}
+.seg button{font:inherit;font-size:13px;border:0;background:none;color:var(--page-muted);padding:5px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--page-text);color:var(--page)}
+.controls label{font-size:13px;color:var(--page-muted)}
+.notes{max-width:1280px;margin:14px 0 0;color:var(--page-muted);font-size:14px}
+.notes b{color:var(--page-text)}
+.notes ul{margin:6px 0 0;padding-left:20px}
+
+/* ---------- the Sotto window ---------- */
+.win{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:10px;border:1px solid var(--win-edge);background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:grid;grid-template-columns:250px 1fr 640px;grid-template-rows:100%;box-shadow:0 30px 60px -30px #0009}
+.win>*{min-height:0;overflow:hidden}
+.win button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;border-radius:8px}
+.win button:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+.win button:disabled{opacity:.45;cursor:default}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:'Spline Sans Mono',ui-monospace,monospace;font-size:12.5px}
+
+.side{background:var(--tt-sidebar);display:flex;flex-direction:column;border-right:1px solid var(--tt-hairline);font-size:13.5px}
+.side .brand{height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;font-weight:650}
+.side .brand i{width:20px;height:20px;border-radius:5px;background:var(--tt-accent)}
+.side .search{margin:4px 10px 10px;height:32px;border:1px solid var(--tt-hairline);border-radius:9px;background:var(--tt-field);color:var(--tt-text-faint);display:flex;align-items:center;gap:8px;padding:0 10px;font-size:13px}
+.side .proj{padding:6px 14px;font-weight:600;display:flex;align-items:center;gap:6px}
+.side .proj .n{margin-left:auto;color:var(--tt-text-muted);font-weight:400}
+.side .badge{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:500;color:var(--tt-text-muted);border:1px solid var(--tt-hairline);border-radius:5px;padding:0 5px}
+.side .badge svg{width:11px;height:11px}
+.side .row{margin:2px 6px;padding:7px 10px 7px 24px;border-radius:9px}
+.side .row.on{background:var(--tt-sidebar-row-active);border:1px solid color-mix(in oklab,var(--tt-accent) 35%,transparent)}
+.side .row div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side .row small{display:flex;justify-content:space-between;color:var(--tt-text-muted);font-size:12.5px}
+.side .row .work{color:var(--tt-accent-text)}
+
+.thread{position:relative;display:flex;flex-direction:column;min-width:0;background:var(--tt-canvas);border-right:1px solid var(--tt-hairline)}
+.thread .bar{height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;font-weight:600;white-space:nowrap;overflow:hidden}
+.thread .bar span{color:var(--tt-text-muted);font-weight:400;font-size:13px}
+.msgs{flex:1;overflow:hidden;padding:12px 22px;display:flex;flex-direction:column;gap:12px}
+.msg{color:var(--tt-text-2);font-size:14px}
+.msg b{color:var(--tt-text)}
+.msg.user{align-self:flex-end;background:var(--tt-surface-elevated);color:var(--tt-text);padding:8px 12px;border-radius:12px;max-width:300px}
+.composer{margin:0 16px 10px;border:1px solid var(--tt-hairline);border-radius:14px;background:var(--tt-surface);padding:12px 14px;color:var(--tt-text-faint);height:96px;display:flex;flex-direction:column;justify-content:space-between}
+.composer .chips{display:flex;gap:6px}
+.composer .chips span{border:1px solid var(--tt-hairline);border-radius:999px;padding:2px 10px;font-size:12.5px;color:var(--tt-text-2)}
+.under{display:flex;gap:6px;margin:0 16px 12px;font-size:12.5px}
+.under span{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--tt-hairline);border-radius:999px;padding:2px 10px;color:var(--tt-text-2)}
+.under svg{width:13px;height:13px}
+
+/* ---------- Tools pane and rail ---------- */
+.tools{display:flex;min-width:0}
+.pane{flex:1;display:flex;flex-direction:column;min-width:0}
+.rail{width:64px;border-left:1px solid var(--tt-hairline);display:flex;flex-direction:column;align-items:center;padding-top:6px;gap:4px}
+.rail button{position:relative;width:56px;padding:7px 0 5px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px!important;color:var(--tt-text-muted)!important}
+.rail button svg{width:18px;height:18px}
+.rail button.on{background:var(--tt-accent-surface);color:var(--tt-text)!important}
+.rail button .dot{position:absolute;top:5px;left:34px;width:7px;height:7px;border-radius:50%;background:var(--tt-accent)}
+.rail button:not(.on):hover{background:var(--tt-hover)}
+.rail .sp{flex:1}
+.rail .railfoot{border-top:1px solid var(--tt-hairline);padding:8px 0;display:flex;flex-direction:column;gap:4px;color:var(--tt-text-muted)}
+
+.chrome{height:44px;display:flex;align-items:center;gap:6px;padding:0 8px 0 12px;border-bottom:1px solid var(--tt-hairline);white-space:nowrap}
+.chrome .title{font-weight:600}
+.chrome .sub{color:var(--tt-text-muted)}
+.chrome .sp{flex:1}
+.tab{height:30px;display:flex;align-items:center;gap:7px;padding:0 10px;border-radius:8px;font-size:13px;max-width:210px;white-space:nowrap;overflow:hidden;color:var(--tt-text-2)}
+.tab.on{background:var(--tt-accent-surface);color:var(--tt-text)}
+.tab .t{overflow:hidden;text-overflow:ellipsis}
+.tab .mark{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;color:var(--tt-accent-text)}
+.tab .mark svg{width:13px;height:13px}
+.tab .mark.private{color:var(--tt-text-faint)}
+.ib{width:30px;height:30px;display:inline-grid;place-items:center;color:var(--tt-text-muted)!important}
+.ib:hover:not(:disabled){background:var(--tt-hover);color:var(--tt-text)!important}
+.ib[aria-pressed=true]{background:var(--tt-accent-surface);color:var(--tt-text)!important}
+.ib.small{width:26px;height:26px}
+.ib.small svg{width:14px;height:14px}
+.toolbar{height:44px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid var(--tt-hairline)}
+.addr{flex:1;min-width:0;height:30px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);display:flex;align-items:center;padding:0 10px;color:var(--tt-text);gap:8px;overflow:hidden;white-space:nowrap}
+.sel{height:30px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);color:var(--tt-text);padding:0 8px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.line{padding:8px 12px;border-bottom:1px solid var(--tt-hairline);color:var(--tt-text-2);font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.line svg{width:14px;height:14px}
+.line .link{color:var(--tt-accent-text);font-weight:600;padding:0 4px}
+.line .sep{color:var(--tt-text-faint)}
+.line .push{margin-left:auto}
+.task{padding:8px 12px;border-bottom:1px solid var(--tt-hairline);font-size:13px;display:flex;justify-content:space-between}
+.webpage{flex:1;background:#0f0f0f;color:#f1f1f1;font:13px/1.4 Roboto,Arial,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+[data-theme=light] .webpage{background:#fff;color:#0f0f0f}
+.webpage .yt{height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #8884}
+.webpage .yt i{width:28px;height:20px;border-radius:5px;background:#f00}
+.webpage .body{padding:20px 22px;display:grid;gap:12px}
+.webpage .card{border:1px solid #8884;border-radius:10px;padding:16px;display:grid;gap:8px}
+.webpage .bar{height:10px;border-radius:5px;background:#8883}
+.webpage .up{justify-self:start;background:#3ea6ff;color:#0f0f0f;border-radius:18px;padding:7px 16px;font-weight:600}
+.webpage.dim{filter:saturate(.6)}
+.foot{height:34px;border-top:1px solid var(--tt-hairline);display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;color:var(--tt-text-muted);font-size:12.5px;white-space:nowrap}
+.foot b{color:var(--tt-text-2);font-weight:500}
+.foot .sp{flex:1}
+.foot .host{display:inline-flex;align-items:center;gap:4px}
+.foot .host svg{width:12px;height:12px}
+
+/* files */
+.tree{padding:6px 8px;border-bottom:1px solid var(--tt-hairline);font-size:13.5px}
+.tree div{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border-radius:7px;color:var(--tt-text-2)}
+.tree div.on{background:var(--tt-accent-surface);color:var(--tt-text)}
+.tree .d1{padding-left:28px}
+.preview-head{height:40px;display:flex;align-items:center;gap:6px;padding:0 6px 0 12px;border-bottom:1px solid var(--tt-hairline);font-size:13px}
+.preview-head b{font-weight:600}
+.preview-head .meta{color:var(--tt-text-muted)}
+.code{flex:1;padding:12px 14px;font-family:'Spline Sans Mono',ui-monospace,monospace;font-size:12.5px;line-height:1.7;white-space:pre;color:var(--tt-text-2);overflow:hidden}
+
+/* changes */
+.changes-bar{height:40px;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;border-bottom:1px solid var(--tt-hairline);font-size:13px}
+.plus{color:var(--tt-success)}.minus{color:var(--tt-error)}
+.fileblock{border-bottom:1px solid var(--tt-hairline)}
+.fileblock .fh{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;font-size:13px}
+.fileblock .fh .st{color:var(--tt-success);font-weight:600;width:12px}
+.fileblock .fh .st.m{color:var(--tt-accent-text)}
+.diff{font-family:'Spline Sans Mono',ui-monospace,monospace;font-size:12px;line-height:1.75}
+.diff div{padding:0 12px;white-space:pre;overflow:hidden;color:var(--tt-text-2)}
+.diff .a{background:var(--tt-diff-add);color:var(--tt-text)}
+.diff .d{background:var(--tt-diff-del);color:var(--tt-text)}
+.diff .h{color:var(--tt-text-muted)}
+.menu{position:absolute;top:40px;left:10px;z-index:5;width:300px;background:var(--tt-surface-overlay);border:1px solid var(--tt-border);border-radius:10px;box-shadow:var(--tt-shadow-overlay);padding:5px;font-size:13px}
+.menu .mi{display:flex;flex-direction:column;padding:7px 10px;border-radius:7px}
+.menu .mi.on{background:var(--tt-accent-surface)}
+.menu .mi.off{color:var(--tt-text-faint)}
+.menu .mi small{color:var(--tt-text-muted);font-size:12px}
+.menu hr{border:0;border-top:1px solid var(--tt-hairline);margin:4px 0}
+
+/* agents */
+.agent{padding:12px 16px 12px 30px;border-bottom:1px solid var(--tt-hairline);position:relative;font-size:13px}
+.agent:before{content:'';position:absolute;left:14px;top:19px;width:7px;height:7px;border-radius:50%;background:var(--tt-text-faint)}
+.agent.working:before{background:var(--tt-accent)}
+.agent .top{display:flex;justify-content:space-between;font-size:14px;font-weight:600}
+.agent .top span{font-weight:400;color:var(--tt-text-muted);font-size:12.5px}
+.agent p{margin:3px 0 0;color:var(--tt-text-2);display:flex;justify-content:space-between}
+.agent small{color:var(--tt-text-muted)}
+
+.placeholder{padding:30px 16px}
+.placeholder strong{display:block;margin-bottom:6px}
+.placeholder p{margin:0;color:var(--tt-text-muted);font-size:13px}
+
+.strip{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--tt-hairline);font-size:12.5px;color:var(--tt-text-muted);background:var(--tt-surface-sunken)}
+.strip svg{width:13px;height:13px}
+.strip .link{color:var(--tt-accent-text);font-weight:600;padding:0 4px;margin-left:auto}
+
+/* settings */
+.settings{width:1280px;margin-top:16px;border:1px solid var(--win-edge);border-radius:10px;background:var(--tt-canvas);color:var(--tt-text);padding:18px 22px;font:14px/1.45 Figtree,system-ui,sans-serif}
+.settings h3{margin:0 0 10px;font-size:13px;color:var(--tt-text-muted);font-weight:500}
+.toggle-row{display:flex;gap:16px;align-items:flex-start;max-width:760px}
+.toggle-row .txt{flex:1}
+.toggle-row .txt b{font-weight:600;display:block}
+.toggle-row .txt span{color:var(--tt-text-muted);font-size:13px}
+.switch{width:38px;height:22px;border-radius:11px;background:var(--tt-accent);position:relative;flex:none;margin-top:2px;cursor:pointer;border:0}
+.switch:after{content:'';position:absolute;top:3px;left:19px;width:16px;height:16px;border-radius:50%;background:var(--tt-on-accent)}
+.switch[aria-checked=false]{background:var(--tt-hairline)}
+.switch[aria-checked=false]:after{left:3px;background:var(--tt-text-muted)}
+
+/* floating switcher (not part of the design) */
+.switcher{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:#111;color:#fff;border-radius:999px;padding:6px 8px;box-shadow:0 10px 30px #0008;font:600 13px/1 system-ui,sans-serif;z-index:99;border:2px solid #ff3cac}
+.switcher button{background:#2a2a2a;color:#fff;border:0;border-radius:999px;width:32px;height:32px;cursor:pointer;font-size:16px}
+.switcher span{padding:0 10px;min-width:330px;text-align:center}
+</style>
+</head>
+<body>
+<header class="page-head">
+  <p class="kicker">Prototype, October 5, 2026. Throwaway. Flip variants with the bar at the bottom or the ← → keys.</p>
+  <h1 id="h1"></h1>
+  <p id="lede"></p>
+</header>
+<div class="controls" id="controls"></div>
+<div id="stage"></div>
+<div id="settings"></div>
+<section class="notes" id="notes"></section>
+<nav class="switcher" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+</nav>
+
+<script>
+const P = {
+  globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  phone:'<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  term:'<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  files:'<path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/>',
+  changes:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>',
+  pr:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>',
+  agents:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98"/><path d="m15.41 6.51-6.82 3.98"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>', x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  left:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', right:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  reload:'<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  ext:'<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  pin:'<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  max:'<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
+  copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  reveal:'<path d="M2 7.5V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-1.5"/><path d="M2 13h10"/><path d="m5 10-3 3 3 3"/>',
+  lock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  unlock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  eye:'<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff:'<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  down:'<path d="m6 9 6 6 6-6"/>', chev:'<path d="m9 18 6-6-6-6"/>',
+  history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  server:'<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
+  folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  wrap:'<path d="M3 6h18"/><path d="M3 12h15a3 3 0 1 1 0 6h-4"/><path d="m16 16-2 2 2 2"/><path d="M3 18h7"/>',
+  branch:'<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  sun:'<circle cx="12" cy="12" r="4"/>',
+  monitor:'<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+}
+const i = (name, extra = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${P[name]}</svg>`
+
+const params = new URLSearchParams(location.search)
+const state = {
+  scene: params.get('scene') === 'remote' ? 'remote' : 'browser',
+  variant: ['A', 'B', 'C'].includes(params.get('variant')) ? params.get('variant') : 'A',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  page: ['agent', 'yours', 'private', 'off'].includes(params.get('page')) ? params.get('page') : 'agent',
+  surface: ['files', 'changes', 'agents', 'browser', 'terminal', 'iphone'].includes(params.get('surface')) ? params.get('surface') : 'files',
+  menu: false,
+}
+const save = () => {
+  const next = new URLSearchParams({ scene: state.scene, variant: state.variant })
+  if (state.theme === 'light') next.set('theme', 'light')
+  if (state.scene === 'browser') next.set('page', state.page); else next.set('surface', state.surface)
+  history.replaceState(null, '', '?' + next)
+}
+
+const NAMES = {
+  browser: { A: 'Shared by default, one Share button', B: 'One line says what the agent has', C: 'A mark on each page tab' },
+  remote: { A: 'Same as a local thread', B: 'A line saying it reads from forge', C: 'Name what forge does not have yet' },
+}
+
+// ---------------- shared window parts ----------------
+function sidebar(scene) {
+  const local = scene === 'browser'
+  return `<aside class="side">
+    <div class="brand"><i></i>Sotto</div>
+    <div class="search">${i('globe', 'style="opacity:0"')}Search threads</div>
+    <div class="proj">${i('folder')}Talk to Text Application <span class="badge">${i('monitor')}this computer</span><span class="n">4</span></div>
+    <div class="row ${local ? 'on' : ''}"><div>${local ? 'Post the WWII Short to YouTube' : 'iOS app UX fixes and GitHub controls'}</div><small><span>claude</span><span class="work">Working</span></small></div>
+    <div class="row"><div>Typing bug message box</div><small><span>Codex</span><span class="work">Working</span></small></div>
+    <div class="proj" style="margin-top:6px">${i('folder')}Space Race <span class="badge">${i('server')}forge</span><span class="n">1</span></div>
+    <div class="row ${local ? '' : 'on'}"><div>Build Moondust Space Race pencil-notebook short</div><small><span>claude</span><span class="work">Working</span></small></div>
+    <div class="proj" style="margin-top:6px">${i('folder')}z-stack <span class="badge">${i('server')}forge</span><span class="n">1</span></div>
+    <div class="row"><div>Build z-stack skills from p-stack</div><small><span>claude</span><span>Done</span></small></div>
+  </aside>`
+}
+function threadColumn(scene) {
+  if (scene === 'browser') return `<section class="thread">
+    <div class="bar">${i('sun')}Post the WWII Short to YouTube <span>/ Talk to Text Application</span></div>
+    <div class="msgs">
+      <div class="msg user">Studio is open now. You should be able to fully drive the browser.</div>
+      <div class="msg">I'll use the Studio page you opened. Uploading <b>ww2_short.mp4</b> and filling in the title, description and tags.</div>
+      <div class="msg" style="color:var(--tt-text-muted)">› 6 browser actions</div>
+    </div>
+    <div class="composer">What would you like to do next?<div class="chips"><span>Opus 5.5</span><span>Extra high</span><span>Full access</span></div></div>
+    <div class="under"><span>${i('folder')}Current checkout</span></div>
+  </section>`
+  return `<section class="thread">
+    <div class="bar">${i('sun')}Build Moondust Space Race short <span>/ Space Race</span></div>
+    <div class="msgs">
+      <div class="msg">The score is ready to hear on its own. The page has the full 210 s, the loudness curve, and a cue list.</div>
+      <div class="msg">The animatic workflow runs in three stages: six agents fit the drawing modules, five builders make the rough drawings, and an integrator assembles it.</div>
+      <div class="msg" style="color:var(--tt-text-muted)">› 14 agent actions</div>
+    </div>
+    <div class="composer">What would you like to do next?<div class="chips"><span>Opus 5.5</span><span>Extra high</span><span>Full access</span></div></div>
+    <div class="under"><span>${i('server')}forge</span><span>${i('folder')}Current checkout</span><span style="margin-left:auto">${i('branch')}master</span></div>
+  </section>`
+}
+function rail(active, dots = {}) {
+  const items = [['browser', 'globe', 'Browser'], ['iphone', 'phone', 'iPhone'], ['terminal', 'term', 'Terminal'], ['files', 'files', 'Files'], ['changes', 'changes', 'Changes'], ['pr', 'pr', 'PR'], ['agents', 'agents', 'Agents']]
+  return `<div class="rail">${items.map(([id, icon, label]) => `<button type="button" data-surface="${id}" class="${id === active ? 'on' : ''}" aria-pressed="${id === active}">${dots[id] ? '<span class="dot"></span>' : ''}${i(icon)}${label}</button>`).join('')}
+    <span class="sp"></span><div class="railfoot"><button type="button" class="ib" aria-label="Pin to this thread">${i('pin')}</button><button type="button" class="ib" aria-label="Expand tools panel">${i('max')}</button><button type="button" class="ib" aria-label="Close tools panel">${i('x')}</button></div></div>`
+}
+
+// ---------------- scene 1: browser sharing ----------------
+function browserScene() {
+  const v = state.variant, page = state.page
+  const off = page === 'off'
+  const shared = page === 'agent' || page === 'yours'
+  const url = page === 'agent' ? 'https://studio.youtube.com/channel/UC…/videos/upload' : 'https://studio.youtube.com/channel/UC…/videos'
+  const tabs = [
+    { title: page === 'agent' ? 'Upload — YouTube Studio' : 'Channel content — YouTube Studio', on: true, shared: shared },
+    { title: 'Sign in — Google Accounts', on: false, shared: !off },
+  ]
+  const mark = t => v === 'C' && !off ? `<span class="mark ${t.shared ? '' : 'private'}" title="${t.shared ? 'The agent can see this page' : 'Private: the agent can’t see this page'}">${i(t.shared ? 'eye' : 'lock')}</span>` : ''
+  const tabLine = `<div class="chrome" style="padding-left:8px">
+    ${tabs.map(t => `<div class="tab ${t.on ? 'on' : ''}">${i('globe')}<span class="t">${t.title}</span>${mark(t)}${t.on ? i('x', 'style="width:13px;height:13px"') : ''}</div>`).join('')}
+    <span class="sp"></span>
+    <button type="button" class="ib" aria-label="Comment on the page">${i('changes', 'style="opacity:0"')}</button>
+    ${shareControl(v, shared, off)}
+    <button type="button" class="ib" aria-label="New page">${i('plus')}</button>
+  </div>`
+  const toolbar = `<div class="toolbar"><button type="button" class="ib" aria-label="Back">${i('left')}</button><button type="button" class="ib" aria-label="Forward" disabled>${i('right')}</button><button type="button" class="ib" aria-label="Reload">${i('reload')}</button>
+    <div class="addr mono">${url}</div><button type="button" class="ib" aria-label="Open in your browser">${i('ext')}</button><span class="sel">Fit pane ${i('down', 'style="width:13px;height:13px"')}</span></div>`
+  const task = `<div class="task"><span>Upload the WWII Short and fill in its details</span><span style="color:var(--tt-text-muted)">Pause</span></div>`
+  const body = `<div class="webpage ${shared ? '' : 'dim'}"><div class="yt"><i></i><b>Studio</b></div><div class="body">
+    <div class="card"><b>Upload videos</b><div class="bar" style="width:70%"></div><div class="bar" style="width:45%"></div><span class="up">Select files</span></div>
+    <div class="card"><div class="bar" style="width:60%"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:35%"></div></div></div></div>`
+  const pane = `<div class="pane">${tabLine}${toolbar}${statusLine(v, shared, off)}${task}${body}
+    <div class="foot">${i('folder')}<b>Talk to Text Application</b> · <span class="mono">main</span> · Project folder<span class="sp"></span><button type="button" class="ib small" aria-label="Copy working folder path">${i('copy')}</button><button type="button" class="ib small" aria-label="Show working folder in File Explorer">${i('reveal')}</button></div></div>`
+  return `<div class="win">${sidebar('browser')}${threadColumn('browser')}<div class="tools">${pane}${rail('browser')}</div></div>`
+}
+function shareControl(v, shared, off) {
+  if (off) return `<button type="button" class="ib" aria-pressed="false" aria-label="Share with agent" title="Let the agent in this thread read page contents and screenshots. Opening, clicking and typing still ask you.">${i('share')}</button>`
+  if (v === 'A') return `<button type="button" class="ib" aria-pressed="${shared}" aria-label="${shared ? 'Stop sharing this page' : 'Share with agent'}" title="${shared ? 'The agent in this thread can see and use this page. Stop sharing keeps it private.' : 'This page is private. Share it with the agent in this thread.'}">${i('share')}</button>`
+  if (v === 'B') return ''
+  return `<button type="button" class="ib" aria-pressed="${!shared}" aria-label="${shared ? 'Make this page private' : 'Share this page with the agent'}" title="${shared ? 'Make this page private' : 'Share this page with the agent'}">${i(shared ? 'unlock' : 'lock')}</button>`
+}
+function statusLine(v, shared, off) {
+  if (off) return `<div class="line">This page is private until you share it. Opening, clicking and typing ask you first.</div>`
+  if (v === 'A') return shared
+    ? `<div class="line">This thread uses the browser without asking<span class="sep">·</span><button type="button" class="link">Stop</button></div>`
+    : `<div class="line">This page is private. The agent can’t see it<span class="sep">·</span><button type="button" class="link">Share with agent</button></div>`
+  if (v === 'B') return shared
+    ? `<div class="line">${i('eye')}The agent can see and use this page<span class="sep">·</span><button type="button" class="link">Make private</button><span class="push"></span><button type="button" class="link">Stop for this thread</button></div>`
+    : `<div class="line">${i('lock')}This page is private<span class="sep">·</span><button type="button" class="link">Share with agent</button><span class="push"></span><button type="button" class="link">Stop for this thread</button></div>`
+  return `<div class="line">This thread uses the browser without asking<span class="sep">·</span><button type="button" class="link">Stop</button></div>`
+}
+function browserSettings() {
+  const v = state.variant
+  const how = v === 'A' ? 'Stop sharing one page' : v === 'B' ? 'Make one page private' : 'Make one page private with its lock'
+  return `<div class="settings"><h3>Settings › Tools</h3><div class="toggle-row"><div class="txt"><b>Let agents use the browser without asking</b>
+    <span>Agents can open pages, click and type in Sotto’s browser without asking first. They can see every page in their thread’s browser, including pages you open and sites you are signed in to there. ${how}, or stop it for one thread, in Tools › Browser.</span></div>
+    <button type="button" class="switch" role="switch" aria-checked="${state.page !== 'off'}" aria-label="Let agents use the browser without asking" id="grantSwitch"></button></div></div>`
+}
+
+// ---------------- scene 2: forge thread tools ----------------
+function remoteScene() {
+  const v = state.variant, s = state.surface
+  let body
+  if (s === 'files') body = filesSurface(v)
+  else if (s === 'changes') body = changesSurface(v)
+  else if (s === 'agents') body = agentsSurface(v)
+  else {
+    const label = { browser: 'Browser', terminal: 'Terminal', iphone: 'iPhone', pr: 'PR' }[s]
+    body = `<div class="chrome"><span class="title">${label}</span></div><div class="placeholder"><strong>${label} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p><p style="margin-top:10px;font-style:italic">(Unchanged in this first step. Terminal, then Browser and iPhone, are later pull requests.)</p></div>`
+  }
+  const foot = `<div class="foot">${i('folder')}<b>Space Race</b> · <span class="mono">master</span> · Project folder${v === 'A' || v === 'C' ? `<span class="host">&nbsp;·&nbsp;${i('server')}on forge</span>` : ''}<span class="sp"></span>
+    <button type="button" class="ib small" aria-label="Copy working folder path" title="Copy path: /home/zache/History/space-race">${i('copy')}</button>
+    ${v === 'C' ? `<button type="button" class="ib small" disabled aria-label="Show working folder: the folder is on forge" title="The folder is on forge. Open it there.">${i('reveal')}</button>` : ''}</div>`
+  const pane = `<div class="pane" style="position:relative">${body}${foot}</div>`
+  return `<div class="win">${sidebar('remote')}${threadColumn('remote')}<div class="tools">${pane}${rail(s, { changes: s !== 'changes', agents: s !== 'agents' })}</div></div>`
+}
+const forgeStrip = (what) => `<div class="strip">${i('server')}${what} on forge · read 6 s ago<button type="button" class="link">Refresh</button></div>`
+function filesSurface(v) {
+  return `<div class="chrome"><span class="title">Files</span>&nbsp;<span class="sub">space-race</span><span class="sp"></span><button type="button" class="ib" aria-label="Refresh files">${i('reload')}</button></div>
+    ${v === 'B' ? forgeStrip('Files') : ''}
+    <div class="tree">
+      <div>${i('down', 'style="width:13px;height:13px"')}${i('folder')}moondust</div>
+      <div class="d1">${i('folder')}out</div>
+      <div class="d1 on">${i('file')}score.mjs</div>
+      <div class="d1">${i('file')}storyboard.md</div>
+      <div>${i('file')}apollo.html</div>
+      <div>${i('file')}README.md</div>
+    </div>
+    <div class="preview-head"><b>score.mjs</b>&nbsp;<span class="meta">4.2 KB · Read only</span><span class="sp" style="flex:1"></span>
+      <button type="button" class="ib small" aria-label="Wrap lines">${i('wrap')}</button>
+      <button type="button" class="ib small" aria-label="Copy path">${i('copy')}</button>
+      ${v === 'C' ? `<button type="button" class="ib small" disabled aria-label="Show in folder: the file is on forge" title="This file is on forge. Open it there.">${i('reveal')}</button>` : ''}
+      <button type="button" class="ib small" aria-label="Close preview">${i('x')}</button></div>
+    <div class="code">// The theme: a music-box phrase in D major.
+export const theme = ['D5', 'A5', 'F#5', 'B5', 'A5']
+
+export const cues = [
+  { at: 0, what: 'music box alone' },
+  { at: 131, what: 'Earthrise: the dip' },
+  { at: 164.4, what: 'contact, a single high note thins out' },
+  { at: 204, what: 'coda: the high A, once' },
+]</div>`
+}
+function changesSurface(v) {
+  const menu = state.menu ? `<div class="menu">
+      <div class="mi on">Working tree<small>Changes in the folder against HEAD</small></div>
+      <div class="mi">Branch changes<small>master against its base</small></div>
+      ${v === 'C' ? `<hr><div class="mi off">Latest turn<small>Not on forge yet. Turn checkpoints are kept on the computer that runs the thread.</small></div>` : ''}
+    </div>` : ''
+  return `<div class="chrome"><button type="button" class="sel" id="scope" style="border:0;background:none;font-weight:600;font-size:14px">Working tree ${i('down', 'style="width:13px;height:13px"')}</button><span class="sp"></span>
+      ${v === 'C' ? `<button type="button" class="ib" disabled aria-label="Checkpoints: not on forge yet" title="Checkpoints are not on forge yet.">${i('history')}</button>` : ''}
+      <button type="button" class="ib" aria-label="Refresh diff">${i('reload')}</button></div>
+    ${menu}
+    ${v === 'B' ? forgeStrip('Working tree') : ''}
+    <div class="changes-bar"><span class="plus">+18</span><span class="minus">−4</span><span style="color:var(--tt-text-muted)">2 files</span></div>
+    <div class="fileblock"><div class="fh">${i('down', 'style="width:13px;height:13px"')}<span class="st m">M</span>moondust/score.mjs<span style="flex:1"></span><span class="plus">+12</span>&nbsp;<span class="minus">−4</span><button type="button" class="ib small" aria-label="Copy path">${i('copy')}</button></div>
+      <div class="diff"><div class="h">@@ -1,6 +1,14 @@</div><div class="d">-export const theme = ['D5', 'A5', 'F#5']</div><div class="a">+export const theme = ['D5', 'A5', 'F#5', 'B5', 'A5']</div><div>
+</div><div class="a">+export const cues = [</div><div class="a">+  { at: 131, what: 'Earthrise: the dip' },</div><div class="a">+  { at: 204, what: 'coda: the high A, once' },</div><div class="a">+]</div></div></div>
+    <div class="fileblock"><div class="fh">${i('chev', 'style="width:13px;height:13px"')}<span class="st">A</span>moondust/storyboard.md<span style="flex:1"></span><span class="plus">+6</span>&nbsp;<span class="minus">−0</span><button type="button" class="ib small" aria-label="Copy path">${i('copy')}</button></div></div>
+    <div style="flex:1"></div>`
+}
+function agentsSurface(v) {
+  const rows = [
+    ['Integrate: integrator', 'Assemble the 210 s animatic and export an MP4.', 'Claude Opus 5.5', '4m 02s', 'Working', true],
+    ['Build: Saturn V launch', 'Rough drawings for 58–74 s with the real camera.', 'Claude Sonnet 5.5', '11m 40s', 'Finished', false],
+    ['Build: Earthrise', 'Rough drawings for 126–140 s.', 'Claude Sonnet 5.5', '10m 12s', 'Finished', false],
+    ['Fit: drawing modules', 'Fit the pencil modules to the plan.', 'Claude Haiku 4.5', '3m 31s', 'Finished', false],
+  ]
+  return `<div class="chrome"><span class="title">Agents</span></div>${v === 'B' ? forgeStrip('Agents') : ''}
+    ${rows.map(([t, d, m, time, st, w]) => `<div class="agent ${w ? 'working' : ''}"><div class="top">${t}<span>${time} ›</span></div><p><span>${d}</span><small>${st}</small></p><small>${m}</small></div>`).join('')}
+    <div style="flex:1"></div><div class="foot" style="border-top:1px solid var(--tt-hairline)"><span>4 agents</span><span class="sp"></span><span>1 working</span></div>`
+}
+
+// ---------------- page chrome, notes, switcher ----------------
+function controls() {
+  const seg = (name, value, options) => `<div class="seg" role="group" aria-label="${name}">${options.map(([v, l]) => `<button type="button" data-set="${name}" data-value="${v}" aria-pressed="${value === v}">${l}</button>`).join('')}</div>`
+  let html = seg('scene', state.scene, [['browser', '1 · Browser sharing'], ['remote', '2 · Forge thread tools']])
+  if (state.scene === 'browser') html += `<label>Page</label>` + seg('page', state.page, [['agent', 'A page the agent opened'], ['yours', 'A page you opened'], ['private', 'A page you made private'], ['off', 'Setting off (as today)']])
+  else html += `<label>Surface</label>` + seg('surface', state.surface, [['files', 'Files'], ['changes', 'Changes'], ['agents', 'Agents'], ['terminal', 'Terminal (later)']]) + (state.surface === 'changes' ? seg('menu', String(state.menu), [['false', 'Scope menu closed'], ['true', 'Scope menu open']]) : '')
+  html += seg('theme', state.theme, [['dark', 'Dark'], ['light', 'Light']])
+  return html
+}
+const NOTES = {
+  browser: {
+    A: `<b>A, the least change.</b> The Share button already in the tab line starts pressed on every page, yours included, and stays pressed when the page moves to another site (Studio → Google sign-in). Pressing it makes that one page private, and the line under the address says so with a way back. The thread line keeps today's words and its Stop. Pick <i>A page you opened</i>: it looks the same as the agent's page, which is the point.`,
+    B: `<b>B, one sentence about this page.</b> The Share button leaves the tab line. The line under the address says what the agent has on the page in front of you, with <b>Make private</b> for this page and <b>Stop for this thread</b> for every page. More words, but nothing to decode from a pressed icon.`,
+    C: `<b>C, a mark on every tab.</b> Each page tab carries an eye while the agent can see it, or a lock once you make it private, so you can tell at a glance across tabs. The tab line's button becomes a lock that makes this page private. The thread line is unchanged.`,
+  },
+  remote: {
+    A: `<b>A, the same as a local thread.</b> Files, Changes and Agents look exactly as they do for a thread on this computer, read from forge. The footer adds <b>on forge</b>. Controls forge can't serve are simply absent: no Show in folder, and the Changes scope menu offers Working tree and Branch changes only.`,
+    B: `<b>B, a line saying where it comes from.</b> A thin line under each surface's chrome says it's on forge, when it was read, and offers Refresh. Missing controls are absent as in A. It says more, but it repeats on every surface.`,
+    C: `<b>C, name what's missing.</b> Like A, but what forge can't do yet stays visible and disabled with its reason: Show in folder, Checkpoints and Latest turn in the scope menu (open it). Honest about the gap, but it shows controls you can't press.`,
+  },
+}
+function render() {
+  document.documentElement.dataset.theme = state.theme
+  document.getElementById('h1').textContent = state.scene === 'browser' ? 'Every page in a thread is shared with its agent' : 'A thread on forge gets Files, Changes and Agents'
+  document.getElementById('lede').innerHTML = state.scene === 'browser'
+    ? 'With <b>Let agents use the browser without asking</b> on, the agent can see and use every page in its thread’s browser: pages it opens, pages you open, and a page that moves to another site. Which way should Tools › Browser say so, and let you make one page private?'
+    : 'Today every tool but PR says “… is on the host machine.” for a forge thread. First step: Files, Changes (Working tree and Branch changes) and Agents work, read from forge. How much should they say about being on forge, and about what forge can’t do yet?'
+  document.getElementById('controls').innerHTML = controls()
+  document.getElementById('stage').innerHTML = state.scene === 'browser' ? browserScene() : remoteScene()
+  document.getElementById('settings').innerHTML = state.scene === 'browser' ? browserSettings() : ''
+  document.getElementById('notes').innerHTML = NOTES[state.scene][state.variant]
+  document.getElementById('label').textContent = `${state.variant} — ${NAMES[state.scene][state.variant]}`
+  save()
+}
+document.addEventListener('click', event => {
+  const set = event.target.closest('[data-set]')
+  if (set) { const key = set.dataset.set; state[key] = key === 'menu' ? set.dataset.value === 'true' : set.dataset.value; if (key === 'scene') state.variant = 'A'; render(); return }
+  const surface = event.target.closest('.rail [data-surface]')
+  if (surface && state.scene === 'remote') { state.surface = surface.dataset.surface; state.menu = false; render(); return }
+  if (event.target.closest('#scope')) { state.menu = !state.menu; render(); return }
+  if (event.target.closest('#grantSwitch')) { state.page = state.page === 'off' ? 'agent' : 'off'; render() }
+})
+const cycle = step => { const keys = ['A', 'B', 'C']; state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.addEventListener('keydown', event => {
+  if (event.target.closest?.('input,textarea,[contenteditable]')) return
+  if (event.key === 'ArrowLeft') cycle(-1)
+  if (event.key === 'ArrowRight') cycle(1)
+})
+render()
+</script>
+</body>
+</html>
