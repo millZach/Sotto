@@ -35,6 +35,27 @@ function fake(initial: BrowserTask[] = [task()]) {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('the browser player', () => {
+  it('does not measure a placement without a task, while hidden, or while docked', async () => {
+    const browser = fake([]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    const geometry = vi.spyOn(playerStore, 'rectFor')
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await act(async () => { await Promise.resolve() })
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => browser.emit({ type: 'task', task: task() }))
+    await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
+    expect(geometry).toHaveBeenCalled()
+    geometry.mockClear()
+    act(() => playerStore.hide('visual-gate'))
+    act(() => browser.emit({ type: 'task', task: task({ summary: 'Still working', updatedAt: 2 }) }))
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => playerStore.restore('visual-gate'))
+    await act(async () => { await store.browser.activate(browser.bridge, 'visual-gate'); store.browser.select('visual-gate', page.id) })
+    geometry.mockClear()
+    act(() => { store.setSurface('browser'); store.setOpen(true) })
+    expect(geometry).not.toHaveBeenCalled()
+    expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
+  })
+
   it('keeps the live page mounted across task events and changes it only when the page changes', async () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 800, y: 300, width: 340, height: 200 }))
     const browser = fake(), store = new ToolsPanelStore(), playerStore = new BrowserPlayerStore()

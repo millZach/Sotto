@@ -74,16 +74,15 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
   // What the label and status take, measured, so a waiting request's buttons shrink the phone rather than push it off the window.
   const [chrome, setChrome] = useState(PHONE_PLAYER_CHROME_HEIGHT)
   const layout = phoneLayout(placement.size, size, chrome)
-  const point = phoneStore.pointFor(layout, size)
   const screen = useRef<HTMLDivElement>(null)
-  const covered = useOverlayOpen(root, screen)
+  // A cloud iPhone shows in place of the test iPhone while it is starting or running; otherwise this is the test iPhone the task opened.
+  const shown = open && thread !== undefined && (cloudLive || page !== undefined)
+  const covered = useOverlayOpen(root, screen, shown)
   const pageId = page?.id
   const mount = useCallback((bounds: BrowserBounds | null) => {
     if (cloudLive && cloudSession) cloudStore.mount(cloudBridge, cloudSession, bounds)
     else if (threadId && pageId) store.browser.mount(bridge, threadId, pageId, bounds)
   }, [store, bridge, threadId, pageId, cloudStore, cloudBridge, cloudLive, cloudSession])
-  // A cloud iPhone shows in place of the test iPhone while it is starting or running; otherwise this is the test iPhone the task opened.
-  const shown = open && thread !== undefined && (cloudLive || page !== undefined)
   const mountActive = shown && !covered && (cloudLive || page?.status !== 'unavailable')
   useBrowserPageMount(screen, mountActive, mount)
   useLayoutEffect(() => {
@@ -107,6 +106,7 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
   useEffect(() => { setProblem(null) }, [taskId])
 
   if (!shown || !threadId) return null
+  const point = phoneStore.pointFor(layout, size)
   const grant = threadBrowser?.grant ?? null
   const active = current?.status === 'working' || current?.status === 'paused'
   const actionText = cloudLive ? cloudSession!.steps.at(-1)?.detail ?? 'Starting…'

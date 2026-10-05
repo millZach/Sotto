@@ -25,9 +25,13 @@ function overlapsPage(element: HTMLElement, viewport: HTMLElement | null): boole
  * Shared by the docked `BrowserSurface` and the floating `BrowserPlayer`, since both draw a live native page that
  * a dialog, menu or the minimized theme editor would otherwise sit under.
  */
-export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: RefObject<HTMLElement | null>): boolean {
-  const [open, setOpen] = useState(false)
+export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: RefObject<HTMLElement | null>, active = true): boolean {
+  // Until the first scan, keep native content behind the DOM. Mounting before the
+  // passive effect checks an existing dialog would briefly draw over that dialog.
+  const [open, setOpen] = useState(true)
   useEffect(() => {
+    // Hidden players have no native page to protect. Keep the document observer and frame loop dormant until shown.
+    if (!active) { setOpen(true); return }
     let frame = 0
     const check = (): void => {
       cancelAnimationFrame(frame)
@@ -46,6 +50,6 @@ export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: 
     const observer = new MutationObserver(check)
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'open', 'hidden', 'data-covers-native-view', 'data-minimized'] })
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
-  }, [inside, viewport])
-  return open
+  }, [inside, viewport, active])
+  return active && open
 }
