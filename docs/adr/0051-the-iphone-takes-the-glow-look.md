@@ -1,0 +1,33 @@
+# The iPhone takes the Glow look
+
+Accepted October 4, 2026. Zach found the iPhone app's type and spacing uneven, its surfaces flat and colourless, and its movement abrupt, and asked for a redesign in Sotto's own character. From five whole-app studies (Layers, Glow, Editorial, Soft and Timeline) he chose **Glow**, asked for its Threads page to scroll as one sheet the way Soft does, and chose version B of three thread pages. He kept the question sheet and New thread as Glow drew them and approved the refined study as the app's new look. The studies are on `prototype/iphone-glow-redesign` under `docs/prototypes/iphone-redesign/`; `glow-refined.html` is the approved one.
+
+This amends [ADR-0039](0039-the-iphone-opens-on-focus-threads.md). Its navigation stands: Threads, Computers and Settings, questions and permissions first, Settled collapsed. What changes is how the app looks and moves, the thread page, and what Settings holds.
+
+## The look
+
+The chosen theme colours the room. Each tab opens on a soft wash mixed from the theme's accent; a thread that needs the user warms it, and the wash scrolls away with the page. Questions and permissions carry a warm glow, working threads breathe with a faint accent halo, and a failed thread has a faint danger edge. The tab bar, the thread's pinned bar and the reply box are frosted glass. Type and spacing come from one scale each, set in Figtree. Screens push and pop, sheets rise over a receding screen, and an answer reads Sending, then Answered, before its card leaves Needs you. Reduce Motion turns movement into fades and stops the breathing; Reduce Transparency turns glass into solid surfaces.
+
+## The thread page
+
+The Messages and Activity tabs are gone. The agent's steps (reading, editing, running commands) sit in the conversation in time order, each a small muted line under a faint guide, and the running step ticks at the end. Messages are placed by the time the host already sends with them and steps by their start time, so nothing new crosses the protocol. Only a slim bar stays pinned: back, a status pill, and the title once the big one has scrolled off. The big title, the provider and computer, and a row of chips for the branch, its changed lines and its pull request scroll away with the conversation. The chips read the Git status the host already puts on the thread's worktree record; checks are left for the Git work that follows. While the reply keyboard is open the top stays one line.
+
+Messages render as blocks (headings, lists, code blocks, paragraphs) with inline Markdown inside each block, as the desktop does, so a stray backtick can no longer turn the rest of a message into code. A key chord such as Ctrl+` reads as a key, not as the start of a code span.
+
+## Settings on this iPhone
+
+Settings now holds the theme (Sotto's six palettes, each in light and dark, drawn from the desktop's own definitions), appearance (Dark, Light or System, Dark by default), text size in five steps, message density, notifications, defaults for new threads, and About. Everything stays on this iPhone and changes no computer's settings. Text size never goes below a size iOS asks for through its accessibility settings; the earlier Larger text switch carries over as the Larger step.
+
+Notifications are local. While Sotto is open it can alert when a thread needs the user, when one finishes, or when one stops with an error, and never for the thread on screen. Sotto drops its connections when it leaves the screen, so nothing arrives after that. Each is off until the user turns it on, and turning the first one on is when iOS asks for permission. An alert while the app is closed would need Apple's push service and a relay the computer reports to, which is a new host; that is a separate decision and not made here. **Play a sound**, from the approved study, adds a sound to the alerts that are on; it asks iOS for nothing itself and waits until one of them is on.
+
+New-thread defaults choose the model, effort, permissions and working copy that New thread starts on. A default applies only where the chosen computer offers it; otherwise the computer's own saved choice applies, as before. A permission default that lets a thread act without asking applies only while that computer lets this iPhone answer (ADR-0033); otherwise the thread starts asking and New thread says why. Working copy may be the project's shared folder or a new worktree, which sends the `workingCopy` field the host's allow-list already accepts.
+
+## Answering on a card
+
+A question with a few one-tap choices, or a permission, can be answered on its card in Threads again, as the approved study draws it. This amends ADR-0039's "Requests are opened and answered in their thread": the card's top still opens the thread to read the whole request first, and the sheet in the thread is unchanged. A card reads Sending, then Answered when the computer confirms the answer through its own receipt, or No longer waiting when the request left without that (a desktop answer, a stopped turn), before it leaves. Nothing here answers for the user; ADR-0004 and ADR-0033 decide who may answer, as before.
+
+Working cards show the step running now only for a thread whose detail this iPhone has read, because the thread list the computer sends carries no steps; otherwise they show the thread's state and how long it has been working.
+
+## What this does not change
+
+No host, listener, protocol version, runtime dependency or command is added. Authority stays where ADR-0004 and ADR-0033 put it: nothing here answers a request for the user.

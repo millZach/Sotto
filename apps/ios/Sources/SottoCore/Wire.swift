@@ -169,6 +169,9 @@ public struct ThreadSummary: Decodable, Identifiable, Sendable {
     /// The computer's word that the thread finished while nothing showed it and has not been opened since, on
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public let finishedUnread: Bool?
+    /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
+    /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
+    public let worktree: ThreadWorktree?
     /// Current provider-confirmed work only; never infer it from retained activity or messages.
     public struct BackgroundWork: Decodable, Sendable { public let type: String }
     public struct Compaction: Decodable, Sendable { public let status: String }
@@ -177,6 +180,71 @@ public struct ThreadSummary: Decodable, Identifiable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
 }
+/// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
+/// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).
+/// Every field is optional and read on its own, so one missing or of another type reads as absent.
+public struct ThreadWorktree: Decodable, Equatable, Sendable {
+    /// `independent` for the thread's own worktree, `shared` for the project's folder.
+    public let mode: String?
+    public let branch: String?
+    public let git: GitStatus?
+    private enum Keys: String, CodingKey { case mode, branch, git }
+    public init(from decoder: Decoder) throws {
+        let c = try? decoder.container(keyedBy: Keys.self)
+        mode = c?.tolerant(String.self, .mode)
+        branch = c?.tolerant(String.self, .branch)
+        git = c?.tolerant(GitStatus.self, .git)
+    }
+    /// The folder's branch, its uncommitted changes, its distance from its upstream and its pull request.
+    public struct GitStatus: Decodable, Equatable, Sendable {
+        public let branch: String?
+        public let changedFiles: Int?
+        public let insertions: Int?
+        public let deletions: Int?
+        public let ahead: Int?
+        public let behind: Int?
+        public let dirty: Bool?
+        public let pullRequest: PullRequest?
+        private enum Keys: String, CodingKey { case branch, changedFiles, insertions, deletions, ahead, behind, dirty, pullRequest }
+        public init(from decoder: Decoder) throws {
+            let c = try? decoder.container(keyedBy: Keys.self)
+            branch = c?.tolerant(String.self, .branch)
+            changedFiles = c?.tolerant(Int.self, .changedFiles)
+            insertions = c?.tolerant(Int.self, .insertions)
+            deletions = c?.tolerant(Int.self, .deletions)
+            ahead = c?.tolerant(Int.self, .ahead)
+            behind = c?.tolerant(Int.self, .behind)
+            dirty = c?.tolerant(Bool.self, .dirty)
+            pullRequest = c?.tolerant(PullRequest.self, .pullRequest)
+        }
+    }
+    /// The branch's pull request as the host last heard from GitHub. `state` is `open`, `closed` or `merged`.
+    public struct PullRequest: Decodable, Equatable, Sendable {
+        public let number: Int?
+        public let title: String?
+        public let url: String?
+        public let state: String?
+        public let draft: Bool?
+        private enum Keys: String, CodingKey { case number, title, url, state, draft }
+        public init(from decoder: Decoder) throws {
+            let c = try? decoder.container(keyedBy: Keys.self)
+            number = c?.tolerant(Int.self, .number)
+            title = c?.tolerant(String.self, .title)
+            url = c?.tolerant(String.self, .url)
+            state = c?.tolerant(String.self, .state)
+            draft = c?.tolerant(Bool.self, .draft)
+        }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// The value at `key`, or nil when it is missing, null or of another type.
+    func tolerant<T: Decodable>(_ type: T.Type, _ key: Key) -> T? {
+        guard let value = try? decodeIfPresent(type, forKey: key) else { return nil }
+        return value
+    }
+}
+
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?
@@ -187,6 +255,8 @@ public struct Activity: Decodable, Identifiable, Sendable {
     public let id: String; public let sequence: Int; public let kind: String; public let status: String; public let title: String
     public let command: String?; public let exitCode: Int?; public let durationMs: Double?
     public let startedAt: String?; public let changes: [Change]?
+    /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
+    public let afterMessageId: String?
     public struct Change: Decodable, Sendable { public let path: String; public let kind: String }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
@@ -198,6 +268,8 @@ public struct Activity: Decodable, Identifiable, Sendable {
 public struct Message: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let role: String; public let text: String; public let commandId: String?
     public let attachments: [Attachment]?
+    /// When the message was written, as the host sends it (ISO 8601). The thread page places steps by it.
+    public var createdAt: String? = nil
 }
 /// An image a message carries. Its bytes stay on the computer; `preview` says the computer keeps a copy
 /// it will hand back by message and attachment ID (the `preview` request).
