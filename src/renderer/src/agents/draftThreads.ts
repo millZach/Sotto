@@ -28,9 +28,14 @@ export function draftThread(values: {
   readonly baseBranch?: string | undefined
   readonly startFromOrigin?: boolean | undefined
   readonly existingWorktreePath?: string | undefined
+  /** The host the thread runs on, marked as the desktop router marks it, so a remote host's draft reads as remote. */
+  readonly host?: Pick<AgentThread, 'hostId' | 'hostLabel' | 'remoteHost'> | undefined
 }): AgentThread {
   return {
     id: values.id, projectId: values.projectId, title: values.title, modelId: values.modelId,
+    ...(values.host?.hostId ? { hostId: values.host.hostId } : {}),
+    ...(values.host?.hostLabel ? { hostLabel: values.host.hostLabel } : {}),
+    ...(values.host?.remoteHost ? { remoteHost: true } : {}),
     ...(values.providerId ? { providerId: values.providerId } : {}),
     ...(values.reasoningEffort ? { reasoningEffort: values.reasoningEffort } : {}),
     ...(values.runtimeMode ? { runtimeMode: values.runtimeMode } : {}),
