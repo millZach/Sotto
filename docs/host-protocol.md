@@ -27,7 +27,7 @@ Between two v1 builds of different Sotto versions, the thread and command shapes
 
 ## HTTP
 
-All on the host's loopback listener, reached through the SSH forward or private Tailscale HTTPS. The desktop's own listener, with phone access on, is reached at `https://<machine>.<tailnet>.ts.net:8443` through Tailscale Serve (ADR-0033). A headless host with phone access on opens a second loopback listener, on a port it remembers, which Tailscale Serve on its machine carries the same way; that one has no administrative routes (ADR-0050). Every response is JSON with `Cache-Control: no-store`. A request carrying an `Origin` other than a loopback page, or one the host was started to allow, is refused.
+All on the host's loopback listener, reached through the SSH forward or private Tailscale HTTPS. The desktop's own listener, with phone access on, is reached at `https://<machine>.<tailnet>.ts.net:8443`, or `:10000` when another app holds 8443 on that computer, through Tailscale Serve (ADR-0033). A headless host with phone access on opens a second loopback listener, on a port it remembers, which Tailscale Serve on its machine carries the same way; that one has no administrative routes (ADR-0050). Every response is JSON with `Cache-Control: no-store`. A request carrying an `Origin` other than a loopback page, or one the host was started to allow, is refused.
 
 | Request | Body | Answer |
 | --- | --- | --- |

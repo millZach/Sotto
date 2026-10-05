@@ -14,18 +14,32 @@ beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-phone-access
 afterEach(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-phone-access-')) await rm(root, { recursive: true, force: true }) })
 
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
-/** A stand-in Tailscale: its Serve setting is one proxy on 8443, or someone else's. */
-function fakeTailscale(options: { status?: TailscaleStatus; other?: string; serve?: ServeResult } = {}) {
+/** A stand-in Tailscale: its Serve settings, one proxy per port (8443 or 10000), Sotto's or someone else's. */
+function fakeTailscale(options: { status?: TailscaleStatus; other?: string; others?: Record<number, string>; serve?: ServeResult } = {}) {
   let status: TailscaleStatus = options.status ?? { state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' }
-  let proxy: string | undefined = options.other
+  const proxies = new Map<number, string>(Object.entries(options.others ?? {}).map(([port, target]) => [Number(port), target]))
+  if (options.other) proxies.set(8443, options.other)
   const calls: string[] = []
+  // 8443 keeps the call names the tests have always read; another port names itself.
+  const on = (port: number) => port === 8443 ? '' : ` on ${port}`
   const tailscale: PhoneAccessTailscale = {
     status: vi.fn(async () => { calls.push('status'); return status }),
-    serveStatus: vi.fn(async (): Promise<ServeConfig> => { calls.push('serve-status'); return proxy ? { TCP: { 8443: { HTTPS: true } }, Web: { [`${DNS}:8443`]: { Handlers: { '/': { Proxy: proxy } } } } } : {} }),
-    serve: vi.fn(async (_port: number, loopback: number): Promise<ServeResult> => { calls.push(`serve ${loopback}`); const result = options.serve ?? { ok: true }; if (result.ok) proxy = serveTarget(loopback); return result }),
-    unserve: vi.fn(async () => { calls.push('unserve'); proxy = undefined; return true }),
+    serveStatus: vi.fn(async (): Promise<ServeConfig> => {
+      calls.push('serve-status')
+      if (proxies.size === 0) return {}
+      const entries = [...proxies]
+      return {
+        TCP: Object.fromEntries(entries.map(([port]) => [String(port), { HTTPS: true }])),
+        Web: Object.fromEntries(entries.map(([port, target]) => [`${DNS}:${port}`, { Handlers: { '/': { Proxy: target } } }])),
+      }
+    }),
+    serve: vi.fn(async (port: number, loopback: number): Promise<ServeResult> => { calls.push(`serve ${loopback}${on(port)}`); const result = options.serve ?? { ok: true }; if (result.ok) proxies.set(port, serveTarget(loopback)); return result }),
+    unserve: vi.fn(async (port: number) => { calls.push(`unserve${on(port)}`); proxies.delete(port); return true }),
   }
-  return { tailscale, calls, proxy: () => proxy, setStatus: (next: TailscaleStatus) => { status = next }, setOther: (target: string) => { proxy = target } }
+  return {
+    tailscale, calls, proxy: (port = 8443) => proxies.get(port),
+    setStatus: (next: TailscaleStatus) => { status = next }, setOther: (target: string, port = 8443) => { proxies.set(port, target) },
+  }
 }
 /** A stand-in listener: its port, the clients connected to it, and whether it was closed. */
 function fakeServer(options: { refusePort?: number } = {}) {
@@ -45,7 +59,7 @@ function create(options: Partial<PhoneAccessOptions> & { tailscale: PhoneAccessT
   const access = new PhoneAccess({ directory: root, service: {} as HostService, settings: () => current, openExternal: vi.fn(async () => undefined), hostname: () => 'LAPTOP', retryMs: 60_000, ...options })
   return { access, settings: current }
 }
-const record = async () => JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8')) as { port: number | null; mapped: boolean }
+const record = async () => JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8')) as { port: number | null; mapped: boolean; servePort?: number }
 
 it('turns on: checks Tailscale, opens a loopback listener with no admin routes, then asks Serve for 8443', async () => {
   const fake = fakeTailscale(), server = fakeServer()
@@ -72,8 +86,24 @@ it('turns off: removes only its own Serve setting and closes the listener, so ph
   expect(access.get()).toMatchObject({ address: null, tailscale: { status: 'waiting' }, serve: { status: 'waiting' } })
 })
 
-it('leaves another app’s setting on 8443 alone, and says the port is taken', async () => {
+it('leaves another app’s setting on 8443 alone and serves phones on 10000 instead', async () => {
   const fake = fakeTailscale({ other: 'http://127.0.0.1:3773' }), server = fakeServer()
+  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000 on 10000'])
+  expect(access.get()).toMatchObject({ phase: 'on', serve: { status: 'ok' }, address: `https://${DNS}:10000`, servePort: 10000 })
+  expect(await record()).toEqual({ port: 41000, mapped: true, servePort: 10000 })
+  settings.phoneAccess = false
+  access.settingsChanged()
+  await vi.waitFor(() => expect(access.get().phase).toBe('off'))
+  expect(fake.calls.slice(3)).toEqual(['serve-status', 'unserve on 10000'])
+  expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(fake.proxy(10000)).toBeUndefined()
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
+})
+
+it('says the ports are taken, and changes nothing, when other apps hold both 8443 and 10000', async () => {
+  const fake = fakeTailscale({ others: { 8443: 'http://127.0.0.1:3773', 10000: 'http://127.0.0.1:3774' } }), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
   await access.start()
   expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'ok' }, serve: { status: 'failed', reason: 'port-taken' }, address: null })
@@ -84,6 +114,17 @@ it('leaves another app’s setting on 8443 alone, and says the port is taken', a
   await vi.waitFor(() => expect(access.get().phase).toBe('off'))
   expect(fake.tailscale.unserve).not.toHaveBeenCalled()
   expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(fake.proxy(10000)).toBe('http://127.0.0.1:3774')
+})
+
+it('removes a setting a crash left on 10000 at the next start, and never touches 8443', async () => {
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: true, servePort: 10000 }))
+  const fake = fakeTailscale({ others: { 8443: 'http://127.0.0.1:3773', 10000: serveTarget(41000) } }), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '' })
+  await access.start()
+  expect(fake.calls).toEqual(['serve-status', 'unserve on 10000'])
+  expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
 })
 
 it('does not remove a setting someone else put on 8443 after Sotto’s, when phone access turns off', async () => {

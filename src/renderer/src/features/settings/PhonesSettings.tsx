@@ -1,7 +1,7 @@
 import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, Copy, Info } from 'lucide-react'
-import { PHONE_ACCESS_SERVE_PORT, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
+import { type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
@@ -15,7 +15,7 @@ import './phones.css'
 /** What a failed step says: what happened, that nothing was changed, and what to do. */
 export function phonesFailure(state: PhonesState): string | null {
   if (state.phase === 'cleanup-failed') return state.serve.status === 'failed' && state.serve.reason === 'cleanup-record'
-    ? 'Phones can’t connect. Sotto couldn’t read its saved cleanup record, so it can’t identify the Tailscale Serve setting. Remove the setting on port 8443 in Tailscale, then press Try again. Sotto is still finishing cleanup.'
+    ? 'Phones can’t connect. Sotto couldn’t read its saved cleanup record, so it can’t identify the Tailscale Serve setting. Remove Sotto’s setting on port 8443 or 10000 in Tailscale, then press Try again. Sotto is still finishing cleanup.'
     : 'Phones can’t connect. Sotto is still finishing cleanup of its Tailscale Serve setting and will try again while it is open. Check Tailscale, then press Try again.'
   if (state.tailscale.status === 'failed') {
     return state.tailscale.reason === 'missing'
@@ -24,14 +24,14 @@ export function phonesFailure(state: PhonesState): string | null {
   }
   if (state.serve.status !== 'failed') return null
   switch (state.serve.reason) {
-    case 'port-taken': return `Another app already uses port ${PHONE_ACCESS_SERVE_PORT} in Tailscale Serve on this computer. Sotto left that setting alone, and nothing was changed. Stop the other app using port ${PHONE_ACCESS_SERVE_PORT}, then press Try again.`
+    case 'port-taken': return 'Other apps already use ports 8443 and 10000 in Tailscale Serve on this computer. Sotto left those settings alone, and nothing was changed. Stop one of those apps, then press Try again.'
     case 'not-enabled': return 'Tailscale Serve isn’t turned on for your tailnet. Nothing was changed. Turn it on in Tailscale, then press Try again.'
     case 'denied': return 'Tailscale on this computer won’t let your account change Tailscale Serve. Nothing was changed. Let your account manage Tailscale, then press Try again.'
     case 'listener': return 'Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto.'
     case 'record': return 'Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again.'
     case 'cleanup-record':
     case 'cleanup': return null
-    case 'failed': return `Tailscale Serve couldn’t be set up on port ${PHONE_ACCESS_SERVE_PORT}. Nothing was changed. Check Tailscale on this computer, then press Try again.`
+    case 'failed': return `Tailscale Serve couldn’t be set up on port ${state.servePort ?? 8443}. Nothing was changed. Check Tailscale on this computer, then press Try again.`
   }
 }
 
@@ -157,7 +157,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     <div className="phones-switch">
       <Toggle label="Let phones connect" checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
         onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
-        description={`Sotto adds this computer to Tailscale Serve on port ${PHONE_ACCESS_SERVE_PORT}, so phones on your tailnet can find it. Only phones you pair can connect. Turning this off removes the setting.`} />
+        description={`Sotto adds this computer to Tailscale Serve on port 8443, or 10000 when another app uses 8443, so phones on your tailnet can find it. Only phones you pair can connect. Turning this off removes the setting.`} />
       {accessSaveFailed ? <p className="tt-field__error" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p> : null}
     </div>
     <ol className="phones-steps" aria-label="Setup" aria-busy={starting || undefined}>
@@ -170,8 +170,8 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       </li>
       <li data-step={serveStep}>
         <StepMark step={serveStep} />
-        <div className="phones-step__copy"><b>Tailscale Serve on port {PHONE_ACCESS_SERVE_PORT}</b>
-          <p>{serveStep === 'ok' ? 'Sotto added it. Port 443 stays free for other apps.' : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
+        <div className="phones-step__copy"><b>Tailscale Serve on port {state?.servePort ?? 8443}</b>
+          <p>{serveStep === 'ok' ? (state?.servePort === 10000 ? 'Sotto added it on 10000, because another app uses 8443. Port 443 stays free for other apps.' : 'Sotto added it. Port 443 stays free for other apps.') : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
         </div>
         {serveStep === 'failed' ? <span className="phones-step__actions">
           {state?.serve.status === 'failed' && state.serve.canOpenSetup ? <Button variant="secondary" onClick={() => void run({ type: 'open-serve-setup' })}>Turn on Serve in Tailscale</Button> : null}
