@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,7 +87,7 @@ private fun NameStep(model: AppModel) {
     var name by rememberSaveable { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     fun find() { if (name.isNotBlank()) model.launch { find(name) } }
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -124,7 +125,7 @@ private fun CodeStep(model: AppModel, found: FoundHost) {
         if (code.length != PairingCode.LENGTH) return
         model.launch { pair(code) }
     }
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(top = 48.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),

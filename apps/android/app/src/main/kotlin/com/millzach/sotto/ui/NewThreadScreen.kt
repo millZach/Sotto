@@ -96,7 +96,7 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
     }
     BackHandler { back() }
 
-    Column(Modifier.fillMaxSize().background(p.canvas).imePadding()) {
+    Column(Modifier.fillMaxSize().background(p.canvas).navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { if (step != Step.Computer) TextButton(onClick = { back() }, enabled = !busy) { Text("Back", style = figtree(16), color = p.accent) } }
             Text("New thread", style = figtree(17, FontWeight.SemiBold), color = p.ink)
@@ -181,7 +181,7 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                 val canCreate = !busy && model.online(hostID) && model.pendingCreations.none { it.hostID == hostID } &&
                     permission != null && (!permission.grants || model.mayAnswer(hostID)) &&
                     (folder?.path != null || model.projects(hostID).any { it.id == projectID })
-                Row(Modifier.fillMaxWidth().background(p.canvas).padding(horizontal = 22.dp, vertical = 12.dp).navigationBarsPadding(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().background(p.canvas).padding(horizontal = 22.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (busy) { CircularProgressIndicator(Modifier.size(20.dp), color = p.accent, strokeWidth = 2.dp); HGap(12.dp) }
                     ActionButton(
                         if (busy) "Opening thread…" else "Open thread on ${model.name(hostID)}",
@@ -360,7 +360,7 @@ private fun FolderPicker(model: AppModel, hostID: String, initialPath: String?, 
         }
         ActionButton(
             "Use this folder", { listing?.let(selected) },
-            Modifier.padding(horizontal = 22.dp, vertical = 12.dp).navigationBarsPadding(),
+            Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
             enabled = !loading && problem == null && listing?.path != null && model.online(hostID), wide = true,
         )
     }

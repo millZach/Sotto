@@ -106,7 +106,7 @@ fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
     LaunchedEffect(thread?.requests?.map { it.id }) { offer() }
     BackHandler { model.launch { if (selected == ref) select(null) }; close() }
 
-    Column(Modifier.fillMaxSize().background(p.canvas).imePadding()) {
+    Column(Modifier.fillMaxSize().background(p.canvas).navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { model.launch { if (selected == ref) select(null) }; close() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to threads", tint = p.ink)
@@ -336,7 +336,7 @@ private fun ActivityRow(record: Activity) {
 private fun Composer(model: AppModel, ref: ThreadRef, openRequest: (AgentRequest) -> Unit) {
     val p = LocalPalette.current
     val requests = model.thread(ref)?.requests ?: emptyList()
-    Column(Modifier.fillMaxWidth().background(p.canvas).navigationBarsPadding()) {
+    Column(Modifier.fillMaxWidth().background(p.canvas)) {
         Hairline()
         if (requests.isNotEmpty()) {
             if (requests.size > 1) {
