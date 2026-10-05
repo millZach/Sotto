@@ -313,6 +313,12 @@ export const agentThreadSchema = z.object({
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
+  /**
+   * The title is a first-message title: the opening words of the thread's first message, held until its generated
+   * title lands. Its `titleSource` stays `default`, the value host protocol v1 carries for it; this optional field
+   * is what keeps a provider's own name from overwriting it.
+   */
+  titledFromFirstMessage: z.boolean().optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
@@ -796,7 +802,7 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list, so a Devin thread keeps its placeholder and is offered no Regenerate that could do nothing.
+ * list, so a Devin thread keeps its first-message title or stand-in and is offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin'

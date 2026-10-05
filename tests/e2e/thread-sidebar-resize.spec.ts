@@ -81,7 +81,9 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).hover()
     await expect(preview.locator('.thread-nav__provider')).toBeVisible()
-    await expect(preview.locator('.thread-nav__provider')).toContainText('Claude')
+    // The provider is its mark; its name is the hover text.
+    await expect(preview.locator('.thread-nav__provider svg.provider-mark[data-provider="claude"]')).toBeVisible()
+    await expect(preview.locator('.thread-nav__provider')).toHaveAttribute('title', /^Claude/)
     await expect(preview.locator('.thread-nav__status')).toBeVisible()
     await expect(preview.locator('.thread-nav__status')).toContainText('Done')
     await expect(preview.locator('.thread-nav__model')).toBeHidden()

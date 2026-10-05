@@ -77,6 +77,8 @@ export interface ThreadReadPurpose {
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
  * system prompt keeps them apart too, and the material is always something to describe, never to obey.
  */
+/** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
+export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
 export interface ShortTextPrompt { readonly instruction: string; readonly material: string }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
@@ -142,7 +144,7 @@ export interface AgentHost {
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
-  renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
+  renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.

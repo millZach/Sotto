@@ -113,8 +113,15 @@ const ATTACHMENT_UPKEEP_ERROR = 'Could not remove screenshots Sotto no longer ne
  * has no finished reply yet, and a thread that has moved on was named or left alone long ago. A requested
  * Regenerate still reads the same first exchange out of a longer history.
  */
+/** A thread still on the stand-in or a provider's name; absent on threads saved before Sotto recorded it. */
+function carriesDefaultTitle(thread: AgentThread): boolean {
+  return thread.titleSource === undefined || thread.titleSource === 'default'
+}
 function firstExchange(thread: AgentThread, trigger: 'automatic' | 'requested', messages: readonly AgentMessage[]): ThreadTitleExchange | null {
-  if (trigger === 'automatic' && (thread.status === 'running' || messages.filter(message => message.role === 'user').length !== 1)) return null
+  if (trigger === 'automatic' && thread.status === 'running') return null
+  // A first-message title says Sotto saw this thread begin, so a steer or a queued follow-up sent during the
+  // first turn does not stop it being named; any other thread is named only while it has said one thing.
+  if (trigger === 'automatic' && thread.titledFromFirstMessage !== true && messages.filter(message => message.role === 'user').length !== 1) return null
   const prompt = messages.findIndex(message => message.role === 'user' && message.text.trim().length > 0)
   if (prompt === -1) return null
   const reply = messages.slice(prompt + 1).find(message => message.role === 'assistant' && message.text.trim().length > 0)
@@ -285,6 +292,8 @@ export class AgentControl {
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
   private readonly titleWrites = new Set<Promise<void>>()
+  /** Threads seen this run with nothing said yet: their first message, when it comes, gives them a first-message title. */
+  private readonly awaitingFirstMessage = new Set<string>()
   /** The desktop window on this machine: the only client there is, and what an unattributed call means. */
   private readonly localClient: ClientIdentity = desktopWindowClient()
   /** Sotto's own supervision, so a recorded answer shows it came from Sotto and not from the user. */
@@ -306,6 +315,12 @@ export class AgentControl {
      * that writes nothing and every failure resolve to. Absent here means no thread is ever named by Sotto.
      */
     writeThreadTitle?: (threadId: string, exchange: ThreadTitleExchange) => Promise<string | null>
+    /**
+     * The first-message title for a thread's first message: its opening words, given the moment it is sent so
+     * the thread is not "New thread" while its first turn runs. `null` (generation off) leaves the stand-in;
+     * absent here means no thread is given one.
+     */
+    writeFirstMessageTitle?: (prompt: string) => Promise<string | null>
     /** Local record of a silent failure; never a banner, never shown to the user. */
     logFailure?: (code: 'client-update-handoff-failed' | 'thread-title-failed' | 'thread-answer-attribution-failed' | 'short-writing-failed', detail: ProviderId | 'failed' | `${ShortTextPurpose} ${ShortTextFailureReason}`) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
@@ -1451,6 +1466,7 @@ export class AgentControl {
     if (this.dependencies.historyEnabled?.() === false) return
     for (const thread of this.state.host.threads) {
       if (this.titled.has(thread.id) || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
+      this.giveFirstMessageTitle(thread)
       // A client shows the first reply while its turn is still running and ends the turn on a later frame
       // that adds no message, so a running thread is not yet checked: checking it would record this count
       // and skip the frame that finishes the turn.
@@ -1468,20 +1484,45 @@ export class AgentControl {
       void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     }
   }
+  /**
+   * A thread Sotto saw begin, empty and still on a `default` name, takes the opening words of its first message as
+   * soon as that message is in, while the turn still runs. A thread that already had history when this run first
+   * saw it, an older or imported one, keeps the name it has.
+   */
+  private giveFirstMessageTitle(thread: AgentThread): void {
+    if (!this.dependencies.writeFirstMessageTitle || !carriesDefaultTitle(thread) || thread.titledFromFirstMessage) return
+    if (threadSummaryOf(thread).messageCount === 0) { this.awaitingFirstMessage.add(thread.id); return }
+    if (!this.awaitingFirstMessage.has(thread.id)) return
+    // The first message, even when a steer is already beside it on the frame that brings it.
+    const first = this.threadHistory(thread).find(message => message.role === 'user' && message.text.trim().length > 0)
+    if (!first) return
+    this.awaitingFirstMessage.delete(thread.id)
+    const pending = this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message')
+    this.titleWrites.add(pending)
+    void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
+  }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   private threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
     return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
   }
   /** Asks for the name and applies it, unless the thread was renamed by hand while the answer was in flight. */
-  private async writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
+  private writeThreadTitle(threadId: string, exchange: ThreadTitleExchange): Promise<void> {
+    return this.offerTitle(threadId, () => this.dependencies.writeThreadTitle!(threadId, exchange), 'generated')
+  }
+  /**
+   * Works out a name Sotto offers a thread and applies it, unless the thread was renamed by hand while it was
+   * worked out. A first-message title also yields to a generated one that landed first.
+   */
+  private async offerTitle(threadId: string, write: () => Promise<string | null>, source: 'generated' | 'first-message'): Promise<void> {
     if (this.disposed) return
     try {
-      const title = await this.dependencies.writeThreadTitle!(threadId, exchange)
+      const title = await write()
       if (this.disposed || title === null) return
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread || thread.titleSource === 'user' || isThreadArchived(thread) || thread.title === title) return
-      this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, 'generated'))
+      if (source === 'first-message' && (!carriesDefaultTitle(thread) || thread.titledFromFirstMessage)) return
+      this.acceptSnapshot(await this.dependencies.host.renameThread!(threadId, title, source))
       await this.persist()
     } catch {
       // A name Sotto offered to write is never worth an error banner: the thread keeps the name it has.

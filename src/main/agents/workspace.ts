@@ -14,7 +14,7 @@ import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, R
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose } from './host'
+import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
@@ -1580,8 +1580,9 @@ export class WorkspaceHost implements AgentHost {
       // project remains the workspace/memory scope for a thread created beneath it.
       const merged: AgentThread = { ...thread,
         subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
-        // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
-        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
+        // A name the user set by hand, or one Sotto gave this thread, outranks whatever the provider still calls it.
+        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource }
+          : old?.titledFromFirstMessage ? { title: old.title, titleSource: 'default' as const, titledFromFirstMessage: true } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
@@ -1878,15 +1879,24 @@ export class WorkspaceHost implements AgentHost {
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
-  async renameThread(threadId: string, title: string, source: 'user' | 'generated' = 'user'): Promise<AgentHostSnapshot> {
+  async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
-    const previous = { title: thread.title, titleSource: thread.titleSource }
+    const previous = { title: thread.title, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
     thread.title = title
-    thread.titleSource = source
+    // A first-message title is still a `default` name to everything that reads one; only its flag tells it apart.
+    thread.titleSource = source === 'first-message' ? 'default' : source
+    if (source === 'first-message') thread.titledFromFirstMessage = true
+    else delete thread.titledFromFirstMessage
     this.dirty = true
     try { await this.flush() }
-    catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+    catch (error) {
+      const restored = this.thread(threadId)
+      Object.assign(restored, { title: previous.title, titleSource: previous.titleSource })
+      if (previous.titledFromFirstMessage) restored.titledFromFirstMessage = true
+      else delete restored.titledFromFirstMessage
+      throw error
+    }
     this.publish(); return this.workspaceSnapshot()
   }
   private thread(id: string): AgentThread {
