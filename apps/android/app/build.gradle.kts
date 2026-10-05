@@ -14,8 +14,8 @@ android {
         applicationId = "com.millzach.sotto.android"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // A release key is passed in by scripts/build-apk.sh (-PsottoKeystoreFile=...); keep the same key
