@@ -4,6 +4,14 @@
 
 Accepted October 4, 2026, by the owner's choice of variant B, "Dialog from the row", in `docs/prototypes/host-phone-access-prototype.html`. The owner asked for it after the iPhone could not add forge, a host with no monitor: the error said to turn on phone access in Settings > Phones on forge, which nobody can open there. They chose a switch per host over relaying every host's threads through the main computer, the host's pairing code and paired phones shown on this computer, Sotto saying plainly when Tailscale is missing or Serve is off on the host rather than installing anything, and the iPhone's Add computer naming this route. Amends [ADR-0033](0033-the-desktop-lets-paired-phones-reach-its-threads.md), which said the headless host sends no name, and [ADR-0025](0025-headless-host-and-client-identity.md).
 
+## October 5 amendment: the tailnet listener carries desktops, and a host can start at boot
+
+[ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](0054-a-host-can-start-at-boot-on-linux.md), accepted October 5, 2026 as the owner's delegated picks, change three things here.
+
+- **The phone listener is now the tailnet listener** and carries a paired desktop's connection as well as phones. A new host-local setting, `tailnetConnections`, off by default, keeps Serve on for desktops, so Serve runs while either it or `phoneAccess` is on, and turning phones off no longer cuts desktops off. Hello's features are chosen per client: a desktop gets provider sign-in and client updates, a phone today's list. While phone access is off, the host refuses pairing on that listener and refuses a session to a client that paired as a phone. The listener with the administrative routes is still never served to the tailnet, as the decision says.
+- **The administrative token lives in an admin session**, not in one long connection. The launch script still hands it back over SSH, and the desktop keeps it in memory only for that SSH connection, which closes 60 seconds after its last use. The Phones dialog holds one open while it is open, and shows Tailscale's approval at its top while that session waits for one.
+- **The first consequence below no longer holds on Linux.** A host can start at boot from a systemd user unit, so its phones reach it after its machine restarts with no desktop connecting. On macOS and Windows hosts it still holds.
+
 ## Context
 
 ADR-0033 lets the desktop serve its own threads to paired phones through Tailscale Serve. A headless host already speaks the same protocol, and the guide told its owner to point Tailscale Serve at the host's loopback port. That did not hold up. A host the desktop starts over SSH listens on a port chosen at each start, so a Serve setting made by hand stops working at the next restart. A phone's pairing code came only from the host's command line. And most hosts that run threads have no screen, so every step meant signing in to the machine.

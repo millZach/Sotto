@@ -1,5 +1,15 @@
 # A Node host on Forge, with clients that keep the host's identity
 
+## October 5 amendment: a tailnet connection, and a host that starts at boot
+
+[ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](0054-a-host-can-start-at-boot-on-linux.md), accepted October 5, 2026 as the owner's delegated picks, change several statements below. Where they disagree with this ADR, they win.
+
+- **SSH is no longer the only path** (the decision's "SSH remains the first planned remote path", and the September 21 transport paragraph). A desktop paired with a host reaches it first through the host's tailnet address, over the host's tailnet listener carried by Tailscale Serve, and uses SSH when the tailnet does not answer or the owner chose SSH only. The listener still binds loopback only. Pairing, the `remote-answer` grant and every launch script operation stay on SSH, and the desktop never pairs on the tailnet.
+- **The forward is no longer the connection** (the September 23 amendment's "the `-N -L` port forward is the only long-lived ssh, and its exit is what a dropped connection is"). With a tailnet connection there is no forward. A dropped connection is the socket closing, on either connection. An SSH connection opened only for an administrative press is an admin session, and it closes 60 seconds after its last use.
+- **Failure codes** (the September 23 amendment's typed codes). A tailnet connection adds its own classes: unreachable and wrong host fall back to SSH, a refused pairing pairs again over SSH, and a version mismatch is final, as now. Retry decisions still read the code alone.
+- **A dropped connection keeps the host's threads** (the September 21 amendments' reconnect). A drop, or a move between the tailnet and SSH, marks the threads as reconnecting and swaps the connection in place, as a host update does (ADR-0040).
+- **A host that starts at boot** (the September 22 amendment, "stops only when the user presses Stop host or Forget"). On Linux with a systemd user manager, a host can also be started by its boot unit, which records `startedBy: "boot"` (the September 23 amendment's "who started a host"). Such a host counts as started by Sotto. Stop host stops it until the machine restarts or the owner switches it on.
+
 ## October 4 amendment: a host's phone access
 
 [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md) lets a headless host serve its own threads to paired phones through Tailscale Serve, as the desktop does (ADR-0033). The host opens a second loopback listener for phones, with no administrative routes. A launch hands the host's administrative token back to the desktop over SSH, and the desktop uses it, through the forward and only in memory, to turn the host's phone access on and off, pair its phones and set their Can answer. The remote command list below is unchanged.

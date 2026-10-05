@@ -1,0 +1,665 @@
+<!doctype html>
+<!--
+  VERDICT (October 5, 2026): C, "Setup-led", with A's controls. The owner delegated the pick ("Go ahead and do
+  everything we discussed, no need to stop and ask me"), so it is recorded as the owner's delegated pick in ADR-0053
+  and ADR-0054. Add host's checklist proves the tailnet connection and its connected card offers Start forge's host
+  at boot; a host saved before this gets a one-time line; the row's meta line, Edit connection's "How Sotto connects"
+  and the More menu's Start at boot… are A's. B is kept as the record of what was weighed.
+
+  PROTOTYPE — throwaway. Question: how does Settings > Hosts say a host is reached over the owner's tailnet rather
+  than SSH, let the owner choose, and offer to start a Linux host at boot? Plan: docs/plans/host-tailnet-connection.md.
+  Variants via ?variant=A|B|C. States via ?state= (see STATES below; keys 1–9 and 0 pick the first ten).
+  Theme ?theme=light, motion ?motion=reduced, window ?size=max (1600x1000) or ?size=min (820x560); 1280x800 otherwise.
+  Desktop chrome and Settings > Hosts copied from host-phone-access-prototype.html (HostsSettings.tsx, hosts.css,
+  hostSetup.css) with the Sotto theme's resolved --tt-* values. No host calls, no persistence.
+  Run: node docs/prototypes/composer-selectors-serve.mjs, then open
+  http://127.0.0.1:4173/docs/prototypes/host-tailnet-prototype.html
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto hosts over the tailnet — prototype</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900}
+@font-face{font-family:'Spline Sans Mono';src:url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2');font-weight:300 700}
+/* ---------- Sotto theme, dark half: desktop --tt-* tokens resolved at 100% contrast, then the phone's names ---------- */
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-text-faint:oklch(0.675 0.012 270);
+  --tt-hairline:oklch(0.305 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-sidebar-row-hover:oklch(0.28 0.003 265);--tt-sidebar-row-active:oklch(0.32 0.025 190);--tt-sidebar-control:oklch(0.295 0.003 265);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-pill:oklch(0.985 0.005 280);--tt-pill-ink:oklch(0.115 0.008 265);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-error-line:oklch(0.655108 0.221148 23.473);--tt-error-surface:oklch(0.29 0.04 20);
+  --tt-warning:oklch(0.829017 0.171221 81.038);--tt-success:oklch(0.79 0.13 165);
+  --tt-code-bg:oklch(0.155 0.008 265);
+  --tt-overlay:color-mix(in srgb,oklch(0.115 0.008 265) 64%,transparent);
+  --tt-shadow-lg:0 24px 60px rgb(0 0 0 / 55%);--tt-shadow-overlay:0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+  --win-edge:#2a2a30;
+
+  --canvas:oklch(0.115 0.008 265);--surface:oklch(0.145 0.008 265);--raised:oklch(0.185 0.008 265);--overlay:oklch(0.215 0.008 265);
+  --text:oklch(0.985 0.005 280);--muted:oklch(0.72 0.014 265);--placeholder:oklch(0.675 0.012 270);
+  --border:oklch(0.305 0.02 265);--hair:oklch(0.22 0.012 265);--input:oklch(0.375 0.024 265);
+  --accent:oklch(0.714 0.104 183.1);--accent-fg:oklch(0.16 0.012 190);--accent-surface:oklch(0.32 0.05 185);--accent-surface-fg:oklch(0.985 0.005 280);
+  --code-bg:oklch(0.155 0.008 265);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.829 0.171 81);--warning-surface:oklch(0.315 0.032 80);
+  --error-fg:oklch(0.702 0.189 22.2);--ok:oklch(0.79 0.13 165);
+  --scrim:oklch(0 0 0 / .55);--key:oklch(0.3 0.008 265);--kbd:oklch(0.17 0.008 265);
+  --page:#161618;--page-text:#e8e8ea;--page-muted:#a0a0a8;--bezel:#050506;
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-text-faint:oklch(0.535 0.015 78);
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-sidebar-row-hover:oklch(0.93 0.01 85);--tt-sidebar-row-active:oklch(0.915 0.02 190);--tt-sidebar-control:oklch(0.995 0.002 85);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-pill:oklch(0.235 0.014 75);--tt-pill-ink:oklch(0.978 0.004 85);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-error-line:oklch(0.637823 0.237287 25.436);--tt-error-surface:oklch(0.94 0.02 25);
+  --tt-warning:oklch(0.546927 0.155556 45.359);--tt-success:oklch(0.5 0.11 158);
+  --tt-code-bg:oklch(0.96 0.005 85);
+  --tt-overlay:color-mix(in srgb,oklch(0.978 0.004 85) 60%,transparent);
+  --tt-shadow-lg:0 24px 60px rgb(20 24 22 / 18%);--tt-shadow-overlay:0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+  --win-edge:#c9c9cf;
+
+  --canvas:oklch(0.978 0.004 85);--surface:oklch(0.99 0.003 85);--raised:oklch(0.955 0.006 85);--overlay:oklch(0.945 0.007 85);
+  --text:oklch(0.235 0.014 75);--muted:oklch(0.5 0.014 75);--placeholder:oklch(0.535 0.015 78);
+  --border:oklch(0.86 0.012 80);--hair:oklch(0.915 0.008 80);--input:oklch(0.83 0.012 80);
+  --accent:oklch(0.53 0.095 186);--accent-fg:oklch(0.99 0.003 85);--accent-surface:oklch(0.92 0.03 186);--accent-surface-fg:oklch(0.235 0.014 75);
+  --code-bg:oklch(0.945 0.007 85);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.547 0.156 45.4);--warning-surface:oklch(0.955 0.018 80);
+  --error-fg:oklch(0.509 0.209 28.5);--ok:oklch(0.5 0.11 158);
+  --scrim:oklch(0.2 0 0 / .35);--key:oklch(1 0 0);--kbd:oklch(0.88 0.006 85);
+  --page:#e7e7ea;--page-text:#1c1c1f;--page-muted:#5a5a62;--bezel:#111113;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:32px 32px 120px}
+.page-head{max-width:1240px;margin:0 0 24px}
+.page-head .kicker{font-size:13px;color:var(--page-muted);letter-spacing:.02em;margin:0 0 6px}
+.page-head h1{font-size:30px;margin:0 0 10px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin:0 0 6px;max-width:980px;color:var(--page-muted)}
+.page-head p b{color:var(--page-text);font-weight:600}
+h2.band{font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);margin:34px 0 18px;border-top:1px solid color-mix(in oklab,var(--page-muted) 30%,transparent);padding-top:18px}
+.top-row{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+.row{display:flex;flex-wrap:wrap;gap:28px 24px;align-items:flex-start}
+figure{margin:0}
+.cap{margin-top:12px;font-size:14px;max-width:560px}
+.cap b{display:block;font-weight:600}
+.cap span{color:var(--page-muted);font-size:13px;display:block;line-height:1.45}
+/* =====================================================================
+   DESKTOP: the Settings page chrome and Settings > Hosts, copied from the app
+   ===================================================================== */
+.win{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:10px;border:1px solid var(--win-edge);background:var(--tt-canvas);color:var(--tt-text);font:14px/1.5 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased;box-shadow:0 30px 60px -30px #0009}
+.win button{font:inherit;color:inherit;min-height:30px}
+.win :focus-visible{outline:3px solid var(--tt-focus-ring);outline-offset:2px}
+.win .layout{display:grid;grid-template-columns:264px minmax(0,1fr);height:100%}
+.side{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--tt-hairline);padding:16px 10px 0;background:var(--tt-sidebar)}
+.side-top{display:flex;align-items:center;height:44px;padding:0 6px 0 14px}
+.brand{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;letter-spacing:-.1px}
+.mark{width:18px;height:18px;border-radius:4px;background:#47b8a9;color:#0b0d0c;display:grid;place-items:center}
+.side-body{flex:1;min-height:0;padding:10px 0 12px}
+.side h1{margin:6px 0 18px;padding:0 8px;font-size:24px;font-weight:600;line-height:1.2;letter-spacing:-.7px}
+.subnav{display:flex;flex-direction:column;gap:4px}
+.subnav button{position:relative;display:flex;align-items:center;gap:11px;width:100%;min-height:42px;padding:10px 12px;border:0;border-radius:8px;color:var(--tt-text-muted);background:transparent;text-align:left;font-size:14px;line-height:1.35;cursor:pointer}
+.subnav button>span{flex:1}
+.subnav button:hover{background:var(--tt-sidebar-row-hover);color:var(--tt-text)}
+.subnav button[aria-selected=true]{color:var(--tt-text);background:var(--tt-sidebar-row-active)}
+.subnav button[aria-selected=true]>svg:first-child{color:var(--tt-accent)}
+.subnav button.gap{margin-top:32px}
+.subnav button.gap::before{content:'';position:absolute;top:-18px;left:12px;right:12px;height:1px;background:var(--tt-hairline)}
+.subnav .new-tag{flex:none;font-size:11px;font-weight:600;color:var(--tt-accent-text)}
+.side-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 2px;margin-top:auto;padding:8px 6px 10px;border-top:1px solid var(--tt-hairline)}
+.side-foot .seg{display:flex;flex:1 0 100%;padding:3px;border-radius:9px;background:var(--tt-canvas)}
+.side-foot .seg span{flex:1;text-align:center;font-size:13px;color:var(--tt-text-muted);padding:5px 0}
+.side-foot .ib{width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:var(--tt-text-muted)}
+.side-foot .ib.on{background:var(--tt-sidebar-row-active);color:var(--tt-accent)}
+.side-foot .ib.end{margin-left:auto}
+.detail{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.scroll{flex:1;min-width:0;min-height:0;overflow:auto;padding:42px 77px 48px;scrollbar-width:thin;scrollbar-color:var(--tt-hairline) transparent}
+.form{width:100%;max-width:790px;margin:0 auto}
+.sec-h{margin:0 0 10px;padding:0 0 20px;border-bottom:1px solid var(--tt-hairline)}
+.sec-h h2{margin:0 0 10px;font-size:28px;font-weight:600;line-height:1.2;letter-spacing:-1px}
+.sec-h p{margin:0;color:var(--tt-text-muted);font-size:16px;line-height:1.5}
+.winctl{position:absolute;top:8px;right:8px;display:flex;gap:4px;color:var(--tt-text-muted)}
+.winctl span{width:34px;height:28px;display:grid;place-items:center}
+.page-status{position:absolute;right:22px;bottom:8px;margin:0;font-size:12px;color:var(--tt-text-muted)}
+.mono{font-family:'Spline Sans Mono',ui-monospace,monospace}
+.win b.mono{font-weight:500}
+
+/* controls (global.css) */
+.tt-button{display:inline-flex;min-height:34px;align-items:center;justify-content:center;gap:7px;border:1px solid var(--tt-hairline);border-radius:999px;padding:0 14px;background:transparent;color:var(--tt-text-2);cursor:pointer;font-size:13.5px!important;font-weight:500;line-height:1.2;white-space:nowrap}
+.tt-button:hover:not(:disabled){border-color:var(--tt-text-faint);color:var(--tt-text)}
+.tt-button:disabled{cursor:not-allowed;opacity:.45}
+.tt-button--primary{border-color:var(--tt-pill);background:var(--tt-pill);color:var(--tt-pill-ink)!important;font-weight:600}
+.tt-button--ghost{border-color:transparent;color:var(--tt-text-muted)}
+.tt-button--ghost:hover:not(:disabled){border-color:transparent;color:var(--tt-text)}
+.tt-button--danger{border-color:transparent;color:var(--tt-error)!important}
+.tt-button--icon{width:34px;padding:0}
+.tt-toggle{display:grid;width:100%;min-height:30px;grid-template-columns:36px minmax(0,1fr);align-items:start;gap:12px;border:0;background:transparent;padding:2px 0;cursor:pointer;text-align:left}
+.tt-toggle__copy{display:grid;min-width:0;gap:2px}
+.tt-toggle__copy>strong{display:block;font-size:15px;font-weight:500;line-height:1.35}
+.tt-field__description{display:block;margin:0;color:var(--tt-text-muted);font-size:13px;line-height:1.45}
+.tt-toggle__track{position:relative;width:36px;height:20px;margin-top:1px;border:1px solid var(--tt-border);border-radius:999px;background:var(--tt-surface-sunken);transition:background-color 120ms ease,border-color 120ms ease}
+.tt-toggle__thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--tt-text-muted);transition:transform 120ms ease,background-color 120ms ease}
+.tt-toggle[aria-checked=true] .tt-toggle__track{border-color:var(--tt-accent);background:var(--tt-accent)}
+.tt-toggle[aria-checked=true] .tt-toggle__thumb{background:var(--tt-on-accent);transform:translateX(16px)}
+.tt-toggle:disabled{cursor:not-allowed}.tt-toggle:disabled .tt-toggle__track{opacity:.5}
+
+/* hosts.css */
+.hosts-settings{display:grid;gap:20px}
+.hosts-settings h3,.hosts-settings h4{margin:0;font-weight:600}
+.hosts-settings h3{font-size:18px}
+.hosts-settings h4{font-size:15px}
+.hosts-settings p{margin:6px 0 0;color:var(--tt-text-muted);font-size:14px}
+.hosts-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.hosts-local{display:flex;align-items:flex-start;gap:14px;padding-bottom:20px;border-bottom:1px solid var(--tt-hairline)}
+.hosts-local__copy{flex:1;min-width:0;max-width:470px}
+.hosts-local .tt-toggle{width:auto;flex:0 0 auto;align-self:center;grid-template-columns:36px auto}
+.hosts-list{display:grid}
+.hosts-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;min-width:0;border-bottom:1px solid var(--tt-hairline);padding:14px 0;position:relative}
+.hosts-list>.hosts-row:first-child{border-top:1px solid var(--tt-hairline)}
+.hosts-row__icon{display:grid;flex:0 0 auto;place-items:center;width:34px;height:34px;border-radius:6px;background:var(--tt-surface-sunken);color:var(--tt-accent-text)}
+.hosts-row__icon--local{color:var(--tt-text-muted)}
+.hosts-row__info{flex:1 1 220px;min-width:0}
+.hosts-settings .hosts-row__meta{margin-top:2px;font-size:13px}
+.hosts-row__meta [data-phase=connected]{color:var(--tt-text)}
+.hosts-row__actions{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto}
+.hosts-empty{padding:16px 0;border-block:1px solid var(--tt-hairline)}
+.hosts-switch{display:inline-flex;align-items:center;gap:8px;color:var(--tt-text-muted);font-size:13px}
+.hosts-switch__state{min-width:22px;text-align:right}
+.hosts-switch .hosts-switch__control{width:auto;min-height:30px;grid-template-columns:36px;align-items:center;padding:4px 2px}
+.hosts-menu{position:relative;display:inline-flex}
+.hosts-menu__list{position:absolute;z-index:20;top:calc(100% + 4px);right:0;display:grid;min-width:184px;border:1px solid var(--tt-hairline);border-radius:10px;background:var(--tt-surface-overlay);box-shadow:var(--tt-shadow-overlay);padding:4px}
+.hosts-menu__list [role=menuitem]{min-height:32px;border:0;border-radius:6px;background:transparent;padding:6px 10px;color:var(--tt-text);font-size:13px;text-align:left;cursor:pointer}
+.hosts-menu__list [role=menuitem]:hover{background:var(--tt-hover)}
+.hosts-menu__list [data-danger]{color:var(--tt-error)}
+.hosts-notice{display:flex;align-items:flex-start;gap:10px;border-left:2px solid var(--tt-accent);border-radius:6px;background:var(--tt-surface-sunken);padding:10px 12px;font-size:13px}
+.hosts-settings .hosts-notice p,.tt-dialog .hosts-notice p{margin:0;color:var(--tt-text);font-size:13px;line-height:1.5}
+.hosts-notice--error{border-left-color:var(--tt-error-line)}
+.hosts-notice>svg{flex:0 0 auto;margin-top:2px;color:var(--tt-accent-text)}
+.hosts-notice--error>svg{color:var(--tt-error)}
+.hosts-notice .grow{flex:1;min-width:0}
+.hosts-notice .tt-button{align-self:center}
+.tt-dialog-backdrop{position:absolute;z-index:50;display:grid;inset:0;place-items:center;background:var(--tt-overlay);padding:20px}
+.tt-dialog{width:min(480px,100%);border:1px solid var(--tt-hairline);border-radius:10px;background:var(--tt-surface-elevated);box-shadow:var(--tt-shadow-lg);padding:24px;animation:arrive .18s ease}
+.tt-dialog h2{margin:0 0 4px;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.tt-dialog .intro{margin:0 0 4px;font-size:13px;color:var(--tt-text-muted)}
+.tt-dialog__actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.tt-dialog__actions .tt-button{min-height:44px;padding:0 18px}
+@keyframes arrive{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---- new: shared phone-access pieces ---- */
+.pa-switchrow{border-block:1px solid var(--tt-hairline);padding:16px 0}
+.pa-switchrow .tt-toggle{grid-template-columns:36px minmax(0,1fr)}
+.pa-switchrow .tt-field__description{max-width:560px}
+.pa-address{display:flex;align-items:center;gap:14px;padding:14px 0 0}
+.pa-address .dotok{width:8px;height:8px;border-radius:50%;background:var(--tt-success);flex:none}
+.pa-address .copy{flex:1;min-width:0}
+.hosts-settings .pa-address p{margin:0}
+.pa-address .copy>p:first-child{color:var(--tt-text);font-size:14px}
+.pa-address .url{font-size:12.5px;color:var(--tt-text-muted);overflow-wrap:anywhere}
+.pa-code{font:600 34px/1 'Spline Sans Mono',ui-monospace,monospace;letter-spacing:.08em;color:var(--tt-text);white-space:nowrap}
+.pa-code i{display:inline-block;width:.45em}
+.pa-count{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--tt-text-muted)}
+.pa-count b{font-weight:600;color:var(--tt-text);font-variant-numeric:tabular-nums}
+.pa-bar{position:relative;flex:none;width:140px;height:3px;border-radius:2px;background:var(--tt-hairline);overflow:hidden}
+.pa-bar i{position:absolute;inset:0 auto 0 0;background:var(--tt-accent);border-radius:2px}
+.pa-facts{display:grid;gap:14px;margin:16px 0 12px}
+.pa-facts dt{font-size:12px;color:var(--tt-text-muted);margin:0 0 4px}
+.pa-facts dd{margin:0}
+.pa-facts .name{font-size:16px}
+.hosts-settings .pa-phone-meta{margin-top:1px;font-size:13px}
+.label-sw{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--tt-text-muted)}
+.label-sw .hosts-switch__control{width:auto;min-height:30px;grid-template-columns:36px;align-items:center;padding:4px 2px}
+
+/* =====================================================================
+   NEW: tailnet connection and start at boot
+   ===================================================================== */
+.dz{zoom:var(--dz,.86)}
+.win.max{width:1600px;height:1000px}
+.win.min{width:820px;height:560px}
+.win.min .layout{grid-template-columns:220px minmax(0,1fr)}
+.win.min .scroll{padding:28px 28px 40px}
+.win.min .side h1{font-size:20px}
+.hosts-settings .hosts-row__note{margin-top:2px;font-size:12.5px;color:var(--tt-text-muted)}
+.hosts-row__meta .via{color:var(--tt-text)}
+.hosts-row__meta .via[data-via=ssh]{color:var(--tt-text-muted)}
+.hosts-menu__list{min-width:210px}
+.hosts-menu__list hr{border:0;border-top:1px solid var(--tt-hairline);margin:4px 2px}
+.hosts-setup-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;border-left:2px solid var(--tt-accent);border-radius:6px;background:var(--tt-surface-sunken);padding:10px 12px}
+.hosts-settings .hosts-setup-line>p{flex:1 1 260px;min-width:0;margin:0;color:var(--tt-text);font-size:13px}
+.hosts-dialog{width:min(480px,100%);max-height:calc(100% - 40px);overflow-y:auto}
+.hosts-dialog.wide{width:min(560px,100%)}
+.win.min .hosts-dialog{padding:18px}
+.hosts-dialog__fields{display:grid;gap:14px;margin:14px 0 0}
+.tt-field{display:grid;gap:5px;min-width:0}
+.tt-field__label{font-size:13px;font-weight:600;color:var(--tt-text)}
+.tt-input{min-height:36px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);color:var(--tt-text);font:inherit;font-size:13.5px;padding:6px 10px;width:100%}
+.hosts-dialog__pair{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:12px}
+.hosts-dialog__optional{color:var(--tt-text-faint);font-weight:400}
+fieldset.hosts-fieldset{margin:0;padding:0;border:0;display:grid;gap:12px;min-width:0}
+fieldset.hosts-fieldset>legend{padding:0;margin:0 0 8px;font-size:13px;font-weight:600;color:var(--tt-text)}
+.hosts-fieldset+.hosts-fieldset{border-top:1px solid var(--tt-hairline);padding-top:14px}
+.choices{display:grid;gap:8px}
+.choice{display:grid;grid-template-columns:18px minmax(0,1fr);gap:3px 10px;min-width:0;border:1px solid var(--tt-hairline);border-radius:8px;padding:10px 12px;cursor:pointer}
+.choice[data-checked]{border-color:var(--tt-accent);background:var(--tt-hover)}
+.choice>input{grid-row:1/span 2;width:16px;height:16px;margin:2px 0 0;accent-color:var(--tt-accent)}
+.choice-name{color:var(--tt-text);font-size:13.5px;font-weight:600;line-height:20px}
+.choice-text{grid-column:2;color:var(--tt-text-muted);font-size:12.5px;line-height:1.45;overflow-wrap:anywhere}
+/* host setup checklist (hostSetup.css) */
+.host-setup{display:grid;gap:4px;margin-top:12px}
+.host-setup__summary{display:flex;align-items:center;gap:10px;min-width:0;border:1px solid var(--tt-hairline);border-radius:8px;padding:6px 6px 6px 12px}
+.hosts-settings .host-setup__summary>p{flex:1;min-width:0;margin:0;overflow:hidden;color:var(--tt-text);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.host-setup__summary span{color:var(--tt-text-muted)}
+.host-setup__summary>.tt-button{min-height:30px;padding:0 12px;font-size:12.5px!important}
+.host-setup__steps{display:grid;gap:2px;margin:10px 0 0;padding:0;list-style:none}
+.host-setup__steps>li{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:4px 10px;padding:6px 0}
+.host-setup__mark{display:grid;place-items:center;width:20px;height:20px;color:var(--tt-text-faint)}
+.host-setup__steps [data-state=done] .host-setup__mark{color:var(--tt-success)}
+.host-setup__steps [data-state=active] .host-setup__mark,.host-setup__steps [data-state=waiting] .host-setup__mark{color:var(--tt-accent-text)}
+.host-setup__steps [data-state=failed] .host-setup__mark{color:var(--tt-error)}
+.host-setup__title{min-width:0;color:var(--tt-text);font-size:13.5px;line-height:20px;overflow-wrap:anywhere}
+.host-setup__steps [data-state=todo] .host-setup__title{color:var(--tt-text-muted)}
+.host-setup__steps [data-state=active] .host-setup__title,.host-setup__steps [data-state=failed] .host-setup__title,.host-setup__steps [data-state=waiting] .host-setup__title{font-weight:600}
+.host-setup__detail{grid-column:2;min-width:0}
+.hosts-settings .host-setup__note{margin:2px 0 0;color:var(--tt-text-muted);font-size:12.5px;overflow-wrap:anywhere}
+.hosts-notice.card{display:grid;gap:10px}
+.hosts-notice.card--done{border-left-color:var(--tt-success)}
+.card-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.card-actions>.tt-button{min-height:32px;padding:0 14px;font-size:13px!important}
+.link{border:0;border-radius:4px;background:none;padding:2px 0;color:var(--tt-accent-text);font:inherit;font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer;min-height:0!important}
+.command{display:flex;align-items:center;gap:8px;min-width:0;border:1px solid var(--tt-hairline);border-radius:6px;background:var(--tt-surface-elevated);padding:4px 4px 4px 10px}
+.command>code{flex:1;min-width:0;overflow-x:auto;color:var(--tt-text);font:12.5px/1.6 'Spline Sans Mono',ui-monospace,monospace;white-space:nowrap}
+.command>.tt-button{flex:0 0 auto;gap:6px;min-height:28px;padding:0 12px;font-size:12.5px!important}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rm *,.rm *::before,.rm *::after{animation:none!important;transition:none!important}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* the boot offer on the connected card, the consent modal and its checks */
+.boot-offer{display:grid;gap:8px;border-top:1px solid var(--tt-hairline);padding-top:10px}
+.hosts-settings .boot-offer p{margin:0;font-size:13px;color:var(--tt-text)}
+.hosts-settings .boot-offer p.quiet{color:var(--tt-text-muted)}
+.checks{list-style:none;margin:12px 0 0;padding:12px 0 0;display:grid;gap:8px;border-top:1px solid var(--tt-hairline)}
+.checks li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:2px 10px;font-size:13px;align-items:start}
+.checks .c-mark{width:18px;height:18px;display:grid;place-items:center;margin-top:1px}
+.checks li[data-s=ok] .c-mark{color:var(--tt-success)}
+.checks li[data-s=fail] .c-mark{color:var(--tt-error)}
+.checks li[data-s=wait] .c-mark{color:var(--tt-text-faint)}
+.checks li[data-s=act] .c-mark{color:var(--tt-accent-text)}
+.hosts-settings .checks p{margin:0;font-size:13px;line-height:1.45;color:var(--tt-text-muted)}
+.checks b{font-weight:500;color:var(--tt-text)}
+.checks .command{grid-column:2;margin-top:6px}
+.hosts-settings p.lead{color:var(--tt-text);font-size:13.5px;margin:8px 0 0}
+.approval{margin-bottom:4px}
+.pa-switchrow+.checks{border-top:0;margin-top:0;padding-top:0}
+/* B: the host's own dialog */
+.hosts-row h4 .namebtn{all:unset;cursor:pointer;border-radius:4px}
+.hosts-row h4 .namebtn:hover{text-decoration:underline;text-underline-offset:3px}
+.hosts-row h4 .namebtn:focus-visible{outline:3px solid var(--tt-focus-ring);outline-offset:2px}
+.hd-sec{display:grid;gap:10px;padding-top:14px;border-top:1px solid var(--tt-hairline)}
+.hd-sec h3{margin:0;font-size:14px;font-weight:600}
+.hd-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;margin:0;font-size:13px}
+.hd-facts dt{color:var(--tt-text-muted)}
+.hd-facts dd{margin:0;color:var(--tt-text);overflow-wrap:anywhere}
+.hd-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hosts-settings .hd-line p{margin:0;flex:1;min-width:200px;font-size:13px}
+.not-here{border:1px dashed var(--tt-hairline);border-radius:8px;padding:12px 14px}
+.hosts-settings .not-here p{margin:0;font-size:13px}
+.pick{display:inline-block;margin-left:8px;font:700 12px/1 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#0b0d0c;background:#6ee7d8;border-radius:999px;padding:5px 9px;vertical-align:middle}
+</style>
+</head>
+<body>
+<header class="page-head">
+  <p class="kicker">Prototype · Sotto · hosts over the tailnet</p>
+  <h1>Reach forge over your tailnet, and start it at boot</h1>
+  <p>Today every connection to forge is an SSH sign-in, and with Tailscale SSH in <b>check</b> mode each relaunch of Sotto asks for an approval. After forge restarts, its threads are gone until this computer connects and starts the host again. Here a paired desktop reaches forge <b>over its tailnet first</b>, through the Tailscale Serve setting Sotto already owns there, and uses SSH only when the tailnet does not answer or for a press that needs it. On Linux, forge's host can <b>start at boot</b>.</p>
+  <p>Three layouts. <b>A</b> puts it on the row and its More menu. <b>B</b> gives forge a dialog of its own. <b>C</b> leads with setup: Add host proves the tailnet and offers the boot start, and a host saved before this gets a one-time line. The bar at the bottom switches layout (← →), state (keys 1–9 and 0, or press a state), theme, motion and window size.</p>
+  <p><b>Picked (October 5, 2026, the owner's delegated pick): C with A's controls.</b> Recorded in ADR-0053 and ADR-0054.</p>
+</header>
+<h2 class="band">Desktop — Settings › Hosts</h2>
+<div class="dz" id="dz"><div class="win" id="win"></div></div>
+<p class="cap" id="deskcap" style="max-width:980px"></p>
+
+<nav class="proto-bar" id="protobar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+  <span class="sep"></span>
+  <span class="grp" role="group" aria-label="State" id="states"></span>
+  <span class="sep"></span>
+  <button id="theme"></button>
+  <button id="motion"></button>
+  <button id="size"></button>
+</nav>
+<style>
+/* prototype switcher (not part of the design) */
+.proto-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:#000;color:#fff;border-radius:999px;padding:6px;box-shadow:0 10px 30px #0006;z-index:1000;font:600 12.5px/1 system-ui,sans-serif;outline:2px solid #ffffff2a;white-space:nowrap;max-width:calc(100vw - 24px);overflow-x:auto}
+.proto-bar button{background:none;border:0;color:#fff;min-width:32px;height:34px;border-radius:17px;cursor:pointer;font:inherit;padding:0 9px}
+.proto-bar button:hover{background:#ffffff1a}
+.proto-bar button:focus-visible{outline:2px solid #6ee7d8}
+.proto-bar button[aria-pressed=true]{background:#fff;color:#000}
+.proto-bar .lab{min-width:170px;text-align:center}
+.proto-bar .sep{width:1px;height:22px;background:#ffffff33;margin:0 4px;flex:none}
+.proto-bar .grp{display:flex;gap:2px}
+</style>
+<script>
+/* ---------- icons (lucide shapes) ---------- */
+const P = {
+  back:'<path d="M15 18l-6-6 6-6"/>', chev:'<path d="M9 6l6 6-6 6"/>', down:'<path d="M6 9l6 6 6-6"/>',
+  up:'<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>', plus:'<path d="M12 5v14M5 12h14"/>',
+  more:'<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>',
+  alert:'<path d="M12 3.5l9.5 17h-19z"/><path d="M12 10v4.5M12 17.6v.2"/>', info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.2"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>', check:'<path d="M5 12.5l4.5 4.5L19 7"/>',
+  host:'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  server:'<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  inbox:'<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 3h6l1-3h5"/>', list:'<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
+  refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  laptop:'<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55A1 1 0 0 1 20.28 20H3.72a1 1 0 0 1-.9-1.45L4 16"/>',
+  phone:'<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M12 18h.01"/>',
+  copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>',
+  mic:'<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+  audio:'<path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/>',
+  sparkles:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4M5 17v4M3 19h4"/>',
+  command:'<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
+  workflow:'<rect x="3" y="3" width="8" height="8" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="2"/>',
+  arrowUR:'<path d="M7 7h10v10M7 17 17 7"/>',
+  palette:'<circle cx="13.5" cy="6.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".6" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".6" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".6" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1a1.6 1.6 0 0 1 1.6-1.7h2c3.1 0 5.6-2.5 5.6-5.6C22 6 17.5 2 12 2z"/>',
+  sliders:'<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  branch:'<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  msg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
+  circle:'<circle cx="12" cy="12" r="8.5"/>', okc:'<circle cx="12" cy="12" r="9"/><path d="m8 12.2 2.7 2.7L16 9.5"/>', xc:'<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>',
+  min:'<path d="M5 12h14"/>', max:'<rect x="5" y="5" width="14" height="14" rx="1"/>',
+}
+const ic = (n, s = 20, cls = '', sw = 1.9) => `<svg class="ic ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`
+const di = (n, s = 17) => ic(n, s, '', 1.7)
+P.loader = '<path d="M21 12a9 9 0 1 1-6.2-8.6"/>'
+P.network = '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>'
+
+/* ---------- fixture ---------- */
+const HOST = 'forge', TARGET = 'forge', USER = 'zach', ADDR = 'https://forge.tail5728ca.ts.net:8443'
+const LINGER_CMD = `sudo loginctl enable-linger ${USER}`
+const OPERATOR_CMD = 'sudo tailscale set --operator=$USER'
+const params = new URLSearchParams(location.search)
+const root = document.documentElement
+if (params.get('theme') === 'light') root.dataset.theme = 'light'
+let reduced = params.get('motion') === 'reduced'
+const SIZES = ['default', 'min', 'max']
+let size = SIZES.includes(params.get('size')) ? params.get('size') : 'default'
+const STATES = [
+  ['tailnet', 'Tailnet'], ['fallback', 'Tailnet silent'], ['ssh', 'SSH only'], ['connecting', 'Connecting'],
+  ['edit', 'Edit connection'], ['checklist', 'Add: tailnet step'], ['card', 'Add: connected'], ['line', 'One-time line'],
+  ['boot', 'Start at boot'], ['linger', 'Linger refused'], ['phones', 'Phones approval'], ['unboot', 'Stop at boot'], ['operator', 'Serve operator'],
+]
+const VARIANTS = { A: 'Row and menu', B: 'Host dialog', C: 'Setup-led (picked, with A)' }
+let VAR = VARIANTS[params.get('variant')] ? params.get('variant') : 'C'
+let ST = STATES.some(([s]) => s === params.get('state')) ? params.get('state') : 'tailnet'
+let menuOpen = true, modalOpen = true, prefer = 'tailnet', copied = '', bootPressed = false, connectPhase = 0
+let returnFocus = null
+
+/* ---------- small pieces ---------- */
+const btn = (label, { v = 'secondary', icon = '', act = '', dis = false, aria = '', id = '' } = {}) => `<button type="button" class="tt-button tt-button--${v}${label ? '' : ' tt-button--icon'}"${id ? ` id="${id}"` : ''}${act ? ` data-act="${act}"` : ''}${dis ? ' disabled' : ''}${aria ? ` aria-label="${aria}"` : ''}>${icon ? di(icon, 16) : ''}${label}</button>`
+const toggle = (label, isOn, desc, act, disabled = false) => `<button type="button" role="switch" aria-checked="${isOn}" class="tt-toggle" data-act="${act}"${disabled ? ' disabled' : ''}><span class="tt-toggle__track" aria-hidden="true"><span class="tt-toggle__thumb"></span></span><span class="tt-toggle__copy"><strong>${label}</strong>${desc ? `<span class="tt-field__description">${desc}</span>` : ''}</span></button>`
+const sw = (isOn, aria, word) => `<span class="hosts-switch"><span class="hosts-switch__state" aria-hidden="true">${word}</span><button type="button" role="switch" aria-checked="${isOn}" aria-label="${aria}" class="tt-toggle hosts-switch__control" data-act="noop"><span class="tt-toggle__track" aria-hidden="true"><span class="tt-toggle__thumb"></span></span></button></span>`
+const command = (cmd, key) => `<div class="command"><code>${cmd}</code>${btn(copied === key ? 'Copied' : 'Copy', { icon: copied === key ? 'check' : 'copy', act: `copy:${key}`, aria: 'Copy the command' })}</div>`
+const markOf = s => s === 'ok' ? di('okc', 18) : s === 'fail' ? di('xc', 18) : s === 'act' ? di('info', 18) : di('circle', 18)
+const markLabel = s => s === 'ok' ? 'Done' : s === 'fail' ? 'Needs you' : s === 'act' ? 'Sotto does this' : 'Not yet'
+const checks = (label, items) => `<ul class="checks" aria-label="${label}">${items.map(([s, title, text, extra = '']) => `<li data-s="${s}"><span class="c-mark" role="img" aria-label="${markLabel(s)}">${markOf(s)}</span><p><b>${title}</b> · ${text}</p>${extra}</li>`).join('')}</ul>`
+const modal = (title, body, footer, cls = '') => `<div class="tt-dialog-backdrop" role="presentation"><section class="tt-dialog hosts-dialog ${cls}" role="dialog" aria-modal="true" aria-labelledby="m-t"><h2 id="m-t">${title}</h2><div class="hosts-settings">${body}</div><div class="tt-dialog__actions">${footer}</div></section></div>`
+const approvalCard = what => `<div class="hosts-notice approval" role="status">${di('info', 16)}<div class="grow" style="display:grid;gap:10px"><p><b>Waiting for your approval in Tailscale.</b> ${HOST} uses Tailscale SSH, which asks you to approve this connection in your browser. ${what} Sotto waits up to 5 minutes.</p><div class="card-actions">${btn('Open approval page', { v: 'primary', act: 'noop' })}<button type="button" class="link" data-act="noop">Why Tailscale asks</button></div></div></div>`
+
+/* ---------- what the row says (ADR-0053's table) ---------- */
+const via = () => ST === 'ssh' || ST === 'line' || prefer === 'ssh' ? 'ssh' : ST === 'fallback' || ST === 'operator' ? 'fallback' : 'tailnet'
+function rowMeta() {
+  if (ST === 'connecting') return `<span data-phase="connecting">${connectPhase ? 'Connecting over SSH…' : 'Connecting over your tailnet…'}</span>`
+  const v = via()
+  if (v === 'tailnet') return `<span class="via" data-via="tailnet">Tailnet</span> · <span data-phase="connected">Connected</span> · 2 providers · Phones on`
+  if (v === 'fallback') return `<span class="via" data-via="ssh">SSH ${TARGET}</span> · <span data-phase="connected">Connected</span> · Tailnet did not answer`
+  return `<span class="via" data-via="ssh">SSH ${TARGET}</span> · <span data-phase="connected">Connected</span> · 2 providers · Phones on`
+}
+function rowNote() {
+  if (ST === 'operator') return `Tailnet did not answer: ${HOST}'s Tailscale Serve needs <span class="mono">${OPERATOR_CMD}</span>. Sotto stays on SSH until it can.`
+  if (via() === 'fallback') return 'Sotto tries it again every 5 minutes.'
+  return ''
+}
+const bootInstalled = () => ['linger', 'unboot'].includes(ST) || bootPressed
+const menuItems = () => [
+  [bootInstalled() ? 'unboot' : 'boot', bootInstalled() ? 'Stop starting at boot…' : 'Start at boot…'],
+  ['hr'], ['noop', 'Stop host'], ['noop', 'Rename'], ['edit', 'Edit connection'], ['hr'], ['noop', `Forget ${HOST}…`, true],
+]
+const moreMenu = () => `<span class="hosts-menu">${btn('', { v: 'ghost', icon: 'more', act: 'menu', aria: `More for ${HOST}`, id: 'more' })}${menuOpen ? `<div class="hosts-menu__list" role="menu" aria-label="More for ${HOST}">${menuItems().map(([a, l, d]) => a === 'hr' ? '<hr>' : `<button type="button" role="menuitem" tabindex="-1" data-act="${a}"${d ? ' data-danger' : ''}>${l}</button>`).join('')}</div>` : ''}</span>`
+function hostRow({ nameButton = false } = {}) {
+  const note = rowNote()
+  const name = nameButton ? `<button type="button" class="namebtn" data-act="hostdialog" id="namebtn" aria-label="Open ${HOST}: connection, start at boot and phones">${HOST}</button>` : HOST
+  return `<section class="hosts-row" aria-label="${HOST}"><span class="hosts-row__icon" aria-hidden="true">${di('server', 18)}</span>
+    <div class="hosts-row__info"><h4>${name}</h4><p class="hosts-row__meta">${rowMeta()}</p>${note ? `<p class="hosts-row__note">${note}</p>` : ''}</div>
+    <div class="hosts-row__actions">${ST === 'connecting' ? '' : btn('Phones…', { icon: 'phone', act: 'phones', aria: `Open phone access for ${HOST}` })}${sw(true, `Keep ${HOST} connected, now and when Sotto starts`, 'On')}${nameButton ? btn('', { v: 'ghost', icon: 'more', aria: `More for ${HOST}` }) : moreMenu()}</div></section>`
+}
+const studioRow = `<section class="hosts-row" aria-label="studio"><span class="hosts-row__icon" aria-hidden="true">${di('server', 18)}</span><div class="hosts-row__info"><h4>studio</h4><p class="hosts-row__meta"><span class="via" data-via="ssh">SSH zach@studio</span> · <span>Switched off</span></p></div><div class="hosts-row__actions">${sw(false, 'Keep studio connected, now and when Sotto starts', 'Off')}${btn('', { v: 'ghost', icon: 'more', aria: 'More for studio' })}</div></section>`
+const localBlock = () => `<div class="hosts-local"><span class="hosts-row__icon hosts-row__icon--local" aria-hidden="true">${di('laptop', 18)}</span><div class="hosts-local__copy"><h3>This computer</h3><p>Runs threads on this computer beside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.</p></div>${toggle('Run the local host', true, '', 'noop')}</div>`
+const oneTimeLine = () => `<div class="hosts-setup-line" role="status"><p><b>${HOST}</b> can connect over your tailnet and start at boot.</p>${btn('Set up…', { act: 'setup', aria: `Set up ${HOST}'s tailnet connection and start at boot` })}${btn('Dismiss', { v: 'ghost', act: 'dismiss', aria: `Dismiss the offer for ${HOST}` })}</div>`
+function page(extraTop = '', nameButton = false) {
+  return `<div class="sec-h"><h2>Hosts</h2><p>Local &amp; remote hosts</p></div><div class="hosts-settings">${localBlock()}
+    <p>Dictation and automatic paste always use this computer. They do not paste into a remote host.</p>
+    <div class="hosts-heading"><h3>Remote hosts</h3>${btn('Add host', { icon: 'plus', act: 'noop' })}</div>
+    <p>Connect to machines on your tailnet or over SSH. Sotto signs in with your SSH setup the first time, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, and a host Sotto started keeps running until you stop it.</p>
+    ${extraTop}<div class="hosts-list">${hostRow({ nameButton })}${studioRow}</div></div>`
+}
+
+/* ---------- Edit connection (A and C) ---------- */
+function connectionChoice() {
+  const opt = (value, name, text) => `<label class="choice"${prefer === value ? ' data-checked' : ''}><input type="radio" name="how" value="${value}" data-act="prefer"${prefer === value ? ' checked' : ''}><span class="choice-name">${name}</span><span class="choice-text">${text}</span></label>`
+  return `<fieldset class="hosts-fieldset"><legend>How Sotto connects</legend><div class="choices" role="radiogroup" aria-label="How Sotto connects">
+    ${opt('tailnet', 'Over your tailnet, SSH when it can’t', `At <span class="mono">${ADDR}</span>. Last answered at 9:41. Tailscale asks for approval only for Phones, Stop host, Update and Start at boot.`)}
+    ${opt('ssh', 'SSH only', 'Every connection signs in over SSH, and Tailscale may ask you to approve it each time.')}
+  </div></fieldset>`
+}
+const editDialog = () => modal(`Edit connection to ${HOST}`, `<div class="hosts-dialog__fields">${connectionChoice()}
+    <fieldset class="hosts-fieldset"><legend>SSH (for setup, updates and phones)</legend>
+      <div class="tt-field"><label class="tt-field__label" for="f-host">SSH host</label><input id="f-host" class="tt-input" value="${TARGET}"></div>
+      <div class="hosts-dialog__pair"><div class="tt-field"><label class="tt-field__label" for="f-user">Username <span class="hosts-dialog__optional">(optional)</span></label><input id="f-user" class="tt-input" value="${USER}"></div><div class="tt-field"><label class="tt-field__label" for="f-port">Port <span class="hosts-dialog__optional">(optional)</span></label><input id="f-port" class="tt-input" placeholder="22"></div></div>
+      <div class="tt-field"><label class="tt-field__label" for="f-inst">Host installation folder</label><input id="f-inst" class="tt-input mono" value="~/.local/share/sotto-host"></div>
+    </fieldset>
+    <p class="tt-field__description">Saving connects to ${HOST} over SSH once to check it, so Tailscale may ask you to approve it.</p></div>`,
+  `${btn('Cancel', { act: 'close' })}${btn('Save connection', { v: 'primary', act: 'close' })}`, 'wide')
+
+/* ---------- Add host's checklist ---------- */
+function checklist(withOffer) {
+  const STEPS = [['Reached forge'], ['Signed in'], ['Host installed'], ['Host started'], ['Paired']]
+  const last = ST === 'checklist' ? 'active' : ST === 'operator' ? 'failed' : 'done'
+  const lastTitle = { active: `Reaching ${HOST} over your tailnet…`, failed: `${HOST} did not answer over your tailnet`, done: `Reached ${HOST} over your tailnet` }[last]
+  const mark = s => s === 'done' ? di('check', 16) : s === 'active' ? `<span class="spin" style="display:grid">${di('loader', 16)}</span>` : s === 'failed' ? di('x', 16) : di('circle', 14)
+  const MARK = { done: 'Done', active: 'In progress', failed: 'Failed' }
+  const steps = STEPS.map(([t]) => `<li data-state="done"><span class="host-setup__mark" role="img" aria-label="Done">${mark('done')}</span><span class="host-setup__title">${t}</span></li>`).join('')
+  const detail = last === 'active'
+    ? `<div class="host-setup__detail"><p class="host-setup__note">Sotto turns on Tailscale Serve for this computer on ${HOST}, on your tailnet only, and tries <span class="mono">${ADDR}</span>. If it doesn’t answer, ${HOST} is still added and connects over SSH.</p></div>`
+    : last === 'failed'
+      ? `<div class="host-setup__detail"><div class="hosts-notice hosts-notice--error card" role="alert"><p>${HOST}'s Tailscale Serve needs ${USER} to be its operator. ${HOST} is added and connected over SSH, and nothing was lost. Run this on ${HOST}, then press Try again.</p>${command(OPERATOR_CMD, 'op')}</div></div>`
+      : `<div class="host-setup__detail"><p class="host-setup__note mono">${ADDR}</p></div>`
+  const tail = `<li data-state="${last}" aria-current="${last === 'active' ? 'step' : 'false'}"><span class="host-setup__mark" role="img" aria-label="${MARK[last]}">${mark(last)}</span><span class="host-setup__title">${lastTitle}</span>${detail}</li>`
+  const offer = withOffer && !bootPressed
+    ? `<div class="boot-offer"><p><b>Start ${HOST}’s host at boot</b></p><p class="quiet">Then ${HOST}’s threads come back after ${HOST} restarts, without this computer signing in over SSH. Sotto adds a systemd user unit for ${USER} on ${HOST} and turns on linger for that account; the host restarts once now, which stops turns running there.</p><div class="card-actions">${btn(`Start ${HOST}’s host at boot`, { act: 'cardboot' })}</div></div>`
+    : withOffer ? `<div class="boot-offer"><p>${di('check', 14)} ${HOST}’s host starts at boot. It restarted once and is connected again.</p></div>`
+      : `<p class="host-setup__note" style="margin:0">${VAR === 'A' ? `Start at boot is in ${HOST}’s More menu.` : `Start at boot is in ${HOST}’s dialog: press its name.`}</p>`
+  const done = ST === 'card' ? `<div class="hosts-notice card card--done" role="status"><p>${HOST} is added and connected over your tailnet. Its projects and threads show in the Threads sidebar with a ${HOST} badge.</p>${offer}</div>` : ''
+  const title = ST === 'checklist' ? `Connecting to ${HOST}` : ST === 'operator' ? `${HOST} is connected over SSH` : `${HOST} is connected`
+  const footer = ST === 'checklist' ? btn('Connecting…', { v: 'primary', dis: true }) : ST === 'operator' ? `${btn('Use SSH only', { act: 'close' })}${btn('Try again', { v: 'primary', act: 'noop' })}` : btn('Done', { v: 'primary', act: 'close' })
+  return modal(title, `<div class="host-setup"><div class="host-setup__summary"><p><b>${HOST}</b> <span>· user and port from your SSH configuration</span></p></div>
+    <ol class="host-setup__steps" aria-label="Connection steps">${steps}${tail}</ol>${done}</div>`, footer, 'wide')
+}
+
+/* ---------- Start at boot: the consent modal, the result, and stopping it ---------- */
+const bootBody = () => `<p class="lead">${HOST}’s host then starts when ${HOST} starts, so its threads come back after a restart without this computer signing in over SSH.</p>
+  ${checks(`What Sotto found on ${HOST}`, [
+    ['ok', 'systemd user manager', `Running for ${USER}.`],
+    ['act', 'Linger', `Off. Sotto turns it on for ${USER}, so the host starts before anyone signs in to ${HOST}. If ${HOST} asks for an administrator, run this there; Sotto never runs sudo.`, command(LINGER_CMD, 'linger0')],
+  ])}
+  ${checks(`What changes on ${HOST}`, [
+    ['act', 'A unit', `<span class="mono">sotto-host.service</span> in ${USER}’s systemd folder, and a small script beside the host.`],
+    ['act', 'One restart, now', 'The host Sotto started restarts under the unit. Turns running there stop; drafts and history stay.'],
+  ])}`
+const bootModal = () => modal(`Start ${HOST}’s host at boot?`, bootBody(), `${btn('Cancel', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}`)
+const lingerBody = () => checks(`Start at boot on ${HOST}`, [
+  ['ok', 'Unit installed', `<span class="mono">sotto-host.service</span> is on for ${USER}.`],
+  ['ok', 'Host restarted', `Running Sotto 0.1.31, started at boot. This computer is connected again.`],
+  ['fail', 'Linger', `${HOST} would not turn it on without an administrator. Until it is on, the host starts when ${USER} first signs in to ${HOST}, not when ${HOST} starts. Run this on ${HOST}; Sotto never runs sudo.`, command(LINGER_CMD, 'linger')],
+])
+const lingerModal = () => modal(`${HOST}’s host starts at boot`, lingerBody(), btn('Done', { v: 'primary', act: 'close' }))
+const unbootModal = () => modal(`Stop starting ${HOST}’s host at boot?`, `<p class="lead">Sotto removes <span class="mono">sotto-host.service</span> and its script from ${HOST}. The host keeps running now. After ${HOST} restarts, it starts again only when this computer connects over SSH.</p>`,
+  `${btn('Keep starting at boot', { act: 'close' })}${btn('Stop starting at boot', { v: 'primary', act: 'close' })}`)
+
+/* ---------- Phones, while its admin session waits for Tailscale ---------- */
+const phonesModal = () => modal(`Phones on ${HOST}`, `${approvalCard('The dialog fills in once you approve.')}
+  <div class="pa-switchrow" style="padding:12px 0">${toggle(`Let phones reach ${HOST}`, true, `Sotto runs Tailscale Serve on ${HOST}, so Sotto on your iPhone can reach ${HOST}’s threads over your tailnet. Only phones you pair can connect.`, 'noop', true)}</div>
+  ${checks(`Phone access on ${HOST}`, [['wait', `Tailscale on ${HOST}`, `Read once Sotto reaches ${HOST} over SSH.`], ['wait', 'Tailscale Serve on port 8443', 'Waits for the step above.'], ['wait', 'Paired phones', 'Waits for the step above.']])}`,
+  btn('Done', { v: 'primary', act: 'close' }), 'wide')
+
+/* ---------- B: forge's own dialog ---------- */
+function hostDialog() {
+  const v = via()
+  const approval = ST === 'boot' ? approvalCard('Start at boot carries on once you approve.') : ''
+  const connected = v === 'tailnet' ? 'Your tailnet' : v === 'fallback' ? `SSH ${TARGET}. The tailnet did not answer at 9:41; Sotto tries it again every 5 minutes.` : `SSH ${TARGET}, as you chose`
+  const bootOn = ['linger', 'unboot'].includes(ST) || bootPressed
+  const bootSec = ST === 'boot'
+    ? `${toggle(`Start ${HOST}’s host at boot`, false, 'Turning this on restarts the host once.', 'noop')}${bootBody()}<div class="card-actions" style="justify-content:flex-end">${btn('Cancel', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}</div>`
+    : ST === 'linger' ? `${toggle(`Start ${HOST}’s host at boot`, true, '', 'noop')}${lingerBody()}`
+      : ST === 'unboot' ? `${toggle(`Start ${HOST}’s host at boot`, true, `Turning this off removes the unit. The host keeps running now; after ${HOST} restarts it starts again only when this computer connects over SSH.`, 'noop')}`
+        : `${toggle(`Start ${HOST}’s host at boot`, bootOn, `So ${HOST}’s threads come back after it restarts, without SSH.`, 'boot')}${checks(`Start at boot on ${HOST}`, [['ok', 'systemd user manager', `Running for ${USER}.`], ['wait', 'Linger', `Off. Sotto turns it on for ${USER} when you turn this on.`]])}`
+  return modal(HOST, `${approval}
+    <section class="hd-sec" aria-labelledby="hd-c" style="border-top:0;padding-top:4px"><h3 id="hd-c">Connection</h3>
+      <dl class="hd-facts"><dt>Connected over</dt><dd>${connected}</dd><dt>Tailnet address</dt><dd class="mono" style="font-size:12.5px">${ADDR}</dd><dt>SSH</dt><dd>${USER}@${TARGET}, port 22</dd></dl>
+      ${connectionChoice()}<div>${btn('Edit SSH connection…', { act: 'noop' })}</div></section>
+    <section class="hd-sec" aria-labelledby="hd-b"><h3 id="hd-b">Start at boot</h3>${bootSec}</section>
+    <section class="hd-sec" aria-labelledby="hd-p"><h3 id="hd-p">Phones</h3><div class="hd-line"><p>Phones on · 1 phone paired.</p>${btn('Phones…', { icon: 'phone', act: 'phones' })}</div></section>`,
+  btn('Done', { v: 'primary', act: 'close' }), 'wide')
+}
+
+/* ---------- the variants ---------- */
+const notHere = text => `<div class="not-here"><p>${text}</p></div>`
+function deskA() {
+  const m = !modalOpen ? '' : ST === 'edit' ? editDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(false) : ST === 'boot' ? bootModal() : ST === 'linger' ? lingerModal() : ST === 'unboot' ? unbootModal() : ST === 'phones' ? phonesModal() : ''
+  const top = ST === 'line' ? notHere(`A has no one-time line. A host saved before this stays on SSH until you choose “Over your tailnet” in its Edit connection, and Start at boot is in its More menu.`) : ''
+  return { html: page(top), modal: m, cap: '<b>A — Row and menu.</b><span>The row’s meta line begins with how the host is connected: Tailnet, or SSH forge with the reason. Edit connection gains “How Sotto connects” above the SSH fields, and the More menu gains Start at boot…, which opens a consent modal. Nothing new to find, but an existing host has to be pointed at the tailnet by hand.</span>' }
+}
+function deskB() {
+  const opensDialog = ['tailnet', 'fallback', 'ssh', 'edit', 'boot', 'linger', 'unboot'].includes(ST)
+  const m = !modalOpen ? '' : opensDialog ? hostDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(false) : ST === 'phones' ? phonesModal() : ''
+  const top = ST === 'line' ? notHere(`B has no one-time line. Press a host’s name to open its dialog, where the connection, Start at boot and Phones live.`) : ''
+  return { html: page(top, true), modal: m, cap: '<b>B — Host dialog.</b><span>The host’s name opens a dialog named for it, with three sections: Connection (where it is connected, its tailnet address, the choice), Start at boot (a switch with its checks and consent) and Phones (opens the existing dialog). Any approval Tailscale asks for shows at its top. Tidy, but one more step, and the row’s name becomes a control nobody expects.</span>' }
+}
+function deskC() {
+  const m = !modalOpen ? '' : ST === 'edit' ? editDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(true) : ST === 'boot' ? bootModal() : ST === 'linger' ? lingerModal() : ST === 'unboot' ? unbootModal() : ST === 'phones' ? phonesModal() : ''
+  const top = ST === 'line' ? oneTimeLine() : ''
+  return { html: page(top), modal: m, cap: '<b>C — Setup-led, with A’s controls. Picked.</b><span>Add host’s checklist gains “Reach forge over your tailnet” after Paired, and its connected card offers Start forge’s host at boot, one consented press. A host saved before this gets a one-time line, “forge can connect over your tailnet and start at boot.”, whose Set up… reopens the same checklist. The row, Edit connection and the More menu are A’s.</span>' }
+}
+
+const NAV = [['mic', 'Dictation'], ['audio', 'Transcription'], ['sparkles', 'Cleanup'], ['command', 'Providers', 'gap'], ['server', 'Hosts'], ['phone', 'Phones'], ['workflow', 'Agents'], ['arrowUR', 'Output'], ['palette', 'Appearance', 'gap'], ['sliders', 'Application'], ['branch', 'Git']]
+function renderDesktop() {
+  const d = { A: deskA, B: deskB, C: deskC }[VAR]()
+  const nav = NAV.map(([i, label, cls]) => `<button type="button" role="tab" class="${cls || ''}" aria-selected="${label === 'Hosts'}" tabindex="${label === 'Hosts' ? 0 : -1}">${di(i)}<span>${label}</span>${label === 'Hosts' ? di('chev', 15) : ''}</button>`).join('')
+  const win = document.getElementById('win')
+  win.className = 'win' + (size === 'min' ? ' min' : size === 'max' ? ' max' : '')
+  win.innerHTML = `<div class="layout">
+    <aside class="side"><div class="side-top"><span class="brand" aria-label="Sotto application"><span class="mark">${ic('audio', 12, '', 2.6)}</span>Sotto</span></div>
+      <div class="side-body"><h1>Settings</h1><nav class="subnav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">${nav}</nav></div></aside>
+    <div class="detail"><div class="scroll" id="scroll"><div class="form" role="tabpanel">${d.html}</div></div></div></div>
+    <div class="winctl" aria-hidden="true"><span>${di('min', 15)}</span><span>${di('max', 13)}</span><span>${di('x', 15)}</span></div>${d.modal}`
+  document.getElementById('deskcap').innerHTML = d.cap
+  document.getElementById('dz').style.setProperty('--dz', size === 'min' ? '1' : size === 'max' ? '.7' : '.86')
+}
+
+/* ---------- render, switcher, actions ---------- */
+function render() {
+  renderDesktop()
+  document.getElementById('lab').textContent = `${VAR} — ${VARIANTS[VAR]}`
+  document.getElementById('states').innerHTML = STATES.map(([id, label], i) => `<button type="button" data-state="${id}" aria-pressed="${id === ST}"${i < 10 ? ` title="Key ${(i + 1) % 10}"` : ''}>${label}</button>`).join('')
+  document.getElementById('theme').textContent = root.dataset.theme === 'dark' ? 'Light' : 'Dark'
+  document.getElementById('motion').textContent = reduced ? 'Motion on' : 'Reduce motion'
+  document.getElementById('size').textContent = { default: '1280×800', min: '820×560', max: '1600×1000' }[size]
+  root.classList.toggle('rm', reduced)
+  const q = new URLSearchParams({ variant: VAR, state: ST })
+  if (root.dataset.theme === 'light') q.set('theme', 'light')
+  if (reduced) q.set('motion', 'reduced')
+  if (size !== 'default') q.set('size', size)
+  history.replaceState(null, '', '?' + q)
+  const dlg = document.querySelector('#win [role=dialog]')
+  const first = dlg && (dlg.querySelector('input:checked') || dlg.querySelector('.tt-button--primary:not(:disabled)') || dlg.querySelector('button'))
+  if (first && document.activeElement?.closest?.('#protobar') == null) first.focus({ preventScroll: true })
+}
+let connectTimer = null
+function setState(s) {
+  ST = s; copied = ''; bootPressed = false; modalOpen = true; connectPhase = 0
+  prefer = s === 'ssh' ? 'ssh' : 'tailnet'
+  menuOpen = s === 'tailnet' && VAR !== 'B'
+  clearInterval(connectTimer)
+  if (s === 'connecting') connectTimer = setInterval(() => { connectPhase = 1 - connectPhase; renderDesktop() }, 2500)
+  render()
+}
+function closeModal() {
+  modalOpen = false; menuOpen = false; render()
+  document.querySelector(VAR === 'B' ? '#namebtn' : '#more')?.focus()
+}
+document.getElementById('win').addEventListener('click', e => {
+  const el = e.target.closest('[data-act]')
+  if (!el || el.disabled) return
+  const a = el.dataset.act
+  if (a === 'noop') return
+  if (a === 'prefer') { prefer = el.value; render(); document.querySelector(`#win input[value="${prefer}"]`)?.focus(); return }
+  if (a === 'close') return closeModal()
+  if (a.startsWith('copy:')) { copied = a.slice(5); render(); setTimeout(() => { copied = ''; renderDesktop() }, 1500); return }
+  if (a === 'menu') { menuOpen = !menuOpen; render(); if (menuOpen) document.querySelector('#win [role=menuitem]')?.focus(); return }
+  if (a === 'boot' || a === 'unboot' || a === 'edit' || a === 'phones' || a === 'hostdialog') {
+    ST = a === 'hostdialog' ? (['tailnet', 'fallback', 'ssh'].includes(ST) ? ST : 'tailnet') : a
+    modalOpen = true; menuOpen = false; render(); return
+  }
+  if (a === 'bootyes') { ST = 'linger'; render(); return }
+  if (a === 'cardboot') { bootPressed = true; render(); return }
+  if (a === 'setup') { ST = 'checklist'; modalOpen = true; render(); return }
+  if (a === 'dismiss') { ST = 'tailnet'; prefer = 'ssh'; menuOpen = false; render(); return }
+})
+const keys = Object.keys(VARIANTS)
+const step = d => { VAR = keys[(keys.indexOf(VAR) + d + keys.length) % keys.length]; setState(ST) }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('states').addEventListener('click', e => { const s = e.target.closest('[data-state]'); if (s) setState(s.dataset.state) })
+document.getElementById('theme').onclick = () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; render() }
+document.getElementById('motion').onclick = () => { reduced = !reduced; render() }
+document.getElementById('size').onclick = () => { size = SIZES[(SIZES.indexOf(size) + 1) % SIZES.length]; render() }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.querySelector('#win [role=dialog]')) { e.preventDefault(); closeModal() }
+    else if (menuOpen) { menuOpen = false; render(); document.querySelector('#more')?.focus() }
+    return
+  }
+  const item = e.target.closest?.('[role=menuitem]')
+  if (item && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault()
+    const all = [...document.querySelectorAll('#win [role=menuitem]')]
+    all[(all.indexOf(item) + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length].focus()
+    return
+  }
+  if (e.target.closest('input,textarea,select,[contenteditable],[role=dialog]')) return
+  if (e.key === 'ArrowLeft' && !e.target.closest('[role=tablist]')) step(-1)
+  if (e.key === 'ArrowRight' && !e.target.closest('[role=tablist]')) step(1)
+  if (/^[0-9]$/.test(e.key)) setState(STATES[(Number(e.key) + 9) % 10][0])
+})
+setState(ST)
+</script>
+</body>
+</html>
