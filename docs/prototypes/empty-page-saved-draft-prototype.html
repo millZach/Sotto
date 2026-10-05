@@ -1,0 +1,207 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: what the empty Threads page says about a saved draft while every provider is connected.
+
+  Today, whenever no pane is open and the coordinator still holds a draft, the page says "Your draft is saved.
+  Reconnect to continue your saved draft." with the draft read-only and a New thread button, even when everything is
+  connected. On the owner's machine the draft is a 565-character prompt whose thread is gone, so the page asks them
+  to reconnect forever and nothing on it moves the draft anywhere.
+
+  Every variant keeps the reconnect wording when Sotto really is disconnected (the Disconnected state in the bar),
+  and every variant offers the same two actions when connected: start a new thread with the draft in its composer,
+  or discard it after a confirmation. When the draft's thread still exists, the page offers to open that thread.
+
+    A  In the page.   The empty page is about the draft: heading, one sentence, the draft read-only, the actions.
+    B  Notice above.  The page says "Choose a thread." as usual; a band at the top of the workspace holds the
+                      draft, folded, with the actions.
+    C  Card.          The page says "Choose a thread." as usual, with the New thread button; a bordered card under
+                      it shows the draft's first lines and the actions.
+
+  Picked: A (In the page), on October 5, 2026, under the owner's delegation. It shipped in #740.
+
+  Bar: variant, Dark / Light, window size, Connected / Disconnected, thread gone / thread still there.
+  Open the file in a browser; nothing to run.
+-->
+<html lang="en" data-theme="dark" data-variant="a" data-connection="connected" data-thread="gone">
+<head>
+<meta charset="utf-8">
+<title>Sotto — saved draft on the empty Threads page</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.235 0.018 280); --tt-surface: oklch(0.26 0.019 280); --tt-surface-elevated: oklch(0.305 0.021 280);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: oklch(0.86 0.01 272); --tt-text-muted: oklch(0.72 0.014 265); --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: color-mix(in srgb, oklch(0.42 0.03 270) 60%, transparent); --tt-field: oklch(0.21 0.016 280); --tt-field-border: oklch(0.40 0.03 272);
+  --tt-pill: oklch(0.92 0.01 280); --tt-pill-ink: oklch(0.22 0.02 280); --tt-error: oklch(0.72 0.16 25); --tt-focus-ring: oklch(0.79 0.13 220);
+  --tt-sidebar: oklch(0.205 0.016 280); --tt-shadow: 0 16px 48px rgb(0 0 0 / 60%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.975 0.005 85);
+  --tt-text: oklch(0.235 0.014 75); --tt-text-2: oklch(0.36 0.014 75); --tt-text-muted: oklch(0.5 0.014 75); --tt-text-faint: oklch(0.535 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field: oklch(0.995 0.002 85); --tt-field-border: oklch(0.82 0.016 80);
+  --tt-pill: oklch(0.26 0.014 75); --tt-pill-ink: oklch(0.98 0.004 85); --tt-error: oklch(0.52 0.18 25); --tt-focus-ring: oklch(0.52 0.13 235);
+  --tt-sidebar: oklch(0.955 0.006 85); --tt-shadow: 0 16px 48px rgb(20 24 22 / 18%);
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: color-mix(in srgb, var(--tt-canvas) 80%, black); color: var(--tt-text); font-family: var(--font-ui); }
+.bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 10px 16px; background: var(--tt-surface); border-bottom: 1px solid var(--tt-hairline); font-size: 13px; color: var(--tt-text-muted); }
+.bar fieldset { display: flex; gap: 4px; align-items: center; margin: 0; padding: 0; border: 0; }
+.bar legend { float: left; margin-right: 6px; }
+.bar button { padding: 4px 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: var(--tt-pill); color: var(--tt-pill-ink); border-color: var(--tt-pill); }
+.stage { display: grid; place-items: center; padding: 24px; }
+.window { width: var(--w, 1280px); height: var(--h, 800px); display: grid; grid-template-columns: 236px 1fr; overflow: hidden; border-radius: 10px; background: var(--tt-canvas); box-shadow: var(--tt-shadow); }
+.sidebar { background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); padding: 40px 14px; font-size: 13px; color: var(--tt-text-muted); display: grid; align-content: start; gap: 6px; }
+.sidebar strong { color: var(--tt-text); font-weight: 600; margin: 10px 0 2px; }
+.sidebar .row { padding: 6px 8px; border-radius: 8px; }
+.workspace { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.strip { height: 34px; flex: none; }
+.empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; padding: 30px; text-align: center; color: var(--tt-text-muted); overflow: auto; }
+.empty h2 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
+.empty p { margin: 0; font-size: 13px; max-width: 460px; }
+.glyph { width: 30px; height: 30px; border: 1.3px solid currentColor; border-radius: 8px 8px 8px 2px; opacity: .8; }
+.draft { width: min(520px, 100%); margin: 4px 0; padding: 12px 16px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); text-align: left; }
+.draft textarea { display: block; width: 100%; min-height: 74px; max-height: 160px; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.draft small { display: block; margin-top: 6px; color: var(--tt-text-muted); font-size: 12px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.btn { display: inline-flex; min-height: 34px; align-items: center; padding: 0 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.btn:focus-visible, .bar button:focus-visible, summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.btn--primary { background: var(--tt-pill); border-color: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.btn--ghost { border-color: transparent; color: var(--tt-text-faint); }
+.btn--danger { border-color: transparent; color: var(--tt-error); }
+.band { display: grid; gap: 10px; padding: 14px 24px; border-bottom: 1px solid var(--tt-hairline); font-size: 14px; color: var(--tt-text-muted); }
+.band p { margin: 0; }
+.band summary { cursor: pointer; color: var(--tt-text); }
+.band .draft { width: 100%; margin-top: 8px; }
+.band .actions { justify-content: flex-start; }
+.card { width: min(480px, 100%); margin-top: 14px; display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; text-align: left; font-size: 13px; }
+.card blockquote { margin: 0; color: var(--tt-text); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
+.card .actions { justify-content: flex-start; }
+.backdrop { position: absolute; inset: 0; display: none; place-items: center; background: color-mix(in srgb, var(--tt-canvas) 55%, transparent); }
+.backdrop[data-open] { display: grid; }
+.dialog { width: min(400px, 90%); padding: 20px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow); }
+.dialog h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.dialog p { margin: 0 0 16px; color: var(--tt-text-muted); font-size: 13.5px; }
+.dialog .actions { justify-content: flex-end; }
+.dialog .btn--danger { background: var(--tt-error); border-color: var(--tt-error); color: var(--tt-canvas); }
+.variant { display: none; flex: 1; min-height: 0; flex-direction: column; }
+:root[data-variant='a'] .variant--a, :root[data-variant='b'] .variant--b, :root[data-variant='c'] .variant--c { display: flex; }
+[data-when] { display: none !important; }
+:root[data-connection='connected'][data-thread='gone'] [data-when~='gone'],
+:root[data-connection='connected'][data-thread='there'] [data-when~='there'],
+:root[data-connection='disconnected'] [data-when~='off'] { display: revert !important; }
+:root[data-connection='connected'] [data-when~='on'] { display: revert !important; }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <fieldset><legend>Variant</legend><button data-set="variant=a" aria-pressed="true">A In the page (recommended)</button><button data-set="variant=b">B Notice above</button><button data-set="variant=c">C Card</button></fieldset>
+  <fieldset><legend>Theme</legend><button data-set="theme=dark" aria-pressed="true">Dark</button><button data-set="theme=light">Light</button></fieldset>
+  <fieldset><legend>Window</legend><button data-size="1600x1000">1600x1000</button><button data-size="1280x800" aria-pressed="true">1280x800</button><button data-size="820x560">820x560</button></fieldset>
+  <fieldset><legend>Providers</legend><button data-set="connection=connected" aria-pressed="true">Connected</button><button data-set="connection=disconnected">Disconnected</button></fieldset>
+  <fieldset><legend>Draft's thread</legend><button data-set="thread=gone" aria-pressed="true">Gone</button><button data-set="thread=there">Still there</button></fieldset>
+</div>
+<div class="stage">
+  <div class="window">
+    <nav class="sidebar" aria-label="Projects"><strong>workshop</strong><div class="row">Footer links</div><div class="row">Weekly note</div><strong>Settled</strong><div class="row">Release notes 1.4</div></nav>
+    <section class="workspace" aria-label="Thread workspace">
+      <div class="strip"></div>
+
+      <!-- A: the page is about the draft. -->
+      <div class="variant variant--a">
+        <div class="empty">
+          <div class="glyph" aria-hidden="true"></div>
+          <h2 data-when="off">Your draft is saved.</h2><p data-when="off">Reconnect to continue your saved draft.</p>
+          <h2 data-when="gone">A draft from an earlier thread is saved.</h2><p data-when="gone">Its thread is no longer here. Start a new thread with it, or discard it.</p>
+          <h2 data-when="there">Your draft for Footer links is saved.</h2><p data-when="there">Open the thread to finish it, or discard it.</p>
+          <div class="draft"><textarea aria-label="Saved draft" readonly rows="4" class="text"></textarea></div>
+          <div class="actions">
+            <button class="btn btn--primary" data-when="off">Connect providers</button>
+            <button class="btn btn--primary" data-when="gone">New thread with this draft</button>
+            <button class="btn btn--primary" data-when="there">Open thread</button>
+            <button class="btn btn--danger" data-when="on" data-discard>Discard draft</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- B: the usual page, the draft in a band above it. -->
+      <div class="variant variant--b">
+        <section class="band" aria-label="Saved draft">
+          <p data-when="off">Your draft is saved. Reconnect to continue it.</p>
+          <p data-when="gone">A draft from an earlier thread is saved. Its thread is no longer here.</p>
+          <p data-when="there">Your draft for Footer links is saved.</p>
+          <details><summary>Show draft</summary><div class="draft"><textarea aria-label="Saved draft" readonly rows="4" class="text"></textarea></div></details>
+          <div class="actions" data-when="on">
+            <button class="btn" data-when="gone">New thread with this draft</button>
+            <button class="btn" data-when="there">Open thread</button>
+            <button class="btn btn--danger" data-discard>Discard draft</button>
+          </div>
+        </section>
+        <div class="empty">
+          <div class="glyph" aria-hidden="true"></div>
+          <h2>Choose a thread.</h2><p>Select a thread to read its messages and continue working.</p>
+          <div class="actions"><button class="btn btn--primary" data-when="on">New thread</button><button class="btn btn--primary" data-when="off">Connect providers</button></div>
+        </div>
+      </div>
+
+      <!-- C: the usual page, the draft in a card under it. -->
+      <div class="variant variant--c">
+        <div class="empty">
+          <div class="glyph" aria-hidden="true"></div>
+          <h2>Choose a thread.</h2><p>Select a thread to read its messages and continue working.</p>
+          <div class="actions"><button class="btn btn--primary" data-when="on">New thread</button><button class="btn btn--primary" data-when="off">Connect providers</button></div>
+          <section class="card" aria-label="Saved draft">
+            <p data-when="off">Your draft is saved. Reconnect to continue it.</p>
+            <p data-when="gone">A draft from an earlier thread is saved.</p>
+            <p data-when="there">Your draft for Footer links is saved.</p>
+            <blockquote class="quote"></blockquote>
+            <div class="actions" data-when="on">
+              <button class="btn" data-when="gone">New thread with this draft</button>
+              <button class="btn" data-when="there">Open thread</button>
+              <button class="btn btn--danger" data-discard>Discard draft</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="backdrop" role="presentation">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title">
+          <h2 id="discard-title">Discard this draft?</h2>
+          <p>The draft is deleted and cannot be brought back.</p>
+          <div class="actions"><button class="btn" data-keep>Keep draft</button><button class="btn btn--danger" data-keep>Discard draft</button></div>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+const text = 'The release notes page still links the old download host. Change every link in docs/release and the README to the new releases repository, keep the anchors as they are, and check that the macOS and Windows sections still name the same file names. When that is done, run the docs link check and tell me which links it could not reach, without fixing those yet. Then draft a short note for the changelog in the same plain style as the last three entries, and stop before committing anything so I can read it first.'
+for (const area of document.querySelectorAll('.text')) area.value = text
+for (const quote of document.querySelectorAll('.quote')) quote.textContent = text
+const root = document.documentElement
+for (const button of document.querySelectorAll('[data-set]')) button.addEventListener('click', () => {
+  const [key, value] = button.dataset.set.split('=')
+  root.dataset[key] = value
+  for (const peer of button.parentElement.querySelectorAll('button')) peer.setAttribute('aria-pressed', String(peer === button))
+})
+const win = document.querySelector('.window')
+for (const button of document.querySelectorAll('[data-size]')) button.addEventListener('click', () => {
+  const [w, h] = button.dataset.size.split('x')
+  win.style.setProperty('--w', `${w}px`); win.style.setProperty('--h', `${h}px`)
+  for (const peer of button.parentElement.querySelectorAll('button')) peer.setAttribute('aria-pressed', String(peer === button))
+})
+const backdrop = document.querySelector('.backdrop')
+let opener = null
+for (const button of document.querySelectorAll('[data-discard]')) button.addEventListener('click', () => { opener = button; backdrop.setAttribute('data-open', ''); backdrop.querySelector('[data-keep]').focus() })
+const close = () => { backdrop.removeAttribute('data-open'); opener?.focus() }
+for (const button of backdrop.querySelectorAll('[data-keep]')) button.addEventListener('click', close)
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && backdrop.hasAttribute('data-open')) close() })
+</script>
+</body>
+</html>

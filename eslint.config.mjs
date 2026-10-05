@@ -27,6 +27,7 @@ export default tseslint.config(
       'artifacts/test-iphone/**',
       'artifacts/cloud-iphone/**',
       'artifacts/new-thread-setup/**',
+      'artifacts/empty-page-saved-draft/**',
       'artifacts/host-folder-browser-run/**',
       'artifacts/command-receipt/**',
       '.cache/**',
