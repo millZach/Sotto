@@ -18,6 +18,7 @@ import {
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
 import { platformProfile } from '../../src/main/platformProfile'
+import { createSystemSettingsOpener } from '../../src/main/app/systemSettings'
 import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import { OutputService } from '../../src/main/output/outputService'
 import { StartupService } from '../../src/main/startup/startupService'
@@ -35,6 +36,7 @@ import {
 } from '../../src/main/tray/trayController'
 import {
   APP_HIDE,
+  SYSTEM_SETTINGS_OPEN,
   APP_MINIMIZE,
   APP_RELOAD,
   APP_QUIT,
@@ -56,6 +58,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -238,7 +241,7 @@ class IpcLifecycleWindow implements BrowserWindowLike {
   }
 }
 
-function createIpcHarness() {
+function createIpcHarness(extra: Partial<Parameters<typeof registerIpc>[1]> = {}) {
   const trustedUrl = 'file:///C:/Sotto/out/renderer/index.html'
   const trustedFrame = { parent: null, url: trustedUrl }
   const trustedContents = {
@@ -292,6 +295,7 @@ function createIpcHarness() {
     trustedSenders: () => [
       { role: 'main', webContents: trustedContents, url: trustedUrl },
     ],
+    ...extra,
   })
   return {
     app,
@@ -346,6 +350,43 @@ describe('typed preload bridge', () => {
     } finally { harness.cleanup() }
   })
 
+  it('opens only the three macOS privacy panes, and nothing on Windows', async () => {
+    const opened: string[] = []
+    const darwinOpener = createSystemSettingsOpener('darwin', async url => { opened.push(url) })
+    expect(createSystemSettingsOpener('win32', async () => undefined)).toBeNull()
+    const harness = createIpcHarness({ openSystemSettings: darwinOpener! })
+    const bridge = createSottoBridge({
+      invoke: (channel, ...args) => harness.ipc.invokeArgs(channel, args),
+      on: () => undefined, removeListener: () => undefined,
+    }, 'darwin')
+    try {
+      for (const pane of ['microphone', 'accessibility', 'automation'] as const) {
+        await expect(bridge.openSystemSettings!(pane)).resolves.toEqual({ ok: true })
+      }
+      expect(opened).toEqual([
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
+      ])
+      for (const pane of ['camera', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera', '', 'Microphone']) {
+        expect(() => bridge.openSystemSettings!(pane as never)).toThrow()
+        await expect(harness.ipc.invoke(SYSTEM_SETTINGS_OPEN, pane)).rejects.toThrow('Invalid IPC payload')
+      }
+      await expect(darwinOpener!('camera' as never)).rejects.toThrow()
+      expect(opened).toHaveLength(3)
+      const frame = { parent: null, url: 'file:///C:/Sotto/out/renderer/widget.html' }
+      await expect(harness.ipc.invoke(SYSTEM_SETTINGS_OPEN, 'microphone', {
+        sender: { mainFrame: frame, getURL: () => frame.url, isDestroyed: () => false }, senderFrame: frame,
+      })).rejects.toThrow('Unauthorized IPC sender')
+      expect(opened).toHaveLength(3)
+    } finally { harness.cleanup() }
+
+    const windows = createIpcHarness()
+    try {
+      await expect(windows.ipc.invoke(SYSTEM_SETTINGS_OPEN, 'microphone')).resolves.toEqual({ ok: false, reason: 'unavailable' })
+    } finally { windows.cleanup() }
+  })
+
   beforeEach(() => {
     electronMock.ipcRenderer.invoke.mockClear()
     electronMock.ipcRenderer.on.mockClear()
@@ -364,6 +405,7 @@ describe('typed preload bridge', () => {
           'chatPrompts',
         'checkForUpdates',
         'checkTranscriptionKey',
+        'ensureMicrophoneAccess',
         'clearHistory',
         'cloudIphone',
         'downloadUpdate',
@@ -393,6 +435,7 @@ describe('typed preload bridge', () => {
         'onWindowMaximized',
         'onWindowHidden',
         'openExternalLink',
+        'openSystemSettings',
         'personalChats',
         'phones',
         'platform',
@@ -867,6 +910,29 @@ describe('IPC validation and lifecycle', () => {
     expect(app.reload).toHaveBeenCalledOnce()
   })
 
+  it('asks the operating system for microphone access when a gate is installed', async () => {
+    const harness = createIpcHarness()
+    await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
+    harness.cleanup()
+    const ensure = vi.fn(async () => false)
+    const ipc = new FakeIpcMain(harness.trustedEvent)
+    const cleanup = registerIpc(ipc, {
+      settings: harness.settings,
+      history: harness.history,
+      startup: harness.startup,
+      hotkeys: harness.hotkeys,
+      app: harness.app,
+      trustedSenders: () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }],
+      microphoneAccess: { ensure },
+    })
+    try {
+      await expect(ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(false)
+      expect(ensure).toHaveBeenCalledOnce()
+    } finally {
+      cleanup()
+    }
+  })
+
   it.each([
     SETTINGS_GET,
     SETTINGS_UPDATE,
@@ -878,6 +944,7 @@ describe('IPC validation and lifecycle', () => {
     TRANSCRIPTION_TRANSCRIBE,
     TRANSCRIPTION_CANCEL,
     TRANSCRIPTION_CHECK_KEY,
+    MICROPHONE_ENSURE_ACCESS,
   ])(
     'denies widget renderer invocation of main-only channel %s',
     async (channel) => {
@@ -943,6 +1010,7 @@ describe('IPC validation and lifecycle', () => {
     await expect(harness.ipc.invoke(TRANSCRIPTION_CANCEL, 'r1')).resolves.toEqual({ ok: true })
     expect(transcription.cancel).toHaveBeenCalledWith('r1')
     await expect(harness.ipc.invokeArgs(TRANSCRIPTION_CHECK_KEY, [])).resolves.toEqual({ ok: true })
+    await expect(harness.ipc.invokeArgs(MICROPHONE_ENSURE_ACCESS, [])).resolves.toBe(true)
 
     // A header-only buffer, an unbounded one, and a non-buffer payload are all
     // rejected before the service ever sees them.
@@ -2144,6 +2212,44 @@ describe('permission policy', () => {
     mediaTypes: ['audio'],
   }
 
+  it('does not pre-grant microphone checks until the operating system has granted them', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => false,
+    )
+
+    expect(
+      harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: gatedUrl,
+      }),
+    ).toBe(false)
+  })
+
+  it('pre-grants microphone checks only after the operating system has granted them', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => true,
+    )
+
+    expect(
+      harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+        isMainFrame: true,
+        mediaType: 'audio',
+        requestingUrl: gatedUrl,
+      }),
+    ).toBe(true)
+  })
+
   it('grants synchronously when no media gate is configured', () => {
     const harness = createSession()
     const trustedContents = { getURL: () => gatedUrl }
@@ -2277,6 +2383,46 @@ describe('permission policy', () => {
 
     await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(false))
   })
+
+  it('checks a trusted microphone request against the OS grant', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    let granted = false
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => granted,
+    )
+    const check = (): boolean => harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+      isMainFrame: true,
+      mediaType: 'audio',
+      requestingUrl: gatedUrl,
+    })
+
+    expect(check()).toBe(false)
+    granted = true
+    expect(check()).toBe(true)
+  })
+
+  it('fails closed when the OS grant cannot be read, so the check never pre-grants', () => {
+    const harness = createSession()
+    const trustedContents = { getURL: () => gatedUrl }
+    installSessionPermissionPolicy(
+      harness.session,
+      () => [{ role: 'main', webContents: trustedContents, url: gatedUrl }],
+      async () => true,
+      () => {
+        throw new Error('secret TCC failure C:/Users/private')
+      },
+    )
+
+    expect(harness.permissionCheck(trustedContents, 'media', gatedUrl, {
+      isMainFrame: true,
+      mediaType: 'audio',
+      requestingUrl: gatedUrl,
+    })).toBe(false)
+  })
 })
 
 describe('StartupService', () => {
@@ -2396,6 +2542,7 @@ function createRuntime(start: () => Promise<void> = async () => undefined) {
   return {
     start: vi.fn<() => Promise<void>>(start),
     showMain: vi.fn<() => void>(),
+    showFromActivation: vi.fn<() => void>(),
     beginQuit: vi.fn<() => void>(),
     dispose: vi.fn<() => void>(),
   } satisfies RuntimeController
@@ -2662,9 +2809,10 @@ describe('bootstrap failure containment', () => {
 
     expect(result.started).toBe(true)
     app.emit('activate')
-    expect(runtime.showMain).toHaveBeenCalledOnce()
+    expect(runtime.showFromActivation).toHaveBeenCalledOnce()
+    expect(runtime.showMain).not.toHaveBeenCalled()
     app.emit('activate')
-    expect(runtime.showMain).toHaveBeenCalledTimes(2)
+    expect(runtime.showFromActivation).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces activation intent raised before startup completes into one show', async () => {
@@ -2705,6 +2853,7 @@ describe('bootstrap failure containment', () => {
     app.emit('activate')
 
     expect(runtime.showMain).not.toHaveBeenCalled()
+    expect(runtime.showFromActivation).not.toHaveBeenCalled()
   })
 
   it('drops pending activation intent when startup fails', async () => {
@@ -3485,7 +3634,6 @@ describe('widget presentation and drag channels', () => {
       },
       platform: 'win32',
       chrome: platformProfile('win32'),
-      dock: null,
       preloadPath: 'C:/Sotto/out/preload/index.js',
       mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
       widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',

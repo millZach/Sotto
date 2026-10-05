@@ -12,12 +12,16 @@ const roots: string[] = []
 class FixtureEncryption implements CredentialEncryption {
   unlocked = true
   failWrites = false
+  failReads = false
   isEncryptionAvailable(): boolean { return this.unlocked }
   encryptString(value: string): Buffer {
     if (this.failWrites) throw new Error('Fixture OS encryption is unavailable')
     return Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5))
   }
-  decryptString(value: Buffer): string { return Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8') }
+  decryptString(value: Buffer): string {
+    if (this.failReads) throw new Error('Fixture Keychain access was denied')
+    return Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8')
+  }
 }
 
 async function directory(): Promise<string> {
@@ -190,5 +194,32 @@ describe('credential storage and formatting migration', () => {
     expect((await settings.forFormatting()).llmApiKey).toBe('')
     await settings.update({ llmApiKey: 'fixture-reentered-key' })
     expect((await settings.forFormatting()).llmApiKey).toBe('fixture-reentered-key')
+  })
+
+  it('keeps a saved key it cannot decrypt, says so, and still accepts a replacement', async () => {
+    const f = await fixture()
+    const credentialsPath = join(f.root, 'credentials.json')
+    const onKeyUnreadable = vi.fn()
+    const settings = new SecureSettings(new SettingsRepository(join(f.root, 'settings.json')), f.credentials, onKeyUnreadable)
+    await settings.update({ llmApiKey: 'fixture-keychain-key' })
+    const sealed = await readFile(credentialsPath, 'utf8')
+
+    // A denied Keychain prompt on macOS: storage still reports available, decryption fails.
+    f.encryption.failReads = true
+    await expect(settings.forFormatting()).rejects.toThrow('denied')
+    expect(onKeyUnreadable).toHaveBeenCalledOnce()
+    expect(await readFile(credentialsPath, 'utf8')).toBe(sealed)
+    expect(f.credentials.has('formatting')).toBe(true)
+    expect((await settings.get()).llmApiKey).toContain('operating system credential store')
+
+    // Allowing access later reads the same key back.
+    f.encryption.failReads = false
+    expect((await settings.forFormatting()).llmApiKey).toBe('fixture-keychain-key')
+
+    // Entering the key again works even while the old one stays unreadable.
+    f.encryption.failReads = true
+    await settings.update({ llmApiKey: 'fixture-reentered-keychain-key' })
+    f.encryption.failReads = false
+    expect((await settings.forFormatting()).llmApiKey).toBe('fixture-reentered-keychain-key')
   })
 })

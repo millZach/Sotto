@@ -68,7 +68,7 @@ You need Windows 10 or 11 (x64), or an Apple silicon Mac with macOS 12 or newer.
 xattr -dr com.apple.quarantine /Applications/Sotto.app
 ```
 
-First-run setup asks you to test your microphone or choose **Skip for now** before continuing. Then install and sign in to at least one agent client, and connect it in **Settings → Providers**. For dictation, add an [OpenRouter API key](https://openrouter.ai/keys) in Settings.
+First-run setup asks you to choose a microphone from the inputs the computer can see, test it, or choose **Skip for now** before continuing. Then install and sign in to at least one agent client, and connect it in **Settings → Providers**. **Connect providers** uses the clients installed on this computer, leaves one you turned off as it is, and chooses Claude Code when Codex is not. For dictation, add an [OpenRouter API key](https://openrouter.ai/keys) in Settings.
 
 ## Privacy and cost
 

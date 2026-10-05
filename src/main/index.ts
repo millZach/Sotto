@@ -23,6 +23,7 @@ import { SshHostLauncher } from './hosts/sshLauncher'
 import { HostPhones } from './hosts/hostPhones'
 import { PHONES_CHANGED } from '../shared/phones'
 import { discoverSshHosts } from './hosts/sshSuggestions'
+import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { PersonalChatService } from './agents/personalChats'
 import { ChatPromptService } from './agents/chatPrompts'
@@ -45,6 +46,7 @@ import {
   Menu,
   nativeImage,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -74,6 +76,7 @@ import {
   type SessionPermissionAdapter,
 } from './app/bootstrap'
 import { buildApplicationMenuTemplate } from './app/applicationMenu'
+import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
@@ -92,6 +95,8 @@ import {
 } from './output/pasteAccessibility'
 import { createPasteCommands } from './output/pasteCommand'
 import { createWarmPasteAdapter } from './output/pasteHelper'
+import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
+import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { OpenRouterTranscriptionService } from './asr/openRouterTranscriptionService'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
@@ -120,7 +125,6 @@ import {
   parseDevelopmentRendererSources,
   WindowManager,
   type BrowserWindowLike,
-  type DockAdapter,
   type NavigationEventName,
   type Rectangle,
   type RendererDiagnostic,
@@ -248,6 +252,7 @@ type NativeDiagnostic =
   | PhoneAccessEvent
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
+  | OsascriptPasteEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -457,6 +462,14 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     return this.window.isMinimized()
   }
 
+  isFullScreen(): boolean {
+    return this.window.isFullScreen()
+  }
+
+  isVisible(): boolean {
+    return this.window.isVisible()
+  }
+
   restore(): void {
     this.window.restore()
   }
@@ -471,7 +484,10 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
 
   setVisibleOnAllWorkspaces(
     visible: boolean,
-    options?: { readonly visibleOnFullScreen: boolean },
+    options?: {
+      readonly visibleOnFullScreen?: boolean
+      readonly skipTransformProcessType?: boolean
+    },
   ): void {
     this.window.setVisibleOnAllWorkspaces(visible, options)
   }
@@ -516,18 +532,20 @@ function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLi
 
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
+  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
+  // The runtime's hash starts first so it overlaps PATH repair and the stores below.
+  // It is still waited on where it always was, before any window, and a tampered runtime still fails startup.
+  const runtimeVerification = e2eConfiguration === null
+    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
+    : null
+  // Dock and Finder launch with the system PATH. Provider CLIs live in the user's login PATH.
+  await installGuiPath()
   const userDataPath = app.getPath('userData')
   const memoryStore = openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)
   const memoryProfile = memoryStore === undefined ? undefined : new MemoryProfile(memoryStore)
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
-  const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
-  // The runtime's hash starts here so it overlaps the stores loading below rather than following them.
-  // It is awaited where it always was, before any window, and a tampered runtime still fails startup.
-  const runtimeVerification = e2eConfiguration === null
-    ? beginRuntimeVerification(join(resourceRoot, 'runtime'))
-    : null
   await naturalSpeechModels.initialize()
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
@@ -549,7 +567,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await cloudIphoneLedger.load()
   const grokSpeech = new GrokSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eGrokSpeechFetch }) })
   const kokoroSpeech = new KokoroSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eKokoroSpeechFetch }) })
-  const settings = new SecureSettings(plainSettings, credentials)
+  const settings = new SecureSettings(plainSettings, credentials, () => recoveryNotices.publish({ code: 'OPENROUTER_KEY_UNREADABLE' }))
   await migrateDesktopKey(settings, recoveryNotices, logOperational)
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
@@ -573,33 +591,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
-  const nativeDock = app.dock
-  const dock: DockAdapter | null =
-    e2eConfiguration === null && profile.dockPresence === 'dynamic' && nativeDock !== undefined
-      ? {
-          show: () => {
-            void nativeDock.show()
-          },
-          hide: () => {
-            nativeDock.hide()
-          },
-        }
-      : null
-  if (dock !== null) {
-    // The Dock icon is owned by main-window visibility, so it starts hidden and
-    // WindowManager reveals it with the first window.
-    try {
-      dock.hide()
-    } catch {
-      // A Dock that refuses to hide is cosmetic and must not fail startup.
-    }
-  }
   const windows = new WindowManager({
     createWindow: createBrowserWindow,
     display: screen,
     platform: profile.platform,
     chrome: profile,
-    dock,
     preloadPath: join(__dirname, '../preload/index.js'),
     mainHtmlPath: join(__dirname, '../renderer/index.html'),
     widgetHtmlPath: join(__dirname, '../renderer/widget.html'),
@@ -666,6 +662,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(memoryProfile === undefined || !agentMemoryEnabled ? {} : { preferences: memoryProfile }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+    ...(e2eConfiguration === null ? { installedProviders: detectInstalledProviders } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(),
@@ -696,7 +693,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'))
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' ? powerMonitor : undefined)
   let browserService: BrowserService | undefined
   let cloudIphoneService: CloudIphoneService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
@@ -873,7 +870,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onShowSettings: () => {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
-    onCheckForUpdates: requestUpdateCheck,
+    // Updates install only on Windows today, so the macOS app menu leaves the command out.
+    ...(platform === 'win32' ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -903,7 +901,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('will-quit', () => warmPaste?.dispose())
   const basePaste: PasteProcessAdapter = e2eConfiguration === null
     ? warmPaste
-      ?? createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options))
+      ?? (platform === 'darwin'
+        // osascript's stderr says which permission refused the paste; it is read, never logged.
+        ? createOsascriptPasteAdapter({
+            spawn: (executable, args, options) => spawn(executable, [...args], { ...options, stdio: [...options.stdio] }),
+            onDenied: denial => recoveryNotices.publish({
+              code: denial === 'automation' ? 'AUTOMATION_PERMISSION_REQUIRED' : 'ACCESSIBILITY_PERMISSION_REQUIRED',
+            }),
+            log: logOperational,
+          })
+        : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === APP_NAME,
@@ -1147,6 +1154,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         // Omitted where no OS microphone gate exists, which keeps the grant
         // synchronous exactly as it is today.
         microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
+        microphoneAccess === null ? undefined : () => microphoneAccess.isGranted(),
       ),
     installProtocols: runtimeSource === null
       ? () => () => undefined
@@ -1235,6 +1243,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
       }, grokSpeech, kokoroSpeech, { voiceCoordinatorEnabled: startupSettings.voiceCoordinatorEnabled, wakeControl: agentControl, encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      // An E2E run never leaves the app for System Settings.
+      const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {
         settings: {
           get: () => settingsCoordinator.getSettings(),
@@ -1261,6 +1271,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         trustedSenders: () => windows.getTrustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
+        ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {
           request(command): void {
             dispatchDictation(command)
@@ -1292,6 +1303,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         recoveryNotices: {
           list: () => recoveryNotices.list(),
         },
+        ...(microphoneAccess === null ? {} : { microphoneAccess }),
       })
       const unsubscribeRecoveryNotices = recoveryNotices.subscribe((notice) => {
         void messageDelivery.sendToMain(RECOVERY_NOTICE, notice).then((delivered) => {

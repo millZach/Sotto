@@ -11,7 +11,7 @@ const HOST_ID = '44444444-4444-4444-8444-444444444444'
 const SETUP_ID = '55555555-5555-4555-8555-555555555555'
 const AFTER_ID = '66666666-6666-4666-8666-666666666666'
 const CHOICE: HostSetupChoice = { models: [{ id: 'claude:opus', name: 'Claude Opus 5.5', provider: 'Claude Code' }], modelId: 'claude:opus' }
-const host: Omit<RemoteHost, 'enabled'> = { id: HOST_ID, name: 'forge', target: 'zach@forge', identityFile: 'C:/Users/zache/.ssh/id_forge', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto' }
+const host: Omit<RemoteHost, 'enabled'> = { id: HOST_ID, name: 'forge', target: 'zach@forge', identityFile: process.platform === 'win32' ? 'C:/Users/zache/.ssh/id_forge' : '/Users/zache/.ssh/id_forge', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto' }
 const start = (patch: Partial<Extract<HostsCommand, { type: 'start-setup' }>> = {}): Extract<HostsCommand, { type: 'start-setup' }> => ({ type: 'start-setup', id: SETUP_ID, host, modelId: 'claude:opus', ...patch })
 
 function fixture(busy?: () => string | undefined) {

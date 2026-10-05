@@ -59,6 +59,7 @@ export interface AgentRuntimeOptions {
   /** A journey's stand-ins for the client update check and installer, and for where each client is (#480). */
   clients?: ControlDependencies['clients']
   locateClient?: ControlDependencies['locateClient']
+  installedProviders?: ControlDependencies['installedProviders']
   /**
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
@@ -140,6 +141,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
+    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     reasoner,

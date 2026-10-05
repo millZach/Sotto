@@ -292,6 +292,8 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
+  /** macOS only: the login item is on but waits for the user to allow it in System Settings > General > Login Items. */
+  readonly approvalRequired?: boolean | undefined
 }
 
 export type OutputOutcome = 'pasted' | 'copied' | 'empty'
@@ -347,6 +349,8 @@ export interface SottoBridge {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
   checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
+  /** Asks the operating system for the microphone before Chromium captures. */
+  ensureMicrophoneAccess(): Promise<boolean>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>
@@ -362,6 +366,8 @@ export interface SottoBridge {
   showApp(): Promise<void>
   /** Opens a validated web/mail link after explicit activation in the main renderer. */
   openExternalLink?(url: string): Promise<CommandResult>
+  /** Opens a macOS Privacy & Security pane after explicit activation; refused as unavailable elsewhere. */
+  openSystemSettings?(pane: import('./systemSettings').SystemSettingsPane): Promise<CommandResult>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
   reloadApp(): Promise<void>
