@@ -264,20 +264,40 @@ export class DesktopHostRouter {
     // Read as values: a host's shell can be its live state, which the command is about to change.
     const { activeThreadId, activeProjectId } = connection.service.shell()
     const selections = this.selections
+    const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
+    let refused = false
     try {
       const result = await connection.service.command(command as AgentCommand, client)
-      if (result.error) this.notice = this.refusal(connection, result.error)
+      if (result.error) { refused = true; this.notice = this.refusal(connection, result.error) }
     } catch (error) {
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.
       if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
-      this.notice = this.refusal(connection, error.message)
+      refused = true; this.notice = this.refusal(connection, error.message)
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
+    // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
+    const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
+    if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
+      await this.openCreated(connection, command.threadId, client)
+    }
     this.emit()
     return agentShell(this.shell())
+  }
+  /**
+   * A remote host keeps a selection for each client and leaves it where it was when that client creates a thread, so
+   * the window opens the thread it just created itself and tells the host, which then composes and sends there.
+   */
+  private async openCreated(connection: DesktopHostConnection, threadId: string, client: ClientIdentity): Promise<void> {
+    if (this.hosts.get(connection.hostId)?.connection !== connection) return
+    const created = connection.service.shell().host.threads.find(thread => thread.id === threadId)
+    if (!created) return
+    this.moveTo(connection.hostId, threadId, created.projectId)
+    // The creation is confirmed either way, and its answer must not read as a refusal: a forward the host refuses or
+    // loses leaves it composing for its earlier selection until the window selects again.
+    await connection.service.command({ type: 'select-thread', threadId }, client).catch(() => undefined)
   }
   /**
    * The window goes where one of its selecting commands took the host, so the thread it shows is the one the host
@@ -288,9 +308,13 @@ export class DesktopHostRouter {
   private follow(connection: DesktopHostConnection, before: Pick<AgentState, 'activeThreadId' | 'activeProjectId'>): void {
     const after = connection.service.shell()
     if (after.activeThreadId === before.activeThreadId && after.activeProjectId === before.activeProjectId) return
-    this.selectedHostId = connection.hostId
-    this.selectedThreadId = after.activeThreadId === null ? null : hostEntityKey(connection.hostId, after.activeThreadId)
-    this.selectedProjectId = after.activeProjectId === null ? null : hostEntityKey(connection.hostId, after.activeProjectId)
+    this.moveTo(connection.hostId, after.activeThreadId, after.activeProjectId)
+  }
+  /** Shows a host's thread and project, given by that host's own IDs. */
+  private moveTo(hostId: string, threadId: string | null, projectId: string | null): void {
+    this.selectedHostId = hostId
+    this.selectedThreadId = threadId === null ? null : hostEntityKey(hostId, threadId)
+    this.selectedProjectId = projectId === null ? null : hostEntityKey(hostId, projectId)
   }
   /** A remote host cannot know the name this computer saved it under, so its refusals are given it here (#459). */
   private refusal(connection: DesktopHostConnection, message: string): string {

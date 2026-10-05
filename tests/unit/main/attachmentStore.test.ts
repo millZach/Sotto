@@ -174,7 +174,10 @@ describe('the attachment store (ADR-0031)', () => {
     const dimensions = { original: { width: 3840, height: 2160 }, sent: { width: 2576, height: 1449 } }
     const handle = await store.stage({ ...png, dimensions })
     expect(handle.dimensions).toEqual(dimensions)
-    expect(JSON.stringify(await index(root))).not.toContain('2576')
+    // Compared as fields and values, not as text: a staging time can contain the same digits as a size.
+    const kept = (await index(root)).entries.map(entry => entry as Record<string, unknown>)
+    expect(kept.flatMap(entry => Object.keys(entry))).not.toContain('dimensions')
+    expect(kept.flatMap(entry => Object.values(entry)).filter(value => [3840, 2160, 2576, 1449].includes(value as number))).toEqual([])
     await expect(store.stage({ ...png, dimensions: { original: { width: 0, height: 1 }, sent: { width: 1, height: 1 } } })).rejects.toThrow()
   })
   it('asks what is owned when a sweep runs, not when it was asked for', async () => {

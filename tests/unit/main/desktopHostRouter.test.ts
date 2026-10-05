@@ -161,6 +161,94 @@ describe('desktop host routing', () => {
       moveLocalTo('thread'); moveLocalTo('other')
       expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'thread'))
     })
+    describe('a thread this window creates on a remote host', () => {
+      // A remote host keeps a selection for each client and leaves it alone on create-thread, as forge did.
+      const NEW_THREAD = '33333333-3333-4333-8333-333333333334'
+      const newThread = hostEntityKey(REMOTE, NEW_THREAD)
+      const addNewThread = (host: ReturnType<typeof fixture>) =>
+        host.state.host.threads.push({ id: NEW_THREAD, projectId: 'project', title: 'New thread', modelId: '', status: 'idle', messages: [], requests: [] })
+      /** The host's answer to create-thread: the thread added and its own selection unmoved, or a refusal. */
+      function hostAnswersCreation(host: ReturnType<typeof fixture>, refusal: string | null = null) {
+        host.command.mockImplementationOnce(async () => {
+          if (refusal === null) addNewThread(host)
+          return { ...host.state, error: refusal }
+        })
+      }
+      const createFromWindow = (router: DesktopHostRouter, hostId = REMOTE, threadId: string | null = hostEntityKey(hostId, NEW_THREAD)) =>
+        router.command({ type: 'create-thread', ...(threadId ? { threadId } : {}), projectId: hostEntityKey(hostId, 'project'), title: 'New thread', modelId: 'model' }, desktopWindowClient())
+      const sentTypes = (host: ReturnType<typeof fixture>) => host.command.mock.calls.map(([request]) => request.type)
+
+      it('opens it and tells the host, so the host composes and sends there', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        hostAnswersCreation(remote)
+        await createFromWindow(router)
+        expect(router.shell()).toMatchObject({ hostId: REMOTE, activeThreadId: newThread, activeProjectId: hostEntityKey(REMOTE, 'project') })
+        expect(remote.command).toHaveBeenLastCalledWith({ type: 'select-thread', threadId: NEW_THREAD }, desktopWindowClient())
+      })
+      it('stays put when the host refuses it', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        hostAnswersCreation(remote, 'Choose an available project.')
+        await createFromWindow(router)
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'thread'))
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+      })
+      it('keeps a selection the user made while the host created it', async () => {
+        const { router, remote } = setup()
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'other') }, desktopWindowClient())
+        finish(); await creating
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
+      })
+      it('keeps where Next took the window while the host created it', async () => {
+        const { router, local, remote, moveLocalTo } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        local.command.mockImplementationOnce(async () => { moveLocalTo('other'); return local.state })
+        await router.command({ type: 'next' }, desktopWindowClient())
+        finish(); await creating
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
+      })
+      it('reports the creation, not a refusal, when the host loses or refuses the selection that follows', async () => {
+        const { router, remote } = setup()
+        hostAnswersCreation(remote)
+        remote.command.mockRejectedValueOnce(new HostConnectionError('The host did not confirm the command.', 'disconnected'))
+        await expect(createFromWindow(router)).resolves.toMatchObject({ error: null })
+        expect(router.shell().activeThreadId).toBe(newThread)
+      })
+      it('reports the creation when the host refuses the selection that follows', async () => {
+        const { router, remote } = setup()
+        hostAnswersCreation(remote)
+        remote.command.mockImplementationOnce(async () => ({ ...remote.state, error: 'That thread is unavailable.' }))
+        await expect(createFromWindow(router)).resolves.toMatchObject({ error: null })
+        expect(router.shell().activeThreadId).toBe(newThread)
+      })
+      it('leaves a host removed while it created the thread', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        router.remove(REMOTE)
+        finish(); await creating
+        expect(router.shell().hostId).toBe(LOCAL)
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+      })
+      it('asks nothing more of a creation that names no thread, or of this computer, which selects what it creates', async () => {
+        const { router, local, remote } = setup()
+        hostAnswersCreation(remote)
+        await createFromWindow(router, REMOTE, null)
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+        hostAnswersCreation(local)
+        await createFromWindow(router, LOCAL)
+        expect(sentTypes(local)).toEqual(['create-thread'])
+      })
+    })
     it('keeps a selection the user made while the command ran', async () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
