@@ -4,14 +4,19 @@ import SwiftUI
     @StateObject private var model = AppModel()
     @StateObject private var previews = PhotoPreviews()
     @Environment(\.scenePhase) private var phase
+    init() {
+        // The earlier Larger text switch becomes the Larger step of the five text sizes (ADR-0050).
+        PhonePreferences().migrate()
+    }
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(previews)
-                .font(.custom("Figtree-Regular", size: 17, relativeTo: .body))
-                .foregroundStyle(Color("Ink")).tint(Color("Accent"))
+                .font(.sotto(.body))
+                .foregroundStyle(Palette.ink)
                 .overlay {
                     if phase != .active {
-                        Color("Canvas").ignoresSafeArea().overlay(Text("Sotto").font(.title2).foregroundStyle(Color("Ink")))
+                        Rectangle().fill(Palette.canvas).ignoresSafeArea()
+                            .overlay(Text("Sotto").font(.sotto(.title, .bold)).foregroundStyle(Palette.ink))
                     }
                 }
                 .task {

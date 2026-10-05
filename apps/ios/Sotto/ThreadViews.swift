@@ -276,7 +276,7 @@ private struct ActivityRow: View {
         default: return "info.circle"
         }
     }
-    private var tint: Color { record.status == "running" ? Palette.accent : record.status == "failed" ? Palette.danger : Palette.muted }
+    private var tint: ThemeRole { record.status == "running" ? Palette.accent : record.status == "failed" ? Palette.danger : Palette.muted }
     private var meta: String? {
         if record.status == "failed" { return record.exitCode.map { "Failed (\($0))" } ?? "Failed" }
         if record.status == "interrupted" { return "Stopped" }
