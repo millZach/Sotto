@@ -74,7 +74,7 @@ Codex can see and operate the apps on your computer with its Computer Use, as it
 - The thread's permissions are **Full access**. Codex's sandbox stops Computer Use in every other mode. Full access means exactly that: Codex can then run anything and change anything, on the whole computer.
 - The Codex desktop app is open. Computer Use talks to a helper the Codex app runs.
 
-Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its calls show in the thread's activity as **Computer Use**. When one fails because either condition is missing, the activity says which, and nothing was changed.
+Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its calls show in the thread's activity as **Computer Use**. A recognised sandbox failure explains how to use Full access. If the connection to the app helper is unavailable, open Codex if it is closed. Keep it open and try again. The app can be open while an older connection no longer works, such as after Codex restarts. If this continues, restart Sotto when your other threads are idle. A connection failure does not tell Sotto whether an earlier action in the same call changed anything.
 
 When the Codex app changes its connection, Sotto refreshes the thread's tools before the next prompt; a refresh failure leaves that prompt unsent so you can try again.
 

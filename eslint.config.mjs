@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/computer-use-guidance/**',
       'artifacts/pkg-17-hostconnection/**',
       'artifacts/pkg-34-workspace-git/**',
       'artifacts/main-infra-bundle/**',
