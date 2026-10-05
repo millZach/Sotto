@@ -23,3 +23,5 @@ Cited captures:
 - [820x560 light](../../artifacts/computer-use-guidance/820-560-light.png)
 
 The retained activity fixture is deliberately disconnected; it proves presentation, not live Computer Use recovery. No live typing, clicking or permission answers were performed by this verification. No design baselines were changed. Historical verification notes remain unchanged.
+
+Before merging, the branch incorporated the separately reviewed connection-refresh fix from PR #737. Only their shared README paragraph conflicted; it now preserves both behaviors. Typecheck and the combined refresh, Computer Use and activity regression suites passed (29 tests across three files). CI checks this combined revision; the guidance PR merges after #737 so its final diff contains only the guidance change.

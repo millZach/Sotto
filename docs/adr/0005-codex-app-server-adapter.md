@@ -115,3 +115,13 @@ The evidence is the installed Codex CLI 0.157.1. Its generated schema has `threa
 ## Amendment: completed user receipts (September 29, 2026)
 
 Codex 0.159 stores the client identity on `item.client_id` for completed user items. The watcher checks it as well as the envelope identity, suppressing an own receipt only when its digest agrees and the two identity fields do not conflict. Complete native identity reconciliation handles receipts without client IDs. Older duplicates already saved in the event store are repaired conservatively as described in ADR-0016. Distinct native IDs, ambiguous IDs and different content remain separate messages.
+
+## Amendment: refresh changed MCP configuration before a turn (October 5, 2026)
+
+Codex desktop can change its native computer-use pipe when it restarts, writing the new path in the global `config.toml`. An already loaded thread's app-server retains the earlier MCP configuration. Starting another turn on that process can then fail to reach the running desktop.
+
+Before a new prompt is recorded or sent, Sotto compares the global config file's metadata with the metadata captured before that thread's app-server started. A change sends `config/mcpServer/reload` to that app-server and waits for its acknowledgement. This API has no params and returns an empty object in Codex 0.160.0's generated protocol. Sotto records the new metadata only after success. It reads no config body, logs no path or value, starts no watcher and changes no permission mode.
+
+Each thread's app-server owns its comparison and any pending refresh. Other threads keep their turns and request channels. A failed refresh leaves the prompt unsent and retryable, including a lost acknowledgement: uncertainty about a tool refresh is not uncertainty about prompt delivery. Sotto neither repeats a prompt nor retries a computer-use action. JSON-RPC method-not-found, or an invalid request naming this method as an unknown variant, disables automatic refresh for that process; older clients can still send ordinary prompts. A fresh app-server checks support again.
+
+File metadata is a change signal, not a parser or a promise that every config edit changed MCP settings. An unrelated global config edit may cause one reload. Project config files are outside this check. See [the verification note](../verification/codex-computer-use-refresh.md) for the regression and live evidence.

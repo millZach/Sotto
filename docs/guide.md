@@ -76,6 +76,8 @@ Codex can see and operate the apps on your computer with its Computer Use, as it
 
 Ask for it by name ("use Computer Use to…") or with Codex's `$computer-use` skill. Its calls show in the thread's activity as **Computer Use**. A recognised sandbox failure explains how to use Full access. If the connection to the app helper is unavailable, keep Codex open and try again. The app can be open while an older connection no longer works, such as after Codex restarts. If this continues, restart Sotto when your other threads are idle. A connection failure does not tell Sotto whether an earlier action in the same call changed anything.
 
+When the Codex app changes its connection, Sotto refreshes the thread's tools before the next prompt; a refresh failure leaves that prompt unsent so you can try again.
+
 ### Terminal mode
 
 In Terminal mode, **Close** releases the terminal's output and keeps its row on **Closed** until Sotto quits. **Reopen** starts the same command with fresh output. **Stop**, a command finishing, or hiding its pane keeps the output readable. Up to 64 terminals can be open at once; Closed rows do not count toward that limit.
