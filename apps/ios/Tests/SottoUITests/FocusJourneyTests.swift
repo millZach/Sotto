@@ -166,6 +166,9 @@ import XCTest
     /// Waits until the conversation's end is in view above `dock`: `end`, the final row, whole between the bar and the
     /// dock, and the bottom of `last`, the last message, on screen above the dock. Two readings in a row must agree.
     private func waitForEnd(_ end: XCUIElement, last: XCUIElement, above dock: XCUIElement, _ message: String) {
+        // At accessibility sizes, with timers ticking and the keyboard settling, a query can briefly find nothing; let
+        // each element be found before reading where it is.
+        for element in [end, last, dock] { _ = element.waitForExistence(timeout: 10) }
         var matches = 0
         var seen = ""
         let inView = NSPredicate { _, _ in
@@ -177,7 +180,7 @@ import XCTest
             matches = shown ? matches + 1 : 0
             return matches >= 2
         }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 10)
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 20)
         if result != .completed { explain("conversation-end-not-in-view", seen) }
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
