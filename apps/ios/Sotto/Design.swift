@@ -316,9 +316,14 @@ struct Light: View {
             if tone == .off {
                 Circle().strokeBorder(theme.color(.muted), lineWidth: 1.5)
             } else {
+                // A gradient halo rather than a shadow: it costs nothing to move or fade.
                 Circle().fill(color)
-                    .background(Circle().fill(color.opacity(0.18)).padding(-3))
-                    .shadow(color: color.opacity(0.7), radius: 6)
+                    .background(
+                        Circle()
+                            .fill(RadialGradient(colors: [color.opacity(0.55), color.opacity(0)], center: .center,
+                                                 startRadius: size * 0.3, endRadius: size * 1.4))
+                            .frame(width: size * 2.8, height: size * 2.8)
+                    )
             }
         }
         .frame(width: size, height: size)
@@ -420,6 +425,8 @@ struct Wash: View {
                     .animation(.easeInOut(duration: 1.6), value: warm)
             }
             .frame(width: width, height: tall, alignment: .topLeading)
+            // Flattened into one image so the drift moves a picture instead of redrawing three gradients every frame.
+            .drawingGroup()
             .scaleEffect(drifting ? 1.07 : 1, anchor: .top)
             .offset(x: drifting ? -width * 0.03 : 0, y: drifting ? tall * 0.02 : 0)
             .animation(drifting ? .easeInOut(duration: 26).repeatForever(autoreverses: true) : .default, value: drifting)
@@ -656,6 +663,36 @@ struct CardSurface: ViewModifier {
     }
 }
 
+/// A soft shadow drawn once: a blurred copy of the shape, flattened into an image and laid behind the view. SwiftUI's
+/// `.shadow` redraws its blur whenever the view moves or anything in it changes, which in a scrolling page is every
+/// frame, and it does so even for a clear colour; this costs a composite instead, and nothing at all when not showing.
+struct SoftShadow<S: Shape>: View {
+    let shape: S
+    let color: Color
+    let radius: CGFloat
+    var y: CGFloat = 0
+    var body: some View {
+        let room = radius * 2 + abs(y)
+        shape.fill(color)
+            .padding(room)
+            .blur(radius: radius)
+            .offset(y: y)
+            .drawingGroup()
+            .padding(-room)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// `.shadow` without its per-frame cost; see `SoftShadow`. `showing` false draws nothing.
+    func softShadow<S: Shape>(_ shape: S, color: Color, radius: CGFloat, y: CGFloat = 0, showing: Bool = true) -> some View {
+        background {
+            if showing { SoftShadow(shape: shape, color: color, radius: radius, y: y) }
+        }
+    }
+}
+
 /// The light behind a card, breathing slowly when it has a period. Still under Reduce Motion.
 private struct GlowLayer: View {
     let shape: RoundedRectangle
@@ -666,7 +703,7 @@ private struct GlowLayer: View {
     @State private var bright = false
     var body: some View {
         shape.fill(base)
-            .shadow(color: color, radius: 18, x: 0, y: 10)
+            .softShadow(shape, color: color, radius: 18, y: 10)
             .opacity(level)
             .animation(breathing ? .easeInOut(duration: (period ?? 4) / 2).repeatForever(autoreverses: true) : nil, value: bright)
             .onAppear { bright = breathing }
@@ -701,7 +738,7 @@ struct FailedEdge: ViewModifier {
                         .fill(theme.color(.danger))
                         .frame(width: 3)
                         .padding(.vertical, 10)
-                        .shadow(color: theme.color(.danger), radius: 7)
+                        .softShadow(Rectangle(), color: theme.color(.danger), radius: 7)
                         .opacity(0.8)
                         .accessibilityHidden(true)
                 }
@@ -827,7 +864,7 @@ private struct PillBody: View {
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
             .foregroundStyle(foreground)
             .background(fill, in: Capsule())
-            .shadow(color: kind == .primary && enabled ? theme.color(.accent).opacity(0.4) : Color.clear, radius: 10, x: 0, y: 6)
+            .softShadow(Capsule(), color: theme.color(.accent).opacity(0.4), radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
@@ -891,7 +928,7 @@ private struct ChoiceBody: View {
             .foregroundStyle(Palette.ink)
             .background(shape.fill(chosen ? theme.color(.accent).opacity(0.12) : theme.color(.fillSofter)))
             .overlay(shape.strokeBorder(chosen ? theme.color(.accent).opacity(0.8) : theme.color(.hairline), lineWidth: chosen ? 1.5 : 1))
-            .shadow(color: chosen ? theme.color(.accent).opacity(0.35) : Color.clear, radius: 10)
+            .softShadow(shape, color: theme.color(.accent).opacity(0.35), radius: 10, showing: chosen)
             .contentShape(shape)
             .opacity(!enabled ? 0.5 : 1)
             .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
@@ -925,7 +962,7 @@ private struct ChipBody: View {
             .foregroundStyle(Palette.ink)
             .background(Capsule().fill(selected ? theme.tinted(.surface, with: .accent, Tint.chosen) : theme.color(.fillSoft)))
             .overlay(Capsule().strokeBorder(selected ? theme.color(.accent) : theme.color(.hairline), lineWidth: selected ? 1.5 : 1))
-            .shadow(color: selected ? theme.color(.accent).opacity(0.45) : Color.clear, radius: 9)
+            .softShadow(Capsule(), color: theme.color(.accent).opacity(0.45), radius: 9, showing: selected)
             .contentShape(Capsule())
             .opacity(enabled ? 1 : 0.5)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
@@ -955,7 +992,7 @@ private struct GlassCircleBody: View {
             .frame(width: 44, height: 44)
             .glass(in: Circle())
             .overlay(Circle().strokeBorder(theme.color(.accent).opacity(0.28), lineWidth: 1))
-            .shadow(color: theme.color(.accent).opacity(0.45), radius: 12, x: 0, y: 6)
+            .softShadow(Circle(), color: theme.color(.accent).opacity(0.45), radius: 12, y: 6)
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)
@@ -1017,7 +1054,7 @@ struct Toast: View {
         }
         .padding(.leading, Space.s3).padding(.trailing, 18).padding(.vertical, 10)
         .glass(in: Capsule(), strong: true)
-        .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 12)
+        .softShadow(Capsule(), color: Color.black.opacity(0.3), radius: 20, y: 12)
         .padding(.horizontal, Space.s4)
         .accessibilityElement(children: .combine)
     }
