@@ -144,7 +144,9 @@ it('asks for a password once per connect although three ssh processes sign in, a
     { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }])
   expect(JSON.stringify(await events())).not.toContain('test-secret')
   expect(() => launcher.answerPrompt(prompts[0]!.id, 'again')).toThrow('no longer waiting')
-})
+  // The test's own deadline matches the sign-in budget above: three real ssh processes sign in one after another,
+  // and a loaded Windows suite has taken longer than the default 15 seconds to finish them.
+}, 150_000)
 it('asks again when an answer is refused, instead of repeating it', async () => {
   const { launcher, events } = await fixture('passphrase')
   const prompts: SshPrompt[] = []
