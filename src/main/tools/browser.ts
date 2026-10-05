@@ -194,6 +194,16 @@ export class BrowserService extends ToolOperations {
       record.page.status = 'loading'; record.page.error = null
       this.publish(record)
     })
+    // A server's redirect is the same navigation going somewhere else. Without this the page kept the address it
+    // started from, never finished loading, and a shared page could not be inspected at the address it reached.
+    contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => {
+      if (!mainFrame || !safeBrowserUrl(url)) return
+      this.invalidate(record)
+      record.generation++
+      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
+      record.page.url = safeBrowserUrl(url)!
+      this.publish(record)
+    })
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
       if (!mainFrame || !safeBrowserUrl(url)) return
       this.invalidate(record)

@@ -222,6 +222,16 @@ describe('browser agent boundaries', () => {
     unwrap(await service.close(target))
     expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]).toMatchObject({ status: 'failed', thumbnail: null, pendingAction: null })
   })
+  it('ends sharing at a redirect to another site without a grant, and Share then shares the site reached', async () => {
+    const { service, target, view } = await browserFixture()
+    unwrap(await service.share({ ...target, enabled: true }))
+    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4321/upload', false, true)
+    ;(view.webContents as unknown as { url: string }).url = 'https://accounts.example.com/signin'
+    view.webContents.emit('did-redirect-navigation', {}, 'https://accounts.example.com/signin', false, true)
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(item => item.id === target.pageId)).toMatchObject({ url: 'https://accounts.example.com/signin', sharedOrigin: null })
+    expect(unwrap(await service.share({ ...target, enabled: true })).sharedOrigin).toBe('https://accounts.example.com')
+    expect(unwrap(await service.startTask({ ...target, description: 'Sign in' })).status).toBe('working')
+  })
   it('refuses an approved coordinate when the target changes without navigating', async () => {
     const { service, target, view } = await browserFixture()
     unwrap(await service.share({ ...target, enabled: true }))
