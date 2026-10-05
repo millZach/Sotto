@@ -7,8 +7,8 @@ private struct NeedsItem {
     let request: AgentRequest
 }
 
-/// An answer sent from a Needs you card. The card reads Sending, then Answered, before it leaves; the thread's
-/// computer confirms the answer first, through the model's own marker for it.
+/// An answer sent from a Needs you card. The card reads Sending, then Answered once the thread's computer confirms
+/// the answer, or No longer waiting if the request left without that, before it leaves.
 private struct CardAnswer {
     let requestID: String
     let busy: String
@@ -20,6 +20,8 @@ private struct CardAnswer {
     /// Until the model has finished sending it.
     var inFlight = true
     var answered = false
+    /// Whether the computer confirmed it. A request that left without that reads as no longer waiting instead.
+    var confirmed = false
 }
 
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
@@ -288,8 +290,8 @@ struct ThreadsView: View {
         }
     }
 
-    /// Settles a card once the model has finished with its answer. Confirmed or no longer waiting, it reads
-    /// Answered for a moment and leaves; refused, it returns to its choices and the banner says why. While the
+    /// Settles a card once the model has finished with its answer. Confirmed, it reads Answered for a moment and
+    /// leaves; gone without confirmation, it reads No longer waiting and leaves; refused, it returns to its choices and the banner says why. While the
     /// computer hasn't confirmed it, the card says so and waits.
     private func resolve(_ id: String) {
         guard let answer = sent[id], !answer.inFlight, !answer.answered else { return }
@@ -300,7 +302,8 @@ struct ThreadsView: View {
             sent[id] = nil
             return
         }
-        withAnimation(.easeInOut(duration: 0.4)) { sent[id]?.answered = true }
+        let confirmed = model.answerConfirmed(answer.requestID, in: ref)
+        withAnimation(.easeInOut(duration: 0.4)) { sent[id]?.answered = true; sent[id]?.confirmed = confirmed }
         Task {
             try? await Task.sleep(nanoseconds: 900_000_000)
             withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .easeInOut(duration: 0.42)) { sent[id] = nil }
@@ -413,6 +416,8 @@ private struct RequestCard: View {
         }
         return .sending
     }
+    /// Whether the computer confirmed the answer this card sent; otherwise its request left without one.
+    private var answerConfirmed: Bool { answer?.confirmed == true }
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
@@ -478,10 +483,10 @@ private struct RequestCard: View {
         case .answered:
             HStack(spacing: Space.s2) {
                 Spacer(minLength: 0)
-                Image(systemName: "checkmark").accessibilityHidden(true)
-                Text(answer?.done ?? "Answered")
+                if answerConfirmed { Image(systemName: "checkmark").accessibilityHidden(true) }
+                Text(answerConfirmed ? (answer?.done ?? "Answered") : "No longer waiting")
             }
-            .font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText)
+            .font(.sotto(.small, .semibold)).foregroundStyle(answerConfirmed ? Palette.accentText : Palette.muted)
             .frame(minHeight: 44)
             .accessibilityElement(children: .combine)
         case .unconfirmed:

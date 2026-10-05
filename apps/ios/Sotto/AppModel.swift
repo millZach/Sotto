@@ -86,6 +86,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     @Published private(set) var removing: String?
     /// What just happened on the tabs.
     @Published var feedback: String? { didSet { feedbackOperations = [] } }
+    /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
+    /// only for those. An answer whose request left without that receipt is not in here.
+    @Published private(set) var confirmedAnswers: Set<String> = []
+    /// Whether the computer confirmed this iPhone's answer to a request.
+    func answerConfirmed(_ requestID: String, in ref: ThreadRef) -> Bool {
+        confirmedAnswers.contains(ref.hostID + "/" + ref.threadID + "/" + requestID)
+    }
     private var feedbackOperations: Set<String> = []
     /// More than one check can await the same computer; keep markers until every check returns.
     private var deliveryChecks: [String: Int] = [:]
@@ -331,6 +338,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         let next = try JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root))
         fixtureShells[ref.hostID] = root
         update(ref.hostID) { $0.shell = next }
+        confirmedAnswers.insert(ref.hostID + "/" + ref.threadID + "/" + request.id)
         feedback = "Answer sent."
     }
     #endif
@@ -1182,6 +1190,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         if item.kind == "answer" {
             let confirmed = receipt?.confirmsAnswer == true
             guard confirmed || noLongerWaiting else { return }
+            if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
                 feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting

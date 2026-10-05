@@ -410,6 +410,7 @@ final class AppModelTests: XCTestCase {
         model.phase(.active); await model.waitForActivation()
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertEqual(model.feedback, "Answer sent.")
+        XCTAssertTrue(model.answerConfirmed("request", in: ref), "A Threads card may say Answered")
     }
     @MainActor func testUnknownReceiptAndDisappearedRequestSettleNeutrallyDespiteUnrelatedShellError() async throws {
         let (_, ref) = try fixture()
@@ -420,6 +421,7 @@ final class AppModelTests: XCTestCase {
         model.phase(.active); await model.waitForActivation()
         XCTAssertTrue(model.pending.isEmpty)
         XCTAssertEqual(model.feedback, "That request is no longer waiting.")
+        XCTAssertFalse(model.answerConfirmed("old", in: ref), "A request that left without a receipt is not an answer")
         XCTAssertTrue(model.canAnswer(try XCTUnwrap(model.thread(ref)?.requests.first), in: ref))
     }
     @MainActor func testUncertainOrMissingRequestThreadDoesNotConfirmAnAnswer() async throws {
