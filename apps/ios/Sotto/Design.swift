@@ -334,7 +334,7 @@ struct Light: View {
         .onChange(of: moving) { _, now in dim = now }
         .accessibilityHidden(true)
     }
-    private var moving: Bool { breathing && !reduceMotion && tone != .off }
+    private var moving: Bool { breathing && !reduceMotion && tone != .off && !DebugFlags.still }
     private var color: Color {
         switch tone {
         case .accent: return theme.color(.accent)
@@ -435,8 +435,8 @@ struct Wash: View {
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { drifting = !reduceMotion }
-        .onChange(of: reduceMotion) { _, reduced in drifting = !reduced }
+        .onAppear { drifting = !reduceMotion && !DebugFlags.still }
+        .onChange(of: reduceMotion) { _, reduced in drifting = !reduced && !DebugFlags.still }
     }
     private var dark: Bool { scheme == .dark }
     private var primary: Color {
@@ -663,6 +663,18 @@ struct CardSurface: ViewModifier {
     }
 }
 
+/// Switches the UI journeys use to find what keeps a page busy: `--ui-still` stops every looping animation, and
+/// `--ui-no-follow` stops the thread page from tracking its bar, title, reply box and end. Debug builds only.
+enum DebugFlags {
+    #if DEBUG
+    static let still = ProcessInfo.processInfo.arguments.contains("--ui-still")
+    static let noFollow = ProcessInfo.processInfo.arguments.contains("--ui-no-follow")
+    #else
+    static let still = false
+    static let noFollow = false
+    #endif
+}
+
 /// A soft shadow drawn once: a blurred copy of the shape, flattened into an image and laid behind the view. SwiftUI's
 /// `.shadow` redraws its blur whenever the view moves or anything in it changes, which in a scrolling page is every
 /// frame, and it does so even for a clear colour; this costs a composite instead, and nothing at all when not showing.
@@ -711,7 +723,7 @@ private struct GlowLayer: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
-    private var breathing: Bool { period != nil && !reduceMotion }
+    private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
     private var level: Double {
         if period == nil { return 1 }
         if reduceMotion { return 0.8 }
@@ -770,8 +782,8 @@ struct Runner: View {
         .frame(height: 2)
         .clipped()
         .opacity(reduceMotion ? 0 : 1)
-        .onAppear { running = !reduceMotion }
-        .onChange(of: reduceMotion) { _, reduced in running = !reduced }
+        .onAppear { running = !reduceMotion && !DebugFlags.still }
+        .onChange(of: reduceMotion) { _, reduced in running = !reduced && !DebugFlags.still }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
