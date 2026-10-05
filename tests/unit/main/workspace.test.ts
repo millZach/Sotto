@@ -967,6 +967,36 @@ describe('durable project/thread organization', () => {
     }
   })
 
+  it('checks each shared folder once per ownership decision and checks it again before the next decision', async () => {
+    const f = await fixture()
+    const project = (await f.host.connect()).projects.find(project => project.providerId === 'codex')!
+    const checkout = join(project.path, 'owned-copy')
+    await mkdir(checkout)
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: checkout, repositoryRoot: project.path, branch: 'sotto/fixture', baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', dirty: false }))
+    const identity = vi.spyOn(ThreadWorktrees.prototype, 'checkoutIdentity').mockImplementation(async path => path)
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    await local(f)
+    await f.host.execute(send())
+    const provider = f.adapters.codex.state.threads
+    provider.at(-1)!.status = 'idle'
+    provider[0]!.workingDirectory = project.path
+    for (let index = 0; index < 30; index++) provider.push({ ...provider[0]!, id: `shared-${index}`, messages: [], requests: [] })
+    f.adapters.codex.emit()
+    await f.host.snapshot()
+    const reclaim = vi.spyOn(ThreadWorktrees.prototype, 'reclaim').mockRejectedValue(new Error('Stopped after ownership check'))
+    identity.mockClear()
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Stopped after ownership check')
+    expect(identity.mock.calls.filter(([path]) => path === project.path)).toHaveLength(1)
+    // A moved/replaced checkout must be discovered afresh by the next operation.
+    identity.mockImplementation(async path => path === project.path ? checkout : path)
+    reclaim.mockClear()
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Another thread works in this folder')
+    expect(reclaim).not.toHaveBeenCalled()
+  })
+
   it('reclaims a thread’s own worktree on request, keeps the record, and lets only a send put the folder back', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
