@@ -20,6 +20,8 @@ Sotto runs the Claude Code, Codex, Grok Build and Devin clients you already have
 
 Saved Codex conversations keep both sides after a restart. Opening a thread also repairs repeated prompts saved by earlier versions.
 
+With the voice coordinator switched off, opening a remote thread does not start or check voice. Dictation still works.
+
 When a failed creation keeps your prompt or screenshots, the error names the project where you can recover them. The prompt returns in the next new thread opened in that project, while this window stays open. Staged screenshots come with it while available; unused screenshots are kept for an hour. Prompts that cannot fit together stay as **Not sent** messages with **Restore prompt**.
 
 ## What it does
