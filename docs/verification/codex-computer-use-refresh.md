@@ -23,3 +23,21 @@ Validation:
 - `npm test -- --maxWorkers=2`: passed, 542 files passed and 40 skipped; 7,376 tests passed and 156 skipped. Duration 1,330.79 seconds (22 minutes 11 seconds), within CI's 30-minute job budget despite simultaneous local suites in other worktrees.
 
 The parent reviewer checked the diff separately for repository standards and the requested behavior and found no remaining production defect. No screenshot baseline changes are required: the change adds no UI surface. Metadata intentionally covers only global `config.toml`, and an unsupported older client continues ordinary sends without automatic MCP refresh on that process.
+
+## Review correction: steering an active turn
+
+PR review identified that steering recorded a new prompt without checking changed config. Two new tests went red before the correction: stale MCP config refused a steering call, and a scripted refresh rejection was ignored while steering still sent. The correction calls the same refresh preflight inside steering's existing dispatch lock, before input preparation and origin persistence. The existing validation after awaits refuses steering if the active turn ended meanwhile. A held-refresh regression also verifies that refusal and the following send's availability.
+
+The installed-version [MCP runtime source](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/session/mcp_runtime.rs) refreshes dirty MCP state before waiting for an MCP server or preparing its call. This supports refresh before a steering prompt in the current turn; it does not replay an already executing tool call.
+
+The parent reviewer also verified installed 0.160.0 in one active model turn. Its first `sky.list_apps` failed against the deliberately missing pipe. While the agent waited in a harmless 40-second shell command, the reviewer changed the isolated config, called reload, and sent `turn/steer` with the original turn ID. That same turn subsequently called Computer Use successfully (`CU_OK`). The probe exited 0 without a new turn, app-server restart or desktop input.
+
+Upstream [runtime publication](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-mcp/src/runtime.rs) retains existing bindings and passes previous connections into reconciliation. The [connection manager](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-mcp/src/connection_manager.rs) reuses matching connection identities and clients. An unrelated global config edit therefore does not blindly cancel unchanged in-flight MCP clients.
+
+Validation on the review correction:
+
+- Typecheck, lint, build and notices verification passed (174 components).
+- `npx vitest run tests/integration/nativeSteering.test.ts tests/integration/codexConfigRefresh.test.ts tests/integration/codexSessionProcesses.test.ts --maxWorkers=2`: 23 tests passed across three files.
+- `npx playwright test tests/e2e/queued-steering.spec.ts`: one test passed in the built Electron app, steering from the keyboard without consuming the newer draft.
+
+The full local suite totals above belong to the initial PR revision. A second full local run was stopped at the parent's direction to avoid duplicating CI; it is not claimed as a pass. The latest revision's full CI gate must pass before merge.
