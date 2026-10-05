@@ -268,7 +268,7 @@ private struct Conversation: View {
     private func entries(thread: ThreadSummary?, detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation]) -> some View {
         let online = model.online(ref.hostID)
         let provider = Words.provider(thread?.providerId)
-        return LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+        return VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
             if detail?.earlierAvailable == true || thread?.earlierAvailable == true {
                 Button("Show earlier messages") { Task { await model.earlier(ref) } }
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
@@ -368,7 +368,7 @@ private struct Conversation: View {
         if nowTitled != titled { titled = nowTitled }
     }
 
-    /// Scrolls to the end once the new layout is in, and once more after a lazy list has measured what it brought in.
+    /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
         Task { @MainActor in
@@ -762,7 +762,7 @@ private struct StepTrail: View {
     let steps: [Activity]
     @Environment(\.sottoTheme) private var theme
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(steps) { record in
                 StepLine(record: record)
             }
