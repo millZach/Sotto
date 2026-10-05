@@ -470,16 +470,12 @@ struct SheetPage<Content: View>: View {
     var warm = false
     var washTone: Wash.Tone = .normal
     var washHeight: CGFloat = 520
-    /// Called with the content's top, relative to rest, each time the page moves.
-    var onScroll: ((CGFloat) -> Void)? = nil
     let content: Content
     @State private var fade: CGFloat = 0
-    init(warm: Bool = false, washTone: Wash.Tone = .normal, washHeight: CGFloat = 520,
-         onScroll: ((CGFloat) -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    init(warm: Bool = false, washTone: Wash.Tone = .normal, washHeight: CGFloat = 520, @ViewBuilder content: () -> Content) {
         self.warm = warm
         self.washTone = washTone
         self.washHeight = washHeight
-        self.onScroll = onScroll
         self.content = content()
     }
     var body: some View {
@@ -510,7 +506,6 @@ struct SheetPage<Content: View>: View {
     }
     /// The fade comes in over the first 24 points of travel and is clear at rest.
     private func travelled(_ top: CGFloat) {
-        onScroll?(top)
         let next = min(1, max(0, -top / 24))
         if next != fade { fade = next }
     }

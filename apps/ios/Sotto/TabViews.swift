@@ -41,20 +41,13 @@ struct ThreadsView: View {
     @State private var sent: [String: CardAnswer] = [:]
     @State private var searchBox = FrameBox()
     @FocusState private var searching: Bool
-    /// Where the page stands and where it stood when search opened, kept off the view's state so scrolling redraws nothing.
-    @State private var scrolled = PageMarks()
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let groups = FocusThreads(model.lists, show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : FocusThreads(model.lists, show: model.show, opened: model.selected)
-        SheetPage(warm: unsearched.requestCount > 0, onScroll: { top in
-            scrolled.top = top
-            guard searching else { return }
-            if Date().timeIntervalSince(scrolled.openedTime) < 0.6 { scrolled.searchOpenedAt = top; return }
-            if abs(top - scrolled.searchOpenedAt) > 12 { searching = false }
-        }) {
+        SheetPage(warm: unsearched.requestCount > 0) {
             heading
             controls(unsearched)
             searchPill
@@ -65,7 +58,6 @@ struct ThreadsView: View {
         .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
             if searching && !searchBox.frame.contains(tap.location) { searching = false }
         })
-        .onChange(of: searching) { _, open in if open { scrolled.searchOpenedAt = scrolled.top; scrolled.openedTime = Date() } }
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await model.refresh() }
         .navigationTitle("Threads")
@@ -715,12 +707,4 @@ private struct ThreadRow: View {
         if failed { return "\(row.thread.title), \(state.words), \(Words.place(row))" }
         return "\(row.thread.title), \(Words.place(row))"
     }
-}
-
-/// Where a page has scrolled to. A reference, so writing it as the page moves draws nothing again.
-private final class PageMarks {
-    var top: CGFloat = 0
-    var searchOpenedAt: CGFloat = 0
-    /// When search opened. iOS may move the page to keep the field in view just after; that isn't the user scrolling.
-    var openedTime = Date.distantPast
 }

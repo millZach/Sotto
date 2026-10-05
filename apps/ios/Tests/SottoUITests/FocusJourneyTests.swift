@@ -44,6 +44,12 @@ import XCTest
     private func text(_ start: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", start)).firstMatch
     }
+    /// Text in the open thread's own conversation that starts with these words. Scoped to the scroll view holding the
+    /// thread's title, so a copy elsewhere in the app (the Threads list under the pushed page) is never the match.
+    private func threadText(_ start: String) -> XCUIElement {
+        app.scrollViews.containing(.staticText, identifier: "thread-title").firstMatch
+            .descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", start)).firstMatch
+    }
     /// Any element whose label is exactly these words.
     private func labelled(_ words: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", words)).firstMatch
@@ -402,7 +408,7 @@ import XCTest
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
         let running = byID("step-drawer-test")
         XCTAssertTrue(running.waitForExistence(timeout: 5), "The running step sits at the end of the conversation")
-        let update = text("Still working through the review fixes")
+        let update = threadText("Still working through the review fixes")
         waitForEnd(running, last: update, above: reply, "The thread opens at the end of its conversation")
         XCTAssertLessThanOrEqual(title.frame.maxY, threadTop + 1, "A long thread opens at its end, not its title")
         capture("thread-glow-bottom")
@@ -456,7 +462,7 @@ import XCTest
         let ask = app.buttons["Answer the question"]
         XCTAssertTrue(ask.waitForExistence(timeout: 5), "The reply box offers the question again")
         let running = byID("step-drawer-test")
-        let update = text("Still working through the review fixes")
+        let update = threadText("Still working through the review fixes")
         XCTAssertTrue(running.waitForExistence(timeout: 5))
         waitForEnd(running, last: update, above: ask, "The conversation stays at its end under a waiting question")
 
