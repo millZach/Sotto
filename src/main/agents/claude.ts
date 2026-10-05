@@ -181,6 +181,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.activityListeners.publish(historyFromEvents => this.activityView(historyFromEvents))
   })
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
+  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
+  private readonly recordUnechoed = new Map<string, () => void>()
+  /** Origins Claude Code has said it started running, whose echo has not come. */
+  private readonly startedOrigins = new Set<string>()
   private readonly dispatching = new Set<string>()
   /** Threads whose stop has gone out: the error result that closes the turn may arrive before the stop is acknowledged. */
   private readonly interrupting = new Set<string>()
@@ -683,16 +687,24 @@ export class ClaudeStreamJsonHost implements AgentHost {
           await this.persist(); throw error
         }
         let timer: ReturnType<typeof setTimeout> | undefined
+        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid); this.startedOrigins.delete(origin.uuid) }
         const acknowledged = new Promise<boolean>(resolve => {
-          timer = setTimeout(() => { this.acknowledgements.delete(origin.uuid); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
-          this.acknowledgements.set(origin.uuid, (delivered = true) => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); resolve(delivered) })
+          timer = setTimeout(() => { forget(); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
+          this.acknowledgements.set(origin.uuid, (delivered = true) => { forget(); resolve(delivered) })
+        })
+        // Claude Code answers a slash command it cannot run here, such as /chrome, with a reply of its own. It never echoes
+        // the prompt, so the prompt is recorded from what was sent.
+        this.recordUnechoed.set(origin.uuid, () => {
+          this.addMessage(id, { id: origin.messageId, role: 'user', text: nativeText, createdAt: origin.createdAt, commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+          if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
+          this.acknowledgements.get(origin.uuid)?.()
         })
         thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
-        catch { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); return { accepted: false, uncertain: true } }
+        catch { forget(); return { accepted: false, uncertain: true } }
         return await acknowledged ? { accepted: true } : { accepted: false, uncertain: true }
       } finally { this.dispatching.delete(id) }
     }
@@ -1050,6 +1062,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
+    // A prompt Claude Code took without an echo is taken when its local command replies, which puts it above the reply.
+    // A result naming it is the last word. Any other reply may belong to a turn the prompt is still held behind.
+    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string' && this.recordUnechoed.has(frame.command_uuid)) this.startedOrigins.add(frame.command_uuid)
+    if (this.recordUnechoed.size && !frame.parent_tool_use_id) {
+      const localReply = frame.type === 'assistant' && typeof frame.local_command_source === 'string'
+      const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
+      if (localReply || resultFor) for (const origin of alias.origins) if (origin.uuid === resultFor || localReply && this.startedOrigins.has(origin.uuid)) this.recordUnechoed.get(origin.uuid)?.()
+    }
     this.projectActivity(id, frame, true)
     if (frame.parent_tool_use_id) { this.emit(true); return }
     this.observeCompaction(id, frame, false)
@@ -1142,6 +1162,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.threads.get(id)
     if (thread) { delete thread.monitoring; delete thread.backgroundWork }
   }
+  /** A sent prompt the transcript has not yet given back, found by its text. */
+  private unreadOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
+    const consumed = this.logOrigins.get(id)
+    return this.aliases[id]?.origins.find(origin => !consumed?.has(origin.uuid) && origin.digest === digest)
+  }
+  /** Claude Code writes a slash command it ran itself into the transcript as a local command, not as a prompt. One
+   * Sotto sent is read back as that prompt. Any other stays out of the record, as its reply does. */
+  private asSentPrompt(id: string, frame: ClaudeFrame): ClaudeFrame {
+    if (frame.type !== 'system' || frame.subtype !== 'local_command' || typeof frame.content !== 'string') return frame
+    if (!this.unreadOrigin(id, claudeDigest(frame.content))) return frame
+    return { type: 'user', uuid: frame.uuid, timestamp: frame.timestamp, message: { role: 'user', content: frame.content } }
+  }
   private message(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (typeof frame.uuid === 'string' && this.aliases[id]?.compactInputIds?.includes(frame.uuid)) return
     this.usage.claude(id, frame, this.threads.get(id)!.modelId)
@@ -1155,7 +1187,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     let origin = alias.origins.find(value => value.uuid === uuid)
     if (fromLog && frame.type === 'user') {
       const consumed = this.logOrigins.get(id) ?? new Set<string>(); this.logOrigins.set(id, consumed)
-      origin ??= alias.origins.find(value => !consumed.has(value.uuid) && value.digest === digest)
+      origin ??= this.unreadOrigin(id, digest)
       if (origin) { consumed.add(origin.uuid); this.lastLogDigest.set(id, digest) }
       else if (this.lastLogDigest.get(id) === digest) return
       else { this.lastLogDigest.delete(id); this.nativeTakeovers.add(id) }
@@ -1177,7 +1209,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       // is a snapshot clone and a workspace write per line, which ran the main process out of heap.
       const current = (): boolean => generation === this.generation && this.aliases[id]?.sessionId === alias.sessionId
       log = new ClaudeSessionLog(this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, alias.sessionId, frame => {
-        if (current()) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, frame, true) }
+        if (current()) { this.observeCompaction(id, frame, true); this.projectActivity(id, frame); this.message(id, this.asSentPrompt(id, frame), true) }
       }, () => { if (current()) { this.noteCursor(id); this.emit() } })
       this.logs.set(id, log)
     }

@@ -171,6 +171,32 @@ describe('Claude recovery and safety', () => {
     expect(await prompts()).toBe(1)
     expect(await readFile(join(f.root, 'claude-threads.json'), 'utf8')).not.toContain(command.text)
   })
+  const chromeReply = "/chrome isn't available in this environment."
+  // Claude Code 2.1.289 reports the start before the reply, so the prompt sits above it. A result alone records it after.
+  it.each([
+    { evidence: undefined, order: ['user', 'assistant'] },
+    { evidence: 'result', order: ['assistant', 'user'] },
+  ])('takes a slash command Claude Code answers itself without an echo (evidence: $evidence)', async ({ evidence, order }) => {
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
+    expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
+    const messages = (await thread()).messages
+    expect(messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome', commandId: 'chrome' }))
+    expect(messages).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
+    expect(messages.map(message => message.role)).toEqual(order)
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    await writeFile(join(f.root, 'script.json'), '{}')
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Carry on' })).toEqual({ accepted: true })
+  })
+  it('reads a slash command it sent back from the transcript when nothing confirmed it', async () => {
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence: 'none' }))
+    const command = { type: 'send' as const, commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' }
+    expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+    await f.adapter.pollSessionLogs()
+    expect((await thread()).messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome' }))
+    // Checking again finds the prompt in the record rather than sending it twice.
+    expect(await f.host.execute(command)).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
   it('sends a native denial for malformed question control requests', async () => {
     await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'malformed', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: {} } } })
     await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('"behavior":"deny"')
