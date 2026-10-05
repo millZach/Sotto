@@ -24,10 +24,14 @@ function overlapsPage(element: HTMLElement, viewport: HTMLElement | null): boole
  * True while an overlay outside `inside` covers the page at `viewport`, so the native page steps aside for it.
  * Shared by the docked `BrowserSurface` and the floating `BrowserPlayer`, since both draw a live native page that
  * a dialog, menu or the minimized theme editor would otherwise sit under.
+ * Undefined until checked, or while inactive. Native pages may mount only when explicitly false.
  */
-export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: RefObject<HTMLElement | null>): boolean {
-  const [open, setOpen] = useState(false)
+export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: RefObject<HTMLElement | null>, active = true): boolean | undefined {
+  // An unchecked page stays unmounted, without claiming that a menu or dialog is open.
+  const [open, setOpen] = useState<boolean | undefined>(undefined)
   useEffect(() => {
+    // Hidden players have no native page to protect. Keep the document observer and frame loop dormant until shown.
+    if (!active) { setOpen(undefined); return }
     let frame = 0
     const check = (): void => {
       cancelAnimationFrame(frame)
@@ -46,6 +50,6 @@ export function useOverlayOpen(inside: RefObject<HTMLElement | null>, viewport: 
     const observer = new MutationObserver(check)
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'open', 'hidden', 'data-covers-native-view', 'data-minimized'] })
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
-  }, [inside, viewport])
-  return open
+  }, [inside, viewport, active])
+  return active ? open : undefined
 }

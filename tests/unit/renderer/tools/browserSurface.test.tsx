@@ -78,6 +78,23 @@ describe('browser addresses', () => {
 })
 
 describe('Browser surface', () => {
+  it('keeps the first unchecked viewport unmounted without claiming that a dialog is open', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const firstPlacement: { bounds: unknown; notice: string | null }[] = []
+    const mount = BrowserStore.prototype.mount
+    vi.spyOn(BrowserStore.prototype, 'mount').mockImplementation(function (this: BrowserStore, ...args) {
+      const viewport = document.querySelector('.browser-viewport')
+      // The native placement hook runs during layout, before the overlay scan's passive effect.
+      if (viewport && firstPlacement.length === 0) {
+        firstPlacement.push({ bounds: args[3], notice: viewport.querySelector('.browser-viewport__covered')?.textContent ?? null })
+      }
+      return mount.apply(this, args)
+    })
+    setup(browser)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+    expect(firstPlacement).toEqual([{ bounds: null, notice: null }])
+  })
+
   it('opens a typed address, draws the page into the viewport and steps aside for overlays and hiding', async () => {
     const browser = fakeBrowser()
     const { store } = setup(browser)

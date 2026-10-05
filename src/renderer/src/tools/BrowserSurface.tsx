@@ -228,7 +228,7 @@ function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenE
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(surface, host)
-  const show = page.status !== 'unavailable' && !covered
+  const show = page.status !== 'unavailable' && covered === false
   const pageId = page.id
 
   const mount = useCallback((bounds: BrowserBounds | null) => store.mount(bridge, threadId, pageId, bounds), [store, bridge, threadId, pageId])

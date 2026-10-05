@@ -32,7 +32,7 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(boundary, host)
-  const show = page !== undefined && page.status !== 'unavailable' && !covered
+  const show = page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
     {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note">This page could not load.</p>
@@ -81,10 +81,6 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [playerStore])
-  // `rectFor` is the one default (pane-anchored, `browserPlayerStore.ts`), so a first drag or resize starts from
-  // exactly the rectangle just drawn rather than a second, disagreeing default kept here.
-  const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
-
   const [problem, setProblem] = useState<string | null>(null)
   const [stoppingGrant, setStoppingGrant] = useState(false)
   const [answering, setAnswering] = useState(false)
@@ -99,6 +95,8 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   if (!thread) return null
   const dockedSame = chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === threadId && threadBrowser?.activePageId === task.pageId
   if (visibility === 'hidden' || dockedSame) return null
+  // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
+  const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
 
   const page = threadBrowser?.pages.find(item => item.id === task.pageId)
   const titleText = page ? pageLabel(page) : task.description
