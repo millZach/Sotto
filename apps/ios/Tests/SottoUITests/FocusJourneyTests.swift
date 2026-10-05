@@ -220,21 +220,17 @@ import XCTest
         XCTAssertTrue(target.exists && target.isHittable, "Scrolling the thread must reach it")
     }
 
-    /// Closes the reply keyboard the way a person does on the thread page: a drag from just above the reply box down
-    /// through the keyboard, which follows the finger off the screen.
+    /// Closes the reply keyboard the way the thread page offers: scrolling the conversation puts it away at once. A short
+    /// drag up inside the conversation, which is already at its end, only bounces.
     private func dragKeyboardClosed(above reply: XCUIElement) {
         let keyboard = app.keyboards.firstMatch
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        let x = window.frame.width - 8
-        let start = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 40 - window.frame.minY))
-        let end = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 12))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
-        if !waitUntilGone(keyboard, timeout: 3) {
-            // Held still, the keyboard may spring back; released while moving, it goes.
-            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0)
-        }
-        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard closes it")
+        let x = window.frame.width / 2
+        let start = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 60 - window.frame.minY))
+        let end = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 200 - window.frame.minY))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
+        XCTAssertTrue(waitUntilGone(keyboard), "Scrolling the conversation closes the reply keyboard")
     }
 
     // MARK: Journeys
@@ -332,7 +328,8 @@ import XCTest
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard again")
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        let low = keyboard.frame.minY - 24
+        // iOS 26 draws its suggestion bar above the frame XCTest reports for the keyboard, so start well clear of it.
+        let low = keyboard.frame.minY - 90
         let high = max(search.frame.maxY + 24, low - 120)
         let x = window.frame.width / 2
         origin.withOffset(CGVector(dx: x, dy: low - window.frame.minY))

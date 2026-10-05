@@ -224,7 +224,7 @@ private struct Conversation: View {
                 page(detail: detail, rows: rows, pending: pending)
             }
             .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)
