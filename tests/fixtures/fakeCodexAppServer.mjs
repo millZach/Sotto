@@ -312,6 +312,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
   } else if (method === 'turn/steer') {
+    if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {
+      emit({ id, error: { code: -32000, message: 'Native computer-use pipe is missing from cached MCP configuration' } }); return
+    }
     const thread = state.threads[params.threadId]
     const turn = thread?.turns.at(-1)
     if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {

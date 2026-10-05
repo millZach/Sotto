@@ -1280,6 +1280,7 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
           try {
+            await this.refreshRuntimeConfig(id)
             input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
             skillsRevision = this.skillsRevision
             validate()
