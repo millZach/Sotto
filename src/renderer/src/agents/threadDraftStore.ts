@@ -640,6 +640,24 @@ export class ThreadDraftStore {
     return draftId
   }
 
+  /**
+   * Put a draft that no composer holds (a leftover draft, whose thread is gone) into this thread's composer, after
+   * anything already written there, and save it at once. Resolves true only once main has saved the composer with
+   * it, so the caller may let the original go; false leaves both, and nothing is lost either way. Typing that lands
+   * while it saves is a newer revision built on the placed one, and is saved by the same call.
+   */
+  async place(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments'>): Promise<boolean> {
+    const current = this.draft(threadId)
+    this.restoreDraft(threadId, { ...combineDrafts([current, { ...EMPTY, ...content }]), requestId: current.requestId })
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await this.flushPending(threadId)
+      const entry = this.entries.get(threadId)
+      if (entry === undefined || entry.error !== null) return false
+      if (entry.saved) return true
+    }
+    return false
+  }
+
   private putBack(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments' | 'skills' | 'files' | 'requestId'>, onlyWhenEmpty: boolean): string | null {
     if (onlyWhenEmpty && hasDraftContent(this.draft(threadId))) return null
     return this.revise(threadId, { text: content.text, attachments: [...content.attachments], skills: [...content.skills], files: [...content.files], requestId: content.requestId })

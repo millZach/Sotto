@@ -161,6 +161,7 @@
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled), .thread-prompt__actions > .thread-prompt__stop[data-beside]:active:not(:disabled) { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-muted); filter: none; }
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
+.thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 /* At a model's highest level the composer wears a thin outline in the effort colourway, with a brighter run
    travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). Both composers read
@@ -212,9 +213,10 @@
 .thread-workspace__compose .agent-composer__footer { margin-top: 10px; }
 .thread-workspace__compose .agent-composer__footer .tt-button { min-height: 30px; font-size: 13px; }
 
-.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
+.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: safe center; overflow: auto; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
 .thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
 .thread-workspace__empty p { margin: 0; font-size: 13px; }
+.thread-workspace__empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
 .thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }
 

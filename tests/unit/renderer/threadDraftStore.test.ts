@@ -596,3 +596,28 @@ describe('screenshots read for a draft', () => {
     expect(store.screenshotReads('thread').problem).toBeNull()
   })
 })
+
+describe('ThreadDraftStore.place', () => {
+  it('puts a leftover draft after what the composer holds and resolves true only once main saved it', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    store.edit('thread', { text: 'Already typed.' })
+    const placed = store.place('thread', { text: 'The leftover prompt.', attachments: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.draft('thread').text).toBe('Already typed.\n\nThe leftover prompt.')
+    const save = saves().at(-1)!
+    expect(save.text).toBe('Already typed.\n\nThe leftover prompt.')
+    calls.at(-1)!.resolve(published(save))
+    await expect(placed).resolves.toBe(true)
+  })
+
+  it('resolves false and keeps the composer’s copy when the save is not confirmed', async () => {
+    const { command, calls } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const placed = store.place('thread', { text: 'The leftover prompt.', attachments: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    calls.at(-1)!.resolve(null)
+    await expect(placed).resolves.toBe(false)
+    expect(store.draft('thread').text).toBe('The leftover prompt.')
+  })
+})
