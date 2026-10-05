@@ -83,7 +83,7 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
     if (cloudLive && cloudSession) cloudStore.mount(cloudBridge, cloudSession, bounds)
     else if (threadId && pageId) store.browser.mount(bridge, threadId, pageId, bounds)
   }, [store, bridge, threadId, pageId, cloudStore, cloudBridge, cloudLive, cloudSession])
-  const mountActive = shown && !covered && (cloudLive || page?.status !== 'unavailable')
+  const mountActive = shown && covered === false && (cloudLive || page?.status !== 'unavailable')
   useBrowserPageMount(screen, mountActive, mount)
   useLayoutEffect(() => {
     const element = root.current

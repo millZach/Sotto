@@ -32,7 +32,7 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(boundary, host)
-  const show = page !== undefined && page.status !== 'unavailable' && !covered
+  const show = page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
     {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note">This page could not load.</p>
