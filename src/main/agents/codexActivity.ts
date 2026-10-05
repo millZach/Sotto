@@ -28,14 +28,15 @@ function isComputerUse(server: unknown, args: unknown): boolean {
 }
 /**
  * What Sotto can say about a Computer Use call that failed for a reason it recognises: Codex's sandbox stopped
- * it, or the Codex app, whose helper Computer Use talks to, is closed (docs/verification/2026-09-25-…). The
+ * it, or the connection to the Codex app helper is unavailable. A missing native pipe does not establish
+ * that the app is closed: a running app may have restarted and replaced its pipe. The
  * sandbox texts are Windows Codex's own; "trusted Node process exited" also names other crashes, so it counts as
  * the sandbox's doing only outside Full access, where the advice to switch can be right.
  */
 export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
   if (!text) return undefined
   if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
-  if (/native pipe/iu.test(text)) return 'Computer Use needs the Codex app open. Nothing was changed. Open Codex and ask again.'
+  if (/native pipe/iu.test(text)) return 'Computer Use connection is unavailable. Keep Codex open and try again. If this continues, restart Sotto when your other threads are idle.'
   return undefined
 }
 export const codexItemSchema = z.preprocess(value => {
