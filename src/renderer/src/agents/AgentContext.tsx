@@ -331,6 +331,7 @@ export function AgentProvider({ children, settings, dictation }: {
   const connection = useAgentConnection(agentsBridge && wrapAgentBridge(agentsBridge))
   const [voice, setVoice] = useState<AgentVoiceState>({ status: 'off' })
   const voiceRef = useRef<AgentVoiceSession | null>(null)
+  const inputMuted = useRef(false)
   const [personalAudio, setPersonalAudio] = useState(false)
   const personalAudioRef = useRef(false)
   const personalRelease = useRef(Promise.resolve())
@@ -410,9 +411,14 @@ export function AgentProvider({ children, settings, dictation }: {
       },
       stop() { speech.output.stop() },
     }))
+    // Restore the input choice before the lifecycle effect can open capture.
+    if (inputMuted.current) void session.setMuted(true)
     voiceRef.current = session
     return () => {
       current = false
+      // Read the actual bit: off hides mute, and a pending microphone release
+      // may not have published a muted status yet (including a spoken mute).
+      inputMuted.current = session.isMuted()
       // Keep the microphone release available to a personal chat even after the
       // coordinator's setting has removed its session.
       void stopVoiceSession(session)

@@ -28,7 +28,9 @@ This verifies the Windows renderer journey with scripted providers and a real ho
 
 ## Neighboring behavior
 
-The focused voice and audio-ownership checks pass (50 tests). The enabled-voice and disabled-remote Electron journeys both pass (2 tests). The enabled journey covers wake, composing and pausing a prompt, sending, mute/unmute, widget dictation and turning the coordinator off. Its old close-button locator depended on the original thread title; the same failure reproduced in the baseline build after the thread named itself. The test now closes the open thread dialog regardless of its generated title.
+The focused voice and audio-ownership checks pass (54 tests). The enabled-voice and disabled-remote Electron journeys both pass (2 tests). The enabled journey covers wake, composing and pausing a prompt, sending, mute/unmute, widget dictation and turning the coordinator off. Its old close-button locator depended on the original thread title; the same failure reproduced in the baseline build after the thread named itself. The test now closes the open thread dialog regardless of its generated title.
+
+PR review caught one additional regression: recreating a session lost its previous mute. The provider now retains the session's actual mute state before disposing it and restores that state before a replacement can listen. Four regression cases failed before this follow-up and pass after it: button and spoken mute, each with immediate and delayed microphone shutdown. Each case also checks that an explicit unmute resumes listening.
 
 ## Standards review
 
