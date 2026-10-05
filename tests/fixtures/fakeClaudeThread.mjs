@@ -198,9 +198,26 @@ lines.on('line', line => {
   } else if (frame.type === 'user') {
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
-    const reply = persist(frame)
     const scriptPath = join(root, 'script.json')
     const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+    // script.json `localCommand`: answer the prompt as Claude Code 2.1.289 answers a slash command it cannot run
+    // headless, such as /chrome. No echo: lifecycle frames naming the prompt, a canned reply, a result naming the
+    // prompt, and two local_command entries in the transcript instead of the prompt. `evidence: 'result'` leaves out
+    // the lifecycle frames; `evidence: 'none'` leaves out every frame that names the prompt.
+    if (script.localCommand) {
+      const command = typeof frame.message.content === 'string' ? frame.message.content : ''
+      const stdout = `<local-command-stdout>${script.localCommand}</local-command-stdout>`
+      const lifecycle = state => { if (!script.evidence) output({ type: 'command_lifecycle', command_uuid: frame.uuid, state, uuid: randomUUID(), session_id: session }) }
+      persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
+      persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
+      lifecycle('queued'); lifecycle('started')
+      output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
+        local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
+      output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
+        ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
+      lifecycle('completed'); return
+    }
+    const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
   } else if (frame.type === 'control_response') {
