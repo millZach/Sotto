@@ -21,6 +21,7 @@ import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, ty
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
@@ -151,6 +152,7 @@ export class WorkspaceHost implements AgentHost {
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
   private activityJsonFallbackAllowed = true
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly settledThreadListeners = new Set<(ids: readonly string[]) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
@@ -1390,7 +1392,7 @@ export class WorkspaceHost implements AgentHost {
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
-    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear()
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
     this.subagentInputs.clear()
     this.ready = false
   }
@@ -1496,6 +1498,10 @@ export class WorkspaceHost implements AgentHost {
     }
   }
   private publish(): void {
+    if (this.settledThreadListeners.size) {
+      const ids = this.settledThreadIds()
+      for (const listener of this.settledThreadListeners) listener(ids)
+    }
     for (const listener of this.listeners) listener(this.workspaceSnapshot())
     if (this.activityListeners.size) {
       this.applyEvents()
@@ -2315,6 +2321,16 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
+  }
+  private settledThreadIds(): readonly string[] {
+    const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
+    return this.state.snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id)
+  }
+  /** Settlement metadata, immediately and on publication, without materializing thread histories. */
+  subscribeSettledThreads(listener: (ids: readonly string[]) => void): () => void {
+    this.settledThreadListeners.add(listener)
+    listener(this.settledThreadIds())
+    return () => this.settledThreadListeners.delete(listener)
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.activityListeners.add(listener); return () => this.activityListeners.delete(listener) }
