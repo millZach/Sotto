@@ -12,21 +12,21 @@ Sotto hid its Dock icon at startup and whenever the main window closed, and show
 | `app.dock.hide()`, then `app.dock.show()`, then the window | **yes**: the window sat on the full-screen desktop |
 | The same, waiting 3 s after `dock.show()` | **yes** |
 | `setActivationPolicy('accessory')`, then `'regular'` | **yes** |
-| Pill with `setVisibleOnAllWorkspaces(…, skipTransformProcessType)` and no Dock change | no |
+| Widget with `setVisibleOnAllWorkspaces(…, skipTransformProcessType)` and no Dock change | no |
 
-Once the process has been an accessory app, its windows keep that ability for the rest of the run. That is why every Sotto window behaved like the pill, whatever the main window's own flags said.
+Once the process has been an accessory app, its windows keep that ability for the rest of the run. That is why every Sotto window behaved like the widget, whatever the main window's own flags said.
 
-In an app that never hid its Dock, an ordinary pill window does not show over another app's full-screen desktop, and a `type: 'panel'` pill does. With a panel pill and an ordinary main window in the same app, the pill stayed over the full-screen app and the main window still went to its own desktop.
+In an app that never hid its Dock, an ordinary widget window does not show over another app's full-screen desktop, and a `type: 'panel'` widget does. With a panel widget and an ordinary main window in the same app, the widget stayed over the full-screen app and the main window still went to its own desktop.
 
-So macOS keeps its Dock icon for the whole run (`dockPresence: 'regular'`), and the pill is a panel (`widgetIsPanel`).
+So macOS keeps its Dock icon for the whole run (`dockPresence: 'regular'`), and the widget is a panel (`widgetIsPanel`).
 
 ## In the running app
 
 With a native full-screen window on the external display and Sotto running from this branch:
 
 - Sotto is a foreground application (`lsappinfo`: `ApplicationType = Foreground`), with its Dock icon.
-- The pill, at the external display's left edge, shows over the full-screen app: `artifacts/macos-bringup/pill-over-full-screen.png`.
-- A drag of the main window by its title strip from the built-in display towards the external one (synthesized mouse events) leaves the window straddling the display edge. The part over the full-screen display is not drawn: `artifacts/macos-bringup/main-window-stays-off-full-screen.png` shows only the full-screen app and the pill.
+- The widget, at the external display's left edge, shows over the full-screen app: `artifacts/macos-bringup/widget-over-full-screen.png`.
+- A drag of the main window by its title strip from the built-in display towards the external one (synthesized mouse events) leaves the window straddling the display edge. The part over the full-screen display is not drawn: `artifacts/macos-bringup/widget-over-full-screen.png` is the same capture: it shows only the full-screen app and the widget.
 
 The packaged checklist lines in `docs/release/macos-bringup.md` stay unticked until the packaged app is checked the same way.
 

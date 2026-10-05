@@ -680,7 +680,7 @@ export class WindowManager {
       if (this.widgetDrag !== null) return
 
       // Windows 11 drops WS_EX_TOPMOST after competing foreground windows or
-      // showInactive races, so a show while the pill is already up sets the
+      // showInactive races, so a show while the widget is already up sets the
       // level again. On macOS that call reorders the app's windows, and a
       // full-screen main window then takes its desktop back. The level set
       // at creation stays.

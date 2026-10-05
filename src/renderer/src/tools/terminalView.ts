@@ -114,7 +114,7 @@ function monoFont(): string {
 /**
  * The real terminal: xterm over the main-process PTY. On Windows Ctrl+C copies a selection and otherwise
  * interrupts, and Ctrl+V pastes. On macOS Ctrl+C always interrupts and Ctrl+V goes to the shell, as in Terminal;
- * ⌘C and ⌘V copy and paste through the Edit menu, and Option works as Meta. Ctrl+Tab and Ctrl+Shift+Tab leave the
+ * ⌘C and ⌘V copy and paste through the Edit menu, and Option types the keyboard layout's characters. Ctrl+Tab and Ctrl+Shift+Tab leave the
  * terminal, since Tab itself belongs to the shell.
  */
 export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor = defaultResolver() }: { readonly resolveColor?: ColorResolver } = {}): TerminalViewLike => {

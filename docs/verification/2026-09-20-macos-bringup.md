@@ -22,7 +22,7 @@ ELECTRON_RUN_AS_NODE=1 release/mac-arm64/Sotto.app/Contents/MacOS/Sotto scripts/
 
 ## Suite fixes that had to land first
 
-Node 22 on this Mac failed 65 tests. Three host mismatches, not product regressions:
+Node 22 on this Mac failed 65 tests. Four host mismatches, not product regressions:
 
 1. `os.tmpdir()` is `/var/folders`, a symlink to `/private/var/folders`. Git and `fs.realpath` return the physical path. Test setup now points `TMPDIR` at the real path, the same idea as CI's long Windows TEMP.
 2. CI is Node 24. Node 22 can `require('node:sqlite')` but does not list it in `builtinModules`, so the release inventory check failed.

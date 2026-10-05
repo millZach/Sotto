@@ -47,7 +47,7 @@ Launch `release/mac-arm64/Sotto.app` and work through:
 - [ ] App menu: ⌘C/⌘V in Sotto's own text fields, ⌘M minimize, ⌘Q quits cleanly, Settings… (⌘,) opens the window.
 - [ ] Hotkey: Control+Shift+Space (literal Control) toggles dictation; rebinding in Settings works and labels render as mac glyphs.
 - [ ] Widget: floats above normal windows, follows across Spaces, visible over a full-screen app; drag gesture works. It is a nonactivating panel (`widgetIsPanel` in `src/main/platformProfile.ts`), which is what lets it join a full-screen desktop while Sotto keeps its Dock icon. Known escape hatches if not: `widgetFocusable` and `widgetAlwaysOnTopLevel: 'screen-saver'`.
-- [ ] Desktops: a full-screen Sotto stays on its desktop until you go there. When the main window is not full screen, it does not sit on another app's full-screen desktop. The pill still may.
+- [ ] Desktops: a full-screen Sotto stays on its desktop until you go there. When the main window is not full screen, it does not sit on another app's full-screen desktop. The widget still may.
 - [ ] Red traffic-light close hides to menu bar (app keeps running); traffic lights sit correctly in the title bar.
 - [ ] "Launch when your Mac starts" toggle registers a login item (System Settings → General → Login Items) and survives relaunch.
 

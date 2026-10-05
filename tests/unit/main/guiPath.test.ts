@@ -140,20 +140,18 @@ describe('reading the login shell PATH', () => {
   })
 
   it('gives up when the shell does not finish', async () => {
-    const started = Date.now()
+    // A lookup that waited for this shell would run into the test's own deadline instead of answering.
     expect(await readShellPath(await shell('setTimeout(() => {}, 30000)'), 300, env)).toBeNull()
-    expect(Date.now() - started).toBeLessThan(5_000)
   })
 
   it('does not wait for a background process the shell left holding its output', async () => {
-    const started = Date.now()
     // The shell prints PATH and exits, but its child inherits stdout and keeps it open, as gitstatusd or tmux would.
+    // The child outlives the deadline, so a lookup that waited for the output to close would answer null.
     const source = [
       `const { spawn } = require('node:child_process')`,
       `spawn(process.execPath, ['-e', 'setTimeout(() => {}, 8000)'], { stdio: ['ignore', 'inherit', 'ignore'] })`,
       `process.stdout.write('/opt/homebrew/bin:/usr/bin:/bin', () => process.exit(0))`,
     ].join('\n')
     expect(await readShellPath(await shell(source), 6_000, env)).toBe('/opt/homebrew/bin:/usr/bin:/bin')
-    expect(Date.now() - started).toBeLessThan(5_000)
   })
 })

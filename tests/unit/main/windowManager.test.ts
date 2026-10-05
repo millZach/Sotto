@@ -546,7 +546,7 @@ describe('WindowManager construction', () => {
     expect(options[1]).not.toHaveProperty('type')
   })
 
-  it('does not reassert the macOS widget level while the pill is already visible', async () => {
+  it('does not reassert the macOS widget level while the widget is already visible', async () => {
     const { manager, windows } = createHarness(darwinOverrides())
     await manager.showWidget()
     const widget = windows[0]!
