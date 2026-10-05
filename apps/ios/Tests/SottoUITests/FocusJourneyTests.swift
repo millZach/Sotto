@@ -400,6 +400,21 @@ import XCTest
 
     /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
     /// title block and Git chips scroll away with it; messages read as Markdown blocks.
+    /// A long thread whose messages arrive a moment after it opens shows its end at once. The page used to sit over rows a
+    /// lazy list had not drawn yet, black until the user scrolled.
+    func testALongThreadShowsItsEndWithoutAScroll() {
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-long-thread", "--ui-slow-detail"])
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let end = byID("step-long-final")
+        let last = threadText("Final comparison:")
+        waitForEnd(end, last: last, above: reply, "A long thread opens showing its end, with no scroll needed")
+        capture("thread-long-open")
+    }
+
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
         let thread = row("iphone")
         reveal(thread)

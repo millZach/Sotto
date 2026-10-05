@@ -182,6 +182,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     #if DEBUG && os(iOS)
     /// Simulator journeys use in-memory display data; this code is absent from Release.
     private var isUIFixture = false
+    /// The fixture hands a thread's messages over a moment after it opens, as a computer does over the network.
+    private var fixtureSlowDetail = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     private func loadUIFixture() {
@@ -266,6 +268,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         ]
         fixtureDetails[laptop + "/iphone"] = decode(ThreadDetail.self, ["threadId": "iphone", "revision": 2,
             "messages": conversation, "activities": steps])
+        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once.
+        if arguments.contains("--ui-long-thread") {
+            let (longMessages, longSteps) = Self.fixtureLongThread(at)
+            fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
+                "messages": longMessages, "activities": longSteps])
+        }
+        fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
             let answers = asking && host == laptop
             let hostCaps = answers ? answeringCaps : caps
@@ -285,6 +294,28 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+    }
+    /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
+    private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
+        var messages: [[String: Any]] = []
+        var steps: [[String: Any]] = []
+        for turn in 0..<12 {
+            let base = Double(12 - turn) * 600
+            messages.append(["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
+                             "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."])
+            steps.append(["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
+                          "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)])
+            let lead = turn == 11 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
+            let bullets: [String] = (0..<(3 + turn % 4)).map { point in
+                "- **Point \(point + 1):** the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered."
+            }
+            let text = "**\(lead)**\n" + bullets.joined(separator: "\n")
+                + "\n\n1. Check the breaker.\n2. Check the conduit fill.\n\n```sh\npython compare_drives.py --option \(turn + 1) --report\n```"
+            messages.append(["id": "reply-\(turn)", "role": "assistant", "createdAt": at(base - 120), "text": text])
+        }
+        steps.append(["id": "long-final", "sequence": 13, "kind": "command", "status": "completed", "title": "Ran",
+                      "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
+        return (messages, steps)
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
     private static var fixtureWorktree: [String: Any] {
@@ -791,7 +822,12 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         selected = ref; openDetail = nil; detailProblem = nil; detailVersion += 1
         #if DEBUG && os(iOS)
         if isUIFixture {
-            openDetail = ref.flatMap { fixtureDetails[$0.id] }
+            let detail = ref.flatMap { fixtureDetails[$0.id] }
+            if fixtureSlowDetail, let ref {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard selected == ref else { return }
+            }
+            openDetail = detail
             return
         }
         #endif
