@@ -481,3 +481,63 @@ it('finishes cleanup of a recognized setting when a new record cannot be saved',
     expect(server.started[0]!.closed).toBe(true)
   } finally { write.mockRestore(); await access.close() }
 })
+
+it('shares a pairing store already loaded, as a headless host does, so a phone pairs into the host’s one set of clients', async () => {
+  const { PairedClients } = await import('../../../src/main/agents/pairing')
+  const pairing = new PairedClients(root)
+  await pairing.load()
+  const fake = fakeTailscale(), server = fakeServer()
+  const policy = { mayGrant: () => ({ allowed: false }), setRemoteAnswers: vi.fn() }
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, pairing, policy })
+  await access.start()
+  // A desktop paired with the same host is no phone: it is never listed, and the dialog cannot remove it.
+  const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
+  const shown = await access.command({ type: 'show-code' })
+  expect(shown.code).not.toBeNull()
+  const phone = await pairing.redeem(shown.code!.code, 'Zach’s iPhone')
+  server.started[0]!.onPaired!(phone.clientId)
+  expect(access.get().phones).toMatchObject([{ name: 'Zach’s iPhone' }])
+  await expect(access.command({ type: 'remove', clientId: desktop.clientId })).rejects.toThrow('no longer paired')
+  await expect(access.command({ type: 'set-can-answer', clientId: desktop.clientId, allowed: true })).rejects.toThrow('no longer paired')
+  expect(policy.setRemoteAnswers).not.toHaveBeenCalled()
+  expect(pairing.list().map(client => client.name)).toEqual(['Sotto desktop', 'Zach’s iPhone'])
+  await access.close()
+  // The phones are remembered across a restart.
+  const again = create({ tailscale: fake.tailscale, startServer: fakeServer().startServer, pairing })
+  await again.access.start()
+  expect(again.access.get().phones.map(item => item.name)).toEqual(['Zach’s iPhone'])
+  await again.access.command({ type: 'remove', clientId: phone.clientId })
+  expect(again.access.get().phones).toEqual([])
+  await again.access.close()
+})
+
+it('says Tailscale refused this account when it will not show or change Serve, and changes nothing', async () => {
+  const { TailscaleAccessDenied } = await import('../../../src/main/phones/tailscale')
+  const refused = fakeTailscale(), server = fakeServer()
+  refused.tailscale.serveStatus = vi.fn(async () => { throw new TailscaleAccessDenied('denied') })
+  const { access } = create({ tailscale: refused.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'denied' }, address: null })
+  expect(refused.tailscale.serve).not.toHaveBeenCalled()
+  await access.close()
+
+  const denied = fakeTailscale({ serve: { ok: false, reason: 'denied' } })
+  const second = create({ tailscale: denied.tailscale, startServer: fakeServer().startServer })
+  await second.access.start()
+  expect(second.access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'denied' } })
+  // A refusal set nothing up, so nothing is left for cleanup to take away.
+  expect(await record()).toMatchObject({ mapped: false })
+  expect(denied.tailscale.unserve).not.toHaveBeenCalled()
+  await second.access.close()
+})
+
+it('hands back the page Tailscale gave for turning Serve on, only while setup stopped there', async () => {
+  const fake = fakeTailscale({ serve: { ok: false, reason: 'not-enabled', enableUrl: 'https://login.tailscale.com/f/serve?node=abc' } })
+  const { access } = create({ tailscale: fake.tailscale, startServer: fakeServer().startServer })
+  await access.start()
+  expect(access.serveSetupUrl()).toBe('https://login.tailscale.com/f/serve?node=abc')
+  const other = create({ tailscale: fakeTailscale().tailscale, startServer: fakeServer().startServer })
+  await other.access.start()
+  expect(other.access.serveSetupUrl()).toBeUndefined()
+  await access.close(); await other.access.close()
+})

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import SottoCore
 
-/// One thread, as thread page B draws it (ADR-0050): only a slim bar stays pinned (back, the thread's state, and its
+/// One thread, as thread page B draws it (ADR-0051): only a slim bar stays pinned (back, the thread's state, and its
 /// title once the big one has scrolled off). The big title, where the thread runs and its branch chips scroll away with
 /// the conversation, and the agent's steps sit between the messages in time order. A waiting question or permission
 /// opens as a sheet; dismissed, the reply box offers it again. Everything here goes to the thread's own computer.

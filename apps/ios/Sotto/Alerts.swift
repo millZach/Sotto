@@ -6,7 +6,7 @@ import SottoCore
 private let alertHostKey = "hostID"
 private let alertThreadKey = "threadID"
 
-/// Local alerts through iOS's notification centre (ADR-0050). Nothing here uses Apple's push service or needs an
+/// Local alerts through iOS's notification centre (ADR-0051). Nothing here uses Apple's push service or needs an
 /// entitlement: an alert is posted on this iPhone, while Sotto runs, and names only the thread, its agent and its
 /// computer. Nothing here logs.
 @MainActor final class AlertCenter: AlertPosting {

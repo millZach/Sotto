@@ -28,7 +28,7 @@ private final class FrameBox {
 }
 
 /// Threads: questions and permissions first, answerable in place, then working threads, recent ones and the
-/// settled shelf (ADR-0039, ADR-0050). The heading, the computer menu, the summary and search scroll with the
+/// settled shelf (ADR-0039, ADR-0051). The heading, the computer menu, the summary and search scroll with the
 /// list as one sheet. Focus reads only host list summaries; opening a thread subscribes to its detail.
 struct ThreadsView: View {
     @EnvironmentObject var model: AppModel

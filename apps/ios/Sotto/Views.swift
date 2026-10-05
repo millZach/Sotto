@@ -31,7 +31,7 @@ struct MainTabs: View {
                 .tag(Tab.settings)
         }
         .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
-        // A tapped alert opens its thread on Threads (ADR-0050).
+        // A tapped alert opens its thread on Threads (ADR-0051).
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onAppear { openAlerted(model.alertOpened) }
     }

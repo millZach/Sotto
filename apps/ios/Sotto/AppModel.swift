@@ -57,7 +57,7 @@ struct DraftPhoto: Identifiable {
 /// Whether iOS lets Sotto show alerts.
 enum AlertPermission: Equatable { case undecided, allowed, denied }
 
-/// Shows local alerts (ADR-0050): only on this iPhone, with no push service. The app hands the model iOS's
+/// Shows local alerts (ADR-0051): only on this iPhone, with no push service. The app hands the model iOS's
 /// notification centre; the model's tests hand it a fake.
 @MainActor protocol AlertPosting: AnyObject {
     func permission() async -> AlertPermission
@@ -766,7 +766,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     private enum Revocation {
         case confirmed, unreachable, unconfirmed
         func words(name: String, clientID: String) -> String {
-            let there = "Remove it there too: in Settings › Phones on \(name), or on a host without a screen with its --revoke-client \(clientID) command."
+            let there = "Remove it there too: in Settings › Phones on \(name). For a computer without a screen, use Phones on its row in Settings › Hosts on your main computer, or its --revoke-client \(clientID) command."
             switch self {
             case .confirmed: return "Removed \(name)."
             case .unreachable: return "Removed \(name) from this iPhone. It couldn’t be reached, so it still lists this iPhone. " + there
@@ -1229,7 +1229,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         guard let host = live[hostID]?.shell?.host else { return [] }
         return NewThreads.availableModels(host)
     }
-    /// The new-thread defaults kept on this iPhone (ADR-0050).
+    /// The new-thread defaults kept on this iPhone (ADR-0051).
     var newThreadDefaults: NewThreadDefaults {
         NewThreadDefaults(modelID: preferences.newThreadModel, effort: preferences.newThreadEffort,
                           permissionID: preferences.newThreadPermission,
@@ -1371,7 +1371,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 
     // MARK: Alerts on this iPhone
 
-    /// Whether iOS lets Sotto alert, asking the first time (ADR-0050). Settings calls this as a switch turns on.
+    /// Whether iOS lets Sotto alert, asking the first time (ADR-0051). Settings calls this as a switch turns on.
     func allowAlerts() async -> Bool {
         #if DEBUG && os(iOS)
         // The simulator journeys never meet iOS's question, and nothing is posted from the fixture.

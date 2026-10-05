@@ -58,6 +58,11 @@ export interface SshHostConnection {
   /** Establish this SSH desktop's default policy once; prior policy decisions are never changed. */
   ensureDesktopAnswers(clientId: string): Promise<void>
   revokeClient(clientId: string): Promise<boolean>
+  /**
+   * The running host's administrative token, which this connection's launch read, for the host's phone access routes on
+   * its forwarded port (ADR-0050). Keep it in memory for this connection only; never write it down or log it.
+   */
+  hostAdminToken(): Promise<string>
   stopHost(): Promise<boolean>
   /** One operation of a host update on this host. A failure the host reports comes back as its `error` result; a lost connection throws. */
   updateHost(operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
@@ -77,7 +82,9 @@ export interface SshLauncherDependencies {
   readonly askpassNode?: string
 }
 const healthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535) })
-const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boolean() })
+const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boolean(),
+  /** Only a launch's result carries it (ADR-0050). It stays on this connection's attempt and goes nowhere else. */
+  adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional() })
 const pairingSchema = z.object({ type: z.literal('pairing-code'), code: z.string().min(1).max(256), expiresAt: z.string().datetime(), hostId: z.uuid() })
 const desktopAnswersSchema = z.object({ type: z.literal('desktop-answers'), hostId: z.uuid() })
 const revokedSchema = z.object({ type: z.literal('revoked'), revoked: z.boolean(), hostId: z.uuid() })
@@ -284,6 +291,7 @@ export class SshHostLauncher {
       this.status(attempt, 'ready')
       return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route,
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
+        hostAdminToken: () => this.adminToken(attempt),
         stopHost: async () => { try { return await this.stopHost(attempt) } finally { await this.closeAttempt(attempt) } },
         updateHost: (operation, options) => this.updateHost(attempt, operation, options) }
     } catch (error) {
@@ -587,6 +595,11 @@ export class SshHostLauncher {
       const revoked = revokedSchema.safeParse(value)
       return revoked.success && revoked.data.hostId === hostId ? revoked.data.revoked : undefined
     })
+  }
+  private async adminToken(attempt: Attempt): Promise<string> {
+    if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', 'Connect to the SSH host before changing its phone access.')
+    if (!attempt.ready.adminToken) throw new SshFailure('admin-failed')
+    return attempt.ready.adminToken
   }
   private async ensureDesktopAnswers(attempt: Attempt, clientId: string): Promise<void> {
     if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', 'Connect to the SSH host before setting up desktop permissions.')

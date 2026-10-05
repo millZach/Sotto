@@ -2,7 +2,7 @@ import SwiftUI
 import SottoCore
 import UIKit
 
-// The iPhone's Glow look (ADR-0050): one type scale and one spacing scale in Figtree, colour from the chosen
+// The iPhone's Glow look (ADR-0051): one type scale and one spacing scale in Figtree, colour from the chosen
 // theme, a wash at the top of each page, glass over content, and glows that say what needs the user and
 // what is working. `docs/prototypes/iphone-redesign/glow-refined.html` is the reference for every value here.
 

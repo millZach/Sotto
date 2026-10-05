@@ -1,6 +1,6 @@
 import Foundation
 
-/// Preferences kept on this iPhone in UserDefaults (ADR-0050). Nothing here is sent to a paired computer or
+/// Preferences kept on this iPhone in UserDefaults (ADR-0051). Nothing here is sent to a paired computer or
 /// changes its settings. SwiftUI views read these keys with `@AppStorage`; anything else, the app model included,
 /// reads them through `PhonePreferences`. This file imports Foundation only so the model's tests can compile it.
 enum PhonePreferenceKey {

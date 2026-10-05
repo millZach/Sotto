@@ -306,6 +306,27 @@ it('keeps a host it started owned across a reconnect, so Stop host still stops i
   expect(() => process.kill(descriptor.pid, 0)).toThrow()
 })
 
+// Phone access on a host (ADR-0050): the launch hands back the host's administrative token, so no second sign-in is needed.
+it('keeps the administrative token the launch read for this connection, and never puts it on a command line', async () => {
+  const { launcher, path, spawns } = await fixture('run')
+  const install = join(path, 'opt', 'sotto release', 'host')
+  await mkdir(install, { recursive: true })
+  await writeFile(join(install, '..', 'package.json'), JSON.stringify({ type: 'module' }))
+  await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(install, 'index.js'))
+  const connection = await launcher.connect(configuration)
+  hosts.push((JSON.parse(await readFile(join(path, 'data', 'sotto', 'host-listener.json'), 'utf8')) as { pid: number }).pid)
+  expect(await connection.hostAdminToken()).toBe('remote-only-secret')
+  const spawned = await spawns()
+  expect(spawned.filter(item => item.op).map(item => item.op)).toEqual(['launch'])
+  for (const item of spawned) expect(item.args.join(' ')).not.toContain('remote-only-secret')
+  await connection.stopHost()
+})
+it('says phone access cannot be reached when the launch handed back no token', async () => {
+  const { launcher } = await fixture('started')
+  const connection = await launcher.connect(configuration)
+  expect((await failure(connection.hostAdminToken())).code).toBe('admin-failed')
+})
+
 // The host setup checklist and Tailscale SSH's `check` mode (#429).
 const keepalives = (args: string[]): string | undefined => args.find(value => value.startsWith('ServerAliveCountMax='))
 it('reports each checklist step it reaches: a question means SSH reached the host, and the first output that it signed in', async () => {

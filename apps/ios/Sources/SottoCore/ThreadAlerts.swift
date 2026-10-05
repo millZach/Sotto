@@ -1,6 +1,6 @@
 import Foundation
 
-/// The alerts the user has turned on in Settings. Each is off until turned on (ADR-0050).
+/// The alerts the user has turned on in Settings. Each is off until turned on (ADR-0051).
 public struct AlertSwitches: Equatable, Sendable {
     public var needsYou: Bool; public var finished: Bool; public var failed: Bool
     public init(needsYou: Bool = false, finished: Bool = false, failed: Bool = false) {

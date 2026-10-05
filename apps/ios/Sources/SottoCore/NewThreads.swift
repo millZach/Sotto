@@ -77,7 +77,7 @@ public enum WorkingCopy: String, CaseIterable, Sendable {
     case shared, independent
 }
 
-/// The choices this iPhone keeps for new threads (ADR-0050). Nil where the computer's own choice applies.
+/// The choices this iPhone keeps for new threads (ADR-0051). Nil where the computer's own choice applies.
 public struct NewThreadDefaults: Equatable, Sendable {
     public var modelID: String?; public var effort: String?; public var permissionID: String?; public var workingCopy: WorkingCopy?
     public init(modelID: String? = nil, effort: String? = nil, permissionID: String? = nil, workingCopy: WorkingCopy? = nil) {
@@ -107,7 +107,7 @@ public enum NewThreads {
         return offered[Int((Double(position) / Double(reference.count - 1) * Double(offered.count - 1)).rounded())]
     }
     /// The model New thread starts on: this iPhone's default where the computer offers it ready, otherwise the
-    /// computer's own saved choice (ADR-0050).
+    /// computer's own saved choice (ADR-0051).
     public static func startingModelID(_ shell: Shell, defaults: NewThreadDefaults) -> String {
         if let preferred = defaults.modelID, availableModels(shell.host).contains(where: { $0.id == preferred }) { return preferred }
         return startingModelID(shell)

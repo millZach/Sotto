@@ -6,7 +6,7 @@ import UserNotifications
     @StateObject private var previews = PhotoPreviews()
     @Environment(\.scenePhase) private var phase
     init() {
-        // The earlier Larger text switch becomes the Larger step of the five text sizes (ADR-0050).
+        // The earlier Larger text switch becomes the Larger step of the five text sizes (ADR-0051).
         PhonePreferences().migrate()
         // Set before launch finishes, so a tapped alert that launches Sotto still reaches its thread.
         UNUserNotificationCenter.current().delegate = AlertDelegate.shared
@@ -25,7 +25,7 @@ import UserNotifications
                 .task {
                     // A sent reply's photos are drawn from this iPhone's own copies until the thread is read again.
                     model.photosSent = { [weak previews] photos, ref in previews?.keep(photos, ref: ref) }
-                    // Local alerts while Sotto runs (ADR-0050); the model decides what is news.
+                    // Local alerts while Sotto runs (ADR-0051); the model decides what is news.
                     AlertCenter.shared.attach(model)
                     model.phase(phase)
                 }

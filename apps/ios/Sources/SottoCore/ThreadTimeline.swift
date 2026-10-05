@@ -24,7 +24,7 @@ public enum TimelineItem: Identifiable, Sendable {
     }
 }
 
-/// A thread's messages and the agent's steps as one conversation in time order (ADR-0050). Messages keep their own
+/// A thread's messages and the agent's steps as one conversation in time order (ADR-0051). Messages keep their own
 /// order, and so do steps, by sequence. A message is placed by `createdAt` and a step by `startedAt`; a step the host
 /// gave no time follows the step before it, and one that came before any timed step takes the time of the first.
 /// With no times to compare, steps sit after the last message from the user. Turn records are not steps.

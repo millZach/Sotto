@@ -2,7 +2,7 @@ import SwiftUI
 import SottoCore
 
 /// Three choices: computer, project (or a folder on it), then that computer's model and options (ADR-0039). The
-/// options start from this iPhone's new-thread defaults where the computer offers them (ADR-0050), and each field's
+/// options start from this iPhone's new-thread defaults where the computer offers them (ADR-0051), and each field's
 /// whole box opens its choices.
 struct NewThreadSheet: View {
     @EnvironmentObject var model: AppModel

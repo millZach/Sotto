@@ -156,7 +156,17 @@ const start = async () => {
   if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
   throw new Error('host-timeout');
 };
-const launch = async () => finish(await start());
+// A launch also hands back the host's administrative token, for the desktop on the other end of this session to
+// administer the host's phone access through the port it forwards (ADR-0050), without signing in over SSH again.
+// This account can read the descriptor already; the token travels only on this session's stdout, and the desktop
+// keeps it in memory for this one connection.
+const adminToken = async ready => {
+  try {
+    const value = JSON.parse(await fs.readFile(descriptorPath, 'utf8'));
+    return value.hostId === ready.hostId && value.pid === ready.pid && typeof value.adminToken === 'string' && /^[A-Za-z0-9_-]{16,256}$/.test(value.adminToken) ? value.adminToken : undefined;
+  } catch { return undefined; }
+};
+const launch = async () => { const ready = await start(); const token = await adminToken(ready); return finish(token ? { ...ready, adminToken: token } : ready); };
 const admin = async () => {
   const current = await discover().catch(() => null);
   if (!current || current.hostId !== cfg.hostId) return finish({ type: 'failed' });

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /*
- * The iPhone paints Sotto's six built-in palettes (ADR-0050). Its Swift copy,
+ * The iPhone paints Sotto's six built-in palettes (ADR-0051). Its Swift copy,
  * apps/ios/Sotto/ThemePalettes.swift, is generated from the desktop's own
  * definitions here, so the two cannot drift: this test rebuilds the Swift
  * source and fails when the committed file differs.
@@ -152,7 +152,7 @@ function swiftSource(palettes: readonly IosPalette[]): string {
     '}',
     '',
     '/// One half of a palette: the desktop\'s roles the iPhone paints, then four text colours derived from them that',
-    '/// keep 4.5:1 or better on every surface the iPhone tints (ADR-0050).',
+    '/// keep 4.5:1 or better on every surface the iPhone tints (ADR-0051).',
     'struct ThemeSwatch: Equatable {',
     ...fields.map(field => `    let ${field}: ThemeRGB`),
     '}',

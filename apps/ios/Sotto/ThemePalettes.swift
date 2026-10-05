@@ -14,7 +14,7 @@ struct ThemeRGB: Equatable {
 }
 
 /// One half of a palette: the desktop's roles the iPhone paints, then four text colours derived from them that
-/// keep 4.5:1 or better on every surface the iPhone tints (ADR-0050).
+/// keep 4.5:1 or better on every surface the iPhone tints (ADR-0051).
 struct ThemeSwatch: Equatable {
     let canvas: ThemeRGB
     let surface: ThemeRGB

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted September 26, 2026, by the owner's choice of variant C, "Guided setup", in `docs/prototypes/phone-access-prototype.html`. Amends [ADR-0025](0025-headless-host-and-client-identity.md), which said the desktop adds no production listener.
+Accepted September 26, 2026, by the owner's choice of variant C, "Guided setup", in `docs/prototypes/phone-access-prototype.html`. Amends [ADR-0025](0025-headless-host-and-client-identity.md), which said the desktop adds no production listener. Amended by [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md): a headless host now runs the same phone access, turned on from the desktop's Hosts page, and sends its name on the tailnet.
 
 ## Context
 

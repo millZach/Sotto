@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import SottoCore
 
-/// Settings on this iPhone (ADR-0039, ADR-0050): the look, alerts, new-thread defaults and About. Everything here
+/// Settings on this iPhone (ADR-0039, ADR-0051): the look, alerts, new-thread defaults and About. Everything here
 /// stays on this iPhone; nothing is sent to a paired computer or changes its settings.
 struct SettingsView: View {
     @State private var toast: String?
@@ -236,7 +236,7 @@ private struct DensityPanel: View {
 
 // MARK: - Notifications
 
-/// Local alerts while Sotto runs (ADR-0050). Each is off until turned on; turning one on is when iOS asks.
+/// Local alerts while Sotto runs (ADR-0051). Each is off until turned on; turning one on is when iOS asks.
 private struct NotificationsPanel: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openURL) private var openURL
@@ -334,7 +334,7 @@ private struct AlertSwitch: View {
 // MARK: - New thread defaults
 
 /// What New thread starts on. Each default applies only where the chosen computer offers it, and a permission that
-/// lets a thread act without asking only while that computer lets this iPhone answer (ADR-0050, ADR-0033).
+/// lets a thread act without asking only while that computer lets this iPhone answer (ADR-0051, ADR-0033).
 private struct DefaultsPanel: View {
     let announce: (String) -> Void
     @EnvironmentObject var model: AppModel
