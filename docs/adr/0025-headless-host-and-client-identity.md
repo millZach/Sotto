@@ -2,7 +2,7 @@
 
 ## October 5 amendment: a tailnet connection, and a host that starts at boot
 
-[ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](0054-a-host-can-start-at-boot-on-linux.md), proposed October 5, 2026 under the owner's delegation for the owner to confirm, change several statements below. Once accepted, where they disagree with this ADR, they win.
+[ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](0054-a-host-can-start-at-boot-on-linux.md), accepted October 5, 2026 under the owner's delegation, change several statements below. Where they disagree with this ADR, they win.
 
 - **SSH is no longer the only path** (the decision's "SSH remains the first planned remote path", and the September 21 transport paragraph). A desktop paired with a host reaches it first through the host's tailnet address, over the host's tailnet listener carried by Tailscale Serve, and uses its SSH connection when the tailnet does not answer or the owner chose SSH only. The listener still binds loopback only. Pairing, the `remote-answer` grant and every launch script operation stay on SSH, and the desktop never pairs on the tailnet.
 - **The forward is no longer the only connection** (the September 23 amendment's "the `-N -L` port forward is the only long-lived ssh, and its exit is what a dropped connection is"). On the SSH connection the forward still carries the socket, as below. On a tailnet connection there is no forward, and a press that needs the launch script opens an admin connection, an SSH connection with no socket on it that closes 60 seconds after its last use. A dropped connection is the socket closing, on either connection.

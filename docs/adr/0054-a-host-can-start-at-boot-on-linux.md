@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 5, 2026, for the owner to confirm on the pull request; it becomes Accepted with the date of that confirmation. The owner delegated the open questions to the agent that wrote this ("Go ahead and do everything we discussed, no need to stop and ask me"), so the picks below are the agent's, made under that delegation and recorded as such. The design is the boot offer and the consent modal of variant C with A's controls in `docs/prototypes/host-tailnet-prototype.html`; the plan is `docs/plans/host-tailnet-connection.md`. Companion to [ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md). Amends [ADR-0025](0025-headless-host-and-client-identity.md), [ADR-0040](0040-an-older-host-is-updated-from-the-threads-page.md) and [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md), whose first consequence left running the host as a service to separate work. This is that work.
+Accepted October 5, 2026. The owner delegated the open decisions on October 5, 2026 ("Go ahead and do everything we discussed, no need to stop and ask me"), including the ones the owner's reviews of the pull request left open, so the picks below are the agent's, made under that delegation and recorded as such. The design is the boot offer and the consent modal of variant C with A's controls in `docs/prototypes/host-tailnet-prototype.html`; the plan is `docs/plans/host-tailnet-connection.md`. Companion to [ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md). Amends [ADR-0025](0025-headless-host-and-client-identity.md), [ADR-0040](0040-an-older-host-is-updated-from-the-threads-page.md) and [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md), whose first consequence left running the host as a service to separate work. This is that work.
 
 ## Context
 
@@ -16,13 +16,13 @@ Linux machines with a systemd user manager can start a user's own process at boo
 
 **Where it applies.** Linux with a systemd user manager. macOS hosts are out: a LaunchAgent starts only at sign-in, and a LaunchDaemon needs root. Windows hosts are out: the launch script is POSIX only. Linux without a user manager (WSL without systemd, a container) is out. In each case the launch script's `boot-status` says `unsupported` with one plain sentence saying why, and the desktop offers nothing.
 
-**Linger comes first.** Start at boot needs the account to linger, and nothing on the host changes until it does. The unit is installed only once linger is on, and a launch uses the unit only while the account lingers; if linger is later turned off, launches go back to starting a detached host, and `boot-status` says why.
+**Linger comes first.** Start at boot needs the account to linger, and nothing on the host changes until it does. The unit is installed only once linger is on, and **Start at boot** refuses to enable it while linger is off. If linger is later turned off, the next launch turns start at boot off (below), so a unit never runs a host that would stop at sign-out.
 
 **The launch script's operations.** Three new operations, each one `ssh` command like the others:
 
 - `boot-status` reports whether boot start is supported, installed and active, whether the account lingers, and whether the unit's pinned Node has drifted from the one the host archive wants. A launch reports it too.
 - `boot-install` reads the account's linger setting first (`loginctl show-user -p Linger`). If it is off, it runs `loginctl enable-linger` for the account, without sudo, since linger is the account's own setting and the owner consented to it with the press. If polkit refuses, it stops there: nothing is written and the running host is untouched, and the result carries `sudo loginctl enable-linger <user>`, which the modal shows with a copy button and the advice to run it on the host and press Start at boot again. Sotto never runs sudo, as with the Serve operator (ADR-0050). Once the account lingers, it writes `~/.config/systemd/user/sotto-host.service` and a small `boot-start.sh` in the installation folder, reloads the user manager and enables the unit. It then hands over a running host: one Sotto started is stopped the way Stop host stops it (SIGTERM, 15 seconds to save and exit) and started again by the unit, so it restarts once; one Sotto did not start is left running and the unit takes over at the next boot. The modal says which before the press.
-- `boot-remove` disables and stops the unit, removes both files, and starts the host the way a launch does, so a host that is switched on keeps running. That is a restart, and the modal says so before the press. Forget runs it without the last step (below).
+- `boot-remove` disables and stops the unit, removes both files, and, only when the host is switched on, starts the host the way a launch does, so it keeps running. That is a restart, and the modal says so before the press. It never starts or restarts a host that is switched off: after Stop host, or for any host this desktop has switched off, the host stays stopped. Forget runs it without the last step (below).
 
 **A busy host asks first.** Installing the unit over a host Sotto started, and removing it, each restart the host once, which stops its turns in progress. Both use ADR-0040's busy-host question: when one of the host's threads is working, the modal says how many and offers to wait until they finish, to stop them now, or to cancel, as Update does.
 
@@ -32,9 +32,10 @@ Linux machines with a systemd user manager can start a user's own process at boo
 
 **Lifecycle with the unit installed.**
 
-- A launch never starts a detached host while the unit is enabled and the account lingers. It asks the user manager to start the unit and waits for the host, so a launch and the unit cannot race for the host lock.
+- A launch reads the unit and the account's linger before it spawns anything, so a launch and the unit never race for the host lock. With linger on and the unit enabled, it never spawns a detached host: if `sotto-host` is active it uses that host, and otherwise it asks the user manager to start the unit and waits for the host.
+- With linger off and the unit enabled, the launch's own sign-in may already have started the unit through `default.target`. The launch disables the unit, stops the unit's host if one is running, and then spawns a detached host as today. It reports start at boot as off, with `sudo loginctl enable-linger <user>` for the owner to run before pressing Start at boot again. The unit's files stay, disabled.
 - **Stop host** stops the unit. Its confirmation says "forge's host stops now and starts again when forge restarts or when you switch it on."
-- **Forget** removes the unit and its script wherever it is installed, and stops the host only if Sotto started it, so a forgotten host does not come back at the next boot. Its confirmation says so.
+- **Forget** revokes this desktop first (ADR-0053, "Forget"), then removes the unit and its script wherever it is installed, and stops the host only if Sotto started it, so a forgotten host does not come back at the next boot. Its confirmation says so. When SSH cannot reach the host, the unit stays, and Forget says so with the rest.
 - **Update**'s restart writes `current` and restarts the unit, then waits for the new host. A rollback points `current` back and restarts the unit again.
 - The host puts Serve back at start from its own `phoneAccess` and `tailnetConnections` settings (ADR-0053), and the Serve setting survives a reboot in tailscaled too. A user unit cannot be ordered after `tailscaled`, so for the first 5 minutes after a start the host's phone access retry, every 30 seconds, also covers Tailscale missing and Serve failing.
 
@@ -47,7 +48,7 @@ Linux machines with a systemd user manager can start a user's own process at boo
 ## Consequences
 
 - A host started at boot keeps its threads reachable from phones and tailnet connections across a restart of its machine, with no desktop and no SSH.
-- Installing the unit, and removing it, each restart a host Sotto started once. Its turns in progress stop, as Stop host's do, after the busy-host question.
+- Installing the unit, and removing it, each restart a host Sotto started once; removing it from a host that is switched off stops it and leaves it stopped. Its turns in progress stop, as Stop host's do, after the busy-host question.
 - A host whose account cannot linger without an administrator gets nothing until the owner runs the command; Sotto does not install a unit that would stop the host at sign-out.
 - The pinned Node path drifts when a version manager upgrades Node. `boot-status` reports the drift and an update rewrites the script.
 - Tests use fake `systemctl` and `loginctl` executables on the path. Only a check on a real Linux host, recorded in `docs/verification/`, proves the unit, linger and a reboot.

@@ -1,6 +1,6 @@
 # Plan: reach a remote host over the tailnet first, and let it start at boot
 
-Status: written October 5, 2026. The decisions are [ADR-0053](../adr/0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](../adr/0054-a-host-can-start-at-boot-on-linux.md), both Proposed until the owner confirms them on the pull request that adds this plan. The prototype is `docs/prototypes/host-tailnet-prototype.html` (variant C with A's controls). This plan does not restate the model: what each name means is in `CONTEXT.md`, and what happens is in the ADRs' sections, which this plan points to by name. It holds what the ADRs do not: the order of the work, the files, the tests, the risks and the check on forge. When a later pull request changes a detail of the model, it changes the ADR, not this plan.
+Status: written October 5, 2026. The decisions are [ADR-0053](../adr/0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) and [ADR-0054](../adr/0054-a-host-can-start-at-boot-on-linux.md), both Accepted October 5, 2026 under the owner's delegation (section 7). The prototype is `docs/prototypes/host-tailnet-prototype.html` (variant C with A's controls). This plan does not restate the model: what each name means is in `CONTEXT.md`, and what happens is in the ADRs' sections, which this plan points to by name. It holds what the ADRs do not: the order of the work, the files, the tests, the risks and the check on forge. When a later pull request changes a detail of the model, it changes the ADR, not this plan.
 
 ## 1. Model, by ADR section
 
@@ -16,7 +16,8 @@ Status: written October 5, 2026. The decisions are [ADR-0053](../adr/0053-a-desk
 | `tailnetConnections`: who turns it on and off | ADR-0053 "The host side" |
 | Health, hello and the launch result | ADR-0053 "What the protocol gains" |
 | The row, Edit connection, the Phones dialog | ADR-0053 "What the owner sees" |
-| Where start at boot applies, linger first, the three operations, the busy-host question, the unit, Forget | ADR-0054 "Decision" |
+| Forget's revoke, and what Forget says when SSH cannot reach the host | ADR-0053 "Forget" |
+| Where start at boot applies, linger first, the three operations, the busy-host question, the unit, a launch with linger off, Forget | ADR-0054 "Decision" |
 
 Implementation shapes the ADRs leave open, recorded here so the pull requests agree:
 
@@ -26,7 +27,8 @@ Implementation shapes the ADRs leave open, recorded here so the pull requests ag
 - The failure classes are typed codes beside today's: `tailnet-unreachable`, `tailnet-wrong-host` and `tailnet-not-desktop` go to SSH; a 401 is today's `pairing-required`; `version_mismatch` is unchanged.
 - Drops and moves call the router's `setReconnecting` and then `replace`, generalising the path a host update's restart uses. `remove` is for Forget, switch-off and a final failure.
 - `tailnetConnections` is host-local but lives in `AppSettings` like `phoneAccess`, because the host's settings store validates against it. It is not on the desktop's settings allow-list in `registerIpc.ts`: nothing on a desktop sets it, and the host's administrative route writes it. `tests/integration/ipc.test.ts`'s every-field check leaves it out the way it leaves out `hotkey` and `launchAtStartup`, with a comment saying why.
-- The launch script's `boot-status` result is `{ supported, reason?, installed, active, linger, nodeDrift }`.
+- The launch script's `boot-status` result is `{ supported, reason?, installed, enabled, active, linger, nodeDrift, fix? }`, where `fix` is the `sudo loginctl enable-linger <user>` line whenever linger is off. A launch reports the same shape.
+- The launch script's `revoke-client` stays the only revoke. `LiveHost.admin()` exposes it, and Forget calls it through `admin()` whichever connection carries the socket; the socket gains no revoke command.
 
 ## 2. The unit
 
@@ -50,9 +52,15 @@ WantedBy=default.target
 2. Write the unit and `boot-start.sh`, run `systemctl --user daemon-reload` and `systemctl --user enable sotto-host`.
 3. If the running host is Sotto's, stop it (SIGTERM, 15 seconds), run `systemctl --user start sotto-host` and wait for it as a launch does. If it is not Sotto's, leave it.
 
-`boot-remove`: `systemctl --user disable --now sotto-host`, remove both files, `daemon-reload`, then start a detached host as a launch does. Forget calls it with `{ restart: false }`.
+`boot-remove { restart }`: `systemctl --user disable --now sotto-host`, remove both files, `daemon-reload`, then, only when `restart` is true, start a detached host as a launch does. The desktop passes `restart: true` only when the saved host is switched on; a switched-off host (including one Stop host switched off) and Forget pass `false`, so boot-remove never starts or restarts a host that is switched off.
 
-A launch while the unit is enabled and `Linger=yes` runs `systemctl --user start sotto-host` and waits rather than spawning a detached host. With `Linger=no` it starts a detached host as today and reports why in `boot-status`.
+A launch checks the unit before it spawns anything:
+
+- Unit enabled, `Linger=yes`: if `systemctl --user is-active sotto-host` says active, it finds and reuses that host; otherwise it runs `systemctl --user start sotto-host` and waits for the host. It never spawns a detached host.
+- Unit enabled, `Linger=no`: the launch's own sign-in may have started the unit through `default.target`. It runs `systemctl --user disable --now sotto-host`, which stops the unit's host if one is running and keeps `Restart=on-failure` from bringing it back, then spawns a detached host as today. The unit's files stay. Its result reports start at boot as off (`enabled: false, linger: false`) with the `fix` line.
+- Unit not enabled: today's launch.
+
+`boot-install` keeps refusing to enable the unit while `Linger=no` (step 1).
 
 ## 3. Docs that change with the code
 
@@ -72,6 +80,7 @@ The prototype draws the row's meta lines, Edit connection, Add host's tailnet st
 
 States the prototype does not draw, and the pull request that draws them in its own mock-up or captures before it builds them:
 
+- PR 3: what Forget says when SSH could not reach the host: the host is removed from this computer, the host still trusts this computer until it is removed there, and the `--revoke-client` command with this computer's client ID and a copy button.
 - PR 5: Add host's form before the press, with its sentence that Sotto turns on Tailscale Serve on the host; the Tailscale row's missing-state line; Rename copy.
 - PR 7: Stop host's and Forget's confirmations for a host with the unit (Forget says the unit is removed); the update panel's copy for a host started at boot; the consent modal for a host Sotto did not start (the unit takes over at the next boot); the busy-host question on Start at boot and Stop starting at boot; linger refused from Add host's connected card.
 
@@ -83,7 +92,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
 
 1. **Decide how a desktop reaches a host over its tailnet and starts it at boot**
    - Branch: `feat/host-tailnet-adr`.
-   - ADR-0053 and ADR-0054 (Proposed until the owner confirms them on the PR), the amendments to ADR-0004, ADR-0025, ADR-0037, ADR-0040 and ADR-0050, the prototype, the `CONTEXT.md` entries, and this plan. Docs only.
+   - ADR-0053 and ADR-0054 (Accepted under the owner's delegation), the amendments to ADR-0004, ADR-0025, ADR-0037, ADR-0040 and ADR-0050, the prototype, the `CONTEXT.md` entries, and this plan. Docs only.
 2. **Let a host's tailnet listener carry desktops**
    - Branch: `feat/host-tailnet-listener`.
    - Files:
@@ -101,13 +110,17 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
    - Docs: `docs/host-protocol.md`.
 3. **Keep the admin SSH apart from a host's socket connection**
    - Branch: `feat/host-admin-connection`.
-   - A refactor that changes no behaviour a user sees:
+   - A refactor that changes no behaviour a user sees, except Forget's when SSH cannot reach the host:
      - `LiveHost` gets `admin(): Promise<AdminConnection>`, which returns the SSH connection when the host is on it and otherwise opens an admin connection (lazy, 60 seconds idle close);
      - `openSocket` takes `{ url, expectedHostId }`;
      - phones, updates, stop, forget and cancelAdd go through `admin()`;
+     - Forget revokes this desktop with `admin()`'s `revokeClient` (the launch script's `revoke-client`) before the stop and the boot unit's removal, whichever connection carries the socket, no longer only when the host has a tunnel. When `admin()` cannot reach the host, Forget still removes it from this desktop and clears its credential, and its result says the pairing was not revoked, which Settings > Hosts turns into the sentence and command in section 4;
      - drops use `setReconnecting` then `replace`;
      - `SocketHostService` gates on hello's features, and `pair()` refuses any address that is not loopback.
-   - Tests: `desktopHosts.test.ts` (threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it), and the `hostPhones` and `hostUpdates` unit tests.
+   - Tests:
+     - `desktopHosts.test.ts`: threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it;
+     - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `admin()` failing to connect, the host is removed, its credential cleared and the result says not revoked; the revoke's drop of the socket does not reconnect or pair again;
+     - the `hostPhones` and `hostUpdates` unit tests.
 4. **Connect to a host over its tailnet before SSH**
    - Branch: `feat/host-tailnet-connection`.
    - Files: `hostConnectionPlan.ts`; the tailnet store; `HostStatus.via` and `tailnetNote`; the 5-minute return check; the `set-connection` command, which turns `tailnetConnections` on or off over `admin()`; the grant left for the next SSH or admin connection.
@@ -124,8 +137,13 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
    - Docs: the guide's Hosts row and Edit connection. A verification note with captures in `artifacts/host-tailnet-connection/`.
 6. **Let a Linux host start at boot**
    - Branch: `feat/host-boot-start`.
-   - Files: `launchScript.ts` (`boot-status`, `boot-install` with linger first, `boot-remove`, systemctl-aware launch, stop and `update-restart`, `boot-start.sh`, Node drift, Forget's removal); `src/host/index.ts` (`startedBy: 'boot'`); the widened phone access retry; the sshLauncher operations.
-   - Tests: `sshLauncher` and launch-script integration with fake `systemctl` and `loginctl` executables on `PATH`, which record their calls and simulate linger off, a polkit refusal (assert nothing is written and the host keeps its PID) and no user manager; a launch with the unit enabled and `Linger=no` starting a detached host. Real systemd only in PR 8.
+   - Files: `launchScript.ts` (`boot-status`, `boot-install` with linger first, `boot-remove { restart }`, a launch that checks the unit and linger before it spawns as section 2 says, stop and `update-restart`, `boot-start.sh`, Node drift, Forget's removal after its revoke); the desktop passing `restart` from whether the saved host is switched on; `src/host/index.ts` (`startedBy: 'boot'`); the widened phone access retry; the sshLauncher operations.
+   - Tests: `sshLauncher` and launch-script integration with fake `systemctl` and `loginctl` executables on `PATH`, which record their calls and simulate linger off, a polkit refusal (assert nothing is written and the host keeps its PID) and no user manager. Real systemd only in PR 8. The launch cases:
+     - unit enabled, `Linger=yes`, `is-active` active: the launch reuses the unit's host, runs no `start` and spawns nothing;
+     - unit enabled, `Linger=yes`, inactive: `start sotto-host`, then the host the unit started, and no detached spawn;
+     - unit enabled, `Linger=no`, with the fake unit's host running: `disable --now sotto-host` before one detached spawn, the unit's host gone, the unit's files still there, and the result reporting start at boot off with the `fix` line;
+     - `boot-install` with `Linger=no` and `enable-linger` refused never calls `enable`;
+     - `boot-remove` with `restart: false` after a stop spawns nothing, and with `restart: true` spawns one detached host.
    - Docs: anything in ADR-0054 and its amendments the build changed.
 7. **Offer to start a host at boot from Settings > Hosts**
    - Branch: `feat/host-boot-start-ui`.
@@ -171,7 +189,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
 
 ## 7. Decisions taken under the owner's delegation, October 5, 2026
 
-The owner delegated the open questions on October 5 ("Go ahead and do everything we discussed, no need to stop and ask me"). The agent decided them as follows, and the ADRs record them as picks made under that delegation, for the owner to confirm on PR 1:
+The owner delegated the open decisions on October 5 ("Go ahead and do everything we discussed, no need to stop and ask me"), including those the owner's reviews of PR 1 left open. The agent decided them as follows, and the ADRs record them as picks made under that delegation:
 
 - **UI variant:** C (setup-led) with A's controls, without C's one-time line, since nothing in Sotto announces itself unasked. An existing host moves through Edit connection and the More menu.
 - **Tailnet connection default:** on for a new host, written by Add host. A host saved before keeps SSH until the owner chooses the tailnet.
@@ -180,6 +198,8 @@ The owner delegated the open questions on October 5 ("Go ahead and do everything
 - **Desktops on the tailnet listener:** recorded by the launch script over SSH; every other client is a phone.
 - **A final failure:** takes the threads away, as ADR-0040 says of an update.
 - **Start at boot without linger:** nothing is installed.
-- **Forget:** removes the unit.
-- **ADRs:** Proposed until the owner confirms them on PR 1, after reading ADR-0053's Consequences.
+- **Forget:** revokes this desktop with the launch script's `revoke-client` over the SSH connection or an admin connection, whichever connection carries the socket, before it stops the host or removes the unit. When SSH cannot reach the host, Forget still removes it here and says the host still trusts this computer until it is removed there, and how.
+- **A launch with linger off and the unit enabled:** disables the unit, stops its host if one runs, spawns a detached host and reports start at boot as off with the linger command. With linger on and the unit active, a launch reuses the unit's host and never spawns a second.
+- **Stop starting at boot:** never starts or restarts a host that is switched off.
+- **ADRs:** ADR-0053 and ADR-0054 are Accepted October 5, 2026, under this delegation.
 - **forge:** see section 6. Releases are cut by the owner by hand (`docs/release/releasing.md`); no agent cuts or publishes one.

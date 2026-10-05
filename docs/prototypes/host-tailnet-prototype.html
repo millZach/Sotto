@@ -2,7 +2,7 @@
 <!--
   VERDICT (October 5, 2026): C, "Setup-led", with A's controls, without C's one-time line. The owner delegated the
   pick ("Go ahead and do everything we discussed, no need to stop and ask me"), so the agent made it and ADR-0053 and
-  ADR-0054 record it as such, Proposed until the owner confirms. Add host's checklist proves the tailnet connection
+  ADR-0054 record it as such, Accepted under that delegation. Add host's checklist proves the tailnet connection
   and its connected card offers Start forge's host at boot; the row's meta line, Edit connection's "How Sotto
   connects" and the More menu's Start at boot… are A's. The one-time line for a host saved before this was dropped,
   since nothing in Sotto announces itself unasked. B is kept as the record of what was weighed.
@@ -326,7 +326,7 @@ fieldset.hosts-fieldset>legend{padding:0;margin:0 0 8px;font-size:13px;font-weig
   <h1>Reach forge over your tailnet, and start it at boot</h1>
   <p>Today every connection to forge is an SSH sign-in, and with Tailscale SSH in <b>check</b> mode each relaunch of Sotto asks for an approval. After forge restarts, its threads are gone until this computer connects and starts the host again. Here a paired desktop reaches forge <b>over its tailnet first</b>, through a Tailscale Serve setting Sotto turns on there when you add it, and uses SSH only when the tailnet does not answer or for a press that needs it. On Linux, forge's host can <b>start at boot</b>.</p>
   <p>Three layouts. <b>A</b> puts it on the row and its More menu. <b>B</b> gives forge a dialog of its own. <b>C</b> leads with setup: Add host proves the tailnet and offers the boot start. C's one-time line for a host saved before this was dropped. The bar at the bottom switches layout (← →), state (keys 1–9 and 0, or press a state), theme, motion and window size.</p>
-  <p><b>Picked (October 5, 2026, under the owner's delegation): C with A's controls, without the one-time line.</b> Recorded in ADR-0053 and ADR-0054, Proposed until the owner confirms.</p>
+  <p><b>Picked (October 5, 2026, under the owner's delegation): C with A's controls, without the one-time line.</b> Recorded in ADR-0053 and ADR-0054, Accepted under that delegation.</p>
 </header>
 <h2 class="band">Desktop — Settings › Hosts</h2>
 <div class="dz" id="dz"><div class="win" id="win"></div></div>
@@ -517,7 +517,7 @@ const lingerBody = () => `<p class="lead">Nothing changed on ${HOST}. Its host i
   ['wait', 'Restart', 'None.'],
 ])}`
 const lingerModal = () => modal(`${HOST}’s host does not start at boot yet`, lingerBody(), `${btn('Close', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}`)
-const unbootModal = () => modal(`Stop starting ${HOST}’s host at boot?`, `<p class="lead">Sotto removes <span class="mono">sotto-host.service</span> and its script from ${HOST}, and restarts the host once outside the unit, so it keeps running. Turns running there stop; drafts and history stay. If a thread is working, Sotto asks first. After ${HOST} restarts, its host starts again only when this computer connects over SSH.</p>`,
+const unbootModal = () => modal(`Stop starting ${HOST}’s host at boot?`, `<p class="lead">Sotto removes <span class="mono">sotto-host.service</span> and its script from ${HOST}, and, while ${HOST} is switched on, restarts the host once outside the unit, so it keeps running. A host you switched off stays stopped. Turns running there stop; drafts and history stay. If a thread is working, Sotto asks first. After ${HOST} restarts, its host starts again only when this computer connects over SSH.</p>`,
   `${btn('Keep starting at boot', { act: 'close' })}${btn('Stop starting at boot', { v: 'primary', act: 'close' })}`)
 
 /* ---------- Phones, while its admin connection waits for Tailscale ---------- */
