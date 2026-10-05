@@ -130,7 +130,7 @@ class Rejected extends Error {
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
 type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
-type Runtime = { server: CodexProcess; clientRevision: number }
+type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.serial}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
@@ -256,6 +256,44 @@ export class CodexAppServerHost implements AgentHost {
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
   }
   private codexHome(): string { return this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex') }
+  /** Metadata only: config may contain credentials and is never read or logged here. */
+  private async configStamp(): Promise<string | undefined> {
+    try {
+      const file = await stat(join(this.codexHome(), 'config.toml'), { bigint: true })
+      return `${file.dev}:${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}`
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+      // This optional change signal must not prevent Codex from using its already loaded configuration.
+      return undefined
+    }
+  }
+  /** Refresh only the app-server about to receive a prompt. No prompt or UI action is retried. */
+  private async refreshRuntimeConfig(id: string): Promise<void> {
+    const runtime = this.runtimes.get(id)
+    const generation = this.generation
+    if (!runtime) throw new Error('Codex stopped before sending the prompt. Nothing was sent. Try again.')
+    const current = (): boolean => generation === this.generation && this.runtimes.get(id) === runtime && runtime.server.alive
+    try {
+      if (!runtime.reloadSupported) return
+      runtime.refreshing ??= (async () => {
+        const stamp = await this.configStamp()
+        if (!current()) throw new Error('Codex connection changed.')
+        if (stamp === undefined || stamp === runtime.configStamp) return
+        try { await this.rpc('config/mcpServer/reload', undefined, undefined, undefined, runtime.server) }
+        catch (error) {
+          // Older clients can still send ordinary prompts. Discover support per process, not by version.
+          if (error instanceof Rejected && (error.methodNotFound || error.unknownVariant === 'config/mcpServer/reload')) { runtime.reloadSupported = false; return }
+          throw error
+        }
+        if (!current()) throw new Error('Codex connection changed.')
+        runtime.configStamp = stamp
+      })().finally(() => { delete runtime.refreshing })
+      await runtime.refreshing
+      if (!current()) throw new Error('Codex connection changed.')
+    } catch (error) {
+      throw new Error('Codex could not refresh its tools. Nothing was sent. Try again, or reconnect Codex if it keeps happening.', { cause: error })
+    }
+  }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
   private spawnServer(executable: string): CodexProcess {
     const generation = this.generation
@@ -354,6 +392,8 @@ export class CodexAppServerHost implements AgentHost {
     const launch = (async () => {
       if (!this.executable || !this.state.connected) throw new Error('Connect to Codex before sending a command.')
       const clientRevision = this.clientRevision
+      const configStamp = await this.configStamp()
+      if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
       const server = this.spawnServer(this.executable)
       try {
         // Only the provider's app-server says which version is installed: a thread's may be finishing on a replaced client.
@@ -364,7 +404,7 @@ export class CodexAppServerHost implements AgentHost {
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
-      this.runtimes.set(id, { server, clientRevision })
+      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true })
       // Launched from a client an update replaced meanwhile: it moves too, once its thread is idle.
       if (clientRevision !== this.clientRevision) { this.outdated.add(id); this.scheduleOutdatedStop() }
       return server
@@ -1241,6 +1281,7 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
           try {
+            await this.refreshRuntimeConfig(id)
             input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
             skillsRevision = this.skillsRevision
             validate()
@@ -1291,7 +1332,10 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           const generation = this.generation
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
-          try { input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments) }
+          try {
+            await this.refreshRuntimeConfig(id)
+            input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
+          }
           catch (error) { this.dispatching.delete(id); throw error }
           const skillsRevision = this.skillsRevision
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true,

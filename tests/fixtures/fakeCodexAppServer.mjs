@@ -69,6 +69,8 @@ if (process.argv.includes('exec')) {
 let state = { threads: {} }
 let stamp
 const loadedThreads = new Set()
+const configStamp = () => { try { const file = statSync(join(process.env.CODEX_HOME, 'config.toml'), { bigint: true }); return `${file.ino}:${file.mtimeNs}:${file.size}` } catch { return 'missing' } }
+let mcpConfigStamp = configStamp()
 const pause = new Int32Array(new SharedArrayBuffer(4))
 const stateStamp = () => { try { const stats = statSync(file('state.json'), { bigint: true }); return `${stats.ino}:${stats.mtimeNs}:${stats.size}` } catch { return 'none' } }
 const load = () => {
@@ -196,6 +198,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       : { config: { developer_instructions: script.developerInstructions ?? null }, origins: {}, layers: null })
     return
   }
+  if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }
   if (method === 'initialize') served(method)
@@ -284,6 +287,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.dropRollbackReply) return
     reply({ thread: script.omitRollbackTurns ? { ...thread, turns: undefined } : thread })
   } else if (method === 'turn/start') {
+    if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {
+      emit({ id, error: { code: -32000, message: 'Native computer-use pipe is missing from cached MCP configuration' } }); return
+    }
     const thread = state.threads[params.threadId]
     // Explicit opt-in fixture writes prove the adapter's actual execution cwd.
     if (script.writeCwd) writeFileSync(join(params.cwd ?? thread.cwd, 'native-cwd-proof.txt'), params.input.find(item => item.type === 'text')?.text ?? '')
@@ -306,6 +312,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
   } else if (method === 'turn/steer') {
+    if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {
+      emit({ id, error: { code: -32000, message: 'Native computer-use pipe is missing from cached MCP configuration' } }); return
+    }
     const thread = state.threads[params.threadId]
     const turn = thread?.turns.at(-1)
     if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {
