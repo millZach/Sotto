@@ -10,10 +10,14 @@ import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { gitPullRequestResultSchema, type GitPullRequestDetail, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
+import { fileListingSchema, filePreviewSchema, filesResultSchema, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
+import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
+import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
+import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { ProviderId } from '../../shared/agents'
 import { protocolAgentStateSchema, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
-import type { HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostFeature, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity } from './hostService'
 import { version as clientVersion } from '../../../package.json'
 
@@ -381,6 +385,43 @@ export class SocketHostService implements HostService {
   async hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> {
     if (!this.features.includes('host-folders')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     return this.read(hostFoldersResultSchema, await this.call({ op: 'host-folders', request }))
+  }
+  /**
+   * A thread's Files, Changes and Agents read on the host (ADR-0025, October 5 amendment). A host that does not list the
+   * surface's feature is from before it; the version sentence says which side to bring up to date, and nothing is sent.
+   * A file's preview and a comparison can be large, so they queue behind previews: the host takes one at a time.
+   */
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> {
+    this.offers('thread-files')
+    return this.read(filesResultSchema(fileListingSchema), await this.call({ op: 'thread-files', request }))
+  }
+  threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> {
+    return this.large('thread-files', async () => this.read(filesResultSchema(filePreviewSchema), await this.call({ op: 'thread-file-preview', request })))
+  }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
+    this.offers('thread-changes')
+    return this.read(toolsResultSchema(gitListingSchema), await this.call({ op: 'thread-changes', request }))
+  }
+  gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> {
+    return this.large('thread-changes', async () => this.read(toolsResultSchema(gitReviewSchema), await this.call({ op: 'thread-changes-review', request })))
+  }
+  async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> {
+    this.offers('subagents')
+    return this.read(subagentPageSchema, await this.call({ op: 'subagent-page', request }))
+  }
+  async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> {
+    this.offers('subagents')
+    return this.read(subagentAssignmentsPageSchema, await this.call({ op: 'subagent-assignments', request }))
+  }
+  /** Refuses with the version sentence, before anything is sent, a read whose feature this host does not list. */
+  private offers(feature: HostFeature): void {
+    if (!this.features.includes(feature)) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+  }
+  /** A large read, queued behind previews and staged images: the host answers one of these frames at a time per client. */
+  private large<T>(feature: HostFeature, read: () => Promise<T>): Promise<T> {
+    try { this.offers(feature) } catch (error) { return Promise.reject(error) }
+    const result = this.previewTail.then(read)
+    this.previewTail = result.catch(() => undefined); return result
   }
   /** Whether the host runs its providers' sign-ins for this client (ADR-0037). */
   offersSignIn(): boolean { return this.features.includes('provider-sign-in') }

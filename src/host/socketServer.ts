@@ -29,16 +29,20 @@ const errors: Record<HostErrorCode, string> = {
   too_large: 'A thread on this host is too large to send to this device. Nothing on the host was lost, and the thread keeps working there. Your other threads still load here.',
 }
 /**
- * An oversize message is named by what it carried: one thread's detail, an attachment preview, or the
- * thread list (a shell push, the hello, an event page, or the shell a command answers with). The headless
- * host has no window, so none of these sends the user to the host machine; each says what was kept instead.
+ * An oversize message is named by what it carried: one thread's detail, an attachment preview, one of a thread's
+ * tool reads (Files, Changes or Agents), or the thread list (a shell push, the hello, an event page, or the shell a
+ * command answers with). The headless host has no window, so none of these sends the user to the host machine; each
+ * says what was kept instead.
  */
-type Oversize = 'thread' | 'preview' | 'list'
+type Oversize = 'thread' | 'preview' | 'tool' | 'list'
 const TOO_LARGE: Record<Oversize, string> = {
   thread: errors.too_large,
   preview: 'This attachment is too large to preview on this device. Nothing on the host was lost, and the attachment is unchanged there.',
+  tool: 'This file or comparison is too large to send to this device. Nothing on the host was lost or changed. Open it on the host machine.',
   list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
 }
+/** A thread's tool reads (ADR-0025, October 5 amendment), whose answer too large to send gets the tool sentence. A file preview and a comparison also take the one-at-a-time guard below. */
+const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
 /** A refusal the client reads: its code, and a sentence, which is the code's own unless the refusal says more. */
 class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code]) { super(message) } }
 /**
@@ -382,6 +386,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     await task
     return privateError === undefined ? shell(peer) : { ...shell(peer), error: privateError }
   }
+  /** A tool read that failed outright is the host's failure to read; what it answered, a refusal included, goes as it is. */
+  const toolRead = async <T>(read: () => Promise<T>): Promise<T> => {
+    try { return await read() } catch { throw new Refusal('unavailable') }
+  }
+  /** A large read, one at a time per peer, on the guard a preview takes. */
+  const oneAtATime = async <T>(peer: Peer, read: () => Promise<T>): Promise<T> => {
+    if (peer.preview) throw new Refusal('busy')
+    peer.preview = true
+    try { return await read() } finally { peer.preview = false }
+  }
   const dispatch = async (peer: Peer, request: HostRequest): Promise<unknown> => {
     if (closing) throw new Refusal('unavailable')
     if (request.session !== peer.session || !authenticated(peer)) throw new Refusal('unauthenticated')
@@ -429,6 +443,28 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'host-folders':
         if (!service.hostFolders) throw new Refusal('invalid_request')
         try { return await service.hostFolders(request.request) } catch { throw new Refusal('unavailable') }
+      // A thread's Files, Changes and Agents (ADR-0025, October 5 amendment). Each answers as the desktop's own IPC does:
+      // a Files or Changes refusal (a changed working folder, a path outside it) is an answer, not an error.
+      case 'thread-files':
+        if (!service.threadFiles) throw new Refusal('invalid_request')
+        return toolRead(() => service.threadFiles!(request.request))
+      case 'thread-file-preview':
+        if (!service.threadFilePreview) throw new Refusal('invalid_request')
+        // Up to 8 MiB of image as about 11 MB of base64: one at a time per peer, on the preview's guard.
+        return oneAtATime(peer, () => toolRead(() => service.threadFilePreview!(request.request)))
+      case 'thread-changes':
+        if (!service.gitChanges) throw new Refusal('invalid_request')
+        return toolRead(() => service.gitChanges!(request.request))
+      case 'thread-changes-review':
+        if (!service.gitReview) throw new Refusal('invalid_request')
+        // Up to 2 MiB of patches, read by several Git runs: one at a time per peer, on the preview's guard.
+        return oneAtATime(peer, () => toolRead(() => service.gitReview!(request.request)))
+      case 'subagent-page':
+        if (!service.subagentPage) throw new Refusal('invalid_request')
+        return toolRead(() => service.subagentPage!(request.request))
+      case 'subagent-assignments':
+        if (!service.subagentAssignments) throw new Refusal('invalid_request')
+        return toolRead(() => service.subagentAssignments!(request.request))
       case 'stage-attachment': {
         if (!service.stageAttachment) throw new Refusal('invalid_request')
         // Up to about 14 MB of base64 in, and 10 MiB held until it is kept: one at a time per peer, on the preview's guard.
@@ -510,7 +546,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code] } } }
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
         if (!response.ok) return
         if (request.op === 'detail') {

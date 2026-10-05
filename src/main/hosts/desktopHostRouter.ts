@@ -5,9 +5,15 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
+import type { FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
+import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { ToolListRequest, ToolsResult } from '../../shared/tools'
+import type { HostThreadToolReads } from '../agents/threadToolReads'
 import { HostConnectionError } from '../agents/socketHostService'
 
-export interface DesktopHostConnection {
+/** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
+export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
@@ -40,6 +46,30 @@ function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
   void _updates; void _run; void _dismissed
   return rest
+}
+
+/** Which surface each tool read is for, as its refusals name it. */
+const TOOL_SURFACES: Record<keyof HostThreadToolReads, { readonly surface: string; readonly what: string }> = {
+  threadFiles: { surface: 'Files', what: 'files' }, threadFilePreview: { surface: 'Files', what: 'files' },
+  gitChanges: { surface: 'Changes', what: 'changes' }, gitReview: { surface: 'Changes', what: 'changes' },
+  subagentPage: { surface: 'Agents', what: 'agents' }, subagentAssignments: { surface: 'Agents', what: 'agents' },
+}
+
+/** Files and Changes show a refusal where the answer would go, so a read the host could not make answers as one. */
+async function answeredAsRefusal<T extends { ok: boolean }>(read: () => Promise<T>): Promise<T | { ok: false; error: { code: 'unavailable'; message: string } }> {
+  try { return await read() }
+  catch (error) { return { ok: false, error: { code: 'unavailable', message: (error instanceof Error ? error.message : '').slice(0, 2000) || 'The host could not be read. Nothing was changed. Try again.' } } }
+}
+
+/**
+ * A path on a paired host, in that host's own format: its working folder joined with a slash-separated relative path.
+ * A Windows folder (`C:\...`, `\\server\...`) joins with the separator it is written with; every other host's with `/`.
+ * Nothing is translated to this computer's format, since the path is the host's.
+ */
+export function hostAbsolutePath(root: string, path: string): string {
+  if (path === '') return root
+  const separator = (/^[A-Za-z]:/u.test(root) || root.startsWith('\\\\')) && root.includes('\\') ? '\\' : '/'
+  return `${root.endsWith(separator) ? root.slice(0, -1) : root}${separator}${path.split('/').join(separator)}`
 }
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
@@ -213,6 +243,48 @@ export class DesktopHostRouter {
     if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing was changed. Connect again to see its folders.')
     if (!connection.hostFolders) throw new Error('This host cannot list its folders yet. Update Sotto on it, then try again.')
     return connection.hostFolders(request.path === undefined ? {} : { path: request.path })
+  }
+  /**
+   * One of a thread's Files, Changes or Agents reads, on the host that runs it (ADR-0025, October 5 amendment). The key's
+   * host-local ID goes to that host, and every thread and project ID in its answer comes back as this window's key, so
+   * the window's stores keep the key they asked with. A read the host could not make throws a sentence the surface shows:
+   * the version sentence for a host from before the read, or what the connection said.
+   */
+  private async threadToolRead<K extends keyof HostThreadToolReads>(read: K, request: Parameters<HostThreadToolReads[K]>[0]): Promise<Awaited<ReturnType<HostThreadToolReads[K]>>> {
+    const { connection, id } = this.target(request.threadId)
+    const { surface, what } = TOOL_SURFACES[read]
+    const method = connection[read] as ((request: Parameters<HostThreadToolReads[K]>[0]) => ReturnType<HostThreadToolReads[K]>) | undefined
+    if (!method) throw new Error(`${surface} is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.`)
+    if (connection.available?.() === false) throw new Error(`This host is disconnected. Nothing was changed. Connect again to read its ${what}.`)
+    let answer: Awaited<ReturnType<HostThreadToolReads[K]>>
+    try { answer = await method({ ...request, threadId: id! }) }
+    catch (error) { throw new Error(error instanceof HostConnectionError ? error.message : `${connection.name} could not read this thread's ${what}. Nothing was changed. Try again.`, { cause: error }) }
+    return mapHostReferences(answer, value => hostEntityKey(connection.hostId, value))
+  }
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return answeredAsRefusal(() => this.threadToolRead('threadFiles', request)) }
+  async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFilePreview', request)) }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return answeredAsRefusal(() => this.threadToolRead('gitChanges', request)) }
+  async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return answeredAsRefusal(() => this.threadToolRead('gitReview', request)) }
+  subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.threadToolRead('subagentPage', request) }
+  subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.threadToolRead('subagentAssignments', request) }
+  /**
+   * Copy path in Files for a thread on a paired host: the host's own path to the file or folder, in the host's format,
+   * once a listing of its folder shows the working folder is still the one the window read and the entry is still there.
+   * Copying it is the caller's; nothing on the host is touched.
+   */
+  async threadFilePath(request: FileRequest): Promise<FilesResult<FilePath>> {
+    const folder = request.path.includes('/') ? request.path.slice(0, request.path.lastIndexOf('/')) : ''
+    const listing = await this.threadFiles({ threadId: request.threadId, path: folder, workspaceId: request.workspaceId })
+    if (!listing.ok) return listing
+    const listed = request.path === '' || listing.value.truncated || listing.value.entries.some(entry => entry.path === request.path && entry.kind !== 'unavailable')
+    if (!listed) return { ok: false, error: { code: 'path-unavailable', message: 'This path is unavailable or changed. Refresh Files and try again.' } }
+    return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
+  }
+  /** Copy path in Changes for a thread on a paired host, the same way, once the change list shows the same working folder. */
+  async gitChangesPath(request: GitPathRequest): Promise<ToolsResult<FilePath>> {
+    const listing = await this.gitChanges({ threadId: request.threadId, workspaceId: request.workspaceId })
+    if (!listing.ok) return listing
+    return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     this.notice = undefined

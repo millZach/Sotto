@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { serialize } from 'node:v8'
 import { describe, expect, it, vi } from 'vitest'
-import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import type { FileListRequest, FileRequest } from '../../../src/shared/files'
+import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
+import { hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError } from '../../../src/main/agents/socketHostService'
@@ -292,6 +295,70 @@ describe('desktop host routing', () => {
     router.remove(LOCAL)
     router.add({ ...local.connection })
     await expect(router.hostFolders({ hostId: LOCAL })).rejects.toThrow('cannot list its folders yet')
+  })
+  it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
+    const workspace = { threadId: 'thread', projectId: 'project', workingDirectory: '/home/forge/repo', workspaceId }
+    const agentRow = { id: 'claude:ui', sequence: 1, revision: 1, assignmentId: 'task-ui', assignmentCount: 1, title: 'Build the Agents view', description: 'Connect the roster.', status: 'working' as const, lastObservedAt: '2026-10-05T10:00:00.000Z' }
+    const reads = {
+      threadFiles: vi.fn(async (request: FileListRequest) => ({ ok: true as const, value: { workspace, path: request.path, truncated: false,
+        entries: [{ name: 'a.txt', path: request.path ? `${request.path}/a.txt` : 'a.txt', kind: 'file' as const }] } })),
+      threadFilePreview: vi.fn(async (request: FileRequest) => ({ ok: true as const, value: { workspace, path: request.path, name: 'a.txt', size: 1, content: { kind: 'text' as const, text: 'a' } } })),
+      gitChanges: vi.fn(async () => ({ ok: true as const, value: { workspace, branch: 'main', revision: 'r1', files: [], truncated: false } })),
+      gitReview: vi.fn(async () => ({ ok: true as const, value: { workspace, revision: 'r1', scope: { kind: 'working' as const }, files: [], truncated: false } })),
+      subagentPage: vi.fn(async () => ({ threadId: 'thread', revision: 1, rows: [agentRow], summary: EMPTY_SUBAGENT_SUMMARY })),
+      subagentAssignments: vi.fn(async () => ({ threadId: 'thread', agentId: 'agent', assignments: [] })),
+    }
+    router.add(local.connection); router.add({ ...remote.connection, ...reads })
+    // The host is asked by its own ID, and its answer's thread and project come back keyed to it.
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key, projectId: hostEntityKey(REMOTE, 'project'), workingDirectory: '/home/forge/repo', workspaceId } } })
+    expect(reads.threadFiles).toHaveBeenCalledWith({ threadId: 'thread', path: '' })
+    await expect(router.threadFilePreview({ threadId: key, path: 'a.txt', workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    expect(reads.threadFilePreview).toHaveBeenCalledWith({ threadId: 'thread', path: 'a.txt', workspaceId })
+    await expect(router.gitChanges({ threadId: key, workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    expect(reads.gitReview).toHaveBeenCalledWith({ threadId: 'thread', workspaceId, scope: { kind: 'working' } })
+    // The host's roster comes back whole, keyed to the host's thread.
+    await expect(router.subagentPage({ threadId: key })).resolves.toMatchObject({ threadId: key, rows: [agentRow] })
+    expect(reads.subagentPage).toHaveBeenCalledWith({ threadId: 'thread' })
+    // An agent's ID is the provider's, not a Sotto reference, so it comes back as it went.
+    await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).resolves.toEqual({ threadId: key, agentId: 'agent', assignments: [] })
+    // Copy path is the host's own path, in its format, once a listing of its folder shows the working folder and the entry.
+    await expect(router.threadFilePath({ threadId: key, path: 'notes/a.txt', workspaceId })).resolves.toMatchObject({ ok: true, value: { path: 'notes/a.txt', absolutePath: '/home/forge/repo/notes/a.txt', workspace: { threadId: key } } })
+    expect(reads.threadFiles).toHaveBeenLastCalledWith({ threadId: 'thread', path: 'notes', workspaceId })
+    await expect(router.threadFilePath({ threadId: key, path: '', workspaceId })).resolves.toMatchObject({ ok: true, value: { absolutePath: '/home/forge/repo' } })
+    await expect(router.threadFilePath({ threadId: key, path: 'gone.txt', workspaceId })).resolves.toMatchObject({ ok: false, error: { code: 'path-unavailable' } })
+    await expect(router.gitChangesPath({ threadId: key, path: 'src/b.ts', workspaceId })).resolves.toMatchObject({ ok: true, value: { absolutePath: '/home/forge/repo/src/b.ts', workspace: { threadId: key } } })
+    expect(local.command).not.toHaveBeenCalled()
+  })
+  it('answers Files and Changes with the host\'s trouble in words, and refuses Agents with the same words', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
+    const older = new HostConnectionError(hostVersionMismatch('0.1.31', '0.1.30', false), 'version_mismatch')
+    router.add({ ...remote.connection, threadFiles: vi.fn(async () => { throw older }), subagentPage: vi.fn(async () => { throw older }),
+      gitChanges: vi.fn(async () => { throw new Error('{"issues":[]}') }) })
+    // A host from before these reads says which side to update, where the listing would have been.
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: older.message } })
+    await expect(router.subagentPage({ threadId: key })).rejects.toThrow(older.message)
+    // Anything else it could not read is named by the host, never shown raw.
+    await expect(router.gitChanges({ threadId: key })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Forge could not read this thread\'s changes. Nothing was changed. Try again.' } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.' } })
+    await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).rejects.toThrow('Agents is unavailable on this host.')
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, threadFiles: vi.fn(), available: () => false })
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: 'This host is disconnected. Nothing was changed. Connect again to read its files.' } })
+    await expect(router.threadFiles({ threadId: hostEntityKey('33333333-3333-4333-8333-333333333333', 'thread'), path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+  it('joins a paired host\'s path in that host\'s own format, never this computer\'s', () => {
+    expect(hostAbsolutePath('/home/forge/repo', 'src/a.ts')).toBe('/home/forge/repo/src/a.ts')
+    expect(hostAbsolutePath('/home/forge/repo/', 'src/a.ts')).toBe('/home/forge/repo/src/a.ts')
+    expect(hostAbsolutePath('/', 'etc/hosts')).toBe('/etc/hosts')
+    expect(hostAbsolutePath('/home/forge/back\\slash', 'a.txt')).toBe('/home/forge/back\\slash/a.txt')
+    expect(hostAbsolutePath('C:\\work\\repo', 'src/a.ts')).toBe('C:\\work\\repo\\src\\a.ts')
+    expect(hostAbsolutePath('C:\\', 'a.txt')).toBe('C:\\a.txt')
+    expect(hostAbsolutePath('C:/work/repo', 'src/a.ts')).toBe('C:/work/repo/src/a.ts')
+    expect(hostAbsolutePath('/home/forge/repo', '')).toBe('/home/forge/repo')
   })
   it('splits observed threads, routes attention IDs, and refuses cross-host commands and local folder actions', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')

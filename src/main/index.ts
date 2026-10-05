@@ -1173,8 +1173,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         copyPath: copyOutput,
         reveal: path => shell.showItemInFolder(path),
       })
-      const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers())
-      const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change))
+      // A thread on a paired host is read on that host (ADR-0025, October 5 amendment). Copy path copies the host's own
+      // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
+      const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
+      const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
+        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request),
+        copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
+      })
+      const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1217,6 +1223,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         terminal: terminalService,
         browser: browserService,
         gitChanges,
+        hostedGitChanges: {
+          list: request => hostRouter.gitChanges(request), review: request => hostRouter.gitReview(request),
+          copyPath: async request => copyHostPath(await hostRouter.gitChangesPath(request)),
+        },
       }, () => windows.getTrustedRenderers())
       // Theme export and Open VSX (ADR-0011). End-to-end runs use an offline Open VSX and a fixed export folder.
       const cleanupThemes = registerThemesIpc(ipcMain, {

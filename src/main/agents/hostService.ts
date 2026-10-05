@@ -6,7 +6,12 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
+import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
+import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
+import type { HostThreadToolReads } from './threadToolReads'
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -56,6 +61,18 @@ export interface HostService {
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
+  /** A folder's entries in a thread's working copy, for Files (ADR-0025, October 5 amendment). */
+  threadFiles?(request: FileListRequest): Promise<FilesResult<FileListing>>
+  /** One file's preview from a thread's working copy, for Files. */
+  threadFilePreview?(request: FileRequest): Promise<FilesResult<FilePreview>>
+  /** A thread's changed files as Git's status lists them, for Changes. */
+  gitChanges?(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
+  /** A thread's Working tree or Branch changes comparison, for Changes. */
+  gitReview?(request: GitReviewRequest): Promise<ToolsResult<GitReview>>
+  /** A page of a thread's agents, for Agents. */
+  subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
+  /** One agent's assignments, for Agents. */
+  subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
 }
 
 /** The part of the event store a client is allowed to read through the host. */
@@ -120,10 +137,13 @@ export class LocalHostService implements HostService {
   private windowFocused = true
   private readonly control: LocalHostControl
   private readonly eventSource: ThreadEventSource | undefined
+  private readonly tools: HostThreadToolReads | undefined
 
-  constructor(options: { control: LocalHostControl; events?: ThreadEventSource }) {
+  /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
+  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads }) {
     this.control = options.control
     this.eventSource = options.events
+    this.tools = options.tools
   }
 
   /** Empty when no event source is wired: the window reads history through the thread detail today. */
@@ -157,6 +177,17 @@ export class LocalHostService implements HostService {
   // The folder browser reads this machine, not the coordinator, so it goes straight to the filesystem
   // rather than through `LocalHostControl`.
   hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> { return listHostFolders(request) }
+  // A thread's Files, Changes and Agents, read as the window's own IPC reads them, with the same bounds.
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return this.reads().threadFiles(request) }
+  async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return this.reads().threadFilePreview(request) }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return this.reads().gitChanges(request) }
+  async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return this.reads().gitReview(request) }
+  async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.reads().subagentPage(request) }
+  async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.reads().subagentAssignments(request) }
+  private reads(): HostThreadToolReads {
+    if (!this.tools) throw new Error('Files, Changes and Agents are unavailable on this host.')
+    return this.tools
+  }
   async command(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
     if (command.type !== 'observe-threads') return this.control.commandShell(command, client)
     if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
