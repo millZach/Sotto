@@ -38,7 +38,7 @@ public enum ClientError: Error, LocalizedError, Equatable {
         case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
         case .hostNotFound(let name): return "Couldn't find \(name) on your tailnet. Check that Tailscale is connected on this iPhone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net."
         case .hostUnreachable(let name): return "Couldn't reach \(name). Check that it's online and that Tailscale is connected on this iPhone."
-        case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. In Sotto on \(name), turn on phone access in Settings > Phones. For a host without a screen, check that Tailscale Serve forwards to it."
+        case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Phones."
         case .sottoNotRunning(let name): return "\(name) answered, but Sotto isn't running there. Nothing was lost. Open Sotto on \(name) and try again."
         case .invalidCode: return "A pairing code is eight letters and numbers. Check the code on that computer."
         case .invalidProtocol: return "This computer uses a different connection format. Update Sotto before connecting."

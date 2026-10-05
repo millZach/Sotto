@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseHostArguments, runHeadlessCommandLine, startHeadlessHost } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { e2eTailscale } from '../../src/main/e2e/tailscale'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { fakeSignInCommand, signInProviders } from './signInProviders'
 import { clientUpdateHost } from './clientUpdateProviders'
@@ -31,6 +32,10 @@ async function main(): Promise<void> {
   if (args.some(argument => ADMIN.has(argument))) { await runHeadlessCommandLine(); return }
   const options = parseHostArguments(args)
   delete process.env.SOTTO_HOST_STARTED_BY
+  // With SOTTO_E2E_HOST_TAILSCALE_DIR, the host's phone access reads e2e-tailscale.json there in place of this machine's
+  // Tailscale (src/main/e2e/tailscale.ts), so a spec can turn phones on for forge and see each failure (ADR-0050).
+  const tailscaleDirectory = process.env.SOTTO_E2E_HOST_TAILSCALE_DIR
+  if (tailscaleDirectory) options.tailscale = e2eTailscale(tailscaleDirectory)
   // With SOTTO_E2E_SIGN_IN_DIR, each provider is signed out until its fake client's sign-in (tests/fixtures/fakeSignInCli.mjs,
   // at SOTTO_E2E_SIGN_IN_SCRIPT) writes its mark there, and the host runs that fake client for Sign in (#460).
   const signInDirectory = process.env.SOTTO_E2E_SIGN_IN_DIR, signInScript = process.env.SOTTO_E2E_SIGN_IN_SCRIPT

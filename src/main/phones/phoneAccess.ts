@@ -8,7 +8,7 @@ import type { ClientIdentity, HostService } from '../agents/hostService'
 import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { PHONE_ACCESS_SERVE_PORT, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
-import { servePortOwner, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
+import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
 
 /**
  * Phone access (ADR-0033): while the `phoneAccess` setting is on and the local host runs, the desktop
@@ -22,14 +22,19 @@ import { servePortOwner, type ServeConfig, type ServeResult, type TailscaleStatu
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
  * A phone's answers count only after the owner turns on Can answer for it, which writes the policy record.
+ *
+ * A headless host runs the same phone access over its own host service (ADR-0050). It shares the host's pairing
+ * store, so a phone and a desktop pair with one set of clients, and the desktop it is connected to administers it
+ * through the host's own administrative routes rather than a Phones page.
  */
 
 /** What phone access logs: stable event names only, never a name, a code or an address. */
 export type PhoneAccessEvent =
   | 'phone-access-on' | 'phone-access-failed' | 'phone-access-start-failed' | 'phone-access-close-failed'
   | 'phone-access-record-unreadable' | 'phone-access-record-write-failed' | 'phone-access-pairing-unreadable'
+  | 'phone-access-phones-unreadable' | 'phone-access-phones-write-failed'
   | 'phone-access-listener-failed' | 'phone-access-listener-close-failed' | 'phone-access-policy-revoke-failed'
-  | 'phone-access-serve-status-failed' | 'phone-access-serve-not-enabled' | 'phone-access-serve-failed' | 'phone-access-serve-remove-failed'
+  | 'phone-access-serve-status-failed' | 'phone-access-serve-not-enabled' | 'phone-access-serve-denied' | 'phone-access-serve-failed' | 'phone-access-serve-remove-failed'
 
 export interface PhoneAccessTailscale {
   status(): Promise<TailscaleStatus>
@@ -58,6 +63,11 @@ export interface PhoneAccessOptions {
   /** Stable event names only; nothing a phone or the owner typed. */
   readonly log?: (event: PhoneAccessEvent) => void
   readonly startServer?: typeof startSocketServer
+  /**
+   * A pairing store that is already loaded, shared with another listener over the same folder: the headless host's
+   * own. Without one, phone access keeps its own over `directory`.
+   */
+  readonly pairing?: PairedClients
   /** How long to wait before looking for Tailscale again after it was not running. */
   readonly retryMs?: number
   /** The longest quitting waits for the Serve setting to be removed. */
@@ -96,9 +106,18 @@ export class PhoneAccess {
   private queue: Promise<void> = Promise.resolve()
   private closed = false
   private readonly listeners = new Set<(state: PhonesState) => void>()
+  /**
+   * With a shared pairing store, the clients that paired through phone access, which are the phones: the desktops that
+   * pair with the same host are not phones, and the Phones dialog must never offer to remove one. Kept in
+   * `phone-clients.json`. Without a shared store, every client in phone access's own store is a phone.
+   */
+  private readonly phoneStore: AtomicJsonStore<string[]> | undefined
+  private phoneIds: Set<string> | undefined
 
   constructor(private readonly options: PhoneAccessOptions) {
-    this.pairing = new PairedClients(options.directory)
+    this.pairing = options.pairing ?? new PairedClients(options.directory)
+    this.pairingReady = options.pairing !== undefined
+    if (options.pairing) this.phoneStore = new AtomicJsonStore(join(options.directory, 'phone-clients.json'), z.array(z.string().min(1).max(512)).max(1000).parse, () => [])
     this.store = new AtomicJsonStore(join(options.directory, 'phone-access.json'), recordSchema.parse, () => { this.recordUncertain = true; return { port: null, mapped: true } })
   }
 
@@ -116,8 +135,22 @@ export class PhoneAccess {
       this.phase = 'cleanup-failed'
     }
     if (this.options.service) await this.loadPairing()
+    if (this.phoneStore) {
+      try { this.phoneIds = new Set(await this.phoneStore.read()) }
+      catch { this.phoneIds = new Set(); this.options.log?.('phone-access-phones-unreadable') }
+    }
     this.settingsChanged()
     await this.queue
+  }
+
+  /** The paired clients that are phones (see `phoneIds`). */
+  private paired() {
+    return this.pairing.list().filter(client => !this.phoneIds || this.phoneIds.has(client.clientId))
+  }
+
+  private async rememberPhones(): Promise<void> {
+    if (!this.phoneStore || !this.phoneIds) return
+    try { await this.phoneStore.write([...this.phoneIds]) } catch { this.options.log?.('phone-access-phones-write-failed') }
   }
 
   /** Called when any setting changed: turns phone access on or off to match, and republishes the name. */
@@ -139,7 +172,7 @@ export class PhoneAccess {
     const settings = this.options.settings()
     const defaultName = this.defaultName()
     const connected = new Set(!this.listenerStopped && this.wanted() ? this.listener?.connectedClients() ?? [] : [])
-    const phones = this.pairingReady ? this.pairing.list().map(client => ({
+    const phones = this.pairingReady ? this.paired().map(client => ({
       clientId: client.clientId, name: client.name, pairedAt: client.pairedAt, connected: connected.has(client.clientId),
       canAnswer: this.options.policy?.mayGrant({ clientId: client.clientId, user: '', transport: 'socket' }).allowed ?? false,
     })) : []
@@ -173,26 +206,37 @@ export class PhoneAccess {
       case 'set-can-answer': {
         const policy = this.options.policy
         if (!policy) throw new Error('Permission policies are unavailable on this computer, so a phone cannot be allowed to answer. Nothing was changed.')
-        if (!this.pairing.list().some(client => client.clientId === command.clientId)) throw new Error('That phone is no longer paired. Nothing was changed.')
+        if (!this.paired().some(client => client.clientId === command.clientId)) throw new Error('That phone is no longer paired. Nothing was changed.')
         policy.setRemoteAnswers(command.clientId, command.allowed, ANSWERS_NOTE)
         this.listener?.refreshCapabilities()
         break
       }
       case 'remove':
         if (!this.pairingReady) throw new Error('Paired phones could not be read. Nothing was changed. Restart Sotto and try again.')
+        // Only a phone: a desktop paired with the same host is removed from that desktop, by Forget.
+        if (this.phoneIds && !this.phoneIds.has(command.clientId)) throw new Error('That phone is no longer paired. Nothing was changed.')
         await this.pairing.revoke(command.clientId)
+        if (this.phoneIds?.delete(command.clientId)) await this.rememberPhones()
         // A record naming a client that no longer exists grants nothing, but it is tidier gone.
         try { this.options.policy?.setRemoteAnswers(command.clientId, false, ANSWERS_NOTE) } catch { this.options.log?.('phone-access-policy-revoke-failed') }
         this.listener?.dropRevoked()
         break
-      case 'open-serve-setup':
-        if (!this.enableUrl) throw new Error('Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.')
-        await this.options.openExternal(this.enableUrl)
+      case 'open-serve-setup': {
+        const url = this.serveSetupUrl()
+        if (!url) throw new Error('Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.')
+        await this.options.openExternal(url)
         break
+      }
     }
     this.publish()
     return this.get()
   }
+
+  /**
+   * The page Tailscale gave for turning Serve on, while the last setup stopped there. A headless host has no browser,
+   * so the desktop administering it opens this page on its own computer instead (ADR-0050).
+   */
+  serveSetupUrl(): string | undefined { return this.serveCheck.status === 'failed' && this.serveCheck.reason === 'not-enabled' ? this.enableUrl : undefined }
 
   /**
    * On quit: ends phone access and makes a bounded cleanup attempt; the next start finishes it.
@@ -261,7 +305,7 @@ export class PhoneAccess {
     this.publish()
     let owner: ReturnType<typeof servePortOwner>
     try { owner = servePortOwner(await this.options.tailscale.serveStatus(), PHONE_ACCESS_SERVE_PORT, this.ourPorts()) }
-    catch { this.options.log?.('phone-access-serve-status-failed'); await this.failServe('failed'); return }
+    catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
     if (owner === 'ours') this.record.mapped = true
     if (owner === 'taken') { await this.failServe('port-taken'); return }
     if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
@@ -278,10 +322,10 @@ export class PhoneAccess {
     let result: ServeResult
     try { result = await this.options.tailscale.serve(PHONE_ACCESS_SERVE_PORT, port) } catch { result = { ok: false, reason: 'failed' } }
     if (!result.ok) {
-      this.options.log?.(result.reason === 'not-enabled' ? 'phone-access-serve-not-enabled' : 'phone-access-serve-failed')
+      this.options.log?.(result.reason === 'not-enabled' ? 'phone-access-serve-not-enabled' : result.reason === 'denied' ? 'phone-access-serve-denied' : 'phone-access-serve-failed')
       this.enableUrl = result.reason === 'not-enabled' ? result.enableUrl : undefined
-      // A consent request made no new setting. Other failures keep cleanup pending until Serve is checked.
-      if (result.reason === 'not-enabled') await this.save({ port, mapped: owner === 'ours' })
+      // A consent request or a refusal made no new setting. Other failures keep cleanup pending until Serve is checked.
+      if (result.reason !== 'failed') await this.save({ port, mapped: owner === 'ours' })
       await this.failServe(result.reason)
       return
     }
@@ -298,7 +342,7 @@ export class PhoneAccess {
     this.phase = phase; this.tailscaleCheck = WAITING; this.serveCheck = WAITING; this.address = null; this.enableUrl = undefined
   }
 
-  private async failServe(reason: 'port-taken' | 'not-enabled' | 'listener' | 'failed' | 'record'): Promise<void> {
+  private async failServe(reason: 'port-taken' | 'not-enabled' | 'denied' | 'listener' | 'failed' | 'record'): Promise<void> {
     this.serveCheck = { status: 'failed', reason, ...(this.enableUrl ? { canOpenSetup: true } : {}) }
     await this.fail()
   }
@@ -390,7 +434,11 @@ export class PhoneAccess {
       service: this.options.service!, pairing: this.pairing, admin: false,
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
-      onPaired: () => { this.cancelCode(); this.publish() },
+      onPaired: (clientId: string) => {
+        this.cancelCode()
+        if (this.phoneIds) { this.phoneIds.add(clientId); void this.rememberPhones() }
+        this.publish()
+      },
       onPeersChanged: () => this.publish(),
     }
     // The remembered port first, so the Serve setting a crash left behind still reads as Sotto's; any free port otherwise.

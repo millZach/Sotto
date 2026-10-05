@@ -1,0 +1,208 @@
+import { z } from 'zod'
+
+import { phonesStateSchema, type HostPhonesCommand } from '../../shared/phones'
+import type { HostPhonesView } from '../../shared/hosts'
+import type { SshHostConnection } from './sshLauncher'
+import { isTailscaleApprovalUrl } from './tailscaleApproval'
+
+/**
+ * Phones on a remote host (ADR-0050). Each connected host runs its own phone access, the desktop's own over its host
+ * service, and this reads and changes it for the Hosts page's Phones dialog: through the host's administrative routes
+ * on the port the SSH connection forwards, with the host's administrative token, which the connection's launch handed
+ * back and which stays in memory here. Every SSH command is a full sign-in, so nothing here runs one.
+ *
+ * A host is read once when it connects, so its row can say whether phones reach it, and again every couple of seconds
+ * while the dialog is open, so a phone pairing or connecting shows up there. Nothing is read for a host nobody is
+ * looking at. What a host last said stays when it disconnects; the dialog says it cannot change anything then.
+ */
+
+/** The connection to a saved host, while it is connected. */
+export interface HostPhonesLink { readonly id: string; readonly name: string; readonly connection: SshHostConnection }
+export interface HostPhonesHosts {
+  /** Every saved host connected now. */
+  links(): HostPhonesLink[]
+  subscribe(listener: () => void): () => void
+}
+export interface HostPhonesOptions {
+  readonly hosts: HostPhonesHosts
+  /** Opens Tailscale's page for turning Serve on, on this computer, on the user's press. */
+  readonly openExternal: (url: string) => Promise<void>
+  readonly fetch?: typeof fetch
+  /** How often an open dialog reads its host again. */
+  readonly pollMs?: number
+  /** Stable event names only. */
+  readonly log?: (event: 'host-phones-read-failed' | 'host-phones-command-failed') => void
+}
+
+const answerSchema = z.object({
+  v: z.literal(1), hostId: z.uuid(), state: phonesStateSchema,
+  url: z.string().max(2100).optional(), error: z.string().max(1000).optional(),
+})
+type Answer = z.infer<typeof answerSchema>
+
+/** A read can wait on nothing slow; a command can wait on Tailscale, whose own calls time out after 20 seconds. */
+const READ_TIMEOUT_MS = 10_000
+const COMMAND_TIMEOUT_MS = 45_000
+const POLL_MS = 2_000
+/** An open dialog says so again well inside this, so a window that went away without closing it stops the reads. */
+export const HOST_PHONES_WATCH_MS = 60_000
+
+class Unauthorized extends Error {}
+
+interface Entry {
+  view: HostPhonesView
+  /** The connection the view and token came from; a new one is read afresh. */
+  connection?: SshHostConnection | undefined
+  token?: Promise<string> | undefined
+  reading?: Promise<void> | undefined
+  /** Until when an open dialog wants this host read again and again. */
+  watchUntil: number
+  timer?: ReturnType<typeof setInterval> | undefined
+  /** Commands go one at a time, so a read never lands between a command and the state it answered with. */
+  commands: Promise<unknown>
+}
+
+export class HostPhones {
+  private readonly entries = new Map<string, Entry>()
+  private readonly listeners = new Set<() => void>()
+  private readonly off: () => void
+  private closed = false
+
+  constructor(private readonly options: HostPhonesOptions) {
+    this.off = options.hosts.subscribe(() => this.sync())
+    this.sync()
+  }
+
+  state(): HostPhonesView[] { return [...this.entries.values()].map(entry => entry.view) }
+  subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
+
+  /**
+   * The dialog is open (true, said again every half minute while it stays open) or closed (false) for this host. While
+   * it is open the host is read every couple of seconds; a watch not renewed in a minute ends by itself.
+   */
+  watch(id: string, watching: boolean): void {
+    const entry = this.entry(id)
+    entry.watchUntil = watching ? Date.now() + HOST_PHONES_WATCH_MS : 0
+    if (!watching) { this.stopWatching(entry); return }
+    if (entry.connection) void this.read(id)
+    if (entry.timer) return
+    entry.timer = setInterval(() => {
+      if (Date.now() > entry.watchUntil) this.stopWatching(entry)
+      else if (entry.connection) void this.read(id)
+    }, this.options.pollMs ?? POLL_MS)
+    entry.timer.unref?.()
+  }
+
+  private stopWatching(entry: Entry): void { if (entry.timer) clearInterval(entry.timer); entry.timer = undefined }
+
+  /** One press in the dialog. A refusal throws its sentence; the state the host answered with is shown either way. */
+  async command(id: string, command: HostPhonesCommand): Promise<void> {
+    const entry = this.entries.get(id), link = this.link(id)
+    if (!entry || !link) throw new Error('This host is not connected, so its phone access cannot be changed. Nothing was changed. Connect it, then try again.')
+    const run = entry.commands.then(async () => {
+      this.set(id, { busy: true })
+      let answer: Answer
+      try { answer = await this.post(entry, link, 'phones-command', { command }, COMMAND_TIMEOUT_MS) }
+      catch (error) {
+        this.options.log?.('host-phones-command-failed')
+        this.set(id, { busy: false })
+        throw new Error(this.failure(link.name, error), { cause: error })
+      }
+      this.set(id, { busy: false, state: answer.state, error: undefined, readAt: new Date().toISOString() })
+      if (answer.error) throw new Error(answer.error)
+      if (command.type === 'open-serve-setup') {
+        if (!answer.url || !isTailscaleApprovalUrl(answer.url)) throw new Error('Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.')
+        await this.options.openExternal(answer.url)
+      }
+    })
+    entry.commands = run.catch(() => undefined)
+    await run
+  }
+
+  close(): void {
+    this.closed = true
+    this.off()
+    for (const entry of this.entries.values()) if (entry.timer) clearInterval(entry.timer)
+  }
+
+  /** Follows the saved hosts: a new connection is read once, and a host no longer saved is dropped. */
+  private sync(): void {
+    if (this.closed) return
+    const links = this.options.hosts.links()
+    for (const link of links) {
+      const entry = this.entry(link.id)
+      if (entry.connection === link.connection) continue
+      entry.connection = link.connection; entry.token = undefined
+      void this.read(link.id)
+    }
+    for (const [id, entry] of this.entries) {
+      if (links.some(link => link.id === id)) continue
+      // Disconnected: keep what it last said, and the open dialog's watch, for when it connects again.
+      entry.connection = undefined; entry.token = undefined
+    }
+  }
+
+  private async read(id: string): Promise<void> {
+    const entry = this.entries.get(id), link = this.link(id)
+    if (!entry || !link || entry.reading) return entry?.reading
+    entry.reading = (async () => {
+      await entry.commands
+      try {
+        const answer = await this.post(entry, link, 'phones', {}, READ_TIMEOUT_MS)
+        if (entry.connection === link.connection) this.set(id, { state: answer.state, error: undefined, readAt: new Date().toISOString() })
+      } catch (error) {
+        this.options.log?.('host-phones-read-failed')
+        if (entry.connection === link.connection) this.set(id, { error: this.failure(link.name, error) })
+      }
+    })().finally(() => { entry.reading = undefined })
+    return entry.reading
+  }
+
+  /** One administrative request, with the token read again once if the host no longer takes the one held. */
+  private async post(entry: Entry, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number, again = true): Promise<Answer> {
+    const connection = link.connection
+    entry.token ??= connection.hostAdminToken()
+    const token = entry.token
+    let response: Response
+    try {
+      response = await (this.options.fetch ?? fetch)(`${connection.url}/v1/admin/${route}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${await token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch (error) { if (entry.token === token) entry.token = undefined; throw error }
+    if (response.status === 401) {
+      if (entry.token === token) entry.token = undefined
+      if (again) return this.post(entry, link, route, body, timeoutMs, false)
+      throw new Unauthorized('The host refused the administrative token.')
+    }
+    if (!response.ok) throw new Error('The host refused the request.')
+    const answer = answerSchema.parse(await response.json())
+    if (answer.hostId !== connection.hostId) throw new Error('The host identity changed.')
+    return answer
+  }
+
+  private failure(name: string, error: unknown): string {
+    if (error instanceof Error && error.name === 'TimeoutError') return `${name} did not answer about phone access in time. Nothing was changed. Try again.`
+    if (error instanceof z.ZodError || (error instanceof Error && error.message === 'The host refused the request.')) {
+      return `The host on ${name} can’t share phone access with this computer. Nothing was changed. Update the host on ${name} from the Threads page, then try again.`
+    }
+    return `Phone access on ${name} could not be reached. Nothing was changed. Check that ${name} is connected, then try again.`
+  }
+
+  private link(id: string): HostPhonesLink | undefined { return this.options.hosts.links().find(link => link.id === id) }
+
+  private entry(id: string): Entry {
+    let entry = this.entries.get(id)
+    if (!entry) { entry = { view: { id }, watchUntil: 0, commands: Promise.resolve() }; this.entries.set(id, entry) }
+    return entry
+  }
+
+  private set(id: string, patch: Partial<Omit<HostPhonesView, 'id'>>): void {
+    const entry = this.entries.get(id)
+    if (!entry) return
+    const view: HostPhonesView = { ...entry.view, ...patch }
+    for (const key of Object.keys(view) as (keyof HostPhonesView)[]) if (view[key] === undefined) delete view[key]
+    entry.view = view
+    for (const listener of this.listeners) listener()
+  }
+}

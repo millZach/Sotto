@@ -305,10 +305,10 @@ While Tailscale holds a connection it answers nothing, so SSH's own keepalive wo
 
 *In development. Builds reach iPhones through TestFlight; [the app's README](../apps/ios/README.md) says how to set that up and how to build it yourself.*
 
-The iPhone app reads and answers threads on your computers over Tailscale. It pairs with every computer running Sotto, and with any host without a screen, and shows their threads together; each computer shares only its own threads. Install Tailscale on the iPhone and on each computer. On a computer running Sotto, turn on phone access in **Settings › Phones** ([Phones](#phones)), which serves Sotto to your tailnet through Tailscale Serve on port 8443. For a host without a screen, point Tailscale Serve on its machine at the host's loopback port. Then add the computer:
+The iPhone app reads and answers threads on your computers over Tailscale. It pairs with every computer running Sotto, and with any host without a screen, and shows their threads together; each computer shares only its own threads. Install Tailscale on the iPhone and on each computer. On a computer running Sotto, turn on phone access in **Settings › Phones** ([Phones](#phones)), which serves Sotto to your tailnet through Tailscale Serve on port 8443. For a host without a screen that this computer reaches over SSH, such as `forge`, turn phone access on for it from this computer instead: **Phones…** on its row in **Settings › Hosts** ([Phones on a host](#phones-on-a-host)). Then add the computer:
 
 1. Type the computer's name on your tailnet, such as `forge`. The app finds its full private address through Tailscale's MagicDNS and checks that Sotto answers there, on port 8443 and then on 443. You can type the full address ending in `.ts.net` instead, with a port if you want only that one.
-2. Type the eight-character code from **Settings › Phones** on that computer, or the code a host's pairing command above prints.
+2. Type the eight-character code from **Settings › Phones** on that computer, or, for a host without a screen, from **Pair a phone** in its Phones dialog on the computer you reach it from.
 
 The first time, the app opens on these two steps. After that, **Add computer** at the top of **Computers** opens them as a sheet.
 
@@ -357,6 +357,16 @@ Then pair a phone: on the iPhone, open Sotto, tap **Add computer** ([iPhone app]
 Each paired phone shows its name with control characters removed and spacing cleaned up, when it paired and whether it is connected now. A paired phone reads threads and replies. Pairing also allows it to change the coordinator’s reasoning provider and model, using credentials already saved on the computer, without **Can answer**. This can send assignment text and relevant thread context to a different reasoning host listed under Privacy and cost in the README. Keys and endpoints stay on the computer (ADR-0033). It answers questions and permissions only after you turn on its **Can answer** switch, which records your permission for that phone and nothing else (ADR-0004); turning it off takes that back. **Remove** asks first, then unpairs the phone and closes its connection at once. **Name on phones** is what phones list this computer's threads under; left empty, it is this computer's name on your tailnet.
 
 Turning **Let phones connect** off removes Sotto's Serve setting on 8443 and closes the listener, which drops every phone's connection; paired phones stay paired for next time. If removal fails, the page says phones cannot connect while Sotto finishes cleanup. Sotto reserves its loopback port with a listener that closes connections and tries again while it is open; **Try again** retries cleanup too. If the saved cleanup record cannot be read, Sotto keeps cleanup pending. Remove the setting on port 8443 in Tailscale, then press **Try again**. Quitting Sotto asks to remove the Serve setting too, and starting it puts the setting back while phone access is on. See [ADR-0033](adr/0033-the-desktop-lets-paired-phones-reach-its-threads.md).
+
+### Phones on a host
+
+A host you added in **Settings › Hosts** can serve its own threads to your iPhone too, so a machine with no screen, such as `forge`, never needs one (ADR-0050). Each connected host's row says **Phones off**, **Phones on**, with how many are paired, or **Phones need you**, and **Phones…** opens **Phones on forge**. Escape or **Done** closes it.
+
+Turn on **Let phones reach forge**. The host checks the same three steps the Phones page does, on its own machine: **Tailscale on forge**, **Tailscale Serve on port 8443** and **Address phones use**. Sotto installs nothing there. If Tailscale is not installed on the host, or not signed in, the first step says so and **Try again** checks again once it is. If the tailnet has not turned Serve on, **Turn on Serve in Tailscale** opens Tailscale's page on this computer. On Linux, Tailscale lets an account change Serve only once that account is its operator; the step says so and shows `sudo tailscale set --operator=$USER`, with **Copy command**, to run on the host. Sotto never runs it.
+
+Then **Pair a phone** shows a code from the host, with the same countdown, **Make a new code** and **Cancel code** (or Escape). On the iPhone, **Add computer**, enter the host's name on your tailnet, then the code. The phone appears under **Paired phones**, with **Can answer** and **Remove**, which asks in place before it unpairs the phone. While the dialog is open it reads the host every couple of seconds, so a phone that pairs or connects shows up there.
+
+Phone access is the host's own setting. The host serves phones on a loopback port it remembers, puts Sotto's Serve setting back each time it starts and takes it away when it stops. Phones reach the host only while its host runs, and a host Sotto started runs until you stop it; after the machine restarts, it starts again when this computer connects. While the host is not connected, the dialog shows what it last said and changes nothing. Only phones that paired through phone access are listed; this computer, and any other desktop paired with the host, are not phones. A phone paired earlier with the host's own `--pairing-code` command stays paired but is not listed; use `--allow-answers` and `--revoke-client` for it.
 
 ## Headless host
 
@@ -481,6 +491,8 @@ When you connect a remote host, Sotto sends your thread reads, prompts and expli
 ### Phones
 
 With phone access on, your threads, and the replies, photos and answers you send from a phone, travel between this computer and the iPhones you paired, over your tailnet through Tailscale Serve. A photo from a phone is kept here as a staged image, like a screenshot, and goes to the thread's provider with the reply. Sotto's listener binds this computer's loopback address only; Serve carries tailnet traffic to it, and Funnel, which would reach the internet, is never used. Sotto runs the `tailscale` command with fixed arguments and reads what it prints; that command talks to the local Tailscale service, so no new host is contacted. Pairing codes and tokens are never logged, and the listener has no administrative routes: codes, answers and removals are handled inside Sotto, from the Phones page.
+
+A host's phone access works the same way on the host's machine: the host runs `tailscale` there, its phone listener binds that machine's loopback address, and your threads on that host travel to your paired phones over your tailnet. This computer changes it through the host's administrative routes on the port SSH forwards. The launch hands back the host's administrative token over SSH, and this computer keeps it in memory for that connection only, never on disk or in a log.
 
 ### Themes and the natural voice
 

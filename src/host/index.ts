@@ -17,6 +17,8 @@ import { startSocketServer } from './socketServer'
 import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HostLockError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
+import { startHostPhones, type HostPhones } from './phones'
+import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -39,6 +41,8 @@ export interface HeadlessHostOptions {
   /** Tests stand in for the registry, the installers and where each client is; the host finds and runs the real ones. */
   clients?: AgentRuntimeOptions['clients']
   locateClient?: AgentRuntimeOptions['locateClient']
+  /** Tests and end-to-end runs stand in for this machine's Tailscale, which phone access runs (ADR-0050). */
+  tailscale?: PhoneAccessTailscale
 }
 
 export { HostLockError } from './lock'
@@ -119,10 +123,15 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
+    let phones: HostPhones | undefined
     try {
       await pairing.load()
       if (options.port !== undefined) {
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true,
+        // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry; this one,
+        // with the administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
+        phones = startHostPhones({ directory, service: runtime.hostService, pairing, policy, settings, startup,
+          ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
+        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: phones.administration,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
@@ -135,7 +144,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
         await chmod(join(directory, 'host-listener.json'), 0o600)
       }
-    } catch (error) { signIns.close(); await listener?.close(); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close(); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -144,6 +153,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       close: (): Promise<void> => {
         closing ??= (async () => {
           signIns.close()
+          // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
+          try { await phones?.close() } catch { options.log?.('phone-access-close-failed') }
           try { await listener?.close() } finally {
             try { await runtime.close() } finally {
               memory?.close()

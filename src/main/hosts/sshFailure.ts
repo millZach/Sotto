@@ -29,6 +29,7 @@ export type SshFailureCode =
   | 'pairing-failed'
   | 'permission-setup-failed'
   | 'revoke-failed'
+  | 'admin-failed'
   | 'stop-failed'
   | 'update-failed'
   | 'request-busy'
@@ -64,6 +65,7 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'pairing-failed': 'The pairing code could not be read from the host. Check that the host is running and try again.',
   'permission-setup-failed': 'Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect.',
   'revoke-failed': 'Client access could not be revoked. Check the host connection and try Forget again.',
+  'admin-failed': 'Phone access on the host could not be reached. Nothing was changed. Check that the host is running, then try again.',
   'stop-failed': 'The host could not be stopped. It may still be running on the SSH host.',
   'update-failed': 'The connection to the host closed before this step of its update finished.',
   'request-busy': 'Wait for the current host request to finish.',

@@ -1,7 +1,9 @@
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
-import { remoteHostSchema, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
+import { remoteHostSchema, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
+import type { HostPhonesCommand } from '../../shared/phones'
+import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
@@ -28,6 +30,14 @@ export interface HostSetupSource {
   subscribe(listener: () => void): () => void
 }
 /** What the Threads page's host update panel asks of the host updates (ADR-0040), which follow the saved hosts. */
+/** Each remote host's phone access (ADR-0050): Settings > Hosts shows it, and its Phones dialog sends it presses. */
+export interface HostPhonesSource {
+  state(): HostPhonesView[]
+  command(id: string, command: HostPhonesCommand): Promise<void>
+  watch(id: string, watching: boolean): void
+  subscribe(listener: () => void): () => void
+}
+
 export interface HostUpdateSource {
   state(): HostUpdateState[]
   command(id: string, action: HostUpdateAction): Promise<void>
@@ -113,6 +123,9 @@ export class DesktopHosts {
   /** The host updates, once main has them (ADR-0040): the Threads page shows them and sends them its presses. */
   private updates: HostUpdateSource | undefined
   private unsubscribeUpdates: (() => void) | undefined
+  /** Each host's phone access, once main has it (ADR-0050). */
+  private phones: HostPhonesSource | undefined
+  private unsubscribePhones: (() => void) | undefined
   /**
    * A host restarting for an update keeps its place on the Threads page, by saved host, under the host's own ID: its
    * threads read Reconnecting and their drafts stay, until this computer connects to it again and the new connection
@@ -151,6 +164,7 @@ export class DesktopHosts {
       ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
       ...(setup ? { setup } : {}), ...(setupChoice ? { setupChoice } : {}), ...(providerJob ? { providerJob } : {}),
       ...(this.updates ? { updates: this.updates.state() } : {}),
+      ...(this.phones ? { phones: this.phones.state() } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
   /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */
@@ -173,6 +187,20 @@ export class DesktopHosts {
     this.updates = updates
     this.unsubscribeUpdates = updates.subscribe(() => this.emit())
     this.emit()
+  }
+  /** Gives Settings > Hosts each host's phone access: its state joins every published state, and the dialog's presses go to it. */
+  usePhones(phones: HostPhonesSource): void {
+    this.unsubscribePhones?.()
+    this.phones = phones
+    this.unsubscribePhones = phones.subscribe(() => this.emit())
+    this.emit()
+  }
+  /** Saved hosts connected now, each with the SSH connection its phone access is reached through (ADR-0050). */
+  phonesLinks(): HostPhonesLink[] {
+    return this.saved.flatMap(host => {
+      const tunnel = this.live.get(host.id)?.tunnel
+      return tunnel && this.status.get(host.id)?.phase === 'connected' ? [{ id: host.id, name: host.name, connection: tunnel }] : []
+    })
   }
   /** Saved hosts an update can reach now, with the Sotto version each said it runs (ADR-0040). */
   updateCandidates(): HostUpdateCandidate[] {
@@ -303,6 +331,13 @@ export class DesktopHosts {
     if (command.type === 'start-provider-job' || command.type === 'stop-provider-job') {
       if (!this.providerJob) throw new Error("An agent cannot work on a host's providers from this window. Nothing was started.")
       await this.providerJob.command(command)
+      return this.get()
+    }
+    if (command.type === 'host-phones' || command.type === 'watch-host-phones') {
+      if (!this.phones) throw new Error('Phone access on hosts cannot be changed from this window. Nothing was changed.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (command.type === 'watch-host-phones') this.phones.watch(command.id, command.watching)
+      else await this.phones.command(command.id, command.command)
       return this.get()
     }
     if (command.type === 'host-update') {
@@ -824,7 +859,7 @@ export class DesktopHosts {
    */
   async close(): Promise<void> {
     this.closed = true
-    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.()
+    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.()
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
     // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
     // the quit drain does not end before its credential is cleared and its pairing revoked.
