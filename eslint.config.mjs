@@ -39,6 +39,8 @@ export default tseslint.config(
       // every file twice and confuse the parser about which tsconfig root it is under.
       '.claude/worktrees/**',
       'coverage/**',
+      // Gradle's own output for the Android client: test reports carry generated browser scripts.
+      'apps/android/**/build/**',
       'artifacts/question-choices/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
