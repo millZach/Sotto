@@ -258,7 +258,10 @@ private struct NotificationsPanel: View {
                 AlertSwitch(title: "When a thread stops with an error", detail: nil,
                             identifier: "setting-notify-failed", isOn: asking($failed))
                 RowDivider()
-                AlertSwitch(title: "Play a sound", detail: nil, identifier: "setting-notify-sound", isOn: asking($sound))
+                // A sound only goes with an alert, so it asks iOS for nothing and waits for one to be on.
+                AlertSwitch(title: "Play a sound", detail: anyAlert ? nil : "Turn on an alert above first.",
+                            identifier: "setting-notify-sound", isOn: $sound)
+                    .disabled(!anyAlert)
             }
             .padding(.horizontal, Space.s4).padding(.vertical, Space.s1)
             .frame(maxWidth: .infinity)
@@ -268,6 +271,8 @@ private struct NotificationsPanel: View {
         }
         .task { await check() }
     }
+
+    private var anyAlert: Bool { needsYou || finished || failed }
 
     /// A switch that, turned on, first makes sure iOS lets Sotto alert, asking the first time.
     private func asking(_ stored: Binding<Bool>) -> Binding<Bool> {
