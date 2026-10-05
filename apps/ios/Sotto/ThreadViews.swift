@@ -225,6 +225,10 @@ private struct Conversation: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            // A tap on the conversation puts the reply keyboard away, as the approved study does; buttons in it still work.
+            .simultaneousGesture(TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            })
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)

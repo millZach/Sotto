@@ -56,6 +56,8 @@ struct ThreadsView: View {
         .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
             if searching && !searchBox.frame.contains(tap.location) { searching = false }
         })
+        // A drag anywhere on the page closes it too, whether or not the list can scroll far enough to count as scrolling.
+        .simultaneousGesture(DragGesture(minimumDistance: 12).onChanged { _ in if searching { searching = false } })
         .scrollDismissesKeyboard(.immediately)
         .refreshable { await model.refresh() }
         .navigationTitle("Threads")

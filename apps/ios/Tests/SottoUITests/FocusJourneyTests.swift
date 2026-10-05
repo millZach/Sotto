@@ -176,25 +176,6 @@ import XCTest
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
 
-    /// Waits until the page shows the last message above `dock` and its big title has scrolled off: near the end of the
-    /// conversation, never back at its top. Two readings in a row must agree.
-    private func waitForNearEnd(_ last: XCUIElement, title: XCUIElement, above dock: XCUIElement, _ message: String) {
-        var matches = 0
-        var seen = ""
-        let inView = NSPredicate { _, _ in
-            guard last.exists, title.exists, dock.exists else { seen = "an element is missing"; matches = 0; return false }
-            let top = self.threadTop, floor = dock.frame.minY
-            let words = last.frame, heading = title.frame
-            seen = "last message \(words), title \(heading), bar bottom \(top), dock top \(floor)"
-            let shown = words.maxY > top && words.minY < floor && heading.maxY <= top + 1
-            matches = shown ? matches + 1 : 0
-            return matches >= 2
-        }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 10)
-        if result != .completed { explain("conversation-left-its-end", seen) }
-        XCTAssertEqual(result, .completed, message + " (" + seen + ")")
-    }
-
     private func explain(_ name: String, _ frames: String) {
         capture(name)
         let diagnostic = XCTAttachment(string: frames + "\n\n" + app.debugDescription)
@@ -239,22 +220,13 @@ import XCTest
         XCTAssertTrue(target.exists && target.isHittable, "Scrolling the thread must reach it")
     }
 
-    /// Closes the reply keyboard the way a person does on the thread page: a drag from just above the reply box down
-    /// through the keyboard, which follows the finger off the screen.
-    private func dragKeyboardClosed(above reply: XCUIElement) {
+    /// Closes the reply keyboard the way the thread page offers: a tap on the conversation, just above the reply box.
+    private func tapKeyboardClosed(above reply: XCUIElement) {
         let keyboard = app.keyboards.firstMatch
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        let x = window.frame.width - 8
-        let start = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 40 - window.frame.minY))
-        let end = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 12))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
-        if !waitUntilGone(keyboard, timeout: 3) {
-            // Held still, the keyboard may spring back; released while moving, it goes.
-            let again = origin.withOffset(CGVector(dx: x, dy: reply.frame.minY - 40 - window.frame.minY))
-            again.press(forDuration: 0.05, thenDragTo: end, withVelocity: .default, thenHoldForDuration: 0)
-        }
-        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard closes it")
+        origin.withOffset(CGVector(dx: window.frame.width - 12, dy: reply.frame.minY - 24 - window.frame.minY)).tap()
+        XCTAssertTrue(waitUntilGone(keyboard), "A tap on the conversation closes the reply keyboard")
     }
 
     // MARK: Journeys
@@ -448,8 +420,8 @@ import XCTest
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The reply box opens the keyboard")
         waitForEnd(running, last: update, above: reply, "With the keyboard open, the conversation's end stays above the reply box")
         capture("thread-glow-keyboard")
-        dragKeyboardClosed(above: reply)
-        waitForNearEnd(update, title: title, above: reply, "Closing the keyboard keeps the conversation at its end; it never jumps to the top")
+        tapKeyboardClosed(above: reply)
+        waitForEnd(running, last: update, above: reply, "Closing the keyboard keeps the conversation at its end; it never jumps to the top")
         let opening = text("Review the frosted window branch")
         XCTAssertFalse(opening.exists && opening.isHittable, "The page stays away from the thread's first message")
 
@@ -536,7 +508,9 @@ import XCTest
         reveal(tropic, swipingDown: true)
         tropic.tap()
         XCTAssertEqual(tropic.value as? String, "Selected")
-        XCTAssertEqual(app.buttons["setting-theme-sotto"].value as? String, "Not selected")
+        let sotto = app.buttons["setting-theme-sotto"]
+        XCTAssertTrue(sotto.waitForExistence(timeout: 5), "The other themes stay listed while the new one paints")
+        XCTAssertEqual(sotto.value as? String, "Not selected")
         app.tabBars.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
         capture("threads-glow-tropic")
