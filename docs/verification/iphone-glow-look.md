@@ -8,8 +8,10 @@ Pro Max with Reduce Motion on and accessibility-large text, launched with the De
 
 ## What the journeys did
 
-All twelve journeys passed on the iPhone SE in run 37339374448; the captures below are from it, and the two Pro Max ones
-from the same run. The package suite ran 246 tests with one skipped and none failing.
+All twelve journeys passed on both phones in run 37346410807, with the package suite at 246 tests, one skipped and none
+failing; the Windows gates passed 7,373 tests. The captures below are from run 37339374448, the one before it, whose
+only failure was the large phone's keyboard check reading its elements before they were found; the check now waits
+for them, and the screens are unchanged.
 
 1. **Threads** opens with the wash, the heading, **+**, the computer menu, the counts and search scrolling as one page
    (`se-threads-dark.png`, `se-threads-light.png`). The counts and the Needs you heading agree: one thread needs you,
