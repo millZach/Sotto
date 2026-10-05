@@ -264,7 +264,7 @@ private struct NotificationsPanel: View {
             .frame(maxWidth: .infinity)
             .sottoCard(.plain)
             if refused { refusal.padding(.top, Space.s3) }
-            NoteLine(text: "Alerts arrive while Sotto is open or was in the background moments ago.")
+            NoteLine(text: "Alerts arrive only while Sotto is open on this iPhone.")
         }
         .task { await check() }
     }

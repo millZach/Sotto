@@ -83,11 +83,11 @@ struct ThreadsView: View {
             HStack(spacing: Space.s3) {
                 ComputerMenu()
                 Spacer(minLength: Space.s2)
-                ThreadCounts(working: all.working.count, needs: all.requestCount)
+                ThreadCounts(working: all.working.count, needs: all.questions.count)
             }
             VStack(alignment: .leading, spacing: Space.s2) {
                 ComputerMenu()
-                ThreadCounts(working: all.working.count, needs: all.requestCount)
+                ThreadCounts(working: all.working.count, needs: all.questions.count)
             }
         }
         .padding(.top, Space.s3)
