@@ -31,3 +31,9 @@ Before merging, the branch incorporated the separately reviewed connection-refre
 PR review found that "Keep Codex open" did not explicitly tell someone with a closed app to open it. The guidance now says to open Codex if it is closed, keep it open and try again. It still describes an unavailable connection rather than asserting that the app is closed. The same projection test covers a missing pipe, an ended pipe and loss after input; each receives the same conditional recovery instructions in Full access and approval-required threads.
 
 The revised regression first failed (1 failed, 9 passed) on the previous words, then the 20 projection tests passed after the correction. Typecheck, lint and build passed again. The built Electron guidance spec passed again (1 test), including an explicit assertion for opening Codex. The three cited captures were regenerated and inspected; the longer words wrap without clipping in dark and light at the minimum size. All six size/appearance combinations and keyboard disclosure still passed with reduced motion. The throwaway prototype was updated on its local-only preservation branch and its worktree removed again.
+
+## Routine capture output
+
+Ordinary runs of `computer-use-guidance.spec.ts` now save screenshots under the test's Playwright output directory (`test.info().outputPath('captures')`). They do not overwrite the three committed, reviewed captures cited above. Updating those evidence files requires an intentional copy after inspecting a new run. The output-path correction changes only test artifacts; the application and the captured journey are unchanged.
+
+For this test-output correction, build, focused ESLint and the built Electron guidance spec passed (1 test). The new minimum-size light capture was inspected. `git diff --exit-code HEAD -- artifacts/computer-use-guidance` passed after the run, confirming that the committed evidence files were unchanged.

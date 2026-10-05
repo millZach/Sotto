@@ -20,7 +20,7 @@ test('Computer Use connection guidance wraps in the built app and opens from the
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinator: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, activeProjectId: 'project', activeThreadId: 'workshop' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
-  const shots = resolve('artifacts/computer-use-guidance')
+  const shots = test.info().outputPath('captures')
   await mkdir(shots, { recursive: true })
   try {
     const launched = await launchSotto('success', profile)
