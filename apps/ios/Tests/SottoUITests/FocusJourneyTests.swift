@@ -353,11 +353,16 @@ import XCTest
         capture("settled-expanded")
         row("settings").tap()
         XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
-        let step = byID("step-read")
-        XCTAssertTrue(step.waitForExistence(timeout: 5), "Steps sit in the conversation; there is no Activity tab")
-        XCTAssertTrue(step.label.contains("Read project notes"))
+        let run = byID("steps-run-read")
+        XCTAssertTrue(run.waitForExistence(timeout: 5), "Steps sit in the conversation, folded into one line; there is no Activity tab")
+        XCTAssertEqual(run.label, "Show 1 step")
+        XCTAssertFalse(byID("step-read").exists, "A finished run's steps stay folded until its line is pressed")
         XCTAssertFalse(app.buttons["thread-pane-activity"].exists)
         capture("thread-messages")
+        run.tap()
+        let step = byID("step-read")
+        XCTAssertTrue(step.waitForExistence(timeout: 5), "Pressing the line opens its steps")
+        XCTAssertTrue(step.label.contains("Read project notes"))
         back()
         reveal(settled, swipingDown: true)
         settled.tap()
@@ -409,7 +414,8 @@ import XCTest
         thread.tap()
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let end = byID("step-long-final")
+        // The thread ends on its last run of steps, folded into one line.
+        let end = byID("steps-run-long-final")
         // The last reply is taller than the screen, so its heading sits above the view at the end; its closing command
         // is what must be on screen.
         let last = threadText("python compare_drives.py --option 12 --report")
@@ -426,8 +432,8 @@ import XCTest
         XCTAssertEqual(title.label, "Refine the iPhone thread view")
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let running = byID("step-drawer-test")
-        XCTAssertTrue(running.waitForExistence(timeout: 5), "The running step sits at the end of the conversation")
+        let running = byID("steps-run-drawer-test")
+        XCTAssertTrue(running.waitForExistence(timeout: 5), "The working run's line sits at the end of the conversation")
         let update = threadText("Still working through the review fixes")
         waitForEnd(running, last: update, above: reply, "The thread opens at the end of its conversation")
         XCTAssertLessThanOrEqual(title.frame.maxY, threadTop + 1, "A long thread opens at its end, not its title")
@@ -467,6 +473,49 @@ import XCTest
         capture("thread-glow-top")
     }
 
+    /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
+    /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
+    func testARunOfStepsOpensInPlaceAndFoldsAgain() {
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let working = byID("steps-run-drawer-test")
+        XCTAssertTrue(working.waitForExistence(timeout: 5), "The working run is one line at the end of the conversation")
+        XCTAssertEqual(working.label, "Show 1 step", "The line's name says what a press does")
+        XCTAssertEqual(working.value as? String,
+                       "Working: Running npm test -- tests/unit/renderer/terminalDrawer.test.ts, 1 step so far",
+                       "The working line names the step running now")
+        XCTAssertFalse(byID("step-drawer-test").exists, "The working run's steps stay folded until its line is pressed")
+
+        let finished = byID("steps-run-edit-tooltips")
+        XCTAssertTrue(finished.waitForExistence(timeout: 5))
+        scrollThread(to: finished, towardStart: true)
+        XCTAssertEqual(finished.label, "Show 3 steps")
+        // From the first edit's start to the end of the typecheck: three and a half minutes, give or take a second.
+        let summary = finished.value as? String ?? ""
+        XCTAssertTrue(summary.hasPrefix("3 steps, 3 minutes"), "A finished run says how many steps and how long (\(summary))")
+        XCTAssertFalse(finished.isSelected)
+        let typecheck = byID("step-typecheck")
+        XCTAssertFalse(typecheck.exists, "A finished run's steps stay folded until its line is pressed")
+        capture("thread-steps-folded")
+
+        finished.tap()
+        XCTAssertTrue(typecheck.waitForExistence(timeout: 5), "Pressing the line opens the run's steps in place")
+        XCTAssertTrue(byID("step-edit-tooltips").exists)
+        XCTAssertTrue(byID("step-edit-drawer").exists)
+        XCTAssertEqual(finished.label, "Hide steps")
+        XCTAssertTrue(finished.isSelected, "An open run is marked as open")
+        XCTAssertFalse(byID("step-think").exists, "Opening one run leaves the others folded")
+        capture("thread-steps-open")
+
+        scrollThread(to: finished, towardStart: true)
+        finished.tap()
+        XCTAssertTrue(waitUntilGone(typecheck), "Pressing the line again folds the steps")
+        XCTAssertEqual(finished.label, "Show 3 steps")
+        XCTAssertTrue(working.exists, "Folding a run leaves the working run's line in place")
+    }
+
     /// A question answered from its sheet leaves the conversation where the user was reading: at its end.
     func testAnsweringAQuestionKeepsTheConversationAtItsEnd() {
         launch(Self.fixture + ["--ui-question-while-reading"])
@@ -481,7 +530,7 @@ import XCTest
         XCTAssertTrue(waitUntilGone(send), "Not now closes the question")
         let ask = app.buttons["Answer the question"]
         XCTAssertTrue(ask.waitForExistence(timeout: 5), "The reply box offers the question again")
-        let running = byID("step-drawer-test")
+        let running = byID("steps-run-drawer-test")
         let update = threadText("Still working through the review fixes")
         XCTAssertTrue(running.waitForExistence(timeout: 5))
         waitForEnd(running, last: update, above: ask, "The conversation stays at its end under a waiting question")
@@ -555,7 +604,7 @@ import XCTest
         reveal(thread)
         thread.tap()
         XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
-        XCTAssertTrue(byID("step-drawer-test").waitForExistence(timeout: 5))
+        XCTAssertTrue(byID("steps-run-drawer-test").waitForExistence(timeout: 5))
         capture("thread-glow-compact-large")
     }
 

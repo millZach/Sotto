@@ -31,3 +31,9 @@ Working cards show the step running now only for a thread whose detail this iPho
 ## What this does not change
 
 No host, listener, protocol version, runtime dependency or command is added. Authority stays where ADR-0004 and ADR-0033 put it: nothing here answers a request for the user.
+
+## October 5 amendment: steps fold into one line
+
+On a busy thread the inline steps buried the messages: dozens of "Reasoning summary" and "Command" lines between two replies. Zach asked for them to shrink to one line that shows the thread is working and opens to show them all, and chose **B · Pulse** from three live effects in `steps-folded.html` on `prototype/iphone-glow-redesign`.
+
+Each run of steps between two messages is now one line. While the run is the thread's working one, the line shows the step running now (its verb, its subject and how long it has run) in the accent, with a breathing dot, the step rolling up like a ticker as the next replaces it, and the number of steps so far. Once the run has ended, the line reads how many steps it had and how long it took ("14 steps · 1m 32s") in quiet type. A failed step changes nothing on the folded line; it shows as it did, in the opened list. A press opens the run's steps in place, as the guide-and-lines trail above, and another press folds them. Under Reduce Motion the line is a still accent line that crossfades. What this paragraph replaces is only how steps are shown: they are still placed by time between messages, and nothing new crosses the protocol.
