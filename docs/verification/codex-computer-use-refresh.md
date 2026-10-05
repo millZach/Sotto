@@ -41,3 +41,11 @@ Validation on the review correction:
 - `npx playwright test tests/e2e/queued-steering.spec.ts`: one test passed in the built Electron app, steering from the keyboard without consuming the newer draft.
 
 The full local suite totals above belong to the initial PR revision. A second full local run was stopped at the parent's direction to avoid duplicating CI; it is not claimed as a pass. The latest revision's full CI gate must pass before merge.
+
+## Review correction: optional metadata failures
+
+The optional config metadata probe previously threw on errors other than a missing file, blocking runtime creation or a prompt despite Codex having usable loaded configuration. Four regression cases went red: three initial probes failed with `EACCES`, `EPERM` or `ENOTDIR`, and a later failed probe blocked steering. The tests replace only stat calls on the fixture's global config path and delegate all other filesystem calls.
+
+An unavailable probe now skips automatic reload without replacing the last known metadata. A later healthy probe can detect a change, and an unchanged healthy probe does not cause a needless reload. Missing files still have a known `missing` stamp. The existing reload-RPC rejection tests continue to require an unsent, retryable prompt; no permission or interruption behavior changes.
+
+On this correction, typecheck, lint and build passed. The refresh, native steering and session-process integration suites passed all 27 tests across three files. The parent separately reviewed the metadata change with no remaining findings. No full local suite was repeated; latest-revision CI remains required before merge.

@@ -130,7 +130,7 @@ class Rejected extends Error {
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
 type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
-type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string; reloadSupported: boolean; refreshing?: Promise<void> }
+type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.serial}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
@@ -257,16 +257,17 @@ export class CodexAppServerHost implements AgentHost {
   }
   private codexHome(): string { return this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex') }
   /** Metadata only: config may contain credentials and is never read or logged here. */
-  private async configStamp(): Promise<string> {
+  private async configStamp(): Promise<string | undefined> {
     try {
       const file = await stat(join(this.codexHome(), 'config.toml'), { bigint: true })
       return `${file.dev}:${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}`
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
-      throw error
+      // This optional change signal must not prevent Codex from using its already loaded configuration.
+      return undefined
     }
   }
-  /** Refresh only the app-server about to start a turn. No prompt or UI action is retried. */
+  /** Refresh only the app-server about to receive a prompt. No prompt or UI action is retried. */
   private async refreshRuntimeConfig(id: string): Promise<void> {
     const runtime = this.runtimes.get(id)
     const generation = this.generation
@@ -277,7 +278,7 @@ export class CodexAppServerHost implements AgentHost {
       runtime.refreshing ??= (async () => {
         const stamp = await this.configStamp()
         if (!current()) throw new Error('Codex connection changed.')
-        if (stamp === runtime.configStamp) return
+        if (stamp === undefined || stamp === runtime.configStamp) return
         try { await this.rpc('config/mcpServer/reload', undefined, undefined, undefined, runtime.server) }
         catch (error) {
           // Older clients can still send ordinary prompts. Discover support per process, not by version.

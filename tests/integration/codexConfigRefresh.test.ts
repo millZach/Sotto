@@ -1,17 +1,22 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import * as fs from 'node:fs/promises'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
+
+// Node's ESM namespace is immutable; expose a mutable copy while retaining real filesystem calls.
+vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
 type Fixture = Awaited<ReturnType<typeof codexFixture>>
 const fixtures: Fixture[] = []
-afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
-async function setup() {
+afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.cleanup() })
+async function setup(beforeConnect?: (f: Fixture) => void) {
   const f = await codexFixture(); fixtures.push(f)
   await mkdir(join(f.root, 'home'), { recursive: true })
   await writeFile(join(f.root, 'home', 'config.toml'), 'fixture = "before"')
+  beforeConnect?.(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   const id = randomUUID()
@@ -22,6 +27,41 @@ async function setup() {
 const send = (f: Fixture, id: string, messageId = randomUUID()) => f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text: 'Check the desktop' })
 const change = (f: Fixture) => writeFile(join(f.root, 'home', 'config.toml'), 'fixture = "desktop restarted with a different pipe"')
 const steer = (f: Fixture, id: string, messageId = randomUUID()) => f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId, text: 'Check the desktop now' })
+
+/** Only the adapter's optional global metadata probe fails; session logs keep their real filesystem. */
+function failConfigStat(f: Fixture, code: string) {
+  const realStat = fs.stat
+  const path = join(f.root, 'home', 'config.toml')
+  return vi.spyOn(fs, 'stat').mockImplementation(((...args: Parameters<typeof fs.stat>) => {
+    if (args[0] === path) return Promise.reject(Object.assign(new Error('Synthetic metadata failure'), { code }))
+    return realStat(...args)
+  }) as typeof fs.stat)
+}
+
+it.each(['EACCES', 'EPERM', 'ENOTDIR'])('keeps runtime start, sends and steering available when config metadata fails (%s)', async code => {
+  const { f, id } = await setup(fixture => { failConfigStat(fixture, code) })
+  await expect(send(f, id)).resolves.toEqual({ accepted: true })
+  await expect(steer(f, id)).resolves.toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(r => r.method === 'config/mcpServer/reload')).toHaveLength(0)
+  await change(f)
+  vi.restoreAllMocks()
+  await expect(steer(f, id)).resolves.toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(r => r.method === 'config/mcpServer/reload')).toHaveLength(1)
+})
+
+it('retains the last known config stamp when a later metadata probe fails', async () => {
+  const { f, id } = await setup()
+  await send(f, id)
+  failConfigStat(f, 'EACCES')
+  await expect(steer(f, id)).resolves.toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(r => r.method === 'config/mcpServer/reload')).toHaveLength(0)
+  vi.restoreAllMocks()
+  await expect(steer(f, id)).resolves.toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(r => r.method === 'config/mcpServer/reload')).toHaveLength(0)
+  await change(f)
+  await expect(steer(f, id)).resolves.toEqual({ accepted: true })
+  expect((await f.driver.requests()).filter(r => r.method === 'config/mcpServer/reload')).toHaveLength(1)
+})
 
 it('refreshes changed configuration before steering an active turn', async () => {
   const { f, id } = await setup()
