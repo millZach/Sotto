@@ -1,10 +1,11 @@
 <!doctype html>
 <!--
-  VERDICT (October 5, 2026): C, "Setup-led", with A's controls. The owner delegated the pick ("Go ahead and do
-  everything we discussed, no need to stop and ask me"), so it is recorded as the owner's delegated pick in ADR-0053
-  and ADR-0054. Add host's checklist proves the tailnet connection and its connected card offers Start forge's host
-  at boot; a host saved before this gets a one-time line; the row's meta line, Edit connection's "How Sotto connects"
-  and the More menu's Start at boot… are A's. B is kept as the record of what was weighed.
+  VERDICT (October 5, 2026): C, "Setup-led", with A's controls, without C's one-time line. The owner delegated the
+  pick ("Go ahead and do everything we discussed, no need to stop and ask me"), so the agent made it and ADR-0053 and
+  ADR-0054 record it as such, Proposed until the owner confirms. Add host's checklist proves the tailnet connection
+  and its connected card offers Start forge's host at boot; the row's meta line, Edit connection's "How Sotto
+  connects" and the More menu's Start at boot… are A's. The one-time line for a host saved before this was dropped,
+  since nothing in Sotto announces itself unasked. B is kept as the record of what was weighed.
 
   PROTOTYPE — throwaway. Question: how does Settings > Hosts say a host is reached over the owner's tailnet rather
   than SSH, let the owner choose, and offer to start a Linux host at boot? Plan: docs/plans/host-tailnet-connection.md.
@@ -241,8 +242,6 @@ figure{margin:0}
 .hosts-row__meta .via[data-via=ssh]{color:var(--tt-text-muted)}
 .hosts-menu__list{min-width:210px}
 .hosts-menu__list hr{border:0;border-top:1px solid var(--tt-hairline);margin:4px 2px}
-.hosts-setup-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;border-left:2px solid var(--tt-accent);border-radius:6px;background:var(--tt-surface-sunken);padding:10px 12px}
-.hosts-settings .hosts-setup-line>p{flex:1 1 260px;min-width:0;margin:0;color:var(--tt-text);font-size:13px}
 .hosts-dialog{width:min(480px,100%);max-height:calc(100% - 40px);overflow-y:auto}
 .hosts-dialog.wide{width:min(560px,100%)}
 .win.min .hosts-dialog{padding:18px}
@@ -318,8 +317,6 @@ fieldset.hosts-fieldset>legend{padding:0;margin:0 0 8px;font-size:13px;font-weig
 .hd-facts dd{margin:0;color:var(--tt-text);overflow-wrap:anywhere}
 .hd-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .hosts-settings .hd-line p{margin:0;flex:1;min-width:200px;font-size:13px}
-.not-here{border:1px dashed var(--tt-hairline);border-radius:8px;padding:12px 14px}
-.hosts-settings .not-here p{margin:0;font-size:13px}
 .pick{display:inline-block;margin-left:8px;font:700 12px/1 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#0b0d0c;background:#6ee7d8;border-radius:999px;padding:5px 9px;vertical-align:middle}
 </style>
 </head>
@@ -327,9 +324,9 @@ fieldset.hosts-fieldset>legend{padding:0;margin:0 0 8px;font-size:13px;font-weig
 <header class="page-head">
   <p class="kicker">Prototype · Sotto · hosts over the tailnet</p>
   <h1>Reach forge over your tailnet, and start it at boot</h1>
-  <p>Today every connection to forge is an SSH sign-in, and with Tailscale SSH in <b>check</b> mode each relaunch of Sotto asks for an approval. After forge restarts, its threads are gone until this computer connects and starts the host again. Here a paired desktop reaches forge <b>over its tailnet first</b>, through the Tailscale Serve setting Sotto already owns there, and uses SSH only when the tailnet does not answer or for a press that needs it. On Linux, forge's host can <b>start at boot</b>.</p>
-  <p>Three layouts. <b>A</b> puts it on the row and its More menu. <b>B</b> gives forge a dialog of its own. <b>C</b> leads with setup: Add host proves the tailnet and offers the boot start, and a host saved before this gets a one-time line. The bar at the bottom switches layout (← →), state (keys 1–9 and 0, or press a state), theme, motion and window size.</p>
-  <p><b>Picked (October 5, 2026, the owner's delegated pick): C with A's controls.</b> Recorded in ADR-0053 and ADR-0054.</p>
+  <p>Today every connection to forge is an SSH sign-in, and with Tailscale SSH in <b>check</b> mode each relaunch of Sotto asks for an approval. After forge restarts, its threads are gone until this computer connects and starts the host again. Here a paired desktop reaches forge <b>over its tailnet first</b>, through a Tailscale Serve setting Sotto turns on there when you add it, and uses SSH only when the tailnet does not answer or for a press that needs it. On Linux, forge's host can <b>start at boot</b>.</p>
+  <p>Three layouts. <b>A</b> puts it on the row and its More menu. <b>B</b> gives forge a dialog of its own. <b>C</b> leads with setup: Add host proves the tailnet and offers the boot start. C's one-time line for a host saved before this was dropped. The bar at the bottom switches layout (← →), state (keys 1–9 and 0, or press a state), theme, motion and window size.</p>
+  <p><b>Picked (October 5, 2026, under the owner's delegation): C with A's controls, without the one-time line.</b> Recorded in ADR-0053 and ADR-0054, Proposed until the owner confirms.</p>
 </header>
 <h2 class="band">Desktop — Settings › Hosts</h2>
 <div class="dz" id="dz"><div class="win" id="win"></div></div>
@@ -404,7 +401,7 @@ const SIZES = ['default', 'min', 'max']
 let size = SIZES.includes(params.get('size')) ? params.get('size') : 'default'
 const STATES = [
   ['tailnet', 'Tailnet'], ['fallback', 'Tailnet silent'], ['ssh', 'SSH only'], ['connecting', 'Connecting'],
-  ['edit', 'Edit connection'], ['checklist', 'Add: tailnet step'], ['card', 'Add: connected'], ['line', 'One-time line'],
+  ['edit', 'Edit connection'], ['checklist', 'Add: tailnet step'], ['card', 'Add: connected'],
   ['boot', 'Start at boot'], ['linger', 'Linger refused'], ['phones', 'Phones approval'], ['unboot', 'Stop at boot'], ['operator', 'Serve operator'],
 ]
 const VARIANTS = { A: 'Row and menu', B: 'Host dialog', C: 'Setup-led (picked, with A)' }
@@ -425,7 +422,7 @@ const modal = (title, body, footer, cls = '') => `<div class="tt-dialog-backdrop
 const approvalCard = what => `<div class="hosts-notice approval" role="status">${di('info', 16)}<div class="grow" style="display:grid;gap:10px"><p><b>Waiting for your approval in Tailscale.</b> ${HOST} uses Tailscale SSH, which asks you to approve this connection in your browser. ${what} Sotto waits up to 5 minutes.</p><div class="card-actions">${btn('Open approval page', { v: 'primary', act: 'noop' })}<button type="button" class="link" data-act="noop">Why Tailscale asks</button></div></div></div>`
 
 /* ---------- what the row says (ADR-0053's table) ---------- */
-const via = () => ST === 'ssh' || ST === 'line' || prefer === 'ssh' ? 'ssh' : ST === 'fallback' || ST === 'operator' ? 'fallback' : 'tailnet'
+const via = () => ST === 'ssh' || prefer === 'ssh' ? 'ssh' : ST === 'fallback' || ST === 'operator' ? 'fallback' : 'tailnet'
 function rowMeta() {
   if (ST === 'connecting') return `<span data-phase="connecting">${connectPhase ? 'Connecting over SSH…' : 'Connecting over your tailnet…'}</span>`
   const v = via()
@@ -438,7 +435,7 @@ function rowNote() {
   if (via() === 'fallback') return 'Sotto tries it again every 5 minutes.'
   return ''
 }
-const bootInstalled = () => ['linger', 'unboot'].includes(ST) || bootPressed
+const bootInstalled = () => ST === 'unboot' || bootPressed
 const menuItems = () => [
   [bootInstalled() ? 'unboot' : 'boot', bootInstalled() ? 'Stop starting at boot…' : 'Start at boot…'],
   ['hr'], ['noop', 'Stop host'], ['noop', 'Rename'], ['edit', 'Edit connection'], ['hr'], ['noop', `Forget ${HOST}…`, true],
@@ -453,7 +450,6 @@ function hostRow({ nameButton = false } = {}) {
 }
 const studioRow = `<section class="hosts-row" aria-label="studio"><span class="hosts-row__icon" aria-hidden="true">${di('server', 18)}</span><div class="hosts-row__info"><h4>studio</h4><p class="hosts-row__meta"><span class="via" data-via="ssh">SSH zach@studio</span> · <span>Switched off</span></p></div><div class="hosts-row__actions">${sw(false, 'Keep studio connected, now and when Sotto starts', 'Off')}${btn('', { v: 'ghost', icon: 'more', aria: 'More for studio' })}</div></section>`
 const localBlock = () => `<div class="hosts-local"><span class="hosts-row__icon hosts-row__icon--local" aria-hidden="true">${di('laptop', 18)}</span><div class="hosts-local__copy"><h3>This computer</h3><p>Runs threads on this computer beside your remote hosts. A change takes effect after you restart Sotto. Saved data stays.</p></div>${toggle('Run the local host', true, '', 'noop')}</div>`
-const oneTimeLine = () => `<div class="hosts-setup-line" role="status"><p><b>${HOST}</b> can connect over your tailnet and start at boot.</p>${btn('Set up…', { act: 'setup', aria: `Set up ${HOST}'s tailnet connection and start at boot` })}${btn('Dismiss', { v: 'ghost', act: 'dismiss', aria: `Dismiss the offer for ${HOST}` })}</div>`
 function page(extraTop = '', nameButton = false) {
   return `<div class="sec-h"><h2>Hosts</h2><p>Local &amp; remote hosts</p></div><div class="hosts-settings">${localBlock()}
     <p>Dictation and automatic paste always use this computer. They do not paste into a remote host.</p>
@@ -466,7 +462,7 @@ function page(extraTop = '', nameButton = false) {
 function connectionChoice() {
   const opt = (value, name, text) => `<label class="choice"${prefer === value ? ' data-checked' : ''}><input type="radio" name="how" value="${value}" data-act="prefer"${prefer === value ? ' checked' : ''}><span class="choice-name">${name}</span><span class="choice-text">${text}</span></label>`
   return `<fieldset class="hosts-fieldset"><legend>How Sotto connects</legend><div class="choices" role="radiogroup" aria-label="How Sotto connects">
-    ${opt('tailnet', 'Over your tailnet, SSH when it can’t', `At <span class="mono">${ADDR}</span>. Last answered at 9:41. Tailscale asks for approval only for Phones, Stop host, Update and Start at boot.`)}
+    ${opt('tailnet', 'Over your tailnet, SSH when it can’t', `At <span class="mono">${ADDR}</span>. Last answered at 9:41. Sotto turns on Tailscale Serve on ${HOST} for this, on your tailnet only. Tailscale asks for approval only for a press that changes something on ${HOST}.`)}
     ${opt('ssh', 'SSH only', 'Every connection signs in over SSH, and Tailscale may ask you to approve it each time.')}
   </div></fieldset>`
 }
@@ -508,26 +504,25 @@ function checklist(withOffer) {
 const bootBody = () => `<p class="lead">${HOST}’s host then starts when ${HOST} starts, so its threads come back after a restart without this computer signing in over SSH.</p>
   ${checks(`What Sotto found on ${HOST}`, [
     ['ok', 'systemd user manager', `Running for ${USER}.`],
-    ['act', 'Linger', `Off. Sotto turns it on for ${USER}, so the host starts before anyone signs in to ${HOST}. If ${HOST} asks for an administrator, run this there; Sotto never runs sudo.`, command(LINGER_CMD, 'linger0')],
+    ['act', 'Linger, first', `Off. Sotto turns it on for ${USER} before anything else, so the host starts before anyone signs in to ${HOST} and keeps running after they sign out. If ${HOST} asks for an administrator, nothing on ${HOST} changes: run this there, then press Start at boot again. Sotto never runs sudo.`, command(LINGER_CMD, 'linger0')],
   ])}
   ${checks(`What changes on ${HOST}`, [
     ['act', 'A unit', `<span class="mono">sotto-host.service</span> in ${USER}’s systemd folder, and a small script beside the host.`],
-    ['act', 'One restart, now', 'The host Sotto started restarts under the unit. Turns running there stop; drafts and history stay.'],
+    ['act', 'One restart, now', 'The host Sotto started restarts under the unit. Turns running there stop; drafts and history stay. If a thread is working, Sotto asks first.'],
   ])}`
 const bootModal = () => modal(`Start ${HOST}’s host at boot?`, bootBody(), `${btn('Cancel', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}`)
-const lingerBody = () => checks(`Start at boot on ${HOST}`, [
-  ['ok', 'Unit installed', `<span class="mono">sotto-host.service</span> is on for ${USER}.`],
-  ['ok', 'Host restarted', `Running Sotto 0.1.31, started at boot. This computer is connected again.`],
-  ['fail', 'Linger', `${HOST} would not turn it on without an administrator. Until it is on, the host starts when ${USER} first signs in to ${HOST}, not when ${HOST} starts. Run this on ${HOST}; Sotto never runs sudo.`, command(LINGER_CMD, 'linger')],
-])
-const lingerModal = () => modal(`${HOST}’s host starts at boot`, lingerBody(), btn('Done', { v: 'primary', act: 'close' }))
-const unbootModal = () => modal(`Stop starting ${HOST}’s host at boot?`, `<p class="lead">Sotto removes <span class="mono">sotto-host.service</span> and its script from ${HOST}. The host keeps running now. After ${HOST} restarts, it starts again only when this computer connects over SSH.</p>`,
+const lingerBody = () => `<p class="lead">Nothing changed on ${HOST}. Its host is still running as before, and this computer is still connected.</p>${checks(`Start at boot on ${HOST}`, [
+  ['fail', 'Linger', `${HOST} would not turn it on without an administrator. Without it, a unit would stop ${HOST}’s host whenever ${USER} signs out, so Sotto installed nothing. Run this on ${HOST}, then press Start at boot again. Sotto never runs sudo.`, command(LINGER_CMD, 'linger')],
+  ['wait', 'Unit', 'Not installed.'],
+  ['wait', 'Restart', 'None.'],
+])}`
+const lingerModal = () => modal(`${HOST}’s host does not start at boot yet`, lingerBody(), `${btn('Close', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}`)
+const unbootModal = () => modal(`Stop starting ${HOST}’s host at boot?`, `<p class="lead">Sotto removes <span class="mono">sotto-host.service</span> and its script from ${HOST}, and restarts the host once outside the unit, so it keeps running. Turns running there stop; drafts and history stay. If a thread is working, Sotto asks first. After ${HOST} restarts, its host starts again only when this computer connects over SSH.</p>`,
   `${btn('Keep starting at boot', { act: 'close' })}${btn('Stop starting at boot', { v: 'primary', act: 'close' })}`)
 
-/* ---------- Phones, while its admin session waits for Tailscale ---------- */
+/* ---------- Phones, while its admin connection waits for Tailscale ---------- */
 const phonesModal = () => modal(`Phones on ${HOST}`, `${approvalCard('The dialog fills in once you approve.')}
-  <div class="pa-switchrow" style="padding:12px 0">${toggle(`Let phones reach ${HOST}`, true, `Sotto runs Tailscale Serve on ${HOST}, so Sotto on your iPhone can reach ${HOST}’s threads over your tailnet. Only phones you pair can connect.`, 'noop', true)}</div>
-  ${checks(`Phone access on ${HOST}`, [['wait', `Tailscale on ${HOST}`, `Read once Sotto reaches ${HOST} over SSH.`], ['wait', 'Tailscale Serve on port 8443', 'Waits for the step above.'], ['wait', 'Paired phones', 'Waits for the step above.']])}`,
+  ${checks(`Phone access on ${HOST}`, [['wait', `Let phones reach ${HOST}`, `Not read yet. The switch shows once Sotto reaches ${HOST} over SSH.`], ['wait', `Tailscale on ${HOST}`, 'Waits for the step above.'], ['wait', 'Tailscale Serve', 'Waits for the step above.'], ['wait', 'Paired phones', 'Waits for the step above.']])}`,
   btn('Done', { v: 'primary', act: 'close' }), 'wide')
 
 /* ---------- B: forge's own dialog ---------- */
@@ -535,11 +530,11 @@ function hostDialog() {
   const v = via()
   const approval = ST === 'boot' ? approvalCard('Start at boot carries on once you approve.') : ''
   const connected = v === 'tailnet' ? 'Your tailnet' : v === 'fallback' ? `SSH ${TARGET}. The tailnet did not answer at 9:41; Sotto tries it again every 5 minutes.` : `SSH ${TARGET}, as you chose`
-  const bootOn = ['linger', 'unboot'].includes(ST) || bootPressed
+  const bootOn = ST === 'unboot' || bootPressed
   const bootSec = ST === 'boot'
     ? `${toggle(`Start ${HOST}’s host at boot`, false, 'Turning this on restarts the host once.', 'noop')}${bootBody()}<div class="card-actions" style="justify-content:flex-end">${btn('Cancel', { act: 'close' })}${btn('Start at boot', { v: 'primary', act: 'bootyes' })}</div>`
-    : ST === 'linger' ? `${toggle(`Start ${HOST}’s host at boot`, true, '', 'noop')}${lingerBody()}`
-      : ST === 'unboot' ? `${toggle(`Start ${HOST}’s host at boot`, true, `Turning this off removes the unit. The host keeps running now; after ${HOST} restarts it starts again only when this computer connects over SSH.`, 'noop')}`
+    : ST === 'linger' ? `${toggle(`Start ${HOST}’s host at boot`, false, '', 'noop')}${lingerBody()}`
+      : ST === 'unboot' ? `${toggle(`Start ${HOST}’s host at boot`, true, `Turning this off removes the unit and restarts the host once, which stops turns running there. After ${HOST} restarts, its host starts again only when this computer connects over SSH.`, 'noop')}`
         : `${toggle(`Start ${HOST}’s host at boot`, bootOn, `So ${HOST}’s threads come back after it restarts, without SSH.`, 'boot')}${checks(`Start at boot on ${HOST}`, [['ok', 'systemd user manager', `Running for ${USER}.`], ['wait', 'Linger', `Off. Sotto turns it on for ${USER} when you turn this on.`]])}`
   return modal(HOST, `${approval}
     <section class="hd-sec" aria-labelledby="hd-c" style="border-top:0;padding-top:4px"><h3 id="hd-c">Connection</h3>
@@ -551,22 +546,18 @@ function hostDialog() {
 }
 
 /* ---------- the variants ---------- */
-const notHere = text => `<div class="not-here"><p>${text}</p></div>`
 function deskA() {
   const m = !modalOpen ? '' : ST === 'edit' ? editDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(false) : ST === 'boot' ? bootModal() : ST === 'linger' ? lingerModal() : ST === 'unboot' ? unbootModal() : ST === 'phones' ? phonesModal() : ''
-  const top = ST === 'line' ? notHere(`A has no one-time line. A host saved before this stays on SSH until you choose “Over your tailnet” in its Edit connection, and Start at boot is in its More menu.`) : ''
-  return { html: page(top), modal: m, cap: '<b>A — Row and menu.</b><span>The row’s meta line begins with how the host is connected: Tailnet, or SSH forge with the reason. Edit connection gains “How Sotto connects” above the SSH fields, and the More menu gains Start at boot…, which opens a consent modal. Nothing new to find, but an existing host has to be pointed at the tailnet by hand.</span>' }
+  return { html: page(), modal: m, cap: '<b>A — Row and menu.</b><span>The row’s meta line begins with how the host is connected: Tailnet, or SSH forge with the reason. Edit connection gains “How Sotto connects” above the SSH fields, and the More menu gains Start at boot…, which opens a consent modal. Nothing new to find, but an existing host has to be pointed at the tailnet by hand.</span>' }
 }
 function deskB() {
   const opensDialog = ['tailnet', 'fallback', 'ssh', 'edit', 'boot', 'linger', 'unboot'].includes(ST)
   const m = !modalOpen ? '' : opensDialog ? hostDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(false) : ST === 'phones' ? phonesModal() : ''
-  const top = ST === 'line' ? notHere(`B has no one-time line. Press a host’s name to open its dialog, where the connection, Start at boot and Phones live.`) : ''
-  return { html: page(top, true), modal: m, cap: '<b>B — Host dialog.</b><span>The host’s name opens a dialog named for it, with three sections: Connection (where it is connected, its tailnet address, the choice), Start at boot (a switch with its checks and consent) and Phones (opens the existing dialog). Any approval Tailscale asks for shows at its top. Tidy, but one more step, and the row’s name becomes a control nobody expects.</span>' }
+  return { html: page('', true), modal: m, cap: '<b>B — Host dialog.</b><span>The host’s name opens a dialog named for it, with three sections: Connection (where it is connected, its tailnet address, the choice), Start at boot (a switch with its checks and consent) and Phones (opens the existing dialog). Any approval Tailscale asks for shows at its top. Tidy, but one more step, and the row’s name becomes a control nobody expects.</span>' }
 }
 function deskC() {
   const m = !modalOpen ? '' : ST === 'edit' ? editDialog() : ['checklist', 'card', 'operator'].includes(ST) ? checklist(true) : ST === 'boot' ? bootModal() : ST === 'linger' ? lingerModal() : ST === 'unboot' ? unbootModal() : ST === 'phones' ? phonesModal() : ''
-  const top = ST === 'line' ? oneTimeLine() : ''
-  return { html: page(top), modal: m, cap: '<b>C — Setup-led, with A’s controls. Picked.</b><span>Add host’s checklist gains “Reach forge over your tailnet” after Paired, and its connected card offers Start forge’s host at boot, one consented press. A host saved before this gets a one-time line, “forge can connect over your tailnet and start at boot.”, whose Set up… reopens the same checklist. The row, Edit connection and the More menu are A’s.</span>' }
+  return { html: page(), modal: m, cap: '<b>C — Setup-led, with A’s controls. Picked.</b><span>Add host’s checklist gains “Reach forge over your tailnet” after Paired, and its connected card offers Start forge’s host at boot, one consented press. The row, Edit connection and the More menu are A’s, and they are how a host saved before this moves to the tailnet: nothing announces it. C’s one-time line was dropped for that reason.</span>' }
 }
 
 const NAV = [['mic', 'Dictation'], ['audio', 'Transcription'], ['sparkles', 'Cleanup'], ['command', 'Providers', 'gap'], ['server', 'Hosts'], ['phone', 'Phones'], ['workflow', 'Agents'], ['arrowUR', 'Output'], ['palette', 'Appearance', 'gap'], ['sliders', 'Application'], ['branch', 'Git']]
@@ -606,7 +597,7 @@ let connectTimer = null
 function setState(s) {
   ST = s; copied = ''; bootPressed = false; modalOpen = true; connectPhase = 0
   prefer = s === 'ssh' ? 'ssh' : 'tailnet'
-  menuOpen = s === 'tailnet' && VAR !== 'B'
+  menuOpen = s === 'tailnet' && VAR !== 'B' && size !== 'min'
   clearInterval(connectTimer)
   if (s === 'connecting') connectTimer = setInterval(() => { connectPhase = 1 - connectPhase; renderDesktop() }, 2500)
   render()
@@ -630,8 +621,6 @@ document.getElementById('win').addEventListener('click', e => {
   }
   if (a === 'bootyes') { ST = 'linger'; render(); return }
   if (a === 'cardboot') { bootPressed = true; render(); return }
-  if (a === 'setup') { ST = 'checklist'; modalOpen = true; render(); return }
-  if (a === 'dismiss') { ST = 'tailnet'; prefer = 'ssh'; menuOpen = false; render(); return }
 })
 const keys = Object.keys(VARIANTS)
 const step = d => { VAR = keys[(keys.indexOf(VAR) + d + keys.length) % keys.length]; setState(ST) }
@@ -640,7 +629,7 @@ document.getElementById('next').onclick = () => step(1)
 document.getElementById('states').addEventListener('click', e => { const s = e.target.closest('[data-state]'); if (s) setState(s.dataset.state) })
 document.getElementById('theme').onclick = () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; render() }
 document.getElementById('motion').onclick = () => { reduced = !reduced; render() }
-document.getElementById('size').onclick = () => { size = SIZES[(SIZES.indexOf(size) + 1) % SIZES.length]; render() }
+document.getElementById('size').onclick = () => { size = SIZES[(SIZES.indexOf(size) + 1) % SIZES.length]; if (size === 'min') menuOpen = false; render() }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (document.querySelector('#win [role=dialog]')) { e.preventDefault(); closeModal() }
