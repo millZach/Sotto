@@ -203,8 +203,13 @@ export const TRANSCRIPTION_PRIVACY_NOTICE = 'The audio you dictate is uploaded t
 /** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
 const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
+/**
+ * How long one transcription may take, retries included. The 15-second floor
+ * leaves room to wait out the provider's short rate-limit bursts (about one,
+ * two and four seconds) before the dictation is given up on.
+ */
 export function transcriptionTimeoutMs(audioSeconds: number): number {
-  return Math.min(30_000, Math.max(8_000, 8_000 + 300 * audioSeconds))
+  return Math.min(30_000, Math.max(15_000, 8_000 + 300 * audioSeconds))
 }
 
 export const transcriptionRequestSchema = z.object({

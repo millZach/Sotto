@@ -968,10 +968,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
   // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error.
+  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
+  // also records whether the provider or OpenRouter set it, and a request that was rate
+  // limited and then went through is recorded too, so the retries can be seen working.
+  const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
   const transcription = new OpenRouterTranscriptionService({
     getSettings: () => settings.forFormatting(),
-    onFailure: diagnosticsAppender('transcription-diagnostics.jsonl'),
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
