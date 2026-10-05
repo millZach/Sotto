@@ -213,9 +213,11 @@
 .thread-workspace__compose .agent-composer__footer { margin-top: 10px; }
 .thread-workspace__compose .agent-composer__footer .tt-button { min-height: 30px; font-size: 13px; }
 
-.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: safe center; overflow: auto; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
+.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
 .thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
 .thread-workspace__empty p { margin: 0; font-size: 13px; }
+/* The Threads page with no pane open carries a saved draft as well, so at the minimum window it scrolls from its top. */
+.thread-workspace__empty--page { justify-content: safe center; overflow: auto; }
 .thread-workspace__empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
 .thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }

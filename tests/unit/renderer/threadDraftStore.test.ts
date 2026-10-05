@@ -598,26 +598,73 @@ describe('screenshots read for a draft', () => {
 })
 
 describe('ThreadDraftStore.place', () => {
-  it('puts a leftover draft after what the composer holds and resolves true only once main saved it', async () => {
+  const leftover = (text: string, attachments: AgentState['draftAttachments'] = []) => ({ text, attachments: attachments ?? [] })
+
+  it('puts a leftover draft after what the composer holds and resolves saved only once main saved it', async () => {
     const { command, calls, saves } = heldCommand()
     const store = new ThreadDraftStore(command, 250, uuids())
     store.edit('thread', { text: 'Already typed.' })
-    const placed = store.place('thread', { text: 'The leftover prompt.', attachments: [] })
+    const placed = store.place('thread', leftover('The leftover prompt.'))
     await vi.advanceTimersByTimeAsync(0)
     expect(store.draft('thread').text).toBe('Already typed.\n\nThe leftover prompt.')
     const save = saves().at(-1)!
     expect(save.text).toBe('Already typed.\n\nThe leftover prompt.')
     calls.at(-1)!.resolve(published(save))
-    await expect(placed).resolves.toBe(true)
+    await expect(placed).resolves.toBe('saved')
   })
 
-  it('resolves false and keeps the composer’s copy when the save is not confirmed', async () => {
+  it('resolves unsaved and keeps the composer’s copy when the save is not confirmed', async () => {
     const { command, calls } = heldCommand()
     const store = new ThreadDraftStore(command, 250, uuids())
-    const placed = store.place('thread', { text: 'The leftover prompt.', attachments: [] })
+    const placed = store.place('thread', leftover('The leftover prompt.'))
     await vi.advanceTimersByTimeAsync(0)
     calls.at(-1)!.resolve(null)
-    await expect(placed).resolves.toBe(false)
+    await expect(placed).resolves.toBe('unsaved')
     expect(store.draft('thread').text).toBe('The leftover prompt.')
+  })
+
+  it('adds nothing twice when the same draft is placed again, and still reports the save', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const shot = { id: 'shot', name: 'footer.png', mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }
+    const first = store.place('thread', leftover('The leftover prompt.', [shot]))
+    await vi.advanceTimersByTimeAsync(0)
+    calls.at(-1)!.resolve(null)
+    await expect(first).resolves.toBe('unsaved')
+    // A retry after the refused save, a refused creation brought back or the same unused thread reused.
+    const again = store.place('thread', leftover('The leftover prompt.', [shot]))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.draft('thread')).toMatchObject({ text: 'The leftover prompt.', attachments: [shot] })
+    calls.at(-1)!.resolve(published(saves().at(-1)!))
+    await expect(again).resolves.toBe('saved')
+    const saveCount = saves().length
+    await expect(store.place('thread', leftover('The leftover prompt.', [shot]))).resolves.toBe('saved')
+    expect(saves()).toHaveLength(saveCount)
+    expect(store.draft('thread').text).toBe('The leftover prompt.')
+  })
+
+  it('saves typing that lands while the placed draft is saving, in the same call', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const placed = store.place('thread', leftover('The leftover prompt.'))
+    await vi.advanceTimersByTimeAsync(0)
+    const first = saves().at(-1)!
+    store.edit('thread', { text: 'The leftover prompt. And one more line.' })
+    calls.at(-1)!.resolve(published(first))
+    await vi.advanceTimersByTimeAsync(0)
+    const second = saves().at(-1)!
+    expect(second.text).toBe('The leftover prompt. And one more line.')
+    calls.at(-1)!.resolve(published(second))
+    await expect(placed).resolves.toBe('saved')
+  })
+
+  it('writes nothing when the two together pass one prompt’s limit', async () => {
+    const { command, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    store.edit('thread', { text: 'A'.repeat(60_000) })
+    const before = store.draft('thread')
+    await expect(store.place('thread', leftover('B'.repeat(60_000)))).resolves.toBe('too-long')
+    expect(store.draft('thread')).toBe(before)
+    expect(saves()).toHaveLength(0)
   })
 })

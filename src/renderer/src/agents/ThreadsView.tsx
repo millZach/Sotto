@@ -11,7 +11,7 @@ import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFact
 import { NewThreadDialog } from './NewThreadDialog'
 import { beginNewThread, unusedNewThread, type ThreadCreationStart } from './newThread'
 import { newThreadChord, newThreadChordLabel, newThreadChordPressed } from './newThreadShortcut'
-import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
+import { ProviderUpgradeNotice, isRecoveredDraft } from './ProviderUpgradeNotice'
 import { EmptyWorkspace, type CarriedDraft } from './EmptyWorkspace'
 import { HostUpdateControl } from './HostUpdates'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
@@ -27,6 +27,8 @@ import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/Ter
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
+
+const TOO_LONG_TO_MOVE = "This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved."
 
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
@@ -89,8 +91,9 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   // The chooser for the top New thread button and the sidebar's own top button; the pen and the empty page's
-  // button already know their project and skip it, opening the thread at once (issue #347).
-  const [chooserOpen, setChooserOpen] = useState(false)
+  // button already know their project and skip it, opening the thread at once (issue #347). Opened by New thread
+  // with this draft, it carries that draft into the thread it opens, and closing it lets the draft go with it.
+  const [chooser, setChooser] = useState<{ readonly carried?: CarriedDraft } | null>(null)
   const [newThreadError, setNewThreadError] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   // The pane the user just focused, shown at once while main confirms the selection. Once the command
@@ -155,17 +158,19 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   }, [])
 
   const openThread = useCallback((threadId: string): void => { setPending(null); void command({ type: 'select-thread', threadId }) }, [command])
+  // A leftover draft taken into a new thread's composer. The coordinator lets its copy go only once main has saved
+  // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
+  const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {
+    void store.place(threadId, carried).then(placed => {
+      if (placed === 'too-long') { setNewThreadError(TOO_LONG_TO_MOVE); return }
+      const latest = publishedRef.current
+      const sameImages = (latest?.draftAttachments ?? []).map(image => image.id).join('\n') === carried.attachments.map(image => image.id).join('\n')
+      if (placed === 'saved' && latest !== null && latest.draft === carried.text && latest.draftThreadId === carried.threadId && sameImages) void command({ type: 'cancel-draft' })
+    })
+  }, [store, command])
   // Callbacks that cross into the memoised sidebar are hoisted: a fresh function each render would undo the memo.
   // The pane and its composer are on screen before the command is answered; main catches up under the same ID.
   // Shared by every instant-creation entry point: the pen, the empty page's button and the chooser.
-  // A leftover draft taken into a new thread's composer. The coordinator lets its copy go only once main has saved
-  // the composer with it, and only if that copy is still the one carried; until then both are kept.
-  const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {
-    void store.place(threadId, carried).then(placed => {
-      const now = publishedRef.current
-      if (placed && now !== null && now.draft === carried.text && now.draftThreadId === carried.threadId) void command({ type: 'cancel-draft' })
-    })
-  }, [store, command])
   const handleCreationStart = useCallback((start: ThreadCreationStart, carried?: CarriedDraft): void => {
     const projectTitle = publishedRef.current?.host.projects.find(project => project.id === start.thread.projectId)?.title
     draftThreads.open(start.thread, start.created)
@@ -186,31 +191,32 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   }, [store, placeCarriedDraft])
   // The pen and the empty page's button already know their project: the thread opens at once, on the defaults
   // from Settings → Agents, selected and focused; a refusal shows in the sidebar's own error place.
-  const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): void => {
-    if (state === null) return
+  // Settles once the thread has opened or been refused.
+  const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): Promise<void> => {
+    if (state === null) return Promise.resolve()
     setNewThreadError(null)
     const unused = unusedNewThread(state, project)
     if (unused) {
       store.restoreRefusedCreation(unused.id, project.id)
       if (carried) placeCarriedDraft(unused.id, carried)
-      openThread(unused.id); focusNewComposer(); return
+      openThread(unused.id); focusNewComposer(); return Promise.resolve()
     }
-    void beginNewThread(state, command, project).then(start => {
+    return beginNewThread(state, command, project).then(start => {
       if ('error' in start) { setNewThreadError(start.error); return }
       handleCreationStart(start, carried)
     })
   }, [state, command, handleCreationStart, openThread, store, placeCarriedDraft])
-  // The draft the chooser carries into the thread it opens, when it was opened by New thread with this draft.
-  const chooserCarry = useRef<CarriedDraft | null>(null)
-  const startNewThread = useCallback((projectId?: string, carried?: CarriedDraft): void => {
+  // A new thread in this project, or the chooser when there is none; with a draft, the thread opens with it.
+  const startNewThread = useCallback((projectId?: string, carried?: CarriedDraft): Promise<void> => {
     setNewThreadError(null)
     const project = projectId !== undefined ? state?.host.projects.find(item => item.id === projectId) : undefined
-    if (project) { createThreadIn(project, carried); return }
-    chooserCarry.current = carried ?? null
-    setChooserOpen(true)
+    if (project) return createThreadIn(project, carried)
+    setChooser(carried ? { carried } : {})
+    return Promise.resolve()
   }, [state, createThreadIn])
+  const openNewThread = useCallback((projectId?: string): void => { void startNewThread(projectId) }, [startNewThread])
   // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads.
-  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) startNewThread(intent.projectId) }, [startNewThread])
+  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) openNewThread(intent.projectId) }, [openNewThread])
   // Ctrl+Shift+N (Cmd+Shift+N on a Mac): a new thread in the focused thread's project, or the chooser when none
   // is focused. Checked against the dictation hotkey like every other chord; an open dialog or a terminal keeps
   // its keys.
@@ -227,11 +233,11 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
       event.preventDefault()
       // The focused pane's project, or the chooser: unlike the empty page's own button, this never falls back
       // to the last-active project, since no thread being focused is exactly when the project is unclear.
-      startNewThread(focusedId !== null ? rowsById.get(focusedId)?.thread.projectId : undefined)
+      openNewThread(focusedId !== null ? rowsById.get(focusedId)?.thread.projectId : undefined)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutChord, platform, focusedId, rowsById, startNewThread])
+  }, [shortcutChord, platform, focusedId, rowsById, openNewThread])
   // The pane actions are rebuilt every render from the current layout; the sidebar is handed a stable
   // entry point into the latest one instead.
   const gridRef = useRef<ReturnType<typeof paneGridActions> | null>(null)
@@ -268,7 +274,7 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
     if (request.type === 'recover-draft' && hasDraftContent(store.draft(request.threadId))) return state
     return command(request)
   }
-  const recoveredDraft = Boolean(state.providerUpgrade && state.draftThreadId === null && (state.draft || state.draftAttachments?.length))
+  const recoveredDraft = isRecoveredDraft(state)
   const error = state.error ?? agents.error
   const split = paneIds.length >= 2
   const renderPane = (threadId: string): ReactNode => {
@@ -288,11 +294,11 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
   }
 
   return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
-    {chooserOpen && <NewThreadDialog state={state} command={command}
-      onClose={() => { chooserCarry.current = null; setChooserOpen(false) }}
-      onCreating={start => { const carried = chooserCarry.current ?? undefined; chooserCarry.current = null; setChooserOpen(false); handleCreationStart(start, carried) }}
-      onCreated={() => { setChooserOpen(false); focusNewComposer() }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={startNewThread}
+    {chooser !== null && <NewThreadDialog state={state} command={command}
+      onClose={() => setChooser(null)}
+      onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
+      onCreated={() => { setChooser(null); focusNewComposer() }} />}
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">
@@ -304,9 +310,9 @@ export function ThreadsView({ onOpenAgents, now: fixedNow, updateControl, tools,
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
-        {!paneIds.length ? <EmptyWorkspace state={state} command={command} hasThreads={rows.length > 0} voice={voice} threadTitle={id => rowsById.get(id)?.thread.title}
-          onNewThread={() => startNewThread(state.activeProjectId ?? undefined)} onNewThreadWithDraft={draft => startNewThread(state.activeProjectId ?? undefined, draft)}
-          onOpenThread={openThread} onOpenAgents={onOpenAgents} /> : null}
+        {!paneIds.length ? <EmptyWorkspace state={state} command={command} voice={voice}
+          onNewThread={() => openNewThread(state.activeProjectId ?? undefined)} onNewThreadWithDraft={draft => startNewThread(state.activeProjectId ?? undefined, draft)}
+          onOpenThread={threadId => { focusPane(threadId); focusNewComposer() }} onOpenAgents={onOpenAgents} /> : null}
         {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
       </div>
     </section>

@@ -136,6 +136,14 @@ const combineDrafts = (content: readonly Pick<ComposerDraft, 'text' | 'attachmen
   skills: [...new Map(content.flatMap(item => item.skills).map(item => [JSON.stringify([item.name, item.path]), item])).values()],
   files: [...new Map(content.flatMap(item => item.files).map(item => [item.path, item])).values()],
 })
+/**
+ * How many saves `place` makes before it stops waiting. Typing while the placed draft saves makes a newer revision,
+ * which the next pass saves; someone still typing after three is left to the composer's own save, and the leftover
+ * copy stays until a later move.
+ */
+const PLACE_SAVE_PASSES = 3
+/** How a leftover draft went into a composer: saved there, not confirmed, or refused for passing one prompt's limits. */
+export type PlaceResult = 'saved' | 'unsaved' | 'too-long'
 const SAVE_ERROR = 'Could not confirm this draft was saved. Keep your text and images and try Save again.'
 const key = (threadId: string, draftId: string): string => `${threadId}\n${draftId}`
 const isEmpty = (draft: ComposerDraft): boolean => draft.text === '' && draft.attachments.length === 0
@@ -642,20 +650,27 @@ export class ThreadDraftStore {
 
   /**
    * Put a draft that no composer holds (a leftover draft, whose thread is gone) into this thread's composer, after
-   * anything already written there, and save it at once. Resolves true only once main has saved the composer with
-   * it, so the caller may let the original go; false leaves both, and nothing is lost either way. Typing that lands
-   * while it saves is a newer revision built on the placed one, and is saved by the same call.
+   * anything already written there, and save it at once. Resolves 'saved' only once main has saved the composer with
+   * it, so the caller may let the original go; 'unsaved' leaves both, and nothing is lost either way. It may run
+   * again for the same draft (a retry, a refused creation brought back, the same unused thread reused): words and
+   * images the composer already holds are not added twice. 'too-long' writes nothing, because the two together pass
+   * one prompt's limits and could never be saved. Typing that lands while it saves is a newer revision built on the
+   * placed one, and is saved by the same call.
    */
-  async place(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments'>): Promise<boolean> {
+  async place(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments'>): Promise<PlaceResult> {
     const current = this.draft(threadId)
-    this.restoreDraft(threadId, { ...combineDrafts([current, { ...EMPTY, ...content }]), requestId: current.requestId })
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    const carried = content.text.trim()
+    const merged = combineDrafts([current, { ...EMPTY, ...content, text: carried === '' || current.text.includes(carried) ? '' : content.text }])
+    if (!recoveredContentSchema.safeParse(merged).success) return 'too-long'
+    const changed = merged.text !== current.text || merged.attachments.length !== current.attachments.length
+    if (changed) this.restoreDraft(threadId, { ...merged, requestId: current.requestId })
+    for (let pass = 0; pass < PLACE_SAVE_PASSES; pass += 1) {
       await this.flushPending(threadId)
       const entry = this.entries.get(threadId)
-      if (entry === undefined || entry.error !== null) return false
-      if (entry.saved) return true
+      if (entry === undefined || entry.error !== null) return 'unsaved'
+      if (entry.saved) return 'saved'
     }
-    return false
+    return 'unsaved'
   }
 
   private putBack(threadId: string, content: Pick<ComposerDraft, 'text' | 'attachments' | 'skills' | 'files' | 'requestId'>, onlyWhenEmpty: boolean): string | null {
