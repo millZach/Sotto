@@ -54,7 +54,7 @@ extension View {
 
 enum Words {
     static func provider(_ id: String?) -> String {
-        ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin"][id ?? ""] ?? "The agent"
+        AgentNames.name(id)
     }
     private static let stamp: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
     private static let plainStamp = ISO8601DateFormatter()

@@ -4,7 +4,8 @@ import UIKit
 
 // The iPhone's Glow look (ADR-0051): one type scale and one spacing scale in Figtree, colour from the chosen
 // theme, a wash at the top of each page, glass over content, and glows that say what needs the user and
-// what is working. `docs/prototypes/iphone-redesign/glow-refined.html` is the reference for every value here.
+// what is working. `docs/prototypes/iphone-redesign/glow-refined.html`, on the
+// `prototype/iphone-glow-redesign` branch, is the reference for every value here.
 
 // MARK: - Theme
 
@@ -157,21 +158,15 @@ enum Palette {
     static let border = ThemeRole(.border)
     static let hairline = ThemeRole(.hairline)
     static let accent = ThemeRole(.accent)
-    static let action = ThemeRole(.accent)
-    static let actionInk = ThemeRole(.onAccent)
     static let bubble = ThemeRole(.bubble)
     static let bubbleInk = ThemeRole(.bubbleInk)
     static let warning = ThemeRole(.warning)
-    static let warningSurface = ThemeRole(.warningSurface)
     static let danger = ThemeRole(.danger)
 
-    static let overlay = ThemeRole(.overlay)
     static let placeholder = ThemeRole(.placeholder)
     static let onAccent = ThemeRole(.onAccent)
-    static let accentSurface = ThemeRole(.accentSurface)
     static let accentText = ThemeRole(.accentText)
     static let warningText = ThemeRole(.warningText)
-    static let dangerSurface = ThemeRole(.dangerSurface)
     static let dangerText = ThemeRole(.dangerText)
     static let code = ThemeRole(.code)
     static let codeInk = ThemeRole(.codeInk)
@@ -397,42 +392,6 @@ struct ElapsedText: View {
         TimelineView(.periodic(from: Date(), by: 1)) { context in
             Text(Elapsed.words(context.date.timeIntervalSince(since)))
         }
-    }
-}
-
-/// A thread's state in a capsule: a light, the state's word and, while it works, how long it has been working.
-struct StatusPill: View {
-    let state: ThreadState
-    var since: Date? = nil
-    /// Unreachable computers can't say what is happening now.
-    var reachable = true
-    var unreachableWords = "Can’t reach it"
-    var body: some View {
-        HStack(spacing: Space.s2) {
-            if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
-            Text(reachable ? state.words : unreachableWords)
-            if reachable, state.workInProgress, let since { ElapsedText(since: since) }
-        }
-        .font(.sotto(.caption, .semibold).monospacedDigit())
-        .lineLimit(1)
-        .padding(.horizontal, Space.s3)
-        .frame(minHeight: 30)
-        .foregroundStyle(foreground)
-        .background(background, in: Capsule())
-        .accessibilityElement(children: .combine)
-    }
-    private var foreground: ThemeRole {
-        guard reachable else { return Palette.muted }
-        if state.workInProgress { return Palette.accentText }
-        if state == .failed { return Palette.dangerText }
-        if state.waitsOnYou { return Palette.warningText }
-        return Palette.muted
-    }
-    private var background: ThemeRole {
-        guard reachable else { return Palette.fillSoft }
-        if state.workInProgress { return Palette.accent.opacity(Tint.accentPill) }
-        if state == .failed { return Palette.danger.opacity(0.12) }
-        return Palette.fillSoft
     }
 }
 
@@ -1112,17 +1071,5 @@ extension View {
     /// A padded card on the surface.
     func card() -> some View {
         padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading).sottoCard(.plain)
-    }
-}
-
-/// A command shown as code.
-struct CommandBox: View {
-    let command: String
-    var body: some View {
-        Text(command).font(.mono).foregroundStyle(Palette.codeInk).textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s3).padding(.vertical, 10)
-            .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
     }
 }
