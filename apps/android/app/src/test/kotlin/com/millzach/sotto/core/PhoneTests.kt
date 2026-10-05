@@ -52,9 +52,10 @@ class PhoneTests {
         assertNull(HostFinder.fullName(machine = "forge", resolvedName = "forge"))
     }
 
-    @Test fun aNameIsTriedOn8443ThenOn443() = runTest {
+    // A desktop serves phones on 8443, or on 10000 when another app holds 8443 (ADR-0033, October 4); a host without a screen on 443.
+    @Test fun aNameIsTriedOn8443Then10000ThenOn443() = runTest {
         val found = HostFinder.candidates("forge") { listOf("forge", "100.101.102.103", "forge.tail5c2e.ts.net") }
-        assertEquals(listOf("https://forge.tail5c2e.ts.net:8443", "https://forge.tail5c2e.ts.net"), found.map { it.url })
+        assertEquals(listOf("https://forge.tail5c2e.ts.net:8443", "https://forge.tail5c2e.ts.net:10000", "https://forge.tail5c2e.ts.net"), found.map { it.url })
         try {
             HostFinder.candidates("forge") { listOf("forge.lan") }
             fail("A name off the tailnet must not be used")
@@ -62,7 +63,7 @@ class PhoneTests {
             assertSameError(ClientError.HostNotFound("forge"), error)
         }
         val full = HostFinder.candidates("forge.tail5c2e.ts.net") { fail("A full address needs no lookup"); emptyList() }
-        assertEquals(listOf(8443, 443), full.map { it.port })
+        assertEquals(listOf(8443, 10000, 443), full.map { it.port })
         val typed = HostFinder.candidates("https://forge.tail5c2e.ts.net:443") { fail("A typed port needs no lookup"); emptyList() }
         assertEquals(listOf(443), typed.map { it.port })
     }
@@ -72,8 +73,13 @@ class PhoneTests {
         val asked = mutableListOf<Int>()
         val desktop = HostFinder.probe(candidates) { endpoint -> asked += endpoint.port; endpoint.port }
         assertEquals(8443, desktop.first.port); assertEquals(listOf(8443), asked)
+        val fallback = HostFinder.probe(candidates) { endpoint ->
+            if (endpoint.port == 8443) throw ClientError.NotASottoHost("forge")
+            endpoint.port
+        }
+        assertEquals(10000, fallback.first.port)
         val headless = HostFinder.probe(candidates) { endpoint ->
-            if (endpoint.port == 8443) throw ClientError.HostUnreachable("forge")
+            if (endpoint.port != 443) throw ClientError.HostUnreachable("forge")
             endpoint.port
         }
         assertEquals(443, headless.first.port)

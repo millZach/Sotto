@@ -45,9 +45,10 @@ sealed class ClientError(message: String) : Exception(message) {
 /// A refusal the host sent for one request: `{ code, message }`, its message plain copy for the user.
 class HostRefusal(val failure: WireFailure) : Exception(failure.message)
 
-/// A computer's private HTTPS origin on the tailnet: `https://<machine>.<tailnet>.ts.net`, on port 443
-/// or 8443 only. The desktop serves its host through Tailscale Serve on 8443; a host without a screen
-/// is usually on 443. Certificate validation is the platform's.
+/// A computer's private HTTPS origin on the tailnet: `https://<machine>.<tailnet>.ts.net`, on port 443,
+/// 8443 or 10000 only, the HTTPS ports Tailscale Serve offers. The desktop serves its host on 8443, or on
+/// 10000 when another app holds 8443; a host without a screen is usually on 443. Certificate validation
+/// is the platform's.
 class HostEndpoint private constructor(val host: String, val port: Int) {
     val url: String get() = if (port == 443) "https://$host" else "https://$host:$port"
 
@@ -67,7 +68,7 @@ class HostEndpoint private constructor(val host: String, val port: Int) {
     override fun toString() = url
 
     companion object {
-        val ports = setOf(443, 8443)
+        val ports = setOf(443, 8443, 10000)
 
         fun parse(input: String): HostEndpoint {
             val uri = try { URI(input.trim()) } catch (_: Exception) { throw ClientError.InvalidHost }

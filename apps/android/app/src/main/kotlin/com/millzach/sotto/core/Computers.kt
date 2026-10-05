@@ -68,9 +68,9 @@ object HostFinder {
         data class Name(val machine: String) : Input
     }
 
-    // The ports to try for a name, in order: the desktop's Tailscale Serve port, then the usual HTTPS port
-    // a host without a screen is served on.
-    val ports = listOf(8443, 443)
+    // The ports to try for a name, in order: the desktop's Tailscale Serve port, its fallback when another app
+    // holds 8443, then the usual HTTPS port a host without a screen is served on.
+    val ports = listOf(8443, 10000, 443)
 
     fun read(typed: String): Input {
         val text = typed.trim().lowercase()
@@ -100,7 +100,7 @@ object HostFinder {
     fun endpoints(fullName: String): List<HostEndpoint> =
         ports.mapNotNull { try { HostEndpoint.parse("https://$fullName:$it") } catch (_: ClientError) { null } }
 
-    // The addresses to check, in order: the one typed with its port, or 8443 then 443 on the full name.
+    // The addresses to check, in order: the one typed with its port, or 8443, 10000 then 443 on the full name.
     suspend fun candidates(typed: String, lookup: suspend (String) -> List<String>): List<HostEndpoint> =
         when (val input = read(typed)) {
             is Input.Address -> listOf(input.endpoint)

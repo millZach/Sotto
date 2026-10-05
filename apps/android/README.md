@@ -38,4 +38,4 @@ The second command builds a debug APK (`com.millzach.sotto.android.debug`). The 
 
 ## Install
 
-Install Tailscale on the phone and connect it to the same tailnet, with MagicDNS on. Install the APK by sideloading it. On a computer running the desktop app, turn on phone access in Settings › Phones. Sotto then runs Tailscale Serve on HTTPS port 8443. Like the iPhone, the app accepts only certificate-validated `https://*.ts.net` origins on port 443 or 8443.
+Install Tailscale on the phone and connect it to the same tailnet, with MagicDNS on. Install the APK by sideloading it. On a computer running the desktop app, turn on phone access in Settings › Phones. Sotto then runs Tailscale Serve on HTTPS port 8443, or 10000 when another app holds 8443. The app accepts only certificate-validated `https://*.ts.net` origins on port 443, 8443 or 10000, and tries a computer's name on 8443, then 10000, then 443. The iPhone client accepts only 443 and 8443.

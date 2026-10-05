@@ -41,7 +41,8 @@ class ProtocolTests {
         }
     }
 
-    @Test fun onlyPorts443And8443AreAccepted() {
+    @Test fun onlyPorts443And8443And10000AreAccepted() {
+        assertEquals(10000, HostEndpoint.parse("https://forge.example.ts.net:10000").port)
         val desktop = HostEndpoint.parse("https://forge.example.ts.net:8443")
         assertEquals(8443, desktop.port)
         assertEquals("forge.example.ts.net:8443", desktop.address)
