@@ -93,7 +93,7 @@ mac:
   entitlementsInherit: build/entitlements.mac.inherit.plist
   # Without NSAppleEventsUsageDescription macOS kills the process instead of prompting when
   # the paste path drives System Events. LSUIElement is deliberately absent: Sotto keeps its Dock
-  # icon while it runs, so only the widget joins other apps' full-screen desktops (ADR-0051).
+  # icon while it runs, so only the widget joins other apps' full-screen desktops (ADR-0052).
   extendInfo:
     NSMicrophoneUsageDescription: >-
       Sotto records your microphone while dictating or when you enable agent voice control.
