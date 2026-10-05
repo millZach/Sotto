@@ -10,6 +10,8 @@
     is, or the left and right arrow keys: A · Sweep, B · Pulse, C · Glow edge.
   - Once the run ends, the line is "14 steps · 1m 32s". Failed steps get nothing special on the folded line.
   - A press opens the steps in place, as the inline trail, with a spring; another press folds them.
+  - October 5, 2026: Zach chose B · Pulse (a breathing dot, the step rolling up like a ticker, a count that ticks up). A and C
+    stay behind ?fold=A|C for the record.
   The open thread's working run gains a step every 2.5 s and, after a while, ends with a short note from the agent and
   starts a new run, so the line can be watched changing. Stop folds the run; a reply ends it and the next steps start
   a new run after the reply. ?open=t3 opens the busy thread on load. Everything else is glow-refined.html as it was.
@@ -1231,7 +1233,7 @@ const NOTES = [
 const RUN_LIMITS = [16, 14, 11, 15]
 const TICK = 2500
 const FX = ['A', 'B', 'C']
-S.fv = (() => { const v = (new URLSearchParams(location.search).get('fold') || 'A').toUpperCase(); return FX.includes(v) ? v : 'A' })()
+S.fv = (() => { const v = (new URLSearchParams(location.search).get('fold') || 'B').toUpperCase(); return FX.includes(v) ? v : 'B' })()
 S.fold = {}      // run key -> open
 S.tl = {}        // thread id -> { items: [{ m } | { run }], cursor, runN, noteN, hold }
 const KIND_ICON = { command: 'terminal', 'file-change': 'pencil', tool: 'file', reasoning: 'spark', plan: 'file' }
