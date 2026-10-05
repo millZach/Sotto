@@ -8,6 +8,14 @@ The observer reports initial settlement and later publications, including projec
 
 ## Verification
 
-Targeted publication and cleanup suites passed: 2 files, 14 tests. Typecheck, lint and third-party notices passed (174 components). Build passed. The relevant built Electron reclaim and settled-folder journeys passed: 2 tests in 23.5 seconds. They cover reclaim on settle, retained branches, recreation on next send and a newly opened thread restoring only its folder. `npm test -- --maxWorkers=2` passed: 544 files passed, 40 skipped; 7,430 tests passed, 156 skipped, in 996.55 seconds. Production and unit-test source stayed fixed throughout that run.
+At commit `183a4ab7`, targeted publication and cleanup suites passed: 2 files, 14 tests. Typecheck, lint and third-party notices passed (174 components). Build passed. The relevant built Electron reclaim and settled-folder journeys passed: 2 tests in 23.5 seconds. They cover reclaim on settle, retained branches, recreation on next send and a newly opened thread restoring only its folder. `npm test -- --maxWorkers=2` passed: 544 files passed, 40 skipped; 7,430 tests passed, 156 skipped, in 996.55 seconds. Production and unit-test source stayed fixed throughout that run.
 
 Synthetic Windows verification does not establish installed-profile latency; macOS was not tested. Existing evidence captures are preserved around Electron execution and no appearance baselines are regenerated. The independent browser window-resize blank-page issue remains outside this change.
+
+## Review follow-up: seed existing settlement once
+
+PR #747 review found that the metadata observer treated its immediate delivery of already settled IDs as newly settled work. With on-settle cleanup enabled, start requested cleanup twice; its existing request coalescing made this harmless, but it differed from the fallback subscription's seed-then-listen behavior.
+
+The first metadata delivery now seeds the existing settled IDs without requesting cleanup. Start still requests its normal initial sweep; later deliveries retain the settlement transition checks. The real WorkspaceHost regression spies before start: it failed before the fix with two calls instead of one, then passed with the fix. The later restore, re-settle, project inheritance and unsubscribe assertions stay unchanged.
+
+Follow-up verification: the publication and cleanup suites passed again, 2 files and 14 tests. Typecheck and lint passed for this follow-up. The parent reviewed the final fix against standards and the requested finding and found no issues. The earlier full-suite and Electron results above belong to `183a4ab7`; this initialization-only review fix relies on its targeted regression and the final PR CI rerun rather than claiming a new local full-suite or Electron run.

@@ -80,9 +80,11 @@ describe('workspace publish coalescing', () => {
     await f.host.setWorkspaceSettled('thread', first.id, true)
     const sweeper = new WorktreeCleanup({ host: f.host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }) })
     cleanup.push(() => sweeper.close())
-    sweeper.start()
-    await sweeper.request()
     const request = vi.spyOn(sweeper, 'request')
+    sweeper.start()
+    expect(request).toHaveBeenCalledTimes(1)
+    await sweeper.request()
+    request.mockClear()
 
     await f.host.setWorkspaceSettled('thread', first.id, false)
     expect(request).not.toHaveBeenCalled()

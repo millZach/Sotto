@@ -74,8 +74,14 @@ export class WorktreeCleanup {
       if (newlySettled && this.dependencies.rules().onSettle) this.request()
     }
     const host = this.dependencies.host
-    if (host.subscribeSettledThreads) this.unsubscribe = host.subscribeSettledThreads(changed)
-    else {
+    if (host.subscribeSettledThreads) {
+      let initial = true
+      this.unsubscribe = host.subscribeSettledThreads(ids => {
+        // The immediate delivery seeds existing settlement; start requests its own sweep below.
+        if (initial) { initial = false; this.settled = new Set(ids) }
+        else changed(ids)
+      })
+    } else {
       this.settled = this.settledThreads(host.workspaceSnapshot())
       this.unsubscribe = host.subscribe(snapshot => changed(this.settledThreads(snapshot)))
     }
