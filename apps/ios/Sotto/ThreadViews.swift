@@ -246,8 +246,8 @@ private struct Conversation: View {
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
             ThreadHero(ref: ref, thread: thread,
-                       topMoved: { top in if DebugFlags.noFollow { return }; follow.heroTop = top; refreshBar() },
-                       titleMoved: { bottom in if DebugFlags.noFollow { return }; follow.titleBottom = bottom; refreshBar() })
+                       topMoved: { top in follow.heroTop = top; refreshBar() },
+                       titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
             entries(thread: thread, detail: detail, rows: rows, pending: pending)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
         }
@@ -327,8 +327,8 @@ private struct Conversation: View {
     private var sentinelReader: some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { if DebugFlags.noFollow { return }; follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in if DebugFlags.noFollow { return }; follow.sentinel = value; follow.settle() }
+                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
         }
     }
 
@@ -342,7 +342,6 @@ private struct Conversation: View {
     }
 
     private func barMoved(_ bottom: CGFloat) {
-        if DebugFlags.noFollow { return }
         follow.barBottom = bottom
         updateVisible()
         refreshBar()
@@ -350,7 +349,6 @@ private struct Conversation: View {
 
     /// Decided on where the user stood before the reply box moved: at the bottom, the page follows it there.
     private func dockMoved(_ top: CGFloat, _ scroll: ScrollViewProxy) {
-        if DebugFlags.noFollow { return }
         let wasAtBottom = follow.atBottom
         follow.dockTop = top
         updateVisible()

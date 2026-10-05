@@ -596,7 +596,7 @@ import XCTest
     }
 
     /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
-    /// moving; the variants switch off looping animations or the thread page's place-keeping to show which costs it.
+    /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) {
         if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
         if openThread {
@@ -614,9 +614,9 @@ import XCTest
         }
     }
     func testIdleCPUOnThreads() { idleCPU([], openThread: false) }
+    func testIdleCPUOnThreadsWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: false) }
     func testIdleCPUInAThread() { idleCPU([], openThread: true) }
     func testIdleCPUInAThreadWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: true) }
-    func testIdleCPUInAThreadWithoutPlaceKeeping() { idleCPU(["--ui-no-follow"], openThread: true) }
 
     /// The same measure in a thread's conversation (one `measure` per test is all XCTest allows).
     func testScrollingAThreadRecordsHitches() {
