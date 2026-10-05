@@ -451,13 +451,32 @@ describe('browser grant (ADR-0029)', () => {
     await expect(service.answerAction({ ...request, actionId: opened.task.pendingAction!.id, allow: true, forThread: true })).resolves.toMatchObject({ ok: false, error: { code: 'blocked' } })
   })
 
-  it('revokes sharing when a granted navigation leaves the origin, as any navigation does', async () => {
+  it('keeps a page shared as it moves to another site while granted, and ends sharing there once stopped', async () => {
     const { service, target } = await browserFixture()
     const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
     unwrap(await service.action({ ...request, action: { type: 'navigate', url: 'https://example.com/' } }))
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === request.pageId)?.sharedOrigin).toBe('https://example.com')
+    expect(unwrap(await service.action({ ...request, action: { type: 'inspect' } })).approvalRequired).toBe(false)
+    unwrap(await service.stopGrant({ threadId: request.threadId, workspaceId: request.workspaceId }))
+    // Stopping leaves the page shared where it is; leaving that site now ends it, as it does without a grant.
+    expect(unwrap(await service.action({ ...request, action: { type: 'navigate', url: 'https://example.com/next' } })).approvalRequired).toBe(true)
+    lastView().webContents.emit('did-start-navigation', {}, 'https://elsewhere.example/', false, true)
     expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === request.pageId)?.sharedOrigin).toBeNull()
-    expect(await service.action({ ...request, action: { type: 'navigate', url: 'https://example.com/next' } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
   })
+
+  it('follows a server redirect to the address it reaches, so a shared page can still be read there', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true)
+    const contents = view.webContents as unknown as { url: string }
+    const task = unwrap(await service.startTask({ ...target, description: 'Upload the video' }))
+    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4321/upload', false, true)
+    contents.url = 'https://accounts.example.com/signin'
+    view.webContents.emit('did-redirect-navigation', {}, 'https://accounts.example.com/signin', false, true)
+    view.webContents.emit('did-finish-load')
+    const page = unwrap(await service.list({ threadId: 'a' })).pages.find(item => item.id === target.pageId)
+    expect(page).toMatchObject({ url: 'https://accounts.example.com/signin', status: 'ready', sharedOrigin: 'https://accounts.example.com' })
+    expect(unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).approvalRequired).toBe(false)
+  })
+
 
   it('reaches no other thread and is never made by a denial', async () => {
     const { service, target } = await browserFixture()
@@ -510,10 +529,29 @@ describe('browser grant (ADR-0029)', () => {
     const restarted = (await browserFixture()).service
     expect(unwrap(await restarted.list({ threadId: 'a' })).grant).toBeNull()
   })
-  it('never makes a page the user opened observable, even while the thread uses the browser without asking', async () => {
-    const { service, target } = await browserFixture(false, new Set(), () => true)
-    expect(await service.startTask({ ...target, description: 'Check the form' })).toMatchObject({ ok: false, error: { code: 'blocked' } })
-    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === target.pageId)?.sharedOrigin).toBeFalsy()
+  it('shares a page the user opened while the thread uses the browser without asking, until the user makes it private', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true)
+    const sharedOrigin = async () => unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === target.pageId)?.sharedOrigin
+    expect(await sharedOrigin()).toBe('http://localhost:4321')
+    const task = unwrap(await service.startTask({ ...target, description: 'Check the form' }))
+    expect(unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).approvalRequired).toBe(false)
+    unwrap(await service.share({ ...target, enabled: false }))
+    // Private stays private: across a move to another site and when the grant is given again.
+    view.webContents.emit('did-start-navigation', {}, 'https://example.com/', false, true)
+    service.settingChanged()
+    expect(await sharedOrigin()).toBeNull()
+    unwrap(await service.share({ ...target, enabled: true }))
+    expect(await sharedOrigin()).toBe('https://example.com')
+  })
+
+  it('shares the thread’s open pages when the grant is given, not only the pages opened after it', async () => {
+    let on = false
+    const { service, target, emit } = await browserFixture(false, new Set(), () => on)
+    expect(unwrap(await service.list({ threadId: 'a' })).pages[0]?.sharedOrigin).toBeNull()
+    on = true; emit.mockClear()
+    service.settingChanged()
+    expect(emit).toHaveBeenCalledWith({ type: 'page', page: expect.objectContaining({ id: target.pageId, sharedOrigin: 'http://localhost:4321' }) })
+    expect(unwrap(await service.startTask({ ...target, description: 'Check the form' })).status).toBe('working')
   })
 
   it('tells every listed thread when the setting changes, and answers what was waiting when it turns on', async () => {

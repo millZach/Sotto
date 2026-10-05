@@ -10,7 +10,8 @@ import { ToolOperations, fail, parse, workspace } from './common'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
-interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number }
+/** `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user shares it again. */
+interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean }
 /** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
 type MountSlot = 'pane' | 'phone'
 const slotOf = (record: PageRecord): MountSlot => record.page.device ? 'phone' : 'pane'
@@ -135,9 +136,35 @@ export class BrowserService extends ToolOperations {
     for (const threadId of threads) {
       const grant = this.grantView(threadId)
       this.dependencies.emit({ type: 'browser-grant', threadId, grant })
-      // Turning the setting on answers what was already waiting, as "Allow this thread to use the browser" does.
-      if (grant) void this.performWaitingActions(threadId).catch(() => undefined)
+      // Turning the setting on shares the thread's pages and answers what was already waiting, as "Allow this thread to use the browser" does.
+      if (grant) { this.shareThreadPages(threadId); void this.performWaitingActions(threadId).catch(() => undefined) }
     }
+  }
+  /**
+   * While its thread has a browser grant, a page is shared with that thread the moment it opens, whoever opened it,
+   * unless the user made it private (ADR-0029, October 5 amendment). Returns whether this made the page shared.
+   */
+  private shareByGrant(record: PageRecord): boolean {
+    if (record.initial || record.madePrivate || record.page.sharedOrigin || !this.grants.active(record.page.workspace.threadId)) return false
+    const url = safeBrowserUrl(record.page.url)
+    if (!url) return false
+    record.page.sharedOrigin = new URL(url).origin
+    record.automation.observe()
+    return true
+  }
+  /** A grant was given: the thread's pages the user has not made private are shared now, not only the next ones. */
+  private shareThreadPages(threadId: string): void {
+    for (const record of this.pages.values()) if (record.page.workspace.threadId === threadId && this.shareByGrant(record)) this.publish(record)
+  }
+  /**
+   * The page is moving to `url`. While its thread has a browser grant, a shared page stays shared as it goes to
+   * another site, a server's redirect included. Without one, sharing ends at the origin it was given for.
+   */
+  private followSharing(record: PageRecord, url: string): void {
+    const origin = new URL(url).origin
+    if (!record.page.sharedOrigin || record.page.sharedOrigin === origin) return
+    if (this.grants.active(record.page.workspace.threadId)) record.page.sharedOrigin = origin
+    else this.revoke(record)
   }
   create(payload: unknown) { return this.run(async () => this.createPage(parse(browserCreateSchema, payload))) }
   private async createPage(request: ReturnType<typeof browserCreateSchema.parse>, initial = false): Promise<BrowserPage> {
@@ -155,7 +182,7 @@ export class BrowserService extends ToolOperations {
     } })
     // A phone starts at its own size, so a capture before the player ever draws it is already 393 pixels wide.
     view.setBounds(phone ? { x: 0, y: 0, width: TEST_IPHONE.width, height: TEST_IPHONE.height } : { x: 0, y: 0, width: 1280, height: 800 })
-    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
+    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: false, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
     this.pages.set(record.page.id, record)
     const contents = view.webContents
     if (phone) {
@@ -184,32 +211,28 @@ export class BrowserService extends ToolOperations {
       this.issue(record, 'A new-window request was blocked. Use a link destination action or open this page externally.')
       return { action: 'deny' }
     })
-    contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
-      if (!mainFrame || !safeBrowserUrl(url)) return
+    /** The main frame is moving to `url`: what waited on the old page lapses, and its sharing follows or ends. */
+    const moving = (url: string, mainFrame: boolean): boolean => {
+      const safe = safeBrowserUrl(url)
+      if (!mainFrame || !safe) return false
       this.invalidate(record)
       record.generation++
+      this.followSharing(record, safe)
+      record.page.url = safe
+      return true
+    }
+    contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
+      if (!moving(url, mainFrame)) return
       record.automation.clear()
-      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
-      record.page.url = safeBrowserUrl(url)!
       record.page.status = 'loading'; record.page.error = null
       this.publish(record)
     })
     // A server's redirect is the same navigation going somewhere else. Without this the page kept the address it
     // started from, never finished loading, and a shared page could not be inspected at the address it reached.
-    contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => {
-      if (!mainFrame || !safeBrowserUrl(url)) return
-      this.invalidate(record)
-      record.generation++
-      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
-      record.page.url = safeBrowserUrl(url)!
-      this.publish(record)
-    })
+    contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => { if (moving(url, mainFrame)) this.publish(record) })
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
-      if (!mainFrame || !safeBrowserUrl(url)) return
-      this.invalidate(record)
-      record.generation++
-      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
-      record.page.url = safeBrowserUrl(url)!; record.page.status = 'ready'
+      if (!moving(url, mainFrame)) return
+      record.page.status = 'ready'
       this.publish(record)
     })
     contents.on('did-finish-load', () => {
@@ -230,14 +253,14 @@ export class BrowserService extends ToolOperations {
       this.issue(record, 'This page is unavailable. Check the address or start its local server, then reload.', true)
     })
     contents.on('render-process-gone', () => this.issue(record, 'This page stopped unexpectedly. Reload to reopen it.', true))
-    if (!initial) this.load(record, request.url)
+    if (!initial) { this.load(record, request.url); this.shareByGrant(record) }
     else record.page.error = 'Waiting for you to open and share this page.'
     return this.publish(record)
   }
   private load(record: PageRecord, url: string): void {
     this.invalidate(record)
     record.automation.clear()
-    if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
+    this.followSharing(record, url)
     record.page.url = url; record.page.status = 'loading'; record.page.error = null
     const generation = ++record.generation
     void record.view.webContents.loadURL(url).catch((error: unknown) => {
@@ -482,6 +505,7 @@ export class BrowserService extends ToolOperations {
     const record = await this.owned(request)
     if (request.enabled && record.initial) return fail('blocked', 'Answer the request to open this page first.')
     record.page.sharedOrigin = request.enabled ? new URL(record.page.url).origin : null
+    record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
     if (!request.enabled) {
       record.automation.dispose()
@@ -625,6 +649,7 @@ export class BrowserService extends ToolOperations {
     if (request.forThread) {
       this.grants.grant(threadId)
       this.dependencies.emit({ type: 'browser-grant', threadId, grant: this.grantView(threadId) })
+      this.shareThreadPages(threadId)
     }
     try { return (await this.perform(record, task, pending.action, scope.initial, scope.target)).task }
     finally { if (request.forThread) await this.performWaitingActions(threadId) }
@@ -663,7 +688,7 @@ export class BrowserService extends ToolOperations {
       let output = '', image: string | undefined
       if (action.type === 'navigate') {
         record.initial = false
-        // Only an explicit Open and share answer, or the browser grant that answer can leave, shares the page.
+        // An agent's new page is shared by its Open and share answer, or by the browser grant that stands for it.
         if (initial) record.page.sharedOrigin = new URL(action.url).origin
         this.load(record, action.url)
         if (record.page.sharedOrigin) record.automation.observe()
