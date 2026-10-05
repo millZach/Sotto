@@ -1,8 +1,10 @@
 import {
   initialDictationState,
+  isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
   reduceDictation,
   TRANSCRIPTION_ERROR_DETAIL,
+  TRANSCRIPTION_KEPT_DETAIL,
   type DictationEvent,
   type DictationState,
   type WidgetProcessingStage,
@@ -98,10 +100,26 @@ interface ActiveSession {
   acceptProgress: boolean
   processing?: Promise<void>
   errorCode?: WidgetErrorCode
-  /** In-order transcription results for segments emitted while listening. */
-  readonly segmentResults: Promise<TranscriptionResult>[]
-  /** Audio RMS of each emitted segment, aligned with segmentResults. */
-  readonly segmentRms: number[]
+  /** When listening began, kept so Try again returns to the same processing state. */
+  startedAt: number
+  /** The recording's parts in order: segments emitted while listening, then the tail. */
+  readonly parts: RecordingPart[]
+  /** The whole recording's length, once it has stopped. */
+  durationMs: number
+  /** A transcription failed and the parts without text are kept for Try again. */
+  kept: boolean
+}
+
+/**
+ * One piece of a recording on its way to text. Its audio stays in memory only
+ * until its text comes back, so a part that was turned away can be sent again
+ * without re-sending the parts that already worked. Nothing here reaches disk.
+ */
+interface RecordingPart {
+  audio: Float32Array | null
+  readonly rms: number
+  result?: Promise<TranscriptionResult>
+  text?: TranscriptionResult
 }
 
 /** Diagnostics-only precision: three decimals distinguish silence from speech. */
@@ -259,8 +277,10 @@ export class DictationController {
       processingStage: 'preparing-audio',
       progress: 0,
       acceptProgress: true,
-      segmentResults: [],
-      segmentRms: [],
+      startedAt: 0,
+      parts: [],
+      durationMs: 0,
+      kept: false,
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
@@ -339,8 +359,45 @@ export class DictationController {
     return this.start()
   }
 
+  /** Sends the parts of a kept recording that have no text yet, then finishes the dictation. */
+  retry(): Promise<void> {
+    const session = this.session
+    if (session === null || !session.kept || this.state.status !== 'error' || !this.isCurrent(session)) {
+      return Promise.resolve()
+    }
+    this.clearResetTimer()
+    session.kept = false
+    delete session.errorCode
+    session.cancellable = true
+    session.acceptProgress = true
+    session.processingStage = 'transcribing'
+    session.progress = 0
+    this.dispatch({ type: 'RETRIED', sessionId: session.id, startedAt: session.startedAt }, session)
+    const waiting = session.parts.filter((part) => part.text === undefined && part.audio !== null)
+    waiting.forEach((part, index) => {
+      const result = this.dependencies.transcriber.transcribe({
+        sessionId: session.id,
+        audio: part.audio!,
+        language: session.settings.language,
+        ...(index === waiting.length - 1
+          ? { onProgress: (progress: TranscriptionProgress) => this.handleProgress(session, progress) }
+          : {}),
+      })
+      part.result = result
+      void result.catch(() => undefined)
+    })
+    const processing = this.finishRecording(session)
+    session.processing = processing
+    return processing
+  }
+
   async cancel(): Promise<void> {
     const session = this.session
+    // An error stays until it is dismissed; dismissing it lets go of a kept recording.
+    if (session !== null && this.state.status === 'error' && this.isCurrent(session)) {
+      this.dismiss(session)
+      return
+    }
     if (session === null || !session.cancellable || !this.isCancellableState()) return
 
     const resetToken = ++this.lifecycleToken
@@ -405,8 +462,9 @@ export class DictationController {
       await this.cancel()
       return
     }
+    session.startedAt = finiteTimestamp(this.now())
     this.dispatch(
-      { type: 'STARTED', sessionId: session.id, startedAt: finiteTimestamp(this.now()) },
+      { type: 'STARTED', sessionId: session.id, startedAt: session.startedAt },
       session,
     )
     this.playCue(session, 'start')
@@ -446,14 +504,13 @@ export class DictationController {
 
   private handleSegment(session: ActiveSession, segment: AudioRecordingResult): void {
     if (!this.isCurrent(session) || session.stopClaimed || segment.samples.length === 0) return
-    session.segmentRms.push(roundRms(calculateRms(segment.samples)))
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
       audio: segment.samples,
       language: session.settings.language,
     })
-    session.segmentResults.push(result)
-    // Rejections are re-observed when processRecording awaits the batch.
+    session.parts.push({ audio: segment.samples, rms: roundRms(calculateRms(segment.samples)), result })
+    // Rejections are re-observed when finishRecording awaits the parts.
     void result.catch(() => undefined)
   }
 
@@ -462,46 +519,68 @@ export class DictationController {
     recording: AudioRecordingResult,
   ): Promise<void> {
     if (!this.isCurrent(session)) return
-    if (recording.samples.length === 0 && session.segmentResults.length === 0) {
+    if (recording.samples.length === 0 && session.parts.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
 
-    const pending = [...session.segmentResults]
-    const segmentRms = [...session.segmentRms]
+    session.durationMs = recording.durationMs
     if (recording.samples.length > 0) {
-      segmentRms.push(roundRms(calculateRms(recording.samples)))
-      pending.push(
-        this.dependencies.transcriber.transcribe({
-          sessionId: session.id,
-          audio: recording.samples,
-          language: session.settings.language,
-          onProgress: (progress) => this.handleProgress(session, progress),
-        }),
-      )
+      const result = this.dependencies.transcriber.transcribe({
+        sessionId: session.id,
+        audio: recording.samples,
+        language: session.settings.language,
+        onProgress: (progress) => this.handleProgress(session, progress),
+      })
+      session.parts.push({ audio: recording.samples, rms: roundRms(calculateRms(recording.samples)), result })
+      void result.catch(() => undefined)
     }
+    await this.finishRecording(session)
+  }
 
-    let result: TranscriptionResult
-    let segmentWords: number[]
-    try {
-      const results = await Promise.all(pending)
-      segmentWords = results.map((partial) => countWords(partial.text))
-      const single = results.length === 1 ? results[0] : undefined
-      result =
-        single !== undefined
-          ? single
-          : {
-              text: results
-                .map((partial) => partial.text.trim())
-                .filter((partial) => partial.length > 0)
-                .join(' '),
-              language: results.at(-1)?.language ?? session.settings.language,
-            }
-    } catch (error) {
-      if (this.isCurrent(session)) this.fail(session, transcriptionFailureCode(error))
+  /**
+   * Waits for every part, keeps the text of each one that came back, and either
+   * finishes the dictation or keeps the recording when a part was turned away.
+   */
+  private async finishRecording(session: ActiveSession): Promise<void> {
+    const parts = session.parts
+    const outcomes = await Promise.allSettled(
+      parts.map((part) => part.result ?? Promise.resolve(part.text!)),
+    )
+    if (!this.isCurrent(session)) return
+    let failure: { readonly reason: unknown } | undefined
+    outcomes.forEach((outcome, index) => {
+      const part = parts[index]!
+      delete part.result
+      if (outcome.status === 'fulfilled') {
+        part.text = outcome.value
+        part.audio = null
+      } else {
+        failure ??= { reason: outcome.reason }
+      }
+    })
+    if (failure !== undefined) {
+      // The parts that came back keep their text; only the others are sent again.
+      session.kept = true
+      this.fail(session, transcriptionFailureCode(failure.reason))
       return
     }
-    if (!this.isCurrent(session)) return
+
+    const results = parts.map((part) => part.text!)
+    const segmentWords = results.map((partial) => countWords(partial.text))
+    const segmentRms = parts.map((part) => part.rms)
+    parts.length = 0
+    const single = results.length === 1 ? results[0] : undefined
+    const result: TranscriptionResult =
+      single !== undefined
+        ? single
+        : {
+            text: results
+              .map((partial) => partial.text.trim())
+              .filter((partial) => partial.length > 0)
+              .join(' '),
+            language: results.at(-1)?.language ?? session.settings.language,
+          }
     session.acceptProgress = false
 
     // Transcription decoders occasionally loop on one word/phrase; collapse those
@@ -520,8 +599,8 @@ export class DictationController {
         const polished = await this.dependencies.polishTranscript(rawText, {
           segmentWords,
           segmentRms,
-          durationMs: Number.isFinite(recording.durationMs)
-            ? Math.max(0, Math.round(recording.durationMs))
+          durationMs: Number.isFinite(session.durationMs)
+            ? Math.max(0, Math.round(session.durationMs))
             : 0,
         })
         if (polished.applied && polished.text.trim().length > 0) {
@@ -544,7 +623,7 @@ export class DictationController {
       id: session.id,
       text,
       createdAt: Math.round(finiteTimestamp(this.now())),
-      durationMs: historyDuration(recording.durationMs),
+      durationMs: historyDuration(session.durationMs),
       language: result.language,
       modelPreset: 'mai',
     }
@@ -610,15 +689,37 @@ export class DictationController {
     this.publish(session)
   }
 
+  /** An error stays until it is dismissed, tried again, or a new dictation starts. */
   private fail(session: ActiveSession, code: ControllerErrorCode): void {
     if (!this.isCurrent(session)) return
     session.cancellable = false
     session.errorCode = code
+    const kept = session.kept && isTranscriptionErrorCode(code)
+    if (!kept) {
+      session.kept = false
+      session.parts.length = 0
+    }
     this.dispatch(
-      { type: 'FAILED', sessionId: session.id, code, message: ERROR_MESSAGES[code] },
+      {
+        type: 'FAILED',
+        sessionId: session.id,
+        code,
+        message: kept ? TRANSCRIPTION_KEPT_DETAIL[code] : ERROR_MESSAGES[code],
+        ...(kept ? { kept: true } : {}),
+      },
       session,
     )
-    this.scheduleReset(session)
+  }
+
+  /** Clears an error and lets go of a recording it kept. */
+  private dismiss(session: ActiveSession): void {
+    this.clearResetTimer()
+    session.kept = false
+    session.parts.length = 0
+    ++this.lifecycleToken
+    this.state = reduceDictation(this.state, { type: 'RESET' })
+    this.publish(session)
+    this.session = null
   }
 
   private publish(session: ActiveSession): void {
@@ -690,6 +791,7 @@ export class DictationController {
           status: state.status,
           ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
           code: session.errorCode ?? 'TRANSCRIPTION_FAILED',
+          ...(state.kept === true ? { kept: true } : {}),
           ...metadata,
           cancellable: false,
         }

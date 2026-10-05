@@ -8,7 +8,14 @@ export type DictationState =
   | { status: 'processing'; sessionId: string; startedAt: number }
   | { status: 'success'; sessionId: string; text: string; output: 'pasted' | 'copied' }
   | { status: 'cancelled'; sessionId: string }
-  | { status: 'error'; sessionId?: string | undefined; code: string; message: string }
+  | {
+      status: 'error'
+      sessionId?: string | undefined
+      code: string
+      message: string
+      /** The recording is kept in memory and can be sent again (a kept recording). */
+      kept?: boolean | undefined
+    }
 
 export type WidgetProcessingStage =
   | 'preparing-audio'
@@ -67,6 +74,22 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
   })
 
 /**
+ * What every surface says when a transcription failure leaves the recording
+ * kept: the same failure, but the recording is still in memory and Try again
+ * sends it, so none of these say it was lost.
+ */
+export const TRANSCRIPTION_KEPT_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
+  Object.freeze({
+    TRANSCRIPTION_UNCONFIGURED: 'Sotto has no OpenRouter API key yet. Your recording is kept until you try again or discard it. Add your key in Settings, then try again.',
+    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. Your recording is kept until you try again or discard it. Check the key in Settings, then try again.',
+    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Your recording is kept until you try again or discard it. Check your connection, then try again.',
+    TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. Your recording is kept until you try again or discard it. Add credit at openrouter.ai, then try again.',
+    TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy and turned part of this recording away. Your recording is kept until you try again or discard it.',
+    TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. Your recording is kept until you try again or discard it.',
+    TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. Your recording is kept until you try again or discard it.',
+  })
+
+/**
  * What every surface says when setup was finished without a microphone. The
  * dictate room, the widget and the hotkey all point at the one place that can
  * clear the state, so the recovery is worded once.
@@ -119,6 +142,8 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly status: 'error'
         readonly sessionId?: string | undefined
         readonly code: WidgetErrorCode
+        /** Whether the recording is kept, so the widget offers Try again. */
+        readonly kept?: boolean | undefined
       }
   )
 
@@ -134,7 +159,9 @@ export type DictationEvent =
       output?: 'pasted' | 'copied'
     }
   | { type: 'CANCELLED'; sessionId: string }
-  | { type: 'FAILED'; sessionId: string; code: string; message: string }
+  | { type: 'FAILED'; sessionId: string; code: string; message: string; kept?: boolean }
+  /** Try again on a kept recording: back to processing for the same session. */
+  | { type: 'RETRIED'; sessionId: string; startedAt: number }
   | { type: 'RESET' }
 
 type ActiveDictationState = Extract<
@@ -229,7 +256,14 @@ export function reduceDictation(
         sessionId: state.sessionId,
         code: event.code,
         message: event.message,
+        ...(event.kept === true ? { kept: true } : {}),
       }
+
+    case 'RETRIED':
+      if (state.status !== 'error' || state.kept !== true || state.sessionId !== event.sessionId) {
+        return state
+      }
+      return { status: 'processing', sessionId: event.sessionId, startedAt: event.startedAt }
 
     case 'RESET':
       return state.status === 'success' || state.status === 'cancelled' || state.status === 'error'

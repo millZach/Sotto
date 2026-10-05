@@ -15,7 +15,7 @@ const boundedSessionId = z.string().min(1).max(128)
 const widgetErrorCodeSchema = z.enum(WIDGET_ERROR_CODES)
 
 export const dictationCommandSchema = z
-  .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel']) })
+  .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel', 'retry']) })
   .strict()
 
 const widgetMetadataSchema = {
@@ -81,6 +81,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('error'),
       sessionId: boundedSessionId.optional(),
       code: widgetErrorCodeSchema,
+      kept: z.boolean().optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -292,7 +293,8 @@ export type HotkeyChangeResult =
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
 
 export type DictationCommand = Readonly<{
-  type: 'toggle' | 'start' | 'stop' | 'cancel'
+  /** `cancel` on an error dismisses it; `retry` sends a kept recording again. */
+  type: 'toggle' | 'start' | 'stop' | 'cancel' | 'retry'
 }>
 
 export interface StartupState {
@@ -393,6 +395,7 @@ export interface SottoWidgetBridge {
   requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
+  requestRetry(): Promise<CommandResult>
   setPresentation(payload: WidgetPresentationPayload): Promise<CommandResult>
   reportDrag(payload: WidgetDragPayload): Promise<CommandResult>
 }

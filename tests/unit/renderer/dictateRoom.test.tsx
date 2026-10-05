@@ -13,7 +13,7 @@ import {
   transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, type DictationState } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -180,6 +180,39 @@ describe('DictateRoom', () => {
     expect(alert).toHaveTextContent('Dictation needs attention.')
     expect(alert).toHaveTextContent('No speech was detected. Try again a little closer to the microphone.')
     expect(alert).not.toHaveTextContent('internal')
+  })
+
+  it('offers Try again and Discard recording for a kept recording, from the keyboard', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn(async () => undefined)
+    const onDismiss = vi.fn(async () => undefined)
+    render(<DictateRoom {...baseProps} onRetry={onRetry} onDismiss={onDismiss}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('was not kept')
+    // The shortcut would start over, so it is not shown beside Try again.
+    expect(screen.queryByText(/in any app/)).not.toBeInTheDocument()
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onRetry).toHaveBeenCalledOnce()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Discard recording' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it('offers Dismiss for an error that keeps nothing, and keeps Start dictation', async () => {
+    const user = userEvent.setup()
+    const onDismiss = vi.fn(async () => undefined)
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+    expect(screen.getByRole('button', { name: 'Start dictation' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(onDismiss).toHaveBeenCalledOnce()
   })
 
   it('names the missing key and sends people to Settings instead of a dead pill', async () => {

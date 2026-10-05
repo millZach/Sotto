@@ -54,7 +54,10 @@ export interface AppController {
   start(): Promise<void>
   stop(): Promise<void>
   toggle(): Promise<void>
+  /** Stops listening or processing; on an error, dismisses it and drops a kept recording. */
   cancel(): Promise<void>
+  /** Sends a kept recording again. */
+  retry?(): Promise<void>
   prewarm?(): Promise<void>
   dispose(): void
 }
@@ -126,6 +129,7 @@ export interface AppActions {
   stop(): Promise<void>
   toggle(): Promise<void>
   cancel(): Promise<void>
+  retry(): Promise<void>
   navigate(destination: AppNavigation): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
@@ -489,6 +493,7 @@ export function AppProvider({
               case 'start': void invokeController(controller, (value) => value.start()); break
               case 'stop': void invokeController(controller, (value) => value.stop()); break
               case 'cancel': void invokeController(controller, (value) => value.cancel()); break
+              case 'retry': void invokeController(controller, (value) => value.retry?.() ?? Promise.resolve()); break
             }
           })
           setDictation(controller.getState())
@@ -540,6 +545,7 @@ export function AppProvider({
     stop: () => invokeController(controllerRef.current, (controller) => controller.stop()),
     toggle: () => invokeController(controllerRef.current, (controller) => controller.toggle()),
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
+    retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     navigate: setNavigation,
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)

@@ -2,6 +2,7 @@ import type { SottoBridge } from '../../../shared/contracts'
 import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
+import { TranscriptionError } from '../transcription/openRouterTranscriber'
 import { BrowserMicrophoneTest, type MicrophoneTestController } from '../features/onboarding/microphoneTest'
 import {
   createProductionDictationController,
@@ -34,6 +35,7 @@ function recording(scenario: E2EScenario): AudioRecordingResult | null {
 }
 
 function createE2EFactories(scenario: E2EScenario): ProductionControllerFactories {
+  let turnedAway = false
   return {
     createRecorder(options: AudioRecorderOptions) {
       return {
@@ -51,6 +53,11 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
       return {
         async transcribe(options) {
           if (scenario === 'transcription-failure') throw new Error('DETERMINISTIC_TRANSCRIPTION_FAILURE')
+          // The provider turns the first request away and accepts the next, as a rate-limit burst does.
+          if (scenario === 'transcription-turned-away-once' && !turnedAway) {
+            turnedAway = true
+            throw new TranscriptionError('rate-limited')
+          }
           options.onProgress?.({ stage: 'loading-model', progress: 1 })
           if (scenario === 'design-processing') {
             await new Promise<never>(() => undefined)

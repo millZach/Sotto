@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Mic,
   MicOff,
+  RotateCcw,
   ShieldAlert,
   Square,
   Volume2,
@@ -32,8 +33,10 @@ import type {
 } from '../../../shared/contracts'
 import { formatAccelerator } from '../../../shared/accelerator'
 import {
+  isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
+  TRANSCRIPTION_KEPT_DETAIL,
   type WidgetErrorCode,
   type WidgetProcessingStage,
   type WidgetSnapshot,
@@ -184,6 +187,7 @@ export interface WidgetAppProps {
   readonly onToggle?: () => void
   readonly onStop?: () => void
   readonly onCancel?: () => void
+  readonly onRetry?: () => void
   readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
@@ -236,6 +240,14 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       }
     case 'error': {
       const entry = errorCopyFor(copy)[snapshot.code]
+      // A kept recording makes the whole pill Try again; what went wrong rides
+      // in the tooltip and the announcement.
+      if (snapshot.kept === true && isTranscriptionErrorCode(snapshot.code)) {
+        return {
+          tone: 'error', title: 'Click to try again', detail: `${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
+          icon: <RotateCcw aria-hidden="true" size={23} strokeWidth={2.2} />,
+        }
+      }
       return {
         tone: 'error', title: entry.title, detail: entry.detail,
         icon: <AlertCircle aria-hidden="true" size={23} strokeWidth={2.2} />,
@@ -322,6 +334,7 @@ export function WidgetApp({
   onToggle,
   onStop,
   onCancel,
+  onRetry,
   onPresentationChange,
   onDrag,
   dragCancellationVersion,
@@ -329,6 +342,7 @@ export function WidgetApp({
   agents,
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
+  const kept = snapshot.status === 'error' && snapshot.kept === true
   const orientation = useWidgetOrientation()
   // The coordinator is hidden for the beta, and with it every control on the
   // widget that speaks, listens or hands a thread to Sotto. Dictation is what
@@ -366,7 +380,9 @@ export function WidgetApp({
   }, [isIdle])
   useEffect(() => () => clearHoverCollapse(), [])
   // The idle sliver click starts dictation; the active capsule click stops it.
-  // Either surface becomes a drag once movement passes the threshold. When an
+  // An error capsule's click tries a kept recording again, or dismisses an
+  // error that keeps nothing. Either surface becomes a drag once movement
+  // passes the threshold. When an
   // idle drag ends the window has snapped away from the pointer, so it returns
   // to the resting presentation.
   const dragGenerationRef = useRef<number | null>(null)
@@ -385,7 +401,7 @@ export function WidgetApp({
     }
   }
   const surface = useWidgetDragGesture(
-    isIdle ? onToggle : onStop,
+    isIdle ? onToggle : snapshot.status === 'error' ? (kept ? onRetry : onCancel) : onStop,
     reportDragPhase,
     isIdle ? () => setExpanded(false) : undefined,
     dragCancellationVersion,
@@ -518,6 +534,13 @@ export function WidgetApp({
       esc
     </button>
   )
+  // An error stays until it is dismissed. Escape is not claimed for it, since
+  // holding the key system-wide while an error waits would take it from every app.
+  const dismissAction = snapshot.status === 'error' && (
+    <WidgetAction label={kept ? 'Discard recording' : 'Dismiss'} onClick={onCancel}>
+      <X aria-hidden="true" size={11} strokeWidth={2.6} />
+    </WidgetAction>
+  )
   const elapsed = isListening && (
     <time
       className="widget-time"
@@ -567,6 +590,7 @@ export function WidgetApp({
         {progressBar}
         {stopAction}
         {escAction}
+        {dismissAction}
         {agentActions}
       </div>
     </aside>
@@ -693,6 +717,7 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
       onToggle: () => { void bridge.requestToggle().catch(() => undefined) },
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
+      onRetry: () => { void bridge.requestRetry().catch(() => undefined) },
       onPresentationChange: (presentation: WidgetPresentation) => {
         void bridge.setPresentation({
           presentation,
@@ -723,7 +748,7 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
   )
 }
 
-const previewNames = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error'] as const
+const previewNames = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error', 'kept'] as const
 type PreviewName = (typeof previewNames)[number]
 
 function isPreviewName(value: string | null): value is PreviewName {
@@ -778,6 +803,8 @@ export function parseVisualPreview(
       return { ...common, status: 'success', output: 'copied', cancellable: false }
     case 'error':
       return { ...common, status: 'error', code: 'MIC_PERMISSION_DENIED', cancellable: false }
+    case 'kept':
+      return { ...common, status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true, cancellable: false }
   }
 }
 
