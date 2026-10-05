@@ -3,6 +3,7 @@ import type { HostDeviceList, TailscaleConnectOutcome, TailscaleSummary } from '
 import { providerIdSchema } from './agents'
 import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
+import { hostPhonesCommandSchema, type PhonesState } from './phones'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -116,6 +117,23 @@ export interface HostsState {
    * user answered Not now for is left out until Sotto next starts.
    */
   updates?: HostUpdateState[]
+  /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
+  phones?: HostPhonesView[]
+}
+/**
+ * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
+ * the host's row and in its Phones dialog. Absent `state` means the host has not answered yet on any connection.
+ */
+export interface HostPhonesView {
+  /** The saved host's ID. */
+  readonly id: string
+  readonly state?: PhonesState | undefined
+  /** A command is on its way to the host. */
+  readonly busy?: boolean | undefined
+  /** Why the last read could not reach the host, in plain words. */
+  readonly error?: string | undefined
+  /** When the host last answered. */
+  readonly readAt?: string | undefined
 }
 export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('add'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
@@ -150,6 +168,10 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select'), hostId: z.uuid() }).strict(),
   /** One press in the Threads page's host update panel, for one saved host (ADR-0040). */
   hostUpdateCommandSchema,
+  /** One press in a remote host's Phones dialog (ADR-0050), sent on to that host. */
+  z.object({ type: z.literal('host-phones'), id: z.uuid(), command: hostPhonesCommandSchema }).strict(),
+  /** A host's Phones dialog is open, said again every half minute, or closed: while open, the host is read every couple of seconds. */
+  z.object({ type: z.literal('watch-host-phones'), id: z.uuid(), watching: z.boolean() }).strict(),
 ])
 export type HostsCommand = z.infer<typeof hostsCommandSchema>
 

@@ -27,19 +27,21 @@ Between two v1 builds of different Sotto versions, the thread and command shapes
 
 ## HTTP
 
-All on the host's loopback listener, reached through the SSH forward or private Tailscale HTTPS. The desktop's own listener, with phone access on, is reached at `https://<machine>.<tailnet>.ts.net:8443` through Tailscale Serve (ADR-0033). Every response is JSON with `Cache-Control: no-store`. A request carrying an `Origin` other than a loopback page, or one the host was started to allow, is refused.
+All on the host's loopback listener, reached through the SSH forward or private Tailscale HTTPS. The desktop's own listener, with phone access on, is reached at `https://<machine>.<tailnet>.ts.net:8443` through Tailscale Serve (ADR-0033). A headless host with phone access on opens a second loopback listener, on a port it remembers, which Tailscale Serve on its machine carries the same way; that one has no administrative routes (ADR-0050). Every response is JSON with `Cache-Control: no-store`. A request carrying an `Origin` other than a loopback page, or one the host was started to allow, is refused.
 
 | Request | Body | Answer |
 | --- | --- | --- |
-| `GET /v1/health` | none | `{ v: 1, status: "ready", hostId, pid, port, sottoVersion, features, name? }`. `name` is optional: the computer's name as the owner set it for phones, sent by the desktop's phone access (ADR-0033). A client shows it when present and falls back to its own name for the host. |
+| `GET /v1/health` | none | `{ v: 1, status: "ready", hostId, pid, port, sottoVersion, features, name? }`. `name` is optional: the computer's name as the owner set it for phones, sent by the desktop's phone access (ADR-0033) and by a headless host's phone listener, which sends its name on the tailnet (ADR-0050). A client shows it when present and falls back to its own name for the host. |
 | `POST /v1/pair` | `{ v: 1, code, name }` | `{ v: 1, hostId, clientId, token }`. The code is single use and lasts five minutes. |
 | `POST /v1/session`, `Authorization: Bearer <token>` | none | `{ v: 1, hostId, clientId, session, expiresAt }`. A session lasts twelve hours. |
 | `POST /v1/revoke`, `Authorization: Bearer <token>` | none | `{ v: 1, hostId, revoked }`. The client forgets itself. |
 | `POST /v1/admin/pairing-code`, admin bearer | none | `{ v: 1, hostId, code, expiresAt }` |
 | `POST /v1/admin/revoke-client`, admin bearer | `{ clientId }` | `{ v: 1, hostId, revoked }` |
 | `POST /v1/admin/allow-answers`, `/v1/admin/deny-answers`, admin bearer | `{ clientId }` | `{ v: 1, hostId, ok: true }` |
+| `POST /v1/admin/phones`, admin bearer | `{}` | `{ v: 1, hostId, state }`: the host's phone access, the same `PhonesState` the desktop's Phones page reads (ADR-0050). |
+| `POST /v1/admin/phones-command`, admin bearer | `{ command }`, one of the Phones page's commands or `{ type: "set-enabled", enabled }` | `{ v: 1, hostId, state, url?, error? }`: the state after the command, Tailscale's consent page for `open-serve-setup`, or the sentence the host refused it with. |
 
-The admin bearer is in the host's private `host-listener.json`, which holds the same fields as health (without `status`) plus `adminToken`. Only the launch script and the host's own command line use it. The desktop's phone listener has no administrative routes and answers them `invalid_request`: it issues codes, allows answers and revokes clients in-process, from Settings > Phones. A refusal is `{ v: 1, error: { code, message } }` with status 401 for `unauthenticated`, 429 for `busy` and 400 otherwise. A request body is at most 8192 bytes.
+The admin bearer is in the host's private `host-listener.json`, which holds the same fields as health (without `status`) plus `adminToken`. The launch script and the host's own command line use it, and a launch hands it back to the desktop over SSH, which keeps it in memory for that connection and uses it for the phone routes through the forward (ADR-0050). The desktop's phone listener has no administrative routes and answers them `invalid_request`: it issues codes, allows answers and revokes clients in-process, from Settings > Phones. A refusal is `{ v: 1, error: { code, message } }` with status 401 for `unauthenticated`, 429 for `busy` and 400 otherwise. A request body is at most 8192 bytes.
 
 ## The socket
 

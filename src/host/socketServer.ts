@@ -17,6 +17,7 @@ import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from './remoteCommands'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
+import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -84,6 +85,17 @@ export interface SocketServerOptions {
    * desktop's phone listener, which then neither lists `client-updates` nor takes the command.
    */
   clientUpdates?: boolean
+  /**
+   * The headless host's own phone access (ADR-0050), read and changed on the administrative routes by the desktop that
+   * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
+   */
+  phones?: HostPhonesAdministration
+}
+/** What the administrative phone routes answer: the state after the command, and Tailscale's page or a refusal when it gave one. */
+export interface HostPhonesAnswer { readonly state: PhonesState; readonly url?: string | undefined; readonly error?: string | undefined }
+export interface HostPhonesAdministration {
+  get(): PhonesState
+  command(command: HostPhonesCommand): Promise<HostPhonesAnswer>
 }
 /**
  * A settled receipt answers a retried command for this long, which covers a reconnect after a lost
@@ -533,6 +545,12 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (token.length !== expected.length || !timingSafeEqual(token, expected)) throw new Refusal('unauthenticated')
           spend('admin', HTTP_BUDGETS.admin)
           if (request.url === '/v1/admin/pairing-code') { respond(response, 200, { v: 1, hostId, ...pairing.issuePairingCode() }); return }
+          if (request.url === '/v1/admin/phones' || request.url === '/v1/admin/phones-command') {
+            if (!options.phones) throw new Refusal('invalid_request')
+            if (request.url === '/v1/admin/phones') { z.object({}).strict().parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
+            const { command } = z.object({ command: hostPhonesCommandSchema }).strict().parse(await body(request))
+            respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
+          }
           const input = z.object({ clientId: z.string().min(1).max(512) }).strict().parse(await body(request))
           if (request.url === '/v1/admin/revoke-client') { const revoked = await pairing.revoke(input.clientId); for (const peer of peers) if (!authenticated(peer)) peer.frames.close(); respond(response, 200, { v: 1, hostId, revoked }); return }
           else if (request.url === '/v1/admin/allow-answers' || request.url === '/v1/admin/deny-answers') {

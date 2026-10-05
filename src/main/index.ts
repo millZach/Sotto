@@ -20,6 +20,7 @@ import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
+import { HostPhones } from './hosts/hostPhones'
 import { PHONES_CHANGED } from '../shared/phones'
 import { discoverSshHosts } from './hosts/sshSuggestions'
 import { DevinAcpHost } from './agents/devin'
@@ -245,6 +246,8 @@ type NativeDiagnostic =
   | 'thread-auto-settle-skipped'
   | ClaudeAdapterEvent
   | PhoneAccessEvent
+  | 'host-phones-read-failed'
+  | 'host-phones-command-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -763,6 +766,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } })
   desktopHosts.useUpdates(hostUpdates)
   quitHandles.hostUpdates = hostUpdates
+  // Each remote host runs its own phone access; its Phones dialog reads and changes it over the host's SSH connection (ADR-0050).
+  const hostPhones = new HostPhones({
+    hosts: { links: () => desktopHosts.phonesLinks(), subscribe: listener => desktopHosts.subscribe(() => listener()) },
+    openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
+    log: logOperational,
+  })
+  desktopHosts.usePhones(hostPhones)
+  quitHandles.hostPhones = hostPhones
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
   const phoneAccess = new PhoneAccess({ directory: userDataPath,

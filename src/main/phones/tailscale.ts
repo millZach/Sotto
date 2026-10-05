@@ -116,10 +116,19 @@ export function servePortOwner(config: ServeConfig, port: number, ourLoopbackPor
 /** The consent page the CLI prints when the tailnet has not turned Serve or HTTPS on. */
 const CONSENT_URL = /https:\/\/login\.tailscale\.com\/[A-Za-z0-9/?=&%._~-]+/u
 
+/**
+ * What the CLI prints when the local Tailscale service will not let this account change it: on Linux, until the
+ * account is its operator (`tailscale set --operator=<user>`), which a host's account usually is not.
+ */
+const ACCESS_DENIED = /\baccess denied\b/iu
+
+/** Serve's setting could not be read because Tailscale refused this account. */
+export class TailscaleAccessDenied extends Error {}
+
 export type ServeResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: 'not-enabled'; readonly enableUrl?: string }
-  | { readonly ok: false; readonly reason: 'failed' }
+  | { readonly ok: false; readonly reason: 'denied' | 'failed' }
 
 /** Runs a command on the first executable that exists, or answers `missing` when none does. */
 export type TailscaleInvoke = (args: readonly string[], options: TailscaleRunOptions) => Promise<TailscaleRunResult | 'missing'>
@@ -159,7 +168,10 @@ export class TailscaleCli {
   async serveStatus(): Promise<ServeConfig> {
     const result = await this.invoke(['serve', 'status', '--json'], { timeoutMs: 10_000 })
     if (result === 'missing') throw new Error('Tailscale is not installed.')
-    if (result.code !== 0) throw new Error('Tailscale Serve status could not be read.')
+    if (result.code !== 0) {
+      if (ACCESS_DENIED.test(result.stdout + result.stderr)) throw new TailscaleAccessDenied('Tailscale refused to show Serve to this account.')
+      throw new Error('Tailscale Serve status could not be read.')
+    }
     return parseServeStatus(result.stdout)
   }
 
@@ -170,7 +182,9 @@ export class TailscaleCli {
     const url = CONSENT_URL.exec(result.stdout + '\n' + result.stderr)?.[0]
     if (url) return { ok: false, reason: 'not-enabled', enableUrl: url }
     if (result.code === 0) return { ok: true }
-    return /\b(?:is not|isn't|not) enabled\b/iu.test(result.stdout + result.stderr) ? { ok: false, reason: 'not-enabled' } : { ok: false, reason: 'failed' }
+    const output = result.stdout + result.stderr
+    if (ACCESS_DENIED.test(output)) return { ok: false, reason: 'denied' }
+    return /\b(?:is not|isn't|not) enabled\b/iu.test(output) ? { ok: false, reason: 'not-enabled' } : { ok: false, reason: 'failed' }
   }
 
   /** `tailscale serve --https=<port> off`. Call only for a setting `servePortOwner` said is Sotto's. */

@@ -24,6 +24,9 @@ import { HOST_BUSY } from '../../src/shared/hostProtocol'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
+import { standInTailscale } from '../fixtures/standInTailscale'
+import { HostPhones } from '../../src/main/hosts/hostPhones'
+let hostTailscale: ReturnType<typeof standInTailscale>
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
@@ -73,6 +76,7 @@ class FixtureSsh extends SshHostLauncher {
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId),
       revokeClient: adminRevoke,
+      hostAdminToken: async () => (JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }).adminToken,
       stopHost: async () => { stops.push(reportedHostId); await beforeStopReply(); if (stopResult instanceof Error) throw stopResult; return stopResult },
       updateHost: async operation => updateHost(operation),
     }
@@ -85,7 +89,8 @@ class FixtureSsh extends SshHostLauncher {
 }
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-desktop-hosts-'))
-  host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  hostTailscale = standInTailscale()
+  host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner, tailscale: hostTailscale.tailscale })
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
@@ -114,6 +119,23 @@ async function add(target = 'forge'): Promise<Connection> {
   await manager.command({ type: 'add', host: remote })
   return remote
 }
+describe('phones on a remote host (ADR-0050)', () => {
+  it('reads a connected host’s phone access through its tunnel, and turns it on there from the Phones dialog', async () => {
+    const phones = new HostPhones({ hosts: { links: () => manager.phonesLinks(), subscribe: listener => manager.subscribe(() => listener()) }, openExternal: async () => undefined })
+    manager.usePhones(phones)
+    try {
+      const remote = await add()
+      await vi.waitFor(() => expect(manager.get().phones).toMatchObject([{ id: remote.id, state: { enabled: false, phase: 'off' } }]))
+      await manager.command({ type: 'host-phones', id: remote.id, command: { type: 'set-enabled', enabled: true } })
+      // The open dialog's reads every couple of seconds are what show the host finishing its setup.
+      await manager.command({ type: 'watch-host-phones', id: remote.id, watching: true })
+      await vi.waitFor(() => expect(manager.get().phones?.[0]?.state).toMatchObject({ enabled: true, phase: 'on', address: 'https://forge.tail5728ca.ts.net:8443' }), { timeout: 20_000 })
+      expect(hostTailscale.proxied()).toBeDefined()
+      await expect(manager.command({ type: 'host-phones', id: randomUUID(), command: { type: 'retry' } })).rejects.toThrow('no longer saved')
+    } finally { phones.close() }
+  })
+})
+
 describe('desktop remote host management over a real socket', () => {
   it('retries a socket that drops while the connected host identity is saved', async () => {
     const remote = await add()

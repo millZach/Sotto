@@ -1,17 +1,16 @@
 import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, Circle, CircleCheck, CircleX, Copy, Info, Smartphone } from 'lucide-react'
-import { PHONE_ACCESS_SERVE_PORT, type PairedPhone, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
+import { AlertTriangle, Check, Copy, Info } from 'lucide-react'
+import { PHONE_ACCESS_SERVE_PORT, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
+import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
 import './hosts.css'
 import './phones.css'
-
-type Step = 'ok' | 'failed' | 'waiting'
 
 /** What a failed step says: what happened, that nothing was changed, and what to do. */
 export function phonesFailure(state: PhonesState): string | null {
@@ -27,55 +26,13 @@ export function phonesFailure(state: PhonesState): string | null {
   switch (state.serve.reason) {
     case 'port-taken': return `Another app already uses port ${PHONE_ACCESS_SERVE_PORT} in Tailscale Serve on this computer. Sotto left that setting alone, and nothing was changed. Stop the other app using port ${PHONE_ACCESS_SERVE_PORT}, then press Try again.`
     case 'not-enabled': return 'Tailscale Serve isn’t turned on for your tailnet. Nothing was changed. Turn it on in Tailscale, then press Try again.'
+    case 'denied': return 'Tailscale on this computer won’t let your account change Tailscale Serve. Nothing was changed. Let your account manage Tailscale, then press Try again.'
     case 'listener': return 'Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto.'
     case 'record': return 'Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again.'
     case 'cleanup-record':
     case 'cleanup': return null
     case 'failed': return `Tailscale Serve couldn’t be set up on port ${PHONE_ACCESS_SERVE_PORT}. Nothing was changed. Check Tailscale on this computer, then press Try again.`
   }
-}
-
-/** "Sep 26", with the year when it is not this one. */
-function pairedOn(iso: string, now = new Date()): string {
-  const date = new Date(iso)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })
-}
-
-function countdown(expiresAt: string, now: number): { text: string; fraction: number } {
-  const left = Math.max(0, Date.parse(expiresAt) - now)
-  const seconds = Math.ceil(left / 1000)
-  return { text: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, fraction: Math.min(1, left / 300_000) }
-}
-
-function StepMark({ step }: { readonly step: Step }): ReactNode {
-  const label = step === 'ok' ? 'Done' : step === 'failed' ? 'Failed' : 'Not yet'
-  return <span className="phones-step__mark" role="img" aria-label={label}>
-    {step === 'ok' ? <CircleCheck size={22} strokeWidth={1.7} aria-hidden="true" /> : step === 'failed' ? <CircleX size={22} strokeWidth={1.7} aria-hidden="true" /> : <Circle size={22} strokeWidth={1.7} aria-hidden="true" />}
-  </span>
-}
-
-function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove }: {
-  readonly phone: PairedPhone; readonly answersAvailable: boolean
-  readonly onCanAnswer: (allowed: boolean) => void; readonly onRemove: () => void
-}): ReactNode {
-  return <section className="hosts-row" aria-label={phone.name}>
-    <span className="hosts-row__icon" aria-hidden="true"><Smartphone size={18} /></span>
-    <div className="hosts-row__info">
-      <h4>{phone.name}</h4>
-      <p className="hosts-row__meta">Paired {pairedOn(phone.pairedAt)} · <span data-phase={phone.connected ? 'connected' : 'disconnected'}>{phone.connected ? 'Connected' : 'Not connected'}</span></p>
-      <p className="phones-grant">{phone.canAnswer ? 'Reads and replies. Can answer questions and permissions.' : 'Reads and replies. Can’t answer questions or permissions.'}</p>
-    </div>
-    <div className="hosts-row__actions">
-      <span className="phones-answer">
-        <span aria-hidden="true">Can answer</span>
-        <button type="button" role="switch" aria-checked={phone.canAnswer} aria-label={`Can answer: let ${phone.name} answer questions and permissions`} disabled={!answersAvailable}
-          className="tt-toggle tt-focusable hosts-switch__control" onClick={() => onCanAnswer(!phone.canAnswer)}>
-          <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
-        </button>
-      </span>
-      <Button variant="danger" aria-label={`Remove ${phone.name}`} onClick={onRemove}>Remove</Button>
-    </div>
-  </section>
 }
 
 /** The name phones show for this computer, saved when the field loses focus or on Enter. */

@@ -1,7 +1,7 @@
 import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Laptop, MoreHorizontal, Plus, Server } from 'lucide-react'
-import { type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
+import { Laptop, MoreHorizontal, Plus, Server, Smartphone } from 'lucide-react'
+import { type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
 import type { HostProviderJobState } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
@@ -9,6 +9,7 @@ import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { HostDialog, HostsModal, type HostDialogMode } from './HostDialog'
 import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
+import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
@@ -72,8 +73,11 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
  * A saved host: its name, where it is and how it is, the switch that keeps it connected, and its menu. A connected host
  * also says how many of its providers are connected, and Show providers opens its tiles (ADR-0037).
  */
-function HostRow({ host, onCommand, onAction, providers, client, bridge, job, choice }: {
+function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, client, bridge, job, choice }: {
   readonly host: HostStatus
+  /** The host's phone access as this computer last read it, and the press that opens its Phones dialog (ADR-0050). */
+  readonly phones?: HostPhonesView | undefined
+  readonly onOpenPhones: () => void
   readonly onCommand: (command: HostsCommand) => Promise<boolean>
   readonly onAction: (host: HostStatus, action: MenuAction) => void
   readonly providers?: readonly AgentProviderStatus[] | undefined
@@ -89,11 +93,12 @@ function HostRow({ host, onCommand, onAction, providers, client, bridge, job, ch
   const waitingForAnswer = questionKey !== null && dismissedQuestionKeys.has(questionKey)
   const route = `SSH ${host.target}${host.sshPort ? `, port ${host.sshPort}` : ''}`
   const shown = host.phase === 'connected' && providers?.length ? providers : undefined
+  const phonesLabel = hostPhonesLabel(phones)
   return <section ref={rowRef} className="hosts-row" aria-label={host.name} data-phase={host.phase}>
     <span className="hosts-row__icon" aria-hidden="true"><Server size={18} /></span>
     <div className="hosts-row__info">
       <h4>{host.name}</h4>
-      <p className="hosts-row__meta">{route} · <span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : hostStatusLabel(host)}</span>{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}</p>
+      <p className="hosts-row__meta">{route} · <span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : hostStatusLabel(host)}</span>{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
       {host.error ? <p className="hosts-row__error" role="alert">{host.error}</p> : null}
     </div>
     <div className="hosts-row__actions">
@@ -112,6 +117,7 @@ function HostRow({ host, onCommand, onAction, providers, client, bridge, job, ch
       {/* The sentence under a host that needs attention asks for one of these; each is also where it always is. */}
       {host.phase === 'error' && canStop(host) ? <Button variant="secondary" onClick={() => onAction(host, 'stop')}>Stop host</Button> : null}
       {host.phase === 'error' && host.enabled && !canStop(host) ? <Button variant="secondary" onClick={() => void onCommand({ type: 'set-enabled', id: host.id, enabled: true })}>Connect again</Button> : null}
+      {host.phase === 'connected' || phones?.state ? <Button variant="secondary" aria-label={`Open phone access for ${host.name}`} onClick={onOpenPhones}><Smartphone size={16} aria-hidden="true" />Phones…</Button> : null}
       <span className="hosts-switch">
         <span className="hosts-switch__state" aria-hidden="true">{host.enabled ? 'On' : 'Off'}</span>
         <button type="button" role="switch" aria-checked={host.enabled} aria-label={`Keep ${host.name} connected, now and when Sotto starts`}
@@ -175,6 +181,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const [renameId, setRenameId] = useState<string | null>(null)
   const [forgetId, setForgetId] = useState<string | null>(null)
   const [stopId, setStopId] = useState<string | null>(null)
+  const [phonesId, setPhonesId] = useState<string | null>(null)
   const addButton = useRef<HTMLButtonElement>(null)
   const tailscale = useTailscale(bridge)
   // Each connected host's providers, as that host publishes them (ADR-0037).
@@ -195,6 +202,8 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const forget = state?.hosts.find(host => host.id === forgetId)
   const stopping = state?.hosts.find(host => host.id === stopId)
   const renaming = state?.hosts.find(host => host.id === renameId)
+  const phonesHost = state?.hosts.find(host => host.id === phonesId)
+  const closePhones = useRef(() => setPhonesId(null)).current
   const forgetDescription = (host: HostStatus): string => {
     const stop = reachable(host) && host.owned ? ' It also stops the host Sotto started there.' : ''
     const access = reachable(host)
@@ -227,12 +236,14 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
     <div className="hosts-list">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
+        phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)}
         providers={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId)?.providers : undefined}
         client={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId) : undefined} />)}
       {state && !state.hosts.length ? <p className="hosts-empty">No remote hosts yet.</p> : null}
     </div>
     {error && <p className="hosts-error" role="alert">{error}</p>}
     {dialog && bridge ? <HostDialog key={dialog.kind === 'edit' ? dialog.host.id : dialog.kind} mode={dialog} bridge={bridge} state={state} tailscale={tailscale} onClose={closeDialog} /> : null}
+    {phonesHost && bridge ? <HostPhonesDialog host={phonesHost} view={state?.phones?.find(item => item.id === phonesHost.id)} bridge={bridge} onClose={closePhones} /> : null}
     {renaming ? <RenameDialog host={renaming} onClose={() => setRenameId(null)} onRename={async name => {
       if (!bridge) return 'Hosts are not available in this window.'
       try { setState(await bridge.command({ type: 'rename', id: renaming.id, name })); return null }

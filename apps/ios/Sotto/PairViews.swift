@@ -70,7 +70,7 @@ struct NameStep: View {
             ScrollView {
                 VStack(spacing: 24) {
                     StepHeader(step: 1, title: "Add computer",
-                               detail: "Read its name in Sotto on that computer: Settings › Phones. For a host without a screen, use its name on your tailnet.")
+                               detail: "Read its name in Sotto on that computer: Settings › Phones. For a computer without a screen, first turn on Let phones reach it in Sotto on your main computer: Settings › Hosts, then Phones on its row. Then use its name on your tailnet.")
                     VStack(spacing: 6) {
                         FieldLabel(text: "Computer name on your tailnet")
                         TextField("forge", text: $name).keyboardType(.URL).textContentType(.URL)
@@ -129,7 +129,7 @@ struct CodeStep: View {
         }
     }
     private var detail: String {
-        "In Sotto on \(found.name): Settings › Phones › Pair a phone. A host without a screen prints one from its pairing command. A code works once, for five minutes."
+        "In Sotto on \(found.name): Settings › Phones › Pair a phone. For a computer without a screen, it is in Sotto on your main computer: Settings › Hosts, then Phones on its row, then Pair a phone. A code works once, for five minutes."
     }
     private func pair() {
         guard code.count == PairingCode.length else { return }
