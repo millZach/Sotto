@@ -188,7 +188,11 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         }
         let laptop = "11111111-1111-4111-8111-111111111111"
         let studio = "22222222-2222-4222-8222-222222222222"
+        let arguments = ProcessInfo.processInfo.arguments
+        // The question journey: the working thread asks a question, and the laptop lets this iPhone answer it.
+        let asking = arguments.contains("--ui-question-while-reading")
         let caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
+        let answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -200,6 +204,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
             ("notes", "Organize the panel notes", "panel", "idle", 4320)
         ]
         let stamp = ISO8601DateFormatter()
+        func at(_ secondsAgo: Double) -> String { stamp.string(from: Date().addingTimeInterval(-secondsAgo)) }
         var threads: [String: [[String: Any]]] = [:]
         for (id, title, project, status, minutes) in rows {
             let host = id == "lighting" ? studio : laptop
@@ -213,6 +218,14 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                         ["id": "testflight", "label": "TestFlight"], ["id": "desktop", "label": "Desktop"]]],
                     ["id": "release-permission", "kind": "permission", "text": "Allow reading the release checklist?", "options": []]]
             }
+            if id == "iphone" {
+                // The thread page journeys read this one: its turn's start, its worktree's Git status and a draft
+                // pull request for the chips, and in the question journey a question waiting in it.
+                let summary: [String: Any] = ["lastMessageAt": date, "runningTurnStartedAt": at(12 * 60)]
+                row["summary"] = summary
+                row["worktree"] = Self.fixtureWorktree
+                if asking { row["requests"] = [Self.fixtureQuestion] }
+            }
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
@@ -223,7 +236,32 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                     ["id": "reply", "role": "assistant", "text": "I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention."]],
                 "activities": [["id": "read", "sequence": 1, "kind": "command", "status": "completed", "title": "Read project notes"]]])
         }
+        // The working thread's own conversation: a review reply in Markdown and a follow-up, with the agent's steps
+        // between them by time, the last one still running.
+        let conversation: [[String: Any]] = [
+            ["id": "ask-review", "role": "user", "text": "Review the frosted window branch against the spec and tell me what’s off.", "createdAt": at(40 * 60)],
+            ["id": "review", "role": "assistant", "text": Self.fixtureReview, "createdAt": at(36 * 60)],
+            ["id": "ask-fix", "role": "user", "text": "Fix the tooltips first, then the drawer chord.", "createdAt": at(12 * 60)],
+            ["id": "update", "role": "assistant", "text": "Still working through the review fixes. The tooltips are done; the drawer’s chord is next.", "createdAt": at(6 * 60)]
+        ]
+        let opened: [[String: String]] = [["path": "src/renderer/src/agents/TerminalDrawer.tsx", "kind": "read"]]
+        let tooltips: [[String: String]] = [["path": "src/renderer/src/agents/terminalTooltips.ts", "kind": "update"]]
+        let drawer: [[String: String]] = [["path": "src/renderer/src/agents/TerminalDrawer.tsx", "kind": "update"]]
+        let steps: [[String: Any]] = [
+            ["id": "think", "sequence": 1, "kind": "reasoning", "status": "completed", "title": "Thought for 12s", "startedAt": at(39 * 60)],
+            ["id": "read-drawer", "sequence": 2, "kind": "tool", "status": "completed", "title": "Read", "changes": opened, "startedAt": at(38 * 60 + 30)],
+            ["id": "edit-tooltips", "sequence": 3, "kind": "file-change", "status": "completed", "title": "Edited", "changes": tooltips, "startedAt": at(11 * 60)],
+            ["id": "edit-drawer", "sequence": 4, "kind": "file-change", "status": "completed", "title": "Edited", "changes": drawer, "startedAt": at(10 * 60)],
+            ["id": "typecheck", "sequence": 5, "kind": "command", "status": "completed", "title": "Ran", "command": "npm run typecheck",
+             "exitCode": 0, "durationMs": 38_000, "startedAt": at(8 * 60)],
+            ["id": "drawer-test", "sequence": 6, "kind": "command", "status": "running", "title": "Running",
+             "command": "npm test -- tests/unit/renderer/terminalDrawer.test.ts", "startedAt": at(41)]
+        ]
+        fixtureDetails[laptop + "/iphone"] = decode(ThreadDetail.self, ["threadId": "iphone", "revision": 2,
+            "messages": conversation, "activities": steps])
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
+            let answers = asking && host == laptop
+            let hostCaps = answers ? answeringCaps : caps
             let pairing = decode(Pairing.self, ["v": 1, "hostId": host, "clientId": "ui-fixture", "token": "not-a-credential"])
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
             let shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
@@ -231,16 +269,69 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
                 "models": [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
                     "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": ["approval-required", "full-access"]]],
-                "providers": [["id": "codex", "connection": "connected", "capabilities": caps]], "capabilities": caps]]
+                "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
-            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: false, features: ["host-folders"])
+            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: ["host-folders"])
         }
         storageReady = true
-        let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+    }
+    /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
+    private static var fixtureWorktree: [String: Any] {
+        let pullRequest: [String: Any] = ["number": 721, "title": "Let the window frost and put a terminal in the bottom third",
+                                          "url": "https://github.com/millZach/Sotto/pull/721", "state": "open", "draft": true]
+        let git: [String: Any] = ["branch": "feat/frosted-window-and-pane-terminal", "changedFiles": 7, "insertions": 212,
+                                  "deletions": 48, "ahead": 4, "behind": 0, "dirty": true, "pullRequest": pullRequest]
+        return ["mode": "independent", "branch": "feat/frosted-window-and-pane-terminal", "git": git]
+    }
+    /// A one-question request with three choices and room for the user's own words.
+    private static var fixtureQuestion: [String: Any] {
+        let choices: [[String: String]] = [
+            ["id": "j", "label": "Ctrl+J", "description": "T3 Code’s own. Free on Windows; dictation doesn’t use it."],
+            ["id": "tick", "label": "Ctrl+`", "description": "What the branch uses now. Clashes when dictation holds it."],
+            ["id": "none", "label": "No shortcut", "description": "Open it from the Terminal button only."]
+        ]
+        let question: [String: Any] = ["id": "shortcut", "question": "Which shortcut should open the terminal drawer?",
+                                       "options": choices, "multiSelect": false, "allowFreeText": true, "required": true]
+        let none: [[String: String]] = []
+        return ["id": "drawer-shortcut", "kind": "question", "text": "Which shortcut should open the terminal drawer?",
+                "options": none, "questions": [question]]
+    }
+    /// A review reply as an agent wrote it, in Markdown: bold headings, a bulleted and a numbered list with bold lead-ins,
+    /// key chords that end in a backtick, and a fenced code block.
+    private static let fixtureReview = """
+    **Not asked for**
+    - **Remembered state:** open state and height are remembered per thread across restarts.
+    - **The shortcut itself:** the spec named no key. The code comment calls Ctrl+` "T3's own", and the reviewer recalls T3 uses Mod+J (unverified). Ctrl+` is also blocked in the Tools and Terminal-mode terminals.
+    - **Reduce transparency:** the frost follows the system's reduce-transparency setting.
+
+    **Implemented but looks wrong**
+    1. **Ctrl+` in Terminal mode:** the same off-screen drawer toggle as Standards #2.
+    2. **Tooltips:** they always say "(Ctrl+`)", even when dictation owns that chord and the shortcut is off.
+
+    The check I ran:
+
+    ```sh
+    npm test -- tests/unit/renderer/terminalDrawer.test.ts
+    ```
+    """
+    /// The fixture has no computer to carry an answer, so once the answer is checked its request leaves the thread, as
+    /// it would when the computer confirmed it.
+    private func settleFixtureAnswer(_ request: AgentRequest, in ref: ThreadRef) throws {
+        guard var root = fixtureShells[ref.hostID], var host = root["host"] as? [String: Any],
+              var rows = host["threads"] as? [[String: Any]],
+              let index = rows.firstIndex(where: { ($0["id"] as? String) == ref.threadID }) else { return }
+        let waiting = rows[index]["requests"] as? [[String: Any]] ?? []
+        rows[index]["requests"] = waiting.filter { ($0["id"] as? String) != request.id }
+        host["threads"] = rows
+        root["host"] = host
+        let next = try JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root))
+        fixtureShells[ref.hostID] = root
+        update(ref.hostID) { $0.shell = next }
+        feedback = "Answer sent."
     }
     #endif
 
@@ -953,6 +1044,9 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         guard let thread = self.thread(ref), canAnswer(request, in: ref), let computer = self.computer(ref.hostID) else { return }
         do {
             let command = try Commands.answer(threadID: ref.threadID, request: request, currentRequests: thread.requests, choice: choice, text: text, answers: answers)
+            #if DEBUG && os(iOS)
+            if isUIFixture { try settleFixtureAnswer(request, in: ref); return }
+            #endif
             let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID, requestID: request.id, kind: "answer")
             try remember(operation)
             await dispatch(command, operation: operation)

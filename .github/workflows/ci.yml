@@ -154,7 +154,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 45
+    # Twelve simulator journeys on two phones, with the package tests and two builds before them.
+    timeout-minutes: 75
     env:
       # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.
       # Its Swift 6 compiler builds in Swift 5 mode, above Package.swift's 5.9 tools and the iOS 17 minimum.

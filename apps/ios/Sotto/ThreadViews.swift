@@ -1059,6 +1059,7 @@ private struct ReplyDock: View {
                     .focused($focused)
                     .padding(.vertical, 11)
                     .accessibilityLabel("Reply to this thread")
+                    .accessibilityIdentifier("thread-reply")
                     // Locked while the reply's photos are staged, so nothing typed now joins it.
                     .disabled(model.preparingSends.contains(ref.id))
             }
@@ -1294,6 +1295,7 @@ private struct RequestSheet: View {
                         }
                         .buttonStyle(ChoiceStyle(chosen: choice == option.id))
                         .accessibilityAddTraits(choice == option.id ? .isSelected : [])
+                        .accessibilityIdentifier("request-option-\(option.id)")
                     }
                 }
             } else {
@@ -1319,6 +1321,7 @@ private struct RequestSheet: View {
                 }
                 .buttonStyle(ChoiceStyle(chosen: chosen))
                 .accessibilityAddTraits(chosen ? .isSelected : [])
+                .accessibilityIdentifier("request-option-\(option.id)")
                 .disabled(item.unavailableReason != nil)
             }
             if item.allowFreeText {
@@ -1431,6 +1434,7 @@ private struct RequestSheet: View {
                     Button("Send answer") { sendAnswer(current) }
                         .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
                         .disabled(!model.canAnswer(current, in: ref) || !ready(current))
+                        .accessibilityIdentifier("request-send-answer")
                 }
             }
             .padding(.horizontal, Space.gutter)

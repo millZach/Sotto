@@ -364,6 +364,7 @@ private struct ThreadCounts: View {
         .lineLimit(1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(working) working, \(needs) \(needs == 1 ? "needs" : "need") you")
+        .accessibilityIdentifier("thread-counts")
     }
 }
 
