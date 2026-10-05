@@ -31,6 +31,15 @@ struct MainTabs: View {
                 .tag(Tab.settings)
         }
         .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
+        // A tapped alert opens its thread on Threads (ADR-0050).
+        .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
+        .onAppear { openAlerted(model.alertOpened) }
+    }
+    private func openAlerted(_ ref: ThreadRef?) {
+        guard let ref else { return }
+        model.alertOpened = nil
+        tab = .threads
+        threadPath = [ThreadRoute(ref: ref)]
     }
     private var waitingCount: Int { ThreadGroups.waiting(model.lists).count }
     /// Recent threads that finished while nothing showed them and have not been opened on either device (ADR-0046).

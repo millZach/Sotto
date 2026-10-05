@@ -54,6 +54,18 @@ struct DraftPhoto: Identifiable {
     }
 }
 
+/// Whether iOS lets Sotto show alerts.
+enum AlertPermission: Equatable { case undecided, allowed, denied }
+
+/// Shows local alerts (ADR-0050): only on this iPhone, with no push service. The app hands the model iOS's
+/// notification centre; the model's tests hand it a fake.
+@MainActor protocol AlertPosting: AnyObject {
+    func permission() async -> AlertPermission
+    /// Asks iOS, which asks the user the first time. True when alerts may be shown.
+    func requestPermission() async -> Bool
+    func post(_ alert: ThreadAlert, sound: Bool)
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
@@ -126,6 +138,17 @@ struct DraftPhoto: Identifiable {
     @Published var creationFeedback: String?
     /// The computer menu on Threads.
     @Published var show = ComputerFilter.all
+    /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
+    @Published var alertOpened: ThreadRef?
+    /// This iPhone's own preferences: alert switches and new-thread defaults.
+    var preferences = PhonePreferences()
+    /// Posts local alerts. Nil until the app hands it over.
+    var alerts: AlertPosting?
+    /// What each computer's thread list held when this iPhone last read it, for alerts. Emptied when a connection
+    /// ends, so the first list after connecting is never news.
+    private var watches: [String: ThreadWatch] = [:]
+    /// Whether the app is on screen now, rather than inactive or in the background.
+    private var foreground = false
     @Published private var openDetail: ThreadDetail?
     @Published private(set) var detailProblem: String?
     private let keychain: KeychainStore
@@ -228,6 +251,8 @@ struct DraftPhoto: Identifiable {
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
+    /// The thread the user is reading now: the open thread while the app is on screen.
+    var threadOnScreen: ThreadRef? { foreground ? selected : nil }
     func problem(_ hostID: String) -> String? { live[hostID]?.problem }
     var anyConnecting: Bool { computers.contains { status($0.hostID) == .connecting } }
     /// Every computer as the lists read it, in the order they were added.
@@ -389,6 +414,7 @@ struct DraftPhoto: Identifiable {
         catch { throw KeychainStore.UndecodableItem(account: account) }
     }
     func phase(_ phase: ScenePhase) {
+        foreground = phase == .active
         #if DEBUG && os(iOS)
         if isUIFixture { return }
         #endif
@@ -403,7 +429,7 @@ struct DraftPhoto: Identifiable {
             retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll()
             active = false; pairGeneration = UUID(); working = false; openDetail = nil
             for (hostID, connection) in connections { generations[hostID] = UUID(); connection.disconnect() }
-            connecting.removeAll()
+            connecting.removeAll(); watches.removeAll()
             live = live.mapValues { (state: Live) -> Live in var next = state; next.status = .connecting; next.mayAnswer = false; return next }
         }
     }
@@ -446,7 +472,7 @@ struct DraftPhoto: Identifiable {
         }
         retries.removeValue(forKey: hostID)?.cancel()
         let current = UUID(); generations[hostID] = current; connecting.insert(hostID)
-        shellSequences[hostID] = 0
+        shellSequences[hostID] = 0; watches[hostID] = nil
         defer { if generations[hostID] == current { connecting.remove(hostID) } }
         update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = nil }
         if selected?.hostID == hostID { cancelDetailReload(); openDetail = nil; detailProblem = nil }
@@ -507,7 +533,7 @@ struct DraftPhoto: Identifiable {
         made.onLiveness = { [weak self] in self?.retryAttempts[hostID] = nil }
         made.onPush = { [weak self] frame, sequence in self?.push(frame, from: hostID, sequence: sequence) }
         made.onDisconnect = { [weak self] in
-            self?.generations[hostID] = UUID(); self?.connecting.remove(hostID)
+            self?.generations[hostID] = UUID(); self?.connecting.remove(hostID); self?.watches[hostID] = nil
             if self?.selected?.hostID == hostID { self?.cancelDetailReload() }
             self?.update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = ClientError.disconnected.localizedDescription }
             self?.scheduleRetry(hostID)
@@ -628,7 +654,7 @@ struct DraftPhoto: Identifiable {
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
-        computers = rest; live[hostID] = nil; pending = markers
+        computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if show == .only(hostID) { show = .all }
         let prefix = hostID + "/"
@@ -1109,11 +1135,27 @@ struct DraftPhoto: Identifiable {
         guard let host = live[hostID]?.shell?.host else { return [] }
         return NewThreads.availableModels(host)
     }
+    /// The new-thread defaults kept on this iPhone (ADR-0050).
+    var newThreadDefaults: NewThreadDefaults {
+        NewThreadDefaults(modelID: preferences.newThreadModel, effort: preferences.newThreadEffort,
+                          permissionID: preferences.newThreadPermission,
+                          workingCopy: preferences.newThreadWorkingCopy.flatMap { WorkingCopy(rawValue: $0.rawValue) })
+    }
     func initialCreationModelID(_ hostID: String) -> String {
-        live[hostID]?.shell.map(NewThreads.startingModelID) ?? ""
+        live[hostID]?.shell.map { NewThreads.startingModelID($0, defaults: newThreadDefaults) } ?? ""
     }
     func initialCreationEffort(_ hostID: String, model: ThreadModel) -> String {
-        live[hostID]?.shell.map { NewThreads.startingEffort(model, shell: $0) } ?? model.startingEffort
+        live[hostID]?.shell.map { NewThreads.startingEffort(model, shell: $0, defaults: newThreadDefaults) } ?? model.startingEffort
+    }
+    /// The permission New thread starts on. A default that would let the thread act without asking waits for
+    /// Can answer on that computer (ADR-0033); until then the thread starts by asking.
+    func initialCreationPermission(_ hostID: String, model: ThreadModel) -> StartingPermission {
+        NewThreads.startingPermission(model, defaults: newThreadDefaults, mayAnswer: mayAnswer(hostID))
+    }
+    var initialCreationWorkingCopy: WorkingCopy { NewThreads.startingWorkingCopy(newThreadDefaults) }
+    /// The ready models of every computer this iPhone can reach, each once, for the new-thread defaults.
+    var defaultModelChoices: [ThreadModel] {
+        NewThreads.catalogUnion(computers.compactMap { online($0.hostID) ? live[$0.hostID]?.shell?.host : nil })
     }
     func projects(_ hostID: String) -> [Project] {
         (live[hostID]?.shell?.host.projects ?? []).filter { $0.workspaceSettledAt == nil }
@@ -1142,7 +1184,7 @@ struct DraftPhoto: Identifiable {
     }
     /// Registration and creation are separate commands. Neither is replayed after a lost acknowledgement.
     func createThread(on hostID: String, projectID: String?, folder: FolderListing?, modelID: String,
-                      effort: String, permissionID: String) async -> ThreadRef? {
+                      effort: String, permissionID: String, workingCopy: WorkingCopy = .shared) async -> ThreadRef? {
         #if DEBUG && os(iOS)
         if isUIFixture {
             guard online(hostID), var root = fixtureShells[hostID], var host = root["host"] as? [String: Any],
@@ -1150,7 +1192,8 @@ struct DraftPhoto: Identifiable {
             let threadID = UUID().uuidString, chosenProject = projectID ?? "new-project"
             do {
                 _ = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: chosen,
-                                              effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+                                              effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
+                                              workingCopy: workingCopy)
                 // Only this debug simulator fixture can mutate in-memory display data without a host.
                 var rows = host["threads"] as? [[String: Any]] ?? []
                 rows.append(["id": threadID, "projectId": chosenProject, "title": "New thread", "providerId": "codex", "status": "idle", "requests": []])
@@ -1178,7 +1221,8 @@ struct DraftPhoto: Identifiable {
             }
             // Validate the visible options before registering anything on the computer.
             _ = try Commands.createThread(projectID: projectID ?? "new-project", threadID: threadID, model: model,
-                                          effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+                                          effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
+                                          workingCopy: workingCopy)
             var chosenProject = projectID
             if let folder, let path = folder.path {
                 guard case .listed(let fresh) = try await folders(hostID, path: .string(path)), fresh.path != nil else {
@@ -1209,7 +1253,8 @@ struct DraftPhoto: Identifiable {
                 throw ClientError.rejected("The project or model is no longer available. Reconnect and choose it again.")
             }
             let command = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: currentModel,
-                                                   effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+                                                   effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
+                                                   workingCopy: workingCopy)
             let marker = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: threadID, kind: "create-thread")
             try remember(marker)
             _ = await dispatch(command, operation: marker)
@@ -1230,6 +1275,50 @@ struct DraftPhoto: Identifiable {
         return creationFeedback ?? feedback ?? "\(kind) did not finish. Choose the project and model again."
     }
 
+    // MARK: Alerts on this iPhone
+
+    /// Whether iOS lets Sotto alert, asking the first time (ADR-0050). Settings calls this as a switch turns on.
+    func allowAlerts() async -> Bool {
+        #if DEBUG && os(iOS)
+        // The simulator journeys never meet iOS's question, and nothing is posted from the fixture.
+        if isUIFixture { return true }
+        #endif
+        guard let alerts else { return false }
+        switch await alerts.permission() {
+        case .allowed: return true
+        case .denied: return false
+        case .undecided: return await alerts.requestPermission()
+        }
+    }
+    /// Whether iOS lets Sotto alert, without asking.
+    func alertPermission() async -> AlertPermission {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return .allowed }
+        #endif
+        guard let alerts else { return .undecided }
+        return await alerts.permission()
+    }
+    /// A tapped alert opens its thread, on a computer this iPhone still holds.
+    func openFromAlert(_ ref: ThreadRef) {
+        guard computer(ref.hostID) != nil else { return }
+        alertOpened = ref
+    }
+    /// Alerts for what is new in a computer's thread list: never for the first list after connecting, the thread
+    /// on screen, a switch that is off, or the UI fixture. Nothing about a thread but its title reaches an alert.
+    private func noticeChanges(_ shell: Shell, from hostID: String) {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return }
+        #endif
+        var watch = watches[hostID] ?? ThreadWatch()
+        let switches = AlertSwitches(needsYou: preferences.notifyNeedsYou, finished: preferences.notifyFinished,
+                                     failed: preferences.notifyFailed)
+        let news = watch.observe(shell.host.threads, hostID: hostID, computer: name(hostID), onScreen: threadOnScreen, switches: switches)
+        watches[hostID] = watch
+        guard let alerts, !news.isEmpty else { return }
+        let sound = preferences.notifySound
+        for alert in news { alerts.post(alert, sound: sound) }
+    }
+
     // MARK: Updates from a computer
 
     private func applyShell(_ next: Shell, from hostID: String, sequence: Int, reconcileAnswers: Bool = true) throws {
@@ -1241,6 +1330,7 @@ struct DraftPhoto: Identifiable {
             $0.shell = next
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
+        noticeChanges(next, from: hostID)
         // Live evidence can arrive after the acknowledgement timed out. Never resend to settle it.
         // A Keychain write failure is local feedback, not a lost connection to the computer.
         for item in scoped(hostID) {
@@ -1276,6 +1366,7 @@ struct DraftPhoto: Identifiable {
         } catch {
             let words = "The update from \(name(hostID)) could not be read. Reconnect to refresh it."
             update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = words }
+            watches[hostID] = nil
             connections[hostID]?.disconnect(); feedback = words
         }
     }
