@@ -421,9 +421,10 @@ describe('socket client isolation and reconnect', () => {
     const phone = await pair('Phone'), desktop = await pair('Desktop')
     await phone.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
     await phone.client.command({ type: 'connect', provider: 'codex' })
-    const workshop = () => phone.client.shell().host.threads.find(thread => thread.title === 'Workshop')
-    await expect.poll(() => workshop()).toBeDefined()
-    const threadId = workshop()!.id
+    await expect.poll(() => phone.client.shell().host.threads.find(thread => thread.title === 'Workshop')).toBeDefined()
+    const threadId = phone.client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    // By its ID from here on: its first message gives it a first-message title.
+    const workshop = () => phone.client.shell().host.threads.find(thread => thread.id === threadId)
     const marked = (client: SocketHostService) => client.shell().host.threads.find(thread => thread.id === threadId)?.finishedUnread
     native.event({ type: 'manual', threadId: 'workshop', text: 'Synthetic prompt' })
     await expect.poll(() => workshop()?.status).toBe('running')

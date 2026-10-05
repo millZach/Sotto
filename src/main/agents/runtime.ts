@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import type { ProviderId } from '../../shared/agents'
 import type { AppSettings } from '../../shared/settings'
 import { ShortTextWriter } from '../llm/shortTextWriter'
-import { threadTitleWriter } from '../llm/threadTitle'
+import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
 import { CodexAppServerHost } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
@@ -141,6 +141,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
+    writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     reasoner,
   })
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
