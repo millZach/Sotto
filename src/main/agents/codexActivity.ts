@@ -36,7 +36,7 @@ function isComputerUse(server: unknown, args: unknown): boolean {
 export function computerUseNeeds(text: string | undefined, sandboxed: boolean): string | undefined {
   if (!text) return undefined
   if (/windows sandbox failed/iu.test(text) || sandboxed && /trusted Node process exited unexpectedly/iu.test(text)) return 'Computer Use cannot run in this thread\'s sandbox. Nothing was changed. Switch the thread to Full access to use it.'
-  if (/native pipe/iu.test(text)) return 'Computer Use connection is unavailable. Keep Codex open and try again. If this continues, restart Sotto when your other threads are idle.'
+  if (/native pipe/iu.test(text)) return 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
   return undefined
 }
 export const codexItemSchema = z.preprocess(value => {

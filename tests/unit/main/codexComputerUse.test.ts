@@ -35,8 +35,8 @@ describe('Codex Computer Use calls', () => {
     expect(project(call('node_repl', 'await sky.click()', { status: 'failed', error: { message: 'Window not found' } })).error).toBe('Window not found')
   })
 
-  it('explains native pipe failures even when Codex is open and the thread has Full access', () => {
-    const guidance = 'Computer Use connection is unavailable. Keep Codex open and try again. If this continues, restart Sotto when your other threads are idle.'
+  it('gives the same recovery for a closed app and a stale connection in Full access', () => {
+    const guidance = 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
     for (const text of [
       'Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)',
       'failed to connect native pipe: The pipe has been ended. (os error 109)',

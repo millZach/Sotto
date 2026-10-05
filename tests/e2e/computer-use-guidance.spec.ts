@@ -36,6 +36,7 @@ test('Computer Use connection guidance wraps in the built app and opens from the
       await page.keyboard.press('Enter')
       const error = log.locator('.thread-activity__error')
       await expect(error).toContainText(guidance)
+      await expect(error).toContainText('Open Codex if it is closed. Keep it open and try again.')
       await expect(error).toContainText(providerError)
       await expect(error).not.toContainText('Nothing was changed')
       await page.emulateMedia({ reducedMotion: 'reduce' })
