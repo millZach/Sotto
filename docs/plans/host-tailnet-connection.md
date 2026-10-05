@@ -40,6 +40,7 @@ KillMode=mixed
 TimeoutStopSec=25
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=75
 [Install]
 WantedBy=default.target
 ```
@@ -56,8 +57,8 @@ WantedBy=default.target
 
 A launch checks the unit before it spawns anything:
 
-- Unit enabled, `Linger=yes`: if `systemctl --user is-active sotto-host` says active, it finds and reuses that host; otherwise it runs `systemctl --user start sotto-host` and waits for the host. It never spawns a detached host.
-- Unit enabled, `Linger=no`: the launch's own sign-in may have started the unit through `default.target`. It runs `systemctl --user disable --now sotto-host`, which stops the unit's host if one is running and keeps `Restart=on-failure` from bringing it back, then spawns a detached host as today. The unit's files stay. Its result reports start at boot as off (`enabled: false, linger: false`) with the `fix` line.
+- Unit enabled, `Linger=yes`: if `systemctl --user is-active sotto-host` says active, it finds and reuses that host. Otherwise it runs `discover()` first and reuses a running host with the expected `hostId`, the state `boot-install` leaves when the running host is not Sotto's; only when none runs does it run `systemctl --user start sotto-host` and wait for the host. It never spawns a detached host. A host the host lock refuses exits with its own code, 75, which the unit lists in `RestartPreventExitStatus=`, so a unit that loses the lock stops rather than retrying every 5 seconds, below systemd's start limit.
+- Unit enabled, `Linger=no`: the launch's own sign-in may have started the unit through `default.target`. It runs `systemctl --user disable --now sotto-host`, which stops the unit's host if one is running and keeps `Restart=on-failure` from bringing it back, then spawns a detached host as today. The unit's files stay. Its result reports start at boot as off (`enabled: false, linger: false`) with the `fix` line. The stop asks no busy-host question, so turns in progress on the unit's host stop once; ADR-0054's consequences say so.
 - Unit not enabled: today's launch.
 
 `boot-install` keeps refusing to enable the unit while `Linger=no` (step 1).
@@ -80,7 +81,7 @@ The prototype draws the row's meta lines, Edit connection, Add host's tailnet st
 
 States the prototype does not draw, and the pull request that draws them in its own mock-up or captures before it builds them:
 
-- PR 3: what Forget says when SSH could not reach the host: the host is removed from this computer, the host still trusts this computer until it is removed there, and the `--revoke-client` command with this computer's client ID and a copy button.
+- PR 3: what Forget says when the revoke did not happen (SSH could not reach the host, or the host was stopped): the host is removed from this computer, the host still trusts this computer until it is removed there, and the `--revoke-client` command to run while the host is running, with the absolute host entry (versioned or flat, as ADR-0053 says), the data folder, this computer's client ID and a copy button.
 - PR 5: Add host's form before the press, with its sentence that Sotto turns on Tailscale Serve on the host; the Tailscale row's missing-state line; Rename copy.
 - PR 7: Stop host's and Forget's confirmations for a host with the unit (Forget says the unit is removed); the update panel's copy for a host started at boot; the consent modal for a host Sotto did not start (the unit takes over at the next boot); the busy-host question on Start at boot and Stop starting at boot; linger refused from Add host's connected card.
 
@@ -114,12 +115,12 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
      - `LiveHost` gets `admin(): Promise<AdminConnection>`, which returns the SSH connection when the host is on it and otherwise opens an admin connection (lazy, 60 seconds idle close);
      - `openSocket` takes `{ url, expectedHostId }`;
      - phones, updates, stop, forget and cancelAdd go through `admin()`;
-     - Forget revokes this desktop with `admin()`'s `revokeClient` (the launch script's `revoke-client`) before the stop and the boot unit's removal, whichever connection carries the socket, no longer only when the host has a tunnel. When `admin()` cannot reach the host, Forget still removes it from this desktop and clears its credential, and its result says the pairing was not revoked, which Settings > Hosts turns into the sentence and command in section 4;
+     - Forget revokes this desktop with `admin()`'s `revokeClient` (the launch script's `revoke-client`) before the stop and the boot unit's removal, whichever connection carries the socket, no longer only when the host has a tunnel. When `admin()` cannot reach the host, or reaches it stopped so `revoke-client` fails, Forget still removes it from this desktop and clears its credential, and its result says the pairing was not revoked, which Settings > Hosts turns into the sentence and command in section 4;
      - drops use `setReconnecting` then `replace`;
      - `SocketHostService` gates on hello's features, and `pair()` refuses any address that is not loopback.
    - Tests:
      - `desktopHosts.test.ts`: threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it;
-     - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `admin()` failing to connect, the host is removed, its credential cleared and the result says not revoked; the revoke's drop of the socket does not reconnect or pair again;
+     - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `admin()` failing to connect, or reaching a stopped host so `revoke-client` returns `failed`, the host is removed, its credential cleared and the result says not revoked; `revoked: false` counts as revoked; the revoke's drop of the socket does not reconnect or pair again;
      - the `hostPhones` and `hostUpdates` unit tests.
 4. **Connect to a host over its tailnet before SSH**
    - Branch: `feat/host-tailnet-connection`.
@@ -137,10 +138,12 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
    - Docs: the guide's Hosts row and Edit connection. A verification note with captures in `artifacts/host-tailnet-connection/`.
 6. **Let a Linux host start at boot**
    - Branch: `feat/host-boot-start`.
-   - Files: `launchScript.ts` (`boot-status`, `boot-install` with linger first, `boot-remove { restart }`, a launch that checks the unit and linger before it spawns as section 2 says, stop and `update-restart`, `boot-start.sh`, Node drift, Forget's removal after its revoke); the desktop passing `restart` from whether the saved host is switched on; `src/host/index.ts` (`startedBy: 'boot'`); the widened phone access retry; the sshLauncher operations.
+   - Files: `launchScript.ts` (`boot-status`, `boot-install` with linger first, `boot-remove { restart }`, a launch that checks the unit and linger before it spawns as section 2 says, stop and `update-restart`, `boot-start.sh`, Node drift, Forget's removal after its revoke); the desktop passing `restart` from whether the saved host is switched on; `src/host/index.ts` (`startedBy: 'boot'`, and exit code 75 when the host lock refuses it); the widened phone access retry; the sshLauncher operations.
    - Tests: `sshLauncher` and launch-script integration with fake `systemctl` and `loginctl` executables on `PATH`, which record their calls and simulate linger off, a polkit refusal (assert nothing is written and the host keeps its PID) and no user manager. Real systemd only in PR 8. The launch cases:
      - unit enabled, `Linger=yes`, `is-active` active: the launch reuses the unit's host, runs no `start` and spawns nothing;
-     - unit enabled, `Linger=yes`, inactive: `start sotto-host`, then the host the unit started, and no detached spawn;
+     - unit enabled, `Linger=yes`, inactive, no host running: `start sotto-host`, then the host the unit started, and no detached spawn;
+     - unit enabled, `Linger=yes`, inactive, with a host Sotto did not start holding the lock: the launch reuses that host, runs no `start` and spawns nothing;
+     - a host the host lock refuses exits with code 75;
      - unit enabled, `Linger=no`, with the fake unit's host running: `disable --now sotto-host` before one detached spawn, the unit's host gone, the unit's files still there, and the result reporting start at boot off with the `fix` line;
      - `boot-install` with `Linger=no` and `enable-linger` refused never calls `enable`;
      - `boot-remove` with `restart: false` after a stop spawns nothing, and with `restart: true` spawns one detached host.
@@ -198,8 +201,8 @@ The owner delegated the open decisions on October 5 ("Go ahead and do everything
 - **Desktops on the tailnet listener:** recorded by the launch script over SSH; every other client is a phone.
 - **A final failure:** takes the threads away, as ADR-0040 says of an update.
 - **Start at boot without linger:** nothing is installed.
-- **Forget:** revokes this desktop with the launch script's `revoke-client` over the SSH connection or an admin connection, whichever connection carries the socket, before it stops the host or removes the unit. When SSH cannot reach the host, Forget still removes it here and says the host still trusts this computer until it is removed there, and how.
-- **A launch with linger off and the unit enabled:** disables the unit, stops its host if one runs, spawns a detached host and reports start at boot as off with the linger command. With linger on and the unit active, a launch reuses the unit's host and never spawns a second.
+- **Forget:** revokes this desktop with the launch script's `revoke-client` over the SSH connection or an admin connection, whichever connection carries the socket, before it stops the host or removes the unit. When the revoke does not happen (SSH cannot reach the host, or the host is stopped), Forget still removes it here and says the host still trusts this computer until it is removed there, and how.
+- **A launch with linger off and the unit enabled:** disables the unit, stops its host if one runs, spawns a detached host and reports start at boot as off with the linger command. With linger on and the unit active, a launch reuses the unit's host and never spawns a second; with the unit inactive, it reuses any running host with the expected ID before it starts the unit, and a unit that loses the host lock stops instead of retrying.
 - **Stop starting at boot:** never starts or restarts a host that is switched off.
 - **ADRs:** ADR-0053 and ADR-0054 are Accepted October 5, 2026, under this delegation.
 - **forge:** see section 6. Releases are cut by the owner by hand (`docs/release/releasing.md`); no agent cuts or publishes one.
