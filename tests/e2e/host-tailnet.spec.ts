@@ -202,9 +202,9 @@ test('Add host shows its tailnet step, says why it kept forge on SSH and tries a
     await expect(done).toBeFocused()
     await capture(launched, 'add-host-operator', async () => { await done.scrollIntoViewIfNeeded(); expect(await inside(done)).toBe(true) })
 
-    // The owner runs the command on forge, then Try again reaches it over the tailnet.
+    // The owner runs the command on forge, then Try the tailnet again reaches it over the tailnet.
     await setServe('free')
-    await kept.getByRole('button', { name: 'Try again' }).click()
+    await kept.getByRole('button', { name: 'Try the tailnet again' }).click()
     const reached = page(launched).getByRole('dialog', { name: 'forge is connected', exact: true })
     await expect(reached).toBeVisible({ timeout: 60_000 })
     await expect(titles.last()).toHaveText('Reached forge over your tailnet', { timeout: 60_000 })
@@ -242,13 +242,25 @@ test('Add host shows its tailnet step, says why it kept forge on SSH and tries a
     await expect(row().getByText(/^SSH forge · Connected/u)).toBeVisible({ timeout: 60_000 })
     await expect(row().getByText(/Tailnet did not answer/u)).toHaveCount(0)
 
-    // And back: the tailnet again, which the row reads as soon as the socket has moved.
+    // And back: the tailnet again, which the row reads as soon as the socket has moved. Focus starts on SSH only, the choice
+    // forge has now, rather than on the first radio.
     await more.click()
     await page(launched).getByRole('menuitem', { name: 'Edit connection' }).click()
+    await expect(edit.getByRole('radio', { name: 'SSH only' })).toBeFocused()
     await edit.getByRole('radio', { name: 'Over your tailnet, SSH when it can’t' }).check()
     await edit.getByRole('button', { name: 'Save connection' }).click()
     await expect(edit).toHaveCount(0, { timeout: 60_000 })
     await expect(row().getByText(/^Tailnet · Connected/u)).toBeVisible({ timeout: 60_000 })
+
+    // Rename says how Sotto connects does not change.
+    await more.click()
+    await page(launched).getByRole('menuitem', { name: 'Rename' }).click()
+    const rename = page(launched).getByRole('dialog', { name: 'Rename forge' })
+    const field = rename.getByRole('textbox', { name: 'Host name' })
+    await expect(field).toHaveAccessibleDescription('Shown on this row and beside the host\'s projects and threads. How Sotto connects to it does not change.')
+    await capture(launched, 'rename', async () => { await field.scrollIntoViewIfNeeded(); expect(await inside(field)).toBe(true) })
+    await page(launched).keyboard.press('Escape')
+    await expect(rename).toHaveCount(0)
 
     // After a relaunch, over the tailnet, Phones… reads forge over an admin connection. While Tailscale holds its sign-in
     // nothing is read yet, so the dialog shows no switch.

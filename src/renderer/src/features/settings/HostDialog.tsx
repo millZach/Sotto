@@ -7,8 +7,9 @@ import type { HostDevice, HostDeviceList, TailscaleSummary } from '../../../../s
 import { Button } from '../../components/Button'
 import { DevicePicker } from './DevicePicker'
 import { TailscalePrompt, type TailscaleControl } from './TailscaleConnect'
-import { HostSetupChecklist, hostSetupSummary, hostSetupTitle, TAILSCALE_GUIDE_URL, type HostSetupOutcome, type TailnetStepView } from './HostSetupChecklist'
-import { lastReached } from './hostTailnetWords'
+import { HostSetupChecklist, hostSetupSummary, hostSetupTitle, tailnetStepView, type HostSetupOutcome } from './HostSetupChecklist'
+import { TAILSCALE_GUIDE_URL, TRY_TAILNET_AGAIN } from './hostTailnetWords'
+import { HostConnectionChoice } from './HostConnectionChoice'
 import { HostAddChoices, HostSetupProgress, hostSetupEnded, hostSetupViewTitle, SetupModelSelect, type HostAddChoice } from './HostSetupView'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
@@ -17,6 +18,9 @@ import { HostsModal } from './HostsModal'
 
 /** The longest name and SSH target a saved host may have (`remoteHostSchema`). */
 const MAX_NAME_LENGTH = 80, MAX_TARGET_LENGTH = 256
+/** Main's sentence from a refused command, without the words Electron puts in front of it. */
+const commandError = (failure: unknown, fallback: string): string =>
+  failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() || fallback : fallback
 /** The host part of an SSH target: `forge` in `zach@forge`. */
 export const targetHost = (target: string): string => target.slice(target.lastIndexOf('@') + 1)
 /** The user part of an SSH target, or '' when the SSH configuration decides. */
@@ -30,7 +34,8 @@ export type HostDialogMode = { readonly kind: 'add' } | { readonly kind: 'edit';
  * which starts a host setup thread and follows it, and Add it, which connects from inside the dialog and saves
  * the host only once it answers and pairs. Once pressed, the form gives way to the host setup checklist, which
  * asks SSH's and Tailscale's questions itself and shows a failure on the step it happened; a failed step offers
- * Have my agent fix this. Edit connection saves the new route; a host that is on connects again with it.
+ * Have my agent fix this. Edit connection saves how Sotto connects and the SSH settings, both checked by main before either
+ * is written; a host that is on connects again the way it says.
  */
 export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   readonly mode: HostDialogMode; readonly bridge: HostsBridge; readonly state: HostsState | null
@@ -69,7 +74,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   const [connected, setConnected] = useState(false)
   /** How Sotto connects, as Edit connection has it chosen (ADR-0053); saved with the connection. */
   const [prefer, setPrefer] = useState<HostConnectionName>(editing?.prefer ?? 'ssh')
-  /** Try again or Use SSH only on Add host's tailnet step, while it runs and once it has answered. */
+  /** Try the tailnet again or Use SSH only on Add host's tailnet step, while it runs and once it has answered. */
   const [tailnetPress, setTailnetPress] = useState<{ readonly running: boolean; readonly error?: string } | null>(null)
   // Have my agent set this up: the choice, its model, and the setup this dialog started or was opened to show.
   const choice = state?.setupChoice
@@ -85,23 +90,20 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   closeRef.current = onClose
   const hintId = useId(), closeHintId = useId()
   const hostId = useId(), serveId = useId(), userId = useId(), portId = useId(), installId = useId(), dataId = useId(), dataHintId = useId(), identityId = useId(), answerId = useId()
-  const preferName = useId(), tailnetChoiceId = useId(), tailnetHintId = useId(), sshChoiceId = useId(), sshHintId = useId()
   // The add this dialog started, as main reports it; it leaves `adding` for `hosts` once the host is saved.
   const adding = attempt !== null && state?.adding?.id === attempt ? state.adding : undefined
   const addedHost = attempt !== null ? state?.hosts.find(item => item.id === attempt) : undefined
   const added = addedHost !== undefined
   // The host Edit connection is for, as main has it now: its address, and an admin connection's sign-in while a save waits.
   const edited = editing ? state?.hosts.find(item => item.id === editing.id) ?? editing : undefined
-  // Add host's tailnet step: main's while the add runs, then whatever this dialog's own Try again found (ADR-0053).
-  const tailnet: TailnetStepView = tailnetPress?.running ? { state: 'active' }
-    : tailnetPress && addedHost ? tailnetPress.error ? { state: 'ssh', why: 'error', error: tailnetPress.error }
-      : addedHost.phase === 'connected' && addedHost.via === 'tailnet' ? { state: 'done' } : { state: 'ssh', why: addedHost.tailnetNote ?? (addedHost.prefer === 'tailnet' ? 'unreachable' : 'refused') }
-      : addedHost?.addTailnet ?? adding?.addTailnet ?? { state: 'todo' }
+  // Add host's tailnet step: main's while the add runs, then the host's own connection (ADR-0053).
+  const tailnet = tailnetStepView(addedHost, adding, tailnetPress)
   const connecting = sending || adding?.phase === 'connecting'
-  // SSH's question and Tailscale's approval belong to whichever connect is showing: the setup's check or add, or Add host's.
-  const live = setup ? setup.attempt : adding
-  const liveId = setup ? setup.attempt?.id ?? null : attempt
-  const prompt = live?.phase === 'connecting' ? live.prompt : undefined
+  // SSH's question and Tailscale's approval belong to whichever connect is showing: the setup's check or add, Add host's, or
+  // the sign-in an Edit connection save opened, which the question over the page would wait behind this dialog for.
+  const live = setup ? setup.attempt : editing ? sending && edited?.adminSignIn ? edited : undefined : adding
+  const liveId = setup ? setup.attempt?.id ?? null : editing ? editing.id : attempt
+  const prompt = editing ? live?.prompt : live?.phase === 'connecting' ? live.prompt : undefined
   // Once the connect has failed, main's sentence is the one that says why; one from this dialog is older.
   const shownError = adding?.phase === 'error' ? adding.error ?? error : error
   const approvalWaiting = live?.tailscale?.waiting === true
@@ -150,7 +152,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   const close = (): void => {
     // A setup carries on in its thread when its dialog closes; one that has ended is put away.
     if (setup) { if (hostSetupEnded(setup)) void bridge.command({ type: 'dismiss-setup', id: setup.id }).catch(() => undefined); onClose(); return }
-    // A failed or unfinished add is dropped with the dialog: main keeps nothing for it.
+    // An add that has not saved the host is dropped with the dialog, and main keeps nothing for it. A saved host stays.
     if (attempt !== null && !added) void bridge.command({ type: 'cancel-add', id: attempt }).catch(() => undefined)
     onClose()
   }
@@ -175,16 +177,13 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     if (editing) {
       setSending(true)
       try {
-        const before = editing.prefer ?? 'ssh'
-        const routeChanged = route.target !== editing.target || route.installPath !== editing.installPath || route.dataDirectory !== editing.dataDirectory
-          || route.identityFile !== (editing.identityFile ?? '') || route.sshPort !== editing.sshPort
-        // How Sotto connects is written first, so a drop the host's change causes reconnects the way the owner chose (ADR-0053).
-        // A changed route, or a save that changes nothing, then connects again over SSH to test it.
-        if (prefer !== before) await bridge.command({ type: 'set-connection', id: editing.id, prefer })
-        if (routeChanged || prefer === before) await bridge.command({ type: 'save', host: { id: editing.id, name: editing.name, ...route } })
+        // Main checks the SSH settings, then writes a new choice, then saves changed SSH settings and connects again with them
+        // (ADR-0053). The choice goes only when it differs from the host's as main has it now; a host never paired has none.
+        const chosen = edited?.hostId && prefer !== (edited.prefer ?? 'ssh')
+        await bridge.command({ type: 'save', host: { id: editing.id, name: editing.name, ...route }, ...(chosen ? { prefer } : {}) })
         onClose()
       }
-      catch (failure) { setError(failure instanceof Error ? failure.message : 'The connection could not be saved. Nothing was changed. Try again.') }
+      catch (failure) { setError(commandError(failure, 'The connection could not be saved. Nothing was changed. Try again.')) }
       finally { setSending(false) }
       return
     }
@@ -196,7 +195,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     catch (failure) {
       // Refused before connecting (already saved, still adding another): back to the form, which says why.
       setAttempt(null)
-      setError(failure instanceof Error ? failure.message : 'The host could not be added. Nothing was saved. Try again.')
+      setError(commandError(failure, 'The host could not be added. Nothing was saved. Try again.'))
     }
     finally { setSending(false) }
   }
@@ -217,7 +216,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     } catch (failure) {
       setSetupId(null)
       if (after) { void bridge.command({ type: 'cancel-add', id: after }).catch(() => undefined); setAttempt(null) }
-      setError(failure instanceof Error ? failure.message : 'The setup could not start. Nothing was started. Try again.')
+      setError(commandError(failure, 'The setup could not start. Nothing was started. Try again.'))
     } finally { setStarting(false) }
   }
   const go = (): void => { if (!editing && how === 'agent' && agentAvailable) void startSetup(); else void submit() }
@@ -231,11 +230,11 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     if (liveId === null) return
     setApprovalError(null)
     try { await bridge.command({ type: 'open-approval', id: liveId }) }
-    catch (failure) { setApprovalError(failure instanceof Error ? failure.message : 'The approval page could not open. Nothing was changed. Try again.') }
+    catch (failure) { setApprovalError(commandError(failure, 'The approval page could not open. Nothing was changed. Try again.')) }
   }
   /**
-   * Try again on Add host's tailnet step: chooses the tailnet for the host, which turns its tailnet connections on and tries
-   * its Serve again (ADR-0053). Use SSH only chooses SSH for a host that preferred the tailnet, and closes the dialog.
+   * Try the tailnet again on Add host's tailnet step: chooses the tailnet for the host, which turns its tailnet connections on
+   * and tries its Serve again (ADR-0053). Use SSH only chooses SSH for a host that preferred the tailnet, and closes the dialog.
    */
   const pressTailnet = async (choice: HostConnectionName): Promise<void> => {
     if (!addedHost || tailnetPress?.running) return
@@ -246,20 +245,20 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
       if (choice === 'ssh') { onClose(); return }
       setTailnetPress({ running: false })
     } catch (failure) {
-      setTailnetPress({ running: false, error: failure instanceof Error ? failure.message : `How Sotto connects to ${addedHost.name} could not be changed. Nothing was changed. Try again.` })
+      setTailnetPress({ running: false, error: commandError(failure, `How Sotto connects to ${addedHost.name} could not be changed. Nothing was changed. Try again.`) })
     }
   }
   const answerPrompt = async (): Promise<void> => {
     if (!prompt || liveId === null || answering) return
     setAnswering(true)
     try { await bridge.command({ type: 'ssh-answer', id: liveId, promptId: prompt.id, answer: prompt.kind === 'host-key' ? 'yes' : answer }) }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'SSH did not take the answer. Cancel and add the host again.') }
+    catch (failure) { setError(commandError(failure, 'SSH did not take the answer. Cancel and add the host again.')) }
     finally { setAnswer(''); setAnswering(false) }
   }
   const stopSetup = async (): Promise<void> => {
     if (!setup) return
     try { await bridge.command({ type: 'stop-setup', id: setup.id }) }
-    catch (failure) { setError(failure instanceof Error ? failure.message : 'The setup could not be stopped. Try again.') }
+    catch (failure) { setError(commandError(failure, 'The setup could not be stopped. Try again.')) }
   }
   /** Open thread: the Threads page, on the setup thread. The setup carries on; Show setup on the Hosts page brings this back. */
   const openThread = (): void => {
@@ -315,43 +314,24 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   // Adding it yourself turns on the host's tailnet connections, so the press is the owner's consent to that Serve setting, and
   // the sentence that says so describes the press, and the SSH host field whose Enter makes it (ADR-0053).
   const serveShown = !editing && !checklist && !agentChosen
-  /**
-   * Edit connection's choice, How Sotto connects (ADR-0053): over the tailnet with SSH when it can't, or SSH only. The tailnet
-   * choice says it turns on Tailscale Serve on the host; a host this computer has never paired with has nothing to choose yet.
-   */
-  const connectionChoice = edited ? <fieldset className="hosts-fieldset">
-    <legend>How Sotto connects</legend>
-    <div className="host-setup__choices">
-      <label className="host-setup__choice" data-checked={prefer === 'tailnet' || undefined} data-disabled={!edited.hostId || undefined}>
-        <input type="radio" name={preferName} value="tailnet" checked={prefer === 'tailnet'} disabled={fieldsDisabled || !edited.hostId} aria-labelledby={tailnetChoiceId} aria-describedby={tailnetHintId}
-          className="tt-focusable" onChange={() => setPrefer('tailnet')} />
-        <span className="host-setup__choice-name" id={tailnetChoiceId}>Over your tailnet, SSH when it can’t</span>
-        <span className="host-setup__choice-text" id={tailnetHintId}>{edited.tailnetAddress
-          ? <>At <span className="hosts-dialog__address">{edited.tailnetAddress}</span>{edited.tailnetSeen ? `, last reached at ${lastReached(edited.tailnetSeen)}` : ''}. </>
-          : `${edited.name} says where your tailnet reaches it once Serve is on. `}
-          Sotto turns on Tailscale Serve on {edited.name} for this, on your tailnet only. Tailscale then asks for approval only for a press that signs in over SSH, such as Phones… or Stop host.</span>
-      </label>
-      <label className="host-setup__choice" data-checked={prefer === 'ssh' || undefined} data-disabled={!edited.hostId || undefined}>
-        <input type="radio" name={preferName} value="ssh" checked={prefer === 'ssh'} disabled={fieldsDisabled || !edited.hostId} aria-labelledby={sshChoiceId} aria-describedby={sshHintId}
-          className="tt-focusable" onChange={() => setPrefer('ssh')} />
-        <span className="host-setup__choice-name" id={sshChoiceId}>SSH only</span>
-        <span className="host-setup__choice-text" id={sshHintId}>Every connection signs in over SSH, and Tailscale may ask you to approve it each time.</span>
-      </label>
-    </div>
-    {!edited.hostId ? <p className="tt-field__description">Connect to {edited.name} once before choosing how Sotto connects.</p> : null}
-  </fieldset> : null
+  const connectionChoice = edited ? <HostConnectionChoice host={edited} value={prefer} opened={editing?.prefer ?? 'ssh'} disabled={fieldsDisabled} onChange={setPrefer} /> : null
   /** Edit connection groups the SSH fields under what SSH is still for; Add host keeps its form as it was. */
   const sshGroup = (fields: ReactNode): ReactNode => editing ? <fieldset className="hosts-fieldset"><legend>SSH (for setup, updates and phones)</legend>{fields}</fieldset> : fields
   // Kept on SSH: the step says why, and the footer offers to try the tailnet again or to keep SSH, beside Done.
   const keptOnSsh = checklist && outcome === 'connected' && tailnet.state === 'ssh'
   const tailnetBusy = tailnetPress?.running === true
-  return <HostsModal title={editing ? `Edit connection to ${editing.name}` : checklist ? hostSetupTitle(submitted.name, outcome, keptOnSsh ? 'ssh' : undefined) : 'Add host'} onClose={close}
+  // Once the host is saved, closing keeps it: the tailnet step's wait offers Close rather than Cancel, and nothing to add again.
+  const savedWhileConnecting = checklist && added && outcome !== 'connected'
+  return <HostsModal title={editing ? `Edit connection to ${editing.name}` : checklist ? hostSetupTitle(submitted.name, outcome, tailnet) : 'Add host'} onClose={close}
     busy={connecting || starting || tailnetBusy} className="hosts-dialog--connection"
     // Keyed, so the footer's buttons are never reused for one another and focus never lands on a press it did not choose.
     footer={checklist && outcome === 'connected' ? <>
       {keptOnSsh && addedHost?.prefer === 'tailnet' ? <Button key="ssh-only" variant="secondary" disabled={tailnetBusy} onClick={() => void pressTailnet('ssh')}>Use SSH only</Button> : null}
-      {keptOnSsh || tailnetBusy ? <Button key="try-tailnet" variant="secondary" disabled={tailnetBusy} onClick={() => void pressTailnet('tailnet')}>{tailnetBusy ? 'Trying…' : 'Try again'}</Button> : null}
+      {keptOnSsh || tailnetBusy ? <Button key="try-tailnet" variant="secondary" disabled={tailnetBusy} onClick={() => void pressTailnet('tailnet')}>{tailnetBusy ? 'Trying…' : TRY_TAILNET_AGAIN}</Button> : null}
       <Button key="done" ref={doneButton} onClick={onClose}>Done</Button>
+    </> : savedWhileConnecting ? <>
+      <Button key="close" ref={cancelButton} variant="secondary" aria-describedby={closeHintId} onClick={close}>Close</Button>
+      <span id={closeHintId} className="tt-visually-hidden">Closes this dialog. {submitted.name} is already added and stays added.</span>
     </> : <>
       <Button key="cancel" ref={cancelButton} variant="secondary" onClick={close}>Cancel</Button>
       <Button key="add" ref={addButton} disabled={connecting || starting || prompt !== undefined} {...(serveShown ? { 'aria-describedby': serveId } : {})} onClick={() => { if (checklist) void submit(); else go() }}>
@@ -362,7 +342,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
       // The connected card offers to start the new host at boot, one consented press (ADR-0054).
       boot={outcome === 'connected' && addedHost ? <HostBootOffer host={addedHost} view={state?.boot?.find(item => item.id === addedHost.id)} bridge={bridge} /> : undefined}
       onOpenApproval={() => void openApproval()} onOpenGuide={openGuide} tailnet={outcome === 'connected' && tailnet.state === 'todo' ? undefined : tailnet} /> : <>
-    <p className="hosts-dialog__intro">{editing ? 'Saving checks the connection over SSH, so Tailscale may ask you to approve it. A host that is on connects again the way you chose.' : 'Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.'}</p>
+    <p className="hosts-dialog__intro">{editing ? `Saving a new choice changes the setting on ${editing.name} as well. Saving changed SSH settings connects again over SSH to check them. Either may sign in over SSH, and Tailscale may ask you to approve that.` : 'Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.'}</p>
     {!editing && tailscale ? <TailscalePrompt control={tailscale} /> : null}
     <form ref={formRef} className="hosts-dialog__fields" onSubmit={event => { event.preventDefault(); go() }}
       onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } const target = event.target as HTMLElement; if (event.key === 'Enter' && target instanceof HTMLInputElement && target.type !== 'radio') { event.preventDefault(); go() } }}>
@@ -399,8 +379,8 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
       </>)}
       {editing?.clientId ? <p className="hosts-dialog__client">This computer's client ID on {editing.name}: <code>{editing.clientId}</code></p> : null}
     </form>
-    {/* Choosing how Sotto connects may open an admin connection, whose sign-in Tailscale may hold (ADR-0053). */}
-    {editing && sending && edited?.adminSignIn && edited.tailscale?.waiting ? <div className="hosts-notice" role="status"><Info size={16} aria-hidden="true" />
+    {/* Choosing how Sotto connects may open an admin connection, whose sign-in SSH may ask a question of, or Tailscale may hold (ADR-0053). */}
+    {editing && question ? question : editing && sending && edited?.adminSignIn && edited.tailscale?.waiting ? <div className="hosts-notice" role="status"><Info size={16} aria-hidden="true" />
       <p className="grow">Waiting for your approval in Tailscale. {edited.name} uses Tailscale SSH, which asks you to approve this connection in your browser.</p>
       {edited.tailscale.url ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${edited.name}`} onClick={() => void bridge.command({ type: 'open-approval', id: edited.id }).catch(() => undefined)}>Open approval page</Button> : null}
     </div> : editing && sending ? <div className="hosts-notice hosts-notice--work" role="status"><LoaderCircle size={16} aria-hidden="true" className="hosts-spin" /><p>Saving the connection.</p></div> : null}

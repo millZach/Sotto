@@ -39,6 +39,8 @@
 .host-setup__command { display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-sm); background: var(--tt-surface-elevated); padding: 4px 4px 4px 10px; }
 .host-setup__command > code { flex: 1; min-width: 0; overflow-x: auto; color: var(--tt-text); font: 12.5px/1.6 var(--tt-font-mono); white-space: nowrap; }
 .host-setup__command > .tt-button { flex: 0 0 auto; gap: 6px; min-height: 28px; padding: 0 12px; font-size: 12.5px; }
+/* A short command that is the whole point of its card wraps instead, so none of it hides under Copy at the window's smallest size. */
+.host-setup__card--wrap .host-setup__command > code { overflow-x: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Two ways to add a machine (ADR-0035): native radios in bordered choices, the chosen one lit by the accent. */
 .host-setup__choices { display: grid; gap: 8px; }

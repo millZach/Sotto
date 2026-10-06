@@ -3,6 +3,7 @@ import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } fr
 import { AlertTriangle, Check, Copy, Laptop, MoreHorizontal, Plus, Server, Smartphone } from 'lucide-react'
 import { type HostForgotten, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
 import type { HostProviderJobState } from '../../../../shared/hostProviders'
+import type { HostConnectionName } from '../../../../shared/hostConnection'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
@@ -11,7 +12,7 @@ import { HostsModal } from './HostsModal'
 import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
 import { HostPhonesDialog, hostPhonesLabel, phoneWords } from './HostPhonesDialog'
-import { TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
+import { tailnetRowNote } from './hostTailnetWords'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -31,18 +32,25 @@ export function hostStatusLabel(host: HostStatus): string {
 /**
  * How a saved host is connected, for the start of its row (ADR-0053): `Tailnet` on its tailnet connection, and its SSH
  * target otherwise, and so does a reconnect. While a host that prefers the tailnet connects for the first time, the whole line
- * says which connection it is trying. The words after the connection are as they were.
+ * says which connection it is trying. The words after the connection are as they were. `via` is the connection the words
+ * name, for the row to style.
  */
-export function hostConnectionLine(host: HostStatus): { readonly connection: string | null; readonly status: string | null; readonly note: string | null } {
+export function hostConnectionLine(host: HostStatus): { readonly connection: string | null; readonly via: HostConnectionName | null; readonly status: string | null; readonly note: string | null } {
   const ssh = `SSH ${host.target}${host.sshPort ? `, port ${host.sshPort}` : ''}`
   const tailnet = host.prefer === 'tailnet'
-  if (host.phase === 'connected' && host.via === 'tailnet') return { connection: 'Tailnet', status: 'Connected', note: null }
+  if (host.phase === 'connected' && host.via === 'tailnet') return { connection: 'Tailnet', via: 'tailnet', status: 'Connected', note: null }
   if (tailnet && host.phase === 'connecting' && !host.reconnecting && !host.tailscale?.waiting && !host.prompt) {
-    return { connection: null, status: host.via === 'tailnet' ? 'Connecting over your tailnet…' : 'Connecting over SSH…', note: null }
+    return { connection: null, via: null, status: host.via === 'tailnet' ? 'Connecting over your tailnet…' : 'Connecting over SSH…', note: null }
   }
   const note = tailnet && host.phase === 'connected' && host.via === 'ssh' && host.tailnetNote ? 'Tailnet did not answer' : null
   // A reconnect says which connection it is trying, as a connected host does.
-  return { connection: host.phase === 'connecting' && host.via === 'tailnet' ? 'Tailnet' : ssh, status: hostStatusLabel(host), note }
+  const reconnectingOverTailnet = host.phase === 'connecting' && host.via === 'tailnet'
+  return { connection: reconnectingOverTailnet ? 'Tailnet' : ssh, via: reconnectingOverTailnet ? 'tailnet' : 'ssh', status: hostStatusLabel(host), note }
+}
+/** Why a host its owner put on the tailnet is on SSH, with the operator's command set apart. */
+function TailnetRowNote({ name, note }: { readonly name: string; readonly note: NonNullable<HostStatus['tailnetNote']> }): ReactNode {
+  const words = tailnetRowNote(name, note)
+  return <p className="hosts-row__note">{words.text}{words.command ? <code className="phones-mono">{words.command}</code> : null}{words.after}</p>
 }
 /** A host of another version Sotto started is still reached through the SSH session kept for Stop host. */
 const reachable = (host: HostStatus): boolean => host.phase === 'connected' || host.phase === 'error' && host.owned === true
@@ -138,11 +146,8 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
     <span className="hosts-row__icon" aria-hidden="true"><Server size={18} /></span>
     <div className="hosts-row__info">
       <h4>{host.name}</h4>
-      <p className="hosts-row__meta">{line.connection ? <><span className="hosts-row__via" data-via={line.connection === 'Tailnet' ? 'tailnet' : 'ssh'}>{line.connection}</span> · </> : ''}<span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}{booting ? ` · ${booting}` : ''}</p>
-      {line.note ? <p className="hosts-row__note">{host.tailnetNote === 'operator'
-        ? <>{host.name}’s Tailscale Serve needs <code className="phones-mono">{TAILSCALE_OPERATOR_COMMAND}</code>, run on {host.name}. Sotto stays on SSH until it can, and tries again every 5 minutes.</>
-        : host.tailnetNote === 'no-tailscale' ? `Tailscale isn’t running on ${host.name}, so Sotto connects over SSH. It tries the tailnet again every 5 minutes.`
-          : host.tailnetNote === 'no-address' ? `${host.name} hasn’t said where your tailnet reaches it yet. Sotto tries again every 5 minutes.` : 'Sotto tries it again every 5 minutes.'}</p> : null}
+      <p className="hosts-row__meta">{line.connection ? <><span className="hosts-row__via" data-via={line.via ?? undefined}>{line.connection}</span> · </> : ''}<span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}{booting ? ` · ${booting}` : ''}</p>
+      {line.note && host.tailnetNote ? <TailnetRowNote name={host.name} note={host.tailnetNote} /> : null}
       {host.error ? <p className="hosts-row__error" role="alert">{host.error}</p> : null}
     </div>
     <div className="hosts-row__actions">

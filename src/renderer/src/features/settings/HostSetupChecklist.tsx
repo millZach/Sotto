@@ -1,42 +1,37 @@
 import { writeClipboard } from '../../agents/richActions'
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Circle, Clock, Copy, LoaderCircle, X } from 'lucide-react'
-import { HOST_SETUP_STEPS, type HostAddTailnet, type HostSetupStep, type HostStatus } from '../../../../shared/hosts'
+import { HOST_SETUP_STEPS, type HostSetupStep, type HostStatus } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
-import { TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
+import { tailnetStepNote, type TailnetStepView } from './hostTailnetWords'
 import './hostSetup.css'
-
-/** Where "Why Tailscale asks" leads: the guide's section on a tailnet policy's `check` and `accept`. */
-export const TAILSCALE_GUIDE_URL = 'https://github.com/millZach/Sotto/blob/main/docs/guide.md#hosts-over-tailscale-ssh'
 
 /** Where Add host stands once pressed: still connecting, stopped at a failed step, or connected and saved. */
 export type HostSetupOutcome = 'connecting' | 'failed' | 'connected'
 type StepState = 'done' | 'active' | 'waiting' | 'failed' | 'todo'
 
-/** The dialog's title while the checklist shows: where the add stands, in one line. `over` says a host Add host kept on SSH. */
-export function hostSetupTitle(name: string, outcome: HostSetupOutcome, over?: 'ssh'): string {
-  if (outcome === 'connected') return over === 'ssh' ? `${name} is connected over SSH` : `${name} is connected`
+/** The dialog's title while the checklist shows: where the add stands, in one line, and over SSH when the tailnet step kept it there. */
+export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?: TailnetStepView): string {
+  if (outcome === 'connected') return tailnet?.state === 'ssh' ? `${name} is connected over SSH` : `${name} is connected`
   return outcome === 'failed' ? `${name} could not be added` : `Connecting to ${name}`
 }
 
 /**
- * Add host's tailnet step as its checklist shows it (ADR-0053): still to come, under way, done, or the host kept on its SSH
- * connection with why. `error` is the sentence a Try again that failed came back with.
+ * Add host's tailnet step (ADR-0053) for the host this dialog added. While the add runs it is main's. Once the add has
+ * ended, or Try the tailnet again has answered, the host's connection now decides it, so a 5-minute check that moves the
+ * host to the tailnet while the dialog is open shows here too; a host still on SSH keeps the reason main gave, or the
+ * row's reason after a press. A press that failed says why, and one still running is under way.
  */
-export type TailnetStepView = { readonly state: 'todo' } | HostAddTailnet | { readonly state: 'ssh'; readonly why: 'error'; readonly error: string }
-
-/** What the tailnet step says when the host stayed on SSH: why, and what to do. Only the operator's has a command. */
-export function tailnetStepNote(view: Extract<TailnetStepView, { state: 'ssh' }>, name: string, address: string | undefined): { readonly text: string; readonly command?: string } {
-  const ssh = `so ${name} is connected over SSH.`
-  switch (view.why) {
-    case 'operator': return { text: `${name}’s Tailscale Serve needs your SSH account to be Tailscale’s operator there, ${ssh} Run this on ${name}, then press Try again.`, command: TAILSCALE_OPERATOR_COMMAND }
-    case 'no-tailscale': return { text: `Tailscale isn’t running on ${name}, ${ssh} Start Tailscale there, then press Try again.` }
-    case 'no-address': return { text: `${name} hasn’t said where your tailnet reaches it yet, ${ssh} Sotto tries again every 5 minutes.` }
-    case 'old-host': return { text: `The host on ${name} can’t be reached over your tailnet until it is updated, ${ssh} Update it from the Threads page, then press Try again.` }
-    case 'refused': return { text: `The host on ${name} didn’t turn on its tailnet connections, ${ssh} Press Try again.` }
-    case 'error': return { text: view.error }
-    default: return { text: `${name} didn’t answer at ${address ?? 'its tailnet address'}, ${ssh} Sotto tries the tailnet again every 5 minutes.` }
-  }
+export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: string } | null): TailnetStepView {
+  if (press?.running) return { state: 'active' }
+  if (!added) return adding?.addTailnet ?? { state: 'todo' }
+  if (press?.error) return { state: 'ssh', why: 'error', error: press.error }
+  const step = added.addTailnet
+  if (step?.state === 'active') return step
+  if (!press && !step) return { state: 'todo' }
+  if (added.via === 'tailnet' && (added.phase === 'connected' || step?.state === 'done')) return { state: 'done' }
+  if (!press && step?.state === 'ssh') return step
+  return { state: 'ssh', why: added.tailnetNote ?? 'unreachable' }
 }
 
 /** "forge · user and port from your SSH configuration": what Add host was asked to connect to. */
@@ -231,9 +226,10 @@ function TailnetStep({ view, name, address }: { readonly view: TailnetStepView; 
   return <li data-state={state} aria-current={state === 'active' ? 'step' : undefined}>
     <StepMark state={state} />
     <span className="host-setup__title">{tailnetStepTitle(view.state, name)}</span>
-    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note">Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} is still added and connects over SSH.</p></div> : null}
+    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note">{name} is added. Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} stays connected over SSH.</p></div> : null}
     {view.state === 'done' && address ? <div className="host-setup__detail"><p className="host-setup__note host-setup__address">{address}</p></div> : null}
-    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card"><FixCommand fix={{ text: note.text, command: note.command }} /></div></div>
+    {/* The command wraps here rather than scrolling under Copy, so the whole of it shows at the window's smallest size. */}
+    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card host-setup__card--wrap"><FixCommand fix={{ text: note.text, command: note.command }} /></div></div>
       : note ? <div className="host-setup__detail"><p className="host-setup__note">{note.text}</p></div> : null}
   </li>
 }
