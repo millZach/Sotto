@@ -1,18 +1,18 @@
 import Foundation
 
-public struct ThreadStartPreferences: Decodable, Sendable {
+public struct ThreadStartPreferences: Decodable, Equatable, Sendable {
     public let newThreadModelId: String?; public let newThreadReasoningEffort: String?
 }
 
 /// Display data from this computer's own model catalog. IDs are opaque Sotto IDs.
-public struct ThreadModel: Decodable, Identifiable, Sendable {
+public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let provider: String; public let providerId: String?
     public let ready: Bool; public let recommended: Bool?
     public let reasoningEfforts: [String]?; public let defaultReasoningEffort: String?
     public let runtimeModes: [String]?; public let providerModes: [ProviderMode]?
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
-    public struct ProviderMode: Decodable, Sendable {
+    public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?
     }
     public var startingEffort: String {

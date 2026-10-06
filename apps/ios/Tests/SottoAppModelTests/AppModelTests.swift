@@ -743,6 +743,35 @@ final class AppModelTests: XCTestCase {
         while model.detail(for: ref)?.revision != 10 && Date() < deadline { await Task.yield() }
         XCTAssertEqual(model.detail(for: ref)?.revision, 10)
     }
+    @MainActor func testAShellThatChangesNothingRedrawsNothing() async throws {
+        let (model, ref) = try fixture()
+        model.phase(.active); await model.waitForActivation()
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        var published = 0
+        let watching = model.objectWillChange.sink { published += 1 }
+        defer { watching.cancel() }
+        // A working thread's computer sends its list many times a second, most of them the same as the last.
+        connection.push(.shell(try HostConnection.shell.decode(Shell.self)))
+        connection.push(.shell(try HostConnection.shell.decode(Shell.self)))
+        XCTAssertEqual(published, 0, "Every view watches the model, so an unchanged shell must not publish on it")
+        connection.push(.shell(try newerShell()))
+        XCTAssertGreaterThan(published, 0)
+        XCTAssertEqual(model.thread(ref)?.title, "New title")
+    }
+    @MainActor func testANewRevisionOfTheOpenThreadPublishesOnlyOnItsStore() async throws {
+        let (model, ref) = try fixture()
+        model.phase(.active); await model.waitForActivation(); await model.select(ref)
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        var onModel = 0, onStore = 0
+        let watchingModel = model.objectWillChange.sink { onModel += 1 }
+        let watchingStore = model.detailStore.objectWillChange.sink { onStore += 1 }
+        defer { watchingModel.cancel(); watchingStore.cancel() }
+        let delta = try JSONDecoder().decode(ThreadDetailDelta.self, from: Data(#"{"threadId":"t","baseRevision":1,"revision":2,"messageDeltas":[{"id":"m","appendText":" now"}],"activityDeltas":[]}"#.utf8))
+        connection.push(.delta(threadID: "t", value: delta))
+        XCTAssertEqual(model.detail(for: ref)?.messages.first?.text, "Ready now")
+        XCTAssertGreaterThan(onStore, 0)
+        XCTAssertEqual(onModel, 0, "A reply arriving a few words at a time redraws the conversation, not every view")
+    }
     @MainActor private func newerShell() throws -> Shell {
         let json = String(decoding: try JSONEncoder().encode(HostConnection.shell), as: UTF8.self)
             .replacingOccurrences(of: "\"Thread\"", with: "\"New title\"")

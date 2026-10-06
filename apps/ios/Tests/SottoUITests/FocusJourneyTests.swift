@@ -665,6 +665,27 @@ import XCTest
         // A timing benchmark, run by hand: TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh (docs/ci.md).
         try XCTSkipUnless(ProcessInfo.processInfo.environment["SOTTO_IOS_PERF"] == "1", "Idle CPU is measured by hand")
         if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
+        measureCPUAtRest(openThread: openThread)
+    }
+    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
+    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
+    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
+    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
+
+    /// The app's CPU while the working thread streams its reply, a word every 50 milliseconds with the thread list sent
+    /// again unchanged each time, on Threads and in that thread. The comparison passes --ui-publish-everything, which
+    /// publishes every change on the whole model as the app did before its stores.
+    private func streamingCPU(_ arguments: [String], openThread: Bool) {
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-streaming"] + arguments)
+        measureCPUAtRest(openThread: openThread)
+    }
+    func testStreamingCPUOnThreads() { streamingCPU([], openThread: false) }
+    func testStreamingCPUOnThreadsPublishingEverything() { streamingCPU(["--ui-publish-everything"], openThread: false) }
+    func testStreamingCPUInTheThread() { streamingCPU([], openThread: true) }
+    func testStreamingCPUInTheThreadPublishingEverything() { streamingCPU(["--ui-publish-everything"], openThread: true) }
+
+    /// Opens the working thread, or stays on Threads, and measures the app's CPU over three seconds, three times.
+    private func measureCPUAtRest(openThread: Bool) {
         if openThread {
             let thread = row("iphone")
             reveal(thread)
@@ -679,13 +700,9 @@ import XCTest
             Thread.sleep(forTimeInterval: 3)
         }
     }
-    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
-    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
-    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
-    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
 
     /// The app's CPU while a sentence is typed into a thread's reply box, three times. The comparison passes
-    /// --ui-drafts-on-model, which publishes each keystroke on the whole model as the app did before the draft store.
+    /// --ui-publish-everything, which publishes each keystroke on the whole model as the app did before the draft store.
     private func typingCPU(_ arguments: [String]) {
         launch(["--ui-fixture", "--reset-ui-preferences"] + arguments)
         let thread = row("iphone")
@@ -702,7 +719,7 @@ import XCTest
         }
     }
     func testTypingCPUInAReply() { typingCPU([]) }
-    func testTypingCPUInAReplyPublishingOnTheModel() { typingCPU(["--ui-drafts-on-model"]) }
+    func testTypingCPUInAReplyPublishingEverything() { typingCPU(["--ui-publish-everything"]) }
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {

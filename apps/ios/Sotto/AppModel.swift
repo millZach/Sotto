@@ -9,8 +9,10 @@ struct FoundHost: Equatable {
     var name: String { health.computerName ?? endpoint.machine }
 }
 
-/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved.
-struct Live {
+/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Comparable, so a state
+/// that changes nothing is never published: a working thread's computer sends its shell up to twenty times a second,
+/// and most of those change nothing this iPhone reads.
+struct Live: Equatable {
     var status = ComputerStatus.connecting
     var shell: Shell?
     var mayAnswer = false
@@ -66,8 +68,6 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     func post(_ alert: ThreadAlert, sound: Bool)
 }
 
-/// Every paired computer, each with its own connection, session and state. A computer that can't be
-/// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 /// The reply boxes' words, by `ThreadRef.id`. A store of its own so that typing publishes here and not on `AppModel`,
 /// which nearly every view watches: with the words on the model, each keystroke made the thread page, its conversation
 /// and the Threads list underneath it evaluate their bodies again.
@@ -75,6 +75,16 @@ final class DraftStore: ObservableObject {
     @Published var text: [String: String] = [:]
 }
 
+/// The open thread's history and what went wrong reading it. A store of its own for the same reason: a working thread's
+/// reply arrives a few words at a time, up to twenty times a second, and only the conversation, the reply box's note
+/// and the open thread's Threads card read it.
+final class DetailStore: ObservableObject {
+    @Published var detail: ThreadDetail?
+    @Published var problem: String?
+}
+
+/// Every paired computer, each with its own connection, session and state. A computer that can't be
+/// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
     private static let requestNoLongerWaiting = "That request is no longer waiting."
     private static let markersUnreadable = "Saved unconfirmed actions could not be read. Check your threads before sending again. Nothing was resent."
@@ -110,17 +120,29 @@ final class DraftStore: ObservableObject {
     let draftStore = DraftStore()
     var drafts: [String: String] {
         get { draftStore.text }
-        set {
-            draftStore.text = newValue
-            #if DEBUG && os(iOS)
-            // The typing journeys' comparison: each keystroke publishing on the model, as it did before the store.
-            if Self.draftsPublishOnModel { objectWillChange.send() }
-            #endif
-        }
+        set { draftStore.text = newValue; publishedInStore() }
+    }
+    /// The open thread's history and its problem, in `detailStore`, which publishes on its own in the same way.
+    let detailStore = DetailStore()
+    private var openDetail: ThreadDetail? {
+        get { detailStore.detail }
+        set { detailStore.detail = newValue; publishedInStore() }
+    }
+    private(set) var detailProblem: String? {
+        get { detailStore.problem }
+        set { detailStore.problem = newValue; publishedInStore() }
     }
     #if DEBUG && os(iOS)
-    private static let draftsPublishOnModel = ProcessInfo.processInfo.arguments.contains("--ui-drafts-on-model")
+    /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
+    /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
+    private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
+    #else
+    private static let publishesEverything = false
     #endif
+    /// A change one of the stores has published. Only the comparison publishes it on the model too.
+    private func publishedInStore() {
+        if Self.publishesEverything { objectWillChange.send() }
+    }
     @Published private(set) var submitted: [String: String] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
     /// Photos in each thread's reply box, by `ThreadRef.id`, in the order they were chosen.
@@ -177,8 +199,6 @@ final class DraftStore: ObservableObject {
     private var watches: [String: ThreadWatch] = [:]
     /// Whether the app is on screen now, rather than inactive or in the background.
     private var foreground = false
-    @Published private var openDetail: ThreadDetail?
-    @Published private(set) var detailProblem: String?
     private let keychain: KeychainStore
     private var computerIndexAccount: String? = ComputerStore.indexAccount
     /// Finds and pairs computers; each paired computer gets its own connection.
@@ -312,9 +332,34 @@ final class DraftStore: ObservableObject {
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: ["host-folders"])
         }
         storageReady = true
+        if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+    }
+    /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
+    /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
+    private func streamFixture(host: String) {
+        guard let object = fixtureShells[host],
+              let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object)) else { return }
+        let ref = ThreadRef(hostID: host, threadID: "iphone")
+        let words = "The drawer’s chord is next, then the tests run again and the branch is ready for review.".split(separator: " ")
+        Task { [weak self] in
+            var sequence = 0
+            while true {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard let self else { return }
+                sequence += 1
+                push(.shell(shell), from: host, sequence: sequence)
+                guard selected == ref, let detail = openDetail else { continue }
+                let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                            "messageDeltas": [["id": "update", "appendText": " " + String(words[sequence % words.count])]],
+                                            "activityDeltas": [[String: Any]]()]
+                guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
+                      let next = detail.applying(change) else { continue }
+                openDetail = next; detailVersion += 1
+            }
+        }
     }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
     private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
@@ -694,7 +739,11 @@ final class DraftStore: ObservableObject {
     }
     private func update(_ hostID: String, _ change: (inout Live) -> Void) {
         guard computer(hostID) != nil else { return }
-        var state = live[hostID] ?? Live(); change(&state); live[hostID] = state
+        let before = live[hostID]
+        var state = before ?? Live(); change(&state)
+        // Setting `live` publishes on the whole model, so a state that changed nothing is left as it was.
+        if state == before && !Self.publishesEverything { return }
+        live[hostID] = state
     }
 
     // MARK: Adding a computer

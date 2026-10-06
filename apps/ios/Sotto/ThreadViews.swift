@@ -203,6 +203,8 @@ private struct Tail: Equatable {
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so each new revision of the thread redraws the conversation; it is read through `model.detail(for:)`.
+    @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     @Binding var stuck: Bool
     @Binding var titled: Bool
@@ -1176,6 +1178,8 @@ private struct ReplyDock: View {
     @EnvironmentObject var model: AppModel
     /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
+    /// Watched for the note that the thread could not be read, which lives there.
+    @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     let openRequest: (AgentRequest) -> Void
     @FocusState private var focused: Bool
