@@ -148,10 +148,12 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
      - unit enabled, `Linger=yes`, inactive, with a host Sotto did not start holding the lock: the launch reuses that host, runs no `start` and spawns nothing;
      - the written unit carries `StartLimitIntervalSec=120` and `StartLimitBurst=5` under `[Unit]`;
      - unit enabled, `Linger=yes`, inactive after the fake `systemctl` reports `start-limit-hit`: the launch runs `reset-failed sotto-host` before `start`, and the same order holds for `update-restart` and its rollback; a fake `start` that exits non-zero, or a unit the fake reports `failed` after a start that returned 0, fails the launch at once with a plain message instead of waiting for the host, and Update's wait does the same;
+     - a unit the fake reports in `auto-restart` with `Result=exit-code` and `NRestarts=2` fails the launch, and Update's restart, well before the ready timeout, while one in `auto-restart` with `NRestarts=1` that then runs the host is waited through;
+     - a unit the fake reports failed with `ExecMainStatus=75` after another host took the lock, which holds it before it listens: the launch waits for and reuses that host instead of failing;
      - a host refused because another live host holds the lock exits with code 75, and a host refused by reclaim contention (another host kept its turn to clear the lock, or hosts kept taking and releasing it) exits with 1;
      - unit enabled, `Linger=no`, with the fake unit's host running: `disable --now sotto-host` before one detached spawn, the unit's host gone, the unit's files still there, and the result reporting start at boot off with the `fix` line;
      - `boot-install` with `Linger=no` and `enable-linger` refused never calls `enable`;
-     - `boot-remove` with `restart: false` after a stop spawns nothing, and with `restart: true` spawns one detached host.
+     - `boot-remove` with `restart: false` after a stop spawns nothing and runs `disable --now`, `daemon-reload` and `reset-failed` in that order, and with `restart: true` spawns one detached host.
    - Docs: anything in ADR-0054 and its amendments the build changed.
 7. **Offer to start a host at boot from Settings > Hosts**
    - Branch: `feat/host-boot-start-ui`.

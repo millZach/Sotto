@@ -3,9 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { HostLockError, startHeadlessHost } from '../../src/host'
-import { readBootId } from '../../src/host/lock'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { HostLockError, HostLockHeldError, hostStartExitCode, runHeadlessCommandLine, startHeadlessHost } from '../../src/host'
+import { HOST_LOCK_HELD_EXIT_CODE, readBootId } from '../../src/host/lock'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 
 let root: string, data: string
@@ -75,5 +75,38 @@ describe('the host data folder lock', () => {
     await writeFile(join(data, 'host-listener.lock'), 'not json')
     await expect(start()).rejects.toThrow('could not be read')
     expect(await lock()).toBe('not json')
+  })
+})
+
+describe('the exit code of a host the lock refused (ADR-0054)', () => {
+  /** The host's own command line, run in this process the way `node host/index.js --data <folder> --port 0` runs it. */
+  async function commandLine(): Promise<number | string | null | undefined> {
+    const argv = process.argv, exitCode = process.exitCode
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    process.argv = [argv[0]!, 'host/index.js', '--data', data, '--port', '0']
+    try { await runHeadlessCommandLine(); return process.exitCode }
+    finally { process.argv = argv; process.exitCode = exitCode; quiet.mockRestore() }
+  }
+  it('exits with its own code when another live host holds the folder, which a boot unit does not retry', async () => {
+    const alive = sleeper()
+    await new Promise(resolve => alive.once('spawn', resolve))
+    await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: alive.pid, nonce: 'live' }))
+    expect(await commandLine()).toBe(HOST_LOCK_HELD_EXIT_CODE)
+    expect(HOST_LOCK_HELD_EXIT_CODE).toBe(75)
+  })
+  it('exits with 1 when another host kept its turn to clear a stale lock, which a boot unit retries', async () => {
+    const dead = sleeper()
+    await new Promise(resolve => dead.once('spawn', resolve))
+    dead.kill(); await new Promise(resolve => dead.once('exit', resolve))
+    await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: dead.pid, nonce: 'stale' }))
+    const clearing = sleeper()
+    await new Promise(resolve => clearing.once('spawn', resolve))
+    await writeFile(join(data, 'host-listener.lock.reclaim'), JSON.stringify({ pid: clearing.pid, nonce: 'clearing' }))
+    expect(await commandLine()).toBe(1)
+  })
+  it('names only the held lock for the unit, and every other refusal, contention included, for a retry', () => {
+    expect(hostStartExitCode(new HostLockHeldError('held'))).toBe(75)
+    expect(hostStartExitCode(new HostLockError('Other hosts kept taking and releasing this data folder'))).toBe(1)
+    expect(hostStartExitCode(new Error('anything else'))).toBe(1)
   })
 })

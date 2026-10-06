@@ -34,7 +34,7 @@
     "build:host": "node scripts/build-host.mjs",
     "package:host": "node scripts/package-host.mjs",
     "host:verify": "node scripts/verify-host-archive.mjs",
-    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/integration/remoteThreadPermissions.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/socketHostService.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts tests/unit/main/cliLookup.test.ts tests/integration/hostProviderLookup.test.ts --maxWorkers=2"
+    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/integration/remoteThreadPermissions.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/socketHostService.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/launchScriptBoot.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts tests/unit/main/cliLookup.test.ts tests/integration/hostProviderLookup.test.ts --maxWorkers=2"
   },
   "license": "MIT",
   "type": "commonjs",

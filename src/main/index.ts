@@ -8,6 +8,8 @@ import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
+import type { BusyHostThreads } from './hosts/busyHost'
+import { HostBootChanges } from './hosts/hostBootStart'
 import { threadKeepsHostBusy } from '../shared/hostUpdates'
 import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
@@ -19,6 +21,7 @@ import { registerPhonesIpc } from './phones/ipc'
 import { e2eTailscale } from './e2e/tailscale'
 import { e2eHostsTailscale } from './e2e/hostsTailscale'
 import { e2eSshStandIn } from './e2e/sshStandIn'
+import { e2eTailnetMap } from './e2e/tailnetStandIn'
 import { SshHostLauncher } from './hosts/sshLauncher'
 import { HostPhones } from './hosts/hostPhones'
 import { PHONES_CHANGED } from '../shared/phones'
@@ -716,12 +719,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const sshStandInExecutable = process.env['SOTTO_E2E_SSH_EXECUTABLE']
   if (sshStandInScript && (!isAbsolute(sshStandInScript) || !sshStandInExecutable || !isAbsolute(sshStandInExecutable))) throw new Error('The ssh test stand-in requires absolute paths.')
   const sshStandIn = sshStandInScript && sshStandInExecutable ? e2eSshStandIn(sshStandInExecutable, sshStandInScript) : undefined
+  // A Playwright journey stands a loopback proxy in for Tailscale Serve and maps one MagicDNS name to it; development only,
+  // like the ssh stand-in, and only ever to this computer (ADR-0053).
+  const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
+    ...(tailnetStandIn ? { resolveTailnet: tailnetStandIn } : {}),
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url); else openedExternalLink = url },
   })
   quitHandles.desktopHosts = desktopHosts
@@ -750,19 +757,27 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
-  // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). Stop N threads
-  // and update stops a turn the way the composer's Stop does. A development end-to-end run serves its own releases.
+  // The threads as the busy-host question reads them, for an update and a start at boot change alike: Stop N threads
+  // stops a turn the way the composer's Stop does.
+  const busyThreads: BusyHostThreads = {
+    working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
+    interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
+    subscribe: listener => hostRouter.subscribe(() => listener()),
+  }
+  // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
+  // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
   const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
-    threads: {
-      working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
-      interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
-      subscribe: listener => hostRouter.subscribe(() => listener()),
-    } })
+    threads: busyThreads })
   desktopHosts.useUpdates(hostUpdates)
   quitHandles.hostUpdates = hostUpdates
+  // Start at boot from Settings > Hosts (ADR-0054), which asks the same busy-host question before it restarts a host.
+  const hostBoot = new HostBootChanges({ threads: busyThreads,
+    hosts: { candidate: id => desktopHosts.bootCandidate(id), keeps: id => desktopHosts.bootKeeps(id), setBootStart: (id, action) => desktopHosts.setBootStart(id, action), subscribe: listener => desktopHosts.subscribe(() => listener()) } })
+  desktopHosts.useBoot(hostBoot)
+  quitHandles.hostBoot = hostBoot
   // Each remote host runs its own phone access; its Phones dialog reads and changes it over the host's SSH connection (ADR-0050).
   const hostPhones = new HostPhones({
     hosts: { links: () => desktopHosts.phonesLinks(), subscribe: listener => desktopHosts.subscribe(() => listener()) },

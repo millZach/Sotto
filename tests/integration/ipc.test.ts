@@ -1257,6 +1257,8 @@ describe('IPC validation and lifecycle', () => {
     const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete fullPatch['hotkey']
     delete fullPatch['launchAtStartup']
+    // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
+    delete fullPatch['tailnetConnections']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
 
@@ -1332,7 +1334,9 @@ describe('IPC validation and lifecycle', () => {
   it.each([
     ['hotkey', { hotkey: 'Alt+Space' }],
     ['startup', { launchAtStartup: true }],
-  ] as const)('rejects native-managed %s in a generic settings payload', async (_name, patch) => {
+    // A headless host's own setting (ADR-0053): refused here rather than dropped, so nothing snaps back unseen.
+    ['tailnet connections', { tailnetConnections: true }],
+  ] as const)('rejects native-managed or host-only %s in a generic settings payload', async (_name, patch) => {
     const { ipc, settings } = createIpcHarness()
 
     await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toMatchObject({
