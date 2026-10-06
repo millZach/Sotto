@@ -974,6 +974,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // Work still going in the background is lost with the session too, so the thread asks for attention.
         const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
+        // A thinking block the CLI was writing gets nothing more, so its row stops running with it.
+        const projector = this.activity.get(id); if (projector) thread.activities = projector.runtimeEnded(thread.activities)
         this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }

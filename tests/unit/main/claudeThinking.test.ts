@@ -90,6 +90,34 @@ describe('Claude thinking as it streams', () => {
     expect(reasoning(rows)[0]).toMatchObject({ status: 'interrupted', text: 'Half a' })
   })
 
+  it('settles a block its failed turn was in as interrupted, and one a finished turn was in as completed', () => {
+    const ended = (is_error: boolean) => {
+      const projector = new ClaudeActivity()
+      const rows = run(projector, [start('msg_1'), blockStart(0, { type: 'thinking', thinking: '' })])
+      return reasoning(run(projector, [{ type: 'result', subtype: is_error ? 'error_during_execution' : 'success', is_error, session_id: 'session' }], true, rows))[0]!.status
+    }
+    expect(ended(true)).toBe('interrupted')
+    expect(ended(false)).toBe('completed')
+  })
+
+  it('stops a block the CLI ended in, on its own turn, and leaves it there when the next turn stops a block at the same place', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('msg_1'), blockStart(0, { type: 'thinking', thinking: '' }), delta(0, { type: 'thinking_delta', thinking: 'Half a' })])
+    rows = projector.runtimeEnded(rows)!
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ id: 'claude-thinking-msg_1-0', turnId: 'user-1', status: 'interrupted', text: 'Half a', completedAt: expect.any(String) })])
+    for (const frame of [start('msg_2'), blockStart(0, { type: 'text', text: '' }), stop(0)]) rows = projector.apply(rows, frame, 'user-2', 'user-2', 'C:/repo', true)
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ id: 'claude-thinking-msg_1-0', turnId: 'user-1', afterMessageId: 'user-1', status: 'interrupted' })])
+    expect(projector.runtimeEnded(rows)).toBe(rows)
+  })
+
+  it('settles a block its stream left open when the stream starts another reply, on the turn the block was in', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('msg_1'), blockStart(0, { type: 'thinking', thinking: '' })])
+    // A retried request opens its thinking at the same place in a new reply; the first block gets nothing more.
+    for (const frame of [start('msg_2'), blockStart(0, { type: 'thinking', thinking: '' })]) rows = projector.apply(rows, frame, 'user-2', 'user-2', 'C:/repo', true)
+    expect(reasoning(rows).map(row => [row.id, row.turnId, row.status])).toEqual([['claude-thinking-msg_1-0', 'user-1', 'interrupted'], ['claude-thinking-msg_2-0', 'user-2', 'running']])
+  })
+
   it('cuts long thinking at the record’s detail budget and says so', () => {
     const projector = new ClaudeActivity()
     const half = 'x'.repeat(MAX_ACTIVITY_TEXT / 2 + 10)
