@@ -4,8 +4,9 @@ import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { agentActivitySchema, MAX_ACTIVITY_TEXT, type AgentActivity } from '../../../src/shared/agentActivity'
 
 /**
- * Frame shapes as Claude Code 2.1.289 sends them with `--include-partial-messages`, and as its transcript keeps them.
- * Every word here is invented for the test.
+ * Stream frames in the Anthropic streaming format Claude Code passes through with `--include-partial-messages`, and
+ * transcript lines as Claude Code 2.1.289 keeps them (field names read from this machine's own session logs). No live
+ * Claude run was made, so these are written to that format rather than recorded. Every word here is invented for the test.
  */
 const event = (value: Record<string, unknown>, parent?: string) => ({ type: 'stream_event', session_id: 'session', parent_tool_use_id: parent ?? null, event: value })
 const start = (id: string, parent?: string) => event({ type: 'message_start', message: { id, role: 'assistant', content: [] } }, parent)
