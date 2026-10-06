@@ -75,12 +75,10 @@ final class DraftStore: ObservableObject {
     @Published var text: [String: String] = [:]
 }
 
-/// The open thread's history and what went wrong reading it. A store of its own for the same reason: a working thread's
-/// reply arrives a few words at a time, up to twenty times a second, and only the conversation, the reply box's note
-/// and the open thread's Threads card read it.
+/// The open thread's history. A store of its own for the same reason: a working thread's reply arrives a few words at a
+/// time, up to twenty times a second, and only the conversation and the open thread's Threads card read it.
 final class DetailStore: ObservableObject {
     @Published var detail: ThreadDetail?
-    @Published var problem: String?
 }
 
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
@@ -122,16 +120,15 @@ final class DetailStore: ObservableObject {
         get { draftStore.text }
         set { draftStore.text = newValue; publishedInStore() }
     }
-    /// The open thread's history and its problem, in `detailStore`, which publishes on its own in the same way.
+    /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
     let detailStore = DetailStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
         set { detailStore.detail = newValue; publishedInStore() }
     }
-    private(set) var detailProblem: String? {
-        get { detailStore.problem }
-        set { detailStore.problem = newValue; publishedInStore() }
-    }
+    /// Why the open thread could not be read. It changes rarely, so it stays on the model; each new revision clears it,
+    /// so that clears it only when there is something to clear.
+    @Published private(set) var detailProblem: String?
     #if DEBUG && os(iOS)
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
     /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
@@ -962,7 +959,8 @@ final class DetailStore: ObservableObject {
                                     incomingRevision: next?.revision, currentRevision: openDetail?.revision,
                                     changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return }
         if let next, next.revision == openDetail?.revision { return }
-        openDetail = next; detailProblem = nil; detailVersion += 1
+        openDetail = next; detailVersion += 1
+        if detailProblem != nil { detailProblem = nil }
     }
     func earlier(_ ref: ThreadRef) async {
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }

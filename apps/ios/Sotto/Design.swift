@@ -376,7 +376,11 @@ final class LightLoopView: LoopingView {
         stage.layer.addSublayer(dot)
     }
     required init?(coder: NSCoder) { fatalError("LightLoopView is made in code") }
+    private var painted: ThemeRGB?
     func paint(_ color: ThemeRGB) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        guard color != painted else { return }
+        painted = color
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
@@ -531,7 +535,11 @@ final class WashLoopView: LoopingView {
         }
     }
     required init?(coder: NSCoder) { fatalError("WashLoopView is made in code") }
+    private var painted: [UIColor] = []
     func paint(primary: UIColor, secondary: UIColor, warmth: UIColor) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        guard painted != [primary, secondary, warmth] else { return }
+        painted = [primary, secondary, warmth]
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         primaryBlob.colors = [primary.cgColor, primary.withAlphaComponent(0).cgColor]
@@ -897,7 +905,11 @@ final class GlowLoopView: LoopingView {
         stage.layer.addSublayer(card)
     }
     required init?(coder: NSCoder) { fatalError("GlowLoopView is made in code") }
+    private var painted: (CGFloat, ThemeRGB, CGFloat, ThemeRGB)?
     func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        if let painted, painted == (radius, glow, alpha, base) { return }
+        painted = (radius, glow, alpha, base)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         card.backgroundColor = base.uiColor(1).cgColor
@@ -1000,7 +1012,11 @@ final class RunnerLoopView: LoopingView {
         stage.layer.addSublayer(streak)
     }
     required init?(coder: NSCoder) { fatalError("RunnerLoopView is made in code") }
+    private var painted: ThemeRGB?
     func paint(_ color: ThemeRGB) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        guard color != painted else { return }
+        painted = color
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         streak.colors = [color.uiColor(0).cgColor, color.uiColor(0.9).cgColor, color.uiColor(0).cgColor]

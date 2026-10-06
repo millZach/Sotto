@@ -251,13 +251,13 @@ public struct ThreadDetail: Decodable, Sendable {
 }
 /// Provider-reported work beside a thread's messages. Observational only: nothing here is an answer or a grant.
 /// `kind` and `status` stay strings so a kind this build does not know still shows, by its title.
-public struct Activity: Decodable, Identifiable, Sendable {
+public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let sequence: Int; public let kind: String; public let status: String; public let title: String
     public let command: String?; public let exitCode: Int?; public let durationMs: Double?
     public let startedAt: String?; public let changes: [Change]?
     /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
     public let afterMessageId: String?
-    public struct Change: Decodable, Sendable { public let path: String; public let kind: String }
+    public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
         if let command, !command.isEmpty { return command }
