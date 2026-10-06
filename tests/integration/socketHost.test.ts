@@ -931,6 +931,30 @@ describe('thread detail over the socket', () => {
     } finally { vi.useRealTimers(); phone.frames.close(); await client.close(); await server.close() }
   })
 
+  it('sends no client a visual, only its words, in a whole thread, a delta and a read (ADR-0055)', async () => {
+    const { stream, server, client, session } = await streamingHost()
+    const visual = { id: 'v1', title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
+    const drawn = { id: 'visual:v1', role: 'assistant' as const, text: '**How a send moves**\n\nThe visual is in Sotto on your computer.', createdAt: '2026-09-23T00:00:01.000Z', visual }
+    const phone = await rawPeer(server.descriptor.port, session())
+    try {
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'activity-summaries'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello'), drawn] }
+      stream.emit({ threadId: 'streaming', baseRevision: 1, revision: 2, messageDeltas: [{ message: drawn }], activityDeltas: [] })
+      await expect.poll(() => client.threadDetail('streaming')?.messages.length).toBe(2)
+      expect(client.threadDetail('streaming')?.messages[1]).toEqual({ id: 'visual:v1', role: 'assistant', text: drawn.text, createdAt: drawn.createdAt })
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail-delta')).toBe(true)
+      stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello'), drawn] }
+      stream.emit(structuredClone(stream.current))
+      await expect.poll(() => phone.messages.filter(item => item.event === 'detail').length).toBe(2)
+      const read = await phone.call('read', { op: 'detail', threadId: 'streaming' })
+      const wire = JSON.stringify([...phone.messages, read])
+      expect(wire).toContain('The visual is in Sotto on your computer.')
+      expect(wire).not.toContain('"visual":{')
+      expect(wire).not.toContain('flowchart LR')
+    } finally { phone.frames.close(); await client.close(); await server.close() }
+  })
+
   it('pushes what changed as a delta the client applies and passes on, and the whole thread to a client that never asked for deltas', async () => {
     const { stream, server, client, updates, session } = await streamingHost()
     try {

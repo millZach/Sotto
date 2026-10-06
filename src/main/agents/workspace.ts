@@ -10,12 +10,14 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
-import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
+import { placeVisuals } from './visualPlacement'
+import { VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
@@ -79,6 +81,14 @@ const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local sto
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
+
+/**
+ * What became of a visual an agent asked to draw (ADR-0055): kept and shown, with where it went, or why nothing was drawn.
+ * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
+ */
+export type VisualAddition =
+  | { readonly added: true; readonly visual: AgentVisual; readonly anchor: 'assistant' | 'user' | 'none' }
+  | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
 
 /** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
 interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string }
@@ -875,8 +885,55 @@ export class WorkspaceHost implements AgentHost {
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
-      return this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      const result = await this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0055). An uncertain one
+      // keeps them: a visual whose turn did go is left out of every window anyway, having no place to sit.
+      if (result.accepted && !result.uncertain && removedUserMessages > 0) this.forgetVisuals(threadId, expectedUserMessageIds.slice(-removedUserMessages))
+      return result
     })
+  }
+  /** Removes the visuals drawn in these turns, and shows the thread without them. */
+  private forgetVisuals(threadId: string, userMessageIds: readonly string[]): void {
+    if (this.storeUnavailable) return
+    try { if (this.threadStore.deleteVisualsForTurns(threadId, userMessageIds) === 0) return }
+    catch { this.saveError = HISTORY_SAVE_ERROR; return }
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+  }
+  /**
+   * Keeps a visual an agent drew in this thread and shows it where the thread stood when the call arrived: under the
+   * newest message the store holds, in the newest user message's turn (ADR-0055). Whatever the provider said before the
+   * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
+   * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
+   */
+  async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
+    await this.initialize()
+    if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
+    this.writeEvents()
+    if (!this.historyWritable() || this.failedEventThreads.has(threadId) || this.pendingEvents.has(threadId)) return { added: false, reason: 'history-unavailable' }
+    let stored: StoredVisual
+    try {
+      const newest = this.threadStore.newestMessages(threadId)
+      const visuals = this.threadStore.readVisuals(threadId)
+      if (visuals.length >= VISUALS_PER_THREAD_MAX) return { added: false, reason: 'thread-limit' }
+      if (visuals.filter(item => item.anchorUserMessageId === newest.userMessageId).length >= VISUALS_PER_TURN_MAX) return { added: false, reason: 'turn-limit' }
+      const visual: AgentVisual = { id: randomUUID(), title: input.title.trim(), kind: input.kind, source: input.source,
+        ...(input.intro?.trim() ? { intro: input.intro.trim() } : {}),
+        ...(input.steps?.length ? { steps: input.steps.map(step => ({ text: step.text.trim(), ...(step.highlight?.length ? { highlight: [...step.highlight] } : {}) })) } : {}) }
+      stored = { visual, createdAt: new Date().toISOString(), anchorMessageId: newest.messageId, anchorUserMessageId: newest.userMessageId }
+      this.threadStore.addVisual(threadId, stored)
+    } catch { return { added: false, reason: 'history-unavailable' } }
+    const anchor = stored.anchorMessageId === null ? 'none' : this.threadStore.message(threadId, stored.anchorMessageId)?.role ?? 'none'
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+    return { added: true, visual: stored.visual, anchor }
+  }
+  /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
+  private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
+    if (this.storeUnavailable) return [...messages]
+    let visuals: readonly StoredVisual[]
+    try { visuals = this.threadStore.readVisuals(threadId) } catch { return [...messages] }
+    return placeVisuals(messages, visuals, windowStartsThread)
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
@@ -1227,10 +1284,10 @@ export class WorkspaceHost implements AgentHost {
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
     }
-    if (!this.watched.has(thread.id)) return this.declared ? [] : [...messages]
+    if (!this.watched.has(thread.id)) return this.declared ? [] : this.withVisuals(thread.id, messages, true)
     const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
     if (hidden > 0) thread.earlierAvailable = true
-    return hidden > 0 ? messages.slice(hidden) : [...messages]
+    return this.withVisuals(thread.id, hidden > 0 ? messages.slice(hidden) : messages, hidden === 0)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -1251,7 +1308,7 @@ export class WorkspaceHost implements AgentHost {
     const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
     if (!window) return
     this.hidden.set(threadId, Math.max(0, window.firstPosition))
-    thread.messages = window.messages
+    thread.messages = this.withVisuals(threadId, window.messages, !window.earlierAvailable)
     if (window.earlierAvailable) thread.earlierAvailable = true
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
@@ -1817,7 +1874,11 @@ export class WorkspaceHost implements AgentHost {
         this.known.clear()
         this.hidden.clear()
         this.storedAnchors.clear()
-        for (const thread of this.state.snapshot.threads) delete thread.earlierAvailable
+        // A visual has no copy but the store's (ADR-0055), so the windows stop showing the ones it no longer holds.
+        for (const thread of this.state.snapshot.threads) {
+          delete thread.earlierAvailable
+          if (thread.messages.some(isVisualMessage)) thread.messages = thread.messages.filter(message => !isVisualMessage(message))
+        }
       }
     }
     this.dirty = true
