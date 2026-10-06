@@ -2,7 +2,27 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+
+it('keeps exact acceptance separate from an editable draft across the Check bridge', async () => {
+  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
+  const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'claude', requestId: 'request', questions: [
+    { id: 'q', question: 'Notes', options: [], multiSelect: false, allowFreeText: true },
+  ] }
+  const draft = requestDraftSchema.parse({ target, revision: 2, held: false, selections: {} })
+  const accepted = { status: 'accepted', decisionId: 'exact-attempt', revision: 2 }
+  for (const result of [accepted, { status: 'editable', draft }, { status: 'editable', draft: null }]) {
+    ipc.invoke.mockResolvedValue(result)
+    expect(await bridge.check(target)).toEqual(result)
+    expect(ipc.invoke).toHaveBeenLastCalledWith(REQUEST_DRAFT_CHECK, target)
+  }
+  for (const invalid of [null, draft, { status: 'accepted', revision: 2 }, { ...accepted, revision: 0 },
+    { ...accepted, draft }, { status: 'editable', draft: { ...draft, revision: 0 } }]) {
+    ipc.invoke.mockResolvedValue(invalid)
+    await expect(bridge.check(target)).rejects.toThrow()
+  }
+})
 
 it('validates identity-only draft change events and removes their listener on unsubscribe', () => {
   const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }

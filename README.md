@@ -46,7 +46,7 @@ Pressing the dictation shortcut again while the microphone is connecting cancels
 
 Settings → Application sets the working-copy default for new threads. Expand **Project defaults** to choose a different default for one project. Previously saved project choices are kept when Sotto updates.
 
-Saved question answers clear when the computer running the thread confirms receiving them. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host.
+Saved question answers clear when the computer running the thread confirms receiving them. If **Check again** confirms acceptance, the answer stays sent; it does not become an editable draft again. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host.
 
 New threads open in Unsettled with the defaults saved in Settings → Agents. An existing empty thread is reused only while it is unsettled, its known model, effort and permission choices match those defaults, and no setting change is pending.
 

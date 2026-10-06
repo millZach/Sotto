@@ -129,7 +129,7 @@ describe('request-owned atomic drafts', () => {
     refresh.mockImplementation(async () => { state = { connected: true, ready: true, requests: [request], uncertainRequestIds: ['request'] } })
     await expect(restarted.check(target)).rejects.toThrow('still unconfirmed')
     refresh.mockImplementation(async () => { state = { connected: true, ready: true, requests: [request] } })
-    expect(await restarted.check(target)).toMatchObject({ held: false, revision: 2 })
+    expect(await restarted.check(target)).toMatchObject({ status: 'editable', draft: { held: false, revision: 2 } })
   })
 
   it('cleans accepted held revisions on startup without a live snapshot; a newer editing revision survives', async () => {
@@ -358,7 +358,7 @@ it('retains legacy choices across restart and checks definition and delivery ide
   await expect(restarted.check(legacyTarget)).rejects.toThrow('still unconfirmed')
   expect(refresh).toHaveBeenCalledOnce()
   state = { ...state, requests: [legacy] }
-  expect(await restarted.check(legacyTarget)).toMatchObject({ revision: 3, held: false })
+  expect(await restarted.check(legacyTarget)).toMatchObject({ status: 'editable', draft: { revision: 3, held: false } })
   await restarted.save({ ...retained, revision: 4, held: true })
   await restarted.bindDecision(legacyTarget, 'retry', { legacy: { optionIds: ['coast'] } })
   const receipt = { requestId: legacy.id, questionsDigest: requestQuestionsDigest(legacyTarget.questions) }
@@ -384,4 +384,59 @@ it.each([true, false])('uses the personal answer owner connection when it is %s'
   const save = service.save(draft({ target: personalTarget, revision: 2, held: true }))
   if (connected) await expect(save).resolves.toBeDefined()
   else await expect(save).rejects.toThrow('Reconnect and check')
+})
+
+
+it('returns explicit acceptance for the exact retired held revision', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {
+    state = { connected: false, ready: true, requests: [], completed: [{ requestId: target.requestId,
+      decisionId: 'accepted-attempt', questionsDigest: requestQuestionsDigest(questions) }] }
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'accepted-attempt', submittedAnswers)
+  expect(await service.check(target)).toEqual({ status: 'accepted', decisionId: 'accepted-attempt', revision: 1 })
+  expect(await service.get(target)).toBeNull()
+  expect((await disk()).drafts).toEqual([])
+})
+
+it('reports exact acceptance when refresh publication already reconciled the captured hold', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service: RequestDraftService = new RequestDraftService(directory, () => state, async () => {
+    state = { connected: false, ready: true, requests: [], completed: [{ requestId: target.requestId,
+      decisionId: 'published-attempt', questionsDigest: requestQuestionsDigest(questions) }] }
+    await service.reconcile()
+    expect(await service.get(target)).toBeNull()
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'published-attempt', submittedAnswers)
+  await expect(service.check(target)).resolves.toEqual({ status: 'accepted', decisionId: 'published-attempt', revision: 1 })
+  expect((await disk()).drafts).toEqual([])
+})
+
+it.each([false, true])('a delayed Check preserves a newer saved revision (held %s)', async held => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  let begin!: () => void, finish!: () => void
+  const started = new Promise<void>(resolve => { begin = resolve })
+  const gate = new Promise<void>(resolve => { finish = resolve })
+  const refresh = vi.fn(async () => {})
+  refresh.mockImplementationOnce(async () => { begin(); await gate })
+  const service = new RequestDraftService(directory, () => state, refresh)
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'older-attempt', submittedAnswers)
+  const checking = service.check(target)
+  const rejection = expect(checking).rejects.toThrow('newer answer draft')
+  try {
+    await started
+    await service.check(target)
+    await service.save(draft({ revision: 3, held }))
+    if (held) await service.bindDecision(target, 'newer-attempt', submittedAnswers)
+    const newer = await service.get(target)
+    state = { ...state, completed: [{ requestId: target.requestId, decisionId: 'older-attempt',
+      questionsDigest: requestQuestionsDigest(questions) }] }
+    finish()
+    await rejection
+    expect(await service.get(target)).toEqual(newer)
+    expect((await disk()).drafts).toEqual([newer])
+  } finally { finish(); await checking.catch(() => {}) }
 })

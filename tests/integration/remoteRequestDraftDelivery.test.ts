@@ -136,7 +136,8 @@ it.each(['check', 'reconnect'] as const)('recovers an accepted remote answer aft
   const recovered = new RequestDraftService(f.desktop, input => router.requestDraftState(input),
     async () => { await router.refreshRequestDraft(f.target, held.decisionId) })
   await recovered.start()
-  if (recovery === 'check') await expect(recovered.check(f.target)).resolves.toBeNull()
+  if (recovery === 'check') await expect(recovered.check(f.target)).resolves.toEqual({ status: 'accepted',
+    decisionId: held.decisionId, revision: held.revision })
   else await router.reconcileRequestDrafts(recovered)
   expect(await recovered.list(f.owner)).toEqual([])
   expect(router.requestDraftState(f.owner)?.completed).toContainEqual({ requestId: question.id,
@@ -217,11 +218,12 @@ it.each(['accepted', 'unknown'] as const)('checks a saved answer when its receip
   const receipt = vi.spyOn(f.client, 'receipt').mockResolvedValueOnce({ status: 'unknown' })
   await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
     answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
-  expect(await f.drafts.list(f.owner)).toHaveLength(1)
+  const held = await f.drafts.get(f.target)
+  expect(held).toMatchObject({ held: true })
   if (outcome === 'unknown') receipt.mockResolvedValueOnce({ status: 'unknown' })
   vi.spyOn(f.client, 'readThreadDetail').mockRejectedValueOnce(new Error('Synthetic check detail failure'))
   if (outcome === 'accepted') {
-    await expect(f.drafts.check(f.target)).resolves.toBeNull()
+    await expect(f.drafts.check(f.target)).resolves.toEqual({ status: 'accepted', decisionId: held!.decisionId, revision: held!.revision })
     expect(await f.drafts.list(f.owner)).toEqual([])
   } else {
     await expect(f.drafts.check(f.target)).rejects.toThrow('Synthetic check detail failure')

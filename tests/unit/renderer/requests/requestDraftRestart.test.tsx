@@ -32,7 +32,7 @@ it('restores structured selections into a fresh renderer store without sending',
 it.each(['thread', 'personal'] as const)('restores a legacy choice for a %s owner and sends only its original option ID', async kind => {
   const saved = new Map<string, RequestDraft>()
   const bridge: RequestDraftBridge = {
-    list: vi.fn(async () => [...saved.values()]), discard: vi.fn(async () => false), check: vi.fn(async () => null),
+    list: vi.fn(async () => [...saved.values()]), discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })),
     get: vi.fn(async target => saved.get(requestDraftKey(target)) ?? null),
     save: vi.fn(async draft => { saved.set(requestDraftKey(draft.target), structuredClone(draft)); return draft }),
   }
@@ -54,7 +54,7 @@ it.each(['thread', 'personal'] as const)('restores a legacy choice for a %s owne
 
 it('keeps a failed legacy choice save visible and blocks sending until it is saved', async () => {
   const bridge: RequestDraftBridge = {
-    list: vi.fn(async () => []), discard: vi.fn(async () => false), check: vi.fn(async () => null), get: vi.fn(async () => null),
+    list: vi.fn(async () => []), discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })), get: vi.fn(async () => null),
     save: vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => draft),
   }
   const request = { id: 'legacy', kind: 'question' as const, text: 'Choose', options: [{ id: 'coast', label: 'Coast' }] }

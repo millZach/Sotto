@@ -31,6 +31,13 @@ export const requestDraftSchema = z.object({
   }
 })
 export type RequestDraft = z.infer<typeof requestDraftSchema>
+/** A retired accepted attempt is distinct from a missing editable draft. */
+export const requestDraftCheckResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('accepted'), decisionId: id,
+    revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+  z.object({ status: z.literal('editable'), draft: requestDraftSchema.nullable() }).strict(),
+])
+export type RequestDraftCheckResult = z.infer<typeof requestDraftCheckResultSchema>
 export const requestDraftDiscardSchema = z.object({ target: requestDraftTargetSchema, revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 export type RequestDraftDiscard = z.infer<typeof requestDraftDiscardSchema>
 export const REQUEST_DRAFT_LIST = 'request-draft:list'
@@ -48,7 +55,7 @@ export interface RequestDraftBridge {
   get(target: RequestDraftTarget): Promise<RequestDraft | null>
   save(draft: RequestDraft): Promise<RequestDraft>
   /** Only main can release a held attempt after a fresh native read. This never delivers an answer. */
-  check(target: RequestDraftTarget): Promise<RequestDraft | null>
+  check(target: RequestDraftTarget): Promise<RequestDraftCheckResult>
 }
 export const requestDraftOwnerKey = (owner: RequestDraftOwner): string => JSON.stringify([owner.kind, owner.providerId, owner.ownerId])
 /** Legacy single-provider snapshots can identify the owner through its model instead of providerId. */

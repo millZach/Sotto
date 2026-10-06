@@ -6,6 +6,7 @@ export interface RemoteHostE2E {
   connect(input: RemoteHostE2EConnection): Promise<void>
   disconnect(hostId: string, keepThreads?: boolean): Promise<void>
   receiptReads(hostId: string): number
+  completedReceiptReads(hostId: string): number
   completedIdleReceiptReads(hostId: string): number
   releaseReceipts(hostId: string): void
   close(): Promise<void>
@@ -19,7 +20,7 @@ declare global { var sottoRemoteHostE2E: RemoteHostE2E | undefined }
  */
 export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
   const sockets = new Map<string, SocketHostService>()
-  const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completedIdle: number }>()
+  const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completed: number; completedIdle: number }>()
   const harness: RemoteHostE2E = {
     async connect(input) {
       const url = new URL(input.url)
@@ -30,7 +31,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
         const hello = await socket.connect()
         let release = (): void => {}
         const wait = input.holdReceipts ? new Promise<void>(resolve => { release = resolve }) : Promise.resolve()
-        const gate = { wait, release, reads: 0, completedIdle: 0 }
+        const gate = { wait, release, reads: 0, completed: 0, completedIdle: 0 }
         gates.set(hello.hostId, gate)
         router.replace({ hostId: hello.hostId, name: 'Forge', kind: 'remote', service: socket,
           refreshRequestAnswer: async (id, target) => {
@@ -38,6 +39,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
             const idle = !state.busyThreadIds?.includes(target.threadId)
               && state.host.threads.find(thread => thread.id === target.threadId)?.requests.every(request => request.id !== target.requestId)
             gate.reads++; await gate.wait; await socket.refreshRequestAnswer(id, target)
+            gate.completed++
             if (idle) gate.completedIdle++
           },
           detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
@@ -56,6 +58,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
       await socket?.close()
     },
     receiptReads: hostId => gates.get(hostId)?.reads ?? 0,
+    completedReceiptReads: hostId => gates.get(hostId)?.completed ?? 0,
     completedIdleReceiptReads: hostId => gates.get(hostId)?.completedIdle ?? 0,
     releaseReceipts: hostId => gates.get(hostId)?.release(),
     async close() {

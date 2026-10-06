@@ -6,7 +6,7 @@ import { personalAnswerHeld, type PersonalChatState } from '../../shared/persona
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
   requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
-  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard,
+  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard, type RequestDraftCheckResult,
 } from '../../shared/requestDrafts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -202,27 +202,36 @@ export class RequestDraftService {
     })
   }
 
-  async check(input: RequestDraftTarget): Promise<RequestDraft | null> {
+  async check(input: RequestDraftTarget): Promise<RequestDraftCheckResult> {
     const target = requestDraftTargetSchema.parse(input)
+    // Capture the attempt before refresh can publish acceptance and reconcile its saved hold.
+    const captured = await this.serial(async () => {
+      const draft = this.current(target)
+      return draft ? structuredClone(draft) : null
+    })
     // A renderer's cached snapshot/observe subscription is not a fresh native read.
     // The read can publish snapshots, so it must run outside the disk-write lane.
     await this.refresh(target)
     return this.serial(async () => {
       const previous = this.current(target)
-      if (previous?.held && previous.decisionId && sameRequestQuestions(previous.target.questions, target.questions)
+      if (previous && (!captured || previous.revision !== captured.revision
+        || previous.decisionId !== captured.decisionId || previous.held !== captured.held)) {
+        throw new Error('A newer answer draft is saved. Check the current answer again.')
+      }
+      if (captured?.held && captured.decisionId
         && this.lookup(target)?.completed?.some(item => item.requestId === target.requestId
-          && item.decisionId === previous.decisionId && item.questionsDigest === requestQuestionsDigest(target.questions))) {
-        await this.commit(this.saved.drafts.filter(item => item !== previous))
-        return null
+          && item.decisionId === captured.decisionId && item.questionsDigest === requestQuestionsDigest(target.questions))) {
+        if (previous) await this.commit(this.saved.drafts.filter(item => item !== previous))
+        return { status: 'accepted', decisionId: captured.decisionId, revision: captured.revision }
       }
       if (!this.offered(target)) throw new Error('This answer is still unconfirmed. Reconnect and check the original request.')
-      if (!previous || !sameRequestQuestions(previous.target.questions, target.questions)) return null
-      if (!previous.held) return structuredClone(previous)
+      if (!previous) return { status: 'editable', draft: null }
+      if (!previous.held) return { status: 'editable', draft: structuredClone(previous) }
       const { decisionId, ...editable } = previous
       void decisionId
       const next = { ...editable, revision: previous.revision + 1, held: false }
       await this.commit(this.saved.drafts.map(item => item === previous ? next : item))
-      return structuredClone(next)
+      return { status: 'editable', draft: structuredClone(next) }
     })
   }
 }

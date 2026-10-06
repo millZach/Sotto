@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
+import type { RequestDraft, RequestDraftBridge, RequestDraftOwner } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../../../src/main/agents/codexRequests'
@@ -37,6 +38,28 @@ function setup(request: AgentRequest, options: { outcome?: SubmitOutcome | 'thro
 }
 
 describe('request answers', () => {
+  it.each(['thread', 'personal'] as const)('lets main check a bound %s answer before any extra refresh and keeps accepted stale requests closed', async kind => {
+    const owner: RequestDraftOwner = { kind, ownerId: 'thread-a', providerId: 'claude' }
+    const request = { ...structured([single]), delivery: 'uncertain' as const }
+    const saved: RequestDraft = { target: { ...owner, requestId: request.id, questions: request.questions! },
+      revision: 4, held: true, decisionId: 'exact-attempt', selections: { 'q-db': { optionIds: ['pg'], other: false, text: '' } } }
+    const bridge: RequestDraftBridge = { get: vi.fn(async () => saved), save: vi.fn(async draft => draft), list: vi.fn(async () => [saved]),
+      discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'accepted' as const, decisionId: 'exact-attempt', revision: 4 })) }
+    const onCheck = vi.fn(async () => true), onSubmit = vi.fn(async () => ({ error: null }))
+    render(<AgentRequestCard ownerId={owner.ownerId} ownerTitle="Workshop" draftOwner={owner} request={request} blocked={null}
+      onSubmit={onSubmit} onCheck={onCheck} store={new RequestAnswerStore(() => bridge)} />)
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Postgres/u })).toBeChecked())
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Check again' }))
+    expect(onCheck).not.toHaveBeenCalled()
+    await screen.findByText('Answer sent.')
+    expect(bridge.check).toHaveBeenCalledExactlyOnceWith(saved.target)
+    expect(bridge.save).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
+    expect(screen.getByRole('radio', { name: /Postgres/u })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('keeps multiselect choices in native order and single choices exclusive with Other', () => {
     let selection = pickOption(multi, EMPTY_SELECTION, 'billing', true)
     selection = pickOption(multi, selection, 'auth', true)

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftQuestions, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -315,12 +315,15 @@ export class RequestAnswerStore {
       const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
       if (binding) {
         // A command error alone is not evidence of nondelivery. Main checks the original request/intent.
+        const checkedRevision = this.get(ownerId, requestId).revision
         try {
           const draft = await binding.bridge.check(binding.target)
-          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding) return
+          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
+            || this.get(ownerId, requestId).revision !== checkedRevision) return
           await this.checked(ownerId, requestId, draft, 'failed', outcome.error)
         } catch {
-          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: outcome.error })
+          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
+            && this.get(ownerId, requestId).revision === checkedRevision) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: outcome.error })
         }
       } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
     }
@@ -328,25 +331,47 @@ export class RequestAnswerStore {
   }
 
   /** After a successful re-read, a request main still offers without an uncertain delivery may be answered again. */
-  async release(ownerId: string, requestId: string): Promise<void> {
+  async release(ownerId: string, requestId: string, reread?: () => Promise<boolean>): Promise<void> {
     const entry = this.get(ownerId, requestId)
-    if (entry.phase !== 'unconfirmed' && entry.phase !== 'sent') return
     const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+    // Bound Check captures the attempt before its own native refresh. A separate read could
+    // retire accepted evidence first. Requests without saved forms keep their provider read.
+    if (!binding && reread) {
+      try { if (!await reread()) return } catch { return }
+      if (this.get(ownerId, requestId) !== entry || this.bindings.has(RequestAnswerStore.key(ownerId, requestId))) return
+    }
+    if (entry.phase !== 'unconfirmed' && entry.phase !== 'sent'
+      && !(binding && reread && (entry.phase === 'idle' || entry.phase === 'failed'))) return
     if (binding) {
+      let checkedRevision = entry.revision
       try {
-        const draft = await binding.bridge.check(binding.target)
+        await binding.loading
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding) return
+        checkedRevision = this.get(ownerId, requestId).revision
+        const draft = await binding.bridge.check(binding.target)
+        if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
+          || this.get(ownerId, requestId).revision !== checkedRevision) return
         await this.checked(ownerId, requestId, draft, 'idle', null)
       } catch (error) {
-        if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding) this.set(ownerId, requestId, { ...entry, saveError: draftError(error) })
+        if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
+          && this.get(ownerId, requestId).revision === checkedRevision) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), saveError: draftError(error) })
       }
       return
     }
     this.set(ownerId, requestId, { ...entry, phase: 'idle', choice: null })
   }
 
-  private async checked(ownerId: string, requestId: string, draft: RequestDraft | null, phase: 'idle' | 'failed', error: string | null): Promise<void> {
+  private async checked(ownerId: string, requestId: string, result: RequestDraftCheckResult, phase: 'idle' | 'failed', error: string | null): Promise<void> {
     const current = this.get(ownerId, requestId)
+    if (result.status === 'accepted') {
+      // Acceptance retires this revision in main. Saving it again would recreate delivered
+      // text as an unsent answer. Older proof cannot settle or save newer local edits.
+      const accepted = result.revision === current.revision
+      this.set(ownerId, requestId, { ...current, phase: accepted ? 'sent' : phase, error: accepted ? null : error, choice: null,
+        ...(accepted ? { save: 'saved', saveError: null } : {}) })
+      return
+    }
+    const draft = result.draft
     // Checking delivery is not proof that newer local content was saved. A failed preflight can leave
     // only an older revision (or nothing) in main; retain the local edit and persist it after release.
     const needsSave = !draft || draft.revision < current.revision || JSON.stringify(draft.selections) !== JSON.stringify(current.selections)

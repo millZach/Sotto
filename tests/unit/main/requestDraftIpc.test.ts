@@ -4,7 +4,7 @@ import { registerRequestDraftIpc } from '../../../src/main/agents/requestDraftIp
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
 
-it('authorizes main-frame draft access only, validates identity/selections, and exposes no delivery command', () => {
+it('authorizes main-frame draft access only, validates identity/selections, and exposes no delivery command', async () => {
   const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
   const sender = (role: 'main' | 'widget'): TrustedIpcSender => { const url = `file:///${role}.html`, mainFrame = { parent: null, url }; return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } } }
@@ -25,6 +25,11 @@ it('authorizes main-frame draft access only, validates identity/selections, and 
   expect(service.save).not.toHaveBeenCalled()
   handlers.get(REQUEST_DRAFT_GET)!(event, target)
   expect(service.get).toHaveBeenCalledWith(target)
+  for (const result of [{ status: 'accepted', decisionId: 'exact-attempt', revision: 1 }, { status: 'editable', draft: null }]) {
+    service.check.mockResolvedValue(result)
+    expect(await handlers.get(REQUEST_DRAFT_CHECK)!(event, target)).toEqual(result)
+    expect(service.check).toHaveBeenLastCalledWith(target)
+  }
   const owner = { kind: target.kind, ownerId: target.ownerId, providerId: target.providerId }
   handlers.get(REQUEST_DRAFT_LIST)!(event, owner)
   expect(service.list).toHaveBeenCalledWith(owner)

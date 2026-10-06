@@ -17,10 +17,15 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
 class AnswerProvider extends E2EAgentHost {
   readonly answers: Extract<AgentHostCommand, { type: 'answer' }>[] = []
-  constructor(private readonly uncertainAnswer = false, private readonly answerCompletion?: Promise<boolean>) { super() }
+  constructor(private readonly uncertainAnswer = false, private readonly answerCompletion?: Promise<boolean>, private readonly keepQuestion = false) { super() }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'answer') this.answers.push(structuredClone(command))
+    const retainedRequest = command.type === 'answer' && this.keepQuestion
+      ? (await this.snapshot()).threads.find(thread => thread.id === command.threadId)?.requests.find(request => request.id === command.requestId) : undefined
     const result = await super.execute(command)
+    // A provider can retain its question in a stale snapshot after accepting the native answer.
+    if (command.type === 'answer' && retainedRequest) this.event({ type: 'question', threadId: command.threadId,
+      text: retainedRequest.text, request: { ...retainedRequest, delivery: 'uncertain' } })
     // The request disappearing is deliberately insufficient evidence of acceptance.
     return command.type === 'answer' && this.uncertainAnswer
       ? { accepted: false, uncertain: true, ...(this.answerCompletion ? { answerCompletion: this.answerCompletion } : {}) }
@@ -36,7 +41,7 @@ const structured: AgentRequest = { id: 'remote-form', kind: 'question', text: 'F
 ] }
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 
-async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>) {
+async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false) {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
@@ -44,7 +49,7 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
       localHostEnabled: false, reducedMotion: 'on', historyEnabled: false }))
-    const providers = { codex: new AnswerProvider(uncertain, answerCompletion), claude: new AnswerProvider(uncertain, answerCompletion), grok: new AnswerProvider(uncertain, answerCompletion), devin: new AnswerProvider() }
+    const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider() }
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
       providers, reasoner: e2eAgentReasoner })
@@ -213,6 +218,57 @@ test('acceptance recovered by a receipt reply after reconnect clears the existin
     expect(f.native.answers).toHaveLength(1)
     expect(f.errors).toEqual([])
   } finally { finishNative(false); await f.close() }
+})
+
+test('Check confirming an accepted answer keeps its visible card sent and never recreates a saved draft', async () => {
+  test.setTimeout(120_000)
+  let finishNative: (accepted: boolean) => void = () => undefined
+  const completion = new Promise<boolean>(resolve => { finishNative = resolve })
+  const f = await fixture('claude', true, completion, true)
+  const originalRecovery = f.host.service.requestAnswerRecovery.bind(f.host.service)
+  try {
+    const { page } = f.launched
+    f.host.service.requestAnswerRecovery = (...args) => ({ ...originalRecovery(...args), completed: [] })
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await card.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect(card).toHaveAttribute('data-phase', 'unconfirmed')
+    await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.completedReceiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    const remoteThread = f.host.service.shell().host.threads.find(thread => thread.title === 'Forge question fixture')!
+    let acceptancePublished = false
+    const stop = f.host.service.subscribe(() => { acceptancePublished ||= originalRecovery(remoteThread.id, 'claude').completed.length === 1 })
+    try {
+      finishNative(true)
+      await expect.poll(() => acceptancePublished).toBe(true)
+    } finally { stop() }
+    // Its original question remains uncertain in the stale snapshot until a later native update.
+    await expect.poll(async () => (await drafts(f.profile)).map(draft => draft.held)).toEqual([true])
+    f.host.service.requestAnswerRecovery = originalRecovery
+    await card.getByRole('button', { name: 'Check again', exact: true }).click()
+    // Only the user's Check learns the proof. Observe the UI and disk, never agents.get().
+    await expect(card).toHaveAttribute('data-phase', 'sent').catch(async error => {
+      await test.info().attach('check-diagnostics', { body: JSON.stringify({
+        drafts: (await drafts(f.profile)).map(draft => ({ revision: draft.revision, held: draft.held, decisionId: draft.decisionId })),
+        alerts: await page.getByRole('alert').allTextContents(), errors: f.errors,
+        proof: originalRecovery(remoteThread.id, 'claude').completed,
+      }), contentType: 'application/json' })
+      throw error
+    })
+    await expect(card.getByText('Answer sent.', { exact: true })).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    await page.screenshot({ path: test.info().outputPath('check-accepted-sent.png'), animations: 'disabled' })
+    f.native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+    await expect(card).toHaveCount(0)
+    await expect(page.getByRole('region', { name: /^(?:Saved|Unconfirmed) answer$/u })).toHaveCount(0)
+    expect(await drafts(f.profile)).toEqual([])
+    expect(f.native.answers).toHaveLength(1)
+    expect(f.errors).toEqual([])
+  } finally { f.host.service.requestAnswerRecovery = originalRecovery; finishNative(false); await f.close() }
 })
 
 test('Check again refreshes the exact saved remote answer through desktop wiring and unlocks an unsent hold without submitting it', async () => {
