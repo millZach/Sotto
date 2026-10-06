@@ -9,7 +9,7 @@ struct FoundHost: Equatable {
     var name: String { health.computerName ?? endpoint.machine }
 }
 
-/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Comparable, so a state
+/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Equatable, so a state
 /// that changes nothing is never published: a working thread's computer sends its shell up to twenty times a second,
 /// and most of those change nothing this iPhone reads.
 struct Live: Equatable {
@@ -71,13 +71,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// The reply boxes' words, by `ThreadRef.id`. A store of its own so that typing publishes here and not on `AppModel`,
 /// which nearly every view watches: with the words on the model, each keystroke made the thread page, its conversation
 /// and the Threads list underneath it evaluate their bodies again.
-final class DraftStore: ObservableObject {
+@MainActor final class DraftStore: ObservableObject {
     @Published var text: [String: String] = [:]
 }
 
-/// The open thread's history. A store of its own for the same reason: a working thread's reply arrives a few words at a
-/// time, up to twenty times a second, and only the conversation and the open thread's Threads card read it.
-final class DetailStore: ObservableObject {
+/// The open thread's history. A store of its own for the same reason: a working thread's message arrives a few words at
+/// a time, up to twenty times a second, and only the conversation and the Working now cards watch it.
+@MainActor final class DetailStore: ObservableObject {
     @Published var detail: ThreadDetail?
 }
 
@@ -118,16 +118,16 @@ final class DetailStore: ObservableObject {
     let draftStore = DraftStore()
     var drafts: [String: String] {
         get { draftStore.text }
-        set { draftStore.text = newValue; publishedInStore() }
+        set { draftStore.text = newValue; publishOnModelIfComparing() }
     }
     /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
     let detailStore = DetailStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
-        set { detailStore.detail = newValue; publishedInStore() }
+        set { detailStore.detail = newValue; publishOnModelIfComparing() }
     }
-    /// Why the open thread could not be read. It changes rarely, so it stays on the model; each new revision clears it,
-    /// so that clears it only when there is something to clear.
+    /// Why the open thread could not be read. It changes rarely, so it stays on the model. Every new revision clears it,
+    /// so a revision sets it only when it holds something, and an unchanged nil publishes nothing.
     @Published private(set) var detailProblem: String?
     #if DEBUG && os(iOS)
     /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
@@ -136,8 +136,8 @@ final class DetailStore: ObservableObject {
     #else
     private static let publishesEverything = false
     #endif
-    /// A change one of the stores has published. Only the comparison publishes it on the model too.
-    private func publishedInStore() {
+    /// Called after a store publishes a change. Only the comparison publishes it on the model too.
+    private func publishOnModelIfComparing() {
         if Self.publishesEverything { objectWillChange.send() }
     }
     @Published private(set) var submitted: [String: String] = [:]

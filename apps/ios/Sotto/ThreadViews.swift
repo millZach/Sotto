@@ -133,10 +133,12 @@ private final class FollowBox {
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
     var atBottom = true
-    /// The user is holding the page, dragging it or letting a flick run out, so it never moves under them.
+    /// The user is dragging the page or letting a flick run out, so it never moves under them.
     var userScrolling = false
-    /// Counts requests to follow, so a burst of them (a reply arriving a few words at a time) scrolls once.
-    var follows = 0
+    /// The page was asked to follow while the user moved it, and owes that once they let go.
+    var missedFollow = false
+    /// Counts requests to follow, so requests made in the same moment scroll once.
+    var followRequests = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -239,8 +241,10 @@ private struct Conversation: View {
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
-                guard !scrolling else { return }
-                // What arrived while they held the page is followed once they let go at the bottom.
+                guard !scrolling, follow.missedFollow else { return }
+                follow.missedFollow = false
+                // What arrived while they moved the page is followed once they let go at the bottom. A page that
+                // only moved is left where they put it.
                 follow.settle()
                 if follow.atBottom { toBottom(proxy) }
             }
@@ -414,28 +418,31 @@ private struct Conversation: View {
     }
 
     /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
-    /// Only the last of several requests made together scrolls, and none while the user is moving the page.
+    /// Requests made in the same moment scroll once, and only the latest looks again. None scrolls while the user moves
+    /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
-        guard !box.userScrolling else { return }
-        box.follows += 1
-        let request = box.follows
+        guard !box.userScrolling else { box.missedFollow = true; return }
+        box.followRequests += 1
+        let request = box.followRequests
         Task { @MainActor in
             await Task.yield()
-            guard box.follows == request, !box.userScrolling else { return }
+            guard box.followRequests == request else { return }
+            guard !box.userScrolling else { box.missedFollow = true; return }
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            if box.follows == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+            if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
         }
     }
 }
 
 private extension View {
-    /// Says whether the user is moving the page: holding it, dragging it or letting a flick run out. iOS 17 can't say,
-    /// so there the page follows as it did before.
+    /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
+    /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
+    /// page follows as it did before.
     @ViewBuilder func onUserScrolling(_ changed: @escaping (Bool) -> Void) -> some View {
         if #available(iOS 18.0, *) {
-            onScrollPhaseChange { _, phase in changed(phase == .tracking || phase == .interacting || phase == .decelerating) }
+            onScrollPhaseChange { _, phase in changed(phase == .interacting || phase == .decelerating) }
         } else {
             self
         }
