@@ -282,12 +282,24 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.runtimes.get(id) === runtime) {
       ended = thread?.backgroundWork?.length ? [...thread.backgroundWork] : [...thread?.monitoring ?? []]
       this.runtimes.delete(id); this.clearMonitoring(id)
+      if (this.thinkingEnded(id)) this.emit()
     }
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     this.closing.set(id, closed)
     try { await closed } finally { if (this.closing.get(id) === closed) this.closing.delete(id) }
     return ended
+  }
+  /**
+   * The thread's CLI is ending, by its own exit or by a stop Sotto made. A thinking block it was writing gets nothing
+   * more, so its row stops running with it. Says whether any row changed.
+   */
+  private thinkingEnded(id: string): boolean {
+    const thread = this.threads.get(id); const projector = this.activity.get(id)
+    if (!thread || !projector) return false
+    const activities = projector.runtimeEnded(thread.activities)
+    if (activities === thread.activities) return false
+    thread.activities = activities; return true
   }
   /** Write the cursors a pending cadence still owes, rather than losing them with the session. */
   private flushCursors(): void {
@@ -924,6 +936,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.reaper.dispose()
     this.flushCursors()
     for (const [id, runtime] of this.runtimes) {
+      this.thinkingEnded(id)
       const closure = this.denyPending(id, runtime).catch(() => undefined).then(() => { runtime.protocol.stop(); return runtime.protocol.closed })
       this.trackClosure(closure)
     }
@@ -978,8 +991,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // Work still going in the background is lost with the session too, so the thread asks for attention.
         const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
-        // A thinking block the CLI was writing gets nothing more, so its row stops running with it.
-        const projector = this.activity.get(id); if (projector) thread.activities = projector.runtimeEnded(thread.activities)
+        this.thinkingEnded(id)
         this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }

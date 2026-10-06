@@ -119,6 +119,35 @@ describe('Claude thinking as it streams', () => {
     expect(reasoning(rows).map(row => [row.id, row.turnId, row.status])).toEqual([['claude-thinking-msg_1-0', 'user-1', 'interrupted'], ['claude-thinking-msg_2-0', 'user-2', 'running']])
   })
 
+  it('settles a subagent’s open block when the turn it ran in is stopped or fails', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('sub_1', 'agent-tool'), blockStart(0, { type: 'thinking', thinking: '' }, 'agent-tool'), delta(0, { type: 'thinking_delta', thinking: 'Half a' }, 'agent-tool')])
+    rows = run(projector, [{ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: 'session' }], true, rows)
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ parentId: 'claude-tool-agent-tool', status: 'interrupted', text: 'Half a', completedAt: expect.any(String) })])
+  })
+
+  it('settles a subagent’s open block when its result comes back: completed, or interrupted when it failed', () => {
+    const settled = (is_error: boolean) => {
+      const projector = new ClaudeActivity()
+      const rows = run(projector, [start('sub_1', 'agent-tool'), blockStart(0, { type: 'thinking', thinking: '' }, 'agent-tool')])
+      const result = { type: 'user', session_id: 'session', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'agent-tool', is_error, content: 'Done.' }] } }
+      return reasoning(run(projector, [result], true, rows))[0]!.status
+    }
+    expect(settled(false)).toBe('completed')
+    expect(settled(true)).toBe('interrupted')
+  })
+
+  it('leaves a background subagent’s open block to the notification that ends it', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('sub_1', 'agent-tool'), blockStart(0, { type: 'thinking', thinking: '' }, 'agent-tool'),
+      { type: 'user', session_id: 'session', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'agent-tool', content: 'Launched.' }] },
+        tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1b2c3' } },
+      { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }])
+    expect(reasoning(rows)[0]!.status).toBe('running')
+    rows = run(projector, [{ type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task-1', tool_use_id: 'agent-tool', status: 'stopped' }], true, rows)
+    expect(reasoning(rows)[0]!.status).toBe('interrupted')
+  })
+
   it('cuts long thinking at the record’s detail budget and says so', () => {
     const projector = new ClaudeActivity()
     const half = 'x'.repeat(MAX_ACTIVITY_TEXT / 2 + 10)

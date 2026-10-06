@@ -20,13 +20,14 @@ export function claudeThinkingRow(place: ThinkingPlace, id: string, status: Agen
   return { ...place, id, kind: 'reasoning', title: THINKING_TITLE, status, ...thinkingText(words), ...extra }
 }
 
-type OpenBlock = { readonly id: string; words: string; readonly place: ThinkingPlace }
+type OpenBlock = { readonly id: string; readonly stream: string; words: string; readonly place: ThinkingPlace }
 
 /**
  * Claude's thinking blocks as they stream. A stream is the thread's own (`main`) or a subagent's, by its tool call.
  * Each block opens a Thinking row at its `content_block_start`, grows it with each `thinking_delta` and settles it at
- * its stop. A block nothing more will come for settles as interrupted: its stream started another reply, the same
- * place was started again, its turn failed or was stopped, or the CLI ended.
+ * its stop. A block nothing more will come for settles: its stream started another reply, its turn ended, its
+ * subagent's result came back, or the CLI ended. A subagent launched to run in the background outlives the turn
+ * that launched it, so only the notification that ends its task, or the CLI ending, settles its blocks.
  */
 export class ClaudeThinking {
   /** The reply each stream is writing now, from its `message_start`. */
@@ -35,13 +36,15 @@ export class ClaudeThinking {
   private readonly open = new Map<string, OpenBlock>()
   /** Replies whose thinking the stream showed, so the live frame repeating a finished block is not needed. */
   private readonly streamed = new Set<string>()
+  /** Subagent streams launched to run on in the background, by their launching tool call. */
+  private readonly background = new Set<string>()
 
   /** Whether the stream already showed this reply's thinking. */
   showed(reply: string): boolean { return this.streamed.has(reply) }
 
   /** A stream starts a reply. A block its last reply left open gets nothing more. */
   replyStarted(stream: string, reply: string, at: string | undefined): AgentActivity[] {
-    const rows = this.settle(key => key.startsWith(`${stream}:`), 'interrupted', at)
+    const rows = this.settle((_key, block) => block.stream === stream, 'interrupted', at)
     this.replies.delete(stream); this.replies.set(stream, reply)
     for (const old of this.replies.keys()) { if (this.replies.size <= MAX_REMEMBERED) break; this.replies.delete(old) }
     return rows
@@ -52,7 +55,7 @@ export class ClaudeThinking {
     const reply = this.replies.get(stream); if (!reply) return []
     const key = `${stream}:${index}`
     const rows = this.settle(open => open === key, 'interrupted', place.startedAt)
-    const block: OpenBlock = { id: claudeThinkingId(reply, index), words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', place }
+    const block: OpenBlock = { id: claudeThinkingId(reply, index), stream, words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', place }
     this.open.set(key, block); this.streamed.add(reply)
     for (const old of this.streamed) { if (this.streamed.size <= MAX_REMEMBERED) break; this.streamed.delete(old) }
     for (const old of this.open.keys()) { if (this.open.size <= MAX_REMEMBERED) break; rows.push(...this.settle(open => open === old, 'interrupted', place.startedAt)) }
@@ -73,22 +76,37 @@ export class ClaudeThinking {
     return this.settle(open => open === key, 'completed', at)
   }
 
-  /** The thread's turn ended with `status`. Its own stream's open blocks get nothing more, and its next reply starts afresh. */
+  /**
+   * The thread's turn ended with `status`. Its own stream's open blocks, and those of any subagent it ran in the
+   * foreground, get nothing more; its next reply starts afresh.
+   */
   turnEnded(status: AgentActivity['status'], at: string | undefined): AgentActivity[] {
     this.replies.delete('main')
-    return this.settle(key => key.startsWith('main:'), thinkingSettledAs(status), at)
+    return this.settle((_key, block) => !this.background.has(block.stream), thinkingSettledAs(status), at)
+  }
+
+  /** A subagent's launch came back saying it runs on in the background, past the turn that launched it. */
+  detached(stream: string): void {
+    this.background.add(stream)
+    for (const old of this.background) { if (this.background.size <= MAX_REMEMBERED) break; this.background.delete(old) }
+  }
+
+  /** A subagent's stream ended, by its result or its task's end: its open blocks get nothing more. */
+  streamEnded(stream: string, status: AgentActivity['status'], at: string | undefined): AgentActivity[] {
+    this.replies.delete(stream); this.background.delete(stream)
+    return this.settle((_key, block) => block.stream === stream, status, at)
   }
 
   /** The CLI ended: no stream will say anything more about any block. */
   ended(at: string): AgentActivity[] {
-    this.replies.clear()
+    this.replies.clear(); this.background.clear()
     return this.settle(() => true, 'interrupted', at)
   }
 
-  private settle(which: (key: string) => boolean, status: AgentActivity['status'], at: string | undefined): AgentActivity[] {
+  private settle(which: (key: string, block: OpenBlock) => boolean, status: AgentActivity['status'], at: string | undefined): AgentActivity[] {
     const rows: AgentActivity[] = []
     for (const [key, block] of this.open) {
-      if (!which(key)) continue
+      if (!which(key, block)) continue
       this.open.delete(key)
       rows.push(claudeThinkingRow(block.place, block.id, status, block.words, at ? { completedAt: at } : {}))
     }

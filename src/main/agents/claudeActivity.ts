@@ -4,6 +4,7 @@ import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
 import { ClaudeThinking, THINKING_BLOCKS, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
+import { thinkingSettledAs } from './thinkingActivity'
 import { CLAUDE_TRANSCRIPT_ID, type ClaudeModelTarget, type ClaudeSubagentTranscript } from './claudeSubagentModels'
 
 const text = (value: unknown): string | undefined => typeof value === 'string' ? value.slice(0, MAX_ACTIVITY_TEXT) : undefined
@@ -202,6 +203,10 @@ export class ClaudeActivity {
           // run, whose folder holds each of its agents' transcripts; those are watched per agent.
           if (typeof launch?.agentId === 'string') this.watchTranscript(child, { agentId: launch.agentId }, block.tool_use_id, task)
         }
+        // A result ends the subagent's stream, and with it any thinking it left open, unless the launch only
+        // acknowledged a subagent that runs on in the background.
+        if (launch?.isAsync === true) this.thinking.detached(block.tool_use_id)
+        else rows.push(...this.thinking.streamEnded(block.tool_use_id, block.is_error === true ? 'interrupted' : 'completed', observedAt))
         rows.push({ ...base, ...old, id: `claude-tool-${block.tool_use_id}`, kind: old?.kind ?? 'tool', title: old?.title ?? 'Tool result',
           ...(child ? { agents: [child] } : {}),
           status: block.is_error === true ? 'failed' : 'completed', startedAt: old?.startedAt, output: text(claudeText(block.content)) ?? '',
@@ -237,10 +242,13 @@ export class ClaudeActivity {
         if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt))
       }
     }
-    // A turn that ends with a block still open (stopped mid-thought) settles its row: nothing more will come for it.
+    // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
     if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(frame.is_error === true ? 'failed' : 'completed', observedAt))
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
+      // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.
+      const ending = frame.subtype === 'task_notification' ? typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id) : undefined
+      if (ending) rows.push(...this.thinking.streamEnded(ending, thinkingSettledAs(status), observedAt))
       const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
       const old = previous.find(row => row.id === `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
       // A restored row is positive task evidence even when this projector resumed after its start.

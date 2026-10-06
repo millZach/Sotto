@@ -148,3 +148,21 @@ it('Devin shows its thought chunks before its reply', async () => {
     expect((await replies(f.host)).map(message => message.text)).toEqual(['Answer.'])
   } finally { await f.cleanup() }
 })
+
+// A stop Sotto makes itself does not pass through the CLI's own exit handling, so it settles the open block too.
+it.each([
+  ['the idle reaper stops the CLI', (f: Awaited<ReturnType<typeof claudeFixture>>, id: string) => (f.adapter as unknown as { stopSession(id: string): Promise<void> }).stopSession(id)],
+  ['Claude disconnects', (f: Awaited<ReturnType<typeof claudeFixture>>) => { f.host.disconnect(); return f.adapter.closed() }],
+])('Claude settles a thinking block as interrupted when %s mid-thought', async (_name, stop) => {
+  const f = await claudeFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Think first' })
+    await f.action(id, { type: 'complete', text: 'Never sent.', thinking: 'Half of a thought.', holdInThinking: 'release-thought' })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    await stop(f, id)
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'interrupted']])
+  } finally { await f.cleanup() }
+})
