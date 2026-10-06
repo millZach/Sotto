@@ -39,6 +39,8 @@ export interface HostUpdateState {
   readonly owned: boolean
   /** How many of the host's threads are working now. */
   readonly working: number
+  /** The host starts at boot, so its systemd unit restarts it into the new version (ADR-0054). */
+  readonly boot?: boolean | undefined
   readonly step?: HostUpdateStep | undefined
   readonly route?: HostUpdateRoute | undefined
   readonly failure?: HostUpdateFailure | undefined

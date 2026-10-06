@@ -5,7 +5,7 @@ import type { HostPhonesView, HostsBridge, HostStatus } from '../../../../shared
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
-import { HostsModal } from './HostDialog'
+import { HostsModal } from './HostsModal'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
 import './hosts.css'
 import './phones.css'

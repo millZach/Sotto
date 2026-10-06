@@ -27,6 +27,7 @@ import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { standInTailscale } from '../fixtures/standInTailscale'
 import { HostPhones } from '../../src/main/hosts/hostPhones'
+import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 let hostTailscale: ReturnType<typeof standInTailscale>
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
@@ -62,6 +63,8 @@ const stops: string[] = []
 const operations: string[] = []
 /** Whether the fixture host is running, as an admin connection finds it; one that is not fails its connect. */
 let hostRunning = true
+/** When set, an admin connection that finds no host running says it could not take this installation's boot unit away. */
+let bootLeftOnStop = false
 /** When set, the launch script's revoke-client fails the way it does when the host refuses it. */
 let revokeFails = false
 /** When set, the launch script's revoke-client fails with this instead, the way a request that never got an answer does. */
@@ -92,7 +95,11 @@ class FixtureSsh extends SshHostLauncher {
     const failure = failures.shift()
     if (failure) throw failure
     // An admin connection starts nothing: a host that is not running fails its connect.
-    if (options.start === false && !hostRunning) throw new SshFailure('host-not-running')
+    if (options.start === false && !hostRunning) {
+      const stopped = new SshFailure('host-not-running')
+      if (bootLeftOnStop) stopped.bootLeft = true
+      throw stopped
+    }
     const which = options.start === false ? 'admin' : 'ssh'
     return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE,
       close: async () => undefined,
@@ -119,7 +126,7 @@ beforeEach(async () => {
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
   launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined
-  operations.length = 0; hostRunning = true; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0
+  operations.length = 0; hostRunning = true; bootLeftOnStop = false; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0
   manager = newManager()
   await manager.start()
 })
@@ -398,8 +405,8 @@ describe('desktop remote host management over a real socket', () => {
     expect(host.pairing.verifyToken(token)).toBeDefined()
     expect(stops).toEqual([])
     // The command resolves `current` on the host and runs the Node and folders this computer last saw.
-    expect(state.forgotten).toEqual([{ id: remote.id, name: 'Forge fixture', cause: 'unreachable', command: 'I="/opt/sotto"; E="$I/host/index.js"; [ -f "$I/current" ] && V=$(cat "$I/current") && [ -f "$I/versions/$V/host/index.js" ] && E="$I/versions/$V/host/index.js"; '
-      + `"${FIXTURE_NODE}" "$E" --data "/data/sotto" --revoke-client "${clientId}"` }])
+    expect(state.forgotten).toEqual([{ id: remote.id, name: 'Forge fixture', revoke: { cause: 'unreachable', command: 'I="/opt/sotto"; E="$I/host/index.js"; [ -f "$I/current" ] && V=$(cat "$I/current") && [ -f "$I/versions/$V/host/index.js" ] && E="$I/versions/$V/host/index.js"; '
+      + `"${FIXTURE_NODE}" "$E" --data "/data/sotto" --revoke-client "${clientId}"` } }])
     // Dismiss puts it away; a dismiss for another host changes nothing.
     expect((await manager.command({ type: 'dismiss-forgotten', id: randomUUID() })).forgotten).toBeDefined()
     expect((await manager.command({ type: 'dismiss-forgotten', id: remote.id })).forgotten).toBeUndefined()
@@ -963,6 +970,120 @@ describe('start at boot (ADR-0054)', () => {
     await manager.command({ type: 'forget', id: remote.id })
     expect(boots).toEqual([])
   })
+
+  it('says Forget left the unit behind when the host would not remove it, with the line that does, though the revoke went through', async () => {
+    bootStart = on
+    const remote = await add()
+    boot = async () => ({ type: 'error', reason: 'boot-remove-failed' })
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().hosts).toEqual([])
+    const [notice] = manager.get().forgotten ?? []
+    expect(notice).toEqual({ id: remote.id, name: 'Forge fixture', bootCommand: expect.stringContaining('systemctl --user disable --now sotto-host') as unknown })
+    expect(notice!.bootCommand).toContain('B="/opt/sotto"/boot-start.sh')
+  })
+
+  it('says a host that refused the revoke still has its unit, since Forget left it running as it was', async () => {
+    bootStart = on
+    const remote = await add()
+    revokeFails = true
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(boots).toEqual([])
+    expect(manager.get().forgotten?.[0]).toMatchObject({ revoke: { cause: 'refused', command: expect.stringContaining('--revoke-client') as unknown }, bootCommand: expect.stringContaining('sotto-host') as unknown })
+  })
+
+  it('says the unit stays when the host stops answering partway through Forget', async () => {
+    bootStart = on
+    const remote = await add()
+    // The revoke and the unit's removal both go unanswered, the way they do over a connection that has just died.
+    revokeError = new SshFailure('admin-failed')
+    boot = async () => { throw new SshFailure('boot-failed') }
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().hosts).toEqual([])
+    expect(manager.get().forgotten?.[0]).toMatchObject({ revoke: { cause: 'unreachable' }, bootCommand: expect.stringContaining('sotto-host') as unknown })
+  })
+
+  it('says the unit stays when a stopped host’s launch could not take it away, though this computer did not know of it', async () => {
+    const remote = await add()
+    await manager.command({ type: 'disconnect', id: remote.id })
+    hostRunning = false
+    bootLeftOnStop = true
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(launchers.at(-1)!.options).toEqual({ start: false, removeBoot: true })
+    expect(manager.get().forgotten?.[0]).toMatchObject({ revoke: { cause: 'not-running' }, bootCommand: expect.stringContaining('sotto-host') as unknown })
+  })
+
+  it('says nothing of a unit when a stopped host’s launch took it away', async () => {
+    bootStart = on
+    const remote = await add()
+    await manager.command({ type: 'disconnect', id: remote.id })
+    hostRunning = false
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().forgotten?.[0]?.bootCommand).toBeUndefined()
+  })
+
+  it('offers the boot state of a connected host to a change, and none for a host whose launch did not say', async () => {
+    const remote = await add()
+    expect(manager.bootCandidate(remote.id)).toBeUndefined()
+    await manager.command({ type: 'forget', id: remote.id })
+    bootStart = off
+    const again = await add()
+    expect(manager.bootCandidate(again.id)).toMatchObject({ id: again.id, name: 'Forge fixture', hostId: reportedHostId, owned: true, bootStart: off, installPath: '/opt/sotto' })
+    await manager.command({ type: 'set-enabled', id: again.id, enabled: false })
+    expect(manager.bootCandidate(again.id)).toBeUndefined()
+  })
+
+  it('offers no start at boot change while Forget closes the host, so a change waiting for its threads does not start then', async () => {
+    bootStart = off
+    const remote = await add()
+    expect(manager.bootCandidate(remote.id)).toBeDefined()
+    const during: unknown[] = []
+    beforeStopReply = async () => { during.push(manager.bootCandidate(remote.id)) }
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(during).toEqual([undefined])
+  })
+
+  it('hands Start at boot to the start at boot changes, and keeps Stop host and Forget waiting while one runs', async () => {
+    bootStart = off
+    const remote = await add()
+    const pressed: string[] = []
+    const changing: { sentence?: string } = {}
+    manager.useBoot({ state: () => [], subscribe: () => () => undefined, busy: () => changing.sentence,
+      command: async (id, action) => { pressed.push(`${id} ${action}`) } })
+    await manager.command({ type: 'host-boot', id: remote.id, action: 'install' })
+    expect(pressed).toEqual([`${remote.id} install`])
+    const busy = changing.sentence = 'Sotto is changing whether the host on Forge fixture starts at boot. Nothing was changed. Wait for it to finish, then try again.'
+    await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow(busy)
+    await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow(busy)
+    expect(manager.get().hosts).toHaveLength(1)
+  })
+
+  it('keeps Update waiting while a start at boot change runs, and a start at boot press waiting while an update runs', async () => {
+    bootStart = off
+    const remote = await add()
+    const pressed: string[] = []
+    const changing: { boot?: string; update?: string } = {}
+    manager.useBoot({ state: () => [], subscribe: () => () => undefined, busy: () => changing.boot, command: async (id, action) => { pressed.push(`boot ${action}`) } })
+    manager.useUpdates({ state: () => [], subscribe: () => () => undefined, busy: () => changing.update, command: async (id, action) => { pressed.push(`update ${action}`) } })
+    changing.boot = 'Sotto is changing whether the host on Forge fixture starts at boot. Nothing was changed. Wait for it to finish, then try again.'
+    await expect(manager.command({ type: 'host-update', id: remote.id, action: 'update' })).rejects.toThrow(changing.boot)
+    // Only Update waits: the update panel's other answers change nothing on the host.
+    await manager.command({ type: 'host-update', id: remote.id, action: 'not-now' })
+    delete changing.boot
+    changing.update = 'Sotto is updating the host on Forge fixture. Nothing was changed. Wait for the update to finish, then try again.'
+    await expect(manager.command({ type: 'host-boot', id: remote.id, action: 'install' })).rejects.toThrow(changing.update)
+    await expect(manager.command({ type: 'host-boot', id: remote.id, action: 'remove' })).rejects.toThrow(changing.update)
+    // An answer to the question, or a Dismiss, still goes through.
+    await manager.command({ type: 'host-boot', id: remote.id, action: 'dismiss' })
+    expect(pressed).toEqual(['update not-now', 'boot dismiss'])
+  })
+
+  it('keeps a start at boot change for a saved host that is switched on, and lets it go once the host is switched off', async () => {
+    const remote = await add()
+    expect(manager.bootKeeps(remote.id)).toBe(true)
+    expect(manager.bootKeeps(randomUUID())).toBe(false)
+    await manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+    expect(manager.bootKeeps(remote.id)).toBe(false)
+  })
 })
 
 describe('updating a host from the Threads page (ADR-0040)', () => {
@@ -980,6 +1101,15 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
     await manager.command({ type: 'disconnect', id: remote.id })
     expect(manager.get().hosts[0]!.version).toBeUndefined()
     expect(manager.updateCandidates()).toEqual([])
+  })
+  it('says a host that starts at boot does, so the update panel can say its systemd unit restarts it', async () => {
+    bootStart = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false }
+    const remote = await add()
+    expect(manager.updateCandidates()).toEqual([expect.objectContaining({ id: remote.id, boot: true })])
+    const updates = new HostUpdates({ version: packageVersion, threads: { working: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+      hosts: { candidates: () => manager.updateCandidates(), run: async () => ({ type: 'error', reason: 'update-failed' }), restart: async () => ({ type: 'error', reason: 'update-failed' }), subscribe: listener => manager.subscribe(() => listener()) } })
+    expect(updates.state()).toEqual([expect.objectContaining({ id: remote.id, phase: 'needs', boot: true })])
+    updates.dispose()
   })
   it('keeps the host\'s threads on the page through the restart, reading Reconnecting, and connects to the new version in their place', async () => {
     const remote = await add()
@@ -1202,7 +1332,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
       expect(state.hosts).toEqual([]); expect(await savedFile()).toEqual([])
       expect(credentials.has('remote-host:' + remote.id)).toBe(false)
       expect(host.pairing.verifyToken(token)).toBeDefined()
-      expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, name: 'Forge fixture', cause, command: expect.stringContaining('--revoke-client') })])
+      expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, name: 'Forge fixture', revoke: { cause, command: expect.stringContaining('--revoke-client') } })])
       expect(stops).toEqual([])
       // A stopped host's launch takes its boot unit away before it fails, so the forgotten host does not start at the next boot.
       expect(launchers.at(-1)!.options).toEqual({ start: false, removeBoot: true })
@@ -1218,7 +1348,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
     expect(operations).toEqual(['admin revoke-client', 'admin stop-host'])
     expect(state.hosts).toEqual([])
     expect(host.pairing.verifyToken(token)).toBeDefined()
-    expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, cause: 'unreachable' })])
+    expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, revoke: expect.objectContaining({ cause: 'unreachable' }) })])
   })
 
   it('keeps a host Sotto started when its revoke never got an answer and its stop failed too', async () => {
@@ -1243,7 +1373,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
     await manager.command({ type: 'disconnect', id: third.id })
     hostRunning = false
     const state = await manager.command({ type: 'forget', id: third.id })
-    expect(state.forgotten).toEqual([expect.objectContaining({ id: first.id, cause: 'unreachable' }), expect.objectContaining({ id: third.id, cause: 'not-running' })])
+    expect(state.forgotten).toEqual([expect.objectContaining({ id: first.id, revoke: expect.objectContaining({ cause: 'unreachable' }) }), expect.objectContaining({ id: third.id, revoke: expect.objectContaining({ cause: 'not-running' }) })])
     expect((await manager.command({ type: 'dismiss-forgotten', id: first.id })).forgotten).toEqual([expect.objectContaining({ id: third.id })])
     expect((await manager.command({ type: 'dismiss-forgotten', id: third.id })).forgotten).toBeUndefined()
   })
