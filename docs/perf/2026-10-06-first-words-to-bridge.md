@@ -18,8 +18,8 @@ thread a window is looking at ends in a message or record that window was not se
 carries a message or record it has not sent. The adapter's publisher also sends the first frame of a burst at once
 now, as the others already did. Later chunks of the same message ride the windows as before.
 
-In the window, the detail delta that brings a new message or activity record to the thread on screen commits
-urgently; every other chunk still commits as a transition, so typing is never queued behind a long transcript.
+In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged;
+"The window's commit" below says why an urgent commit was tried and taken back.
 
 ## First chunk to the bridge
 
@@ -65,10 +65,28 @@ thread holding 347), `SOTTO_PERF_BENCH=1` with `SOTTO_PERF_DATA`. Two runs of ea
 
 No regression. The spread between runs of one version is wider than any gap between versions: the machine was
 running another build throughout. The render benchmarks mount the Threads page with a mocked connection, so they
-measure what a commit costs, which this change leaves alone; what it changes is the priority of the commit that
-brings a message's first words, and `tests/unit/renderer/agentDetailPriority.test.tsx` holds that every later
-chunk still commits as a transition. `shellDetailCommits`, which drives the real connection hook, still makes one
-commit per streamed chunk.
+measure what a commit costs, which this change leaves alone. `shellDetailCommits`, which drives the real
+connection hook, still makes one commit per streamed chunk.
+
+## The window's commit
+
+The issue asked for the thread on screen to commit its detail promptly without letting a long transcript make
+typing lag. A version of this change committed the delta that brought a new message or activity record to the
+active thread urgently, and every other chunk as a transition. The render benchmarks above cannot see the
+difference, since they do not go through the connection, so it was checked in the running app with
+`tests/e2e/workspace-performance.spec.ts`, which streams into four panes with 80 and 2,000 messages of history
+while sending, typing and switching panes:
+
+| Build | Runs | Runs that missed a frame budget |
+| --- | ---: | ---: |
+| `origin/main` | 3 | 0 |
+| this change, urgent first words | 3 | 3: a four-pane stream's next frame (p95 296 ms against 200), a stream's visible update gap (368 ms against 200), a send's next frame (173 ms against 100) |
+| this change, first words as a transition | 3 | 0 |
+
+An urgent commit renders the whole Threads page without yielding, and each send and each finished reply in the
+spec made one. A transition already commits within the next frames when nothing urgent is waiting, so the first
+words keep it; the time they were losing was in main's windows. Every run, on `origin/main` too, failed the
+spec's `messageCount <= 81` check, which this change does not touch.
 
 ## Per-chunk work in main
 
