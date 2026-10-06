@@ -300,7 +300,7 @@ describe('desktop host routing', () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
     const workspace = { threadId: 'thread', projectId: 'project', workingDirectory: '/home/forge/repo', workspaceId }
-    const agentRow = { id: 'claude:ui', sequence: 1, revision: 1, assignmentId: 'task-ui', assignmentCount: 1, title: 'Build the Agents view', description: 'Connect the roster.', status: 'working' as const, lastObservedAt: '2026-10-05T10:00:00.000Z' }
+    const agentRow = { id: 'claude:ui', sequence: 1, revision: 1, assignmentId: 'task-ui', assignmentCount: 1, title: 'Build the Agents view', description: 'Connect the roster.', status: 'running' as const, lastObservedAt: '2026-10-05T10:00:00.000Z' }
     const reads = {
       threadFiles: vi.fn(async (request: FileListRequest) => ({ ok: true as const, value: { workspace, path: request.path, truncated: false,
         entries: [{ name: 'a.txt', path: request.path ? `${request.path}/a.txt` : 'a.txt', kind: 'file' as const }] } })),
