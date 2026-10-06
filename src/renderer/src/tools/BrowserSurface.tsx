@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
-import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -47,6 +47,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const [reviewBusy, setReviewBusy] = useState(false)
   const [stoppingGrant, setStoppingGrant] = useState(false)
   const address = useRef<HTMLInputElement>(null)
+  const shareButton = useRef<HTMLButtonElement>(null)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -75,6 +76,11 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const newPage = creating || pages.length === 0
   const shown = draft !== null && draft.pageId === (newPage ? null : activeId) ? draft.text : newPage ? '' : active?.url ?? ''
   const full = browser.pages.length >= 32
+  // Under the grant every page is shared, so an unshared one is a page the user made private (ADR-0029). A page an
+  // agent asked to open and nobody has opened yet, its request waiting, denied or expired, is not, so it says nothing.
+  const madePrivate = Boolean(browser.grant && active && !newPage && !active.sharedOrigin && !agentToolsUnavailable && !task?.pendingAction && active.error !== BROWSER_WAITING_TO_OPEN)
+  const shareTitle = browser.grant ? active?.sharedOrigin ? 'The agent in this thread can see and use this page. Stop sharing keeps it private.' : 'This page is private. Share it with the agent in this thread.'
+    : active?.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Opening, clicking and typing still ask you.'
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -161,8 +167,8 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
         {active && !newPage ? <>
           <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
             <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
-          {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
-            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : `Let the agent in this thread read page contents and screenshots.${browser.grant ? ' It can already open, click and type here without asking.' : ' Opening, clicking and typing still ask you.'}`} onClick={() => void reviewPage('share')}>
+          {!agentToolsUnavailable ? <button ref={shareButton} type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
+            title={shareTitle} onClick={() => void reviewPage('share')}>
             <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
         </> : null}
         {onFloat ? <button type="button" className="files-icon tt-focusable" aria-label="Float the browser over the thread" title="Float the browser over the thread" onClick={onFloat}><PictureInPicture2 size={16} aria-hidden="true" /></button> : null}
@@ -199,6 +205,11 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
     {browser.grant ? <div className="browser-grant">
       <span>This thread uses the browser without asking</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread use the browser without asking" title="This thread will ask before opening, clicking or typing again" disabled={stoppingGrant} onClick={stopGrant}>Stop</button>
+    </div> : null}
+    {/* Sharing takes this line away, so focus goes to the Share button that now shows the page shared. */}
+    {madePrivate ? <div className="browser-grant">
+      <span>This page is private. The agent cannot see it</span><span aria-hidden="true">·</span>
+      <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy} onClick={() => void reviewPage('share').then(() => requestAnimationFrame(() => shareButton.current?.focus()))}>Share with agent</button>
     </div> : null}
     {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
