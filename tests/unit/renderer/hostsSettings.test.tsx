@@ -343,7 +343,7 @@ it('says Forget signs in to a host it is not connected to, to revoke this comput
   await user.click(await screen.findByRole('button', { name: 'More for Build box' }))
   await user.click(screen.getByRole('menuitem', { name: 'Forget Build box…' }))
   expect(within(screen.getByRole('dialog', { name: 'Forget Build box?' })).getByText("Sotto signs in to Build box over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. "
-    + "If Build box can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.")).toBeTruthy()
+    + "If its host starts at boot, Sotto removes that too, so it does not start again when Build box restarts. If Build box can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.")).toBeTruthy()
 })
 
 it('shows Tailscale’s approval inside Forget while its sign-in waits for it, and opens the page on a press', async () => {
@@ -375,7 +375,7 @@ it('says a forgotten host still trusts this computer, offers the command that re
   const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
-  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command }] })
+  push({ forgotten: [{ id: REMOTE, name: 'forge', revoke: { cause: 'unreachable', command } }] })
   const notice = await screen.findByRole('status', { name: 'forge still trusts this computer' })
   expect(notice.textContent).toContain('SSH could not reach forge, so Sotto removed it from this computer without revoking this computer’s access there. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
   expect(within(notice).getByRole('region', { name: 'Command to run on forge' }).textContent).toBe(command)
@@ -396,8 +396,8 @@ it('says why each forgotten host was not revoked, one notice for each', async ()
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
   push({ forgotten: [
-    { id: REMOTE, name: 'forge', cause: 'refused', command: 'revoke forge' },
-    { id: LOCAL, name: 'spark', cause: 'not-running', command: 'revoke spark' },
+    { id: REMOTE, name: 'forge', revoke: { cause: 'refused', command: 'revoke forge' } },
+    { id: LOCAL, name: 'spark', revoke: { cause: 'not-running', command: 'revoke spark' } },
   ] })
   expect(screen.getByRole('status', { name: 'forge still trusts this computer' }).textContent).toContain('The host on forge did not revoke this computer’s access, so Sotto removed forge from this computer and left its host running. forge still trusts this computer until it is removed there. To remove it, run this on forge:')
   expect(screen.getByRole('status', { name: 'spark still trusts this computer' }).textContent).toContain('The host on spark was not running, so Sotto removed spark from this computer without revoking this computer’s access there. spark still trusts this computer until it is removed there. To remove it, start the host on spark, then run this there:')
@@ -409,7 +409,7 @@ it('selects the command from the keyboard when it cannot be copied, so the copy 
   vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
-  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command: 'revoke forge' }] })
+  push({ forgotten: [{ id: REMOTE, name: 'forge', revoke: { cause: 'unreachable', command: 'revoke forge' } }] })
   const notice = screen.getByRole('status', { name: 'forge still trusts this computer' })
   await user.click(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }))
   expect(within(notice).getByRole('alert').textContent).toBe('The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.')

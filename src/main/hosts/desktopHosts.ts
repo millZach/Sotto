@@ -23,6 +23,8 @@ import { revokeByHandCommand } from './revokeCommand'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 import type { DesktopHostConnection, DesktopHostRouter } from './desktopHostRouter'
 import type { HostUpdateCandidate } from './hostUpdate'
+import { bootRemovalCommand, type HostBootCandidate } from './hostBootStart'
+import type { HostBootAction, HostBootState } from '../../shared/bootStart'
 import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates'
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
@@ -54,11 +56,19 @@ export interface HostUpdateSource {
   busy(id: string): string | undefined
   subscribe(listener: () => void): () => void
 }
+/** What Settings > Hosts asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
+export interface HostBootSource {
+  state(): HostBootState[]
+  command(id: string, action: HostBootAction): Promise<void>
+  /** Why another command on this saved host must wait for its start at boot change, or nothing when none is running. */
+  busy(id: string): string | undefined
+  subscribe(listener: () => void): () => void
+}
 /** The launch script's answers to a restart that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'update-stop-failed', 'update-busy', 'update-missing', 'update-invalid'])
 /** The launch script's answers to a start at boot change that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'boot-stop-failed', 'update-busy', 'archive-missing'])
-/** The commands that act on one saved host's connection, which wait while that host is being updated. */
+/** The commands that act on one saved host's connection, which wait while that host is being updated or its start at boot changes. */
 const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'set-connection', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
  * One connect to a saved host and what it opened. `via` is the connection its socket is on: the SSH connection's forward,
@@ -157,6 +167,9 @@ export class DesktopHosts {
   /** The host updates, once main has them (ADR-0040): the Threads page shows them and sends them its presses. */
   private updates: HostUpdateSource | undefined
   private unsubscribeUpdates: (() => void) | undefined
+  /** The start at boot changes, once main has them (ADR-0054): Settings > Hosts shows them and sends them its presses. */
+  private boot: HostBootSource | undefined
+  private unsubscribeBoot: (() => void) | undefined
   /** Each host's phone access, once main has it (ADR-0050). */
   private phones: HostPhonesSource | undefined
   private unsubscribePhones: (() => void) | undefined
@@ -170,7 +183,7 @@ export class DesktopHosts {
   private readonly admins: AdminConnections
   /** The Node each host's launch script last ran under, for the command that revokes this computer there by hand. Memory only. */
   private readonly nodePaths = new Map<string, string>()
-  /** Each not-revoked notice Forget left, oldest first, until dismissed. */
+  /** Each Forget notice Forget left, oldest first, until dismissed. */
   private forgotten: HostForgotten[] = []
   /** How this computer reaches each saved host over its tailnet (ADR-0053). */
   private readonly tailnet: TailnetStore
@@ -235,6 +248,7 @@ export class DesktopHosts {
       // A forgotten host's last answer is left out with its row.
       ...(this.phones ? { phones: this.phones.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       ...(this.forgotten.length ? { forgotten: [...this.forgotten] } : {}),
+      ...(this.boot ? { boot: this.boot.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
   /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */
@@ -256,6 +270,13 @@ export class DesktopHosts {
     this.unsubscribeUpdates?.()
     this.updates = updates
     this.unsubscribeUpdates = updates.subscribe(() => this.emit())
+    this.emit()
+  }
+  /** Gives Settings > Hosts the start at boot changes: their state joins every published state, and its presses go to them. */
+  useBoot(boot: HostBootSource): void {
+    this.unsubscribeBoot?.()
+    this.boot = boot
+    this.unsubscribeBoot = boot.subscribe(() => this.emit())
     this.emit()
   }
   /** Gives Settings > Hosts each host's phone access: its state joins every published state, and the dialog's presses go to it. */
@@ -282,7 +303,8 @@ export class DesktopHosts {
     return this.saved.flatMap(host => {
       const status = this.status.get(host.id)
       if (!status?.version || !status.hostId || !this.live.has(host.id) || !this.reachable(host.id)) return []
-      return [{ id: host.id, name: host.name, hostId: status.hostId, version: status.version, owned: status.owned === true, installPath: host.installPath, dataDirectory: host.dataDirectory }]
+      return [{ id: host.id, name: host.name, hostId: status.hostId, version: status.version, owned: status.owned === true, installPath: host.installPath, dataDirectory: host.dataDirectory,
+        ...(status.bootStart?.enabled ? { boot: true } : {}) }]
     })
   }
   /** One operation of a host update, over the SSH connection the host is on or an admin connection. */
@@ -312,6 +334,20 @@ export class DesktopHosts {
   private restartOver(host: SavedHost, connection: PressConnection, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
     return this.restartOnPurpose(host, () => connection.updateHost({ op: 'update-restart', version }, options),
       result => result.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
+  }
+  /** Whether a saved host is still saved and switched on, so a start at boot change waiting for it carries on. */
+  bootKeeps(id: string): boolean {
+    return this.saved.some(host => host.id === id && host.enabled !== false)
+  }
+  /**
+   * A saved host connected now whose launch said how start at boot stands on it, which is what a change to it needs. None
+   * while Stop host, Forget or a restart is closing its connection on purpose, so a change waiting for its threads does
+   * not start over a connection that is going away.
+   */
+  bootCandidate(id: string): HostBootCandidate | undefined {
+    const host = this.saved.find(item => item.id === id), status = this.status.get(id), active = this.live.get(id)
+    if (!host || !status?.hostId || !status.bootStart || status.phase !== 'connected' || !active || active.closing) return undefined
+    return { id, name: host.name, hostId: status.hostId, owned: status.owned === true, bootStart: status.bootStart, installPath: host.installPath }
   }
   /**
    * Start at boot for a saved host (ADR-0054): installs its unit, or removes it, over the SSH connection the host is on or
@@ -477,8 +513,18 @@ export class DesktopHosts {
       else await this.phones.command(command.id, command.command)
       return this.get()
     }
+    if (command.type === 'host-boot') {
+      if (!this.boot) throw new Error('Start at boot cannot be changed from this window. Nothing was changed.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (command.action === 'install' || command.action === 'remove') { const busy = this.updates?.busy(command.id); if (busy) throw new Error(busy) }
+      await this.boot.command(command.id, command.action)
+      return this.get()
+    }
     if (command.type === 'host-update') {
       if (!this.updates) throw new Error('Hosts cannot be updated from this window. Nothing was changed.')
+      // An update waits for a start at boot change, as the launch script's update lock would make it.
+      const busy = command.action === 'update' ? this.boot?.busy(command.id) : undefined
+      if (busy) throw new Error(busy)
       await this.updates.command(command.id, command.action)
       return this.get()
     }
@@ -488,7 +534,8 @@ export class DesktopHosts {
       if (command.type === 'disconnect') { await this.cancelAdd(command.id); return this.get() }
     }
     if (CONNECTION_COMMANDS.has(command.type)) {
-      const busy = this.updates?.busy('id' in command ? command.id : command.host.id)
+      const id = 'id' in command ? command.id : command.host.id
+      const busy = this.updates?.busy(id) ?? this.boot?.busy(id)
       if (busy) throw new Error(busy)
     }
     if (command.type === 'save') return this.edit(command.host)
@@ -544,7 +591,7 @@ export class DesktopHosts {
    * here. The revoke goes over the SSH connection the socket is on, or over an admin connection when it is on none, and
    * comes first, since it goes through the running host's administrative route and so cannot follow a stop. A host the
    * admin connection cannot reach or finds stopped, or one that refuses the revoke, is still removed here, and a
-   * not-revoked notice names the command that revokes this computer on the host by hand. A host that refused is left
+   * Forget notice names the command that revokes this computer on the host by hand. A host that refused is left
    * running, so that command can run there now. Only a stop that may have failed keeps the host saved, and so does a
    * sign-in the user stopped, which changes nothing.
    */
@@ -559,6 +606,8 @@ export class DesktopHosts {
     const unit = this.status.get(host.id)?.bootStart?.installed === true
     if (!(this.reachable(host.id) && this.onSsh(host.id))) await this.disconnect(host.id)
     let cause: HostForgottenCause | undefined, stopFailed = false
+    // Whether the host's boot unit stays behind, so its host still starts at boot there: Forget says so, with the command.
+    let unitLeft = false
     try {
       // A host that is not running has its boot unit taken away by the admin connection's own launch, which then fails
       // with `host-not-running`: there is nothing to revoke on, but the forgotten host must not start at the next boot.
@@ -567,12 +616,13 @@ export class DesktopHosts {
         // failure is the host refusing, which leaves it running; a request that never got an answer is the host not reached,
         // and a host Sotto started is still stopped, or kept here if that fails too.
         const failure = host.clientId ? await connection.revokeClient(host.clientId).then(() => undefined, (error: unknown) => error ?? new Error('The revoke failed.')) : undefined
-        if (failure instanceof SshFailure && failure.code === 'revoke-failed') { cause = 'refused'; return }
+        const installed = unit || connection.bootStart?.installed === true
+        // A host that refused is left running as it was, its unit with it.
+        if (failure instanceof SshFailure && failure.code === 'revoke-failed') { cause = 'refused'; unitLeft = installed; return }
         if (failure) cause = 'unreachable'
         // Then its boot unit, so a forgotten host does not come back at the next boot (ADR-0054). Removing it starts nothing
-        // and stops a host the unit runs. One that could not be removed stays on the host; Forget does not say so yet,
-        // which item 7 of the tailnet plan, Start at boot's own surface, takes on.
-        if (unit || connection.bootStart?.installed) await connection.boot({ op: 'boot-remove', restart: false }).catch(() => undefined)
+        // and stops a host the unit runs. One that could not be removed stays on the host, and Forget says so.
+        if (installed) unitLeft = (await connection.boot({ op: 'boot-remove', restart: false }).catch(() => undefined))?.type !== 'boot-removed'
         if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
       }, { removeBoot: true })
     } catch (error) {
@@ -580,6 +630,9 @@ export class DesktopHosts {
       // the next press, which wants no such thing, opens one of its own.
       if (error instanceof SignInStopped) { await this.admins.close(host.id); return this.keepAfterForget(host, active) }
       cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
+      // A stopped host's unit goes with the admin connection's own launch, which says when it could not take it away; one
+      // SSH could not reach keeps the unit this computer knew of. One it did not know of, it cannot speak for.
+      if (cause === 'not-running' ? error instanceof SshFailure && error.bootLeft === true : unit) unitLeft = true
     }
     if (stopFailed) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
     await this.disconnect(host.id)
@@ -588,9 +641,9 @@ export class DesktopHosts {
     await this.save()
     await this.forgetTailnet(host.id)
     this.status.delete(host.id)
-    if (cause && host.clientId) {
-      const command = revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) })
-      this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, cause, command }]
+    const revoke = cause && host.clientId ? { cause, command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
+    if (revoke || unitLeft) {
+      this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...(revoke ? { revoke } : {}), ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
     }
     this.nodePaths.delete(host.id)
     this.emit()
@@ -1423,7 +1476,7 @@ export class DesktopHosts {
    */
   async close(): Promise<void> {
     this.closed = true
-    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.()
+    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
     for (const id of [...this.returns.keys()]) this.clearReturn(id)
     // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so

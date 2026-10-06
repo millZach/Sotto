@@ -72,15 +72,15 @@ function StepMark({ state }: { readonly state: StepState }): ReactNode {
   </span>
 }
 
-/** A command the user runs to fix a failure, with Copy. Sotto never runs it. */
-function FixCommand({ fix }: { readonly fix: NonNullable<HostStatus['fix']> }): ReactNode {
+/** A command the user runs to fix a failure, with Copy, under the sentence that introduces it when there is one. Sotto never runs it. */
+export function FixCommand({ fix }: { readonly fix: { readonly text?: string | undefined; readonly command: string } }): ReactNode {
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => {
     try { await writeClipboard(fix.command); setCopied('copied') } catch { setCopied('failed') }
   }
   return <>
-    <p>{fix.text}</p>
+    {fix.text ? <p>{fix.text}</p> : null}
     <div className="host-setup__command">
       <code>{fix.command}</code>
       <Button variant="secondary" aria-label="Copy the command" onClick={() => void copy()}>
@@ -115,7 +115,7 @@ export interface AgentSetupView {
  * shows on its own step with main's sentence (what happened, that nothing was saved, what to do) and a
  * command to copy where there is one. SSH's own questions sit on the step that asked them.
  */
-export function HostSetupChecklist({ name, summary, host, outcome, error, approvalError, question, onChange, onOpenApproval, onOpenGuide, agent, offer, tailnet }: {
+export function HostSetupChecklist({ name, summary, host, outcome, error, approvalError, question, onChange, onOpenApproval, onOpenGuide, agent, offer, tailnet, boot }: {
   /** The host part of the target, which names the host until it is renamed. */
   readonly name: string
   /** What was asked for besides the host: `hostSetupSummary()`. */
@@ -139,6 +139,8 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   readonly offer?: ReactNode
   /** Add host's own add ends with its tailnet step, after Paired (ADR-0053); a setup's add has none. */
   readonly tailnet?: TailnetStepView | undefined
+  /** On the connected card: the offer to start the host at boot, or what came of it (ADR-0054). */
+  readonly boot?: ReactNode
 }): ReactNode {
   const approval = useRef<HTMLButtonElement>(null)
   const approvalUrl = host?.tailscale?.waiting ? host.tailscale.url : undefined
@@ -208,6 +210,7 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
     {outcome === 'connecting' && error && !agent ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert"><p>{error}</p></div> : null}
     {outcome === 'connected' && !agent ? <div className="hosts-notice host-setup__card host-setup__card--done" role="status">
       <p>{host?.name ?? name} is added and connected{over}. Its projects and threads show in the Threads sidebar with a {host?.name ?? name} badge.</p>
+      {boot}
     </div> : null}
   </div>
 }

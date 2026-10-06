@@ -561,7 +561,9 @@ export class SshHostLauncher {
     const reason = typeof result.reason === 'string' ? result.reason : ''
     if (!LAUNCH_REASONS.has(reason as SshFailureCode)) return new SshFailure('host-start-failed')
     if (reason === 'node-too-old' || reason === 'node-too-new') return SshFailure.node(reason, typeof result.version === 'string' ? result.version : undefined)
-    return new SshFailure(reason as SshFailureCode)
+    const failure = new SshFailure(reason as SshFailureCode)
+    if (reason === 'host-not-running' && result.bootLeft === true) failure.bootLeft = true
+    return failure
   }
   /**
    * A question from the askpass helper. A host-key question missing its fingerprint gets it from the
