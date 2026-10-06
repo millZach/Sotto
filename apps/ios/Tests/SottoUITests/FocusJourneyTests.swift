@@ -180,7 +180,8 @@ import XCTest
             matches = shown ? matches + 1 : 0
             return matches >= 2
         }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 20)
+        // With the keyboard up, one reading of the four elements can take the simulator ten seconds or more.
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 60)
         if result != .completed { explain("conversation-end-not-in-view", seen) }
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
@@ -662,27 +663,86 @@ import XCTest
     /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) throws {
-        // A timing benchmark, run by hand: TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh (docs/ci.md).
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["SOTTO_IOS_PERF"] == "1", "Idle CPU is measured by hand")
+        try skipUnlessMeasuring()
         if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
+        measureCPUForThreeSeconds(openThread: openThread)
+    }
+    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
+    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
+    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
+    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
+    /// The same still thread with the reply keyboard open and nothing typed: the page must not keep itself busy there either.
+    func testIdleCPUInAThreadWithTheKeyboardOpen() throws {
+        try skipUnlessMeasuring()
+        openWorkingThread()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box opens the keyboard")
+        measureCPUForThreeSeconds()
+    }
+
+    /// The app's CPU while the working thread streams a message, a word every 50 milliseconds with the thread list sent
+    /// again unchanged each time, on Threads and in that thread. The comparison passes --ui-publish-everything, which
+    /// publishes every change on the whole model as the app did before its stores.
+    private func streamingCPU(_ arguments: [String], openThread: Bool) throws {
+        try skipUnlessMeasuring()
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-streaming"] + arguments)
+        measureCPUForThreeSeconds(openThread: openThread)
+    }
+    func testStreamingCPUOnThreads() throws { try streamingCPU([], openThread: false) }
+    func testStreamingCPUOnThreadsPublishingEverything() throws { try streamingCPU(["--ui-publish-everything"], openThread: false) }
+    func testStreamingCPUInTheThread() throws { try streamingCPU([], openThread: true) }
+    func testStreamingCPUInTheThreadPublishingEverything() throws { try streamingCPU(["--ui-publish-everything"], openThread: true) }
+
+    /// The CPU journeys are timing benchmarks, run by hand:
+    /// TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh (docs/ci.md).
+    private func skipUnlessMeasuring() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SOTTO_IOS_PERF"] == "1", "CPU is measured by hand")
+    }
+
+    /// Opens the working thread, or stays on Threads, and measures the app's CPU over three seconds, three times.
+    private func measureCPUForThreeSeconds(openThread: Bool) {
         if openThread {
-            let thread = row("iphone")
-            reveal(thread)
-            thread.tap()
-            XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
+            openWorkingThread()
         } else {
             XCTAssertTrue(byID("thread-counts").waitForExistence(timeout: 5))
         }
+        measureCPUForThreeSeconds()
+    }
+    private func measureCPUForThreeSeconds() {
         let options = XCTMeasureOptions()
         options.iterationCount = 3
         measure(metrics: [XCTCPUMetric(application: app)], options: options) {
             Thread.sleep(forTimeInterval: 3)
         }
     }
-    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
-    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
-    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
-    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
+
+    private func openWorkingThread() {
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
+    }
+
+    /// The app's CPU while a sentence is typed into a thread's reply box, three times. The comparison passes
+    /// --ui-publish-everything, which publishes each keystroke on the whole model as the app did before the draft store.
+    private func typingCPU(_ arguments: [String]) throws {
+        try skipUnlessMeasuring()
+        launch(["--ui-fixture", "--reset-ui-preferences"] + arguments)
+        openWorkingThread()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box opens the keyboard")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTCPUMetric(application: app)], options: options) {
+            reply.typeText("The tooltips look right now, ship it. ")
+        }
+    }
+    func testTypingCPUInAReply() throws { try typingCPU([]) }
+    func testTypingCPUInAReplyPublishingEverything() throws { try typingCPU(["--ui-publish-everything"]) }
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
