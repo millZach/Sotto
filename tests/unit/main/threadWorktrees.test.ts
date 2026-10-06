@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { existingWorkingDirectory, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../../src/main/agents/threadWorktrees'
+import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../../src/main/agents/threadWorktrees'
 import { resolveThreadWorkingDirectory } from '../../../src/shared/threadWorkingDirectory'
 
 const roots: string[] = []
@@ -76,7 +76,8 @@ describe('independent working-copy allocation', () => {
     expect(calls.filter(args => args.includes('--git-common-dir'))).toHaveLength(2)
     calls.length = 0
     expect(await service.discover(ready.path!, f.project)).toMatchObject({ mode: 'independent', path: ready.path, branch: ready.branch, reused: true })
-    expect(calls).toHaveLength(6)
+    // The project folder's checkout identity is read from its files, not asked of Git (issue #766).
+    expect(calls).toHaveLength(5)
     expect(calls.filter(args => args.includes('--git-common-dir'))).toHaveLength(2)
     await removeTestCheckout(f.root, ready.path!)
     calls.length = 0
@@ -901,4 +902,89 @@ it('groups subdirectories when checkout discovery is refused by Git ownership ch
   const refused: RunGit = async () => { throw new Error('fatal: detected dubious ownership in repository') }
   const service = new ThreadWorktrees(f.root, refused)
   expect(await service.checkoutIdentity(nested)).toBe(await service.checkoutIdentity(f.project))
+})
+
+describe('reading a checkout from its files (issue #766)', () => {
+  const key = (path: string) => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path)
+  const counting = () => {
+    const calls: string[][] = []
+    const run: RunGit = async (cwd, args) => { calls.push(args); return git(cwd, args) }
+    return { calls, run }
+  }
+
+  it('finds the checkout identity Git finds, without asking Git', async () => {
+    const f = await fixture()
+    const nested = join(f.project, 'nested', 'deeper'); await mkdir(nested, { recursive: true })
+    const linked = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    const outside = join(f.root, 'plain'); await mkdir(outside)
+    const { calls, run } = counting()
+    const toplevel = async (folder: string) => key(await realpath((await git(folder, ['rev-parse', '--show-toplevel'])).trim()))
+    expect(await checkoutIdentity(f.project, run)).toBe(await toplevel(f.project))
+    expect(await checkoutIdentity(nested, run)).toBe(await toplevel(f.project))
+    expect(await checkoutIdentity(linked.path!, run)).toBe(await toplevel(linked.path!))
+    // Outside any repository Git finds nothing, and the folder groups with the nearest .git of any kind above it,
+    // as it always has when Git's discovery was refused, or with itself when there is none.
+    let marker: string | undefined
+    for (let candidate = await realpath(outside); !marker; candidate = dirname(candidate)) {
+      if (await lstat(join(candidate, '.git')).then(() => true, () => false)) marker = candidate
+      else if (dirname(candidate) === candidate) break
+    }
+    expect(await checkoutIdentity(outside, run)).toBe(key(marker ?? await realpath(outside)))
+    expect(calls).toEqual([])
+  })
+
+  it('passes over a .git folder that is not a repository, as Git does', async () => {
+    const f = await fixture()
+    const nested = join(f.project, 'nested'); await mkdir(join(nested, '.git'), { recursive: true })
+    const { calls, run } = counting()
+    // A .git folder with no HEAD, objects or refs is not a repository to Git, which finds the one above it.
+    expect(key(await realpath((await git(nested, ['rev-parse', '--show-toplevel'])).trim()))).toBe(key(await realpath(f.project)))
+    expect(await checkoutIdentity(nested, run)).toBe(key(await realpath(f.project)))
+    expect(calls).toEqual([])
+  })
+
+  it('reads a ready worktree\'s branch from its files and leaves anything Git must settle to Git', async () => {
+    const f = await fixture()
+    const { calls, run } = counting()
+    const service = new ThreadWorktrees(f.root, run)
+    const ready = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
+    expect(await service.readyOnDisk(ready)).toEqual({ branch: ready.branch })
+    await git(ready.path!, ['switch', '-c', 'feat/elsewhere'])
+    expect(await service.readyOnDisk(ready)).toEqual({ branch: 'feat/elsewhere' })
+    await git(ready.path!, ['switch', '--detach'])
+    expect(await service.readyOnDisk(ready)).toEqual({ branch: undefined })
+    expect(calls).toEqual([])
+    // Locked in Git's registry, recorded as anything but ready, or reclaimed: inspect decides.
+    await git(f.project, ['worktree', 'lock', '--', ready.path!])
+    expect(await service.readyOnDisk(ready)).toBeNull()
+    await git(f.project, ['worktree', 'unlock', '--', ready.path!])
+    expect(await service.readyOnDisk({ ...ready, status: 'error' })).toBeNull()
+    expect(await service.readyOnDisk({ ...ready, reclaimedAt: '2026-10-05T00:00:00.000Z' })).toBeNull()
+    // A worktree of another repository is not this record's checkout.
+    const other = await fixture()
+    expect(await service.readyOnDisk({ ...ready, repositoryRoot: other.project })).toBeNull()
+    // A .git file that no longer points at Git's registry entry for this folder.
+    // Windows will not open a hidden file for writing, so the .git file is replaced rather than rewritten.
+    await unlink(join(ready.path!, '.git'))
+    await writeFile(join(ready.path!, '.git'), `gitdir: ${join(f.root, 'elsewhere')}\n`)
+    expect(await service.readyOnDisk(ready)).toBeNull()
+    // A folder that is gone.
+    await removeTestCheckout(f.root, ready.path!)
+    expect(await service.readyOnDisk(ready)).toBeNull()
+    expect(calls).toEqual([])
+  })
+
+  it('reads a shared project folder\'s branch from its files, and a plain folder as no repository', async () => {
+    const f = await fixture()
+    const service = new ThreadWorktrees(f.root, async () => { throw new Error('Git was asked') })
+    const shared = await f.service.inspect(await f.service.allocate(f.project, 'shared'))
+    expect(await service.readyOnDisk(shared)).toEqual({ branch: shared.branch })
+    const plainFolder = join(f.root, 'plain'); await mkdir(plainFolder)
+    const plain = await f.service.inspect(await f.service.allocate(plainFolder, 'shared'))
+    expect(plain.repositoryRoot).toBeUndefined()
+    expect(await service.readyOnDisk(plain)).toEqual({ branch: undefined })
+    // A plain folder that became a repository since it was inspected is Git's to read.
+    await git(plainFolder, ['init'])
+    expect(await service.readyOnDisk(plain)).toBeNull()
+  })
 })

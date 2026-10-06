@@ -13,7 +13,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
   return new Promise((accept, reject) => {
     const child = spawn(options.executable ?? 'git', [...(options.prefix ?? ['-c', 'core.quotePath=false']), ...args], {
       cwd, windowsHide: true, shell: false, detached: process.platform !== 'win32',
-      env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' },
+      // No optional locks: a status read here never takes the index lock from a commit running beside it.
+      env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
     })
     let timedOut = false
     let processError: Error | undefined
@@ -73,14 +74,47 @@ async function canonicalCheckoutPath(folder: string): Promise<string> {
     }
   }
 }
-/** One implementation for ownership, checkpoint records and reservations, including when Git refuses discovery. */
+const missing = (error: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')
+
+/**
+ * Git's own discovery for a folder, read from the `.git` entries on disk so that asking starts no process. `root`
+ * is the nearest folder, this one or above, holding a `.git` file or a `.git` directory with a HEAD, objects and
+ * refs; Git passes over a `.git` directory without them, and so does this. A null root is a folder in no
+ * repository, with the nearest `.git` of any kind as `marker`, which is where a refused Git discovery has always
+ * grouped it. Undefined when the file system would not answer, and then Git is asked.
+ */
+type CheckoutOnDisk = { readonly root: string } | { readonly root: null; readonly marker: string | undefined }
+async function checkoutOnDisk(folder: string): Promise<CheckoutOnDisk | undefined> {
+  let marker: string | undefined
+  for (let candidate = folder;; candidate = dirname(candidate)) {
+    let entry: Awaited<ReturnType<typeof stat>> | undefined
+    try { entry = await stat(join(candidate, '.git')) }
+    catch (error) { if (!missing(error)) return undefined }
+    if (entry?.isFile()) return { root: candidate }
+    if (entry?.isDirectory()) {
+      const [head, objects, refs] = await Promise.all(['HEAD', 'objects', 'refs'].map(name => stat(join(candidate, '.git', name)).catch(() => undefined)))
+      if (head?.isFile() && objects?.isDirectory() && refs?.isDirectory()) return { root: candidate }
+    }
+    if (entry) marker ??= candidate
+    if (dirname(candidate) === candidate) return { root: null, marker }
+  }
+}
+
+/**
+ * One implementation for ownership, checkpoint records and reservations, including when Git refuses discovery.
+ * A send reserves its checkout through this, so the answer comes from the files on disk and Git is asked only
+ * when they leave it open (issue #766).
+ */
 export async function checkoutIdentity(folder: string, git: RunGit = runWorktreeGit): Promise<string> {
   const canonical = await canonicalCheckoutPath(folder)
-  try { await stat(folder) }
+  let real: string
+  try { real = await realpath(folder) }
   catch (error) {
-    if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return canonical
+    if (missing(error)) return canonical
     throw error
   }
+  const found = await checkoutOnDisk(real)
+  if (found) return pathKey(found.root ?? found.marker ?? canonical)
   try { return await canonicalCheckoutPath((await git(folder, ['rev-parse', '--show-toplevel'])).trim()) }
   catch {
     // Git can refuse safe.directory ownership checks. Its on-disk marker still groups root and subfolders.
@@ -107,6 +141,35 @@ async function coordinateRegistry<T>(identity: RegistryIdentity, run: () => Prom
   registryOperations.set(identity.key, settled)
   try { return await operation }
   finally { if (registryOperations.get(identity.key) === settled) registryOperations.delete(identity.key) }
+}
+
+/**
+ * A checkout's own Git directory and its repository's common one, from the `.git` entry at its root: a directory
+ * for a main checkout, or a file pointing at the directory Git keeps for a linked worktree (or a submodule).
+ */
+async function gitDirectories(root: string): Promise<{ gitDir: string; commonDir: string; linked: boolean } | undefined> {
+  const marker = join(root, '.git')
+  const entry = await stat(marker)
+  if (entry.isDirectory()) return { gitDir: marker, commonDir: marker, linked: false }
+  if (!entry.isFile()) return
+  const pointer = /^gitdir: (.+)$/u.exec((await readFile(marker, 'utf8')).trim())
+  if (!pointer) return
+  const gitDir = resolve(root, pointer[1]!.trim())
+  const common = await readFile(join(gitDir, 'commondir'), 'utf8').then(text => text.trim(), error => { if (missing(error)) return undefined; throw error })
+  return common === undefined ? { gitDir, commonDir: gitDir, linked: false } : { gitDir, commonDir: resolve(gitDir, common), linked: true }
+}
+
+/** The branch a Git directory's HEAD names, none for a detached HEAD, and undefined for a HEAD only Git can read. */
+async function headBranch(gitDir: string): Promise<{ branch: string | undefined } | undefined> {
+  const head = (await readFile(join(gitDir, 'HEAD'), 'utf8')).trim()
+  const symbolic = /^ref: (\S+)$/u.exec(head)
+  if (symbolic) {
+    const ref = symbolic[1]!
+    // A reftable repository keeps this stand-in in HEAD and its real HEAD elsewhere.
+    if (ref === 'refs/heads/.invalid') return
+    return { branch: ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined }
+  }
+  return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(head) ? { branch: undefined } : undefined
 }
 
 function registeredWorktrees(output: string): Array<{ path: string; branch: string | undefined; locked: boolean; lockReason: string | undefined; prunable: boolean }> {
@@ -703,6 +766,54 @@ export class ThreadWorktrees {
 
   async inspect(metadata: AgentWorktree): Promise<AgentWorktree> {
     return (await this.inspectWithin(metadata)).worktree
+  }
+
+  /**
+   * What `inspect` would say of a ready record, read from the checkout's own files instead of Git, so a send
+   * starts no Git process before its prompt goes out (issue #766): the folder is there, it is the checkout the
+   * record names (for a worktree, not reached through a link, and one the original repository's registry lists,
+   * points back at and has not locked), and its HEAD names `branch`, or nothing for a detached HEAD. Null whenever the
+   * files do not settle all of that, and then the caller asks Git with `inspect`. It reads no uncommitted
+   * changes; the inspection after the send does.
+   */
+  async readyOnDisk(metadata: AgentWorktree): Promise<{ branch: string | undefined } | null> {
+    try { return await this.readOnDisk(metadata) ?? null } catch { return null }
+  }
+
+  private async readOnDisk(metadata: AgentWorktree): Promise<{ branch: string | undefined } | undefined> {
+    if (!metadata.path || metadata.status !== 'ready' || metadata.reclaimedAt) return
+    const path = await realpath(metadata.path)
+    if (!(await stat(path)).isDirectory()) return
+    if (metadata.mode === 'shared') {
+      const found = await checkoutOnDisk(path)
+      if (!found) return
+      // A folder outside any repository, as it was when it was last inspected.
+      if (found.root === null) return metadata.repositoryRoot === undefined ? { branch: undefined } : undefined
+      if (!metadata.repositoryRoot || pathKey(found.root) !== pathKey(metadata.repositoryRoot)) return
+      const directories = await gitDirectories(found.root)
+      return directories && headBranch(directories.gitDir)
+    }
+    // A worktree reached through a link is not the checkout Sotto made.
+    if (!metadata.repositoryRoot || pathKey(path) !== pathKey(metadata.path)) return
+    const directories = await gitDirectories(path)
+    if (!directories) return
+    let gitDir = directories.gitDir
+    if (directories.linked) {
+      // Git's registry entry for this checkout: under the original repository's worktrees, naming this folder.
+      const expected = await gitDirectories(await realpath(metadata.repositoryRoot))
+      if (!expected) return
+      const [common, expectedCommon] = await Promise.all([realpath(directories.commonDir), realpath(expected.commonDir)])
+      gitDir = await realpath(gitDir)
+      if (pathKey(common) !== pathKey(expectedCommon) || pathKey(dirname(gitDir)) !== pathKey(join(common, 'worktrees'))) return
+      if (pathKey(resolve(gitDir, (await readFile(join(gitDir, 'gitdir'), 'utf8')).trim())) !== pathKey(join(path, '.git'))) return
+      if (await stat(join(gitDir, 'locked')).then(() => true, error => { if (missing(error)) return false; throw error })) return
+    } else if (pathKey(path) !== pathKey(await realpath(metadata.repositoryRoot))) return
+    if (metadata.projectRelativePath) {
+      const directory = await realpath(resolve(path, metadata.projectRelativePath))
+      const local = relative(path, directory)
+      if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`) || !(await stat(directory)).isDirectory()) return
+    }
+    return headBranch(gitDir)
   }
 
   private async inspectWithin(metadata: AgentWorktree, identity?: RegistryIdentity, observed?: InspectionReads, reclaiming = false): Promise<{ worktree: AgentWorktree; identity?: RegistryIdentity }> {
