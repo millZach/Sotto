@@ -3,10 +3,13 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createStorageRepositories } from '../../src/main/storage/repositories'
 import { RecoveryNoticeCenter } from '../../src/main/storage/recoveryNoticeCenter'
+import { AgentCredentials } from '../../src/main/agents/credentials'
+import { SecureSettings } from '../../src/main/agents/secureSettings'
+import { migrateDesktopKey } from '../../src/main/settings/migrateDesktopKey'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 
 const roots: string[] = []
@@ -22,6 +25,26 @@ afterEach(async () => {
 })
 
 describe('storage recovery notice flow', () => {
+  it('publishes the desktop startup notice and logs no key or vault error when migration fails', async () => {
+    const root = await fixtureRoot()
+    await writeFile(join(root, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, llmApiKey: 'private-key' }))
+    const notices = new RecoveryNoticeCenter()
+    const repositories = createStorageRepositories(root, notices)
+    const credentials = new AgentCredentials(root, {
+      isEncryptionAvailable: () => true,
+      encryptString: () => { throw new Error('private-key vault details') },
+      decryptString: () => '',
+    })
+    await credentials.load()
+    const settings = new SecureSettings(repositories.settings, credentials)
+    const log = vi.fn()
+    await expect(migrateDesktopKey(settings, notices, log)).resolves.toBeUndefined()
+    expect(notices.list()).toEqual([{ code: 'OPENROUTER_KEY_MIGRATION_FAILED' }])
+    expect(log.mock.calls).toEqual([['secure-key-migration-unavailable']])
+    expect((await settings.get()).llmApiKey).toBe('')
+    expect(await readFile(join(root, 'settings.json'), 'utf8')).not.toContain('private-key')
+  })
+
   it('launches with defaults, preserves both corrupt stores, and retains only safe notices', async () => {
     const root = await fixtureRoot()
     const settingsBytes = Buffer.from('{"microphoneId":"private-device",', 'utf8')

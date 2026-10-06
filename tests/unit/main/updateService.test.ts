@@ -185,6 +185,35 @@ describe('UpdateService', () => {
     expect(updater.calls.check).toBe(0)
   })
 
+  it.each(['automatic', 'manual'] as const)('keeps the previous offer when a %s check fails', async trigger => {
+    let clock = 1
+    const updater = createFakeUpdater({ check: async send => {
+      if (updater.calls.check === 1) offersUpdate(send)
+      else { send({ type: 'error', message: 'offline' }); throw new Error('offline') }
+    } })
+    const { service } = createService({ createUpdater: () => updater.adapter, now: () => clock })
+    await service.check('manual')
+    clock = 2
+    await service.check(trigger)
+    expect(updater.calls.check).toBe(2)
+    expect(service.status().phase).toEqual({ ...available, problem: 'offline', failedStep: 'check' })
+    expect(service.status().checkedAt).toBe(2)
+  })
+
+  it.each(['newer', 'none'] as const)('refreshes an existing offer when the feed returns %s', async result => {
+    const updater = createFakeUpdater({ check: async send => {
+      if (updater.calls.check === 1) offersUpdate(send)
+      else if (result === 'newer') send({ type: 'available', version: '0.1.29' })
+      else send({ type: 'not-available' })
+    } })
+    const { service } = createService({ createUpdater: () => updater.adapter })
+    await service.check('manual')
+    await service.check('automatic')
+    expect(updater.calls.check).toBe(2)
+    expect(service.status().phase).toEqual(result === 'newer'
+      ? { phase: 'available', version: '0.1.29', problem: null } : { phase: 'up-to-date' })
+  })
+
   it('checks once shortly after start and then once per interval, and cancels both on dispose', async () => {
     const updater = createFakeUpdater()
     // Properties, not `let`s: TypeScript would otherwise keep narrowing the
@@ -313,7 +342,7 @@ describe('UpdateService', () => {
 
     await service.check('manual')
     await expect(service.download()).resolves.toEqual({ ok: false, reason: 'unavailable' })
-    expect(service.status().phase).toEqual({ phase: 'available', version: '3.5.0', problem: 'ECONNRESET' })
+    expect(service.status().phase).toEqual({ phase: 'available', version: '3.5.0', problem: 'ECONNRESET', failedStep: 'download' })
 
     // A retry that lands clears the earlier problem.
     updater.adapter.download = async () => { updater.emit({ type: 'downloaded', version: '3.5.0' }) }
@@ -333,7 +362,7 @@ describe('UpdateService', () => {
 
     await service.check('manual')
     await service.download()
-    expect(service.status().phase).toEqual({ phase: 'available', version: '3.5.0', problem: 'sha512 checksum mismatch' })
+    expect(service.status().phase).toEqual({ phase: 'available', version: '3.5.0', problem: 'sha512 checksum mismatch', failedStep: 'download' })
   })
 
   it('refuses to download or install anything that was never offered', async () => {
@@ -419,7 +448,7 @@ describe('UpdateService', () => {
     expect(updater.calls.install).toBe(2)
   })
 
-  it('keeps a failed download and its reason across the automatic poll, until the user acts', async () => {
+  it('refreshes a failed download offer on the next successful poll', async () => {
     const updater = createFakeUpdater({
       check: offersUpdate,
       download: async () => {
@@ -431,12 +460,12 @@ describe('UpdateService', () => {
     await service.check('manual')
     await service.download()
     await service.check('automatic')
-    expect(updater.calls.check).toBe(1)
-    expect(service.status().phase).toEqual({ phase: 'available', version: '3.5.0', problem: 'ECONNRESET' })
+    expect(updater.calls.check).toBe(2)
+    expect(service.status().phase).toEqual(available)
 
     // A manual check is the user asking afresh, and it refreshes the offer.
     await service.check('manual')
-    expect(updater.calls.check).toBe(2)
+    expect(updater.calls.check).toBe(3)
     expect(service.status().phase).toEqual(available)
   })
 

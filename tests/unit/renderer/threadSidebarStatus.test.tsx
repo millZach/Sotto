@@ -6,7 +6,6 @@ import type { AgentState } from '../../../src/shared/agents'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { FinishedThreadWatch, showThreads, watchThreads } from '../../../src/renderer/src/agents/finishedThreads'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, workingLabel } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
@@ -18,8 +17,14 @@ const NOW = E2E_THREADS_NOW
 const status = (title: string): HTMLElement => screen.getByRole('button', { name: title }).querySelector('.thread-nav__status')!
 const clock = (title: string): HTMLElement => screen.getByRole('button', { name: title }).querySelector('.thread-nav__time')!
 const rowFor = (state: AgentState, threadId: string, now = NOW) => describeThreads(state, now).find(row => row.thread.id === threadId)!
-const withStatus = (state: AgentState, threadId: string, threadStatus: 'idle' | 'running'): Partial<AgentState> =>
-  ({ host: { ...state.host, threads: state.host.threads.map(thread => thread.id === threadId ? { ...thread, status: threadStatus } : thread) } })
+/** The thread as the host publishes it: idle or running, and marked finished-unread or not (ADR-0046). */
+const withStatus = (state: AgentState, threadId: string, threadStatus: 'idle' | 'running', finishedUnread = false): Partial<AgentState> =>
+  ({ host: { ...state.host, threads: state.host.threads.map(thread => {
+    if (thread.id !== threadId) return thread
+    const { finishedUnread: _mark, ...rest } = thread
+    void _mark
+    return { ...rest, status: threadStatus, ...(finishedUnread ? { finishedUnread: true as const } : {}) }
+  }) } })
 
 /** The fixture's pending permission, rewritten as the provider's question on the same thread. */
 function asQuestion(state: AgentState): AgentState {
@@ -33,12 +38,11 @@ function asQuestion(state: AgentState): AgentState {
 function mount(state: AgentState, now: number | undefined) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<><FinishedThreadWatch /><ThreadsView onOpenAgents={vi.fn()} now={now} /></>)
+  render(<ThreadsView onOpenAgents={vi.fn()} now={now} />)
   return live
 }
 
-// Watching no threads and showing none forgets everything, as a restart does.
-beforeEach(() => { vi.mocked(useAgents).mockReset(); watchThreads([]); showThreads([]) })
+beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('a row that needs you says what it needs', () => {
@@ -157,42 +161,30 @@ describe('a working row counts up', () => {
   })
 })
 
-describe('a thread that finishes out of sight', () => {
-  it('says it just finished until the thread is opened', () => {
-    const state = threadsStateFixture()
-    const live = mount(state, NOW)
+// Whether a thread finished out of sight is the host's to say (ADR-0046, tests/unit/main/finishedUnread.test.ts);
+// the sidebar reads the mark the host publishes and words it.
+describe('a thread the host marks as finished and unread', () => {
+  it('says it just finished while the host marks it, and Done once the mark is gone', () => {
+    const live = mount(threadsStateFixture(), NOW)
     expect(status('Footer links')).toHaveTextContent('Working')
     act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
-    expect(status('Footer links')).toHaveTextContent('Just finished')
-    expect(status('Footer links')).toHaveAttribute('data-unseen', 'true')
-    act(() => { live.publish({ activeThreadId: 'footer-links' }) })
     expect(status('Footer links')).toHaveTextContent('Done')
     expect(status('Footer links')).not.toHaveAttribute('data-unseen')
-    // Working again clears it too, and finishing while you are reading the thread never marks it.
-    act(() => { live.publish(withStatus(live.state, 'footer-links', 'running')) })
-    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
-    expect(status('Footer links')).toHaveTextContent('Done')
-  })
-
-  it('marks a thread that finished while no list was on screen, as on Settings', () => {
-    const live = liveAgentState(threadsStateFixture())
-    vi.mocked(useAgents).mockImplementation(live.useLive)
-    const { rerender } = render(<FinishedThreadWatch />)
-    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
-    rerender(<><FinishedThreadWatch /><ThreadsView onOpenAgents={vi.fn()} now={NOW} /></>)
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle', true)) })
     expect(status('Footer links')).toHaveTextContent('Just finished')
     expect(status('Footer links')).toHaveAttribute('data-unseen', 'true')
+    const ring = screen.getByRole('button', { name: 'Footer links' }).querySelector('.thread-nav__ring')!
+    expect(ring).toHaveAttribute('data-unseen', 'true')
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'idle')) })
+    expect(status('Footer links')).toHaveTextContent('Done')
+    expect(status('Footer links')).not.toHaveAttribute('data-unseen')
   })
 
-  it('never marks the thread you are looking at, whichever way it finishes', () => {
-    const state = threadsStateFixture(); state.activeThreadId = 'weekly-note'
-    const live = mount(state, NOW)
-    act(() => { live.publish(withStatus(live.state, 'weekly-note', 'idle')) })
-    expect(status('Weekly note')).toHaveTextContent('Done')
-    expect(status('Weekly note')).not.toHaveAttribute('data-unseen')
-    // Leaving for another thread does not make the finish unseen after the fact.
-    act(() => { live.publish({ activeThreadId: 'visual-gate' }) })
-    expect(status('Weekly note')).toHaveTextContent('Done')
+  it('says only what the thread is doing when the mark rides on a thread that is not done', () => {
+    const live = mount(threadsStateFixture(), NOW)
+    act(() => { live.publish(withStatus(live.state, 'footer-links', 'running', true)) })
+    expect(status('Footer links')).toHaveTextContent('Working')
+    expect(status('Footer links')).not.toHaveAttribute('data-unseen')
   })
 })
 
@@ -214,23 +206,12 @@ describe('a thread whose turn ended with work still running', () => {
     expect(rowFor(state, 'footer-links')).toMatchObject({ state: 'done', stateLabel: 'Done' })
   })
 
-  it('says it just finished only once the background work ends', () => {
+  it('reads as working, not finished, while the work runs', () => {
     const live = mount(threadsStateFixture(), NOW)
     act(() => { live.publish(withWork(live.state, 'footer-links', [agent])) })
     expect(status('Footer links')).toHaveTextContent('Working')
     expect(status('Footer links')).toHaveAttribute('data-state', 'working')
     expect(status('Footer links')).not.toHaveAttribute('data-unseen')
-    act(() => { live.publish(withWork(live.state, 'footer-links', undefined)) })
-    expect(status('Footer links')).toHaveTextContent('Just finished')
-  })
-
-  it('never says it just finished when a disconnect cut the work off', () => {
-    const live = mount(threadsStateFixture(), NOW)
-    act(() => { live.publish(withWork(live.state, 'footer-links', [agent])) })
-    const disconnected = withWork(live.state, 'footer-links', undefined)
-    act(() => { live.publish({ host: { ...disconnected.host!, threads: disconnected.host!.threads.map(thread => thread.id === 'footer-links' ? { ...thread, clientConnected: false } : thread) } }) })
-    expect(status('Footer links')).not.toHaveAttribute('data-unseen')
-    expect(status('Footer links')).not.toHaveTextContent('Just finished')
   })
 })
 

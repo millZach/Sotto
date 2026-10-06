@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
@@ -34,7 +34,7 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> =
   const service = createService()
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   const target = { threadId: owner.threadId, workspaceId: owner.workspaceId }
-  return { service, createService, target, files, processes, spawn, events, change: () => { cwd = other } }
+  return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
   it('keeps writes in request order while another session can pass a held workspace validation', async () => {
@@ -156,5 +156,44 @@ describe('persistent terminal service', () => {
     expect(unwrap(await restored.list(f.target)).sessions).toHaveLength(32)
     const restarted = f.createService()
     expect(unwrap(await restarted.list(f.target)).sessions).toHaveLength(32)
+  })
+  it('keeps a drawer shell apart from a Tools shell, lists each by its own place, and counts either as running', async () => {
+    const f = await fixture()
+    const tools = unwrap(await f.service.create(f.target))
+    const drawer = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    expect(tools.session.place).toBe('tools')
+    expect(drawer.session.place).toBe('drawer')
+    expect(unwrap(await f.service.list(f.target)).sessions.map(s => s.id)).toEqual([tools.session.id])
+    expect(unwrap(await f.service.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([drawer.session.id])
+    expect(f.service.hasRunningTerminal('a')).toBe(true)
+    unwrap(await f.service.close({ ...f.target, sessionId: tools.session.id }))
+    // Only the Tools shell closed; the drawer's own shell still keeps the folder in use.
+    expect(f.service.hasRunningTerminal('a')).toBe(true)
+    unwrap(await f.service.close({ ...f.target, sessionId: drawer.session.id }))
+    expect(f.service.hasRunningTerminal('a')).toBe(false)
+  })
+  it('reopens a drawer shell back into the drawer, never into Tools', async () => {
+    const f = await fixture()
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    f.service.dispose()
+    const restored = f.createService()
+    const replacement = unwrap(await restored.reopen({ ...f.target, sessionId: created.session.id }))
+    expect(replacement.session.place).toBe('drawer')
+    expect(unwrap(await restored.list(f.target)).sessions).toEqual([])
+    expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([replacement.session.id])
+  })
+  it('reads an older record with no place as a Tools shell', async () => {
+    const f = await fixture()
+    const owner = unwrap(await f.service.list(f.target)).workspace
+    const legacy = {
+      id: '11111111-1111-4111-8111-111111111111', workspace: owner, title: 'PowerShell', shell: 'pwsh.exe',
+      status: 'interrupted', cols: 80, rows: 24, exitCode: null, createdAt: 1,
+    }
+    await writeFile(join(f.directory, 'terminal-sessions.json'), JSON.stringify([legacy]), 'utf8')
+    const restored = f.createService()
+    const sessions = unwrap(await restored.list(f.target)).sessions
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.place).toBe('tools')
+    expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions).toEqual([])
   })
 })

@@ -12,6 +12,7 @@ import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatProm
 import { contextBridge, ipcRenderer } from 'electron'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { createToolsBridges } from './tools'
+import { createCloudIphoneBridge } from './cloudIphone'
 import { createTerminalWorkspaceBridge } from './terminals'
 import { createThemesBridge } from './themes'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
@@ -22,6 +23,7 @@ import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, gitPullRequestResu
 import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, hostFoldersResultSchema } from '../shared/hostFolders'
 import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
+import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
@@ -31,9 +33,11 @@ import {
   APP_RELOAD,
   APP_TOGGLE_MAXIMIZE,
   APP_MAXIMIZED,
+  APP_WINDOW_HIDDEN,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
+  SYSTEM_SETTINGS_OPEN,
   DICTATION_COMMAND,
   DICTATION_REQUEST,
   HISTORY_ADD,
@@ -49,6 +53,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   SETTINGS_GET,
   SETTINGS_CHANGED,
   SETTINGS_RESET,
@@ -86,6 +91,7 @@ import {
 import { historyEntrySchema } from '../shared/history'
 import {
   PLATFORM_ARGUMENT_PREFIX,
+  WINDOW_FROST_ARGUMENT,
   resolvePlatform,
   type SottoPlatform,
 } from '../shared/platform'
@@ -127,7 +133,7 @@ const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('un
 const commandResultSchema = z.union([z.object({ ok: z.literal(true) }).strict(), unavailableSchema])
 const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'empty']), unavailableSchema])
-const startupStateSchema = z.object({ enabled: z.boolean() }).strict()
+const startupStateSchema = z.object({ enabled: z.boolean(), approvalRequired: z.boolean().optional() }).strict()
 const voidSchema = z.undefined()
 
 async function invokeParsed<Output>(
@@ -197,31 +203,37 @@ function createBufferedSubscription<Output>(
   capacity: number,
 ): (listener: (payload: Output) => void) => () => void {
   const buffered: Output[] = []
-  let listener: ((payload: Output) => void) | null = null
+  const listeners = new Set<(payload: Output) => void>()
   renderer.on(channel, (_event, ...args) => {
     if (args.length !== 1) return
     const result = schema.safeParse(args[0])
     if (!result.success) return
-    if (listener !== null) {
-      listener(result.data)
+    if (listeners.size > 0) {
+      for (const listener of [...listeners]) {
+        if (listeners.has(listener)) listener(result.data)
+      }
     } else {
       buffered.push(result.data)
       if (buffered.length > capacity) buffered.splice(0, buffered.length - capacity)
     }
   })
   return (nextListener) => {
-    listener = nextListener
+    // Each registration owns its unsubscribe, even when callers use the same callback.
+    const listener = (payload: Output): void => {
+      try { nextListener(payload) }
+      catch { /* A subscriber cannot stop delivery to others. Never log state or exception bodies. */ }
+    }
+    listeners.add(listener)
     const replay = buffered.splice(0)
     for (const payload of replay) {
-      if (listener !== nextListener) break
-      nextListener(payload)
+      if (!listeners.has(listener)) break
+      listener(payload)
     }
     let subscribed = true
     return () => {
       if (!subscribed) return
       subscribed = false
-      if (listener === nextListener) listener = null
-      buffered.splice(0)
+      listeners.delete(listener)
     }
   }
 }
@@ -296,6 +308,7 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
 export function createSottoBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
+  canFrostWindow = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -330,6 +343,7 @@ export function createSottoBridge(
       signIn: request => renderer.invoke(HOSTS_SIGN_IN, hostSignInRequestSchema.parse(request)) as Promise<ProviderSignInView | null> }),
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
     ...createToolsBridges(renderer),
+    cloudIphone: createCloudIphoneBridge(renderer),
     terminals: createTerminalWorkspaceBridge(renderer),
     themes: createThemesBridge(renderer),
     subagents: Object.freeze<SubagentsBridge>({
@@ -361,6 +375,7 @@ export function createSottoBridge(
       check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftSchema.nullable(), requestDraftTargetSchema.parse(target)),
     }),
     platform,
+    canFrostWindow,
 
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
@@ -398,6 +413,7 @@ export function createSottoBridge(
     cancelTranscription: (requestId) =>
       invokeParsed(renderer, TRANSCRIPTION_CANCEL, commandResultSchema, requestId),
     checkTranscriptionKey: () => invokeParsed(renderer, TRANSCRIPTION_CHECK_KEY, transcriptionKeyCheckSchema),
+    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
@@ -411,12 +427,14 @@ export function createSottoBridge(
 
     showApp: () => invokeParsed(renderer, APP_SHOW, voidSchema),
     openExternalLink: url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
+    openSystemSettings: pane => invokeParsed(renderer, SYSTEM_SETTINGS_OPEN, commandResultSchema, systemSettingsPaneSchema.parse(pane)),
     hideApp: () => invokeParsed(renderer, APP_HIDE, voidSchema),
     reloadApp: () => invokeParsed(renderer, APP_RELOAD, voidSchema),
     minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
     toggleMaximizeApp: () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
     getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),
     onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
+    onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, z.null(), () => listener()),
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
   return hostClientBridge(bridge)
@@ -497,7 +515,7 @@ export function exposeRendererBridge(
   const rendererRole = parseRendererRoleArgument(arguments_)
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

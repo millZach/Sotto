@@ -1,10 +1,14 @@
 // @vitest-environment node
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { readBootId } from '../../src/host/lock'
+import { MemoryStore } from '../../src/main/memory/store'
+import { PolicyStore } from '../../src/main/memory/policies'
+import { PairedClients } from '../../src/main/agents/pairing'
 
 const directories: string[] = [], children: ChildProcess[] = [], hosts: number[] = []
 afterEach(async () => {
@@ -54,11 +58,15 @@ it('starts an owned host, issues a code and a revocation, and exits after each r
   const configuration = await fixture()
   const ready = await launch(configuration)
   expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
-  expect(JSON.stringify(ready)).not.toContain('remote-only-secret')
+  // Only a launch hands back the administrative token, for the desktop's phone routes (ADR-0050); no other result does.
+  expect(ready).toMatchObject({ adminToken: 'remote-only-secret' })
   const pairing = await run(configuration, { op: 'pairing-code', hostId: HOST_ID })
   expect(pairing).toMatchObject({ code: 0, errors: '' })
   expect(pairing.messages.at(-1)).toMatchObject({ type: 'pairing-code', code: 'ABC123', hostId: HOST_ID })
-  expect((await run(configuration, { op: 'revoke-client', hostId: HOST_ID, clientId: 'client' })).messages.at(-1)).toMatchObject({ type: 'revoked', revoked: true })
+  expect(JSON.stringify(pairing.messages)).not.toContain('remote-only-secret')
+  const revoked = await run(configuration, { op: 'revoke-client', hostId: HOST_ID, clientId: 'client' })
+  expect(revoked.messages.at(-1)).toMatchObject({ type: 'revoked', revoked: true })
+  expect(JSON.stringify(revoked.messages)).not.toContain('remote-only-secret')
   expect(() => process.kill(ready.pid as number, 0)).not.toThrow()
   // The host wrote the mark itself; the launch script keeps no record of its own.
   expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8'))).toMatchObject({ startedBy: 'launch-script', pid: ready.pid })
@@ -68,6 +76,150 @@ it('refuses a request for a different host ID', async () => {
   const configuration = await fixture()
   await launch(configuration)
   expect((await run(configuration, { op: 'pairing-code', hostId: '22222222-2222-4222-8222-222222222222' })).messages.at(-1)).toEqual({ type: 'failed' })
+})
+
+async function desktopPermissionFixture() {
+  const configuration = await fixture()
+  await launch(configuration)
+  const memory = new MemoryStore(join(configuration.dataDirectory, 'memory.sqlite'))
+  memory.open()
+  const policies = new PolicyStore(memory)
+  const pairing = new PairedClients(configuration.dataDirectory)
+  await pairing.load()
+  const { clientId } = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
+  return { configuration, memory, policies, clientId, client: { clientId, user: 'Desktop fixture', transport: 'socket' as const },
+    operation: { op: 'desktop-answers', hostId: HOST_ID, clientId } as const }
+}
+
+it('establishes the authenticated SSH desktop policy once, including concurrent setup, without a host upgrade', async () => {
+  const { configuration, memory, policies, client, operation } = await desktopPermissionFixture()
+  try {
+    expect(policies.mayGrant(client).allowed).toBe(false)
+    const results = await Promise.all([run(configuration, operation), run(configuration, operation), run(configuration, operation)])
+    for (const result of results) expect(result.messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    const records = policies.list({ scope: 'client:' + client.clientId, includeInactive: true })
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ action: 'remote-answer', resource: client.clientId, effect: 'allow', source: 'user' })
+    expect(records[0]!.note).toContain('authenticated SSH session')
+    await run(configuration, operation)
+    expect(policies.list({ scope: 'client:' + client.clientId, includeInactive: true })).toEqual(records)
+  } finally { memory.close() }
+})
+
+it.each(['revoked', 'expired', 'always-confirm'] as const)('preserves an existing %s desktop policy on reconnect', async kind => {
+  const { configuration, memory, policies, client, operation } = await desktopPermissionFixture()
+  try {
+    if (kind === 'always-confirm') policies.grant({ action: 'remote-answer', resource: client.clientId, scope: 'client:' + client.clientId, effect: 'always-confirm', note: 'Fixture boundary' })
+    else {
+      const record = policies.grantRemoteAnswers(client.clientId, 'Fixture decision', kind === 'expired' ? '2000-01-01T00:00:00.000Z' : null)
+      if (kind === 'revoked') policies.revoke(record.id)
+    }
+    const before = policies.list({ scope: 'client:' + client.clientId, includeInactive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(false)
+    expect(policies.list({ scope: 'client:' + client.clientId, includeInactive: true })).toEqual(before)
+  } finally { memory.close() }
+})
+
+it('refuses unpaired clients and another host without writing policies', async () => {
+  const { configuration, memory, policies, operation } = await desktopPermissionFixture()
+  try {
+    for (const invalid of [{ ...operation, clientId: 'not-paired' }, { ...operation, hostId: '22222222-2222-4222-8222-222222222222' }]) {
+      expect((await run(configuration, invalid)).messages.at(-1)).toEqual({ type: 'failed' })
+    }
+    expect(policies.list({ includeInactive: true })).toEqual([])
+    // Nor is either recorded as a desktop: only a paired client of this host is.
+    await expect(readFile(join(configuration.dataDirectory, 'desktop-clients.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  } finally { memory.close() }
+})
+
+const desktops = async (configuration: Configuration): Promise<unknown> => JSON.parse(await readFile(join(configuration.dataDirectory, 'desktop-clients.json'), 'utf8'))
+
+it('records the desktop on every SSH connect, a desktop paired before the record existed and one that may already answer included', async () => {
+  const { configuration, memory, policies, client, clientId, operation } = await desktopPermissionFixture()
+  try {
+    // Paired, granted and connected before this build: no record of desktops exists on the host yet.
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    await rm(join(configuration.dataDirectory, 'desktop-clients.json'))
+    // Its next connect records it, though its grant is already there and is left as it is.
+    const before = policies.list({ scope: 'client:' + clientId, includeInactive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(await desktops(configuration)).toEqual([clientId])
+    expect(policies.list({ scope: 'client:' + clientId, includeInactive: true })).toEqual(before)
+    // Once, however often it connects.
+    await run(configuration, operation)
+    expect(await desktops(configuration)).toEqual([clientId])
+  } finally { memory.close() }
+})
+
+it('records two desktops connecting at once, and keeps the desktops already recorded', async () => {
+  const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
+  try {
+    await writeFile(join(configuration.dataDirectory, 'desktop-clients.json'), JSON.stringify(['laptop-recorded-earlier']))
+    const pairing = new PairedClients(configuration.dataDirectory)
+    await pairing.load()
+    const other = await pairing.redeem(pairing.issuePairingCode().code, 'Second desktop')
+    const results = await Promise.all([run(configuration, operation), run(configuration, { ...operation, clientId: other.clientId }), run(configuration, operation)])
+    for (const result of results) expect(result.messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(new Set(await desktops(configuration) as string[])).toEqual(new Set(['laptop-recorded-earlier', clientId, other.clientId]))
+  } finally { memory.close() }
+})
+
+it('records a confirmed desktop even when its grant cannot be written, since the grant and the record are separate', async () => {
+  const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
+  memory.close()
+  await rm(join(configuration.dataDirectory, 'memory.sqlite'))
+  expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'failed' })
+  expect(await desktops(configuration)).toEqual([clientId])
+})
+
+it('leaves a record of desktops it cannot read as it is, and still writes the grant', async () => {
+  const { configuration, memory, policies, client, operation } = await desktopPermissionFixture()
+  try {
+    // A folder where the file should be cannot be read as one, on every system the host runs on.
+    const record = join(configuration.dataDirectory, 'desktop-clients.json')
+    await mkdir(join(record, 'kept'), { recursive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    expect((await stat(join(record, 'kept'))).isDirectory()).toBe(true)
+  } finally { memory.close() }
+})
+
+it('reports the tailnet address and who started the host, as its descriptor records them, and only a well-formed address', async () => {
+  const configuration = await fixture()
+  const ready = await launch(configuration, { ...process.env, FAKE_HOST_TAILNET_ADDRESS: 'https://forge.tail5728ca.ts.net:8443' })
+  expect(ready).toMatchObject({ type: 'ready', owned: true, startedBy: 'launch-script', tailnetAddress: 'https://forge.tail5728ca.ts.net:8443' })
+  for (const address of ['http://forge.tail5728ca.ts.net:8443', 'https://forge.example.com:8443', 'https://forge.tail5728ca.ts.net', 'https://forge.tail5728ca.ts.net:8443/x']) {
+    const descriptor = JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(join(configuration.dataDirectory, 'host-listener.json'), JSON.stringify({ ...descriptor, tailnetAddress: address }))
+    const again = await launch(configuration)
+    expect(again).toMatchObject({ type: 'ready', pid: ready.pid, startedBy: 'launch-script' })
+    expect(again).not.toHaveProperty('tailnetAddress')
+  }
+})
+
+it('reports no tailnet address or starter for a host its owner started by hand with Serve off', async () => {
+  const configuration = await fixture()
+  await startedByHand(configuration)
+  const ready = await launch(configuration)
+  expect(ready).toMatchObject({ type: 'ready', owned: false })
+  expect(ready).not.toHaveProperty('tailnetAddress')
+  expect(ready).not.toHaveProperty('startedBy')
+})
+
+it('refuses missing or corrupt policy stores without creating or replacing them', async () => {
+  const { configuration, memory, operation } = await desktopPermissionFixture()
+  memory.close()
+  const file = join(configuration.dataDirectory, 'memory.sqlite')
+  await rm(file)
+  expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'failed' })
+  await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' })
+  const original = 'Fixture unreadable policy database'
+  await writeFile(file, original)
+  expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'failed' })
+  expect(await readFile(file, 'utf8')).toBe(original)
 })
 it('finds a host it started earlier, still owned, and stops it on stop-host', async () => {
   const configuration = await fixture()
@@ -122,6 +274,17 @@ it('starts a host over a lock whose holder is gone', async () => {
   await new Promise(resolve => gone.once('exit', resolve))
   await writeFile(join(configuration.dataDirectory, 'host-listener.lock'), JSON.stringify({ pid: gone.pid, nonce: 'stale' }))
   expect(await launch(configuration)).toMatchObject({ type: 'ready', owned: true })
+})
+it('starts over a previous-boot lock even when its PID now belongs to a live process', async () => {
+  const configuration = await fixture()
+  await mkdir(configuration.dataDirectory, { recursive: true })
+  const boot = await readBootId()
+  expect(boot).toBeDefined()
+  // The installed fixture stands in for the host's boot-aware reclaim, without ever signalling this PID.
+  await writeFile(join(configuration.dataDirectory, 'host-listener.lock'), JSON.stringify({ pid: process.pid, nonce: 'stale', boot: 'previous-boot' }))
+  const ready = await launch(configuration, { ...process.env, FAKE_HOST_BOOT: boot })
+  expect(ready).toMatchObject({ type: 'ready', owned: true })
+  expect(() => process.kill(process.pid, 0)).not.toThrow()
 })
 it('treats a lock held by another account (EPERM) as held, the way the host does', () => {
   expect(LAUNCH_SCRIPT_SOURCE).toContain("error.code === 'EPERM'")

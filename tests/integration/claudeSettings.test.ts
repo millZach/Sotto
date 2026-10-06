@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
-import type { ClaudeSettingsEvent } from '../../src/main/agents/claude'
+import type { ClaudeAdapterEvent } from '../../src/main/agents/claude'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
@@ -22,10 +22,10 @@ const models = [
 const settingsRequests = new Set(['set_model', 'apply_flag_settings', 'set_permission_mode'])
 
 /** A connected fixture with two models and one thread on `fixture-model` at low effort; `start` runs its CLI. */
-async function fixture(start = true): Promise<{ f: Fixture; id: string; events: ClaudeSettingsEvent[] }> {
+async function fixture(start = true): Promise<{ f: Fixture; id: string; events: ClaudeAdapterEvent[] }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-claude-'))
   await writeFile(join(root, 'models.json'), JSON.stringify(models))
-  const events: ClaudeSettingsEvent[] = []
+  const events: ClaudeAdapterEvent[] = []
   const f = await claudeFixture(root, undefined, undefined, { logEvent: event => events.push(event) })
   fixtures.push(f)
   await f.host.connect()
@@ -126,8 +126,8 @@ it('says the background work stopped when a lost answer stops the CLI, and keeps
   await f.liveSettings.silence()
   const result = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
   expect(result).toMatchObject({ accepted: false, uncertain: true })
-  expect(result.error).toContain('Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "Review the diff" stopped with it.')
-  expect(result.error).toContain('The session starts again with the new settings the next time you use the thread.')
+  expect(result.error).toContain('Claude Code did not confirm the settings change, so Sotto stopped this provider session, and "Review the diff" stopped with it.')
+  expect(result.error).toContain('The provider session starts again with the new settings the next time you use the thread.')
   const shown = await thread(f, id)
   expect(shown.status).toBe('error')
   expect(shown.backgroundWork).toBeUndefined()
@@ -162,7 +162,7 @@ it('leaves the coordinator\'s saved intent in place when the CLI never answers, 
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   const outbox = async (): Promise<unknown[]> => (JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { outbox: unknown[] }).outbox
   try {
     await control.start(); await control.command({ type: 'connect' })

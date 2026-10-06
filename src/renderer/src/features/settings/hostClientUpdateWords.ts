@@ -9,13 +9,17 @@ import { PROVIDER_LABELS, type ClientUpdateRun, type ProviderClientUpdate, type 
 /** Where one client stands, as the tile and the popover show it. `current` shows nothing: nothing announces up to date. */
 export type ClientUpdatePhase = 'current' | 'behind' | 'by-hand' | 'queued' | 'updating' | 'updated' | 'failed'
 
-/** The phase of one reading. An update the user has put away with Done reads as current. */
+/**
+ * The phase of one reading. An update the user has put away with Done reads as current, and one that left the client
+ * still behind what is published reads as behind: "is now 2.1.287" must not hide 2.1.288.
+ */
 export function clientUpdatePhase(update: ProviderClientUpdate, acknowledged = false): ClientUpdatePhase {
   switch (update.state) {
     case 'queued': return 'queued'
     case 'updating': return 'updating'
-    case 'updated': return acknowledged ? 'current' : 'updated'
     case 'failed': case 'unchanged': return 'failed'
+    case 'updated': if (!update.behind) return acknowledged ? 'current' : 'updated'
+    // falls through
     default: return !update.behind ? 'current' : update.canInstall ? 'behind' : 'by-hand'
   }
 }

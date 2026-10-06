@@ -5,6 +5,7 @@ import type { BrowserBridge, BrowserCapture, BrowserEvent, BrowserPage, BrowserT
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { BrowserTaskDetails } from '../../../../src/renderer/src/tools/BrowserTaskDetails'
 import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
+import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { BROWSER_PLAYER_MIN_WIDTH, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE, BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
@@ -35,6 +36,43 @@ function fake(initial: BrowserTask[] = [task()]) {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('the browser player', () => {
+  it('does not measure a placement without a task, while hidden, or while docked', async () => {
+    const browser = fake([]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    const geometry = vi.spyOn(playerStore, 'rectFor')
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await act(async () => { await Promise.resolve() })
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => browser.emit({ type: 'task', task: task() }))
+    await screen.findByRole('complementary', { name: 'Browser for Visual gate flake' })
+    expect(geometry).toHaveBeenCalled()
+    geometry.mockClear()
+    act(() => playerStore.hide('visual-gate'))
+    act(() => browser.emit({ type: 'task', task: task({ summary: 'Still working', updatedAt: 2 }) }))
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => playerStore.restore('visual-gate'))
+    await act(async () => { await store.browser.activate(browser.bridge, 'visual-gate'); store.browser.select('visual-gate', page.id) })
+    geometry.mockClear()
+    act(() => { store.setSurface('browser'); store.setOpen(true) })
+    expect(geometry).not.toHaveBeenCalled()
+    expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the live page mounted across task events and changes it only when the page changes', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 800, y: 300, width: 340, height: 200 }))
+    const browser = fake(), store = new ToolsPanelStore(), playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: page.id, bounds: expect.any(Object) })))
+    vi.mocked(browser.bridge.mount).mockClear()
+    act(() => browser.emit({ type: 'task', task: task({ summary: 'Checked the form', updatedAt: 2 }) }))
+    expect(browser.bridge.mount).not.toHaveBeenCalled()
+    const nextPage = { ...page, id: '33333333-3333-4333-8333-333333333333' }
+    act(() => {
+      browser.emit({ type: 'page', page: nextPage })
+      browser.emit({ type: 'task', task: task({ pageId: nextPage.id, updatedAt: 3 }) })
+    })
+    expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: page.id, bounds: null }))
+    expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: nextPage.id, bounds: expect.any(Object) }))
+  })
   it('asks for no remote host thread\'s tasks, and survives a bridge that refuses a thread outright', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
     const state = threadsStateFixture()
@@ -59,6 +97,36 @@ describe('the browser player', () => {
     act(() => store.unpin())
     rerender(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     expect(screen.getByRole('complementary', { name: 'Browser for Visual gate flake' })).toBeInTheDocument()
+  })
+  it('does not ask this computer’s browser about a thread on another host', async () => {
+    const browser = fake([])
+    const remoteId = 'host:00000000-0000-4000-8000-000000000099:remote-thread'
+    browser.bridge.tasks = vi.fn(async (request: { threadId: string }) => {
+      if (request.threadId === remoteId) throw new Error('This action belongs to another host. Select that host before trying again.')
+      return ok([])
+    })
+    const state = threadsStateFixture()
+    const sample = state.host.threads[0]!
+    state.host.threads = [...state.host.threads, { ...sample, id: remoteId, remoteHost: true, title: 'On DGX' }]
+    const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
+    render(<BrowserPlayer state={state} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
+    await waitFor(() => expect(browser.bridge.tasks).toHaveBeenCalled())
+    const asked = vi.mocked(browser.bridge.tasks).mock.calls.map(call => call[0].threadId)
+    expect(asked).toContain('visual-gate')
+    expect(asked).not.toContain(remoteId)
+  })
+  it('keeps listing the other threads when one browser subscription throws', () => {
+    const store = new BrowserStore()
+    const tasks = vi.fn((request: { threadId: string }) => {
+      if (request.threadId === 'foreign') throw new Error('This action belongs to another host. Select that host before trying again.')
+      return Promise.resolve(ok([]))
+    })
+    const bridge: BrowserBridge = { ...fake([]).bridge, tasks }
+    expect(() => store.watchTasks(bridge, ['foreign', 'local'])).not.toThrow()
+    expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign', 'local'])
+    tasks.mockClear()
+    store.watchTasks(bridge, ['foreign', 'local'])
+    expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign'])
   })
   it('shows its own live page rather than "steps aside", even though its own root carries data-covers-native-view', async () => {
     // Regression: the player marks its own <aside> so a page docked elsewhere steps aside for it (browserOverlay.ts).

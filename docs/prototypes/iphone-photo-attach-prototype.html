@@ -1,0 +1,317 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three directions for attaching photos from the iPhone thread composer,
+  switchable via ?variant=A|B|C. Verdict (October 3, 2026): B, "In the field, like Messages". ADR-0031's
+  October 3 amendment records the pick. Decided already: a library and a camera source; sent photos show
+  as thumbnails that open full screen; a model that can't take images leaves the control visible
+  but unavailable, with a reason; attached photos stay with the thread's draft.
+  The question these answer: where the control lives, how staged photos sit in the composer, and
+  how sent photos read in the thread. No host calls, no persistence. Colours are Sotto's default
+  palette (src/shared/themes/palettes.ts), the same frame as iphone-client-prototype.html.
+  Run: node docs/prototypes/composer-selectors-serve.mjs, then open
+  http://127.0.0.1:4173/docs/prototypes/iphone-photo-attach-prototype.html
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Photos from the iPhone — prototype</title>
+<style>
+@font-face{font-family:Figtree;src:url('/src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900}
+
+:root,[data-theme=dark]{
+  --canvas:oklch(0.115 0.008 265);--surface:oklch(0.145 0.008 265);--raised:oklch(0.185 0.008 265);--overlay:oklch(0.215 0.008 265);
+  --text:oklch(0.985 0.005 280);--muted:oklch(0.72 0.014 265);--placeholder:oklch(0.675 0.012 270);
+  --border:oklch(0.305 0.02 265);--hair:oklch(0.22 0.012 265);
+  --accent:oklch(0.714 0.104 183.1);--accent-fg:oklch(0.16 0.012 190);--accent-surface:oklch(0.32 0.05 185);
+  --message:oklch(0.205 0.014 265);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.829 0.171 81);
+  --error-fg:oklch(0.702 0.189 22.2);--error-surface:oklch(0.29 0.04 20);
+  --scrim:oklch(0 0 0 / .55);--sheet:oklch(0.2 0.008 265);
+  --page:#161618;--page-text:#e8e8ea;--page-muted:#a0a0a8;--bezel:#050506;
+}
+[data-theme=light]{
+  --canvas:oklch(0.978 0.004 85);--surface:oklch(0.99 0.003 85);--raised:oklch(0.955 0.006 85);--overlay:oklch(0.945 0.007 85);
+  --text:oklch(0.235 0.014 75);--muted:oklch(0.5 0.014 75);--placeholder:oklch(0.535 0.015 78);
+  --border:oklch(0.86 0.012 80);--hair:oklch(0.915 0.008 80);
+  --accent:oklch(0.53 0.095 186);--accent-fg:oklch(0.99 0.003 85);--accent-surface:oklch(0.92 0.03 186);
+  --message:oklch(0.93 0.012 85);
+  --warning:oklch(0.772 0.173 65.4);--warning-fg:oklch(0.547 0.156 45.4);
+  --error-fg:oklch(0.509 0.209 28.5);--error-surface:oklch(0.94 0.02 25);
+  --scrim:oklch(0.2 0 0 / .35);--sheet:oklch(0.995 0.002 85);
+  --page:#e7e7ea;--page-text:#1c1c1f;--page-muted:#5a5a62;--bezel:#111113;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:40px 40px 120px}
+.page-head{max-width:1100px;margin:0 0 30px}
+.page-head .kicker{font-size:13px;color:var(--page-muted);letter-spacing:.02em;margin:0 0 6px}
+.page-head h1{font-size:30px;margin:0 0 10px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin:0 0 6px;max-width:820px;color:var(--page-muted)}
+.row{display:flex;flex-wrap:wrap;gap:36px 28px;align-items:flex-start}
+.cell{width:calc(414px * var(--z,.7))}
+.frame{zoom:var(--z,.7);width:414px;height:868px;border-radius:62px;background:var(--bezel);padding:12px;box-shadow:0 30px 60px -30px #0008}
+.cap{margin-top:12px;font-size:14px}
+.cap b{display:block;font-weight:600}
+.cap span{color:var(--page-muted);font-size:13px;display:block;line-height:1.45}
+
+/* ---------- inside the phone ---------- */
+.phone{position:relative;width:390px;height:844px;border-radius:50px;overflow:hidden;background:var(--canvas);color:var(--text);font:17px/1.45 Figtree,system-ui,sans-serif;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+.sb{flex:none;height:54px;display:flex;align-items:center;justify-content:space-between;padding:6px 30px 0 44px;font-size:17px;font-weight:600;position:relative;z-index:5}
+.sb .island{position:absolute;left:50%;top:11px;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:136px;height:5px;border-radius:3px;background:var(--text);opacity:.85;z-index:30}
+.ic{flex:none;display:block}
+.nav{flex:none;height:44px;display:flex;align-items:center;padding:0 12px;position:relative}
+.nav .back{display:flex;align-items:center;gap:2px;color:var(--accent)}
+.nav .t{position:absolute;left:0;right:0;text-align:center;font-weight:600;pointer-events:none}
+.seg{flex:none;margin:8px 16px;background:var(--raised);border-radius:9px;padding:2px;display:flex;font-size:13px;font-weight:600}
+.seg span{flex:1;text-align:center;padding:5px 0;border-radius:7px;color:var(--muted)}
+.seg span.on{background:var(--overlay);color:var(--text);box-shadow:0 1px 2px #0003}
+.banner{flex:none;margin:0 16px 4px;font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.banner i{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.fill{flex:1;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:14px;padding:16px}
+.mine{align-self:flex-end;max-width:300px;background:var(--accent-surface);padding:10px 14px;border-radius:20px 20px 6px 20px}
+.theirs{align-self:flex-start;max-width:330px}
+.theirs small{display:block;font-size:12px;color:var(--muted);margin:0 0 4px 6px}
+.theirs div{background:var(--surface);border:1px solid var(--hair);padding:10px 14px;border-radius:20px 20px 20px 6px}
+.muted{color:var(--muted)}
+.foot{font-size:13px;line-height:1.4}
+
+/* composer */
+.comp{flex:none;border-top:1px solid var(--hair);background:var(--canvas);padding:8px 12px 30px;position:relative;z-index:6}
+.crow{display:flex;align-items:flex-end;gap:8px}
+.field{flex:1;min-height:44px;background:var(--raised);border-radius:22px;padding:11px 16px;color:var(--placeholder)}
+.field.typed{color:var(--text)}
+.rb{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--raised);color:var(--text)}
+.rb.go{background:var(--accent);color:var(--accent-fg)}
+.rb.off{color:var(--muted);opacity:.55}
+.rb.flat{background:none}
+.rb.press{outline:2px solid var(--accent);outline-offset:2px}
+
+/* fake photos */
+.ph{flex:none;border-radius:10px;overflow:hidden;position:relative;background:#888}
+.p1{background:linear-gradient(#f4f4f6 0 18%,transparent 18%),linear-gradient(90deg,transparent 10%,#e5484d 10% 90%,transparent 90%) 0 34%/100% 14% no-repeat,repeating-linear-gradient(#fff 0 9px,#d9d9de 9px 11px) ,#fff}
+.p2{background:radial-gradient(circle at 30% 40%,transparent 18%,#2b2b2b 18% 20%,transparent 20%),linear-gradient(115deg,transparent 48%,#2b2b2b 48% 50%,transparent 50%),linear-gradient(#efece4,#e3dfd3)}
+.p3{background:linear-gradient(#0d1b2a 0 12%,transparent 12%),linear-gradient(90deg,#1b263b 0 26%,transparent 26%),linear-gradient(#3a86ff 0 0) 40% 45%/50% 30% no-repeat,#24324a}
+.p4{background:linear-gradient(160deg,#f6bd60 0%,#f28482 55%,#84a59d 100%)}
+.ph .x{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:#000c;color:#fff;display:flex;align-items:center;justify-content:center}
+.ph .veil{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;color:#fff}
+.ring{width:26px;height:26px;border-radius:50%;background:conic-gradient(#fff var(--p,40%),#fff4 0);-webkit-mask:radial-gradient(circle,transparent 9px,#000 10px);mask:radial-gradient(circle,transparent 9px,#000 10px)}
+.ph.bad{outline:2px solid var(--error-fg);outline-offset:-2px}
+.ph.bad .veil{background:#000a}
+
+/* sheets and menus */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:20}
+.asheet{position:absolute;left:8px;right:8px;bottom:34px;z-index:21;display:flex;flex-direction:column;gap:8px}
+.asheet .grp{background:var(--sheet);border-radius:14px;overflow:hidden}
+.asheet .grp div{height:57px;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--accent);font-size:19px;border-top:1px solid var(--hair)}
+.asheet .grp div:first-child{border-top:0}
+.asheet .grp .hd{height:auto;padding:12px 16px;font-size:13px;color:var(--muted)}
+.asheet .cancel{font-weight:600}
+.menu{position:absolute;z-index:21;width:250px;background:var(--sheet);border-radius:14px;box-shadow:0 20px 50px #0007;overflow:hidden;font-size:17px}
+.menu div{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--hair)}
+.menu div:first-child{border-top:0}
+.menu .dis{color:var(--muted)}
+.menu .why{font-size:13px;color:var(--muted);display:block;padding:10px 16px;border-top:6px solid var(--hair);line-height:1.4}
+.drawer{flex:none;height:300px;background:var(--surface);border-top:1px solid var(--hair);display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:0 0 30px;position:relative;z-index:6}
+.drawer .ph{border-radius:0;height:100%}
+.drawer .tile{background:var(--raised);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--text)}
+.drawer .pick{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:#0004}
+.drawer .pick.on{background:var(--accent);border-color:#fff;display:flex;align-items:center;justify-content:center;color:var(--accent-fg);font-size:12px;font-weight:700}
+.dbar{flex:none;display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:15px;background:var(--surface);border-top:1px solid var(--hair);position:relative;z-index:6}
+.dbar b{color:var(--accent);font-weight:600}
+
+/* viewer */
+.viewer{position:absolute;inset:0;background:#000;z-index:25;color:#fff;display:flex;flex-direction:column}
+.viewer .top{display:flex;justify-content:space-between;align-items:center;padding:60px 16px 12px;font-size:16px}
+.viewer .top b{font-weight:600}
+.viewer .img{flex:1;display:flex;align-items:center;justify-content:center}
+.viewer .meta{padding:14px 20px 44px;font-size:14px;color:#bbb;line-height:1.5}
+.dots{display:flex;gap:6px;justify-content:center;padding-bottom:10px}
+.dots i{width:7px;height:7px;border-radius:50%;background:#fff5}
+.dots i.on{background:#fff}
+
+.chip{display:flex;gap:10px;align-items:center;background:var(--raised);border-radius:12px;padding:6px 10px 6px 6px;font-size:14px}
+.chip .ph{width:36px;height:36px;border-radius:7px}
+.chip .n{flex:1;min-width:0}
+.chip .n b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .n span{color:var(--muted);font-size:12px}
+.chip .n span.err{color:var(--error-fg)}
+.tray{display:flex;gap:8px;padding:2px 0 10px;overflow:hidden}
+.why{font-size:13px;color:var(--muted);padding:0 4px 8px;line-height:1.4}
+.err{color:var(--error-fg)}
+.tip{position:absolute;left:12px;right:12px;bottom:92px;z-index:8;background:var(--sheet);border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:15px;line-height:1.4;box-shadow:0 12px 30px #0005}
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;background:#000;color:#fff;border-radius:999px;padding:6px;box-shadow:0 10px 30px #0006;z-index:1000;font:600 14px/1 system-ui,sans-serif;outline:2px solid #ffffff22}
+.proto-bar button{background:none;border:0;color:#fff;min-width:40px;height:40px;border-radius:20px;cursor:pointer;font:inherit;padding:0 12px}
+.proto-bar button:hover{background:#ffffff1a}
+.proto-bar button:focus-visible{outline:2px solid #6ee7d8}
+.proto-bar .lab{min-width:240px;text-align:center}
+.proto-bar .sep{width:1px;height:22px;background:#ffffff33;margin:0 4px}
+</style>
+</head>
+<body>
+<header class="page-head" id="head"></header>
+<main id="stage"></main>
+<nav class="proto-bar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+  <span class="sep"></span>
+  <button id="theme"></button>
+  <button id="zoom"></button>
+</nav>
+<script>
+/* ---------- icons ---------- */
+const P = {
+  back:'<path d="M15 18l-6-6 6-6"/>', up:'<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>', plus:'<path d="M12 5v14M5 12h14"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  clip:'<path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',
+  photo:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  grid:'<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
+  warn:'<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+  share:'<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>'
+}
+const ic = (n, s = 22, w = 2) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`
+
+/* ---------- shared phone chrome ---------- */
+const phone = (body, over = '') => `<div class="frame"><div class="phone">
+  <div class="sb"><span>9:41</span><span class="island"></span><span style="display:flex;gap:6px;align-items:center"><svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2" width="3" height="10" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2" fill="currentColor"/><rect x="25" y="4.5" width="1.5" height="4" rx=".75" fill="currentColor" opacity=".4"/></svg></span></div>
+  <div class="nav"><span class="back">${ic('back', 24)}Threads</span><span class="t">Fix the login redirect</span></div>
+  <div class="seg"><span class="on">Messages</span><span>Activity</span></div>
+  <div class="banner"><i></i>Studio PC</div>
+  ${body}${over}<div class="home"></div></div></div>`
+const thread = (extra = '') => `<div class="fill">
+  <div class="theirs"><small>Claude Code</small><div>The redirect goes back to <b>/login</b> after a successful sign-in. Can you show me what you see?</div></div>
+  ${extra}</div>`
+const ph = (k, w, h, inner = '') => `<div class="ph ${k}" style="width:${w}px;height:${h}px">${inner}</div>`
+const send = on => `<span class="rb ${on ? 'go' : ''}" aria-label="Send reply">${ic('up', 20, 2.4)}</span>`
+
+/* ---------- variants ---------- */
+const VARIANTS = {
+A: {
+  name: 'Paperclip and tray',
+  thesis: 'A paperclip sits left of the reply box. A press opens an iOS action sheet: Choose photos, Take photo. Chosen photos wait in a row of square thumbnails above the reply box, each with its own remove button. Sent photos sit in a grid inside your bubble.',
+  good: 'Good at: standard iOS. The action sheet and tray are familiar, and the tray shows progress and refusals on the photo itself.',
+  cost: 'Costs: the action sheet is a modal step on every attach. The tray adds 74 pt above the keyboard while photos wait.',
+  set: {
+    idle: () => phone(thread() + A_compRaw({}), ''),
+    menu: () => phone(thread() + A_compRaw({ pressed: true }), `<div class="scrim"></div><div class="asheet"><div class="grp"><div class="hd">Attach photos to this reply. They go to Studio PC.</div><div>${ic('photo')}Choose photos</div><div>${ic('cam')}Take photo</div></div><div class="grp"><div class="cancel">Cancel</div></div></div>`),
+    staged: () => phone(thread() + A_compRaw({ staged: true, text: 'This one broke after I signed in', tray: `<div class="tray">
+        ${ph('p1', 64, 64, `<span class="x">${ic('x', 12, 3)}</span>`)}
+        ${ph('p3', 64, 64, `<span class="x">${ic('x', 12, 3)}</span>`)}
+        ${ph('p4', 64, 64, `<span class="veil"><span class="ring" style="--p:55%"></span></span>`)}
+        ${ph('p2 bad', 64, 64, `<span class="veil">${ic('warn', 22)}</span><span class="x">${ic('x', 12, 3)}</span>`)}
+      </div><div class="why err">One photo couldn’t be read, so it wasn’t added. The others are fine. Remove it or try another.</div>` })),
+    sent: () => phone(thread(`<div class="mine" style="padding:6px;max-width:260px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">${ph('p1', 122, 122)}${ph('p3', 122, 122)}</div><div style="padding:6px 8px 2px">This one broke after I signed in</div></div>
+      <div class="theirs"><small>Claude Code</small><div>Thanks. The second screenshot shows the session cookie missing. Looking at the middleware now.</div></div>`) + A_compRaw({}), ''),
+    viewer: () => phone(thread(), `<div class="viewer"><div class="top"><b>Close</b><span>1 of 2</span>${ic('share')}</div><div class="img">${ph('p1', 390, 520).replace('border-radius:10px', '')}</div><div class="meta">Screenshot 2026-10-03 at 09.12.png<br>Resized from 2556×3408 to 1932×2576 before sending.</div></div>`),
+    nosupport: () => phone(thread() + A_compRaw({ off: true, pressed: true }), `<div class="tip">This thread’s model can’t take photos. Change the model on Studio PC to attach them.</div>`),
+  }
+},
+B: {
+  name: 'In the field, like Messages',
+  thesis: 'A plus button opens a short menu above it: Photo library, Camera. Chosen photos sit inside the reply box above the text, at their own shape, so the box grows to hold them. Sent photos stand on their own above your text bubble, the way Messages shows them.',
+  good: 'Good at: photos read as part of what you are writing. Sent photos are large enough to read a screenshot without opening it.',
+  cost: 'Costs: several tall photos push the thread up a long way. A refusal has less room to explain itself inside the box.',
+  set: {
+    idle: () => phone(thread() + B_comp(), ''),
+    menu: () => phone(thread() + B_comp({ pressed: true }), `<div class="menu" style="left:12px;bottom:92px"><div>Photo library ${ic('photo')}</div><div>Camera ${ic('cam')}</div></div>`),
+    staged: () => phone(thread() + B_comp({ photos: true, text: 'This one broke after I signed in' }), ''),
+    sent: () => phone(thread(`<div style="align-self:flex-end;display:flex;flex-direction:column;align-items:flex-end;gap:4px">${ph('p1', 180, 240)}${ph('p3', 220, 140)}<div class="mine">This one broke after I signed in</div></div>
+      <div class="theirs"><small>Claude Code</small><div>The second screenshot shows the session cookie missing.</div></div>`) + B_comp(), ''),
+    viewer: () => phone(thread(), `<div class="viewer"><div class="top"><b>Done</b><span></span>${ic('share')}</div><div class="img">${ph('p3', 390, 250).replace('border-radius:10px', '')}</div><div class="dots"><i></i><i class="on"></i></div><div class="meta">IMG_4120.jpg · resized from 4032×3024 to 2576×1932<br>Swipe for the other photo.</div></div>`),
+    nosupport: () => phone(thread() + B_comp({ pressed: true }), `<div class="menu" style="left:12px;bottom:92px"><div class="dis">Photo library ${ic('photo')}</div><div class="dis">Camera ${ic('cam')}</div><span class="why">This thread’s model can’t take photos. Change the model on Studio PC to attach them.</span></div>`),
+  }
+},
+C: {
+  name: 'Photo drawer',
+  thesis: 'A photo button swaps the keyboard for the system photo picker, embedded where the keyboard was, with the camera as the first tile. Chosen photos wait as labelled rows with name, size and state. Sent photos collapse to a strip with a count that opens a grid.',
+  good: 'Good at: choosing several photos fast without leaving the thread. Each staged photo has room to say what is happening to it in words.',
+  cost: 'Costs: the embedded picker is iOS 17 PhotosPicker inline style, which needs care around the keyboard. Rows take more height than thumbnails.',
+  set: {
+    idle: () => phone(thread() + C_comp(), ''),
+    menu: () => phone(thread() + C_comp({ active: true }) + `<div class="dbar"><span class="muted">2 selected</span><b>Add</b></div><div class="drawer">
+        <div class="tile">${ic('cam', 28)}Camera</div>
+        ${ph('p1', 0, 0, '<span class="pick on">1</span>').replace('width:0px;height:0px', '')}
+        ${ph('p2', 0, 0, '<span class="pick"></span>').replace('width:0px;height:0px', '')}
+        ${ph('p3', 0, 0, '<span class="pick on">2</span>').replace('width:0px;height:0px', '')}
+        ${ph('p4', 0, 0, '<span class="pick"></span>').replace('width:0px;height:0px', '')}
+        <div class="tile">${ic('grid', 26)}All photos</div></div>`, ''),
+    staged: () => phone(thread() + C_comp({ rows: true, text: 'This one broke after I signed in' }), ''),
+    sent: () => phone(thread(`<div class="mine" style="max-width:280px"><div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">${ph('p1', 44, 44)}${ph('p3', 44, 44)}<span style="font-size:14px;opacity:.8">2 photos</span></div>This one broke after I signed in</div>
+      <div class="theirs"><small>Claude Code</small><div>The second screenshot shows the session cookie missing.</div></div>`) + C_comp(), ''),
+    viewer: () => phone(thread(), `<div class="viewer" style="background:var(--canvas);color:var(--text)"><div class="top"><span></span><b>2 photos</b><b style="color:var(--accent)">Done</b></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 4px">${ph('p1', 189, 250)}${ph('p3', 189, 250)}</div><div class="meta" style="color:var(--muted)">Tap a photo to see it full screen.</div></div>`),
+    nosupport: () => phone(thread() + C_comp({ active: true, off: true }) + `<div class="drawer" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 40px 30px;text-align:center">${ic('photo', 34, 1.6)}<div style="font-weight:600">This model can’t take photos</div><div class="muted foot">Change the thread’s model on Studio PC to attach them. Your reply is still here.</div></div>`, ''),
+  }
+}
+}
+
+/* A: paperclip, tray */
+function A_compRaw({ staged = false, tray = '', pressed = false, text = '', off = false } = {}) {
+  return `<div class="comp">${tray}<div class="crow"><span class="rb flat ${pressed ? 'press' : ''} ${off ? 'off' : ''}" aria-label="${off ? 'Attach photos. This thread’s model can’t take them.' : 'Attach photos'}">${ic('clip', 24)}</span><div class="field ${text ? 'typed' : ''}">${text || 'Reply'}</div>${send(staged)}</div></div>`
+}
+/* B: plus, photos inside the field */
+function B_comp({ pressed = false, photos = false, text = '' } = {}) {
+  const inside = photos ? `<div style="display:flex;gap:6px;margin:-4px -8px 8px;align-items:flex-end">
+      ${ph('p1', 66, 88, `<span class="x">${ic('x', 12, 3)}</span>`)}
+      ${ph('p3', 104, 66, `<span class="x">${ic('x', 12, 3)}</span>`)}
+      ${ph('p4', 66, 88, `<span class="veil"><span class="ring" style="--p:55%"></span></span>`)}
+    </div><div class="err foot" style="margin:0 -4px 8px">IMG_4133.heic couldn’t be read, so it wasn’t added.</div>` : ''
+  return `<div class="comp"><div class="crow"><span class="rb ${pressed ? 'press' : ''}" aria-label="Attach photos">${ic('plus', 22, 2.2)}</span><div class="field ${text ? 'typed' : ''}" style="${photos ? 'border-radius:20px;padding-top:12px' : ''}">${inside}${text || 'Reply'}</div>${send(photos)}</div></div>`
+}
+/* C: photo button, drawer, rows */
+function C_comp({ active = false, rows = false, text = '', off = false } = {}) {
+  const list = rows ? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+      <div class="chip">${ph('p1', 36, 36)}<div class="n"><b>Screenshot 09.12.png</b><span>1.8 MB · Ready</span></div>${ic('x', 18)}</div>
+      <div class="chip">${ph('p3', 36, 36)}<div class="n"><b>IMG_4120.jpg</b><span>Sending to Studio PC… 60%</span></div>${ic('x', 18)}</div>
+      <div class="chip">${ph('p2', 36, 36)}<div class="n"><b>IMG_4133.heic</b><span class="err">Couldn’t be read. It wasn’t added.</span></div>${ic('x', 18)}</div>
+    </div>` : ''
+  return `<div class="comp" style="${active ? 'padding-bottom:8px' : ''}">${list}<div class="crow"><span class="rb ${active ? 'press' : ''} ${off ? 'off' : ''}" aria-label="Attach photos">${ic('photo', 22)}</span><div class="field ${text ? 'typed' : ''}">${text || 'Reply'}</div>${send(rows)}</div></div>`
+}
+
+const SCREENS = [
+  ['idle', 'Ready', 'The reply box with the photo control. Nothing waits yet.'],
+  ['menu', 'Choosing', 'A press on the control. Choose from the library or take one with the camera; the camera asks for access the first time.'],
+  ['staged', 'Waiting to send', 'Two photos ready, one still going to the computer, one refused. Send works with text, photos or both. Leave the thread and come back: these are still here.'],
+  ['sent', 'In the thread', 'A sent reply with its photos, fetched from the computer as previews.'],
+  ['viewer', 'Opened', 'A press on a sent photo. Shows the name and, when it was scaled before sending, the size it was scaled from.'],
+  ['nosupport', 'Model can’t take photos', 'The control stays where it is but does nothing except say why. An older Sotto on the computer gets the same treatment: “Update Sotto on Studio PC to send photos.”'],
+]
+
+/* ---------- render + switcher ---------- */
+const params = new URLSearchParams(location.search)
+let key = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+const root = document.documentElement
+root.dataset.theme = params.get('theme') === 'light' ? 'light' : 'dark'
+let zoom = Number(params.get('zoom')) || 0.7
+const keys = Object.keys(VARIANTS)
+function render() {
+  const v = VARIANTS[key]
+  document.getElementById('head').innerHTML = `<p class="kicker">PROTOTYPE · Photos from the iPhone · ${keys.indexOf(key) + 1} of ${keys.length}</p><h1>${key}: ${v.name}</h1><p>${v.thesis}</p><p>${v.good}</p><p>${v.cost}</p>`
+  document.getElementById('stage').innerHTML = `<div class="row">${SCREENS.map(([id, label, note]) => `<div class="cell"><div aria-label="${label}">${v.set[id]()}</div><div class="cap"><b>${label}</b><span>${note}</span></div></div>`).join('')}</div>`
+  document.getElementById('lab').textContent = `${key}: ${v.name}`
+  document.getElementById('theme').textContent = root.dataset.theme === 'dark' ? 'Light' : 'Dark'
+  document.getElementById('zoom').textContent = `${Math.round(zoom * 100)}%`
+  root.style.setProperty('--z', zoom)
+  const q = new URLSearchParams({ variant: key })
+  if (root.dataset.theme === 'light') q.set('theme', 'light')
+  if (zoom !== 0.7) q.set('zoom', zoom)
+  history.replaceState(null, '', '?' + q)
+}
+const step = d => { key = keys[(keys.indexOf(key) + d + keys.length) % keys.length]; render(); scrollTo(0, 0) }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('theme').onclick = () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; render() }
+document.getElementById('zoom').onclick = () => { zoom = zoom === 0.7 ? 1 : zoom === 1 ? 0.5 : 0.7; render() }
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+render()
+</script>
+</body>
+</html>

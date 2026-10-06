@@ -137,6 +137,28 @@ describe('thread store', () => {
     expect(reopened.store.messageCount('kept')).toBe(0)
   })
 
+  it.each(['forget', 'becomeEphemeral'] as const)('erases chosen option labels from disk on %s while retaining attribution', async transition => {
+    const f = await store()
+    const attribution = { clientId: 'window-1', transport: 'ipc' as const }
+    f.store.append('thread', { kind: 'answer-given', at, requestId: 'request',
+      questionOptionIds: ['Delete the staging database', 'Publish the private repository'], attribution })
+    expect(await onDisk(f.root)).toContain('Delete the staging database')
+
+    if (transition === 'forget') f.store.forget('thread')
+    else f.store.becomeEphemeral()
+    const saved = await onDisk(f.root)
+    expect(saved).not.toContain('Delete the staging database')
+    expect(saved).not.toContain('Publish the private repository')
+    f.store.close()
+
+    const reopened = await store(f.root)
+    expect(reopened.store.eventsAfter(0, 'thread')[0]?.event).toEqual({
+      kind: 'answer-given', at, requestId: 'request', answer: '', attribution,
+    })
+    reopened.store.rebuild()
+    expect(reopened.store.readMessages('thread').messages).toEqual([])
+  })
+
   it('keeps committed history durable with synchronous=FULL', () => {
     const db = new DatabaseSync(':memory:')
     try {

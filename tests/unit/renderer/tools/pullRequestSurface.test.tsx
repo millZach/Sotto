@@ -59,6 +59,18 @@ async function menu(label: string) {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReset().mockReturnValue(null) })
 
+it('copies the pull request link through main when browser clipboard access is denied', async () => {
+  const { writeText, onStatus } = mount()
+  writeText.mockRejectedValue(new Error('Permission denied'))
+  const deliverOutput = vi.fn(async () => 'copied')
+  vi.stubGlobal('sotto', { ...window.sotto, deliverOutput })
+  await opened()
+  await menu('Copy link')
+  await waitFor(() => expect(deliverOutput).toHaveBeenCalledWith({ text: URL, autoPaste: false, pasteDelayMs: 50 }))
+  expect(writeText).not.toHaveBeenCalled()
+  expect(onStatus).toHaveBeenCalledWith('Link copied')
+})
+
 describe('the merge checklist, read from the pull request', () => {
   const read = (change: Partial<GitPullRequestDetail>) => checklist(detail(change)).map(line => [line.label, line.tone, line.why, line.fix?.kind ?? null])
   it('lists five lines in the order a merge meets them, each done for a pull request ready to merge', () => {
@@ -444,4 +456,14 @@ describe('the Pull request surface', () => {
     delete earlier.reviews; delete earlier.mergedAt
     expect(gitPullRequestDetailSchema.parse(earlier)).toMatchObject({ reviews: [], mergedAt: null })
   })
+})
+
+it('explains how to recover when copying the pull request link fails', async () => {
+  const { onStatus, openExternalLink } = mount()
+  vi.stubGlobal('sotto', { ...window.sotto, deliverOutput: vi.fn(async () => 'failed') })
+  await opened()
+  await menu('Copy link')
+  await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Could not copy the link. Open on GitHub and copy the address from your browser.'))
+  fireEvent.click(screen.getByRole('button', { name: 'Open on GitHub' }))
+  expect(openExternalLink).toHaveBeenCalledWith(URL)
 })

@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
-import type { AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -31,6 +31,8 @@ export type AgentHostCommand =
 export interface AgentHostResult {
   readonly accepted: boolean
   readonly uncertain?: boolean
+  /** Local answer delivery after its deadline; observes the original write and never sends another. */
+  readonly answerCompletion?: Promise<boolean>
   /**
    * For `configure-thread`: the snapshot the adapter emitted once the provider confirmed the change, carrying
    * the thread's effective settings. The coordinator accepts it in place of reading the thread again, and
@@ -61,6 +63,8 @@ export function confirmedSettingsSnapshot(result: AgentHostResult): [Omit<AgentH
  */
 export interface ThreadReadPurpose {
   readonly beforeSend?: boolean
+  /** An explicit Check again may reopen an uncertain Claude answer for a fresh user choice. */
+  readonly retryUncertainAnswers?: boolean
   /**
    * The reader keeps each thread's history from the host's `subscribeEvents` and reads none from what the read
    * hands back, as an activity subscriber that asks for it does. A host that publishes events then hands back
@@ -73,6 +77,8 @@ export interface ThreadReadPurpose {
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
  * system prompt keeps them apart too, and the material is always something to describe, never to obey.
  */
+/** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
+export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
 export interface ShortTextPrompt { readonly instruction: string; readonly material: string }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
@@ -138,7 +144,7 @@ export interface AgentHost {
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
-  renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
+  renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
@@ -170,8 +176,9 @@ export interface AgentHost {
   configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
   updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
   restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
-  /** Remove the thread's own worktree folder and keep its branch (ADR-0019). */
-  reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean }): Promise<AgentHostSnapshot>
+  /** Remove the thread's own worktree folder and keep its branch (ADR-0041). */
+  previewThreadWorktreeReclaim?(threadId: string): Promise<WorktreeReclaimPreview>
+  reclaimThreadWorktree?(threadId: string, options?: { withUncommittedChanges?: boolean; automatic?: boolean; confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] }): Promise<AgentHostSnapshot>
   threadWorkingDirectory?(threadId: string): Promise<string>
   /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
   runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
@@ -225,7 +232,7 @@ export interface AgentHost {
   observeThreads?(threadIds: readonly string[]): void
   disconnect(provider?: ProviderId): void
   /**
-   * A new client for `provider` is on disk (ADR-0021). The adapter finds it again, reads its version, stops each
+   * A new client for `provider` is on disk (ADR-0042). The adapter finds it again, reads its version, stops each
    * idle process now the way the reaper does, and each working one once it goes idle, so the next process a thread
    * starts runs the new client. It never disconnects, cancels a turn or answers a request, and does nothing for a
    * provider that is not connected. Absent on a host with no local client.

@@ -78,7 +78,13 @@ export class NativeSettingsCoordinator {
         ) {
           await this.dependencies.onAutoPasteChanged(patchSnapshot.autoPaste)
         }
-        const updated = await this.dependencies.repository.update(patchSnapshot)
+        const { worktreeCleanup, ...fields } = patchSnapshot
+        const updated = await this.dependencies.repository.update({
+          ...fields,
+          ...(worktreeCleanup === undefined ? {} : {
+            worktreeCleanup: { ...previous.worktreeCleanup, ...worktreeCleanup },
+          }),
+        })
         await this.notifySettingsChanged(updated)
         return updated
       } catch {

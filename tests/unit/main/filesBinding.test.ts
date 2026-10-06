@@ -63,7 +63,7 @@ describe('the coordinator answering Files without copying its state', () => {
     // The fixture project points at a real folder, so a listing goes all the way through verification.
     ;(host as unknown as { state: AgentHostSnapshot }).state.projects[0]!.path = root
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     controls.push(control)
     await control.start(); await control.command({ type: 'connect' })
     return control

@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, parseSettings, type AppSettings } from '../../shared/settings'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { AtomicJsonStore } from './atomicJsonStore'
+import { parseHostEntityKey } from '../../shared/clientIdentity'
 
 export interface SettingsRepositoryOptions {
   now?: () => number
@@ -64,6 +65,23 @@ export class SettingsRepository {
   async exists(): Promise<boolean> {
     await this.mutationTail
     return this.store.exists()
+  }
+
+  /** Repair the Settings row's former client-keyed local overrides before any thread reads them. */
+  migrateProjectWorkingCopyDefaults(localHostId: string): Promise<void> {
+    return this.enqueueMutation(async () => {
+      const settings = await this.readSettings()
+      const defaults = { ...settings.projectThreadWorkingCopyDefaults }
+      let changed = false
+      for (const [id, value] of Object.entries(defaults)) {
+        const key = parseHostEntityKey(id)
+        if (!key || key.hostId !== localHostId) continue
+        defaults[key.id] ??= value
+        delete defaults[id]
+        changed = true
+      }
+      if (changed) await this.store.write({ ...settings, projectThreadWorkingCopyDefaults: defaults })
+    })
   }
 
   private async readSettings(): Promise<AppSettings> {

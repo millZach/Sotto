@@ -12,8 +12,6 @@ import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
-const membership = { status: async () => ({ status: 'beta' as const, label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta' as const, label: 'Test', expiresAt: null }) }
-
 const opened: { control: AgentControl; stop: () => Promise<void> }[] = []
 const removals: (() => Promise<void>)[] = []
 async function coordinator(root?: string) {
@@ -21,7 +19,7 @@ async function coordinator(root?: string) {
   if (root === undefined) removals.push(workspace.remove)
   const credentials = new AgentCredentials(workspace.root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
   await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner, membership })
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner })
   opened.push({ control, stop: workspace.stop })
   await control.start()
   await control.command({ type: 'connect' })

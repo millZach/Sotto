@@ -20,7 +20,7 @@ function fullState(models: AgentModel[], clientHosts?: { hostId: string; models:
     voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: false },
     reasoningAccounts: [],
-    membership: { status: 'active', label: 'Sotto', expiresAt: null }, clientScoped: true,
+     clientScoped: true,
   }
 }
 

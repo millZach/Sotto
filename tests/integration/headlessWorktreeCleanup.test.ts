@@ -77,7 +77,7 @@ async function host() {
 }
 
 describe('worktree cleanup on the headless host', () => {
-  it('reclaims a settled thread’s worktree under the host’s own rules and keeps its branch (ADR-0019)', async () => {
+  it('reclaims a settled thread’s worktree under the host’s own rules and keeps its branch (ADR-0041)', async () => {
     const f = await host()
     const threadId = await f.worktreeThread()
     const { path, branch } = f.thread(threadId).worktree!

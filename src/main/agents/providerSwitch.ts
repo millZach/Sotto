@@ -324,7 +324,8 @@ export class ConfiguredProviderHost implements AgentHost {
           if (!target) throw new Error('The provider has not confirmed the earlier project registration. Refresh its connection before retrying; it will not be registered twice.')
         } else {
           this.registrations.add(key)
-          await this.registrationStore?.write([...this.registrations])
+          try { await this.registrationStore?.write([...this.registrations]) }
+          catch (error) { this.registrations.delete(key); throw error }
           let result: AgentHostResult
           try { result = await this.options.hosts[id].execute({ type: 'create-project', commandId: `${command.commandId}:project`, projectId, title: project.title, path: project.path }) }
           catch (error) { this.registrations.delete(key); await this.registrationStore?.write([...this.registrations]); throw error }

@@ -1,4 +1,4 @@
-import type { FileListing, FilePath, FilePreview, FileWorkspace, FilesBridge, FilesError, FilesResult } from '../../../shared/files'
+import { FILES_MAX_CONCURRENT_REQUESTS, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesBridge, type FilesError, type FilesResult } from '../../../shared/files'
 
 export type FileEntry = FileListing['entries'][number]
 export type ListingState =
@@ -32,6 +32,7 @@ export interface ThreadFiles {
 export type PathAction = 'copyPath' | 'reveal'
 
 const ROOT = ''
+const REQUEST_QUEUE_WAIT_MS = 10_000
 const unavailableBridge: FilesError = { code: 'unavailable', message: 'Files is not available in this window.' }
 
 function freshThread(threadId: string, generation = 0, workspaceChanged = false): ThreadFiles {
@@ -56,6 +57,9 @@ export class FilesBrowserStore {
   private readonly listeners = new Set<() => void>()
   private readonly scroll = new Map<string, { tree: number; preview: number }>()
   private readonly inflight = new Set<string>()
+  private readonly rootLoads = new Map<string, Promise<boolean>>()
+  private activeRequests = 0
+  private readonly waitingRequests: (() => void)[] = []
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -169,14 +173,27 @@ export class FilesBrowserStore {
     const current = this.threads.get(threadId)
     if (!bridge) return { ok: false, error: unavailableBridge }
     if (!current?.workspace) return { ok: false, error: { code: 'workspace-unavailable', message: 'Refresh Files first.' } }
+    // A thread on a paired host has no reveal: its folder is on that host, so the control is not offered.
+    const act = bridge[action]
+    if (!act) return { ok: false, error: { code: 'unavailable', message: 'This folder is on the host machine. Open it there.' } }
     const { generation, workspace } = current
-    const result = await this.call(() => bridge[action]({ threadId, path, workspaceId: workspace.workspaceId }))
+    const result = await this.call(() => act.call(bridge, { threadId, path, workspaceId: workspace.workspaceId }))
     this.checkWorkspace(bridge, threadId, generation, result)
     return result
   }
 
   // Lists the root without a token. Resolves true when the working folder was replaced.
   private async loadRoot(bridge: FilesBridge | undefined, threadId: string): Promise<boolean> {
+    const key = `${threadId}:${this.threads.get(threadId)?.generation}`
+    const pending = this.rootLoads.get(key)
+    if (pending) return pending
+    const request = this.readRoot(bridge, threadId)
+    this.rootLoads.set(key, request)
+    try { return await request }
+    finally { this.rootLoads.delete(key) }
+  }
+
+  private async readRoot(bridge: FilesBridge | undefined, threadId: string): Promise<boolean> {
     const start = this.threads.get(threadId)
     if (!start) return false
     if (!bridge) {
@@ -204,7 +221,11 @@ export class FilesBrowserStore {
     const start = this.threads.get(threadId)
     if (!start) return
     if (!bridge || !start.workspace) {
-      if (!start.workspace && bridge) await this.loadRoot(bridge, threadId)
+      if (!start.workspace && bridge) {
+        await this.loadRoot(bridge, threadId)
+        const current = this.threads.get(threadId)
+        if (current?.generation === start.generation && current.workspace && current.expanded.has(path)) await this.loadDirectory(bridge, threadId, path)
+      }
       return
     }
     const { generation, workspace } = start
@@ -217,8 +238,20 @@ export class FilesBrowserStore {
   }
 
   private async loadPreview(bridge: FilesBridge | undefined, threadId: string, path: string, quiet: boolean): Promise<void> {
-    const start = this.threads.get(threadId)
+    let start = this.threads.get(threadId)
     if (!start) return
+    if (bridge && !start.workspace) {
+      const generation = start.generation
+      await this.loadRoot(bridge, threadId)
+      start = this.threads.get(threadId)
+      if (!start || start.generation !== generation || start.selectedPath !== path) return
+      if (start.workspace) {
+        for (const folder of start.expanded) {
+          const listing = start.listings.get(folder)
+          if (!listing || listing.status === 'error') void this.loadDirectory(bridge, threadId, folder)
+        }
+      }
+    }
     if (!bridge || !start.workspace) {
       this.patch(threadId, start.generation, { preview: { status: 'error', path, error: bridge ? { code: 'workspace-unavailable', message: '' } : unavailableBridge } })
       return
@@ -247,7 +280,26 @@ export class FilesBrowserStore {
   }
 
   private async call<T>(request: () => Promise<FilesResult<T>>): Promise<FilesResult<T>> {
-    try { return await request() } catch { return { ok: false, error: { code: 'unavailable', message: 'Files could not be reached.' } } }
+    if (this.activeRequests >= FILES_MAX_CONCURRENT_REQUESTS) {
+      const admitted = await new Promise<boolean>(resolve => {
+        const admit = (): void => { clearTimeout(timeout); resolve(true) }
+        const timeout = setTimeout(() => {
+          const index = this.waitingRequests.indexOf(admit)
+          if (index !== -1) this.waitingRequests.splice(index, 1)
+          resolve(false)
+        }, REQUEST_QUEUE_WAIT_MS)
+        this.waitingRequests.push(admit)
+      })
+      if (!admitted) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
+    } else this.activeRequests++
+    try { return await request() }
+    catch { return { ok: false, error: { code: 'unavailable', message: 'Files could not be reached.' } } }
+    finally {
+      // Hand the completed request's slot to the oldest waiter before admitting another request.
+      const next = this.waitingRequests.shift()
+      if (next) next()
+      else this.activeRequests--
+    }
   }
 
   private patch(threadId: string, generation: number, patch: Partial<ThreadFiles>): void {

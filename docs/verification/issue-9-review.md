@@ -1,5 +1,6 @@
 # Issue 9 review record
 
+Historical evidence: #610 removed the membership implementation and its tests. Membership and paid-launch statements below no longer describe Sotto.
 Review date: 2026-09-09. Fixed baseline: `63c3c6e913da561deb314e8d337f7eaf04c0672e` on `main`. The initial review compared the staged implementation against that baseline; follow-up review included newer working-tree fixes. No implementation commit existed during the initial review.
 
 The standards and specification reviews were performed independently. This record keeps their findings separate. It is a source and test review, not a claim that the production membership service, physical voice experience, or macOS release has been validated.

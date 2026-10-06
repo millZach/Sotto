@@ -10,6 +10,7 @@ export function createStorageRepositories(
   recoveryNotices: RecoveryNoticeCenter,
   now: () => number = Date.now,
   defaults: AppSettings = DEFAULT_SETTINGS,
+  log?: (event: 'history-temp-cleanup-failed') => void,
 ): Readonly<{
   settings: SettingsRepository
   history: HistoryRepository
@@ -22,6 +23,7 @@ export function createStorageRepositories(
     }),
     history: new HistoryRepository(join(userDataPath, 'history.json'), {
       now,
+      ...(log ? { log } : {}),
       onRecovery: (notice) => recoveryNotices.publish(notice),
     }),
   })

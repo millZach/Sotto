@@ -100,7 +100,7 @@ describe.skipIf(!live)('side writing against the installed clients', () => {
       const credentials = new AgentCredentials(data, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
       await credentials.load()
       const control = new AgentControl({ schedule: immediatePublishScheduler, directory: data, host, credentials, reasoner: e2eAgentReasoner,
-        membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) },
+
         writeThreadTitle: threadTitleWriter(new ShortTextWriter({ write: (threadId, prompt) => host.writeShortText(threadId, prompt),
           onFailure: failure => failures.push(`${failure.purpose}:${failure.reason}`) }), () => DEFAULT_SETTINGS) })
       try {

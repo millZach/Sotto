@@ -19,7 +19,7 @@ async function fixture() {
   await credentials.load()
   const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   const control = create(); await control.start(); await control.command({ type: 'connect' })
   return { f, threadId, control, create }
 }

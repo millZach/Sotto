@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it, afterEach, vi } from 'vitest'
@@ -44,6 +45,43 @@ describe('headless host credentials', () => {
     await writeFile(path, '{broken')
     await expect(openHostCredentials(root, keyFile)).rejects.toThrow('could not be unlocked')
     expect(await readFile(path, 'utf8')).toBe('{broken')
+  })
+
+  it('keeps an older plaintext key on repeated starts without a key file and prints the fix', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-host-credentials-')); roots.push(root)
+    const original = JSON.stringify({ llmApiKey: 'private-provider-key' })
+    await writeFile(join(root, 'settings.json'), original)
+    const argv = process.argv, exitCode = process.exitCode
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      process.argv = ['node', 'host', '--data', root]
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await runHeadlessCommandLine()
+        expect(await readFile(join(root, 'settings.json'), 'utf8')).toBe(original)
+        expect(process.exitCode).toBe(1)
+      }
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('Pass --key-file <file>'))
+      expect(JSON.stringify(error.mock.calls)).not.toContain('private-provider-key')
+    } finally { error.mockRestore(); process.argv = argv; process.exitCode = exitCode }
+  })
+
+  it('removes an older key after a failed secure write and prints only safe guidance', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-host-credentials-')); roots.push(root)
+    await writeFile(join(root, 'settings.json'), JSON.stringify({ llmApiKey: 'private-provider-key' }))
+    const keyFile = join(root, 'user-key')
+    await writeFile(keyFile, 'user-supplied-long-secret')
+    const write = vi.spyOn(AgentCredentials.prototype, 'set').mockRejectedValue(new Error('private-provider-key storage detail'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const argv = process.argv, exitCode = process.exitCode
+    try {
+      process.argv = ['node', 'host', '--data', root, '--key-file', keyFile]
+      await runHeadlessCommandLine()
+      expect(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')).llmApiKey).toBe('')
+      expect(error).toHaveBeenCalledWith('[Sotto] openrouter-key-migration-failed')
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('Enter it again'))
+      expect(JSON.stringify(error.mock.calls)).not.toContain('private-provider-key')
+      expect(process.exitCode).toBe(1)
+    } finally { write.mockRestore(); error.mockRestore(); process.argv = argv; process.exitCode = exitCode }
   })
 
   it('requires an explicit data folder and accepts environment defaults with command-line overrides', () => {

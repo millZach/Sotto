@@ -13,7 +13,6 @@ export function emptyDesktopState(hostId?: string): AgentState {
     draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-    membership: { status: 'free', label: 'Local host off', expiresAt: null },
   }
 }
 
@@ -50,7 +49,10 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   return {
     agentControl: refuseMissing(control), agentHost: refuseMissing(host), threadRegistry: null,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
-    hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable() },
+    hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined,
+      // No local thread here has Files, Changes or Agents to read.
+      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), gitChanges: async () => unavailable(),
+      gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),
     // No worktrees are owned here, so the cleanup has nothing to sweep and every call does nothing.
@@ -58,7 +60,6 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     close: async () => undefined,
   } as unknown as Awaited<ReturnType<typeof createAgentRuntime>>
 }
-
 
 /** Refuse an explicit privacy change before saving settings if its local cleanup cannot run. */
 export function requireLocalHistoryCleanup(localHostRunning: boolean, historyEnabled: boolean, requestedHistoryEnabled: boolean | undefined): void {

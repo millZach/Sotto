@@ -64,7 +64,7 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot }: {
     {drawer ? <section className="git-actions" aria-label="Checkpoints">
     {open ? <div className="git-actions__drawer">
       {!checkpoints ? <p role="status">Reading checkpoints…</p> : <>
-        {!checkpoints.supported ? <p>{checkpoints.reason}</p> : null}
+        {checkpoints.reason ? <p>{checkpoints.reason}</p> : null}
         {checkpoints.checkpoints.length === 0 ? <p>No completed checkpoints yet.</p> : <ul className="checkpoint-list">{checkpoints.checkpoints.map((checkpoint, index) => <li key={checkpoint.id}>
           <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => select(checkpoint)}>Checkpoint {checkpoints.checkpoints.length - index} · {checkpoint.files.length} {checkpoint.files.length === 1 ? 'file' : 'files'} · {checkpoint.status}</button>
         </li>)}</ul>}

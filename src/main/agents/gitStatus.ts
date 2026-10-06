@@ -224,6 +224,7 @@ export class GitStatusReader implements GitStatusSource {
   async listChangedFiles(cwd: string): Promise<GitChangedFiles> {
     const inside = await this.git(cwd, ['rev-parse', '--is-inside-work-tree']).then(out => out.trim() === 'true', error => { if (error instanceof GitUnavailableError) throw error; return false })
     if (!inside) return { isRepository: false, files: [], truncated: false }
+    cwd = (await this.git(cwd, ['rev-parse', '--show-toplevel'])).trim()
     const porcelain = await this.git(cwd, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z'])
     const unborn = parsePorcelain(porcelain).unborn
     const records = parseChangedRecords(porcelain)

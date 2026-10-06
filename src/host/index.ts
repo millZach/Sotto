@@ -1,7 +1,9 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink } from 'node:fs/promises'
+import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
 import { SecureSettings } from '../main/agents/secureSettings'
 import { createStorageRepositories } from '../main/storage/repositories'
@@ -14,8 +16,13 @@ import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
-import { acquireHostLock, HostLockError, readBootId, releaseHostLock, type HostLease } from './lock'
+import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
+import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
+import { DesktopClients } from './desktopClients'
+import { CommandReceipts } from './commandReceipts'
+import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
+import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -26,11 +33,11 @@ export interface HeadlessHostOptions {
   reasoner?: AgentRuntimeOptions['reasoner']
   log?: (event: string) => void
   /**
-   * Set when the desktop's launch script started this host over SSH (SOTTO_HOST_STARTED_BY). The host
-   * writes it into its listener descriptor, which only the lock holder writes, so the desktop can tell
-   * a host Sotto started, and may stop, from one the user started, however many launches raced.
+   * Set when the desktop's launch script started this host over SSH, or its start at boot unit did (SOTTO_HOST_STARTED_BY,
+   * ADR-0054). The host writes it into its listener descriptor, which only the lock holder writes, so the desktop can
+   * tell a host Sotto started, and may stop, from one the user started, however many launches raced.
    */
-  startedBy?: 'launch-script'
+  startedBy?: HostStartedBy
   /** Tests stand fake clients in for the providers' own sign-ins; the host finds the real ones as its adapters do. */
   signInCommand?: ProviderSignInOptions['command']
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
@@ -38,11 +45,18 @@ export interface HeadlessHostOptions {
   /** Tests stand in for the registry, the installers and where each client is; the host finds and runs the real ones. */
   clients?: AgentRuntimeOptions['clients']
   locateClient?: AgentRuntimeOptions['locateClient']
+  /** Tests and end-to-end runs stand in for this machine's Tailscale, which phone access runs (ADR-0050). */
+  tailscale?: PhoneAccessTailscale
 }
 
-export { HostLockError } from './lock'
+export { HostLockError, HostLockHeldError } from './lock'
+/** Who started a host, as SOTTO_HOST_STARTED_BY says: the desktop's launch script, or the host's start at boot unit (ADR-0054). */
+export type { HostStartedBy } from '../shared/hostConnection'
 /** The command line itself was wrong. The message names the fix and is safe to print; the key-file hint would only mislead. */
 export class HostArgumentError extends Error {}
+
+/** Safe startup guidance; credential contents and storage errors must never be printed. */
+export class HostKeyMigrationError extends Error {}
 
 /** Starts the same coordinator and durable workspace as Electron, with no desktop capabilities. */
 export async function startHeadlessHost(options: HeadlessHostOptions) {
@@ -71,7 +85,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const recovery = new RecoveryNoticeCenter()
   const repositories = createStorageRepositories(directory, recovery)
   const settings = new SecureSettings(repositories.settings, credentials)
-  await settings.migrate()
+  if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
+    throw new HostKeyMigrationError('A key saved by an older version of Sotto needs secure storage. Pass --key-file <file> and start the host again. The saved key has not been changed.')
+  }
+  await settings.migrate(() => options.log?.('openrouter-key-migration-failed')).catch(() => {
+    throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
+  })
+  await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
   try {
@@ -95,7 +115,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       missingAttachment: MISSING_REMOTE_ATTACHMENT,
       // The host connects every provider that is installed and signed in here, except the ones turned off (ADR-0036).
       runsAs: 'headless-host',
-      // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0019, ADR-0025).
+      // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0041, ADR-0025).
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
     })
@@ -109,11 +129,45 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
+    let phones: HostPhoneAccess | undefined
+    const descriptorPath = join(directory, 'host-listener.json')
+    // The launch script reads the descriptor on every connect, while the host may be writing it again for a new tailnet
+    // address, so it is written whole to a private temporary file and renamed into place: a reader never sees half of it.
+    const descriptorStore = new AtomicJsonStore<Record<string, unknown>>(descriptorPath, value => value as Record<string, unknown>, () => ({}))
+    /** Whether the host writes its descriptor: from its listener's start until it closes. */
+    let describing = false
+    /** The tailnet address the descriptor last recorded, set only once a write succeeded, so a failed one is tried again. */
+    let recordedAddress: string | undefined
+    let descriptorWrites: Promise<void> = Promise.resolve()
+    const writeDescriptor = (): Promise<void> => {
+      // Each write starts after the last one settles either way, so one that failed never stops the ones after it.
+      const write = descriptorWrites.catch(() => undefined).then(async () => {
+        if (!listener || !describing) return
+        const tailnetAddress = phones?.address()
+        await descriptorStore.write({ ...listener.descriptor, adminToken: listener.adminToken,
+          ...(options.startedBy ? { startedBy: options.startedBy } : {}), ...(tailnetAddress ? { tailnetAddress } : {}) })
+        recordedAddress = tailnetAddress
+      })
+      descriptorWrites = write
+      return write
+    }
+    const about = () => ({ tailnetAddress: phones?.address(), startedBy: options.startedBy })
     try {
       await pairing.load()
       if (options.port !== undefined) {
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true,
+        // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
+        // retried command twice (ADR-0053).
+        const receipts = new CommandReceipts()
+        // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
+        // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
+        // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
+        phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
+          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about },
+          ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
+        const tailnet = phones
+        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
+          receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
@@ -121,11 +175,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           },
         })
         const { peers } = listener
-        peersConnected = () => peers() > 0
-        await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
-        await chmod(join(directory, 'host-listener.json'), 0o600)
+        // A desktop or phone on the tailnet listener is a window in front as much as one through SSH is.
+        peersConnected = () => peers() > 0 || tailnet.peers() > 0
+        describing = true
+        await writeDescriptor()
+        // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
+        tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
-    } catch (error) { signIns.close(); await listener?.close(); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -134,12 +191,16 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       close: (): Promise<void> => {
         closing ??= (async () => {
           signIns.close()
+          // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
+          // The descriptor is no longer written from here on, so the one removed below stays removed.
+          try { await phones?.close() } catch { options.log?.('phone-access-close-failed') }
+          describing = false
+          await descriptorWrites.catch(() => undefined)
           try { await listener?.close() } finally {
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
-                const path = join(directory, 'host-listener.json')
-                try { const current = JSON.parse(await readFile(path, 'utf8')) as { adminToken?: string }; if (current.adminToken === listener.adminToken) await unlink(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') options.log?.('host-descriptor-cleanup-failed') }
+                try { const current = JSON.parse(await readFile(descriptorPath, 'utf8')) as { adminToken?: string }; if (current.adminToken === listener.adminToken) await unlink(descriptorPath) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') options.log?.('host-descriptor-cleanup-failed') }
               }
             }
           }
@@ -164,7 +225,15 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   }
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
-    ...(env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' as const } : {}) }
+    ...(startedBySotto(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY } : {}) }
+}
+
+/**
+ * The code a host that did not start exits with. Another live host holding the data folder gets its own, which a start
+ * at boot unit does not retry (ADR-0054); every other refusal is 1, which it does.
+ */
+export function hostStartExitCode(error: unknown): number {
+  return error instanceof HostLockHeldError ? HOST_LOCK_HELD_EXIT_CODE : 1
 }
 
 /** The process stays available without a provider connection; SIGTERM and SIGINT stop it cleanly. */
@@ -219,9 +288,9 @@ export async function runHeadlessCommandLine(): Promise<void> {
     process.removeListener('SIGTERM', stop)
     process.removeListener('SIGINT', stop)
     console.error('[Sotto] host-start-failed')
-    if (error instanceof HostLockError || error instanceof HostArgumentError) console.error(error.message)
+    if (error instanceof HostLockError || error instanceof HostArgumentError || error instanceof HostKeyMigrationError) console.error(error.message)
     else console.error('Check the data folder and its original key file, then retry with the same --data and --key-file: host/index.js from an extracted archive, out/host/index.js from a checkout.')
-    process.exitCode = 1
+    process.exitCode = hostStartExitCode(error)
   }
 }
 

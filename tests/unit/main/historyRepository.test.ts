@@ -1,13 +1,25 @@
 // @vitest-environment node
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
 import { ZodError } from 'zod'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HistoryRepository } from '../../../src/main/storage/historyRepository'
+import { createStorageRepositories } from '../../../src/main/storage/repositories'
+import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
 import type { HistoryEntry } from '../../../src/shared/history'
+
+vi.mock('node:fs/promises', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...fs, unlink: vi.fn(fs.unlink), readdir: vi.fn(fs.readdir) }
+})
+const nativeFs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+beforeEach(() => {
+  vi.mocked(unlink).mockReset().mockImplementation(nativeFs.unlink)
+  vi.mocked(readdir).mockReset().mockImplementation(nativeFs.readdir)
+})
 
 const roots: string[] = []
 
@@ -24,11 +36,12 @@ function createEntry(id: string, createdAt: number, text = `Transcript ${id}`): 
 
 async function createRepository(
   now: () => number = Date.now,
+  log?: (event: 'history-temp-cleanup-failed') => void,
 ): Promise<{ filePath: string; repository: HistoryRepository }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-history-repository-'))
   roots.push(root)
   const filePath = join(root, 'history.json')
-  return { filePath, repository: new HistoryRepository(filePath, { now }) }
+  return { filePath, repository: new HistoryRepository(filePath, { now, ...(log ? { log } : {}) }) }
 }
 
 async function recoverySiblingNames(filePath: string): Promise<string[]> {
@@ -37,10 +50,110 @@ async function recoverySiblingNames(filePath: string): Promise<string[]> {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
+  vi.useRealTimers()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe('HistoryRepository', () => {
+  it.each(['initialize', 'clear'] as const)('preserves malformed temporary filenames during %s', async action => {
+    const { filePath, repository } = await createRepository()
+    const lookalikes = [
+      `${filePath}.tmp-123-${'a'.repeat(36)}`,
+      `${filePath}.tmp-123-${'-'.repeat(36)}`,
+      `${filePath}.tmp-123-1234567-12345-1234-1234-123456789abc`,
+    ]
+    await Promise.all(lookalikes.map(path => writeFile(path, 'unrelated note', 'utf8')))
+    await repository[action]()
+    for (const path of lookalikes) expect(await readFile(path, 'utf8')).toBe('unrelated note')
+  })
+
+  it.each(['EPERM', 'EBUSY', 'EACCES'])('continues startup and loads history after cleanup %s', async code => {
+    const { filePath } = await createRepository()
+    const saved = createEntry('saved', 1)
+    const temporary = `${filePath}.tmp-123-12345678-1234-1234-1234-123456789abc`
+    const removable = `${filePath}.tmp-456-12345678-1234-1234-1234-123456789abc`
+    await writeFile(filePath, JSON.stringify([saved]), 'utf8')
+    await writeFile(temporary, 'private abandoned transcript')
+    await writeFile(removable, 'other abandoned transcript')
+    const log = vi.fn()
+    vi.mocked(unlink).mockImplementation(async path => {
+      if (path === temporary) throw Object.assign(new Error('private path and transcript'), { code })
+      await nativeFs.unlink(path)
+    })
+    const repository = new HistoryRepository(filePath, { log })
+    vi.useFakeTimers()
+    const startup = repository.initialize()
+    const loaded = repository.list()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(startup).resolves.toBeUndefined()
+    await expect(loaded).resolves.toEqual([saved])
+    expect(log.mock.calls).toEqual([['history-temp-cleanup-failed']])
+    expect(await nativeFs.readdir(dirname(filePath))).toContain(basename(temporary))
+    expect(await nativeFs.readdir(dirname(filePath))).not.toContain(basename(removable))
+    expect(vi.mocked(unlink).mock.calls.filter(([path]) => path === temporary)).toHaveLength(
+      process.platform === 'win32' && code !== 'EACCES' ? 6 : 1,
+    )
+  })
+
+  it.runIf(process.platform === 'win32').each(['unlink', 'readdir'] as const)(
+    'retries a transient Windows %s lock and cleans the abandoned file', async operation => {
+      const log = vi.fn()
+      const { filePath, repository } = await createRepository(Date.now, log)
+      const temporary = `${filePath}.tmp-123-12345678-1234-1234-1234-123456789abc`
+      await writeFile(temporary, 'abandoned transcript')
+      const locked = Object.assign(new Error('private lock details'), { code: 'EBUSY' })
+      if (operation === 'unlink') vi.mocked(unlink).mockRejectedValueOnce(locked)
+      else vi.mocked(readdir).mockRejectedValueOnce(locked)
+      await expect(repository.initialize()).resolves.toBeUndefined()
+      expect(await nativeFs.readdir(dirname(filePath))).toEqual([])
+      expect(log).not.toHaveBeenCalled()
+    },
+  )
+
+  it('continues startup when the history directory cannot be swept', async () => {
+    const { filePath } = await createRepository()
+    const saved = createEntry('saved', 1)
+    await writeFile(filePath, JSON.stringify([saved]))
+    const log = vi.fn()
+    const { history: repository } = createStorageRepositories(
+      dirname(filePath), new RecoveryNoticeCenter(), Date.now, undefined, log,
+    )
+    vi.mocked(readdir).mockRejectedValueOnce(Object.assign(new Error('private directory'), { code: 'EACCES' }))
+    await expect(repository.initialize()).resolves.toBeUndefined()
+    await expect(repository.list()).resolves.toEqual([saved])
+    expect(log.mock.calls).toEqual([['history-temp-cleanup-failed']])
+  })
+
+
+  it('removes crashed-write transcripts at startup without changing saved history or backups', async () => {
+    const { filePath, repository } = await createRepository()
+    const saved = createEntry('saved', 1)
+    await writeFile(filePath, JSON.stringify([saved]), 'utf8')
+    await writeFile(`${filePath}.tmp-123-12345678-1234-1234-1234-123456789abc`, JSON.stringify([createEntry('orphan', 2)]), 'utf8')
+    await writeFile(`${filePath}.corrupt-backup`, 'backup', 'utf8')
+    await writeFile(`${filePath}.tmp-user-note`, 'unrelated', 'utf8')
+
+    await repository.initialize()
+
+    expect((await readdir(dirname(filePath))).sort()).toEqual(['history.json', 'history.json.corrupt-backup', 'history.json.tmp-user-note'])
+    expect(await repository.list()).toEqual([saved])
+  })
+
+  it.each([true, false])('clears crashed-write transcripts with active history present: %s', async present => {
+    const { filePath, repository } = await createRepository()
+    if (present) await repository.add(createEntry('saved', 1), { enabled: true, retention: 'unlimited' })
+    await writeFile(`${filePath}.tmp-123-12345678-1234-1234-1234-123456789abc`, JSON.stringify([createEntry('orphan', 2)]), 'utf8')
+    await writeFile(join(dirname(filePath), 'settings.json.tmp-123-12345678-1234-1234-1234-123456789abc'), 'unrelated', 'utf8')
+
+    await repository.clear()
+
+    expect((await readdir(dirname(filePath))).sort()).toEqual([
+      ...(present ? ['history.json'] : []), 'settings.json.tmp-123-12345678-1234-1234-1234-123456789abc',
+    ])
+    expect(await repository.list()).toEqual([])
+  })
+
   it('keeps only the newest entry when retention is one', async () => {
     const { repository } = await createRepository()
     await repository.add(createEntry('1', 1, 'one'), { enabled: true, retention: 1 })
@@ -251,6 +364,20 @@ describe('HistoryRepository', () => {
     await repository.clear()
 
     expect(await repository.exists()).toBe(false)
+  })
+
+  it('deletes retained history from disk after recording history is disabled', async () => {
+    const { filePath, repository } = await createRepository()
+    const kept = createEntry('kept', 1)
+    await repository.add(kept, { enabled: true, retention: 'unlimited' })
+    await repository.add(createEntry('deleted', 2), { enabled: true, retention: 'unlimited' })
+    await repository.add(createEntry('not-recorded', 3), { enabled: false, retention: 'unlimited' })
+
+    await expect(repository.delete('deleted')).resolves.toBe(true)
+
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).toEqual([kept])
+    expect(await new HistoryRepository(filePath).list()).toEqual([kept])
+    expect(await repository.list({ enabled: false })).toEqual([])
   })
 
   it('persists an empty list when clearing an existing history file', async () => {

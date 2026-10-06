@@ -8,6 +8,7 @@ import { startHeadlessHost } from '../../src/host'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { HostProviderJobs } from '../../src/main/hosts/hostProviderJob'
@@ -34,12 +35,12 @@ const parsed = (reply: { body?: McpReply }): Record<string, unknown> => JSON.par
 
 /** SSH that reaches the headless host running in this process, as the launch script would have started it. */
 class LocalSsh extends SshHostLauncher {
-  constructor(private readonly remote: Awaited<ReturnType<typeof startHeadlessHost>>) { super() }
+  constructor(private readonly remote: Awaited<ReturnType<typeof startHeadlessHost>>, private readonly dataDirectory: string) { super() }
   override async connect(_configuration: SshHostConfiguration, callbacks: SshCallbacks = {}): Promise<SshHostConnection> {
     callbacks.onStep?.('sign-in'); callbacks.onStep?.('install'); callbacks.onStep?.('start')
     const hostId = this.remote.descriptor!.hostId
     return { url: 'http://127.0.0.1:' + this.remote.descriptor!.port, hostId, owned: true, route: { hostname: 'forge', identityFiles: [] }, close: async () => undefined,
-      showHostPairingCode: async () => ({ ...this.remote.pairing.issuePairingCode(), hostId }), revokeClient: async () => true, stopHost: async () => true, updateHost: async () => { throw new Error('Nothing here updates a host.') } }
+      showHostPairingCode: async () => ({ ...this.remote.pairing.issuePairingCode(), hostId }), ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(this.dataDirectory, hostId, clientId), revokeClient: async () => true, hostAdminToken: async () => { throw new Error("Nothing here administers phone access.") }, stopHost: async () => true, updateHost: async () => { throw new Error('Nothing here updates a host.') }, boot: async () => { throw new Error('Nothing here starts a host at boot.') } }
   }
   override async disconnect(): Promise<void> { /* nothing to close */ }
 }
@@ -56,7 +57,7 @@ it('reads the host\'s provider, checks it again and ends the job once the host f
   const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   const router = new DesktopHostRouter(emptyDesktopState); cleanup.push(async () => router.dispose())
   const hosts = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
-    launcher: () => new LocalSsh(remote) })
+    launcher: () => new LocalSsh(remote, join(root, 'remote')) })
   await hosts.start(); cleanup.push(() => hosts.close())
   const forge = randomUUID()
   await hosts.command({ type: 'add', host: { id: forge, name: 'forge', target: 'zach@forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data/sotto' } })

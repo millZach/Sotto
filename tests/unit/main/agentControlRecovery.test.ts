@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +10,10 @@ import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '.
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
+import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
+import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -80,10 +83,7 @@ async function fixture(host = new E2EAgentHost(), options: { coordinatorEnabled?
   const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials)
   const create = async (): Promise<void> => {
     control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, ...options,
-      membership: {
-        status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-        action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-      } })
+    })
     controls.push(control)
     await control.start()
     if (!control.get().host.connected) await control.command({ type: 'connect' })
@@ -214,6 +214,70 @@ describe('reasoning account route isolation', () => {
     const state = await f.control.command({ type: 'utterance', text: 'Choose the test project.' })
     expect(state.error).toBeNull()
     expect(f.requests[0]).toMatchObject({ origin: 'https://openrouter.ai', authorization: `Bearer ${ROUTER_KEY}` })
+  })
+
+  it('loads retired endpoint configuration without losing assignments or drafts', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop' })
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: '643812b8-aed2-4eaf-8cc5-cd5174103c1a', text: 'Keep this draft.' })
+    f.control.dispose()
+    const file = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    saved.configuration.membershipEndpoint = 'https://retired.example'
+    await writeFile(file, JSON.stringify(saved))
+    await f.restart()
+    expect(f.control.get().assignments).toEqual(saved.assignments)
+    expect(f.control.get().threadDrafts).toEqual(saved.threadDrafts)
+    expect(f.control.configuration()).not.toHaveProperty('membershipEndpoint')
+    expect(JSON.parse(await readFile(file, 'utf8')).configuration).not.toHaveProperty('membershipEndpoint')
+  })
+
+  it('clears retired encrypted slots at start and tolerates absent slots on the next start', async () => {
+    const f = await fixture()
+    await f.credentials.set('membership', 'retired-token')
+    await f.credentials.set('membership-cache', 'retired-cache')
+    await f.credentials.set('formatting', 'keep-this-key')
+    await f.restart()
+    const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
+    await reloaded.load()
+    expect(reloaded.has('membership')).toBe(false)
+    expect(reloaded.has('membership-cache')).toBe(false)
+    expect(reloaded.get('formatting')).toBe('keep-this-key')
+    await f.restart()
+    expect(f.credentials.has('membership')).toBe(false)
+  })
+
+  it('completes startup when each retired credential write fails', async () => {
+    const f = await fixture()
+    await f.credentials.set('membership', 'retired-token')
+    await f.credentials.set('membership-cache', 'retired-cache')
+    const write = vi.spyOn(f.credentials, 'set').mockRejectedValue(new Error('Private fixture failure'))
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(f.restart()).resolves.toBeUndefined()
+      expect(f.control.get().host.connected).toBe(true)
+      expect(write.mock.calls).toEqual([['membership', ''], ['membership-cache', '']])
+      expect(warning.mock.calls).toEqual([['retired-credential-clear-failed'], ['retired-credential-clear-failed']])
+    } finally { write.mockRestore(); warning.mockRestore() }
+  })
+
+  it('reads older hosts and sends retired v1 fields required by older desktops', async () => {
+    const f = await fixture()
+    const current = f.control.shell()
+    expect(current).not.toHaveProperty('membership')
+    expect(current.configuration).not.toHaveProperty('membershipEndpoint')
+    const wire = shellForProtocolV1(current)
+    const hello = hostHelloSchema.parse({ hostId: randomUUID(), clientId: 'older-host', shell: wire,
+      capabilities: { mayAnswer: false }, sottoVersion: '0.1.21', features: [], events: [], latestSeq: 0, hasMore: false })
+    expect(hello.shell).toEqual(current)
+    expect(olderDesktopAccountSchema.parse(wire)).toMatchObject({ membership: { status: 'beta' }, configuration: { membershipEndpoint: '' } })
+    for (const state of [current, wire]) {
+      const parsed = hostPushSchema.parse({ v: 1, event: 'shell', state })
+      expect(parsed).toMatchObject({ state: current })
+      if (parsed.event !== 'shell') throw new Error('Expected shell')
+      expect(parsed.state).not.toHaveProperty('membership')
+      expect(parsed.state.configuration).not.toHaveProperty('membershipEndpoint')
+    }
   })
 
   it('changes the default provider while preserving assignments and unrelated reasoning credentials', async () => {
@@ -443,6 +507,19 @@ describe('composition navigation and explicit spoken controls', () => {
     expect(next.activeThreadId).toBe('workshop')
   })
 
+  it.each(['con.txt', 'NUL.log', 'aux.archive.tar', 'COM1.txt', 'lpt9.log', 'LPT¹', 'com³.txt', 'nul .txt', 'CON  .log'])('refuses the Windows device folder name %s before creating it', async title => {
+    const f = await fixture()
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+    try {
+      const execute = vi.spyOn(f.host, 'execute')
+      const result = await f.control.command({ type: 'create-project', title, path: join(f.root, title) })
+      expect(result.error).toBe('Choose a project name that can be used as a folder name.')
+      expect(execute).not.toHaveBeenCalled()
+      expect(await readdir(f.root)).not.toContain(title)
+    } finally { Object.defineProperty(process, 'platform', platform) }
+  })
+
   it('keeps an explicitly created or selected project open while another project has a queued thread', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })
@@ -547,6 +624,134 @@ describe('the hidden coordinator', () => {
 })
 
 describe('supervision event ordering', () => {
+  it.each([false, true])('keeps management active when shutdown cancels a decision and the final save fails: %s', async saveFails => {
+    const f = await fixture()
+    await f.account()
+    const failure = new Error('Sotto reasoning stopped.')
+    const decide = vi.spyOn(ConfiguredAgentReasoner.prototype, 'decide').mockImplementationOnce(async () => {
+      await decisionGate
+      throw failure
+    })
+    let release!: () => void
+    const decisionGate = new Promise<void>(resolve => { release = resolve })
+    const write = AtomicJsonStore.prototype.write
+    let rejectWrites = false
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (saveFails && rejectWrites) return decisionGate.then(() => { throw new Error('Synthetic final save failure') })
+      return write.call(this, value)
+    })
+    try {
+      await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+      rejectWrites = true
+      f.host.event({ type: 'ready', threadId: 'workshop', text: 'Review this result' })
+      await expect.poll(() => decide.mock.calls.length).toBe(1)
+      f.control.dispose()
+      release()
+      await expect.poll(() => decide.mock.settledResults[0]?.type).toBe('rejected')
+      expect(f.control.get().assignments[0]).toMatchObject({ mode: 'managed', paused: false, stopReason: 'none' })
+      expect(f.control.get().queue).toEqual([])
+    } finally { release(); save.mockRestore(); decide.mockRestore() }
+    await f.control.privacyChanged()
+    const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    expect(saved.assignments[0]).toMatchObject({ mode: 'managed', paused: false, stopReason: 'none' })
+    expect(saved.queue).toEqual([])
+    await f.restart()
+    expect(f.control.get().assignments[0]).toMatchObject({ mode: 'managed', paused: false })
+    expect(f.control.get().queue.some(item => item.text === failure.message)).toBe(false)
+  })
+  it('detects a manual prompt after restarting before takeover was saved', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+    const file = join(f.root, 'agents.json')
+    const saved = await readFile(file, 'utf8')
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'I will handle this myself.' })
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+    await f.control.command({ type: 'refresh' })
+    f.control.dispose()
+    await writeFile(file, saved)
+    const startup = await f.host.snapshot()
+    Object.assign(f.host, { workspaceSnapshot: () => structuredClone(startup) })
+    await f.restart()
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+    expect(f.decisions).toEqual([])
+  })
+
+  it.each([1, 2001])('keeps management and context age when %s earlier messages are loaded', async count => {
+    const f = await fixture()
+    f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [
+      { id: 'recent', role: 'user', text: 'Recent prompt', createdAt: new Date().toISOString() },
+    ] })
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+    await f.control.command({ type: 'pause', threadId: 'workshop' })
+    const before = f.control.get()
+    Object.assign(f.host, { loadEarlierMessages: async () => {
+      f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [
+        ...Array.from({ length: count }, (_, index) => ({ id: `older-${index}`, role: 'user' as const, text: 'Earlier prompt', createdAt: '2026-01-01T00:00:00.000Z' })),
+        ...before.host.threads.find(thread => thread.id === 'workshop')!.messages,
+      ] })
+      return f.host.snapshot()
+    } })
+    const after = await f.control.command({ type: 'load-earlier-messages', threadId: 'workshop' })
+    expect(after.assignments).toEqual(before.assignments.map(assignment => ({ ...assignment, seenMessageIds: after.assignments[0]!.seenMessageIds })))
+    expect(after.assignments[0]!.seenMessageIds.length).toBeLessThanOrEqual(2000)
+    const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    expect(saved.assignments[0].seenMessageIds.length).toBeLessThanOrEqual(2000)
+    expect(after.queue).toEqual(before.queue)
+    expect(after.speech).toEqual(before.speech)
+    for (let refresh = 0; refresh < 2; refresh += 1) {
+      const refreshed = await f.control.command({ type: 'refresh' })
+      expect(refreshed.assignments[0]).toMatchObject({ mode: 'managed', contextUpdatedAt: before.assignments[0]!.contextUpdatedAt })
+      expect(refreshed.queue).toEqual(before.queue)
+      expect(refreshed.speech).toEqual(before.speech)
+    }
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'A new prompt' })
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+  })
+  it('bounds message identities when management starts and saved state is restored', async () => {
+    const f = await fixture()
+    const messages = Array.from({ length: 2500 }, (_, index) => ({ id: `message-${index}`, role: 'user' as const,
+      text: 'Earlier prompt', createdAt: '2026-01-01T00:00:00.000Z' }))
+    f.host.event({ type: 'history', threadId: 'workshop', text: '', messages })
+    const assigned = await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+    expect(assigned.assignments[0]!.seenMessageIds).toEqual(messages.slice(-2000).map(message => message.id))
+    const file = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    saved.assignments[0].seenMessageIds = messages.map(message => message.id)
+    await writeFile(file, JSON.stringify(saved), 'utf8')
+    await f.restart()
+    const restored = await f.control.command({ type: 'refresh' })
+    expect(restored.assignments[0]!.seenMessageIds).toEqual(messages.slice(-2000).map(message => message.id))
+    expect(restored.assignments[0]!.mode).toBe('managed')
+    expect(JSON.parse(await readFile(file, 'utf8')).assignments[0].seenMessageIds).toHaveLength(2000)
+  })
+  it('detects a new manual prompt while earlier messages are still loading', async () => {
+    const f = await fixture()
+    f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [
+      { id: 'recent', role: 'user', text: 'Recent prompt', createdAt: new Date().toISOString() },
+    ] })
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const waiting = new Promise<void>(resolve => { started = resolve })
+    Object.assign(f.host, { loadEarlierMessages: async () => {
+      const snapshot = await f.host.snapshot()
+      f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [
+        { id: 'older', role: 'user', text: 'Earlier prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+        ...snapshot.threads.find(thread => thread.id === 'workshop')!.messages,
+      ] })
+      started(); await gate
+      return f.host.snapshot()
+    } })
+    const loading = f.control.command({ type: 'load-earlier-messages', threadId: 'workshop' })
+    try {
+      await waiting
+      expect(f.control.get().assignments[0]?.mode).toBe('managed')
+      f.host.event({ type: 'manual', threadId: 'workshop', text: 'I am handling this now' })
+      expect(f.control.get().assignments[0]?.mode).toBe('manual')
+    } finally { release(); await loading }
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+  })
   it('restores a completed response without paying for another review, while new responses and explicit resume still work', async () => {
     const f = await fixture()
     await f.account()

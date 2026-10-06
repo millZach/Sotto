@@ -74,7 +74,8 @@ const bypassAllowed = args.includes('--allow-dangerously-skip-permissions')
 const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode') }
 const saveSettings = () => { if (!metadata) writeFileSync(join(root, `settings-${session}.json`), JSON.stringify({ ...settings, pid: process.pid })) }
 saveSettings()
-const timer = setInterval(() => {
+// control-<session>.json: the one scripted action a test holds for this session, read every 10 ms or at once by `act`.
+const act = () => {
   const control = join(root, `control-${session}.json`)
   if (!existsSync(control)) return
   let action; try { action = JSON.parse(readFileSync(control, 'utf8')) } catch { return }
@@ -135,7 +136,8 @@ const timer = setInterval(() => {
     const request = { subtype: 'can_use_tool', tool_name: action.type === 'question' ? 'AskUserQuestion' : 'Bash', tool_use_id: randomUUID(), input: action.type === 'question' ? { questions: [{ question: action.text, header: 'Choice', options: [{ label: 'Blue', description: 'Blue color' }], multiSelect: false }] } : { command: 'npm run build', description: action.text } }
     const request_id = action.requestId ?? randomUUID(); pending.set(request_id, request); output({ type: 'control_request', request_id, request }); return
   }
-}, 10)
+}
+const timer = setInterval(act, 10)
 const lines = createInterface({ input: process.stdin })
 lines.on('line', line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
@@ -198,11 +200,30 @@ lines.on('line', line => {
   } else if (frame.type === 'user') {
     if (!initialized) violation('User prompt arrived before successful initialization')
     if (!frame.uuid || frame.session_id !== session || frame.message?.role !== 'user' || frame.parent_tool_use_id !== null) violation('Malformed native user frame')
-    const reply = persist(frame)
     const scriptPath = join(root, 'script.json')
     const script = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
+    // script.json `localCommand`: answer the prompt as Claude Code 2.1.289 answers a slash command it cannot run
+    // headless, such as /chrome. No echo: lifecycle frames naming the prompt, a canned reply, a result naming the
+    // prompt, and two local_command entries in the transcript instead of the prompt. `evidence: 'result'` leaves out
+    // the lifecycle frames; `evidence: 'none'` leaves out every frame that names the prompt.
+    if (script.localCommand) {
+      const command = typeof frame.message.content === 'string' ? frame.message.content : ''
+      const stdout = `<local-command-stdout>${script.localCommand}</local-command-stdout>`
+      const lifecycle = state => { if (!script.evidence) output({ type: 'command_lifecycle', command_uuid: frame.uuid, state, uuid: randomUUID(), session_id: session }) }
+      persist({ type: 'system', subtype: 'local_command', content: command, level: 'info', uuid: randomUUID() })
+      persist({ type: 'system', subtype: 'local_command', content: stdout, level: 'info', uuid: randomUUID() })
+      lifecycle('queued'); lifecycle('started')
+      output({ type: 'assistant', uuid: randomUUID(), session_id: session, parent_tool_use_id: null, message: { id: randomUUID(), model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: script.localCommand }] },
+        local_command_source: stdout, local_command_outcome: { kind: 'unavailable_headless' } })
+      output({ type: 'result', subtype: 'success', session_id: session, is_error: false, num_turns: 0, result: script.localCommand,
+        ...(script.evidence === 'none' ? {} : { user_message_uuid: frame.uuid, user_message_uuids: [frame.uuid] }) })
+      lifecycle('completed'); return
+    }
+    const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
+    // script.json `reply`: a model that answers every prompt at once, as the scripted `complete` action answers it.
+    if (!script.delay && script.reply !== undefined) { writeFileSync(join(root, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: script.reply })); act() }
   } else if (frame.type === 'control_response') {
     const envelope = frame.response; const request = pending.get(envelope?.request_id); const answer = envelope?.response
     if (envelope?.subtype === 'error' && typeof envelope.error === 'string') { pending.delete(envelope.request_id); return }

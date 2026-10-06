@@ -278,15 +278,6 @@ function AgentConnectionSettings({ state, command, focusReasoning }: { readonly 
       <p>Assignment context expires after seven days without activity. Turning off history prevents saving that context. Unsent drafts stay on this desktop until sent or cleared so they survive a restart.</p>
     </div>
     <div className="agent-actions"><Button onClick={() => void save()} disabled={state.globalLaneBusy || checking || (reasoningChanged && subscription && !account?.ready)}>Save connection settings</Button>{saved ? <span role="status">Settings saved</span> : null}</div>
-    <div className="agent-billing agent-membership"><p><strong>Sotto access</strong></p>
-      <p>{state.membership.label}</p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>
-      {state.membership.expiresAt ? <p>Current access ends {new Date(state.membership.expiresAt).toLocaleString()}.</p> : null}
-      {state.configuration.membershipEndpoint ? <div className="agent-actions">
-        <Button variant="secondary" onClick={() => void command({ type: 'membership', action: 'signin' })}>Sign in to Sotto</Button>
-        <Button variant="secondary" onClick={() => void command({ type: 'membership', action: state.membership.status === 'active' ? 'portal' : 'checkout' })}>{state.membership.status === 'active' ? 'Manage subscription' : 'Get Sotto Pro'}</Button>
-        <Button variant="ghost" onClick={() => void command({ type: 'membership', action: 'refresh' })}>Refresh membership</Button>
-      </div> : <p>Hosted sign-in and checkout are not available in this private development beta.</p>}
-    </div>
   </section>
 }
 

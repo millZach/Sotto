@@ -1,0 +1,32 @@
+/* One pane's own terminal drawer, below its composer. Chrome and colours follow the Tools terminal (tools.css); this file only adds the drawer's own shell and divider. */
+.pane-terminal { --tools-hover: var(--tt-hover); position: relative; display: flex; flex: none; flex-direction: column; min-width: 0; height: var(--pane-terminal-height, 200px); min-height: 0; border-top: 1px solid var(--tt-hairline); background: var(--tt-terminal-background, var(--tools-bg)); }
+.pane-terminal__divider { position: absolute; top: -5px; left: 0; right: 0; height: 9px; cursor: row-resize; touch-action: none; z-index: 1; }
+.pane-terminal__divider::before { position: absolute; inset: 4px 0; background: var(--tt-hairline); transition: background-color .16s ease, inset .16s ease; content: ''; }
+.pane-terminal__divider:hover::before, .pane-terminal__divider[data-dragging]::before { inset: 3px 0; background: var(--tt-activity); }
+.pane-terminal__divider:focus-visible { outline: none; }
+.pane-terminal__divider:focus-visible::before { inset: 2px 0; background: var(--tt-focus-ring); }
+.pane-terminal__body { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+/* The terminal fits the drawer, never the other way round: without a zero minimum width a wide grid widens its own
+   box, the fit then measures that, and typing scrolls the whole pane sideways. Clipping, not scrolling, keeps
+   focus from dragging the pane along while the grid catches up with a resize. */
+.pane-terminal__body :is(.terminal-surface, .terminal-screen, .terminal-view) { min-width: 0; }
+.pane-terminal__body .terminal-surface { flex: 1; min-height: 0; }
+.pane-terminal .terminal-view { overflow: clip; }
+.pane-terminal .terminal-bar { min-height: 36px; }
+/* The drawer's icon buttons look the way the Tools panel's do, a little smaller for its shorter bar. */
+.pane-terminal .files-icon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-terminal .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
+.pane-terminal .files-icon:disabled { opacity: .5; cursor: default; }
+.pane-terminal .terminal-tabs__tab { min-height: 28px; border-radius: 6px; font-size: 13px; }
+.pane-terminal .terminal-tabs__tab[aria-selected='true'], .pane-terminal .terminal-tabs__item[data-selected] { border-color: transparent; }
+.pane-terminal .terminal-tabs__item { border-radius: 6px; }
+.pane-terminal .terminal-view { padding: 10px 8px 6px 14px; }
+.terminal-bar__end { display: flex; flex: none; align-items: center; gap: 6px; padding-left: 6px; }
+.pane-terminal__branch { display: inline-flex; flex: none; align-items: center; gap: 4px; max-width: 160px; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.pane-terminal__branch bdi { overflow: hidden; text-overflow: ellipsis; }
+
+:root[data-reduced-motion='on'] .pane-terminal__divider::before { transition: none; }
+
+@media (max-width: 820px), (max-height: 560px) {
+  .pane-terminal__branch { display: none; }
+}

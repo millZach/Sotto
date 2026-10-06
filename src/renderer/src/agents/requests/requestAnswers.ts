@@ -164,6 +164,7 @@ interface DraftBinding {
   readonly target: RequestDraftTarget
   readonly bridge: RequestDraftBridge
   loading: Promise<void> | null
+  retiring: Promise<void> | null
   writing: Promise<boolean>
   loaded: boolean
 }
@@ -223,9 +224,10 @@ export class RequestAnswerStore {
     const key = RequestAnswerStore.key(ownerId, requestId), bridge = this.bridge()
     if (!bridge) return Promise.resolve()
     const existing = this.bindings.get(key)
+    if (existing?.retiring) return existing.retiring.then(() => this.connect(ownerId, requestId, target))
     if (existing?.loaded) return Promise.resolve()
     if (existing?.loading) return existing.loading
-    const binding = existing ?? { target, bridge, loading: null, writing: Promise.resolve(true), loaded: false }
+    const binding = existing ?? { target, bridge, loading: null, retiring: null, writing: Promise.resolve(true), loaded: false }
     this.bindings.set(key, binding)
     const before = this.get(ownerId, requestId)
     this.set(ownerId, requestId, { ...before, save: 'loading', saveError: null })
@@ -294,8 +296,10 @@ export class RequestAnswerStore {
   /** Sends once: a second call while one is sending, sent or unconfirmed does nothing. */
   async submit(ownerId: string, requestId: string, choice: string | null, send: () => Promise<SubmitOutcome>): Promise<void> {
     const entry = this.get(ownerId, requestId)
+    const submittedBinding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
-    this.set(ownerId, requestId, { ...entry, revision: entry.revision + 1, phase: 'sending', error: null, choice })
+    const sending: RequestEntry = { ...entry, revision: entry.revision + 1, phase: 'sending', error: null, choice }
+    this.set(ownerId, requestId, sending)
     if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
       // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
       this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: 'This answer was not sent because its draft could not be saved. Check again after storage is available.' })
@@ -304,6 +308,8 @@ export class RequestAnswerStore {
     let outcome: SubmitOutcome
     try { outcome = await send() } catch { outcome = null }
     const current = this.get(ownerId, requestId)
+    // A departed unbound request may already have been pruned or its ID reused while this reply waited.
+    if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== submittedBinding || (!submittedBinding && current !== sending)) return
     if (outcome === null) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: null })
     else if (outcome.error !== null) {
       const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
@@ -311,8 +317,11 @@ export class RequestAnswerStore {
         // A command error alone is not evidence of nondelivery. Main checks the original request/intent.
         try {
           const draft = await binding.bridge.check(binding.target)
+          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding) return
           await this.checked(ownerId, requestId, draft, 'failed', outcome.error)
-        } catch { this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: outcome.error }) }
+        } catch {
+          if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: outcome.error })
+        }
       } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
     }
     else this.set(ownerId, requestId, { ...current, phase: 'sent', error: null })
@@ -326,8 +335,11 @@ export class RequestAnswerStore {
     if (binding) {
       try {
         const draft = await binding.bridge.check(binding.target)
+        if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding) return
         await this.checked(ownerId, requestId, draft, 'idle', null)
-      } catch (error) { this.set(ownerId, requestId, { ...entry, saveError: draftError(error) }) }
+      } catch (error) {
+        if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding) this.set(ownerId, requestId, { ...entry, saveError: draftError(error) })
+      }
       return
     }
     this.set(ownerId, requestId, { ...entry, phase: 'idle', choice: null })
@@ -345,14 +357,37 @@ export class RequestAnswerStore {
   }
 
   /** Forget answers for requests the owner no longer has. */
-  prune(ownerId: string, liveRequestIds: readonly string[]): void {
+  prune(ownerId: string, live: readonly AgentRequest[]): void {
     const prefix = `${ownerId}\0`
     let changed = false
     for (const key of [...this.entries.keys()]) {
       // Renderer snapshots are not authoritative. Durable records are retired only by main.
-      if (!this.bindings.has(key) && key.startsWith(prefix) && !liveRequestIds.includes(key.slice(prefix.length))) { this.entries.delete(key); changed = true }
+      if (!this.bindings.has(key) && key.startsWith(prefix) && !live.some(request => request.id === key.slice(prefix.length))) { this.entries.delete(key); changed = true }
+    }
+    for (const [key, binding] of this.bindings) {
+      if (binding.target.kind !== 'thread' || binding.target.ownerId !== ownerId || binding.retiring
+        || live.some(request => request.id === binding.target.requestId && sameRequestQuestions(requestDraftQuestions(request), binding.target.questions))) continue
+      // A missing card alone retires nothing. Main must confirm that its saved draft is gone.
+      binding.retiring = this.retire(key, binding).finally(() => { binding.retiring = null })
     }
     if (changed) this.emit()
+  }
+
+  private async retire(key: string, binding: DraftBinding): Promise<void> {
+    await binding.loading
+    await binding.writing
+    const entry = this.entries.get(key)
+    if (!entry || entry.save !== 'saved') return
+    try {
+      const draft = await binding.bridge.get(binding.target)
+      const current = this.entries.get(key)
+      if (draft !== null || current?.save !== 'saved' || current.revision !== entry.revision || this.bindings.get(key) !== binding) return
+      this.entries.delete(key)
+      this.bindings.delete(key)
+      this.emit()
+    } catch {
+      // An unreadable owner or storage is not evidence of retirement; retain its local recovery state.
+    }
   }
 
   private set(ownerId: string, requestId: string, entry: RequestEntry): void {

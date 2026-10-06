@@ -129,7 +129,8 @@ describe('Codex app-server per thread session', () => {
     expect((await thread(working)).status).toBe('running')
     await f.driver.completeTurn(working, 'Finished on the old client')
     await expect.poll(() => replied(working, 'Finished on the old client')).toBe(true)
-    expect((await thread(working)).lastTurn?.status).toBe('completed')
+    // The reply and terminal turn arrive as separate provider frames.
+    await expect.poll(async () => (await thread(working)).lastTurn?.status).toBe('completed')
     // Once idle, it moves too.
     await expect.poll(() => f.adapter.resumedThreads().includes(working)).toBe(false)
     expect(await f.serverOf(working)).toBe(before.working)

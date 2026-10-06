@@ -251,7 +251,7 @@ export const updatePhaseSchema = z.discriminatedUnion('phase', [
   z.object({ phase: z.literal('checking') }).strict(),
   z.object({ phase: z.literal('up-to-date') }).strict(),
   z
-    .object({ phase: z.literal('available'), version: updateVersionSchema, problem: updateProblemSchema.nullable() })
+    .object({ phase: z.literal('available'), version: updateVersionSchema, problem: updateProblemSchema.nullable(), failedStep: z.enum(['check', 'download']).optional() })
     .strict(),
   z
     .object({
@@ -292,6 +292,8 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
+  /** macOS only: the login item is on but waits for the user to allow it in System Settings > General > Login Items. */
+  readonly approvalRequired?: boolean | undefined
 }
 
 export type OutputOutcome = 'pasted' | 'copied' | 'empty'
@@ -307,6 +309,7 @@ export interface SottoBridge {
   readonly terminal?: import('./terminal').TerminalBridge
   readonly terminals?: import('./terminalWorkspace').TerminalWorkspaceBridge
   readonly browser?: import('./browser').BrowserBridge
+  readonly cloudIphone?: import('./cloudIphone').CloudIphoneBridge
   readonly themes?: import('./themes/bridge').ThemesBridge
   readonly gitChanges?: import('./gitChanges').GitChangesBridge
   readonly subagents?: import('./subagents').SubagentsBridge
@@ -314,6 +317,8 @@ export interface SottoBridge {
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentWireBridge
   readonly platform: SottoPlatform
+  /** Whether the system draws a frosted material behind this window, so the Frosted window setting can take effect (ADR-0048). */
+  readonly canFrostWindow?: boolean
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
   onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
@@ -344,6 +349,8 @@ export interface SottoBridge {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>
   cancelTranscription(requestId: string): Promise<CommandResult>
   checkTranscriptionKey(): Promise<TranscriptionKeyCheck>
+  /** Asks the operating system for the microphone before Chromium captures. */
+  ensureMicrophoneAccess(): Promise<boolean>
 
   getUpdateStatus(): Promise<UpdateStatus | UnavailableResult>
   checkForUpdates(): Promise<UpdateStatus | UnavailableResult>
@@ -359,12 +366,15 @@ export interface SottoBridge {
   showApp(): Promise<void>
   /** Opens a validated web/mail link after explicit activation in the main renderer. */
   openExternalLink?(url: string): Promise<CommandResult>
+  /** Opens a macOS Privacy & Security pane after explicit activation; refused as unavailable elsewhere. */
+  openSystemSettings?(pane: import('./systemSettings').SystemSettingsPane): Promise<CommandResult>
   hideApp(): Promise<void>
   minimizeApp(): Promise<void>
   reloadApp(): Promise<void>
   toggleMaximizeApp(): Promise<void>
   getWindowMaximized(): Promise<boolean>
   onWindowMaximized(listener: (maximized: boolean) => void): () => void
+  onWindowHidden(listener: () => void): () => void
   quitApp(): Promise<void>
 }
 

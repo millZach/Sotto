@@ -104,6 +104,11 @@ const policyColumns = [
 export const policyInsertSql = `INSERT INTO policies (${policyColumns.join(', ')})
   VALUES (${policyColumns.map(() => '?').join(', ')})`
 
+// SSH setup establishes a default once. Keep every prior decision, including inactive records.
+export const desktopAnswerSetupSql = `INSERT INTO policies (${policyColumns.join(', ')})
+  SELECT ${policyColumns.map(() => '?').join(', ')}
+  WHERE NOT EXISTS (SELECT 1 FROM policies WHERE action = 'remote-answer' AND scope = ? AND resource = ?)`
+
 // Shared by the TypeScript store and the direct runtime probe.
 export function migrateDatabase(db) {
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;')

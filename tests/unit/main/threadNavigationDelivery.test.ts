@@ -57,9 +57,7 @@ async function fixture(receiptIds: string[] = []) {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
   await credentials.load()
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, membership: {
-      status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
-    } }); controls.add(control); return control
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, }); controls.add(control); return control
   }
   let control = create()
   await control.start(); await stageInto(control, PIXEL_PNG, OTHER_PNG); await control.command({ type: 'connect' })

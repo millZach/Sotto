@@ -262,22 +262,15 @@ describe('DictationController', () => {
     await stop
   })
 
-  it('toggles from the shortcut and ignores start or toggle during permission and processing', async () => {
-    const starting = deferred<void>()
+  it('toggles from the shortcut and ignores start or toggle during processing', async () => {
     const stopping = deferred<null>()
     const harness = createHarness({
       recorder: {
-        start: vi.fn(() => starting.promise),
         stop: vi.fn(() => stopping.promise),
       },
     })
 
-    const start = harness.controller.toggle()
     await harness.controller.toggle()
-    await harness.controller.start()
-    expect(harness.createRecorder).toHaveBeenCalledTimes(1)
-    starting.resolve()
-    await start
 
     const stop = harness.controller.toggle()
     await harness.controller.toggle()
@@ -286,6 +279,44 @@ describe('DictationController', () => {
     expect(harness.createRecorder).toHaveBeenCalledTimes(1)
     stopping.resolve(null)
     await stop
+  })
+
+  it.each(['stop', 'toggle'] as const)('remembers %s while connecting and cancels when the microphone is ready', async (action) => {
+    const starting = deferred<void>()
+    const cuePlayer = { playStart: vi.fn(), playStop: vi.fn() }
+    const harness = createHarness({
+      currentSettings: settings({ streamingAsr: true }),
+      recorder: { start: vi.fn(() => starting.promise) },
+      cuePlayer,
+    })
+    const start = harness.controller.start()
+
+    await harness.controller[action]()
+    await harness.controller[action]()
+    await harness.controller.start()
+    expect(harness.controller.getState().status).toBe('requesting-permission')
+    expect(harness.createRecorder).toHaveBeenCalledTimes(1)
+    expect(harness.recorder.cancel).not.toHaveBeenCalled()
+    recorderOptions(harness).onSegment?.({
+      samples: new Float32Array([0.5]), sourceSampleRate: 16_000, durationMs: 300,
+    })
+    starting.resolve()
+    await start
+
+    expect(harness.controller.getState().status).toBe('cancelled')
+    expect(harness.recorder.cancel).toHaveBeenCalledTimes(1)
+    expect(harness.recorder.stop).not.toHaveBeenCalled()
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(cuePlayer.playStart).not.toHaveBeenCalled()
+    expect(cuePlayer.playStop).not.toHaveBeenCalled()
+    expect(snapshots(harness).some((snapshot) => snapshot.status === 'listening')).toBe(false)
+
+    await harness.controller.start()
+    expect(harness.controller.getState().status).toBe('listening')
+    await harness.controller.stop()
+    expect(harness.transcriber.transcribe).toHaveBeenCalledTimes(1)
   })
 
   it('does not stop, transcribe, or deliver twice after repeated stop requests', async () => {

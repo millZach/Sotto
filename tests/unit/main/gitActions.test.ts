@@ -45,6 +45,128 @@ async function fixture(options: { remote?: boolean; gh?: GhFixture; commitMessag
 }
 
 describe('the stacked Git action, the way T3 runs it', () => {
+  it.each([false, true])('keeps command arguments constant for thousands of paths (selected files: %s)', async selectedFiles => {
+    const f = await fixture({ remote: false })
+    const snapshot = await new GitStatusReader({ fetchIntervalMs: () => 0 }).read(f.repo, { remote: false })
+    const argumentLists: string[][][] = []
+    for (const count of [3, 3000]) {
+      const paths = Array.from({ length: count }, (_, i) => `scaffold/long-project-file-${i}.txt`)
+      const excluded = selectedFiles ? Array.from({ length: count }, (_, i) => `excluded/staged-file-${i}.txt`) : []
+      const calls: { args: readonly string[]; stdin: string | undefined }[] = []
+      const run: RunGitCommand = async (_cwd, _command, args, options) => {
+        calls.push({ args, stdin: options?.stdin })
+        if (args[0] === 'rev-parse' && args.includes('--show-toplevel')) return f.repo
+        if (args[0] === 'rev-parse' && args.includes('--verify')) throw new Error('No operation in progress')
+        if (args[0] === 'status') return paths.map(path => `? ${path}\0`).join('')
+        if (args[0] === 'diff' && args.includes('--name-only')) return excluded.join('\0')
+        if (args[0] === 'diff' && args.includes('--name-status')) return `A\t${paths[0]}`
+        if (args[0] === 'write-tree' || args[0] === 'rev-parse') return 'abc123'
+        return ''
+      }
+      const actions = new GitActions({ run, status: { read: async () => snapshot, invalidate: () => undefined }, writeCommitMessage: async () => null, writePullRequestText: async () => null })
+      const result = await actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Commit scaffold', ...(selectedFiles ? { filePaths: paths } : {}) })
+      expect(result.commit.status).toBe('created')
+      const mutations = calls.filter(call => call.args.includes('add') || call.args.includes('reset'))
+      expect(mutations.map(call => call.stdin)).toEqual(selectedFiles ? [`${excluded.join('\0')}\0`, `${paths.join('\0')}\0`, `${paths.join('\0')}\0`] : [`${paths.join('\0')}\0`])
+      for (const call of mutations) {
+        expect(call.args).toContain('--literal-pathspecs')
+        expect(call.args).toContain('--pathspec-from-file=-')
+        expect(call.args).toContain('--pathspec-file-nul')
+      }
+      argumentLists.push(calls.map(call => [...call.args]))
+    }
+    expect(argumentLists[1]).toEqual(argumentLists[0])
+  })
+  it('keeps stdin pathspecs literal when adding and restoring selected staging', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, '[a].txt'), 'chosen\n')
+    await writeFile(join(f.repo, 'a.txt'), 'excluded\n')
+    await writeFile(join(f.repo, '[skip].txt'), 'also excluded\n')
+    git(f.repo, 'add', 'a.txt', '[skip].txt')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', filePaths: ['[a].txt'], commitMessage: 'Add literal filename' })
+    expect(result.commit.status).toBe('created')
+    expect(git(f.repo, 'show', '--pretty=', '--name-only', 'HEAD')).toBe('[a].txt')
+    expect(git(f.repo, 'diff', '--cached', '--name-only')).toBe('[skip].txt\na.txt')
+    expect(git(f.repo, 'show', ':a.txt')).toBe('excluded')
+    expect(git(f.repo, 'show', ':[skip].txt')).toBe('also excluded')
+  })
+  it.each([false, true])('preserves staged hunks and excluded staging (exclude files: %s)', async exclude => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'work.txt'), 'staged\n'); git(f.repo, 'add', 'work.txt')
+    await writeFile(join(f.repo, 'work.txt'), 'staged\nunstaged\n')
+    if (exclude) { await writeFile(join(f.repo, 'skip.txt'), 'excluded\n'); git(f.repo, 'add', 'skip.txt') }
+    await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', ...(exclude ? { filePaths: ['work.txt'] } : {}), commitMessage: 'Commit staged hunk' })
+    expect(git(f.repo, 'show', 'HEAD:work.txt')).toBe('staged')
+    expect(await readFile(join(f.repo, 'work.txt'), 'utf8')).toBe('staged\nunstaged\n')
+    expect(git(f.repo, 'diff', '--cached', '--name-only')).toBe(exclude ? 'skip.txt' : '')
+    expect(git(f.repo, 'diff', '--name-only')).toBe('work.txt')
+    expect(git(f.repo, 'diff', '--', 'work.txt')).toContain('+unstaged')
+    expect(git(f.repo, 'diff', '--cached', '--', 'work.txt')).toBe('')
+    if (exclude) expect(git(f.repo, 'show', ':skip.txt')).toBe('excluded')
+  })
+  it('refuses a conflicted stash pop before changing the index or working files', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'work.txt'), 'stashed\n'); git(f.repo, 'stash', 'push', '-qm', 'Stashed edit')
+    await writeFile(join(f.repo, 'work.txt'), 'committed\n'); commit(f.repo, 'Conflicting edit')
+    expect(() => git(f.repo, 'stash', 'pop')).toThrow()
+    const index = git(f.repo, 'ls-files', '--unmerged')
+    const working = await readFile(join(f.repo, 'work.txt'), 'utf8')
+    const head = git(f.repo, 'rev-parse', 'HEAD')
+    expect(index).not.toBe('')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', commitMessage: 'Refused' })).rejects.toThrow('Resolve the conflicted files before committing here.')
+    expect(git(f.repo, 'ls-files', '--unmerged')).toBe(index)
+    expect(await readFile(join(f.repo, 'work.txt'), 'utf8')).toBe(working)
+    expect(git(f.repo, 'rev-parse', 'HEAD')).toBe(head)
+    expect(f.calls.some(call => call.includes('write-tree'))).toBe(false)
+  })
+  it('restores the original index after a refused commit', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'work.txt'), 'staged\n'); git(f.repo, 'add', 'work.txt')
+    await writeFile(join(f.repo, 'work.txt'), 'staged\nunstaged\n')
+    await writeFile(join(f.repo, 'skip.txt'), 'excluded\n'); git(f.repo, 'add', 'skip.txt')
+    await mkdir(join(f.repo, '.githooks'))
+    const hook = join(f.repo, '.githooks', 'pre-commit'); await writeFile(hook, '#!/bin/sh\nexit 1\n'); await chmod(hook, 0o755)
+    const before = git(f.repo, 'write-tree')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', filePaths: ['work.txt'], commitMessage: 'Refused' })).rejects.toThrow('Commit failed')
+    expect(git(f.repo, 'write-tree')).toBe(before)
+    expect(await readFile(join(f.repo, 'work.txt'), 'utf8')).toBe('staged\nunstaged\n')
+  })
+  it('restores the original index if staging a selected path fails', async () => {
+    const f = await fixture({ remote: false })
+    await writeFile(join(f.repo, 'work.txt'), 'staged\n'); git(f.repo, 'add', 'work.txt')
+    const before = git(f.repo, 'write-tree')
+    await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', filePaths: ['missing.txt'], commitMessage: 'Refused' })).rejects.toThrow('pathspec')
+    expect(git(f.repo, 'write-tree')).toBe(before)
+  })
+  it('preserves excluded staging when committing selected files in an unborn repository', async () => {
+    const f = await fixture({ remote: false })
+    const repo = join(f.root, 'unborn'); await mkdir(repo); git(repo, 'init', '-q', '-b', 'main'); configure(repo)
+    await writeFile(join(repo, 'chosen.txt'), 'chosen\n'); await writeFile(join(repo, 'skip.txt'), 'excluded\n')
+    git(repo, 'add', 'skip.txt')
+    await f.actions.runStackedAction({ threadId: 't', cwd: repo, action: 'commit', filePaths: ['chosen.txt'], commitMessage: 'First selected commit' })
+    expect(git(repo, 'ls-tree', '--name-only', 'HEAD')).toBe('chosen.txt')
+    expect(git(repo, 'diff', '--cached', '--name-only')).toBe('skip.txt')
+  })
+  it('commits both ends of a selected rename and leaves an excluded file alone', async () => {
+    const f = await fixture({ remote: false })
+    git(f.repo, 'mv', 'work.txt', 'renamed.txt')
+    await writeFile(join(f.repo, 'skip.txt'), 'excluded\n')
+    await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit', filePaths: ['renamed.txt'], commitMessage: 'Rename work' })
+    expect(git(f.repo, 'ls-tree', '--name-only', 'HEAD')).toBe('renamed.txt')
+    expect(git(f.repo, 'status', '--porcelain')).toBe('?? skip.txt')
+  })
+  it('commits repository-relative selected paths and counts new files from a project subfolder', async () => {
+    const f = await fixture({ remote: false })
+    const sub = join(f.repo, 'sub'); await mkdir(sub)
+    await writeFile(join(sub, 'chosen.txt'), 'one\ntwo\n')
+    await writeFile(join(f.repo, 'work.txt'), 'excluded\n')
+    const reader = new GitStatusReader({ fetchIntervalMs: () => 0 })
+    expect((await reader.listChangedFiles(sub)).files.find(file => file.path === 'sub/chosen.txt')).toMatchObject({ insertions: 2, deletions: 0 })
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: sub, action: 'commit', filePaths: ['sub/chosen.txt'], commitMessage: 'Add chosen file' })
+    expect(result.commit.status).toBe('created')
+    expect(git(f.repo, 'show', '--pretty=', '--name-only', 'HEAD')).toBe('sub/chosen.txt')
+    expect(git(f.repo, 'status', '--porcelain')).toContain('work.txt')
+  })
   it('commits everything with the message given, and offers Push', async () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'work.txt'), 'second\n'); await writeFile(join(f.repo, 'new.txt'), 'new\n')
@@ -68,7 +190,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(result.commit).toMatchObject({ status: 'created', subject: 'Write the commit from the diff' })
     expect(git(f.repo, 'show', '--stat', '--pretty=', 'HEAD')).toContain('work.txt')
     expect(git(f.repo, 'show', '--stat', '--pretty=', 'HEAD')).not.toContain('skip.txt')
-    expect(git(f.repo, 'status', '--porcelain')).toBe('?? skip.txt')
+    expect(git(f.repo, 'status', '--porcelain')).toBe('A  skip.txt')
     const material = f.writeCommitMessage.mock.calls[0]![1]
     expect(material.text).toContain('+second')
     expect(material.conventions?.subjects).toEqual(['Add the rules', 'First'])
@@ -278,6 +400,27 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(git(fork, 'log', '-1', '--pretty=%s', 'main')).toBe('Second')
     expect(git(f.remote, 'log', '-1', '--pretty=%s', 'main')).toBe('First')
   }, 40000)
+  it.each([
+    ['remote.pushDefault', false], ['remote.pushDefault', true],
+    ['branch.main.pushRemote', false], ['branch.main.pushRemote', true],
+  ] as const)('pushes a branch level with origin to the fork chosen by %s (fork behind: %s)', async (setting, behind) => {
+    const f = await fixture()
+    const fork = join(f.root, 'fork.git'); git(f.root, 'init', '--bare', '-q', '-b', 'main', fork)
+    git(f.repo, 'remote', 'add', 'fork', fork); git(f.repo, 'config', setting, 'fork')
+    if (behind) {
+      git(f.repo, 'push', '-q', 'fork', 'main')
+      await writeFile(join(f.repo, 'work.txt'), 'second\n'); commit(f.repo, 'Second')
+      git(f.repo, 'push', '-q', 'origin', 'main')
+    }
+    expect(git(f.repo, 'rev-list', '--left-right', '--count', 'HEAD...origin/main')).toBe('0\t0')
+    const originHead = git(f.remote, 'rev-parse', 'refs/heads/main')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'push', allowDefaultBranch: true })
+    expect(result.push.status).toBe('pushed')
+    expect(result.toast.title).not.toBe('Already up to date')
+    expect(f.calls).toContainEqual(['git', 'push', '-u', 'fork', 'HEAD:refs/heads/main'])
+    expect(git(fork, 'rev-parse', 'refs/heads/main')).toBe(git(f.repo, 'rev-parse', 'HEAD'))
+    expect(git(f.remote, 'rev-parse', 'refs/heads/main')).toBe(originHead)
+  })
   it('runs one action per folder at a time', async () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'work.txt'), 'second\n')
@@ -299,6 +442,36 @@ describe('the stacked Git action, the way T3 runs it', () => {
 })
 
 describe('pull, switch, init and publish', () => {
+  it('reports a failed publish push even after gh has added origin', async () => {
+    const f = await fixture({ remote: false, gh: async args => {
+      if (args[0] === 'repo' && args[1] === 'create') { git(f.repo, 'remote', 'add', 'origin', f.remote); throw new Error('push rejected') }
+      return ''
+    } })
+    await expect(f.actions.publish(f.repo, { repository: 'o/r', visibility: 'private' })).rejects.toThrow('Publish failed. push rejected')
+    expect(git(f.repo, 'remote', 'get-url', 'origin')).toBe(f.remote)
+  })
+  it('settles a lost publish reply only when the current commit reached origin', async () => {
+    const f = await fixture({ remote: false, gh: async args => {
+      if (args[0] === 'repo' && args[1] === 'create') {
+        git(f.root, 'init', '--bare', '-q', '-b', 'main', f.remote); git(f.repo, 'remote', 'add', 'origin', f.remote)
+        git(f.repo, 'push', '-q', '-u', 'origin', 'main'); throw new Error('reply lost')
+      }
+      return ''
+    } })
+    expect(await f.actions.publish(f.repo, { repository: 'o/r', visibility: 'private' })).toEqual({ url: 'https://github.com/o/r' })
+    expect(git(f.remote, 'rev-parse', 'main')).toBe(git(f.repo, 'rev-parse', 'HEAD'))
+  })
+  it('does not mistake an older origin branch for a successful publish push', async () => {
+    const f = await fixture({ remote: false, gh: async args => {
+      if (args[0] === 'repo' && args[1] === 'create') {
+        git(f.repo, 'remote', 'add', 'origin', f.remote)
+        git(f.repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD~1'); throw new Error('push rejected')
+      }
+      return ''
+    } })
+    await writeFile(join(f.repo, 'work.txt'), 'second\n'); commit(f.repo, 'Second')
+    await expect(f.actions.publish(f.repo, { repository: 'o/r', visibility: 'private' })).rejects.toThrow('Publish failed. push rejected')
+  })
   it('pulls only a fast-forward, refuses a diverged branch in T3\'s words, and says when it is already current', async () => {
     const f = await fixture()
     expect(await f.actions.pull(f.repo)).toEqual({ status: 'skipped_up_to_date', branch: 'main', upstream: 'origin/main' })

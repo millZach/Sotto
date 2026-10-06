@@ -1,11 +1,24 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   enableWasmThreadSupport,
+  blockSpellcheckDictionaryDownloads,
   selectRendererSource,
   secureWebPreferences,
 } from '../../../src/main/security'
+
+describe('spellcheck privacy', () => {
+  it('keeps spellcheck enabled while giving Hunspell a hostless download URL', () => {
+    const setSpellCheckerDictionaryDownloadURL = vi.fn()
+    const setSpellCheckerEnabled = vi.fn()
+    const session = { setSpellCheckerDictionaryDownloadURL, setSpellCheckerEnabled }
+    blockSpellcheckDictionaryDownloads(session)
+
+    expect(setSpellCheckerDictionaryDownloadURL).toHaveBeenCalledWith('data:,')
+    expect(setSpellCheckerEnabled).not.toHaveBeenCalled()
+  })
+})
 
 describe('secureWebPreferences', () => {
   it('isolates every renderer from Node', () => {

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { clientAgentState, hostEntityKey, parseHostEntityKey } from '../../../src/shared/clientIdentity'
 import { attentionItemKey } from '../../../src/shared/agentAttention'
-import { threadsStateFixture } from './liveAgentState'
+import { openSidebarFolders, threadsStateFixture } from './liveAgentState'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -31,6 +31,7 @@ it('keeps both hosts in one sidebar, pane arrangement, draft store and attention
   const rows = describeThreads(combined, Date.now())
   const organization = organizeWorkspace(combined, rows, '')
   const onOpen = vi.fn()
+  openSidebarFolders(combined)
   render(<ThreadSidebar state={combined} organization={organization} command={vi.fn(async () => combined)} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()} currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
   fireEvent.click(screen.getByText('Laptop task')); fireEvent.click(screen.getByText('Forge task'))
   expect(onOpen.mock.calls.map(call => call[0])).toEqual([hostEntityKey(A, 'same:thread'), hostEntityKey(B, 'same:thread')])

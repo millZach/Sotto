@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalViewHandlers, TerminalViewLike } from './terminalStore'
+import { writeClipboard } from '../agents/richActions'
 
 /** ANSI colours per appearance, tuned to stay readable on the panel field in each mode. */
 const ANSI_DARK = {
@@ -69,8 +70,10 @@ function withAlpha(hex: string, alpha: number): string {
 /**
  * The terminal's colours from the theme's terminal roles, or the Crossing tokens where there are none. A theme's
  * selection is opaque, which xterm supports by drawing selected text above it; the accent fallback is a wash.
+ * See-through, the background keeps its colour at zero alpha, so the drawer behind it shows and xterm still
+ * measures text contrast against the theme's own terminal background.
  */
-export function terminalTheme(root: HTMLElement = document.documentElement, resolve: ColorResolver = defaultResolver()): ITheme {
+export function terminalTheme(root: HTMLElement = document.documentElement, resolve: ColorResolver = defaultResolver(), seeThrough = false): ITheme {
   const style = getComputedStyle(root)
   const color = (fallback: string, ...names: string[]): { readonly css: string; readonly hex: string } => {
     for (const name of names) {
@@ -89,7 +92,7 @@ export function terminalTheme(root: HTMLElement = document.documentElement, reso
   const scrollbarHover = color(scrollbar.hex, '--tt-terminal-scrollbar-hover')
   return {
     ...(light ? ANSI_LIGHT : ANSI_DARK),
-    background: background.hex,
+    background: seeThrough ? withAlpha(background.hex, 0) : background.hex,
     foreground: foreground.hex,
     cursor: cursor.hex,
     cursorAccent: background.hex,
@@ -109,18 +112,22 @@ function monoFont(): string {
 }
 
 /**
- * The real terminal: xterm over the main-process PTY. Ctrl+C copies a selection and otherwise interrupts;
- * Ctrl+V pastes; Ctrl+Tab and Ctrl+Shift+Tab leave the terminal, since Tab itself belongs to the shell.
+ * The real terminal: xterm over the main-process PTY. On Windows Ctrl+C copies a selection and otherwise
+ * interrupts, and Ctrl+V pastes. On macOS Ctrl+C always interrupts and Ctrl+V goes to the shell, as in Terminal;
+ * ⌘C and ⌘V copy and paste through the Edit menu, and Option types the keyboard layout's characters. Ctrl+Tab and Ctrl+Shift+Tab leave the
+ * terminal, since Tab itself belongs to the shell.
  */
 export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor = defaultResolver() }: { readonly resolveColor?: ColorResolver } = {}): TerminalViewLike => {
   const platform = (window.sotto as { platform?: string } | undefined)?.platform
   const systemMotion = matchMedia('(prefers-reduced-motion: reduce)')
   const blinks = (): boolean => document.documentElement.dataset.reducedMotion !== 'on' && !systemMotion.matches
-  let theme = terminalTheme(document.documentElement, resolveColor)
+  // A drawer's terminal is see-through while the room is frosted; its drawer paints the frosted colour behind it.
+  const seeThrough = (): boolean => handlers.followsFrost === true && document.documentElement.dataset.frost !== undefined
+  let theme = terminalTheme(document.documentElement, resolveColor, seeThrough())
   let painted = JSON.stringify(theme)
   const terminal = new Terminal({
     fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
-    theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false,
+    theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false, allowTransparency: handlers.followsFrost === true,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
   const fit = new FitAddon()
@@ -129,6 +136,13 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   element.className = 'terminal-view__screen'
   let opened = false
   let inputEnabled = false
+  let disposed = false
+  let selectionRevision = 0
+  const selectionChanges = terminal.onSelectionChange(() => { selectionRevision++ })
+  // xterm reports a dragged selection on release. Protect it from queued copies from the first press.
+  const startSelection = (): void => { selectionRevision++ }
+  element.addEventListener('pointerdown', startSelection, true)
+  element.addEventListener('mousedown', startSelection, true)
   let renderer: WebglAddon | undefined
   const releaseRenderer = (): void => {
     const current = renderer
@@ -166,18 +180,31 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       return false
     }
     if (ctrl && !event.shiftKey && (event.key === 'c' || event.key === 'C')) {
-      if (terminal.hasSelection()) {
-        void navigator.clipboard?.writeText(terminal.getSelection()).catch(() => undefined)
-        terminal.clearSelection()
+      if (platform !== 'darwin' && terminal.hasSelection()) {
+        const selection = terminal.getSelection()
+        if (!selection.trim()) { handlers.onNotice?.('Nothing to copy. Select some text first.'); return false }
+        const copiedRevision = selectionRevision
+        const copiedRange = terminal.getSelectionPosition()
+        void writeClipboard(selection).then(() => {
+          if (disposed) return
+          const range = terminal.getSelectionPosition()
+          if (selectionRevision === copiedRevision && range && copiedRange &&
+            range.start.x === copiedRange.start.x && range.start.y === copiedRange.start.y &&
+            range.end.x === copiedRange.end.x && range.end.y === copiedRange.end.y) terminal.clearSelection()
+          handlers.onNotice?.(null)
+        }, () => { if (!disposed) handlers.onNotice?.('Could not copy. Your selection is kept. Try Ctrl+C again.') })
         return false
       }
       if (inputEnabled) handlers.onInterrupt()
       return false
     }
-    if (ctrl && (event.key === 'v' || event.key === 'V')) {
+    // On macOS Ctrl+V is the shell's own (quoted insert); ⌘V pastes through the Edit menu's paste event.
+    if (platform !== 'darwin' && ctrl && (event.key === 'v' || event.key === 'V')) {
       // The browser's paste event reaches xterm's textarea and arrives through onData once.
       return false
     }
+    // A key the page acts on (a drawer's own toggle) goes to the page, never to the shell.
+    if (handlers.isPageShortcut?.(event)) return false
     return true
   })
 
@@ -192,14 +219,14 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   // mode, contrast or editor change repaints this same terminal. A root change that leaves its colours alone does not.
   const retheme = new MutationObserver(() => {
     followMotion()
-    const next = terminalTheme(document.documentElement, resolveColor)
+    const next = terminalTheme(document.documentElement, resolveColor, seeThrough())
     const key = JSON.stringify(next)
     if (key === painted) return
     theme = next
     painted = key
     terminal.options.theme = theme
   })
-  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'style', 'class'] })
+  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'data-frost', 'style', 'class'] })
 
   const view: TerminalViewLike = {
     mount(container) {
@@ -224,7 +251,17 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       return { cols: terminal.cols, rows: terminal.rows }
     },
     focus() { terminal.focus() },
-    dispose() { retheme.disconnect(); systemMotion.removeEventListener('change', followMotion); releaseRenderer(); terminal.dispose(); element.remove() },
+    dispose() {
+      disposed = true
+      selectionChanges.dispose()
+      element.removeEventListener('pointerdown', startSelection, true)
+      element.removeEventListener('mousedown', startSelection, true)
+      retheme.disconnect()
+      systemMotion.removeEventListener('change', followMotion)
+      releaseRenderer()
+      terminal.dispose()
+      element.remove()
+    },
   }
   return view
 }

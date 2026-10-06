@@ -61,16 +61,14 @@ const exit = code => { process.exitCode = code }
 
 /**
  * OpenSSH runs SSH_ASKPASS with the prompt as its one argument, and SSH_ASKPASS_PROMPT=none for a notice
- * that takes no answer. Windows goes through cmd.exe, which keeps only the first line.
+ * that takes no answer.
  */
 function askpass(prompt, hint = '') {
   return new Promise(resolve => {
     const program = process.env.SSH_ASKPASS
     if (process.env.SSH_ASKPASS_REQUIRE !== 'force' || !program) { resolve(null); return }
     const env = { ...process.env, SSH_ASKPASS_PROMPT: hint }
-    const child = process.platform === 'win32'
-      ? spawn(`"${program}" "${prompt.split('\n')[0]}"`, { shell: true, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
-      : spawn(program, [prompt], { stdio: ['ignore', 'pipe', 'ignore'], env })
+    const child = spawn(program, [prompt], { shell: false, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env })
     let output = ''
     child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk })
     child.on('error', () => resolve(null))
@@ -190,12 +188,16 @@ async function control(script) {
     say({ type: 'ready', ...health(), owned: mode !== 'discovered' })
   }
   if (operation === 'pairing-code') { record({ type: 'pairing-requested' }); say({ type: 'pairing-code', hostId, code: 'ABC123', expiresAt: new Date(Date.now() + 60_000).toISOString() }) }
+  if (operation === 'desktop-answers') { record({ type: 'desktop-answers-requested' }); say({ type: 'desktop-answers', hostId }) }
+  // The launch script's own refusal, and a revoke that ends with no answer at all.
+  if (operation === 'revoke-client' && mode === 'revoke-refused') { say({ type: 'failed' }); return }
+  if (operation === 'revoke-client' && mode === 'revoke-silent') { exit(1); return }
   if (operation === 'revoke-client') { record({ type: 'revoke-requested' }); say({ type: 'revoked', hostId, revoked: true }) }
   if (operation === 'stop-host') { record({ type: 'host-stopped', owned: mode !== 'discovered' }); say({ type: 'host-stopped', stopped: mode !== 'discovered', hostId }) }
 }
 
 const script = !tunnel && !resolveOnly ? await readAll(process.stdin) : ''
-record({ type: 'spawn', args, target, tunnel, resolve: resolveOnly, op: configuration?.op, stdinSha256: createHash('sha256').update(script).digest('hex'),
+record({ type: 'spawn', args, target, tunnel, resolve: resolveOnly, op: configuration?.op, ...(configuration?.start === false ? { start: false } : {}), ...(configuration?.removeBoot === true ? { removeBoot: true } : {}), stdinSha256: createHash('sha256').update(script).digest('hex'),
   askpass: process.env.SSH_ASKPASS_REQUIRE === 'force' && !!process.env.SSH_ASKPASS })
 if (resolveOnly) process.stdout.write(`host ${target}\nhostname forge.example.net\nuser user\nport 2222\nidentityfile ~/.ssh/id_ed25519\nidentityfile ~/.ssh/id_rsa\n`)
 else if (await authenticate()) { if (tunnel) forward(); else await control(script) }

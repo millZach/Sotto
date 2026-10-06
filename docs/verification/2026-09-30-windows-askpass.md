@@ -1,0 +1,15 @@
+# Windows askpass helper
+
+Verified on Windows x64 with the system OpenSSH client. The helper is compiled in its temporary folder with Windows' .NET Framework 4 compiler and launched directly.
+
+`tests/integration/sshAskpass.test.ts` checks complete multiline questions, UTF-8 answers, confirmation and notice hints, cancellation, forgotten callers and removal of the helper folder, including when a question is still unanswered. Its direct-start regression fails on the previous helper with `spawn EINVAL`. The same test file generates an isolated passphrase-protected key and uses Windows OpenSSH's `ssh-keygen -y` to request its passphrase through the real helper. The key and helper folders are removed afterward. `tests/unit/main/sshAskpass.test.ts` checks an actionable preparation error and cleanup after compiler failure.
+
+`tests/integration/sshLauncher.test.ts` checks the full launcher against the scripted SSH fixture, including one answer per connection, a refused answer, notices, withdrawn questions and host-key acceptance and refusal. These three focused files passed all 46 tests after the review and CI fixes.
+
+`npm run build` and the Electron journeys in `tests/e2e/hosts.spec.ts` and `tests/e2e/host-setup.spec.ts` passed. They check Add host, setup feedback, saved-host controls, Escape and focus, and light/dark layouts at 1600×1000, 1280×800 and 820×560 with reduced motion. A throwaway wording preview in the existing Hosts view placed the preparation error in its existing error area, without changing layout or controls. The copy was shortened after the minimum-size capture showed the last line reaching under the existing footer. Its inspected final minimum-size captures are [dark](../../artifacts/windows-askpass/hosts-error-dark.png) and [light](../../artifacts/windows-askpass/hosts-error-light.png). The preview source is excluded from the change because this fix preserves the existing surface.
+
+The full two-worker suite passed 6,390 tests with 153 skipped; the final focused checks also include the review fixes for compiler failure and cleanup. Typecheck, lint and notices verification passed. The standards review found the preparation error wording, and the spec review found the helper-exit cleanup race; both were fixed.
+
+This evidence covers native helper execution and a real OpenSSH passphrase request; it does not establish a complete connection through Windows `ssh.exe` to a remote host or execution on macOS. No design baselines were regenerated.
+
+The first Windows CI run failed its initial launcher readiness case with a connection timeout. The sign-in deadline included the local version probe and helper preparation. A controlled-clock regression holds helper preparation past the sign-in budget: it disconnected before the fix and stays connecting afterward, then completes a real fixture connection. The deadline now starts after the helper is ready. The version probe and helper preparation retain their separate bounds; no existing deadline was increased. All 46 focused tests, typecheck and lint passed after this correction.

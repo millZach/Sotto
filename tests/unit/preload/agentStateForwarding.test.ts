@@ -12,7 +12,7 @@ const state: AgentState = {
   globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
   voice: { status: 'off', error: null, action: 'none', revision: 0 },
   credentials: { reasoning: false, grokSpeech: false, secure: false },
-  reasoningAccounts: [], membership: { status: 'active', label: 'Sotto', expiresAt: null },
+  reasoningAccounts: [],
 }
 
 describe('agent state broadcast forwarding', () => {

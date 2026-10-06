@@ -1,4 +1,5 @@
-import React, { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { isCompositionKey } from '../../agents/composerKeys'
+import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { DEFAULT_HOST_DATA_DIRECTORY, DEFAULT_HOST_INSTALL_PATH, type HostsBridge, type HostsState, type HostStatus, type RemoteHost } from '../../../../shared/hosts'
 import type { HostDevice, HostDeviceList, TailscaleSummary } from '../../../../shared/hostDevices'
@@ -9,54 +10,8 @@ import { HostSetupChecklist, hostSetupSummary, hostSetupTitle, TAILSCALE_GUIDE_U
 import { HostAddChoices, HostSetupProgress, hostSetupEnded, hostSetupViewTitle, SetupModelSelect, type HostAddChoice } from './HostSetupView'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
-
-/** How many Hosts modals are open, so a saved host's SSH question waits rather than stacking on one. */
-let openModals = 0
-const modalListeners = new Set<() => void>()
-const subscribeModals = (listener: () => void): (() => void) => { modalListeners.add(listener); return () => { modalListeners.delete(listener) } }
-const modalsChanged = (change: number): void => { openModals += change; for (const listener of modalListeners) listener() }
-/** Whether Add host, Edit connection or Rename is open. */
-export const useHostsModalOpen = (): boolean => useSyncExternalStore(subscribeModals, () => openModals > 0)
-
-/**
- * A modal for Settings > Hosts: focus starts inside it (on `data-autofocus` when a control has it), Tab stays inside it, Escape answers it (after
- * anything open inside has answered first) and focus goes back to what opened it.
- */
-export function HostsModal({ title, onClose, busy = false, children, footer, className = '' }: {
-  readonly title: string; readonly onClose: () => void; readonly busy?: boolean
-  readonly children: ReactNode; readonly footer: ReactNode; readonly className?: string
-}): ReactNode {
-  const dialog = useRef<HTMLElement>(null)
-  const titleId = useId()
-  const close = useRef(onClose)
-  close.current = onClose
-  useEffect(() => { modalsChanged(1); return () => modalsChanged(-1) }, [])
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    // Focus starts on the control marked for it, such as Add host's Device list below a Tailscale prompt, else on the first one.
-    const start = dialog.current?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') ?? dialog.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')
-    start?.focus()
-    // Escape is heard on the document, so it still answers while focus sits on a control that just turned off.
-    // Anything open inside the dialog (Add host's device list) answers it first and stops it there.
-    const onEscape = (event: globalThis.KeyboardEvent): void => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close.current() } }
-    document.addEventListener('keydown', onEscape)
-    return () => { document.removeEventListener('keydown', onEscape); queueMicrotask(() => { if (opener?.isConnected) opener.focus() }) }
-  }, [])
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    if (event.key !== 'Tab') return
-    const focusable = [...dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])') ?? []]
-    const first = focusable[0], last = focusable.at(-1)
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
-  }
-  return <div className="tt-dialog-backdrop" role="presentation">
-    <section ref={dialog} className={`tt-dialog hosts-dialog ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || undefined} onKeyDown={onKeyDown}>
-      <h2 id={titleId}>{title}</h2>
-      {children}
-      <div className="tt-dialog__actions">{footer}</div>
-    </section>
-  </div>
-}
+import { HostBootOffer } from './HostBootStart'
+import { HostsModal } from './HostsModal'
 
 /** The longest name and SSH target a saved host may have (`remoteHostSchema`). */
 const MAX_NAME_LENGTH = 80, MAX_TARGET_LENGTH = 256
@@ -123,7 +78,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   const closeRef = useRef(onClose)
   closeRef.current = onClose
   const hintId = useId(), closeHintId = useId()
-  const hostId = useId(), userId = useId(), portId = useId(), installId = useId(), dataId = useId(), dataHintId = useId(), identityId = useId(), answerId = useId()
+  const hostId = useId(), serveId = useId(), userId = useId(), portId = useId(), installId = useId(), dataId = useId(), dataHintId = useId(), identityId = useId(), answerId = useId()
   // The add this dialog started, as main reports it; it leaves `adding` for `hosts` once the host is saved.
   const adding = attempt !== null && state?.adding?.id === attempt ? state.adding : undefined
   const addedHost = attempt !== null ? state?.hosts.find(item => item.id === attempt) : undefined
@@ -291,7 +246,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     <pre className="hosts-challenge">{prompt.text}</pre>
     {prompt.kind !== 'host-key' ? <div className="tt-field"><label className="tt-field__label" htmlFor={answerId}>{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
       <input id={answerId} className="tt-input tt-focusable" type="password" autoComplete="off" autoFocus value={answer} onChange={event => setAnswer(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void answerPrompt() } }} /></div> : null}
+        onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void answerPrompt() } }} /></div> : null}
     <div className="hosts-prompt__actions"><Button autoFocus={prompt.kind === 'host-key'} disabled={answering} onClick={() => void answerPrompt()}>{prompt.kind === 'host-key' ? 'Trust host and continue' : 'Continue'}</Button></div>
   </div> : null
   const openGuide = (): void => { void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL) }
@@ -316,22 +271,27 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     </div>
   </div> : null
   const agentChosen = !editing && how === 'agent' && agentAvailable
+  // Adding it yourself turns on the host's tailnet connections, so the press is the owner's consent to that Serve setting, and
+  // the sentence that says so describes the press, and the SSH host field whose Enter makes it (ADR-0053).
+  const serveShown = !editing && !checklist && !agentChosen
   return <HostsModal title={editing ? `Edit connection to ${editing.name}` : checklist ? hostSetupTitle(submitted.name, outcome) : 'Add host'} onClose={close} busy={connecting || starting} className="hosts-dialog--connection"
     footer={checklist && outcome === 'connected' ? <Button ref={doneButton} onClick={onClose}>Done</Button> : <>
       <Button ref={cancelButton} variant="secondary" onClick={close}>Cancel</Button>
-      <Button ref={addButton} disabled={connecting || starting || prompt !== undefined} onClick={() => { if (checklist) void submit(); else go() }}>
+      <Button ref={addButton} disabled={connecting || starting || prompt !== undefined} {...(serveShown ? { 'aria-describedby': serveId } : {})} onClick={() => { if (checklist) void submit(); else go() }}>
         {editing ? (sending ? 'Saving…' : 'Save connection') : connecting ? 'Connecting…' : checklist ? 'Try again' : agentChosen ? (starting ? 'Starting…' : 'Start setup') : 'Add host'}</Button>
     </>}>
     {checklist ? <HostSetupChecklist name={submitted.name} summary={hostSetupSummary(submitted.user, submitted.port)} host={adding ?? addedHost} outcome={outcome}
       error={shownError} approvalError={approvalError} question={question} offer={offer} {...(outcome === 'connected' ? {} : { onChange: change })}
+      // The connected card offers to start the new host at boot, one consented press (ADR-0054).
+      boot={outcome === 'connected' && addedHost ? <HostBootOffer host={addedHost} view={state?.boot?.find(item => item.id === addedHost.id)} bridge={bridge} /> : undefined}
       onOpenApproval={() => void openApproval()} onOpenGuide={openGuide} /> : <>
     <p className="hosts-dialog__intro">{editing ? 'The new connection is used the next time Sotto connects. A host that is on connects again now.' : 'Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.'}</p>
     {!editing && tailscale ? <TailscalePrompt control={tailscale} /> : null}
     <form ref={formRef} className="hosts-dialog__fields" onSubmit={event => { event.preventDefault(); go() }}
-      onKeyDown={event => { const target = event.target as HTMLElement; if (event.key === 'Enter' && target instanceof HTMLInputElement && target.type !== 'radio') { event.preventDefault(); go() } }}>
+      onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } const target = event.target as HTMLElement; if (event.key === 'Enter' && target instanceof HTMLInputElement && target.type !== 'radio') { event.preventDefault(); go() } }}>
       {typing ? <div className="tt-field">
         <label className="tt-field__label" htmlFor={hostId}>SSH host</label>
-        <input id={hostId} className="tt-input tt-focusable" value={host} disabled={fieldsDisabled} aria-describedby={hintId} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={MAX_TARGET_LENGTH}
+        <input id={hostId} className="tt-input tt-focusable" value={host} disabled={fieldsDisabled} aria-describedby={serveShown ? `${hintId} ${serveId}` : hintId} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={MAX_TARGET_LENGTH}
           autoFocus={entry === 'typed'} placeholder="forge or user@server" onChange={event => setHost(event.target.value)} />
         <p className="tt-field__description" id={hintId}>{editing ? 'An alias from your SSH configuration, or a host name.'
           : <>A host name, an alias from your SSH configuration or user@server. <button type="button" className="hosts-devices__back tt-focusable" disabled={fieldsDisabled} onClick={chooseFromDevices}>Choose from your devices</button></>}</p>
@@ -339,6 +299,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
         onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} />}
       {!editing ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
         onModel={setModelId} disabled={fieldsDisabled} /> : null}
+      {serveShown ? <p className="tt-field__description" id={serveId}>Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</p> : null}
       {typing ? <div className="hosts-dialog__pair">
         <div className="tt-field"><label className="tt-field__label" htmlFor={userId}>Username <span className="hosts-dialog__optional">(optional)</span></label>
           <input id={userId} className="tt-input tt-focusable" value={user} disabled={fieldsDisabled} autoCapitalize="none" spellCheck={false} maxLength={64} placeholder="From your SSH configuration" onChange={event => setUser(event.target.value)} /></div>

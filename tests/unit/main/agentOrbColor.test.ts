@@ -24,10 +24,6 @@ async function fixture(directory?: string) {
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler,
     directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
-    membership: {
-      status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-      action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-    },
   })
   controls.add(control)
   await control.start()

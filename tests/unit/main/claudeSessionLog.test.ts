@@ -29,6 +29,18 @@ async function transcript(): Promise<{ home: string; cwd: string; session: strin
 }
 
 describe('Claude session log cursor', () => {
+  it('finds the native project folder for an astral character', async () => {
+    const { home, cwd, session } = await transcript()
+    const project = join(cwd, 'work-\u{1f600}')
+    const folder = join(home, 'projects', `${cwd.replace(/[^a-zA-Z0-9]/gu, '-')}-work---`)
+    await mkdir(folder, { recursive: true })
+    await writeFile(join(folder, `${session}.jsonl`), entry(session, 'Native transcript'))
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, project, session, frame => frames.push(frame))
+    expect(await reader.exists()).toBe(true)
+    await reader.poll()
+    expect(frames).toHaveLength(1)
+  })
   it('resumes at a stored cursor and reads only what was appended', async () => {
     const { home, cwd, session, path } = await transcript()
     await appendFile(path, entry(session, 'First') + entry(session, 'Second'))

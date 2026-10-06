@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { z } from 'zod'
+import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 export interface CredentialEncryption {
@@ -13,8 +14,9 @@ export class AgentCredentials {
   private readonly store: AtomicJsonStore<Record<string, string>>
   private values: Record<string, string> = {}
   private mutation: Promise<void> = Promise.resolve()
-  constructor(directory: string, private readonly encryption: CredentialEncryption) {
-    this.store = new AtomicJsonStore(join(directory, 'credentials.json'), z.record(z.string(), z.string()).parse, () => ({}))
+  constructor(directory: string, private readonly encryption: CredentialEncryption, onRecovery?: (notice: RecoveryNotice) => void) {
+    this.store = new AtomicJsonStore(join(directory, 'credentials.json'), z.record(z.string(), z.string()).parse, () => ({}),
+      undefined, undefined, () => onRecovery?.({ code: 'CREDENTIALS_RECOVERED' }))
   }
   async load(): Promise<void> { await this.mutation; this.values = await this.store.read() }
   available(): boolean { return this.encryption.isEncryptionAvailable() }
@@ -26,9 +28,23 @@ export class AgentCredentials {
     return this.encryption.decryptString(Buffer.from(value, 'base64'))
   }
   set(slot: string, value: string): Promise<void> {
-    const operation = this.mutation.then(() => this.write(slot, value))
-    this.mutation = operation.catch(() => undefined)
-    return operation
+    return this.enqueue(() => this.write(slot, value))
+  }
+  /** The slot's ciphertext as stored, for putting it back without decrypting it. */
+  sealed(slot: string): string | undefined { return this.values[slot] || undefined }
+  restoreSealed(slot: string, sealed: string | undefined): Promise<void> {
+    return this.enqueue(async () => {
+      const updated = { ...this.values }
+      if (sealed) updated[slot] = sealed
+      else delete updated[slot]
+      await this.store.write(updated)
+      this.values = updated
+    })
+  }
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const queued = this.mutation.then(operation)
+    this.mutation = queued.catch(() => undefined)
+    return queued
   }
   private async write(slot: string, value: string): Promise<void> {
     if (value && !this.available()) throw new Error('Secure credential storage is unavailable. No key was saved.')

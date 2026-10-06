@@ -87,6 +87,27 @@ describe('MemoryProfile', () => {
     expect(store.search('briefly', { limit: 10 })).toHaveLength(1)
   })
 
+  it('notifies every deleted chain member only after commit, and stops notifying after disposal', () => {
+    const first = profile.command(questionnaire()).memories[0]!
+    const notifications: string[][] = []
+    const dispose = profile.subscribeDeleted(ids => {
+      // The write transaction has finished and every deleted ID is already gone.
+      store.database().exec('BEGIN IMMEDIATE'); store.database().exec('ROLLBACK')
+      expect(ids.every(id => !store.get(id))).toBe(true)
+      notifications.push([...ids])
+    })
+    profile.command({ type: 'edit', id: first.id, content: 'Replacement' })
+    const replacement = store.get(first.id)!.supersededBy!
+    expect(notifications).toEqual([])
+    const snapshot = vi.spyOn(profile, 'snapshot').mockImplementationOnce(() => { throw new Error('Snapshot failed') })
+    expect(() => profile.command({ type: 'delete', id: first.id })).toThrow('Snapshot failed')
+    snapshot.mockRestore(); expect(store.get(first.id)).toBeDefined(); expect(notifications).toEqual([])
+    profile.command({ type: 'delete', id: first.id })
+    expect(notifications.map(ids => ids.sort())).toEqual([[first.id, replacement].sort()])
+    dispose(); profile.command({ type: 'delete', id: profile.snapshot().memories[0]!.id })
+    expect(notifications).toHaveLength(1)
+  })
+
   it('deletes a whole supersession chain from either history or current item, including FTS, across restart', () => {
     for (const deleteHistory of [true, false]) {
       if (profile.snapshot().questionnaireCompletedAt === null) profile.command(questionnaire())

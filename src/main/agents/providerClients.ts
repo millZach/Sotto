@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
-import { access, constants, open, readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { access, constants, open, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { setTimeout as delay } from 'node:timers/promises'
 import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { PROVIDER_LABELS, type ClientChannel, type ClientUpdateFailure, type ProviderClientUpdate, type ProviderId } from '../../shared/agents'
@@ -62,13 +63,70 @@ function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
     join(home, '.npm-global', 'lib', 'node_modules'), join(home, '.local', 'share', 'npm', 'lib', 'node_modules'),
   ]
 }
-async function npmOwns(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<boolean> {
+/** The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. */
+async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const parts = executable.split(sep), names = packageName.split('/')
+  const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
+    && names.every((name, offset) => parts[index + 1 + offset]?.toLowerCase() === name.toLowerCase()))
   const bin = dirname(executable)
-  const roots = [...npmGlobalRoots(environment), join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...npmGlobalRoots(environment),
+    join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
   for (const root of roots) {
-    try { await access(join(root, ...packageName.split('/'), 'package.json'), constants.F_OK); return true } catch { /* Try the next global layout. */ }
+    const folder = join(root, ...names)
+    try { await access(join(folder, 'package.json'), constants.F_OK); return folder } catch { /* Try the next global layout. */ }
+  }
+  return undefined
+}
+async function npmOwns(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<boolean> {
+  return await npmPackageFolder(packageName, executable, environment) !== undefined
+}
+
+/** True when a program or library in this folder is running: Windows will not open a running image for writing. */
+async function runningFrom(folder: string): Promise<boolean> {
+  const files = await readdir(folder, { recursive: true }).catch(() => [] as string[])
+  for (const file of files.filter(name => /\.(?:exe|dll|node)$/iu.test(name))) {
+    try { await (await open(join(folder, file), 'r+')).close() } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES' || code === 'ETXTBSY') return true
+    }
   }
   return false
+}
+
+/**
+ * npm moves the package it replaces to `.<name>-<hash>` beside it and deletes that folder once the new one is in.
+ * The name is the same on every run (arborist's `retire-path.js` hashes the package's path). On Windows npm cannot
+ * delete a program that is still running, so an update made while a thread works leaves the folder behind (ADR-0042).
+ * That costs nothing until the next update needs the same name while something from before the last one still runs
+ * there: npm cannot move the folder in, falls back to copying file by file, and stops on
+ * `EBUSY: resource busy or locked, copyfile`. So before npm runs, each such folder is deleted when nothing runs from
+ * it, and moved to a name of its own when something does, to be deleted before a later update.
+ */
+export async function clearLeftoverPackage(packageFolder: string, now: () => number = Date.now): Promise<void> {
+  const scope = dirname(packageFolder)
+  const leftover = new RegExp(`^\\.${basename(packageFolder).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}-[A-Za-z0-9]{8}(?:\\.old-\\d+)?$`, 'u')
+  for (const entry of await readdir(scope, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory() || !leftover.test(entry.name)) continue
+    const folder = join(scope, entry.name)
+    if (!await runningFrom(folder)) await rm(folder, { recursive: true, force: true }).catch(() => undefined)
+    // Only npm's own name has to be free. A folder already moved waits there until its program stops.
+    else if (!entry.name.includes('.old-')) await moveAside(folder, `${folder}.old-${now()}`)
+  }
+}
+/**
+ * Opening the folder's idle programs to look for a running one is enough for a virus scanner to read them, and while
+ * it does Windows refuses to move their folder (`EPERM`, measured under load). That passes, so the move is tried again
+ * for a few seconds. One still refused is left where it is, and npm says what it says.
+ */
+const MOVE_ASIDE_RETRY_DELAYS_MS = [50, 100, 200, 400, 800, 1600] as const
+async function moveAside(folder: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try { await rename(folder, to); return } catch (error) {
+      const retry = MOVE_ASIDE_RETRY_DELAYS_MS[attempt], code = (error as NodeJS.ErrnoException).code
+      if (retry === undefined || (code !== 'EPERM' && code !== 'EBUSY')) return
+      await delay(retry)
+    }
+  }
 }
 
 /**
@@ -312,7 +370,7 @@ export interface ProviderClientsOptions {
 /**
  * What each installed client publishes, and the one press that installs it. Nothing here connects,
  * disconnects or decides: the install runs beside whatever is running the old client, and the
- * coordinator tells the adapters afterwards (ADR-0021).
+ * coordinator tells the adapters afterwards (ADR-0042).
  */
 export class ProviderClients {
   private readonly cache = new Map<string, { version: string; expiresAt: number }>()
@@ -384,6 +442,12 @@ export class ProviderClients {
         : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.` }
     }
     onStep?.(1)
+    // Elsewhere npm deletes a running program's folder like any other, so nothing is left to clear.
+    const packageName = CLIENT_PACKAGES[provider]
+    if (process.platform === 'win32' && install.channel === 'npm' && executable && packageName) {
+      const folder = await npmPackageFolder(packageName, executable, environment)
+      if (folder) await clearLeftoverPackage(folder)
+    }
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd ? { cwd: action.cwd } : undefined)
     if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
     if (!action.installStep) return upgrade

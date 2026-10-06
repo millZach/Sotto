@@ -31,7 +31,7 @@ async function fixture() {
   const create = () => {
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: vi.fn(), decide: vi.fn() } as never,
-      membership: { status: async () => ({ status: 'beta', label: 'Beta', expiresAt: null }), action: vi.fn() } })
+    })
     controls.push(control); return control
   }
   const seed = create(); await seed.start(); seed.dispose()
@@ -145,7 +145,7 @@ describe('native provider retirement', () => {
     expect((await readdir(f.root)).filter(name => name.startsWith('provider-retirement'))).toEqual(['provider-retirement-v1.json'])
   })
   it('preserves credentials and original live bytes when encrypted-slot deletion cannot commit', async () => {
-    const f = await fixture(); await f.save(); await f.credentials.set('t3', 'secret'); await f.credentials.set('membership', 'unrelated')
+    const f = await fixture(); await f.save(); await f.credentials.set('t3', 'secret'); await f.credentials.set('unrelated', 'unrelated')
     const before = await readFile(f.path, 'utf8'); const ciphertext = await readFile(join(f.root, 'credentials.json'), 'utf8')
     const original = AtomicJsonStore.prototype.write
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value) {
@@ -154,7 +154,7 @@ describe('native provider retirement', () => {
     })
     const failed = f.create(); await expect(failed.start()).rejects.toThrow('vault save failed')
     expect(await readFile(f.path, 'utf8')).toBe(before); expect(await readFile(join(f.root, 'credentials.json'), 'utf8')).toBe(ciphertext)
-    expect(f.credentials.has('t3')).toBe(true); expect(f.credentials.has('membership')).toBe(true); expect(f.decrypt).not.toHaveBeenCalled()
+    expect(f.credentials.has('t3')).toBe(true); expect(f.credentials.has('unrelated')).toBe(true); expect(f.decrypt).not.toHaveBeenCalled()
     await expect(failed.privacyChanged()).rejects.toThrow('safely recover')
     expect(await readFile(f.path, 'utf8')).toBe(before); expect(f.connect).not.toHaveBeenCalled()
   })

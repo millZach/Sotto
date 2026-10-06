@@ -1,5 +1,9 @@
 # 4. Authority lives in policy records
 
+September 29, 2026 amendment: [ADR-0025](0025-headless-host-and-client-identity.md#september-29-amendment-an-ssh-desktop-can-answer-at-setup) records Zach's choice that an authenticated SSH desktop connection creates its own client-scoped remote-answer policy automatically when none has ever existed. It changes how that desktop's policy is established, not who answers requests: the user still chooses permissions, supervision approves nothing, and a phone still needs an explicit grant. Existing revoked or expired records remain in force as a refusal to establish the default again. [ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md) (accepted October 5, 2026, under the owner's delegation) keeps that record written only over SSH but honours it on the desktop's tailnet connection too, so the desktop's token carries it from any device on the owner's tailnet; its first consequence says so.
+
+October 1, 2026 amendment: [ADR-0005](0005-codex-app-server-adapter.md#decision) records the September 30 decision that supervision may accept Codex URL elicitations and app-tool confirmations. This is a second standing exception to the rules below that supervision approves nothing and the user answers every permission. ADR-0029's exception for Sotto's own browser remains in force.
+
 ## Status
 
 Accepted — 2026-09-10. ADR-0025's September 22 amendment applies this to paired clients: the commands a paired device may send, and which of them need a `remote-answer` policy record. ADR-0029 (September 25, 2026) makes one standing exception: by default a thread may open, navigate, click and type in Sotto's own browser without asking, through a grant shaped like a policy record with the source `settings`.

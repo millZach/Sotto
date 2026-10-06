@@ -1,6 +1,7 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
+import { projectWorkingCopyDefaultKey } from '../../../../shared/clientIdentity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
@@ -21,14 +22,15 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
   const button = useRef<HTMLButtonElement>(null)
   const contentId = useId()
   const project = projects.find(item => item.id === selectedId) ?? projects[0]
+  const defaultKey = (id: string): string => projectWorkingCopyDefaultKey(agents?.state, id)
 
   const saveDefault = async (value: string): Promise<void> => {
     if (!project || savingRef.current) return
     savingRef.current = true
     setSaving(true)
     const defaults = { ...settings.projectThreadWorkingCopyDefaults }
-    if (value === 'inherit') delete defaults[project.id]
-    else if (value === 'shared' || value === 'independent') defaults[project.id] = value
+    if (value === 'inherit') delete defaults[defaultKey(project.id)]
+    else if (value === 'shared' || value === 'independent') defaults[defaultKey(project.id)] = value
     try {
       await onSave({ projectThreadWorkingCopyDefaults: defaults })
     } finally {
@@ -51,7 +53,7 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
         <Field label="Project"><Select value={project.id} disabled={saving} onChange={event => setSelectedId(event.currentTarget.value)}>
           {projects.map(item => <option key={item.id} value={item.id}>{item.title} — {item.path}</option>)}
         </Select></Field>
-        <Field label="New threads in this project work in"><Select value={settings.projectThreadWorkingCopyDefaults[project.id] ?? 'inherit'} disabled={saving} onChange={event => void saveDefault(event.currentTarget.value)}>
+        <Field label="New threads in this project work in"><Select value={settings.projectThreadWorkingCopyDefaults[defaultKey(project.id)] ?? 'inherit'} disabled={saving} onChange={event => void saveDefault(event.currentTarget.value)}>
           <option value="inherit">Use global default ({settings.threadWorkingCopyDefault === 'shared' ? 'Project folder' : 'New worktree'})</option>
           <option value="shared">Project folder</option>
           <option value="independent">New worktree</option>

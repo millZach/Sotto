@@ -28,9 +28,7 @@ async function fixture(reasoner: AgentReasoner = e2eAgentReasoner) {
   const host = new WorkspaceHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
   await credentials.load()
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, membership: {
-    status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }),
-  } })
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, })
   const f = { root, host, control: create(), async restart() { this.control.dispose(); this.control = create(); await this.control.start() } }
   fixtures.push(f)
   await f.control.start(); await f.control.command({ type: 'connect' })

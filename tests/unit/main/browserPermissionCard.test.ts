@@ -32,6 +32,12 @@ describe('the browser permission card says what a press does', () => {
     expect(text).toContain('Check the composer')
   })
 
+  it('names the test iPhone it would open, repeating why the agent asked', () => {
+    const text = ask(`mcp__${BROWSER_MCP_SERVER}__iphone_open`, { url: 'http://localhost:5173/', description: 'Check it on a phone' })!.request.text
+    expect(text).toContain('open http://localhost:5173/ on the test iPhone')
+    expect(text).toContain('Check it on a phone')
+  })
+
   it('names the action rather than the tool', () => {
     const said = (action: unknown): string => ask(`mcp__${BROWSER_MCP_SERVER}__browser_action`, { action })!.request.text
     expect(said({ type: 'navigate', url: 'http://localhost:5173/settings' })).toContain('go to http://localhost:5173/settings')
@@ -39,6 +45,9 @@ describe('the browser permission card says what a press does', () => {
     expect(said({ type: 'type', text: 'hello' })).toContain('type into the page')
     // The typed text is the user's to read in Tools, not something the card repeats back.
     expect(said({ type: 'type', text: 'hunter2' })).not.toContain('hunter2')
+    expect(said({ type: 'tap', x: 10, y: 20 })).toContain('tap in the page')
+    expect(said({ type: 'swipe', x: 10, y: 20, toX: 10, toY: 200 })).toContain('swipe in the page')
+    expect(said({ type: 'key', key: 'Enter' })).toContain('press Enter in the page')
   })
 
   it('leaves a tool from another server with the name it came with', () => {
@@ -72,6 +81,13 @@ describe('a Grok permission for Sotto’s browser says the same thing', () => {
 
   it('names the action, not the meta-tool', () => {
     expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_action`, tool_input: { action: { type: 'click', x: 1, y: 2 } } })).toContain('click in the page')
+    expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_action`, tool_input: { action: { type: 'tap', x: 1, y: 2 } } })).toContain('tap in the page')
+    expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_action`, tool_input: { action: { type: 'swipe', x: 1, y: 2, toX: 1, toY: 200 } } })).toContain('swipe in the page')
+    expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__browser_action`, tool_input: { action: { type: 'key', key: 'Enter' } } })).toContain('press Enter in the page')
+  })
+
+  it('names the test iPhone for iphone_open', () => {
+    expect(grokAsk({ tool_name: `${BROWSER_MCP_SERVER}__iphone_open`, tool_input: { url: 'http://localhost:5173/' } })).toContain('open http://localhost:5173/ on the test iPhone')
   })
 
   it('keeps Grok’s own card for another server and for a shape it does not recognise', () => {
@@ -86,6 +102,10 @@ const codexAsk = (params: Record<string, unknown>): string =>
 describe('a Codex elicitation about Sotto’s browser says which browser', () => {
   it('names the tool when the body carries one', () => {
     expect(codexAsk({ serverName: BROWSER_MCP_SERVER, request: { name: 'browser_open', arguments: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/')
+  })
+
+  it('names the test iPhone for the bare iphone_ tool name', () => {
+    expect(codexAsk({ serverName: BROWSER_MCP_SERVER, request: { name: 'iphone_open', arguments: { url: 'http://localhost:5173/' } } })).toContain('open http://localhost:5173/ on the test iPhone')
   })
 
   // The body's shape is not established against a real client, so the server alone still has to read.

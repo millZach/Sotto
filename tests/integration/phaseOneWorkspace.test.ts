@@ -49,8 +49,7 @@ async function fixture() {
     const host = new WorkspaceHost(native, directory, () => historyEnabled)
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }),
-        action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     await control.start(); await stageInto(control, PIXEL_PNG)
     return { control, host, registry }
   }
@@ -93,6 +92,17 @@ describe('integrated Phase 1 workspace persistence', () => {
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining(draft))
     expect(f.control.get().host.threads.find(thread => thread.id === threadId)).toMatchObject({ projectId: project.id, nativeSessionStarted: false, worktree: { status: 'error' } })
     expect(Object.values(f.adapters).flatMap(adapter => adapter.commands)).toEqual([])
+  })
+  it('hands the adapter’s last user message ID to the coordinator and never saves it', async () => {
+    const f = await fixture()
+    await f.command({ type: 'connect' })
+    const native = f.adapters.claude.state.threads[0]!
+    native.lastUserMessageId = 'NATIVE-LAST-USER-ID'; native.title = 'Workshop saved after the ID'
+    f.adapters.claude.emit()
+    await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.title === 'Workshop saved after the ID')?.lastUserMessageId).toBe('NATIVE-LAST-USER-ID'))
+    // The same publish is what gets saved; the ID is the adapter's to say again, so a saved copy could only be stale.
+    await vi.waitFor(async () => expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('Workshop saved after the ID'))
+    expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('NATIVE-LAST-USER-ID')
   })
   it('does not retain private transcript copies during corrupt workspace recovery', async () => {
     const f = await fixture()

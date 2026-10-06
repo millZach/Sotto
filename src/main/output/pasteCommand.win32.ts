@@ -100,6 +100,8 @@ ${PASTE_TYPE_DEFINITION}
 
 $reader = [Console]::In
 $writer = [Console]::Out
+$writer.WriteLine('ready')
+$writer.Flush()
 while ($true) {
   $line = $reader.ReadLine()
   if ($null -eq $line -or $line -eq 'exit') { break }

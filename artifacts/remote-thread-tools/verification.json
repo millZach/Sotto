@@ -1,0 +1,14 @@
+{
+  "filesListedFromHost": true,
+  "previewFromHost": true,
+  "noShowInFolder": true,
+  "footerSaysOnForge": true,
+  "copyPathIsHostPath": true,
+  "changesFromHost": true,
+  "twoScopesOnly": true,
+  "changeAppearsOnItsOwn": true,
+  "fileMentionFromHost": true,
+  "agentsFromHost": true,
+  "terminalStillOnHost": true,
+  "errors": []
+}

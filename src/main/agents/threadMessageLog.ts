@@ -18,6 +18,9 @@ const activitySummaries = new WeakMap<readonly AgentActivity[], AgentThreadSumma
  * rather than a whole message again. A thread nobody is looking at costs those facts and nothing more.
  */
 
+/** A thread as an adapter hands it to the log to be published. */
+type Published = { id: string; messages: AgentMessage[]; activities?: AgentActivity[] | undefined; summary?: AgentThreadSummary | undefined; lastUserMessageId?: string | undefined }
+
 /** The per-message facts the log keeps once a thread's messages are put away. */
 interface Track {
   /** The messages the adapter is working with, or undefined once they are put away. */
@@ -140,8 +143,8 @@ export class ThreadMessageLog {
    * One thread as a snapshot carries it: its messages while a window is looking at it, and its summary
    * alone when none is. What the pane draws for a thread outside the watched set comes from the store.
    */
-  publishedThread<T extends { id: string; messages: AgentMessage[]; activities?: AgentActivity[] | undefined; summary?: AgentThreadSummary | undefined }>(thread: T): T {
-    if (this.holding(thread.id)) return { ...thread, messages: this.published(thread.id) }
+  publishedThread<T extends Published>(thread: T): T {
+    if (this.holding(thread.id)) return { ...thread, messages: this.published(thread.id), ...this.lastUserMessageIdField(thread.id) }
     return this.summarizedThread(thread)
   }
   /**
@@ -150,12 +153,21 @@ export class ThreadMessageLog {
    * left as an event, so a copy of the held ones on every update was made only to be thrown away (#322). Any
    * other subscriber gets the thread as a snapshot carries it.
    */
-  activityThread<T extends { id: string; messages: AgentMessage[]; activities?: AgentActivity[] | undefined; summary?: AgentThreadSummary | undefined }>(thread: T, historyFromEvents: boolean): T {
+  activityThread<T extends Published>(thread: T, historyFromEvents: boolean): T {
     return historyFromEvents ? this.summarizedThread(thread) : this.publishedThread(thread)
   }
   /** One thread with its summary and no messages. */
-  private summarizedThread<T extends { id: string; messages: AgentMessage[]; activities?: AgentActivity[] | undefined; summary?: AgentThreadSummary | undefined }>(thread: T): T {
-    return { ...thread, messages: [], summary: this.summaryBeside(thread.id, thread.activities) }
+  private summarizedThread<T extends Published>(thread: T): T {
+    return { ...thread, messages: [], summary: this.summaryBeside(thread.id, thread.activities), ...this.lastUserMessageIdField(thread.id) }
+  }
+  /**
+   * The user's newest message by ID, which a send names back for the stale-reply check. It comes from the
+   * facts, not the window: a window taken back up after its messages were put away holds none of the older
+   * ones, and reading the user's last message from it made every send to that thread look like a race.
+   */
+  private lastUserMessageIdField(threadId: string): { lastUserMessageId?: string } {
+    const id = this.lastUserMessageId(threadId)
+    return id === undefined ? {} : { lastUserMessageId: id }
   }
   count(threadId: string): number { return this.track(threadId).order.length }
   has(threadId: string, messageId: string): boolean { return this.track(threadId).ids.has(messageId) }

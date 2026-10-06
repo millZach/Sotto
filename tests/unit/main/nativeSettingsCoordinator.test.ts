@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { cleanSettingsHistory } from '../../../src/main/settings/privacyCleanup'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -74,6 +75,18 @@ function createHarness() {
     },
   }
 }
+
+it('merges queued cleanup rule edits with the latest persisted settings', async () => {
+  const harness = createHarness()
+  await Promise.all([
+    harness.coordinator.updateSettings({ worktreeCleanup: { onSettle: true } }),
+    harness.coordinator.updateSettings({ worktreeCleanup: { merged: true } }),
+    harness.coordinator.updateSettings({ worktreeCleanup: { afterDays: 14 } }),
+  ])
+  expect(harness.persisted.worktreeCleanup).toEqual({
+    onSettle: true, merged: true, afterDays: 14, unchanged: false,
+  })
+})
 
 describe('NativeSettingsCoordinator', () => {
   it.each(['hotkey', 'launchAtStartup'] as const)(
@@ -314,4 +327,17 @@ describe('NativeSettingsCoordinator', () => {
     await expect(coordinator.resetSettings()).resolves.toEqual(defaults)
     expect(activeHotkey).toBe('Control+Shift+Space')
   })
+})
+
+it('retries failed personal-chat privacy cleanup on the next unrelated Settings save', async () => {
+  const harness = createHarness()
+  const agentControl = { privacyChanged: vi.fn(async () => undefined) }
+  const personalChats = { privacyChanged: vi.fn(async () => undefined).mockRejectedValueOnce(new Error('storage unavailable')) }
+  harness.settingsChanged.mockImplementation(() => cleanSettingsHistory(agentControl, personalChats))
+  await harness.coordinator.updateSettings({ historyEnabled: false })
+  expect(personalChats.privacyChanged).toHaveBeenCalledTimes(1)
+  await harness.coordinator.updateSettings({ autoPaste: false })
+  expect(harness.persisted.historyEnabled).toBe(false)
+  expect(personalChats.privacyChanged).toHaveBeenCalledTimes(2)
+  expect(agentControl.privacyChanged).toHaveBeenCalledTimes(2)
 })

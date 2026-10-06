@@ -1,4 +1,4 @@
-﻿import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'

@@ -148,6 +148,14 @@ describe('theme library writer', () => {
 })
 
 describe('theme import text', () => {
+  it('accepts VS Code comments and trailing commas from file or pasted text', () => {
+    const text = `{
+      // VS Code writes JSON with comments.
+      "name": "Code Dark",
+      "colors": { "editor.background": "#1e1e1e", /* canvas */ },
+    }`
+    expect(parseImportedThemeText(text)).toEqual(parseImportedThemeText(JSON.stringify({ name: 'Code Dark', colors: { 'editor.background': '#1e1e1e' } })))
+  })
   it('reads T3 theme files and VS Code themes, and explains invalid files', () => {
     const harbor = parseThemeFile({ version: 1, name: 'Harbor', appearance: 'dark', colors: { canvas: '#102a33' } })
     expect(parseImportedThemeText(serializeThemeFile(harbor))).toEqual(harbor)
@@ -165,6 +173,18 @@ describe('theme import text', () => {
 })
 
 describe('theme editor panel', () => {
+  it.each([{ isComposing: true }, { keyCode: 229 }])('leaves theme saving for Enter after composition (%j)', async composition => {
+    const { save } = host(async () => true)
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
+    const field = await screen.findByLabelText('Theme name')
+    fireEvent.change(field, { target: { value: 'Aurora' } })
+    fireEvent.keyDown(field, { key: 'Enter', ...composition })
+    await act(async () => { await Promise.resolve() })
+    expect(save).not.toHaveBeenCalled()
+    fireEvent.keyDown(field, { key: 'Enter' })
+    await waitFor(() => expect(save).toHaveBeenCalledOnce())
+  })
+
   function host(onSave: (patch: SettingsPatch) => Promise<boolean>) {
     let settings: AppSettings = { ...DEFAULT_SETTINGS }
     const save = vi.fn(async (patch: SettingsPatch) => {

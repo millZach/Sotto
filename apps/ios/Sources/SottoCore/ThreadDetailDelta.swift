@@ -41,7 +41,8 @@ public extension ThreadDetail {
             case .append(let id, let text):
                 guard let index = messages.firstIndex(where: { $0.id == id }) else { return nil }
                 let old = messages[index]
-                messages[index] = Message(id: old.id, role: old.role, text: old.text + text, commandId: old.commandId, attachments: old.attachments)
+                messages[index] = Message(id: old.id, role: old.role, text: old.text + text, commandId: old.commandId, attachments: old.attachments,
+                                          createdAt: old.createdAt)
             }
         }
         for change in delta.activityDeltas {

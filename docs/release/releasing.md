@@ -6,6 +6,8 @@ Releases are cut by hand on two machines and published to the public `millZach/S
 
 Before cutting the Windows release, run `npm ci` and `npm run test:desktop-smoke` on the release checkout in an interactive Windows desktop. Record the commit and passing result in the release evidence before packaging or publishing. The check builds that checkout once and runs isolated fake-provider recovery, Settings and daily-workspace journeys, including a real temporary shell, Git repository and local-only push. It makes no paid provider call and does not publish a release or regenerate design baselines. Run it without another Electron journey using the desktop; see [the desktop check](../ci.md#manual-windows-desktop-check) for scope and failure handling. Normal CI gates must also pass.
 
+The first desktop release whose Add host turns on a host's tailnet connections (ADR-0053, October 6 amendment) waits for the iPhone build that reads a host's 403 `forbidden` as a reason to keep trying. Check that build is on TestFlight before step 4, or publish both together. An older iPhone paired with that host reads the refusal as unpaired while the host's phone access is off.
+
 1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the two `package:*` installer paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
 2. On each machine, move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
 3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.
@@ -42,6 +44,8 @@ electron-builder's publish config and the Windows auto-update feed point at `mil
 The host is a Node process, not a Linux desktop app. Build on Linux with Node 24 and a clean `npm ci`, then run `npm run test:socket` and `npm run package:host`. The CI job **Host archive and socket contract (Linux)** does the same work and retains its archive for review. CI never publishes a release.
 
 `package:host` builds only the headless entry. It produces `release/Sotto-host-X.Y.Z-linux-x64.tar.gz` and a matching `.tar.gz.sha256` sidecar on the x64 Linux runner. Local builds carry their actual platform and architecture in the filename; a Windows smoke build is not a Linux release. There is no cross-platform native-module copy or Electron packaging step.
+
+`build-host.mjs` and `package-host.mjs` use the checkout's `out/host` folder by default; `package-host.mjs` writes archives into the checkout's `release` folder. Set `SOTTO_HOST_OUT_DIR` and `SOTTO_HOST_RELEASE_DIR` to use other output folders, as the packaging regression test does. Relative overrides resolve from the checkout, regardless of the command's working folder. The test builds once through packaging and removes its temporary build and archive folders afterward.
 
 The archive extracts directly into an installation directory:
 

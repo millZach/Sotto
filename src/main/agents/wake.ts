@@ -99,11 +99,14 @@ export class AgentWakeService {
   constructor(private readonly runtimeDirectory: string, private readonly workerPath: string) {}
 
   async prepare(input: string, runtime = this.runtimeDirectory): Promise<void> {
-    if (this.worker !== null && this.directory === input && this.selectedRuntime === runtime && this.preparation !== null) return this.preparation
+    if (this.directory === input && this.selectedRuntime === runtime && this.preparation !== null) return this.preparation
     this.dispose()
     this.directory = input
     this.selectedRuntime = runtime
-    const preparation = this.start(input, runtime, this.generation)
+    const preparation = this.start(input, runtime, this.generation).catch(error => {
+      if (this.preparation === preparation) this.dispose()
+      throw error
+    })
     this.preparation = preparation
     return preparation
   }

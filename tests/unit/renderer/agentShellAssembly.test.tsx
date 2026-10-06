@@ -1,14 +1,16 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleOf } from '../../fixtures/stagedImages'
 
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
+import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
   type AgentBridge, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail,
   type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
-afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 const message = (id: string, role: AgentMessage['role'], text: string): AgentMessage =>
   ({ id, role, text, createdAt: `2026-01-0${id.length}T00:0${id.length}:00.000Z` })
@@ -28,7 +30,7 @@ function fullState(threads: AgentThread[], activeThreadId: string | null = null)
     globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
     voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-    membership: { status: 'beta', label: 'Test', expiresAt: null }, historyEnabled: true,
+     historyEnabled: true,
   }
 }
 
@@ -64,6 +66,26 @@ function shellBridge(state: AgentState, options: { detail?: boolean } = {}) {
 }
 
 describe('assembling the window state from the shell', () => {
+  it('prunes departed requests even when their thread has no pane, including removed threads', async () => {
+    const first = { ...thread('prune-first', []), requests: [{ id: 'reused', kind: 'permission' as const, text: 'Allow?', options: [] }] }
+    const second = { ...thread('prune-second', []), requests: [{ id: 'reused', kind: 'permission' as const, text: 'Allow?', options: [] }] }
+    const state = fullState([first, second])
+    const wire = shellBridge(state, { detail: false })
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    await act(async () => {
+      await requestAnswerStore.submit(first.id, 'reused', null, async () => ({ error: null }))
+      await requestAnswerStore.submit(second.id, 'reused', null, async () => ({ error: null }))
+    })
+    expect(requestAnswerStore.get(first.id, 'reused').phase).toBe('sent')
+    act(() => wire.publish(fullState([{ ...first, requests: [] }, second])))
+    await waitFor(() => expect(requestAnswerStore.get(first.id, 'reused').phase).toBe('idle'))
+    expect(requestAnswerStore.get(second.id, 'reused').phase).toBe('sent')
+    act(() => wire.publish(fullState([first])))
+    await waitFor(() => expect(requestAnswerStore.get(second.id, 'reused').phase).toBe('idle'))
+    expect(requestAnswerStore.get(first.id, 'reused').phase).toBe('idle')
+  })
+
   it('does not walk retained history again for unrelated shell updates', async () => {
     let reads = 0
     const messages = Array.from({ length: 200 }, (_, index) => ({
@@ -210,6 +232,68 @@ describe('which history the window gives up', () => {
 })
 
 describe('the startup shell cache', () => {
+  it('discloses the plaintext excerpts and permission details in both privacy guides', () => {
+    for (const path of ['README.md', 'docs/guide.md']) {
+      const text = readFileSync(path, 'utf8')
+      const disclosure = text.split('\n').find(line => line.includes('startup copy of your threads'))
+      expect(disclosure).toBeDefined()
+      for (const term of ['Keep local history', 'not encrypted', 'your last message and the last reply', '2,000', 'permission request', 'Turning history off deletes']) {
+        expect(disclosure).toContain(term)
+      }
+    }
+  })
+
+  it('keeps plaintext excerpts and permission details only while history is on', () => {
+    const liveThread = thread('workshop', [message('a', 'user', 'u'.repeat(2100)), message('bb', 'assistant', 'a'.repeat(2100))])
+    liveThread.requests = [{ id: 'permission', kind: 'permission', text: 'Run the command?', context: { command: 'npm test' }, options: [] }]
+    const state = fullState([liveThread])
+    writeShellCache(state)
+    const kept = readShellCache()!.host.threads[0]!
+    expect(kept.messages).toEqual([])
+    expect(kept.summary?.lastUser?.text).toBe('u'.repeat(2000))
+    expect(kept.summary?.lastAssistant?.text).toBe('a'.repeat(2000))
+    expect(kept.requests).toEqual(liveThread.requests)
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).toContain('npm test')
+    writeShellCache({ ...state, historyEnabled: false })
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull()
+  })
+
+  it('writes the last change at the end of the throttle window', async () => {
+    vi.useFakeTimers()
+    const state = fullState([thread('first', [])])
+    const wire = shellBridge(state, { detail: false })
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await act(async () => {})
+    expect(result.current.state).not.toBeNull()
+    act(() => wire.publish(fullState([thread('second', [])])))
+    act(() => wire.publish(fullState([thread('last', [])])))
+    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(readShellCache()?.host.threads[0]?.id).toBe('last')
+  })
+
+  it('never writes a pending shell after history is turned off or the connection unmounts', async () => {
+    vi.useFakeTimers()
+    const state = fullState([thread('first', [])])
+    const wire = shellBridge(state, { detail: false })
+    const view = renderHook(() => useAgentConnection(wire.bridge))
+    await act(async () => {})
+    expect(view.result.current.state).not.toBeNull()
+    act(() => wire.publish(fullState([thread('pending', [])])))
+    act(() => wire.publish({ ...state, historyEnabled: false }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(readShellCache()).toBeNull()
+    act(() => wire.publish(state))
+    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    act(() => wire.publish(fullState([thread('unmounted', [])])))
+    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
+    const before = localStorage.getItem(SHELL_CACHE_KEY)
+    view.unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).toBe(before)
+  })
+
   it('paints what the window saw last, marked stale and disconnected, then replaces it', async () => {
     const live = fullState([thread('workshop', [message('a', 'assistant', 'Indigo it is.')])], 'workshop')
     writeShellCache(live)

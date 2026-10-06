@@ -17,7 +17,8 @@ function transcriptionKeyStatusCopy(result: TranscriptionKeyCheck): string {
   }
 }
 
-export function OpenRouterKeyField({ apiKey, onUpdateSettings, onCheckTranscriptionKey }: {
+export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSettings, onCheckTranscriptionKey }: {
+  readonly migrationFailed?: boolean
   readonly apiKey: string
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onCheckTranscriptionKey: () => Promise<TranscriptionKeyCheck>
@@ -78,6 +79,9 @@ export function OpenRouterKeyField({ apiKey, onUpdateSettings, onCheckTranscript
       </Field>
       <Button variant="secondary" disabled={busy} onClick={() => void verify()}>{busy ? 'Verifying...' : 'Verify key'}</Button>
     </div>
+    {migrationFailed && !apiKey ? <p className="settings-remote-status settings-remote-status--error" role="status">
+      <CircleAlert size={16} aria-hidden="true" />The OpenRouter key could not be stored securely. Enter it again.
+    </p> : null}
     {status === null ? null : <p className={`settings-remote-status${status.error ? ' settings-remote-status--error' : ''}`} role="status">
       {status.error ? <CircleAlert size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{status.text}
     </p>}

@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Checkpoint } from '../../../../src/shared/checkpoints'
 import type { GitChange, GitChangesBridge, GitReview, GitReviewFile } from '../../../../src/shared/gitChanges'
 import type { GitRef } from '../../../../src/shared/gitRefs'
+import type { GitStatus } from '../../../../src/shared/gitStatus'
+import type { AgentState } from '../../../../src/shared/agents'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ChangesStore, parseUnifiedDiff } from '../../../../src/renderer/src/tools/changesStore'
@@ -97,6 +99,16 @@ describe('Changes as T3’s diff', () => {
     for (const name of ['Stage file', 'Unstage file', 'Commit', 'Git actions']) expect(within(panel()).queryByRole('button', { name })).toBeNull()
     expect(within(panel()).queryByRole('option', { name: /Staged/u })).toBeNull()
     expect(within(panel()).getByRole('button', { name: 'Checkpoints' }).closest('.tools-chrome')).toHaveClass('changes-summary')
+  })
+
+  it('names the preserved damaged file in the existing Checkpoints drawer', async () => {
+    const git = fakeGit()
+    const reason = 'Sotto set aside a checkpoint file it could not read as checkpoints.json.corrupt-fixture and kept the rest.'
+    vi.mocked(git.bridge.checkpoints!).mockResolvedValue({ ok: true, value: { supported: true, checkpoints: [], reason } })
+    setup(git)
+    await within(panel()).findByText('export const ready = true')
+    fireEvent.click(within(panel()).getByRole('button', { name: 'Checkpoints' }))
+    expect(await within(panel()).findByText(reason)).toBeInTheDocument()
   })
 
   it('gives each row its file and line numbers as data for a later selection', async () => {
@@ -436,5 +448,38 @@ describe('diff rows and base choices', () => {
     expect(git.bridge.watch).toHaveBeenNthCalledWith(2, { threadId: 'visual-gate', workspaceId: TOKEN_A, enabled: false })
     expect(git.bridge.watch).toHaveBeenLastCalledWith({ threadId: 'visual-gate', workspaceId: 'replacement', enabled: true })
     store.deactivate(git.bridge)
+  })
+})
+
+const FORGE = '22222222-2222-4222-8222-222222222222'
+const GIT_STATUS: GitStatus = { isRepository: true, branch: 'feature/changes', upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: false, dirty: true,
+  changedFiles: 3, insertions: 2, deletions: 1, ahead: 0, behind: 0, aheadOfDefault: 1, pullRequest: null, fetchedAt: null, readAt: '2026-10-05T10:00:00.000Z' }
+/** The fixture with Workshop on a paired host. */
+function onForge(readAt = GIT_STATUS.readAt): AgentState {
+  const state = threadsStateFixture()
+  state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true }]
+  state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate'
+    ? { ...thread, remoteHost: true, hostId: FORGE, worktree: { mode: 'shared', status: 'ready', dirty: true, git: { ...GIT_STATUS, readAt } } } : thread)
+  return state
+}
+
+describe('Changes for a thread on a paired host (ADR-0025, October 5 amendment)', () => {
+  it('offers Working tree and Branch changes alone, with no Checkpoints, Show in folder or watch', async () => {
+    const user = userEvent.setup()
+    const git = fakeGit({ checkpoints: [checkpoint(TURN_ONE, 'ready')] })
+    setup(git, onForge())
+    await within(panel()).findByText('export const ready = true')
+    const scope = within(panel()).getByRole('combobox', { name: 'Diff scope' })
+    expect(within(scope).getAllByRole('option').map(option => option.textContent)).toEqual(['Working tree', 'Branch changes'])
+    expect(within(panel()).queryByRole('button', { name: 'Checkpoints' })).toBeNull()
+    expect(within(block('logo.png')).getByText('Binary file: no text diff.')).toBeInTheDocument()
+    expect(within(block('logo.png')).queryByRole('button', { name: /^Show in /u })).toBeNull()
+    expect(git.bridge.checkpoints).not.toHaveBeenCalled(); expect(git.bridge.watch).not.toHaveBeenCalled(); expect(git.bridge.onChanged).not.toHaveBeenCalled()
+    await user.click(within(block('src/app.ts')).getByRole('button', { name: 'Copy path: src/app.ts' }))
+    expect(git.bridge.copyPath).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, path: 'src/app.ts' })
+    await user.selectOptions(scope, 'branch')
+    expect(await within(panel()).findByText('trail')).toBeInTheDocument()
+    expect(git.bridge.review).toHaveBeenLastCalledWith(expect.objectContaining({ scope: { kind: 'branch', base: null } }))
+    expect(git.bridge.reveal).not.toHaveBeenCalled()
   })
 })

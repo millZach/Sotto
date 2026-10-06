@@ -3,6 +3,7 @@ out/
 dist/
 dist-electron/
 /release/
+artifacts/windows-askpass/
 coverage/
 playwright-report/
 test-results/
@@ -59,6 +60,9 @@ artifacts/devin-local-provider/
 # Resizable thread sidebar verification
 artifacts/thread-sidebar/
 
+# Frosted window screen captures: they show the desktop behind the window
+artifacts/frosted-window/
+
 artifacts/terminal-loading/
 
 artifacts/activity-performance/
@@ -76,7 +80,11 @@ artifacts/agents-view/
 
 artifacts/agent-browser/
 artifacts/browser-grant/
+artifacts/remote-thread-tools/
+artifacts/test-iphone/
+artifacts/cloud-iphone/
 artifacts/new-thread-setup/
+artifacts/empty-page-saved-draft/
 artifacts/host-folder-browser-run/
 artifacts/command-receipt/
 artifacts/sidebar-question/
@@ -95,6 +103,9 @@ artifacts/screenshot-resize-run/
 artifacts/workflow-agent-rows-run/
 
 artifacts/review-*/
+artifacts/renderer-other-bundle-run/
+artifacts/review-644/
+artifacts/review-667/
 
 # Workspace menu layout verification
 artifacts/workspace-picker/
@@ -102,4 +113,32 @@ artifacts/codex-restored-replies/
 
 # Native iPhone Focus verification captures; force-add only images cited by the note.
 artifacts/ios-focus/
+
+# Main infrastructure verification captures; retain only the images cited by the note.
+artifacts/main-infra-bundle/
+
+# Settings fixes: retain only the captures cited by the verification note.
+artifacts/pkg-18-e2e/
+# Generated captures from the Forge hand test; force-add only images cited by the note.
+artifacts/forge-hand-test/
+
+# Native iPhone thread-creation captures; force-add only images cited by the note.
+artifacts/iphone-new-threads/
+
+# Composer recovery captures; retain only the images cited by the verification note.
+artifacts/crossing/pkg-43-*.png
+
+# Shared-checkout Git verification; retain only captures cited by the note.
+artifacts/pkg-34-workspace-git/
+
+/artifacts/pkg-17-hostconnection/
+
+artifacts/computer-use-guidance/
+
+# Hidden-player verification; retain only the capture cited by the note.
+artifacts/hidden-player-typing/
+
+# Disabled-coordinator verification; retain only the capture cited by the note.
+artifacts/disabled-coordinator-voice/
+
 artifacts/forge-question-ack/

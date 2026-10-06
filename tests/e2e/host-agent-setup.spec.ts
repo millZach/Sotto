@@ -7,7 +7,7 @@ import { build } from 'vite'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * Have my agent set this up (issue #431, ADR-0035) in the built app: Add host starts a host setup thread, and the
@@ -232,6 +232,35 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(page.locator('.hosts-setup-line')).toHaveCount(0)
     expect(await page.evaluate(async () => (await window.sotto!.hosts!.get()).setup)).toBeUndefined()
+    // The actual SSH setup grants this desktop authority immediately. Create a permissive remote
+    // thread, then change its mode from the composer over the real socket, without a second prompt.
+    const remoteThread = await page.evaluate(async folder => {
+      const hostId = (await window.sotto!.hosts!.get()).hosts[0]!.hostId!
+      await window.sotto!.hosts!.command({ type: 'select', hostId })
+      const projects = await window.sotto!.agents!.command({ type: 'create-project', provider: 'codex', title: 'Remote permissions', path: folder, useExisting: true })
+      const project = projects.host.projects.find(item => item.path === folder)!
+      const model = (await window.sotto!.agents!.get()).host.models.find(item => item.providerId === 'codex')!
+      const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: project.id, modelId: model.id,
+        title: 'Change permissions on forge', managed: false, runtimeMode: 'full-access' })
+      if (created.error) throw new Error(created.error)
+      return created.host.threads.find(item => item.title === 'Change permissions on forge')!.id
+    }, root)
+    await openThreads(page)
+    await page.getByRole('button', { name: 'Change permissions on forge', exact: true }).click()
+    const chip = page.getByRole('combobox', { name: 'Thread permissions', exact: true })
+    await expect(chip).toHaveText('Full access')
+    await chip.click()
+    await page.getByRole('listbox', { name: 'Thread permissions' }).getByRole('option', { name: 'Auto', exact: true }).click()
+    await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === id)?.runtimeMode, remoteThread)).toBe('auto')
+    await expect(chip).toHaveText('Auto')
+    await expect(chip).not.toHaveAttribute('data-pending')
+    await expect(page.locator('.thread-workspace__error, .thread-options__notice')).toHaveCount(0)
+    for (const [width, height, appearance] of [[1280, 800, 'dark'], [820, 560, 'light']] as const) {
+      await resizeWindow(launched, width, height)
+      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
+      await expect(chip).toBeVisible()
+      await page.screenshot({ path: test.info().outputPath(`remote-permissions-${appearance}-${width}.png`), animations: 'disabled' })
+    }
     expect(errors).toEqual([])
     await writeFile(test.info().outputPath('agent-setup-contrast.json'), JSON.stringify(lowest, null, 2))
   } finally { await finish(launched, root, profile, restore) }

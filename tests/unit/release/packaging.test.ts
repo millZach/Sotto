@@ -112,8 +112,9 @@ describe('release contract', () => {
     expect(verifier).toContain('out/main/external-dependencies.json')
     expect(verifier).toContain('out/preload/external-dependencies.json')
     expect(verifier).not.toContain('scripts/probe-memory-store.mjs')
-    expect(verifier).toContain("SOTTO_MEMORY_PROBE: '1'")
-    expect(verifier).toContain('SOTTO_MEMORY_PROBE_USER_DATA')
+    expect(verifier).not.toContain("SOTTO_MEMORY_PROBE: '1'")
+    expect(verifier).toContain('requireApp(join(app.getAppPath(), main))')
+    expect(verifier).toContain("probeMemoryStore(join(root, 'memory.sqlite'))")
     expect(verifier).toContain('const memoryStore = await verifyPackagedMemoryStore(target)')
     expect(verifier.indexOf('const memoryStore =')).toBeLessThan(
       verifier.indexOf('const smoke = await verifyNormalPackagedLaunch'),

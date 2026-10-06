@@ -75,7 +75,6 @@ function stateAround(host: AgentHostSnapshot, activeThreadId: string): AgentStat
     pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
     voice: { status: 'off', error: null, action: 'none', revision: 0 },
     credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    membership: { status: 'beta', label: 'Beta', expiresAt: null },
   }
 }
 

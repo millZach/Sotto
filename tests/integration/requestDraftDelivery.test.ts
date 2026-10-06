@@ -11,6 +11,53 @@ const fixtures: Awaited<ReturnType<typeof draftHandoffFixture>>[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.close() })
 async function fixture() { const f = await draftHandoffFixture(); fixtures.push(f); return f }
 
+it.each(['before', 'after'] as const)('settles an answer completed %s the command returns without restoring its uncertainty error', async order => {
+  const f = await fixture()
+  f.host.event({ type: 'question', threadId: 'workshop', text: '', request })
+  let complete!: (delivered: boolean) => void
+  const completion = order === 'before' ? Promise.resolve(true) : new Promise<boolean>(resolve => { complete = resolve })
+  const events: string[] = []
+  void completion.then(() => { events.push('completed') })
+  vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true, answerCompletion: completion })
+  await f.command({ type: 'answer', threadId: 'workshop', requestId: request.id, answer: 'Blue' })
+  events.push('returned')
+  if (order === 'after') { expect(f.control.get().error).not.toBeNull(); complete(true) }
+  await expect.poll(() => f.control.requestAnswerRecovery('workshop', 'claude').completed).toHaveLength(1)
+  expect(f.control.requestAnswerRecovery('workshop', 'claude').uncertainRequestIds).toEqual([])
+  await expect.poll(() => f.control.get().error).toBeNull()
+  expect(events).toEqual(order === 'before' ? ['completed', 'returned'] : ['returned', 'completed'])
+})
+
+it.each(['before', 'after'] as const)('keeps a newer error when an answer completes %s the command returns', async order => {
+  const f = await fixture()
+  f.host.event({ type: 'question', threadId: 'workshop', text: '', request })
+  let complete!: (delivered: boolean) => void
+  const completion = order === 'before' ? Promise.resolve(true) : new Promise<boolean>(resolve => { complete = resolve })
+  const events: string[] = []
+  void completion.then(() => { events.push('completed') })
+  vi.spyOn(f.host, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true, answerCompletion: completion })
+  let newerError: string | null = null
+  const newer = async () => {
+    newerError = (await f.command({ type: 'answer', threadId: 'missing-thread', requestId: 'missing', answer: 'Later' })).error
+    expect(newerError).not.toBeNull()
+  }
+  let newerCommand: Promise<void> | undefined
+  const subscribe = f.control.subscribe(() => {
+    if (order === 'before' && f.control.requestAnswerRecovery('workshop', 'claude').completed.length) {
+      subscribe(); newerCommand = newer()
+    }
+  })
+  try {
+    await f.command({ type: 'answer', threadId: 'workshop', requestId: request.id, answer: 'Blue' })
+    events.push('returned')
+    if (order === 'before') { expect(newerCommand).toBeDefined(); await newerCommand }
+    if (order === 'after') { await newer(); complete(true) }
+    await expect.poll(() => f.control.requestAnswerRecovery('workshop', 'claude').completed).toHaveLength(1)
+    await expect.poll(() => f.control.get().error).toBe(newerError)
+    expect(events).toEqual(order === 'before' ? ['completed', 'returned'] : ['returned', 'completed'])
+  } finally { subscribe() }
+})
+
 it('persists privacy-safe main answer receipts across restart without copying structured answer content', async () => {
   const f = await fixture(); f.setHistory(false)
   f.host.event({ type: 'question', threadId: 'workshop', text: '', request })

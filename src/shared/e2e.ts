@@ -32,6 +32,7 @@ export const e2eScenarioSchema = z.enum([
   'history-disabled',
   'hotkey-conflict',
   'microphone-denied-once',
+  'microphone-browser',
   'silence',
   'paste-failure',
   'clipboard-recovery',

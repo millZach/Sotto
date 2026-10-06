@@ -21,7 +21,7 @@ function provider() {
   return Object.assign(new E2EAgentHost(), { clientUpdated: vi.fn(async () => undefined), disconnect: vi.fn(() => undefined) })
 }
 
-it('hands a client update through the workspace, the provider switch and the thread IDs to that provider alone (ADR-0021)', async () => {
+it('hands a client update through the workspace, the provider switch and the thread IDs to that provider alone (ADR-0042)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-client-updated-')); roots.push(root)
   const credentials = new AgentCredentials(root, {
     isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '',

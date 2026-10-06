@@ -1,5 +1,5 @@
 import React, { StrictMode } from 'react'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,6 +23,34 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings
 import { agentWireBridge } from '../../fixtures/agentBridge'
 
 const OK = Object.freeze({ ok: true as const })
+
+it.each(['unmount', 'blur'] as const)('shows dictionary save failures after Settings closes (%s)', async trigger => {
+  const pending = deferred<AppSettings>()
+  const bridge = createBridge({
+    getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    updateSettings: vi.fn(() => pending.promise),
+  })
+  render(<AppProvider bridge={bridge}><NavigationProbe /><App /></AppProvider>)
+  await openPage('settings')
+  await userEvent.click(screen.getByRole('tab', { name: 'Cleanup' }))
+  const dictionary = screen.getByRole('textbox', { name: 'Personal dictionary' })
+  await userEvent.type(dictionary, 'Sotto')
+  if (trigger === 'blur') await userEvent.tab()
+  act(() => shell.navigate('history'))
+  await act(async () => { pending.reject(new Error('Synthetic save failure')) })
+  expect(await screen.findByText('Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.')).toBeVisible()
+  expect(screen.getByText('Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.')).toHaveAttribute('role', 'alert')
+  if (trigger === 'blur') {
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss dictionary save notice' }))
+  } else {
+    vi.mocked(bridge.updateSettings).mockResolvedValueOnce({ ...DEFAULT_SETTINGS, onboardingComplete: true, llmDictionary: 'Recovered dictionary' })
+    act(() => shell.navigate('settings'))
+    await userEvent.click(screen.getByRole('tab', { name: 'Cleanup' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Personal dictionary' }), 'Recovered dictionary')
+    await userEvent.tab()
+  }
+  await waitFor(() => expect(screen.queryByText('Your dictionary edits were not saved. Open Settings, choose Cleanup and enter them again.')).not.toBeInTheDocument())
+})
 
 it('retains failed dictation across navigation and later dictation, and copies without retranscription or paste', async () => {
   let recordings = 0
@@ -102,6 +130,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -119,6 +148,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     toggleMaximizeApp: vi.fn(async () => undefined),
     getWindowMaximized: vi.fn(async () => false),
     onWindowMaximized: vi.fn(() => () => undefined),
+    onWindowHidden: vi.fn(() => () => undefined),
     quitApp: vi.fn(async () => undefined),
     ...overrides,
   }
@@ -131,6 +161,41 @@ const createController: AppControllerFactory = () => ({
   toggle: vi.fn(async () => undefined),
   cancel: vi.fn(async () => undefined),
   dispose: vi.fn(),
+})
+
+it('keeps cached history and reports failure when deletion is refused while history is off', async () => {
+  const entry = { id: 'retained', text: 'Retained transcript', createdAt: 1, durationMs: 10, language: 'en', modelPreset: 'balanced' as const }
+  const otherEntry = { ...entry, id: 'other-retained', text: 'Another retained transcript' }
+  const bridge = createBridge({
+    listHistory: vi.fn(async () => [entry, otherEntry]),
+    deleteHistory: vi.fn(async () => false),
+  })
+  const { result } = renderHook(() => useApp(), {
+    wrapper: ({ children }) => <AppProvider bridge={bridge} createController={createController}>{children}</AppProvider>,
+  })
+  await waitFor(() => expect(result.current.history).toEqual([entry, otherEntry]))
+  await act(async () => { await result.current.actions.updateSettings({ historyEnabled: false }) })
+  vi.mocked(bridge.listHistory).mockResolvedValue([])
+
+  let deleted: boolean | undefined
+  await act(async () => { deleted = await result.current.actions.deleteHistory(entry.id) })
+
+  expect(deleted).toBe(false)
+  expect(result.current.history).toEqual([entry, otherEntry])
+  expect(result.current.failure).toBe('HISTORY_UPDATE_FAILED')
+  expect(bridge.listHistory).toHaveBeenCalledOnce()
+
+  vi.mocked(bridge.deleteHistory).mockResolvedValue(true)
+  await act(async () => { deleted = await result.current.actions.deleteHistory(entry.id) })
+  expect(deleted).toBe(true)
+  expect(result.current.history).toEqual([otherEntry])
+  expect(result.current.historyStatus).toBe('ready')
+  await act(async () => { deleted = await result.current.actions.deleteHistory(otherEntry.id) })
+  expect(deleted).toBe(true)
+  expect(result.current.history).toEqual([])
+  expect(result.current.historyStatus).toBe('ready')
+  expect(bridge.deleteHistory).toHaveBeenNthCalledWith(3, otherEntry.id)
+  expect(bridge.listHistory).toHaveBeenCalledOnce()
 })
 
 /**
@@ -285,6 +350,7 @@ describe('Sotto application onboarding integration', () => {
       listRecoveryNotices: vi.fn(async () => [
         { code: 'SETTINGS_RECOVERED' as const },
         { code: 'HISTORY_RECOVERED' as const },
+        { code: 'CREDENTIALS_RECOVERED' as const },
       ]),
       onRecoveryNotice: vi.fn((listener) => {
         recoveryListener = listener
@@ -297,12 +363,26 @@ describe('Sotto application onboarding integration', () => {
 
     await waitFor(() => expect(screen.getAllByRole('status').filter((node) =>
       node.classList.contains('tt-toast'),
-    )).toHaveLength(2))
+    )).toHaveLength(3))
     expect(screen.getByText(/restored default settings/i)).toBeVisible()
     expect(screen.getByText(/started with an empty history/i)).toBeVisible()
+    expect(screen.getByText(/Add your keys again in Settings/)).toBeVisible()
     expect(document.body).not.toHaveTextContent('C:\\private\\settings.json')
     expect(document.body).not.toHaveTextContent('private transcript content')
     expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible()
+  })
+
+  it('shows the startup key migration notice and repeats recovery guidance in Settings', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'OPENROUTER_KEY_MIGRATION_FAILED' as const }]),
+    })
+    renderApp(bridge)
+    await openPage('home')
+    expect(await screen.findByText('The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.')).toBeVisible()
+    act(() => shell.navigate('settings'))
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Transcription' }))
+    expect(await screen.findByText('The OpenRouter key could not be stored securely. Enter it again.')).toBeVisible()
   })
 
   it('explains both macOS permission panes when auto-paste is refused', async () => {
@@ -317,6 +397,60 @@ describe('Sotto application onboarding integration', () => {
     expect(toast).toBeVisible()
     expect(toast).toHaveTextContent(/Privacy & Security > Accessibility/i)
     expect(toast).toHaveTextContent(/Privacy & Security > Automation/i)
+    expect(toast).toHaveTextContent(/After an update, if paste still fails, remove Sotto from the Accessibility list and add it again/)
+  })
+
+  it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'accessibility', 'Accessibility'],
+    ['AUTOMATION_PERMISSION_REQUIRED', 'automation', 'Automation'],
+  ] as const)('opens the macOS pane a %s notice is about', async (code, pane, paneName) => {
+    const openSystemSettings = vi.fn(async () => ({ ok: true as const }))
+    const bridge = createBridge({
+      platform: 'darwin',
+      openSystemSettings,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code }]),
+    })
+    // The button opens the pane through the window bridge, as external links do.
+    window.sotto = bridge
+    try {
+      renderApp(bridge)
+
+      const button = await screen.findByRole('button', { name: `Open System Settings at Privacy & Security, ${paneName}` })
+      expect(button).toHaveTextContent('Open System Settings')
+      button.focus()
+      await userEvent.setup().keyboard('{Enter}')
+      expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith(pane)
+    } finally {
+      delete window.sotto
+    }
+  })
+
+  it('says a denied Automation permission left the text copied', async () => {
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'AUTOMATION_PERMISSION_REQUIRED' as const }]),
+    })
+    renderApp(bridge)
+
+    const toast = await screen.findByText(/copied the transcript instead of pasting it/i)
+    expect(toast).toHaveTextContent(/control System Events in System Settings > Privacy & Security > Automation/)
+    expect(screen.queryByRole('button', { name: /Open System Settings/ })).toBeNull()
+  })
+
+  it.each([
+    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
+    ['win32', /Nothing was deleted. Enter the key again in Settings → Transcription/],
+  ] as const)('explains an unreadable saved OpenRouter key on %s', async (platform, text) => {
+    const bridge = createBridge({
+      platform,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'OPENROUTER_KEY_UNREADABLE' as const }]),
+    })
+    renderApp(bridge)
+
+    expect(await screen.findByText(text)).toBeVisible()
   })
 
   it('renders loading and a finite recovery state when settings cannot load', async () => {
@@ -577,7 +711,7 @@ describe('Sotto application onboarding integration', () => {
 
     const toast = await screen.findByRole('alert')
     expect(toast).toHaveTextContent('Could not download update net::ERR_INTERNET_DISCONNECTED')
-    expect(screen.getByRole('button', { name: 'Download failed for 3.5.0. Click to retry.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Update check failed. Update 3.5.0 is still offered. Click to download.' })).toBeInTheDocument()
 
     act(() => publish?.({ currentVersion: '3.4.0', phase: { phase: 'downloaded', version: '3.5.0', problem: 'No update filepath provided, can’t quit and install' }, checkedAt: 1 }))
     expect(screen.getByRole('button', { name: 'Install failed for 3.5.0. Click to retry.' })).toBeInTheDocument()
@@ -736,7 +870,69 @@ describe('Sotto application onboarding integration', () => {
     renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
     await userEvent.click(await screen.findByRole('button', { name: /continue/i }))
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
-    await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset'))
+    await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset', expect.any(Function)))
+  })
+
+  it('stops a ready onboarding test and asks for a new one when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
+    expect(microphone.start).toHaveBeenCalledOnce()
+    expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(microphone.start).toHaveBeenLastCalledWith(expect.any(Function), undefined, expect.any(Function))
+  })
+
+  it('clears a blocked onboarding result when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText('Microphone access is blocked.')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    expect(await screen.findByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.queryByText('Microphone access is blocked.')).not.toBeInTheDocument()
+    expect(microphone.start).toHaveBeenCalledOnce()
+  })
+
+  it('reports an ended onboarding input and ignores an older ended callback after retry', async () => {
+    const ended: Array<(outcome: 'missing') => void> = []
+    const start = vi.fn<MicrophoneTestController['start']>(async (onLevel, _id, onEnded) => {
+      ended.push(onEnded!)
+      onLevel(0.6)
+      return 'ready'
+    })
+    renderApp(createBridge(), () => ({ start, stop: vi.fn(async () => undefined) }))
+    await reachMicrophoneStep(userEvent.setup())
+    await userEvent.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    act(() => ended[0]!('missing'))
+    expect(screen.getByText('No microphone was found.')).toBeVisible()
+    expect(screen.queryByRole('meter', { name: 'Microphone level' })).not.toBeInTheDocument()
+    expect(document.querySelector('.onboarding-microphone-test .voice-wave')).toHaveAttribute('data-stage', 'idle')
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Try microphone again' }))
+    await screen.findByText(/Microphone ready/i)
+    act(() => ended[0]!('missing'))
+    expect(screen.getByText(/Microphone ready/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    act(() => ended[1]!('missing'))
+    expect(screen.getByText('No microphone was found.')).toBeVisible()
   })
 
   it('releases an active microphone test across StrictMode unmount cleanup', async () => {

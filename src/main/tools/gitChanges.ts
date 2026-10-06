@@ -14,7 +14,7 @@ import { parseNameStatusZ, parseNumstatZ, sectionIsBinary, sectionPath, splitPat
 
 interface GitDependencies {
   files: FilesService
-  copyPath(path: string): void
+  copyPath(path: string): void | Promise<void>
   reveal(path: string): void
   emit(event: ToolTarget & { revision: string }): void
   pollMs?: number
@@ -39,17 +39,11 @@ const BINARY = 'Binary file: no text diff.'
  * Branch changes (`base...HEAD`). Nothing here stages, commits or switches; the Git action does that (ADR-0027).
  */
 export class GitChangesService extends ToolOperations {
-  private readonly mutations = new Set<string>()
   private readonly watches = new Map<string, { target: ToolTarget; revision: string }>()
   private readonly children = new Set<ReturnType<typeof execFile>>()
   private timer: ReturnType<typeof setInterval> | null = null
   private polling = false
   constructor(private readonly dependencies: GitDependencies) { super() }
-  async isMutating(threadId: string): Promise<boolean> {
-    if (this.mutations.size === 0) return false
-    const owner = await workspace(this.dependencies.files, threadId)
-    return this.mutations.has(await realpath(owner.workingDirectory))
-  }
   checkpoints(payload: unknown) { return this.dependencies.checkpoints?.checkpoints(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   inspectCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.inspectCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   revertCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.revertCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
@@ -216,6 +210,9 @@ export class GitChangesService extends ToolOperations {
       for (const entry of nameStatus) {
         if (!fileRelativePathSchema.safeParse(entry.path).success || entry.originalPath !== undefined && !fileRelativePathSchema.safeParse(entry.originalPath).success) continue
         const counts = numstat.get(entry.path)
+        // Some Git versions (Apple's Git 2.50 among them) still name a whitespace-only change in --name-status under
+        // --ignore-all-space, while --numstat and the patch leave it out; a mode change or a rename keeps its numstat line.
+        if (request.ignoreWhitespace && !counts) continue
         const section = byPath.get(entry.path)
         let content: GitReviewFile['content']
         if (!section || section === incomplete) content = overflowed ? { kind: 'too-large', message: TOO_LARGE_REVIEW } : { kind: 'unavailable', message: 'Git gave no text diff for this file.' }
@@ -251,7 +248,7 @@ export class GitChangesService extends ToolOperations {
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     const info = await this.safePath(owner, request.path)
     await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    this.dependencies[action](action === 'copyPath' ? info.absolutePath : info.existing)
+    await this.dependencies[action](action === 'copyPath' ? info.absolutePath : info.existing)
     return { workspace: owner, path: request.path, absolutePath: info.absolutePath }
   }) }
   copyPath(payload: unknown) { return this.pathAction(payload, 'copyPath') }

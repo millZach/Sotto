@@ -7,7 +7,7 @@ import { immediatePublishScheduler } from './publishScheduler'
 
 /**
  * A coordinator over `host` with a plain credential store under `directory`, a reasoner that decides nothing
- * unless given `decide`, and a beta membership: enough for a manual send, and for a supervision follow-up when
+ * unless given `decide`, enough for a manual send, and for a supervision follow-up when
  * `decide` answers one. The caller starts, connects and disposes it.
  */
 export async function manualSendCoordinator(directory: string, host: AgentHost,
@@ -16,5 +16,5 @@ export async function manualSendCoordinator(directory: string, host: AgentHost,
   await credentials.load()
   return new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
 }

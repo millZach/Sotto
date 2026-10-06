@@ -1,15 +1,136 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
+import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
+
+it('does not restore a pruned answer when an old submit completes after its request ID is reused', async () => {
+  const store = new RequestAnswerStore(() => undefined)
+  let finish!: (value: { error: null }) => void
+  const old = store.submit('thread', 'reused', null, () => new Promise(resolve => { finish = resolve }))
+  store.prune('thread', [])
+  await store.submit('thread', 'reused', null, async () => ({ error: 'Try again' }))
+  finish({ error: null })
+  await old
+  expect(store.get('thread', 'reused')).toMatchObject({ phase: 'failed', error: 'Try again' })
+  store.prune('thread', [])
+  expect(store.get('thread', 'reused').phase).toBe('idle')
+})
 const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'codex', requestId: 'req', questions: [
   { id: 'q', question: 'Notes', options: [], allowFreeText: true, multiSelect: false },
 ] }
 const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
-function gate<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
+function gate<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
 function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
 
 describe('request draft renderer ordering', () => {
+  it('retires an accepted form when the same request ID changes questions and returns without an empty snapshot', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    const first = { id: target.requestId, kind: 'question' as const, text: 'Notes', options: [], questions: target.questions }
+    const replacement = { ...first, questions: [{ ...target.questions[0]!, question: 'Different notes' }] }
+    const replacementTarget = { ...target, questions: replacement.questions }
+    const firstOwner = requestAnswerOwnerKey(target.ownerId, first, target)
+    const replacementOwner = requestAnswerOwnerKey(target.ownerId, replacement, target)
+    await store.connect(firstOwner, target.requestId, target)
+    await store.submit(firstOwner, target.requestId, null, async () => ({ error: null }))
+    expect(store.get(firstOwner, target.requestId).phase).toBe('sent')
+    store.prune(target.ownerId, [first])
+    await store.connect(firstOwner, target.requestId, target)
+    expect(store.get(firstOwner, target.requestId).phase).toBe('sent')
+    expect(api.get).toHaveBeenCalledOnce()
+    store.prune(target.ownerId, [replacement])
+    await store.connect(replacementOwner, target.requestId, replacementTarget)
+    store.prune(target.ownerId, [first])
+    await store.connect(firstOwner, target.requestId, target)
+    expect(store.get(firstOwner, target.requestId)).toMatchObject({ phase: 'idle', selections: {} })
+  })
+
+  it('retires a departed structured answer only after main confirms it is gone, before reconnecting a reused ID', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    const request = { id: target.requestId, kind: 'question' as const, text: 'Notes', options: [], questions: target.questions }
+    const ownerId = requestAnswerOwnerKey(target.ownerId, request, target)
+    await store.connect(ownerId, target.requestId, target)
+    await store.submit(ownerId, target.requestId, null, async () => ({ error: null }))
+    expect(store.get(ownerId, target.requestId).phase).toBe('sent')
+    const retirement = gate<RequestDraft | null>()
+    api.get = vi.fn().mockReturnValueOnce(retirement.promise).mockResolvedValue(null)
+    store.prune(target.ownerId, [])
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledOnce())
+    const reconnect = store.connect(ownerId, target.requestId, target)
+    retirement.resolve(null)
+    await reconnect
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(store.get(ownerId, target.requestId)).toMatchObject({ phase: 'idle', selections: {} })
+  })
+
+  it('does not apply an old bound submit result to a newly reconnected request', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api), delivery = gate<{ error: null }>()
+    await store.connect('thread', 'req', target)
+    const old = store.submit('thread', 'req', null, () => delivery.promise)
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+    store.prune('thread', [])
+    await store.connect('thread', 'req', target)
+    expect(store.get('thread', 'req').phase).toBe('idle')
+    delivery.resolve({ error: null })
+    await old
+    expect(store.get('thread', 'req').phase).toBe('idle')
+  })
+
+  it('retires a removed owner after its delayed submit settles without a newer draft revision', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api), delivery = gate<{ error: null }>(), retirement = gate<RequestDraft | null>()
+    await store.connect('thread', 'req', target)
+    const sending = store.submit('thread', 'req', null, () => delivery.promise)
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('saved'))
+    api.get = vi.fn(() => retirement.promise)
+    store.prune('thread', [])
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledOnce())
+    delivery.resolve({ error: null })
+    await sending
+    expect(store.get('thread', 'req').phase).toBe('sent')
+    retirement.resolve(null)
+    await vi.waitFor(() => expect(store.get('thread', 'req').phase).toBe('idle'))
+  })
+
+  it.each(['submit', 'release'] as const)('ignores a retired binding when a delayed %s check resolves or fails', async operation => {
+    for (const fails of [false, true]) {
+      const api = bridge(), store = new RequestAnswerStore(() => api), checking = gate<RequestDraft | null>()
+      await store.connect('thread', 'req', target)
+      api.check = vi.fn(() => checking.promise)
+      if (operation === 'release') await store.submit('thread', 'req', null, async () => ({ error: null }))
+      const old = operation === 'release' ? store.release('thread', 'req') : store.submit('thread', 'req', null, async () => ({ error: 'Old refusal' }))
+      await vi.waitFor(() => expect(api.check).toHaveBeenCalledOnce())
+      store.prune('thread', [])
+      await store.connect('thread', 'req', target)
+      store.select('thread', 'req', 'q', selection('New request text'))
+      await store.flush('thread', 'req')
+      if (fails) checking.reject(new Error('Old check failed')); else checking.resolve(null)
+      await old
+      expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', error: null, saveError: null, selections: { q: selection('New request text') } })
+    }
+  })
+
+  it('keeps departed structured drafts when main still retains them or a newer edit has no save acknowledgement', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    api.get = vi.fn(async () => draft('Kept in main', 2, true))
+    await store.connect('thread', 'req', target)
+    store.prune('thread', [])
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+    expect(store.get('thread', 'req').phase).toBe('unconfirmed')
+    api.check = vi.fn(async () => draft('Kept in main', 2))
+    await store.release('thread', 'req')
+    const reading = gate<RequestDraft | null>()
+    api.get = vi.fn(() => reading.promise)
+    store.prune('thread', [])
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledOnce())
+    api.save = vi.fn().mockRejectedValue(new Error('Disk unavailable'))
+    store.select('thread', 'req', 'q', selection('Unsaved newer text'))
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('unsaved'))
+    const reconnect = store.connect('thread', 'req', target)
+    reading.resolve(null)
+    await reconnect
+    expect(store.get('thread', 'req').selections.q?.text).toBe('Unsaved newer text')
+    expect(store.canReload()).toBe(false)
+  })
+
   it.each([false, true])('does not rewrite a saved answer restored after a failed initial read (held=%s)', async held => {
     const api = bridge()
     const restored = { ...draft('Saved in main', 5, held), ...(held ? { decisionId: 'main-owned-decision' } : {}) }

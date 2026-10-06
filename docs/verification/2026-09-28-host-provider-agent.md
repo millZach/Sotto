@@ -31,7 +31,7 @@ The two-axis review made five findings, two of them the same mistake in the tile
 
 ## Too old
 
-Sotto already had floors, so the too-old case is built rather than left waiting: Grok Build 1.0.5 and Devin 3000.10.31, the versions their adapters were checked against (ADR-0021), and Claude Code's set of flags. Each is now written next to its adapter with its reason, and a client refused as too old carries its floor to the tile and the brief (`requiredVersion`): "0.9.12 on forge. Sotto needs 1.0.5 or later." Claude Code's floor has no version number, so its tile says "Sotto needs a newer version." Codex has no floor, and none was added.
+Sotto already had floors, so the too-old case is built rather than left waiting: Grok Build 1.0.5 and Devin 3000.10.31, the versions their adapters were checked against (ADR-0042), and Claude Code's set of flags. Each is now written next to its adapter with its reason, and a client refused as too old carries its floor to the tile and the brief (`requiredVersion`): "0.9.12 on forge. Sotto needs 1.0.5 or later." Claude Code's floor has no version number, so its tile says "Sotto needs a newer version." Codex has no floor, and none was added.
 
 ## Checked on this computer, not in the app
 

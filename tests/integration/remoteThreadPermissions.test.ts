@@ -9,6 +9,10 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
+import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
+import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
+import { PendingSettingsStore, settingValues } from '../../src/renderer/src/agents/pendingSettings'
 import type { AgentHostSnapshot, AgentRuntimeMode } from '../../src/shared/agents'
 
 class ProfileHost extends E2EAgentHost {
@@ -67,6 +71,38 @@ async function fixture(profiles = false) {
 }
 
 describe('resolved thread permissions through the real socket and coordinator', () => {
+  it('returns a remote permission refusal to the desktop and keeps asking usable', async () => {
+    const { client, create, allowAnswers } = await fixture()
+    const safe = await client.command({ ...create, runtimeMode: 'approval-required' })
+    const thread = safe.host.threads.find(item => item.title === create.title)!
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const hostId = safe.hostId!
+    router.add({ hostId, name: 'Forge', kind: 'remote', service: client,
+      detail: id => client.readThreadDetail(id), preview: request => client.attachmentPreview(request) })
+    const threadId = hostEntityKey(hostId, thread.id)
+    try {
+      for (const runtimeMode of ['full-access', 'auto', 'auto-accept-edits'] as const) {
+        const result = await router.command({ type: 'configure-thread', threadId, runtimeMode }, local)
+        expect(result.error).toBe(REMOTE_PERMISSION_DENIED)
+        expect(result.host.threads.find(item => item.id === threadId)?.runtimeMode).toBe('approval-required')
+      }
+      const settings = new PendingSettingsStore()
+      const drawn = router.shell()
+      settings.press(threadId, 'permissions', 'full-access', { runtimeMode: 'full-access' },
+        command => router.command(command, local), settingValues(drawn, drawn.host.threads.find(item => item.id === threadId)!))
+      await expect.poll(() => settings.view(threadId).refusals.permissions?.error).toBe(REMOTE_PERMISSION_DENIED)
+      expect(settings.view(threadId).pending.permissions).toBeUndefined()
+      settings.clear()
+      expect((await router.command({ type: 'configure-thread', threadId, runtimeMode: 'approval-required' }, local)).error).toBeNull()
+      await allowAnswers(true)
+      for (const runtimeMode of ['full-access', 'auto', 'auto-accept-edits', 'approval-required'] as const) {
+        const result = await router.command({ type: 'configure-thread', threadId, runtimeMode }, local)
+        expect(result.error).toBeNull()
+        expect(result.host.threads.find(item => item.id === threadId)?.runtimeMode).toBe(runtimeMode)
+      }
+    } finally { router.dispose() }
+  })
+
   it.each<AgentRuntimeMode>(['auto-accept-edits', 'auto', 'full-access'])('requires the originating client policy for explicit and inherited %s', async runtimeMode => {
     const { client, pair, allowAnswers, create, service, identity } = await fixture()
     await service.command({ type: 'configure', patch: { newThreadRuntimeMode: runtimeMode } }, local)

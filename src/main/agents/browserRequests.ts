@@ -4,12 +4,12 @@ type Frame = Record<string, unknown>
 const frame = (value: unknown): Frame => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Frame : {}
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
 /** What answering a client's own browser prompt does not decide: page actions stay Tools' (ADR-0029). */
-export const TOOLS_STILL_DECIDES = 'Tools asks you before opening, navigating, clicking or typing, unless this thread uses the browser without asking.'
+export const TOOLS_STILL_DECIDES = 'Tools asks you before opening, navigating, clicking, tapping or typing, unless this thread uses the browser without asking.'
 
 /**
  * Sotto's own browser tools, said in the words the user would use. A native tool carries no
  * description in the frame it asks with, so without this a card is the tool's name and its arguments
- * and nothing else. Sotto owns these six names and can say honestly what each would do; a tool from
+ * and nothing else. Sotto owns these seven names and can say honestly what each would do; a tool from
  * anyone else's server keeps the name it came with, because Sotto cannot describe it.
  *
  * Each client spells the name its own way, so the caller passes whatever it holds: Claude Code's
@@ -20,7 +20,7 @@ export function sottoBrowserTool(name: string, server?: string): string | undefi
   for (const prefix of [`mcp__${BROWSER_MCP_SERVER}__`, `${BROWSER_MCP_SERVER}__`]) {
     if (name.startsWith(prefix)) return name.slice(prefix.length)
   }
-  return server === BROWSER_MCP_SERVER && name.startsWith('browser_') ? name : undefined
+  return server === BROWSER_MCP_SERVER && (name.startsWith('browser_') || name.startsWith('iphone_')) ? name : undefined
 }
 
 function browserAction(action: Frame): string {
@@ -32,7 +32,23 @@ function browserAction(action: Frame): string {
   if (action.type === 'type') return 'type into the page'
   if (action.type === 'scroll') return 'scroll the page'
   if (action.type === 'viewport') return 'change the page size'
+  if (action.type === 'tap') return 'tap in the page'
+  if (action.type === 'swipe') return 'swipe in the page'
+  if (action.type === 'key') return 'press ' + (text(action.key) || 'a key') + ' in the page'
   return 'work in the page'
+}
+
+/** The cloud iPhone (ADR-0047) drives the same session the user already started by answering iphone_cloud_open. */
+function cloudAction(action: Frame): string {
+  if (action.type === 'inspect') return 'look at the cloud iPhone’s screen'
+  if (action.type === 'screenshot') return 'take a picture of the cloud iPhone’s screen'
+  if (action.type === 'tap') return 'tap on the cloud iPhone'
+  if (action.type === 'swipe') return 'swipe on the cloud iPhone'
+  if (action.type === 'type') return 'type on the cloud iPhone'
+  if (action.type === 'key') return 'press ' + (text(action.key) || 'a key') + ' on the cloud iPhone'
+  if (action.type === 'button') return 'press ' + (text(action.button) || 'a button') + ' on the cloud iPhone'
+  if (action.type === 'openUrl') { const url = text(action.url); return url ? 'open ' + url + ' on the cloud iPhone' : 'open a link on the cloud iPhone' }
+  return 'work on the cloud iPhone'
 }
 
 /** The card for one of Sotto's browser tools, or undefined for a tool Sotto does not own. */
@@ -45,9 +61,14 @@ export function browserRequestText(name: string, input: unknown, server?: string
     : tool === 'browser_status' ? 'check how its browser task is going'
       : tool === 'browser_start' ? 'start a browser task on a page you shared'
         : tool === 'browser_open' ? url ? 'open ' + url : 'open a page'
+          : tool === 'iphone_open' ? url ? 'open ' + url + ' on the test iPhone' : 'open a page on the test iPhone'
           : tool === 'browser_action' ? browserAction(frame(args.action))
             : tool === 'browser_finish' ? 'finish its browser task as ' + (args.status === 'failed' ? 'failed' : 'done')
-              : ''
+              : tool === 'iphone_cloud_open' ? 'start a cloud iPhone with ' + (text(args.buildPath) || 'a build')
+                : tool === 'iphone_cloud_action' ? cloudAction(frame(args.action))
+                  : tool === 'iphone_cloud_status' ? 'check how its cloud iPhone session is going'
+                    : tool === 'iphone_cloud_finish' ? 'finish its cloud iPhone session as ' + (args.status === 'failed' ? 'failed' : 'done')
+                      : ''
   if (!said) return undefined
   const why = text(args.description).trim() ? '\n“' + text(args.description).trim() + '”' : ''
   // Answering here only lets it reach the browser. Page actions ask again in Tools unless a browser grant covers them (ADR-0029).

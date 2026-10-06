@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { PairedClients } from '../../src/main/agents/pairing'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHosts, reconnectDelayMs } from '../../src/main/hosts/desktopHosts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -37,7 +38,7 @@ let root: string, sshd: ChildProcess | undefined, sshdLog = ''
 let install: string, data: string, fingerprint: string
 let manager: DesktopHosts | undefined, router: DesktopHostRouter | undefined
 const forwards: ChildProcess[] = [], prompts: NonNullable<HostStatus['prompt']>[] = [], scheduled: number[] = []
-let spawnCount = 0, versionChecks = 0
+let spawnCount = 0, versionChecks = 0, forwardUrl = ''
 
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
 const descriptor = async (): Promise<{ pid: number; port: number; hostId: string; startedBy?: string } | undefined> => {
@@ -121,7 +122,10 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
       if (args.includes('-V')) versionChecks += 1
       else spawnCount += 1
       const child = spawnSsh(file, ['-F', join(root, 'ssh_config'), ...args], options)
-      if (args.includes('-N')) forwards.push(child)
+      if (args.includes('-N')) {
+        forwards.push(child)
+        forwardUrl = 'http://127.0.0.1:' + args[args.indexOf('-L') + 1]!.split(':')[1]
+      }
       return child
     }
     manager = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined,
@@ -141,18 +145,27 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     const row = () => manager!.get().hosts.find(host => host.id === remote.id)
     const diagnostics = () => `\nhost row: ${JSON.stringify(row())}\nsshd:\n${sshdLog}`
     // Add host: the host key and the key's passphrase are asked once each, through the real askpass
-    // helper, although four ssh processes (-G, launch, forward, pairing code) run, and the host is saved
-    // once it answers and pairs.
+    // helper, although five ssh processes (-G, launch, forward, pairing code, desktop permissions)
+    // run, and the host is saved once it answers, pairs and establishes its desktop's policy.
     await manager.command({ type: 'add', host: remote })
     expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId: expect.any(String), hostId: expect.any(String) })
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase'])
     expect(prompts[0]!.text).toContain(fingerprint)
-    expect(spawnCount).toBe(4)
+    expect(spawnCount).toBe(5)
     // The runner's real `ssh -V` was read and is new enough.
     expect(versionChecks).toBe(1)
     const first = (await descriptor())!
     expect(first).toMatchObject({ startedBy: 'launch-script', hostId: row()!.hostId })
     const { clientId, hostId } = row()!
+    const checkDesktopPermission = async (): Promise<void> => {
+      const probe = new SocketHostService({ url: forwardUrl, token: credentials.get(`remote-host:${remote.id}`), expectedHostId: first.hostId })
+      try {
+        const hello = await probe.connect()
+        expect(hello.clientId).toBe(clientId)
+        expect(hello.capabilities.mayAnswer).toBe(true)
+      } finally { await probe.close() }
+    }
+    await checkDesktopPermission()
 
     // The host's threads reach the desktop through the forward, and a command reaches the host.
     expect(router.shell().connections).toEqual([expect.objectContaining({ hostId, kind: 'remote' })])
@@ -174,6 +187,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     expect(row()).toMatchObject({ clientId, hostId, owned: true })
     expect((await descriptor())!.pid).toBe(first.pid)
     expect(prompts.map(prompt => prompt.kind)).toEqual(['host-key', 'passphrase', 'passphrase'])
+    await checkDesktopPermission()
 
     // Disconnect leaves the host running.
     await manager.command({ type: 'disconnect', id: remote.id })
@@ -194,6 +208,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
     expect(row(), diagnostics()).toMatchObject({ phase: 'connected', owned: true, clientId, hostId })
     const second = (await descriptor())!
     expect(second.pid).not.toBe(first.pid)
+    await checkDesktopPermission()
     const before = new PairedClients(data); await before.load()
     expect(before.list().map(item => item.clientId)).toEqual([clientId])
     await manager.command({ type: 'forget', id: remote.id })

@@ -232,11 +232,13 @@ export const agentRequestSchema = z.object({
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
+  answerRetryReady: z.literal(true).optional(),
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
 export const agentMessageSchema = z.object({
-  id, role: z.enum(['user', 'assistant']), text, createdAt: z.string(),
+  // A projected message combines bounded events and can exceed any one event's limit.
+  id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
@@ -258,6 +260,14 @@ const agentThreadSummarySchema = z.object({
   runningTurnStartedAt: z.string().optional(),
 }).strict()
 export type AgentThreadSummary = z.infer<typeof agentThreadSummarySchema>
+export const worktreeReclaimPreviewSchema = z.object({
+  path: z.string(), branch: z.string().optional(), dirty: z.boolean(), ignored: z.array(z.string()),
+  repositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) })),
+  items: z.array(z.object({ path: z.string(), bytes: z.number().nonnegative(), fileCount: z.number().int().nonnegative() })),
+  untracked: z.array(z.string()),
+  outsideLink: z.string().optional(),
+}).strict()
+export type WorktreeReclaimPreview = z.infer<typeof worktreeReclaimPreviewSchema>
 export const agentWorktreeSchema = z.object({
   mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
@@ -274,7 +284,7 @@ export const agentWorktreeSchema = z.object({
    * and for a detached HEAD. The pane compares it with `branch` to show the branch-changed notice. */
   sentBranch: z.string().optional(),
   /** When Sotto reclaimed this worktree's folder. The branch and the thread stay; the next send puts
-   * the folder back on that branch (ADR-0019). Absent while the folder is there. */
+   * the folder back on that branch (ADR-0041). Absent while the folder is there. */
   reclaimedAt: z.string().optional(),
   /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
    * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
@@ -303,6 +313,12 @@ export const agentThreadSchema = z.object({
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
+  /**
+   * The title is a first-message title: the opening words of the thread's first message, held until its generated
+   * title lands. Its `titleSource` stays `default`, the value host protocol v1 carries for it; this optional field
+   * is what keeps a provider's own name from overwriting it.
+   */
+  titledFromFirstMessage: z.boolean().optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
@@ -325,6 +341,13 @@ export const agentThreadSchema = z.object({
   messages: z.array(agentMessageSchema), requests: z.array(agentRequestSchema),
   /** Present on the shell stream, where `messages` is empty; absent when the messages themselves are here. */
   summary: agentThreadSummarySchema.optional(),
+  /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
+   * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
+  finishedUnread: z.literal(true).optional(),
+  /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
+   * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
+   * the adapter put away and took back up carries none of the older messages, so it cannot say. */
+  lastUserMessageId: z.string().optional(),
   /** True when the thread store holds messages older than the window `messages` carries (issue #119). */
   earlierAvailable: z.boolean().optional(),
   activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
@@ -342,6 +365,9 @@ export const agentThreadSchema = z.object({
   lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
+  historySaveNotice: z.string().max(600).optional(),
+  /** A native request refused because Sotto could not show it; never a pending request or an approval. */
+  requestNotice: z.string().max(600).optional(),
   /** Changes only on a confirmed native rewind; cached activity must not cross it. */
   historyEpoch: z.string().optional(),
 })
@@ -375,6 +401,8 @@ export type AgentProviderStatus = z.infer<typeof agentProviderStatusSchema>
 export const PROVIDER_REJECTED_ACTION = 'The provider rejected this action. Check its current permissions and account status.'
 /** What main answers when the provider did not say whether it took an action; Sotto keeps it and checks it later. */
 export const PROVIDER_RESULT_UNCONFIRMED = 'The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it.'
+/** What main answers when a folder sent as existing is not there, so nothing was added and no folder was made. */
+export const PROJECT_FOLDER_MISSING = 'That folder no longer exists. Nothing was added. Choose another folder.'
 /** What main answers when the provider took a settings change its thread does not show yet; Sotto keeps it and checks it later. */
 export const THREAD_SETTINGS_UNRECONCILED = 'The provider has not confirmed these thread settings in its state. Refresh to reconcile the existing save; it will not be replayed.'
 /** What main answers when Restore branch needs the user's word first; the pane opens its confirmation on this exact sentence. */
@@ -432,7 +460,7 @@ export type ClientUpdateRun = z.infer<typeof clientUpdateRunSchema>
 /** One connected host's catalog, as the desktop keeps it apart from the others when it combines threads. */
 export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
   capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional(),
-  /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0021). */
+  /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
   clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
@@ -516,7 +544,6 @@ export const agentConfigurationSchema = z.object({
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
-  membershipEndpoint: z.string().max(2_048),
   checkClientUpdates: z.boolean().default(true),
   /**
    * What a new thread in a project starts on, apart from personal chats' reasoning model and effort
@@ -536,7 +563,7 @@ export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   orbColor: 'teal',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '', checkClientUpdates: true,
+  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -588,6 +615,7 @@ export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
+  worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -637,10 +665,6 @@ export const agentStateSchema = z.object({
   voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
   credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
-  membership: z.object({
-    status: z.enum(['beta', 'free', 'active', 'expired', 'unavailable']),
-    label: z.string(), expiresAt: z.string().nullable(),
-  }),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
   /** True only for the shell the window painted from its own cache before main answered. */
@@ -734,7 +758,7 @@ export const agentThreadDetailRequestSchema = id
  */
 export const agentMessageDeltaSchema = z.union([
   z.object({ message: agentMessageSchema }).strict(),
-  z.object({ id, appendText: text }).strict(),
+  z.object({ id, appendText: z.string() }).strict(),
 ])
 export type AgentMessageDelta = z.infer<typeof agentMessageDeltaSchema>
 export const agentActivityDeltaSchema = z.union([
@@ -778,7 +802,7 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list, so a Devin thread keeps its placeholder and is offered no Regenerate that could do nothing.
+ * list, so a Devin thread keeps its first-message title or stand-in and is offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin'
@@ -787,7 +811,12 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
   return thread.summary ?? summarizeThread(thread)
 }
-/** One thread as the shell stream carries it: the sidebar's facts, none of its history. */
+/** The user's newest message as the adapter recorded it, which a send names for the stale-reply check. A
+ * host that does not say yet (an older remote host) leaves the window's newest user message to stand in. */
+export function lastUserMessageIdOf(thread: Pick<AgentThread, 'messages' | 'lastUserMessageId'>): string | null {
+  return thread.lastUserMessageId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? null
+}
+/** One thread on the shell stream: summaries with message excerpts and pending requests, without full message lists. */
 function threadShell(thread: AgentThread): AgentThread {
   return { ...thread, messages: [], ...(thread.activities === undefined ? {} : { activities: [] }), summary: threadSummaryOf(thread) }
 }
@@ -798,7 +827,7 @@ export function agentShell(state: AgentState): AgentState {
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'membership', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
@@ -854,9 +883,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
   z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
-  /** Remove the thread's own worktree folder and keep its branch (ADR-0019). `withUncommittedChanges`
+  /** Remove the thread's own worktree folder and keep its branch (ADR-0041). `withUncommittedChanges`
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
-  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('preview-reclaim-thread-worktree'), threadId: id }).strict(),
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
    * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`
@@ -898,7 +928,6 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.enum(['next', 'later']) }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
-  z.object({ type: z.literal('membership'), action: z.enum(['refresh', 'signin', 'checkout', 'portal']) }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
@@ -960,6 +989,25 @@ export function enabledThreadProviders(configuration: AgentConfiguration): Provi
 export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread, 'hostId'>): AgentHostSnapshot {
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
+}
+const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok'] as const
+/**
+ * The clients to connect when the current selection is not installed.
+ * Codex remains the default when its CLI is present; otherwise Claude Code, then Grok Build.
+ * A provider the user turned off stays off. Devin is included only when it was already enabled and its CLI is present.
+ * Returns null when the current selection can already connect, or when every installed client was turned off.
+ */
+export function selectInstalledProviders(configuration: AgentConfiguration, installed: readonly ProviderId[]): Pick<AgentConfiguration, 'provider' | 'enabledProviders'> | null {
+  const present = new Set(installed)
+  const enabled = enabledThreadProviders(configuration)
+  if (present.has(configuration.provider) && enabled.some(id => present.has(id))) return null
+  const off = new Set(configuration.disconnectedProviders ?? [])
+  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id) && !off.has(id))
+  if (enabled.includes('devin') && present.has('devin') && !off.has('devin')) enabledProviders.push('devin')
+  const provider = enabledProviders[0]
+  if (!provider) return null
+  if (provider === configuration.provider && enabled.length === enabledProviders.length && enabled.every((id, index) => id === enabledProviders[index])) return null
+  return { provider, enabledProviders }
 }
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
   host = hostForThread(host, thread)

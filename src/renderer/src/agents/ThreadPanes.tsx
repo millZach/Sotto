@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties
 import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
+import { useOptionalApp } from '../state/AppContext'
+import { chordClaimed } from './branchToolbar.logic'
 import {
   DIVIDER_WIDTH, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, PANE_DRAG_TYPE, RESIZE_STEP, THREAD_DRAG_TYPE,
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
@@ -217,6 +219,8 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  * keyboard focus or draft, and the retained arrangement returns when there is room.
  */
 export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
+  const app = useOptionalApp()
+  const zoomShortcut = chordClaimed('ctrl+shift+m', app?.settings?.hotkey, app?.platform ?? 'win32')
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
   const [moving, setMoving] = useState<string | null>(null)
@@ -280,7 +284,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     // Ctrl+Shift+M zooms the focused pane or returns to the arrangement.
-    if (!split || event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
+    if (!zoomShortcut || !split || event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
     if (narrow && !layout.zoomed) return
     event.preventDefault()
     if (shownId !== null) toggleZoom(shownId)
@@ -387,8 +391,8 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
               onDragEnd={() => { window.clearTimeout(moveStart.current); setMoving(null) }}>
               <GripVertical size={16} aria-hidden="true" />
             </button> : null}
-            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts="Control+Shift+M"
-              aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={layout.zoomed ? 'Show all panes (Ctrl+Shift+M)' : 'Zoom pane (Ctrl+Shift+M)'}
+            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomShortcut ? 'Control+Shift+M' : undefined}
+              aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={`${layout.zoomed ? 'Show all panes' : 'Zoom pane'}${zoomShortcut ? ' (Ctrl+Shift+M)' : ''}`}
               onClick={() => toggleZoom(id)}>
               {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
             </button> : null}

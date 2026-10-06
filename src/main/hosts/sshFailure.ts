@@ -24,12 +24,18 @@ export type SshFailureCode =
   | 'host-busy'
   | 'host-start-failed'
   | 'host-timeout'
+  | 'host-not-running'
+  | 'boot-start-refused'
+  | 'boot-unit-failed'
   | 'forward-failed'
   | 'forward-timeout'
   | 'pairing-failed'
+  | 'permission-setup-failed'
   | 'revoke-failed'
+  | 'admin-failed'
   | 'stop-failed'
   | 'update-failed'
+  | 'boot-failed'
   | 'request-busy'
   | 'not-connected'
   | 'cancelled'
@@ -58,12 +64,18 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'host-busy': 'A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect.',
   'host-start-failed': 'The host could not start. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account.',
   'host-timeout': 'The host was not ready in time. Check that it starts on the SSH host, then reconnect.',
+  'host-not-running': 'The host is not running on the SSH host, so nothing was changed there. Connect to it in Settings > Hosts, which starts it, then try again.',
+  'boot-start-refused': 'The host starts at boot, and its systemd unit would not start. Nothing was lost. Check the unit on the SSH host, then reconnect.',
+  'boot-unit-failed': 'The host starts at boot, and its systemd unit stopped before the host was ready. Nothing was lost, and the unit may still be trying to start it. Check the unit on the SSH host, then reconnect.',
   'forward-failed': 'The SSH port forward could not open. Reconnect, and if it fails again, check that the SSH server allows port forwarding.',
   'forward-timeout': 'The SSH forward was not ready in time. Check SSH access and reconnect.',
   'pairing-failed': 'The pairing code could not be read from the host. Check that the host is running and try again.',
+  'permission-setup-failed': 'Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect.',
   'revoke-failed': 'Client access could not be revoked. Check the host connection and try Forget again.',
+  'admin-failed': 'Phone access on the host could not be reached. Nothing was changed. Check that the host is running, then try again.',
   'stop-failed': 'The host could not be stopped. It may still be running on the SSH host.',
   'update-failed': 'The connection to the host closed before this step of its update finished.',
+  'boot-failed': 'The connection to the host closed before start at boot was changed. Connect again to see whether it changed.',
   'request-busy': 'Wait for the current host request to finish.',
   'not-connected': 'Connect to the SSH host first.',
   'cancelled': 'The SSH connection was cancelled.',
@@ -84,6 +96,11 @@ export interface SshFix { readonly text: string; readonly command: string }
 export class SshFailure extends Error {
   /** Set where there is one exact command that fixes the failure. */
   fix?: SshFix
+  /**
+   * Set on `host-not-running` when Forget's admin connection found this installation's boot unit and could not take it
+   * away (ADR-0054), so the forgotten host still starts at boot.
+   */
+  bootLeft?: boolean
   constructor(readonly code: SshFailureCode, message: string = MESSAGES[code]) {
     super(message)
     this.name = 'SshFailure'
@@ -102,8 +119,8 @@ export class SshFailure extends Error {
 
 /** The launch script's reasons that name a failure on the host side; anything else it says is `host-start-failed`. */
 export const LAUNCH_REASONS: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>([
-  'archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout',
-  'node-missing', 'node-too-old', 'node-too-new',
+  'archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout', 'host-not-running',
+  'boot-start-refused', 'boot-unit-failed', 'node-missing', 'node-too-old', 'node-too-new',
 ])
 
 /**
@@ -116,9 +133,11 @@ const FAILURE_STEPS: Partial<Readonly<Record<SshFailureCode, HostSetupStep>>> = 
   'auth-failed': 'sign-in', 'host-key-changed': 'sign-in', 'host-key-rejected': 'sign-in', 'identity-file-unreadable': 'sign-in', 'prompt-unanswered': 'sign-in',
   // Until the host archive carries its own Node (#207), a missing or unsuitable Node is part of the installation.
   'node-missing': 'install', 'node-too-old': 'install', 'node-too-new': 'install', 'archive-missing': 'install',
-  'descriptor-invalid': 'start', 'port-taken': 'start', 'host-busy': 'start', 'host-start-failed': 'start', 'host-timeout': 'start',
+  'descriptor-invalid': 'start', 'port-taken': 'start', 'host-busy': 'start', 'host-start-failed': 'start', 'host-timeout': 'start', 'host-not-running': 'start',
+  'boot-start-refused': 'start', 'boot-unit-failed': 'start',
   'forward-failed': 'start', 'forward-timeout': 'start',
   'pairing-failed': 'pair',
+  'permission-setup-failed': 'pair',
 }
 export const failureStep = (code: SshFailureCode): HostSetupStep | undefined => FAILURE_STEPS[code]
 
@@ -199,6 +218,10 @@ export function failureFix(code: SshFailureCode, context: {
     if (!plainWord(host) || host.includes('@')) return undefined
     const entry = port && port !== 22 ? `'[${host}]:${port}'` : host
     return { text: "Once you know the new key is the host's own, remove the old one from your known hosts on this computer:", command: `ssh-keygen -R ${entry}` }
+  }
+  // A start at boot unit that would not start, or would not stay up, says why in its own journal (ADR-0054).
+  if (code === 'boot-start-refused' || code === 'boot-unit-failed') {
+    return { text: 'To see why, run this on the SSH host:', command: 'journalctl --user -u sotto-host -n 50 --no-pager' }
   }
   if (code === 'archive-missing') {
     const folder = shellFolder(context.installPath)

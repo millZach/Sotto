@@ -20,7 +20,7 @@ function fixture(clientUpdates: ProviderClientUpdate[], running = false): AgentS
       threads: [{ id: 'thread', providerId: 'grok', projectId: 'project', title: 'Grok work', modelId: 'grok:4.7', status: running ? 'running' : 'idle', messages: [], requests: [] }],
     }, assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [], membership: { status: 'beta', label: 'Test', expiresAt: null },
+    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
   }
 }
 function provide(state: AgentState) {

@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 
-// Updating Claude Code replaces the client on disk while Sotto stays connected (ADR-0021). Each thread runs its own
+// Updating Claude Code replaces the client on disk while Sotto stays connected (ADR-0042). Each thread runs its own
 // CLI, so each moves to the new client as it goes idle: an idle CLI stops at once and the next action starts the new
 // client, and a busy one finishes on the old client first. Nothing is disconnected, cancelled or answered.
 const fixtures: Awaited<ReturnType<typeof claudeFixture>>[] = []

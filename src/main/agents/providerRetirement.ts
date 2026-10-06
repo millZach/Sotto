@@ -19,9 +19,10 @@ type RetirableState = {
 }
 function missing(error: unknown): boolean { return (error as NodeJS.ErrnoException)?.code === 'ENOENT' }
 
-/** Disk compatibility only. The public configuration/IPC schema still rejects this field. */
+/** Disk compatibility only. The public configuration/IPC schema still rejects these fields. */
 export function stripRetiredEndpoint(value: object): Record<string, unknown> {
   const clean = { ...value } as Record<string, unknown>
+  delete clean.membershipEndpoint
   delete clean.endpoint
   return clean
 }

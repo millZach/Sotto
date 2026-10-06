@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -8,6 +8,9 @@ import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import type { AgentState } from '../../src/shared/agents'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
+import { FollowupStore } from '../../src/main/agents/followups'
+import { TurnRecorder } from '../../src/main/agents/turns'
+import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -16,19 +19,128 @@ async function fixture(root?: string) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const opened: string[] = []
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+  const recorder = new TurnRecorder({ directory: f.root, resolveSession: id => f.registry.byThread(id) })
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, turns: recorder,
     openThreadFolder: async path => { opened.push(path) },
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   let closing: Promise<void> | undefined
   const close = () => closing ??= (async () => { control.dispose(); await control.privacyChanged(); await f.stop() })()
   cleanup.push(async () => { await close(); await f.remove() })
   await control.start(); await control.command({ type: 'connect' })
-  return { ...f, control, opened, close }
+  return { ...f, control, opened, recorder, close }
 }
 function thread(state: AgentState) { return state.host.threads.find(thread => thread.id === state.activeThreadId)! }
 
 describe('workspace controller integration', () => {
+  it('returns a worktree preview without saving or broadcasting it', async () => {
+    const f = await fixture()
+    const preview = { path: '/synthetic/worktree', branch: 'sotto/test', dirty: false, ignored: ['.env'], items: [{ path: '.env', bytes: 10, fileCount: 1 }], repositories: [], untracked: [] }
+    const previewHost = vi.spyOn(f.host, 'previewThreadWorktreeReclaim').mockResolvedValue(preview)
+    const publish = vi.fn(); const unsubscribe = f.control.subscribe(publish); publish.mockClear()
+    try {
+      const result = await f.control.command({ type: 'preview-reclaim-thread-worktree', threadId: f.control.get().host.threads[0]!.id })
+      expect(result.worktreeReclaimPreview).toEqual(preview)
+      expect(f.control.get().worktreeReclaimPreview).toBeUndefined()
+      expect(f.control.shell().worktreeReclaimPreview).toBeUndefined()
+      expect(publish).not.toHaveBeenCalled()
+      expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('synthetic/worktree')
+    } finally { previewHost.mockRestore(); unsubscribe() }
+  })
+
+  it('stops native work even when the follow-up pause cannot be saved', async () => {
+    const f = await fixture()
+    const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
+    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
+    const pause = vi.spyOn(FollowupStore.prototype, 'pause').mockRejectedValueOnce(new Error('Synthetic pause write failure'))
+    try {
+      const result = await f.control.command({ type: 'interrupt', threadId })
+      expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toHaveLength(1)
+      expect(result.assignments.find(item => item.threadId === threadId)?.paused).toBe(true)
+      expect((await f.recorder.recent(20)).find(turn => turn.commandType === 'interrupt')).toMatchObject({ outcome: 'completed' })
+      expect(result.error).toBe('Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.')
+    } finally { pause.mockRestore() }
+  })
+
+  it.each(['closed', 'unsupported'] as const)('leaves management and queued messages unchanged when Stop is refused: %s', async refusal => {
+    const f = await fixture()
+    const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
+    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
+    const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
+    if (refusal === 'closed') native.archivedAt = new Date().toISOString()
+    else f.adapters.codex.state.capabilities.interrupt = false
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh' })
+    const before = f.control.get()
+    const pause = vi.spyOn(FollowupStore.prototype, 'pause')
+    try {
+      const result = await f.control.command({ type: 'interrupt', threadId })
+      expect(result.error).toBe(refusal === 'closed' ? 'This thread is settled or archived. There is no open work to stop.' : 'This connection cannot stop agent work.')
+      expect(result.assignments).toEqual(before.assignments)
+      expect(result.followups).toEqual(before.followups)
+      expect(pause).not.toHaveBeenCalled()
+      expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toEqual([])
+    } finally { pause.mockRestore() }
+  })
+
+  it.each(['closed', 'unsupported'] as const)('restores management when Stop becomes unavailable during queue persistence: %s', async refusal => {
+    const f = await fixture()
+    const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
+    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
+    const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const pause = vi.spyOn(FollowupStore.prototype, 'pause').mockImplementationOnce(async () => { await gate })
+    const stopping = f.control.command({ type: 'interrupt', threadId })
+    try {
+      await expect.poll(() => pause.mock.calls.length).toBe(1)
+      if (refusal === 'closed') native.archivedAt = new Date().toISOString()
+      else f.adapters.codex.state.capabilities.interrupt = false
+      f.adapters.codex.emit()
+      await f.control.command({ type: 'refresh' })
+      release()
+      const result = await stopping
+      expect(result.error).toBe(refusal === 'closed' ? 'This thread is settled or archived. There is no open work to stop.' : 'This connection cannot stop agent work.')
+      expect(result.assignments.find(item => item.threadId === threadId)?.paused).toBe(false)
+      expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).assignments.find((item: { threadId: string }) => item.threadId === threadId).paused).toBe(false)
+      expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toEqual([])
+    } finally { release(); await stopping; pause.mockRestore() }
+  })
+
+  it('reports a failed Stop intent save without claiming cancellation reached the provider', async () => {
+    const f = await fixture()
+    const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
+    const pause = vi.spyOn(FollowupStore.prototype, 'pause').mockRejectedValueOnce(new Error('Synthetic pause write failure'))
+    const write = AtomicJsonStore.prototype.write
+    const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (value && typeof value === 'object' && 'outbox' in value && Array.isArray(value.outbox)
+        && value.outbox.some(item => item.type === 'interrupt')) return Promise.reject(new Error('Synthetic Stop intent failure'))
+      return write.call(this, value)
+    })
+    try {
+      const result = await f.control.command({ type: 'interrupt', threadId })
+      expect(result.error).toBe('Synthetic Stop intent failure')
+      expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toEqual([])
+    } finally { pause.mockRestore(); save.mockRestore() }
+  })
+
+  it('retries Stop after an uncertain interrupt without replaying a prompt', async () => {
+    const f = await fixture()
+    const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
+    const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
+    native.status = 'running'; native.lastTurn = { id: 'unconfirmed-turn', status: 'running' }
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh' })
+    const original = f.adapters.codex.execute.bind(f.adapters.codex)
+    const execute = vi.spyOn(f.adapters.codex, 'execute').mockResolvedValueOnce({ accepted: false, uncertain: true })
+    try {
+      expect((await f.control.command({ type: 'interrupt', threadId })).error).toBeTruthy()
+      expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toContainEqual(expect.objectContaining({ type: 'interrupt', threadId }))
+      execute.mockImplementation(original)
+      expect((await f.control.command({ type: 'interrupt', threadId })).error).toBeNull()
+      expect(execute.mock.calls.map(([command]) => command.type)).toEqual(['interrupt', 'interrupt'])
+    } finally { execute.mockRestore() }
+  })
   it('reopens an uncertain send through the real workspace and reconciles only its exact late receipt without replay', async () => {
     const first = await fixture()
     const threadId = first.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
@@ -155,6 +267,42 @@ describe('workspace controller integration', () => {
     expect((await f.control.command(prompt)).error).toBeNull()
     expect(f.registry.byThread(id)).toEqual(binding)
     expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
+  })
+  it('does not recreate a selected existing folder that disappeared before registration', async () => {
+    const f = await fixture()
+    const path = join(f.root, 'selected-folder')
+    await mkdir(path)
+    await rm(path, { recursive: true })
+    const before = f.control.get().host.projects
+    const result = await f.control.command({ type: 'create-project', provider: 'codex', title: 'Selected folder', path, useExisting: true })
+    expect(result.error).toBe('That folder no longer exists. Nothing was added. Choose another folder.')
+    expect(result.host.projects).toEqual(before)
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(f.adapters.codex.commands).toHaveLength(0)
+  })
+  it('makes a new folder, opens it when it is sent again as existing, and refuses a folder or file already there', async () => {
+    const f = await fixture()
+    const path = join(f.root, 'voice-lab')
+    const made = await f.control.command({ type: 'create-project', provider: 'codex', title: 'voice-lab', path })
+    expect(made.error).toBeNull()
+    expect((await stat(path)).isDirectory()).toBe(true)
+    const project = made.host.projects.find(item => item.path === path)!
+    // Add project's retry after an unanswered first try sends the folder as existing, and finds the project it made.
+    const retried = await f.control.command({ type: 'create-project', provider: 'codex', title: 'voice-lab', path, useExisting: true })
+    expect(retried.error).toBeNull()
+    expect(retried.activeProjectId).toBe(project.id)
+    expect(retried.host.projects.filter(item => item.path === path)).toHaveLength(1)
+    const before = retried.host.projects
+    const other = join(f.root, 'not-a-project')
+    await mkdir(other)
+    const refused = await f.control.command({ type: 'create-project', provider: 'codex', title: 'not-a-project', path: other })
+    expect(refused.error).toBe('That folder already exists. Nothing was added. Choose another folder, or add this one with Add project to use it as it is.')
+    expect(refused.host.projects).toEqual(before)
+    const file = join(f.root, 'notes')
+    await writeFile(file, '')
+    const onFile = await f.control.command({ type: 'create-project', provider: 'codex', title: 'notes', path: file, useExisting: true })
+    expect(onFile.error).toBe('A file with that name is already there. Nothing was added. Choose another name.')
+    expect(onFile.host.projects).toEqual(before)
   })
   it('opens existing projects without changing scope, creates multiple manual threads, and keeps coordinator settings independent', async () => {
     const f = await fixture()

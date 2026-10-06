@@ -25,6 +25,7 @@ vi.mock('electron', async () => {
     close() { this.destroyed = true; this.emit('destroyed') }
   }
   class IsolatedSession extends EventEmitter {
+    setSpellCheckerDictionaryDownloadURL = vi.fn()
     setPermissionRequestHandler = vi.fn(); setPermissionCheckHandler = vi.fn(); setDevicePermissionHandler = vi.fn()
     webRequest = { onBeforeRequest: vi.fn() }
     closeAllConnections = vi.fn().mockResolvedValue(undefined)

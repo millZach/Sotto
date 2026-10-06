@@ -1,6 +1,6 @@
 # A host's client updates on its tiles: the built app over a scripted host
 
-September 29, 2026, Windows 11, from `feat/host-client-updates` (#480, ADR-0021 as amended September 29).
+September 29, 2026, Windows 11, from `feat/host-client-updates` (#480, ADR-0042 as amended September 29).
 
 ## What was run
 

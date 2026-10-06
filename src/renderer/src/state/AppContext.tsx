@@ -214,6 +214,7 @@ export function AppProvider({
   const copy = platformCopy(platform)
 
   const settingsRef = useRef<AppSettings | null>(null)
+  const historyRef = useRef<readonly HistoryEntry[]>([])
   const controllerRef = useRef<AppController | null>(null)
   const lifecycleGenerationRef = useRef(0)
   const activeGenerationRef = useRef(0)
@@ -277,6 +278,7 @@ export function AppProvider({
   )
 
   const commitHistory = useCallback((entries: readonly HistoryEntry[]): void => {
+    historyRef.current = entries
     setHistory(entries)
     setHistoryStatus('ready')
   }, [])
@@ -335,6 +337,7 @@ export function AppProvider({
     setFailure(null)
     setSettings(null)
     settingsRef.current = null
+    historyRef.current = []
     setHistory([])
     setDictation(initialDictationState)
     setRecoveryNotices([])
@@ -398,6 +401,7 @@ export function AppProvider({
           isCurrentGeneration(generation) &&
           historyVersionRef.current === initialHistoryVersion
         ) {
+          historyRef.current = []
           setHistory([])
           setHistoryStatus('degraded')
           setFailure('HISTORY_LOAD_FAILED')
@@ -571,7 +575,10 @@ export function AppProvider({
     deleteHistory: async (id) => {
       if (bridge === undefined) return false
       return enqueueHistoryMutation(async () => {
-        await bridge.deleteHistory(id)
+        if (!await bridge.deleteHistory(id)) throw new Error('HISTORY_UPDATE_FAILED')
+        if (settingsRef.current?.historyEnabled === false) {
+          return historyRef.current.filter(entry => entry.id !== id)
+        }
         return bridge.listHistory()
       })
     },

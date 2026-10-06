@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { claudeAnswer, claudePending } from '../../src/main/agents/claudeRequests'
 import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
+import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
+import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
+import { PersonalChatService } from '../../src/main/agents/personalChats'
+import { personalRequestDraftState } from '../../src/main/agents/requestDrafts'
+import { personalAnswerHeld } from '../../src/shared/personalChats'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { AgentControl } from '../../src/main/agents/control'
@@ -13,6 +18,21 @@ import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG, promptImageOf, stageInto } from '../fixtures/stagedImages'
+
+/** Hold the actual stdin callback and bytes without replacing the protocol's deadline. */
+function delayStdin(adapter: Awaited<ReturnType<typeof claudeFixture>>['adapter'], id: string) {
+  const runtime = (adapter as unknown as { runtimes: Map<string, { protocol: ClaudeProtocol }> }).runtimes.get(id)!
+  const stdin = (runtime.protocol as unknown as { child: import('node:child_process').ChildProcessWithoutNullStreams }).child.stdin
+  const write = stdin.write.bind(stdin)
+  let release = () => undefined
+  let fail = () => undefined
+  const spy = vi.spyOn(stdin, 'write').mockImplementationOnce(((chunk: string, callback: (error?: Error | null) => void) => {
+    release = () => { release = () => undefined; write(chunk, callback) }
+    fail = () => { release = () => undefined; callback(new Error('Pipe failed')) }
+    return false
+  }) as typeof stdin.write)
+  return { release: () => release(), fail: () => fail(), restore: () => spy.mockRestore() }
+}
 
 describe('Claude native request mapping', () => {
   it('rejects malformed permissions and questions', () => {
@@ -114,7 +134,7 @@ describe('Claude recovery and safety', () => {
     let registry = new ThreadRegistry(f.root)
     let wrapped = new SottoThreadHost('claude', f.adapter, registry)
     const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     let control = create()
     try {
       await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
@@ -151,15 +171,379 @@ describe('Claude recovery and safety', () => {
     expect(await prompts()).toBe(1)
     expect(await readFile(join(f.root, 'claude-threads.json'), 'utf8')).not.toContain(command.text)
   })
+  const chromeReply = "/chrome isn't available in this environment."
+  // Claude Code 2.1.289 reports the start before the reply, so the prompt sits above it. A result alone records it after.
+  it.each([
+    { evidence: undefined, order: ['user', 'assistant'] },
+    { evidence: 'result', order: ['assistant', 'user'] },
+  ])('takes a slash command Claude Code answers itself without an echo (evidence: $evidence)', async ({ evidence, order }) => {
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
+    expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
+    const messages = (await thread()).messages
+    expect(messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome', commandId: 'chrome' }))
+    expect(messages).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
+    expect(messages.map(message => message.role)).toEqual(order)
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    await writeFile(join(f.root, 'script.json'), '{}')
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Carry on' })).toEqual({ accepted: true })
+  })
+  it('reads a slash command it sent back from the transcript when nothing confirmed it', async () => {
+    await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence: 'none' }))
+    const command = { type: 'send' as const, commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' }
+    expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+    await f.adapter.pollSessionLogs()
+    expect((await thread()).messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome' }))
+    // Checking again finds the prompt in the record rather than sending it twice.
+    expect(await f.host.execute(command)).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
   it('sends a native denial for malformed question control requests', async () => {
     await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'malformed', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: {} } } })
     await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('"behavior":"deny"')
     expect((await thread()).requests).toEqual([])
   })
+  it.each(['answer', 'interrupt', 'cancel'] as const)('keeps a pending request after a turn result until %s', async end => {
+    await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'pending-after-result',
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'npm run build' } } } })
+    await expect.poll(async () => (await thread()).requests.map(request => request.id)).toEqual(['pending-after-result'])
+    await f.driver.backgroundWork!.completeLeaving(id, 'The agent is still working.', 'Build')
+    await expect.poll(async () => (await thread()).messages.at(-1)?.text).toBe('The agent is still working.')
+    expect((await thread()).requests.map(request => request.id)).toEqual(['pending-after-result'])
+    if (end === 'cancel') {
+      await f.action(id, { type: 'raw', frame: { type: 'control_cancel_request', request_id: 'pending-after-result' } })
+    } else {
+      const result = end === 'answer'
+        ? await f.host.execute({ type: 'answer', commandId: 'answer', threadId: id, requestId: 'pending-after-result', answer: '', approved: false })
+        : await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId: id })
+      expect(result.accepted).toBe(true)
+      await expect.poll(async () => (await f.driver.requests()).some(record => {
+        const frame = record.params?.frame as { response?: { request_id?: string; response?: { behavior?: string } } }
+        return frame.response?.request_id === 'pending-after-result' && frame.response.response?.behavior === 'deny'
+      })).toBe(true)
+    }
+    await expect.poll(async () => (await thread()).requests).toEqual([])
+  })
   it('resumes the native context after CLI takeover before another prompt', async () => {
+    await f.driver.backgroundWork!.completeLeaving(id, 'Still working.', 'Build')
+    await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
     await f.driver.typeInProvider(id, 'Typed outside Sotto')
     await f.host.execute({ type: 'send', commandId: 'next', messageId: 'next', threadId: id, text: 'Continue' })
     expect((await f.driver.requests()).filter(record => record.method === 'resume')).toHaveLength(1)
+  })
+  it('reads appended transcript lines before an overlapping caller returns', async () => {
+    clearInterval((f.adapter as unknown as { pollTimer: NodeJS.Timeout }).pollTimer)
+    await f.adapter.pollSessionLogs()
+    const calls = vi.spyOn(f.adapter, 'pollSessionLogs')
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const original = ClaudeSessionLog.prototype.poll
+    let reached!: () => void
+    const read = new Promise<void>(resolve => { reached = resolve })
+    const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementationOnce(async function (this: ClaudeSessionLog) {
+      await original.call(this); reached(); await gate
+    })
+    const first = f.adapter.pollSessionLogs()
+    await read
+    const joined = f.driver.typeInProvider(id, 'Appended after the first read')
+    try {
+      await expect.poll(() => calls.mock.calls.length).toBe(2)
+      release(); await Promise.all([first, joined])
+      // Inspect the projection directly: snapshot() would perform a fresh read and hide the bug.
+      const messages = (f.adapter as unknown as { messageLog: { messages(id: string): { text: string }[] } }).messageLog.messages(id)
+      expect(messages.some(message => message.text === 'Appended after the first read')).toBe(true)
+    } finally { release(); await first; poll.mockRestore() }
+    const next = vi.spyOn(ClaudeSessionLog.prototype, 'poll')
+    try { await f.adapter.pollSessionLogs(); expect(next).toHaveBeenCalledTimes(1) }
+    finally { next.mockRestore() }
+  })
+  it('releases settled runtime closures before disconnect', async () => {
+    for (const mode of ['full-access', 'approval-required', 'full-access'] as const) {
+      expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: mode })).accepted).toBe(true)
+    }
+    const retained = () => {
+      const closures = (f.adapter as unknown as { closures: Promise<void>[] | Set<Promise<void>> }).closures
+      return Array.isArray(closures) ? closures.length : closures.size
+    }
+    await expect.poll(retained).toBe(1)
+  })
+  it('runs a queued read after the preceding read fails', async () => {
+    clearInterval((f.adapter as unknown as { pollTimer: NodeJS.Timeout }).pollTimer)
+    await f.adapter.pollSessionLogs()
+    let fail!: (error: Error) => void
+    const gate = new Promise<void>((_, reject) => { fail = reject })
+    const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementationOnce(() => gate).mockResolvedValueOnce(undefined)
+    const first = f.adapter.pollSessionLogs().catch((error: Error) => error)
+    const queued = f.adapter.pollSessionLogs().then(() => 'read', (error: Error) => error.message)
+    fail(new Error('First read failed'))
+    expect(await first).toEqual(new Error('First read failed'))
+    expect(await queued).toBe('read')
+    expect(poll).toHaveBeenCalledTimes(2)
+  })
+  it('finishes joined reads without waiting for later poll arrivals', async () => {
+    clearInterval((f.adapter as unknown as { pollTimer: NodeJS.Timeout }).pollTimer)
+    // Stopping the timer leaves its active read in flight. Drain it before holding our own passes.
+    await f.adapter.pollSessionLogs()
+    const releases: (() => void)[] = []
+    const gates = Array.from({ length: 3 }, () => new Promise<void>(resolve => { releases.push(resolve) }))
+    let index = 0
+    const poll = vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementation(() => gates[index++] ?? Promise.resolve())
+    const first = f.adapter.pollSessionLogs()
+    let joinedDone = false
+    const joined = f.adapter.pollSessionLogs().then(() => { joinedDone = true })
+    let later: Promise<void> | undefined
+    try {
+      releases[0]!(); await expect.poll(() => poll.mock.calls.length).toBe(2)
+      later = f.adapter.pollSessionLogs()
+      releases[1]!(); await expect.poll(() => poll.mock.calls.length).toBe(3)
+      await expect.poll(() => joinedDone).toBe(true)
+    } finally { releases.forEach(release => release()); await Promise.all([first, joined, later]); poll.mockRestore() }
+  })
+  it('restarts personal background work after a memory in its running context is deleted', async () => {
+    let deleted!: (ids: readonly string[]) => void
+    const unsubscribe = vi.fn()
+    const service = new PersonalChatService({ userDataPath: f.root, hosts: { claude: f.adapter }, configuration: () => ({ reasoning: 'claude', reasoningModel: f.modelId, reasoningEffort: 'high' }),
+      preferences: { retrieve: () => [], subscribeDeleted: listener => { deleted = listener; return unsubscribe } } })
+    await service.start(); await service.connect()
+    try {
+      const personal = randomUUID(), memories = [{ id: 'deleted-memory', content: 'Use short replies.' }]
+      await f.adapter.createPersonalConversation({ commandId: 'personal', threadId: personal, title: 'Personal', modelId: f.modelId, workingDirectory: f.root }, memories)
+      await f.driver.backgroundWork!.completeLeaving(personal, 'Still working.', 'Build')
+      await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === personal)?.backgroundWork?.length).toBe(1)
+      const process = (await f.liveSettings.effective(personal)).process
+      // A retrieval miss is not a deletion; keep the work and its original context.
+      const command = { type: 'send' as const, commandId: 'miss', messageId: 'miss', threadId: personal, text: 'Continue' }
+      expect(await f.adapter.sendPersonalConversation(command, [])).toEqual({ accepted: true })
+      expect((await f.liveSettings.effective(personal)).process).toBe(process)
+      await f.driver.completeTurn(personal, 'Finished the follow-up.')
+      await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === personal)?.status).toBe('idle')
+      deleted(['unrelated-memory']); expect(await f.sessions!.starts(personal)).toBe(1)
+      deleted(['deleted-memory'])
+      expect(await f.adapter.sendPersonalConversation({ ...command, commandId: 'fresh', messageId: 'fresh' }, [])).toEqual({ accepted: true })
+      expect(await f.sessions!.starts(personal)).toBe(2)
+      expect((await f.liveSettings.effective(personal)).process).not.toBe(process)
+      expect(f.adapter.personalSnapshot().find(thread => thread.id === personal)?.backgroundWork ?? []).toEqual([])
+      expect((await f.host.snapshot()).error).toContain('A memory in this provider session was deleted, so Sotto stopped this provider session, and "Build" stopped with it.')
+      expect((await f.host.snapshot()).error).toContain('Ask Claude to start it again if you still need it.')
+      const launch = (await f.driver.requests()).filter(record => record.method === 'resume').at(-1)!
+      expect((launch.params!.frame as { args: string[] }).args.join(' ')).not.toContain(memories[0]!.content)
+    } finally { await service.close(); expect(unsubscribe).toHaveBeenCalledOnce() }
+  })
+  it('waits for personal background work before restarting for changed memories', async () => {
+    const personal = randomUUID()
+    await f.adapter.createPersonalConversation({ commandId: 'personal', threadId: personal, title: 'Personal', modelId: f.modelId, workingDirectory: f.root })
+    await f.driver.backgroundWork!.completeLeaving(personal, 'Still working.', 'Build')
+    await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === personal)?.backgroundWork?.length).toBe(1)
+    const memories = [{ id: 'memory', content: 'Use short replies.' }]
+    const command = { type: 'send' as const, commandId: 'personal-send', messageId: 'personal-send', threadId: personal, text: 'Continue' }
+    const process = (await f.liveSettings.effective(personal)).process
+    expect(await f.adapter.sendPersonalConversation(command, memories)).toEqual({ accepted: true })
+    expect((await f.liveSettings.effective(personal)).process).toBe(process)
+    expect(f.adapter.personalSnapshot().find(thread => thread.id === personal)?.backgroundWork).toHaveLength(1)
+    expect(await f.sessions!.starts(personal)).toBe(1)
+    await f.driver.backgroundWork!.end(personal)
+    await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === personal)?.backgroundWork ?? []).toEqual([])
+    await f.driver.completeTurn(personal, 'Finished the follow-up.')
+    await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === personal)?.status).toBe('idle')
+    expect(await f.adapter.sendPersonalConversation({ ...command, commandId: 'fresh', messageId: 'fresh' }, memories)).toEqual({ accepted: true })
+    expect(await f.sessions!.starts(personal)).toBe(2)
+    const launch = (await f.driver.requests()).filter(record => record.method === 'resume').at(-1)!
+    expect((launch.params!.frame as { args: string[] }).args.join(' ')).toContain(memories[0]!.content)
+  })
+  it('delivers only the original answer when stdin resumes after its deadline', async () => {
+    await f.driver.raisePermission(id, 'Build')
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+    const requestId = (await thread()).requests[0]!.id
+    const delayed = delayStdin(f.adapter, id)
+    const answer = { type: 'answer' as const, commandId: 'deny', threadId: id, requestId, answer: '', approved: false }
+    try {
+      expect(await f.host.execute(answer)).toMatchObject({ accepted: false, uncertain: true })
+      await f.host.refreshThread!(id, { retryUncertainAnswers: true })
+      await f.host.execute({ ...answer, commandId: 'allow', approved: true })
+      delayed.release(); delayed.restore()
+      await expect.poll(async () => (await thread()).requests).toEqual([])
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)
+        .map(record => f.protocol!.permissionDecision(record))).toEqual([false])
+    } finally { delayed.release(); delayed.restore() }
+  })
+  it('lets the user retry an uncertain answer after a turn result without replaying it', async () => {
+    await f.driver.raisePermission(id, 'Build')
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+    const requestId = (await thread()).requests[0]!.id
+    const write = ClaudeProtocol.prototype.write
+    const failed = vi.spyOn(ClaudeProtocol.prototype, 'write').mockImplementationOnce(() => Promise.reject(new Error('Uncertain write')))
+    const command = { type: 'answer' as const, commandId: 'first-answer', threadId: id, requestId, answer: '', approved: false }
+    expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+    failed.mockRestore()
+    await f.driver.completeTurn(id, 'Turn ended before the answer arrived.')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    expect((await thread()).requests[0]!.delivery).toBe('uncertain')
+    expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)).toHaveLength(0)
+    await expect(f.host.execute({ type: 'send', commandId: 'blocked', messageId: 'blocked', threadId: id, text: 'Continue' })).rejects.toThrow('pending Claude request')
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const retryWrite = vi.spyOn(ClaudeProtocol.prototype, 'write').mockImplementationOnce(async function (this: ClaudeProtocol, frame) { await gate; await write.call(this, frame) })
+    const retry = f.host.execute({ ...command, commandId: 'retry', approved: true })
+    try {
+      await expect.poll(() => retryWrite.mock.calls.length).toBe(1)
+      expect(await f.host.execute({ ...command, commandId: 'duplicate' })).toEqual({ accepted: false, uncertain: true })
+      release(); expect(await retry).toEqual({ accepted: true })
+    } finally { release(); await retry; retryWrite.mockRestore() }
+    expect((await thread()).requests).toEqual([])
+    await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined).map(record => f.protocol!.permissionDecision(record))).toEqual([true])
+    expect(await f.host.execute({ type: 'send', commandId: 'unblocked', messageId: 'unblocked', threadId: id, text: 'Continue' })).toEqual({ accepted: true })
+  })
+  it('records the original personal denial when its callback succeeds late', async () => {
+    const service = new PersonalChatService({ userDataPath: f.root, hosts: { claude: f.adapter }, configuration: () => ({ reasoning: 'claude', reasoningModel: f.modelId, reasoningEffort: 'high' }) })
+    let delayed: ReturnType<typeof delayStdin> | undefined
+    try {
+      await service.start(); await service.connect()
+      const chat = (await service.create()).chats[0]!
+      await service.saveDraft({ chatId: chat.id, revision: 1, text: 'Hello', skills: [] })
+      await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
+      await f.driver.raisePermission(chat.id, 'Build')
+      await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
+      const requestId = service.get().chats[0]!.requests[0]!.id
+      delayed = delayStdin(f.adapter, chat.id)
+      const answer = { chatId: chat.id, requestId, answer: '', approved: false }
+      await service.answer(answer)
+      const checked = await service.refresh(chat.id)
+      expect(personalAnswerHeld(checked.chats[0]!, requestId)).toBe(true)
+      await expect(service.answer({ ...answer, approved: true })).rejects.toThrow('uncertain')
+      delayed.release(); delayed.restore(); await service.settled()
+      await expect.poll(() => service.get().chats[0]!.requests).toEqual([])
+      expect(service.get().chats[0]!.decisions).toMatchObject([{ approved: false, status: 'accepted' }])
+      expect(service.get().chats[0]!.decisions).toHaveLength(1)
+      expect(service.get().error).toBeUndefined()
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)
+        .map(record => f.protocol!.permissionDecision(record))).toEqual([false])
+    } finally { delayed?.release(); delayed?.restore(); await service.close() }
+  })
+  it('permits a new answer only after a delayed stdin callback fails outright', async () => {
+    await f.driver.raisePermission(id, 'Build')
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+    const requestId = (await thread()).requests[0]!.id
+    const delayed = delayStdin(f.adapter, id)
+    const answer = { type: 'answer' as const, commandId: 'deny', threadId: id, requestId, answer: '', approved: false }
+    try {
+      const result = await f.host.execute(answer)
+      expect(result).toMatchObject({ accepted: false, uncertain: true })
+      delayed.fail(); delayed.restore(); expect(await result.answerCompletion).toBe(false)
+      await f.host.refreshThread!(id, { retryUncertainAnswers: true })
+      expect(await f.host.execute({ ...answer, commandId: 'allow', approved: true })).toEqual({ accepted: true })
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)
+        .map(record => f.protocol!.permissionDecision(record))).toEqual([true])
+    } finally { delayed.release(); delayed.restore() }
+  })
+  it('reopens a personal answer through Check again without replaying its uncertain decision', async () => {
+    const service = new PersonalChatService({ userDataPath: f.root, hosts: { claude: f.adapter }, configuration: () => ({ reasoning: 'claude', reasoningModel: f.modelId, reasoningEffort: 'high' }) })
+    try {
+      await service.start(); await service.connect()
+      const chat = (await service.create()).chats[0]!
+      await service.saveDraft({ chatId: chat.id, revision: 1, text: 'Hello', skills: [] })
+      await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
+      await f.driver.raisePermission(chat.id, 'Build')
+      await expect.poll(() => service.get().chats[0]!.requests.length).toBe(1)
+      const requestId = service.get().chats[0]!.requests[0]!.id
+      const answer = { chatId: chat.id, requestId, answer: '', approved: false }
+      const failed = vi.spyOn(ClaudeProtocol.prototype, 'write').mockRejectedValueOnce(new Error('Uncertain write'))
+      await service.answer(answer); failed.mockRestore()
+      expect(personalAnswerHeld(service.get().chats[0]!, requestId)).toBe(true)
+      await expect(service.answer(answer)).rejects.toThrow('uncertain')
+      const checked = await service.refresh(chat.id)
+      expect(checked.chats[0]!.decisions![0]!.status).toBe('uncertain')
+      expect(personalAnswerHeld(checked.chats[0]!, requestId)).toBe(false)
+      expect(personalRequestDraftState(checked, { kind: 'personal', ownerId: chat.id, providerId: 'claude' })!.uncertainRequestIds).toEqual([])
+      expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)).toHaveLength(0)
+      await service.answer({ ...answer, approved: true })
+      expect(service.get().chats[0]!.decisions!.map(decision => decision.status)).toEqual(['uncertain', 'accepted'])
+      expect(service.get().error).toBeUndefined()
+      expect(personalAnswerHeld(service.get().chats[0]!, requestId)).toBe(false)
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined).map(record => f.protocol!.permissionDecision(record))).toEqual([true])
+    } finally { await service.close() }
+  })
+  it.each(['none', 'draft', 'error'] as const)('settles the original project answer after a newer %s', async later => {
+    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
+    await credentials.load()
+    const registry = new ThreadRegistry(f.root), wrapped = new SottoThreadHost('claude', f.adapter, registry)
+    const recordAnswer = vi.fn()
+    Object.assign(wrapped, { recordAnswer })
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    })
+    let delayed: ReturnType<typeof delayStdin> | undefined
+    try {
+      await control.start(); await control.command({ type: 'connect' })
+      const threadId = registry.all().find(binding => binding.sessionId === id)!.threadId
+      await wrapped.refreshThread(threadId); await f.driver.raiseQuestion(id, 'Color?')
+      await expect.poll(async () => (await thread()).requests.length).toBe(1)
+      const requestId = (await thread()).requests[0]!.id
+      delayed = delayStdin(f.adapter, id)
+      await control.command({ type: 'answer', threadId, requestId, answer: 'Blue' })
+      expect(recordAnswer).toHaveBeenCalledTimes(1)
+      await control.refreshRequestDraft(threadId)
+      expect((await thread()).requests[0]!.answerRetryReady).toBeUndefined()
+      expect(control.requestAnswerRecovery(threadId, 'claude').uncertainRequestIds).toEqual([requestId])
+      expect(control.get().error).not.toBeNull()
+      let expectedError: string | null = null
+      if (later === 'draft') await control.command({ type: 'save-thread-draft', threadId, draftId: randomUUID(), text: 'Unsent draft', attachments: [], requestId: null })
+      if (later === 'error') {
+        expectedError = (await control.command({ type: 'answer', threadId: 'missing-thread', requestId: 'missing-request', answer: 'Later' })).error
+        expect(expectedError).not.toBeNull()
+      }
+      delayed.release(); delayed.restore()
+      await expect.poll(() => control.requestAnswerRecovery(threadId, 'claude').uncertainRequestIds).toEqual([])
+      await expect.poll(() => control.requestAnswerRecovery(threadId, 'claude').completed).toMatchObject([{ requestId }])
+      await expect.poll(() => control.get().error).toBe(expectedError)
+      expect(recordAnswer).toHaveBeenCalledTimes(1)
+      await expect.poll(async () => (await thread()).requests).toEqual([])
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)
+        .map(record => f.protocol!.permissionDecision(record))).toEqual([true])
+      const delivered = (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)
+      expect(delivered[0]!.params!.frame).toMatchObject({ response: { response: { updatedInput: { answers: { 'Color?': 'Blue' } } } } })
+    } finally { delayed?.release(); delayed?.restore(); control.dispose(); await registry.flush() }
+  })
+  it('reopens a project answer through the coordinator Check again path', async () => {
+    const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
+    await credentials.load()
+    const registry = new ThreadRegistry(f.root), wrapped = new SottoThreadHost('claude', f.adapter, registry)
+    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: wrapped, credentials, reasoner: e2eAgentReasoner,
+    })
+    try {
+      await control.start(); await control.command({ type: 'connect' })
+      const threadId = registry.all().find(binding => binding.sessionId === id)!.threadId
+      await wrapped.refreshThread(threadId)
+      await f.driver.raisePermission(id, 'Build')
+      await expect.poll(async () => (await thread()).requests.length).toBe(1)
+      const requestId = (await thread()).requests[0]!.id
+      const answer = { type: 'answer' as const, threadId, requestId, answer: '', approved: false }
+      const failed = vi.spyOn(ClaudeProtocol.prototype, 'write').mockRejectedValueOnce(new Error('Uncertain write'))
+      await control.command(answer); failed.mockRestore()
+      expect((await thread()).requests[0]!.delivery).toBe('uncertain')
+      await control.refreshRequestDraft(threadId)
+      expect((await thread()).requests[0]!.answerRetryReady).toBe(true)
+      expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined)).toHaveLength(0)
+      const result = await control.command({ ...answer, approved: true })
+      expect(result.error).toBeNull()
+      await expect.poll(async () => (await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) !== undefined).map(record => f.protocol!.permissionDecision(record))).toEqual([true])
+    } finally { control.dispose(); await registry.flush() }
+  })
+  it.each(['browser', 'setup'] as const)('cancels a launch superseded during %s tool setup without blocking its next send', async tools => {
+    let entered!: () => void, release!: () => void
+    const waiting = new Promise<void>(resolve => { entered = resolve })
+    const ready = new Promise<void>(resolve => { release = resolve })
+    const mcpServer = async () => {
+      entered(); await ready
+      return { name: 'sotto_browser' as const, type: 'http' as const, url: 'http://127.0.0.1:1234/mcp', headers: [] }
+    }
+    if (tools === 'browser') f.adapter.useBrowserTools({ definitions: [], call: async () => ({ content: [] }), mcpServer })
+    else f.adapter.useHostSetupTools({ name: 'fixture_tools', definitions: [], mcpServer })
+    const created = randomUUID()
+    const creating = f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Cancelled launch', modelId: f.modelId })
+    const cancelled = expect(creating).resolves.toEqual({ accepted: false, uncertain: true })
+    await waiting
+    await f.host.connect()
+    release(); await cancelled
+    expect(await f.host.execute({ type: 'send', commandId: 'after-reconnect', messageId: 'after-reconnect', threadId: created, text: 'Continue' })).toEqual({ accepted: true })
+    expect((await f.sessions!.starts(created))).toBe(1)
   })
   const launches = async () => (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => (record.params?.frame as { args: string[] }).args).filter(args => !args.includes('--no-session-persistence'))
   const permission = (args: string[]) => ({ mode: args[args.indexOf('--permission-mode') + 1], prompts: args[args.indexOf('--permission-prompts') + 1], allowBypass: args.includes('--allow-dangerously-skip-permissions') })
@@ -186,6 +570,15 @@ describe('Claude recovery and safety', () => {
       request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', tool_use_id: 'tool', input: { questions: [] } } } })
     await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('only you can answer')
     await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('"behavior":"deny"')
+    expect((await thread()).requests).toEqual([])
+  })
+  it.each(['elicitation', 'request_user_dialog'])('reports an unreadable %s request when declining it', async subtype => {
+    await f.action(id, { type: 'raw', frame: { type: 'control_request', request_id: 'unreadable-dialog', request: { subtype, dialog_kind: 'unknown' } } })
+    await expect.poll(async () => (await f.driver.requests()).some(record => {
+      const frame = record.params?.frame as { response?: { subtype?: string; request_id?: string } }
+      return frame.response?.request_id === 'unreadable-dialog' && frame.response.subtype === 'error'
+    })).toBe(true)
+    expect((await f.host.snapshot()).error).toContain('only you can answer')
     expect((await thread()).requests).toEqual([])
   })
   // Paired with the test above: the fixture differs only in whether its session lists the question tool,

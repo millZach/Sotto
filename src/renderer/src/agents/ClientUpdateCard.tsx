@@ -15,7 +15,7 @@ function sinceLabel(iso: string): string {
 }
 
 /**
- * One card in the corner for every client that has fallen behind (ADR-0021). It says what is
+ * One card in the corner for every client that has fallen behind (ADR-0042). It says what is
  * installed, what is published and what a press will do, and after a press whether it worked. It
  * never speaks for a client Sotto cannot update: that row shows the command to run instead.
  */
@@ -72,7 +72,7 @@ export function ClientUpdateCard(): ReactNode {
   // One client that went wrong, is being updated or has just updated gets one sentence; why it went
   // wrong waits under Details. A card about several clients keeps the list. Nothing here mentions a
   // thread still working: the installer never stops one, and each moves to the new version when it
-  // is next idle (ADR-0021), which is true without being said.
+  // is next idle (ADR-0042), which is true without being said.
   const single = shown.length === 1 ? shown[0]! : undefined
   if (single && (single.state === 'failed' || single.state === 'unchanged' || single.state === 'updating' || single.state === 'updated')) {
     const name = PROVIDER_LABELS[single.id]

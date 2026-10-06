@@ -100,7 +100,7 @@ describe('Codex native skills', () => {
     await credentials.load()
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
       reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })
     const draft = { type: 'save-thread-draft' as const, threadId: f.threadId, draftId: randomUUID(), text: 'Keep my draft' }
     await control.command(draft)

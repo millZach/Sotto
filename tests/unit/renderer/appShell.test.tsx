@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -274,5 +274,45 @@ describe('AppShell', () => {
     expect(confirm).toHaveFocus()
     await user.tab()
     expect(cancel).toHaveFocus()
+  })
+
+  it('keeps Enter in a field from bypassing disabled confirmation or committing composed text', async () => {
+    const user = userEvent.setup()
+    const { ConfirmationDialog } = await import('../../../src/renderer/src/components/ConfirmationDialog')
+    const onConfirm = vi.fn(async () => false)
+    const props = { title: 'Continue?', description: <input aria-label="Answer" />, confirmLabel: 'Continue', cancelLabel: 'Cancel', onCancel: vi.fn(), onConfirm, submitOnEnter: true }
+    const { rerender } = render(<ConfirmationDialog {...props} confirmDisabled />)
+    await user.click(screen.getByRole('textbox', { name: 'Answer' }))
+    await user.keyboard('{Enter}')
+    expect(onConfirm).not.toHaveBeenCalled()
+    rerender(<ConfirmationDialog {...props} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Answer' }), { key: 'Enter', isComposing: true })
+    expect(onConfirm).not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
+    expect(onConfirm).toHaveBeenCalledOnce()
+  })
+
+  it('does not submit a second field answer while Continue is pending', async () => {
+    const user = userEvent.setup()
+    const { ConfirmationDialog } = await import('../../../src/renderer/src/components/ConfirmationDialog')
+    let finish!: (value: boolean) => void
+    const onConfirm = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    render(<ConfirmationDialog submitOnEnter title="Continue?" description={<input aria-label="Answer" />} confirmLabel="Continue" cancelLabel="Cancel" onCancel={vi.fn()} onConfirm={onConfirm} />)
+    await user.click(screen.getByRole('textbox', { name: 'Answer' }))
+    await user.keyboard('{Enter}{Enter}')
+    expect(onConfirm).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    await act(async () => finish(false))
+  })
+
+  it('does not confirm theme removal when Enter is pressed on a variant checkbox', async () => {
+    const user = userEvent.setup()
+    const { ConfirmationDialog } = await import('../../../src/renderer/src/components/ConfirmationDialog')
+    const onConfirm = vi.fn(async () => false)
+    render(<ConfirmationDialog title="Remove theme?" description={<label><input type="checkbox" defaultChecked />Dark variant</label>} confirmLabel="Remove selected" cancelLabel="Keep" onCancel={vi.fn()} onConfirm={onConfirm} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Dark variant' }))
+    await user.keyboard('{Enter}')
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeVisible()
   })
 })

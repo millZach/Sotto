@@ -17,7 +17,6 @@ const state = (notice: string): AgentState => ({
   voice: { status: 'off', error: null, action: 'none', revision: 0 },
   credentials: { reasoning: false, grokSpeech: false, secure: false },
   reasoningAccounts: [],
-  membership: { status: 'active', label: 'Sotto', expiresAt: null },
 })
 class TestClock {
   private armed: { run: () => void } | null = null
@@ -120,7 +119,7 @@ describe('coalesced coordinator broadcasts', () => {
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
     await credentials.load()
     const created = new AgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     controls.push(created)
     await created.start()
     // Settle whatever start published so the burst under test owns a fresh window.

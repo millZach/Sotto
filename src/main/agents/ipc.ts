@@ -21,6 +21,8 @@ import type { GrokSpeechService } from './grokSpeech'
 import type { KokoroSpeechService } from './kokoroSpeech'
 
 export interface AgentIpcOptions {
+  readonly voiceCoordinatorEnabled: boolean
+  readonly wakeControl: Pick<AgentControl, 'configuration'>
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
    * so the receipt names each catalog by the revision the broadcast uses. */
   readonly encodeReceipt: (state: AgentState) => AgentCommandReceipt
@@ -76,9 +78,9 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
       z.object({ type: z.literal('release') }).strict(),
     ]).parse(payload)
     if (request.type === 'release') { wake.dispose(); return { detected: false, endSeconds: 0 } }
-    const state = control.get()
-    if (!state.configuration.enabled || !['active', 'beta'].includes(state.membership.status)) throw new Error('Agent voice control is not enabled.')
-    await wake.prepare(state.configuration.wakeModelDirectory, state.configuration.wakeRuntimeDirectory || undefined)
+    const configuration = options.wakeControl.configuration()
+    if (!options.voiceCoordinatorEnabled || !configuration.enabled) throw new Error('Agent voice control is not enabled.')
+    await wake.prepare(configuration.wakeModelDirectory, configuration.wakeRuntimeDirectory || undefined)
     return request.type === 'detect' ? wake.detect(request.audio) : { detected: false, endSeconds: 0 }
   })
   let speechOperation: symbol | null = null
@@ -159,7 +161,8 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
     const command = agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
     const speakOnly = command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1
-    if (!speakOnly && ['configure', 'credential', 'connect', 'disconnect', 'membership', 'voice-state', 'check-reasoning', 'preview-voice', 'observe-threads'].includes(command.type) && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    const widgetCommand = ['compose', 'send', 'manual-send', 'answer', 'steer', 'queue-followup', 'edit-followup', 'steer-followup', 'remove-followup', 'reorder-followups', 'resume-followups', 'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'assign', 'unassign', 'resume', 'pause', 'voice', 'utterance', 'select-thread', 'select-attention', 'next', 'later'].includes(command.type)
+    if (!speakOnly && !widgetCommand && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     // The host answers with the shell already; the coordinator builds it without copying any history.
     // The window already has the catalogs from the broadcast, so the answer names each by its catalog
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, MessageSquare, PanelLeftClose, PanelLeftOpen, Squar
 import type { AgentSkillCatalog } from '../../../../shared/agentSkills'
 import { publicProviderEntityId, type AgentState } from '../../../../shared/agents'
 import { resolveModel } from '../../../../shared/modelCatalog'
-import type { PersonalChat, PersonalChatBridge, PersonalChatState } from '../../../../shared/personalChats'
+import { personalAnswerHeld, type PersonalChat, type PersonalChatBridge, type PersonalChatState } from '../../../../shared/personalChats'
 import { Button } from '../../components/Button'
 import { PageWindowControls } from '../../components/WindowControls'
 import { composerEnterIntent, readComposerKey, runComposerMenuKey } from '../composerKeys'
@@ -125,10 +125,12 @@ function PersonalRequests({ bridge, chat, connected, onWriteAnswer }: {
 }): ReactNode {
   const PROVIDER = providerLabel(chat.providerId)
   return <>{chat.requests.map(request => {
-    const unconfirmed = (state: PersonalChatState): boolean => state.chats.find(item => item.id === chat.id)?.decisions
-      ?.some(decision => decision.requestId === request.id && (decision.status === 'submitting' || decision.status === 'uncertain')) === true
+    const unconfirmed = (state: PersonalChatState): boolean => {
+      const current = state.chats.find(item => item.id === chat.id)
+      return current ? personalAnswerHeld(current, request.id) : true
+    }
     // A durable answer intent the service could not confirm holds the card, across restarts too.
-    const held = chat.decisions?.some(decision => decision.requestId === request.id && decision.status === 'uncertain')
+    const held = personalAnswerHeld(chat, request.id)
     return <AgentRequestCard key={request.id} ownerId={chat.id} ownerTitle={chat.title} request={held ? { ...request, delivery: 'uncertain' } : request}
       draftOwner={{ kind: 'personal', ownerId: chat.id, providerId: chat.providerId }}
       blocked={connected ? null : `Connect ${PROVIDER} to answer.`}

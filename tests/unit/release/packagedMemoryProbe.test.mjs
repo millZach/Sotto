@@ -2,6 +2,7 @@
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
+import process from 'node:process'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,10 +20,10 @@ function launchResult(output, exitCode = 0) {
   child.stderr = new PassThrough()
   const application = {
     process: () => child,
-    evaluate: vi.fn(async () => {
-      child.stdout.write(output)
-      child.emit('close', exitCode, null)
-    }).mockResolvedValueOnce(terminal),
+    evaluate: vi.fn().mockResolvedValueOnce(terminal).mockImplementationOnce(async () => {
+      if (exitCode !== 0) throw new Error('packaged process failed')
+      return JSON.parse(output)
+    }),
     close: vi.fn(async () => undefined),
   }
   electron.launch.mockResolvedValue(application)
@@ -35,10 +36,27 @@ describe('packaged memory probe', () => {
     await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...evidence, terminal })
     const options = electron.launch.mock.calls.at(-1)[0]
     expect(options.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
-    expect(options.env.SOTTO_MEMORY_PROBE).toBe('1')
-    expect(isAbsolute(options.env.SOTTO_MEMORY_PROBE_USER_DATA)).toBe(true)
-    expect(existsSync(options.env.SOTTO_MEMORY_PROBE_USER_DATA)).toBe(false)
+    expect(options.env.SOTTO_MEMORY_PROBE).toBeUndefined()
+    const root = options.args[0].slice('--user-data-dir='.length)
+    expect(isAbsolute(root)).toBe(true)
+    expect(existsSync(root)).toBe(false)
     expect(options.args.some(arg => arg.includes('probe-memory-store.mjs'))).toBe(false)
+  })
+
+  it('invokes the probe exported by the shipped main entry rather than checkout code', async () => {
+    const application = launchResult(JSON.stringify(evidence))
+    await verifyPackagedMemoryStore('release/win-unpacked')
+    const [evaluate, root] = application.evaluate.mock.calls[1]
+    const probe = vi.fn(() => evidence)
+    const requireApp = vi.fn(path => path === './package.json' ? { main: 'out/main/index.js' } : { probeMemoryStore: probe })
+    const builtin = process.getBuiltinModule.bind(process)
+    vi.spyOn(process, 'getBuiltinModule').mockImplementation(name => name === 'node:module'
+      ? { createRequire: vi.fn(() => requireApp) } : builtin(name))
+    const { join } = builtin('node:path')
+    const shipped = join(root, 'shipped-app')
+    expect(evaluate({ app: { getAppPath: () => shipped } }, root)).toEqual(evidence)
+    expect(requireApp.mock.calls).toEqual([['./package.json'], [join(shipped, 'out/main/index.js')]])
+    expect(probe).toHaveBeenCalledWith(join(root, 'memory.sqlite'))
   })
 
   it.each([
@@ -50,7 +68,7 @@ describe('packaged memory probe', () => {
     await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/memory store probe/)
   })
 
-  it('rejects a failed packaged process even if it printed valid evidence', async () => {
+  it('rejects a failed packaged process even if valid evidence was prepared', async () => {
     launchResult(JSON.stringify(evidence), 1)
     await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/memory store probe/)
   })

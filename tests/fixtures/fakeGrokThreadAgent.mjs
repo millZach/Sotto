@@ -260,6 +260,6 @@ function run(command) {
  // A future client asking for a person under a name this Sotto has never mapped.
  if (command.type === 'unreadable') {
   const id = ++serial; pending.set(id,{kind:'unreadable'})
-  send({id,method:command.method,params:{sessionId:command.sessionId,toolCallId:String(id),questions:[{question:command.text,options:[]}]}})
+  send({id,method:command.method,params:{sessionId:command.sessionId,toolCallId:String(id),questions:[{question:command.text,options:[]}],...command.params}})
  }
 }

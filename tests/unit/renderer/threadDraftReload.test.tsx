@@ -21,7 +21,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-reload-drafts-'))
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
   const bridge: AgentBridge = agentBridgeFor(control)
   return { control, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),

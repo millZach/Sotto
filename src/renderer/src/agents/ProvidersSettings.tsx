@@ -24,7 +24,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (!update.published) return `${update.installed} is installed. Sotto could not reach the registry to see what is published.${past}`
   if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`
   if (!update.canInstall) return `${update.installed} is installed; ${update.published} is published. Sotto does not know how it was installed, so update it with ${update.command ?? 'the installer you used'}.${past}`
-  // Updating never stops a working thread, so there is nothing to warn about here (ADR-0021).
+  // Updating never stops a working thread, so there is nothing to warn about here (ADR-0042).
   return `${update.installed} is installed; ${update.published} is published. Your threads keep working while it installs.${past}`
 }
 

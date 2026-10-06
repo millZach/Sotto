@@ -8,7 +8,7 @@ import { SubagentsStore } from './subagentsStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
 /** Pull request's word on the rail is T3's short one, the one its Git action says (Create PR, View PR); the tile is too narrow for two words. */
-export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'pull-request', label: 'PR' }, { id: 'agents', label: 'Agents' }] as const
+export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'iphone', label: 'iPhone' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'pull-request', label: 'PR' }, { id: 'agents', label: 'Agents' }] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 const TOOLS_PANEL_DEFAULT_WIDTH = 600
@@ -118,6 +118,15 @@ export class ToolsPanelStore {
   showPullRequest(threadId: string): void {
     const pinned = this.chrome.pinnedThreadId
     this.update({ open: true, surface: 'pull-request', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })
+  }
+
+  /**
+   * Opens Tools > iPhone for the thread whose phone the player shows, as its **Show in Tools** asks. A panel pinned
+   * to another thread is pinned to this one instead, since the press names this thread's phone.
+   */
+  showPhone(threadId: string): void {
+    const pinned = this.chrome.pinnedThreadId
+    this.update({ open: true, surface: 'iphone', ...(pinned !== null && pinned !== threadId ? { pinnedThreadId: threadId } : {}) })
   }
 
   /** Closing moved focus to the toggle; a toggle mounted shortly after (the panes re-laid out) takes it if nothing else has. */

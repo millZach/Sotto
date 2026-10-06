@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -14,6 +14,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { HostSetup, type HostSetupThreads } from '../../src/main/hosts/hostSetup'
 import { HOST_SETUP_MCP_SERVER, HostSetupToolServer, type HostSetupToolHandlers } from '../../src/main/hosts/hostSetupTools'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
+import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { SshFailure, SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
 import type { ProviderId } from '../../src/shared/agents'
@@ -66,7 +67,7 @@ describe.each(factories)('%s host setup tools', (provider, factory) => {
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch!.params!.frame as { args: string[] }).args
-      const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]!) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> }
+      const config = JSON.parse(await readFile(args[args.indexOf('--mcp-config') + 1]!, 'utf8')) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> }
       const entry = config.mcpServers[HOST_SETUP_MCP_SERVER]!
       // Sotto's own tools carry no native prompt; adding asks in the thread itself.
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
@@ -117,7 +118,7 @@ describe('grok host setup admission', () => {
 describe('the host setup tool over Add host', () => {
   /** A scripted SSH launcher: each connect fails with the next failure, or reaches the real headless host. */
   class ScriptedSsh extends SshHostLauncher {
-    constructor(private readonly remote: Awaited<ReturnType<typeof startHeadlessHost>>, private readonly failures: Error[], private readonly connects: SshHostConfiguration[]) { super() }
+    constructor(private readonly remote: Awaited<ReturnType<typeof startHeadlessHost>>, private readonly failures: Error[], private readonly connects: SshHostConfiguration[], private readonly dataDirectory: string) { super() }
     override async connect(configuration: SshHostConfiguration, callbacks: SshCallbacks = {}): Promise<SshHostConnection> {
       this.connects.push(configuration)
       callbacks.onStep?.('sign-in'); callbacks.onStep?.('install')
@@ -126,7 +127,7 @@ describe('the host setup tool over Add host', () => {
       callbacks.onStep?.('start')
       const hostId = this.remote.descriptor!.hostId
       return { url: 'http://127.0.0.1:' + this.remote.descriptor!.port, hostId, owned: true, route: { hostname: 'forge', identityFiles: [] }, close: async () => undefined,
-        showHostPairingCode: async () => ({ ...this.remote.pairing.issuePairingCode(), hostId }), revokeClient: async () => true, stopHost: async () => true, updateHost: async () => { throw new Error('Nothing here updates a host.') } }
+        showHostPairingCode: async () => ({ ...this.remote.pairing.issuePairingCode(), hostId }), ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(this.dataDirectory, hostId, clientId), revokeClient: async () => true, hostAdminToken: async () => { throw new Error("Nothing here administers phone access.") }, stopHost: async () => true, updateHost: async () => { throw new Error('Nothing here updates a host.') }, boot: async () => { throw new Error('Nothing here starts a host at boot.') } }
     }
     override async disconnect(): Promise<void> { /* nothing to close */ }
   }
@@ -141,7 +142,7 @@ describe('the host setup tool over Add host', () => {
     // The first connect is the user's own Add it on another machine, which fails; the setup's first check follows.
     const failures: Error[] = [new SshFailure('auth-failed'), new SshFailure('node-missing')], connects: SshHostConfiguration[] = []
     const hosts = new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: true, localHostEnabled: () => true, restart: () => undefined,
-      launcher: () => new ScriptedSsh(remote, failures, connects) })
+      launcher: () => new ScriptedSsh(remote, failures, connects, join(root, 'remote')) })
     await hosts.start(); cleanup.push(() => hosts.close())
     const threads: HostSetupThreads = {
       choice: () => ({ models: [{ id: 'claude:opus', name: 'Claude Opus 5.5', provider: 'Claude Code' }], modelId: 'claude:opus' }),

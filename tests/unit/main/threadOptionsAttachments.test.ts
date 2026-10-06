@@ -55,7 +55,7 @@ async function controlFixture() {
   const host = new FixtureHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
   const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   let control = create(); disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
   return { root, host, get control() { return control }, async restart() { control.dispose(); control = create(); await control.start() } }

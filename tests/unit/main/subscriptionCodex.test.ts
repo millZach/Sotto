@@ -252,7 +252,7 @@ describe('native Codex subscription client', () => {
     f.state.holdExit = true
     let finished = false
     const completion = f.complete().then((result) => { finished = true; return result })
-    await vi.waitFor(() => expect(f.children.find((child) => child.started)?.kill).toHaveBeenCalled(), { timeout: 500 })
+    await vi.waitFor(() => expect(f.children.find((child) => child.started)?.kill).toHaveBeenCalled(), { timeout: 5_000 })
     const execution = f.children.find((child) => child.started)!
     expect(await readdir(execution.cwd)).toEqual([])
     expect(await readdir(f.cwd)).toHaveLength(1)

@@ -173,7 +173,7 @@ describe('theme editor inspector and resizing', () => {
 describe('the spotlight and colour readers do not wake each other', () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext
   const highlight = vi.mocked(inspector.highlightThemeRoleUsage)
-  const wait = (ms: number) => act(() => new Promise<void>(resolve => { setTimeout(resolve, ms) }))
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
   beforeEach(() => {
     probe.real = true
@@ -185,6 +185,7 @@ describe('the spotlight and colour readers do not wake each other', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     probe.real = false
     HTMLCanvasElement.prototype.getContext = originalGetContext
     document.documentElement.removeAttribute('style')
@@ -197,7 +198,7 @@ describe('the spotlight and colour readers do not wake each other', () => {
   }
 
   it('stays idle with a drawing on screen, yet refreshes once for a real page change', async () => {
-    const user = userEvent.setup()
+    vi.useFakeTimers()
     const settings: AppSettings = { ...DEFAULT_SETTINGS }
     render(
       <>
@@ -206,18 +207,18 @@ describe('the spotlight and colour readers do not wake each other', () => {
       </>,
     )
     act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
-    await user.click(screen.getByRole('button', { name: 'Show where Background is used' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show where Background is used' }))
 
     let probes = 0
     const counter = new MutationObserver(records => {
       for (const record of records) for (const node of record.addedNodes) if (node instanceof Element && node.hasAttribute(THEME_TOKEN_PROBE_ATTRIBUTE)) probes += 1
     })
     counter.observe(document.body, { childList: true, subtree: true })
-    await wait(100)
+    await advance(100)
     const settled = highlight.mock.calls.length
     probes = 0
     // Before the fix each refresh's sentinels made the palette probe, whose span scheduled the next refresh.
-    await wait(1300)
+    await advance(1300)
     expect(highlight.mock.calls.length).toBe(settled)
     expect(probes).toBe(0)
 
@@ -232,7 +233,7 @@ describe('the spotlight and colour readers do not wake each other', () => {
       document.body.append(spotlight)
       spotlight.remove()
     })
-    await wait(700)
+    await advance(700)
     expect(highlight.mock.calls.length).toBe(settled)
 
     // A streaming reply growing the page refreshes the count, once.
@@ -241,13 +242,15 @@ describe('the spotlight and colour readers do not wake each other', () => {
       reply.setAttribute('data-test-page-change', '')
       document.body.append(reply)
     })
-    await waitFor(() => expect(highlight.mock.calls.length).toBe(settled + 1))
-    await wait(1100)
+    await advance(700)
+    expect(highlight.mock.calls.length).toBe(settled + 1)
+    await advance(1100)
     expect(highlight.mock.calls.length).toBe(settled + 1)
     counter.disconnect()
   })
 
   it('reads the palette again when the theme really changes, not when a probe puts a colour back', async () => {
+    vi.useFakeTimers()
     render(<DiagramReader />)
     const root = document.documentElement
     const reads = vi.spyOn(window, 'getComputedStyle')
@@ -255,12 +258,15 @@ describe('the spotlight and colour readers do not wake each other', () => {
       root.style.setProperty('--tt-text', '#01fea7', 'important')
       root.style.removeProperty('--tt-text')
     })
+    await advance(200)
     expect(reads).not.toHaveBeenCalled()
 
     await act(async () => { root.style.setProperty('--tt-text', '#123456') })
+    await advance(150)
     expect(screen.getByRole('status', { name: 'Diagram text' })).toHaveTextContent('#123456')
     reads.mockClear()
     await act(async () => { root.dataset.theme = 'light' })
+    await advance(150)
     expect(reads).toHaveBeenCalled()
     reads.mockRestore()
     delete root.dataset.theme

@@ -1,4 +1,4 @@
-﻿# Phase 3 Windows package verification
+# Phase 3 Windows package verification
 
 The final local Windows application directory is [Sotto.exe](../../release/phase-three-final-707b253/win-unpacked/Sotto.exe), packaged from source `707b2535f6325c083ee85fc2230a8c58cb92ed21`. The complete strict verifier passed on the isolated checkout's package. All 259 files in the delivery copy match that verified directory byte for byte. [Verifier result](phase-3-packaged-windows.json), [copy hashes](phase-3-package-copy.json).
 

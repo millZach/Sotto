@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { APP_MAXIMIZED, WIDGET_VISIBILITY } from '../../../src/shared/channels'
+import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, WIDGET_VISIBILITY } from '../../../src/shared/channels'
 import type { WidgetPresentation } from '../../../src/shared/contracts'
 import {
   parseDevelopmentRendererSources,
@@ -14,7 +14,7 @@ import {
 import type { StoredWidgetPlacement } from '../../../src/main/storage/widgetPlacementRepository'
 import { platformProfile } from '../../../src/main/platformProfile'
 
-type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed' | 'moved'
+type WindowEvent = 'maximize' | 'unmaximize' | 'close' | 'closed' | 'moved' | 'hide' | 'minimize'
 
 class FakeWindow implements BrowserWindowLike {
   readonly webContents = {
@@ -39,10 +39,15 @@ class FakeWindow implements BrowserWindowLike {
   readonly isMaximized = vi.fn(() => false)
   readonly minimize = vi.fn()
   readonly isMinimized = vi.fn(() => false)
+  readonly isFullScreen = vi.fn(() => false)
+  readonly isVisible = vi.fn(() => true)
   readonly restore = vi.fn()
   readonly showInactive = vi.fn()
   readonly setAlwaysOnTop = vi.fn()
   readonly setVisibleOnAllWorkspaces = vi.fn()
+  readonly setBackgroundColor = vi.fn()
+  readonly setBackgroundMaterial = vi.fn()
+  readonly setVibrancy = vi.fn()
   bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
   readonly setBoundsCalls: Rectangle[] = []
   readonly setPositionCalls: Array<readonly [number, number]> = []
@@ -160,7 +165,6 @@ function createHarness(
     },
     platform: 'win32',
     chrome: platformProfile('win32'),
-    dock: null,
     preloadPath: 'C:/Sotto/out/preload/index.js',
     mainHtmlPath: 'C:/Sotto/out/renderer/index.html',
     widgetHtmlPath: 'C:/Sotto/out/renderer/widget.html',
@@ -319,6 +323,63 @@ describe('WindowManager construction', () => {
     ])
   })
 
+  it('opens a frosted main window clear over acrylic and tells only its renderer that it can frost', async () => {
+    const { manager, options } = createHarness({ windowFrost: 'acrylic', frostedWindow: () => true })
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).toMatchObject({ backgroundColor: '#00000000', backgroundMaterial: 'acrylic' })
+    expect(options[0]?.webPreferences.additionalArguments).toContain('--sotto-window-frost')
+    expect(options[1]?.webPreferences.additionalArguments).not.toContain('--sotto-window-frost')
+  })
+
+  it('keeps the black window where the user has not asked for frost, still telling the renderer it could', async () => {
+    const { manager, options } = createHarness({ windowFrost: 'acrylic', frostedWindow: () => false })
+
+    await manager.createMainWindow()
+
+    expect(options[0]).toMatchObject({ backgroundColor: '#000000' })
+    expect(options[0]).not.toHaveProperty('backgroundMaterial')
+    expect(options[0]?.webPreferences.additionalArguments).toContain('--sotto-window-frost')
+  })
+
+  it('never frosts where the system has no material, whatever the setting says', async () => {
+    const { manager, options, windows } = createHarness({ windowFrost: null, frostedWindow: () => true })
+
+    await manager.createMainWindow()
+    manager.setMainWindowFrosted(true)
+
+    expect(options[0]).toMatchObject({ backgroundColor: '#000000' })
+    expect(options[0]?.webPreferences.additionalArguments).not.toContain('--sotto-window-frost')
+    expect(windows[0]?.setBackgroundMaterial).not.toHaveBeenCalled()
+    expect(windows[0]?.setBackgroundColor).not.toHaveBeenCalled()
+  })
+
+  it('turns acrylic on and off in place when the setting changes', async () => {
+    const { manager, windows } = createHarness({ windowFrost: 'acrylic', frostedWindow: () => false })
+    await manager.createMainWindow()
+
+    manager.setMainWindowFrosted(true)
+    expect(windows[0]?.setBackgroundMaterial).toHaveBeenLastCalledWith('acrylic')
+    expect(windows[0]?.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+
+    manager.setMainWindowFrosted(false)
+    expect(windows[0]?.setBackgroundMaterial).toHaveBeenLastCalledWith('none')
+    expect(windows[0]?.setBackgroundColor).toHaveBeenLastCalledWith('#000000')
+  })
+
+  it('uses window vibrancy on macOS', async () => {
+    const { manager, options, windows } = createHarness({ platform: 'darwin', chrome: platformProfile('darwin'), windowFrost: 'vibrancy', frostedWindow: () => true })
+
+    await manager.createMainWindow()
+    expect(options[0]).toMatchObject({ backgroundColor: '#00000000', vibrancy: 'under-window', visualEffectState: 'followWindow' })
+
+    manager.setMainWindowFrosted(false)
+    expect(windows[0]?.setVibrancy).toHaveBeenLastCalledWith(null)
+    expect(windows[0]?.setBackgroundMaterial).not.toHaveBeenCalled()
+  })
+
   it('passes the complete non-focusing widget options to the real constructor seam', async () => {
     const { manager, options } = createHarness()
 
@@ -466,10 +527,88 @@ describe('WindowManager construction', () => {
     await manager.createWidgetWindow()
 
     expect(options[0]?.focusable).toBe(false)
+    // A regular app's ordinary window cannot join another app's full-screen desktop; a panel can.
+    expect(options[0]?.type).toBe('panel')
     expect(windows[0]!.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
       visibleOnFullScreen: true,
+      skipTransformProcessType: true,
     })
+  })
+
+  it('keeps the Windows widget an ordinary window and the main window never a panel', async () => {
+    const { manager, options } = createHarness()
+
+    await manager.createMainWindow()
+    await manager.createWidgetWindow()
+
+    expect(options[0]).not.toHaveProperty('type')
+    expect(options[1]).not.toHaveProperty('type')
+  })
+
+  it('does not reassert the macOS widget level while the widget is already visible', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.showWidget()
+    const widget = windows[0]!
+    expect(widget.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+    widget.setAlwaysOnTop.mockClear()
+
+    await manager.showWidget()
+
+    expect(widget.setAlwaysOnTop).not.toHaveBeenCalled()
+  })
+
+  it('leaves a visible full-screen main window where it is when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.show.mockClear()
+    main.focus.mockClear()
+
+    await manager.showMainFromActivation()
+
+    expect(main.show).not.toHaveBeenCalled()
+    expect(main.focus).not.toHaveBeenCalled()
+  })
+
+  it('still raises a full-screen main window when show is asked for directly', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+
+    await manager.showMain()
+
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
+  })
+
+  it('restores a minimized full-screen main window when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.isMinimized.mockReturnValue(true)
+
+    await manager.showMainFromActivation()
+
+    expect(main.restore).toHaveBeenCalledOnce()
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
+  })
+
+  it('opens a hidden full-screen main window when the app activates', async () => {
+    const { manager, windows } = createHarness(darwinOverrides())
+    await manager.createMainWindow()
+    const main = windows[0]!
+    main.isFullScreen.mockReturnValue(true)
+    main.isVisible.mockReturnValue(false)
+
+    await manager.showMainFromActivation()
+
+    expect(main.show).toHaveBeenCalledOnce()
+    expect(main.focus).toHaveBeenCalledOnce()
   })
 
   it('leaves workspace spanning alone where the profile does not ask for it', async () => {
@@ -1247,6 +1386,21 @@ describe('WindowManager lifecycle', () => {
     expect(windows).toHaveLength(2)
   })
 
+  it('notifies the main renderer when its native window hides or minimizes', async () => {
+    const { manager, windows } = createHarness()
+    await manager.createWindows()
+    const main = windows[0]!
+    const widget = windows[1]!
+    main.emit('hide')
+    main.emit('minimize')
+    expect(main.webContents.send.mock.calls.filter(([channel]) => channel === APP_WINDOW_HIDDEN)).toEqual([
+      [APP_WINDOW_HIDDEN, null], [APP_WINDOW_HIDDEN, null],
+    ])
+    expect(widget.webContents.send).not.toHaveBeenCalledWith(APP_WINDOW_HIDDEN, null)
+    main.emit('closed')
+    expect(main.removedListeners).toEqual(expect.arrayContaining(['hide', 'minimize']))
+  })
+
   it('toggles only the main window and publishes native maximize changes', async () => {
     const { manager, windows } = createHarness()
     await manager.createWindows()
@@ -1298,62 +1452,8 @@ describe('WindowManager lifecycle', () => {
     )
   })
 
-  it('brackets main-window visibility with dock presence', async () => {
-    const events: string[] = []
-    const dock = {
-      show: vi.fn(() => {
-        events.push('dock:show')
-      }),
-      hide: vi.fn(() => {
-        events.push('dock:hide')
-      }),
-    }
-    const { manager, windows } = createHarness({ dock }, (window) => {
-      window.show.mockImplementation(() => {
-        events.push('window:show')
-      })
-      window.hide.mockImplementation(() => {
-        events.push('window:hide')
-      })
-    })
-
-    await manager.showMain()
-    manager.hideMain()
-    await manager.showMain()
-    windows[0]!.emit('close')
-
-    expect(events).toEqual([
-      'dock:show',
-      'window:show',
-      'window:hide',
-      'dock:hide',
-      'dock:show',
-      'window:show',
-      'window:hide',
-      'dock:hide',
-    ])
-  })
-
-  it('keeps showing and hiding the main window where there is no runtime dock', async () => {
-    const { manager, windows } = createHarness({ dock: null })
-
-    await manager.showMain()
-    manager.hideMain()
-
-    expect(windows[0]!.show).toHaveBeenCalledOnce()
-    expect(windows[0]!.hide).toHaveBeenCalledOnce()
-  })
-
-  it('contains a failing dock so window visibility still changes', async () => {
-    const dock = {
-      show: vi.fn(() => {
-        throw new Error('dock unavailable')
-      }),
-      hide: vi.fn(() => {
-        throw new Error('dock unavailable')
-      }),
-    }
-    const { manager, windows } = createHarness({ dock })
+  it('shows and hides the main window', async () => {
+    const { manager, windows } = createHarness()
 
     await manager.showMain()
     manager.hideMain()
@@ -2320,7 +2420,7 @@ describe('WindowManager lifecycle', () => {
 
     expect(windows[0]!.destroy).toHaveBeenCalledOnce()
     expect(windows[1]!.destroy).toHaveBeenCalledOnce()
-    expect(windows[0]!.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'close', 'closed'])
+    expect(windows[0]!.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed'])
     expect(windows[0]!.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(windows[1]!.removedListeners).toStrictEqual(['closed', 'moved'])
     expect(windows[1]!.webContents.removeListener).toHaveBeenCalledTimes(3)
@@ -2396,7 +2496,7 @@ describe('WindowManager lifecycle', () => {
     crashed.emitRenderProcessGone()
 
     expect(crashed.destroy).toHaveBeenCalledOnce()
-    expect(crashed.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'close', 'closed'])
+    expect(crashed.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed'])
     expect(crashed.webContents.removeListener).toHaveBeenCalledTimes(3)
     expect(crashed.removeRenderProcessGoneListener).toHaveBeenCalledOnce()
     expect(manager.getMainWebContents()).toBeNull()

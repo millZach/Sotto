@@ -10,6 +10,21 @@ export function parseHostEntityKey(key: string): { hostId: string; id: string } 
   return match ? { hostId: match[1]!, id: match[2]! } : null
 }
 
+/**
+ * Whether a tool request names its thread by a client key. The window's bridge hands this computer's own threads to
+ * main by their own IDs, so a key that reaches main names a thread on a paired host, which only that host can read.
+ */
+export function namesHostThread(request: unknown): boolean {
+  return request !== null && typeof request === 'object' && 'threadId' in request && typeof request.threadId === 'string' && parseHostEntityKey(request.threadId) !== null
+}
+
+/** Local project defaults use the host's own ID; remote defaults keep their client routing key. */
+export function projectWorkingCopyDefaultKey(state: AgentState | null | undefined, projectId: string): string {
+  const localHostId = state?.connections ? state.connections.find(host => host.kind === 'local')?.hostId : state?.hostId
+  const key = parseHostEntityKey(projectId)
+  return key && key.hostId === localHostId ? key.id : projectId
+}
+
 const references = new Set(['threadId', 'projectId', 'activeThreadId', 'activeProjectId', 'draftThreadId'])
 const referenceLists = new Set(['threadIds', 'busyThreadIds'])
 // These are provider observations or user content, never client routing references.

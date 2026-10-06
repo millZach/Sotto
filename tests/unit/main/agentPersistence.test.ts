@@ -25,10 +25,7 @@ async function fixture() {
   await credentials.load()
   const host = new E2EAgentHost()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: {
-      status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-      action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-    } })
+  })
   controls.push(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
@@ -154,5 +151,4 @@ describe('coordinator persistence', () => {
     expect(f.control.get().configuration.speak).toBe(initial)
     expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { speak: boolean } }).configuration.speak).toBe(initial)
   })
-
 })

@@ -46,7 +46,7 @@ async function fixture(schedule: PublishScheduler = immediatePublishScheduler) {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   controls.add(control)
   await control.start(); await control.command({ type: 'connect' })
   host.event({ type: 'manual', threadId: 'workshop', text: 'Pick the palette' })

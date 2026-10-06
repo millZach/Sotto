@@ -7,6 +7,7 @@ export interface ReleasePlatformProfile {
   readonly executablePath: (target: string) => string
   readonly resourcesPath: (target: string) => string
   readonly licenseRoot: (target: string) => string
+  readonly smokeArgs: readonly string[]
   readonly smokeEnvironment: (profileRoot: string) => Promise<Readonly<Record<string, string>>>
   readonly openDistributable: <T>(
     distributablePath: string,

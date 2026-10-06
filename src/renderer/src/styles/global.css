@@ -1,6 +1,7 @@
 @import './tokens.css';
 @import './fonts.css';
 @import './glass.css';
+@import './frost.css';
 
 /* Sotto management window — "Crossing".
 
@@ -716,6 +717,10 @@ textarea.tt-input {
 .onboarding-ready svg {
   flex: 0 0 auto;
   color: var(--tt-success);
+}
+
+.onboarding-microphone-picker {
+  margin: 0 0 16px;
 }
 
 /* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */

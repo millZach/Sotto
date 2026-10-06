@@ -1,5 +1,7 @@
 # Sotto membership service contract
 
+Historical evidence: #610 removed the membership implementation and its tests. Membership and paid-launch statements below no longer describe Sotto.
+
 The desktop client is implemented. A production identity service, billing account, product/price, hosted pages, and webhook deployment have **not** been configured. This document describes the endpoint the client expects; it is not evidence of a running subscription service or completed billing validation.
 
 The installed application keeps free dictation available without an account. Any build with no membership endpoint, packaged or unpackaged, displays **Private beta** and allows agent actions; that state is not a paid entitlement. (Originally, packaged builds without an endpoint had free access only; that locked agents out of installed builds before the service existed.) Provider usage is billed through the user's chosen provider access and is not included in Sotto membership.

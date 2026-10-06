@@ -9,6 +9,7 @@ import {
   type HistoryEntry,
 } from '../../shared/history'
 import { AtomicJsonStore } from './atomicJsonStore'
+import { retryWindowsFileOperation } from './windowsFileRetry'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 
 const historySchema = z.array(historyEntrySchema)
@@ -21,6 +22,7 @@ export interface HistoryRepositoryOptions {
   now?: () => number
   store?: AtomicJsonStore<HistoryEntry[]>
   onRecovery?: (notice: RecoveryNotice) => void
+  log?: (event: 'history-temp-cleanup-failed') => void
 }
 
 export interface AddHistoryOptions {
@@ -69,7 +71,7 @@ export class HistoryRepository {
 
   constructor(
     private readonly filePath: string,
-    options: HistoryRepositoryOptions = {},
+    private readonly options: HistoryRepositoryOptions = {},
   ) {
     this.store =
       options.store ??
@@ -81,6 +83,10 @@ export class HistoryRepository {
         undefined,
         () => options.onRecovery?.({ code: 'HISTORY_RECOVERED' }),
       )
+  }
+
+  initialize(): Promise<void> {
+    return this.enqueueMutation(() => this.removeSiblings(false))
   }
 
   async list(options: { readonly enabled: boolean } = { enabled: true }): Promise<HistoryEntry[]> {
@@ -123,11 +129,7 @@ export class HistoryRepository {
     )
   }
 
-  delete(
-    id: string,
-    options: { readonly enabled: boolean } = { enabled: true },
-  ): Promise<boolean> {
-    if (!options.enabled) return Promise.resolve(false)
+  delete(id: string): Promise<boolean> {
     return this.enqueueMutation(async () => {
       const current = await this.readSorted()
       const remaining = current.filter((entry) => entry.id !== id)
@@ -148,7 +150,7 @@ export class HistoryRepository {
         await this.store.write([])
       }
 
-      await this.removeRecoverySiblings()
+      await this.removeSiblings(true)
     })
   }
 
@@ -161,30 +163,35 @@ export class HistoryRepository {
     return sortEntries(await this.store.read())
   }
 
-  private async removeRecoverySiblings(): Promise<void> {
+  private async removeSiblings(includeRecovery: boolean): Promise<void> {
     const directory = dirname(this.filePath)
     const recoveryPrefix = `${basename(this.filePath)}.corrupt-`
+    const temporaryPrefix = `${basename(this.filePath)}.tmp-`
     let siblingNames: string[]
 
     try {
-      siblingNames = await readdir(directory)
+      siblingNames = await retryWindowsFileOperation(() => readdir(directory))
     } catch (error) {
       if (hasErrorCode(error, 'ENOENT')) {
         return
       }
 
-      throw error
+      if (includeRecovery) throw error
+      this.options.log?.('history-temp-cleanup-failed')
+      return
     }
 
     await Promise.all(
       siblingNames
-        .filter((name) => name.startsWith(recoveryPrefix))
+        .filter((name) => (name.startsWith(temporaryPrefix) && /^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(name.slice(temporaryPrefix.length)))
+          || (includeRecovery && name.startsWith(recoveryPrefix)))
         .map(async (name) => {
           try {
-            await unlink(join(directory, name))
+            await retryWindowsFileOperation(() => unlink(join(directory, name)))
           } catch (error) {
             if (!hasErrorCode(error, 'ENOENT')) {
-              throw error
+              if (includeRecovery) throw error
+              this.options.log?.('history-temp-cleanup-failed')
             }
           }
         }),

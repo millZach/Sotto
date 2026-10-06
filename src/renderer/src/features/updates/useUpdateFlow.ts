@@ -67,7 +67,7 @@ export function useUpdateFlow({ status, checkRequest, check, download, install, 
     const result = await check()
     if (result === null || result.phase.phase === 'unsupported') {
       notify({ tone: 'error', title: 'Could not check for updates', detail: UPDATES_UNSUPPORTED_MESSAGE })
-    } else if (result.phase.phase === 'failed') {
+    } else if (result.phase.phase === 'failed' || (result.phase.phase === 'available' && result.phase.problem !== null)) {
       notify({ tone: 'error', title: 'Could not check for updates', detail: result.phase.problem })
     }
     return result

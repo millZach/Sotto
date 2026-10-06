@@ -4,5 +4,6 @@ export const migrations: readonly { readonly version: number; readonly sql: stri
 export const latestMigrationVersion: number
 export const memoryInsertSql: string
 export const policyInsertSql: string
+export const desktopAnswerSetupSql: string
 
 export function migrateDatabase(db: DatabaseSync): number[]

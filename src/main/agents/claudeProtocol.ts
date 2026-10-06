@@ -1,3 +1,4 @@
+import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
@@ -5,6 +6,10 @@ import { withCliPath } from './cliLookup'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}
+/** The deadline elapsed, but stdin still owns the original bytes. */
+export class ClaudeWritePending extends ClaudeUncertain {
+  constructor(readonly completion: Promise<void>) { super('Claude delivery is uncertain.') }
+}
 /**
  * The CLI answered a control request with an error: it heard the request and did not do it. Unlike a lost or
  * unreadable answer, nothing about the request is unknown, so a caller may try another way.
@@ -13,11 +18,13 @@ export class ClaudeRejected extends Error {}
 // Native user replay and transcript entries include base64 image data. Honor the
 // shared aggregate attachment limit plus room for prompt/protocol metadata.
 export const CLAUDE_MAX_FRAME_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
+const OUTPUT_DRAIN_GRACE_MS = 300
 
 /** Native newline-framed control channel. Deadlines never resend a mutation. */
 export class ClaudeProtocol {
   private readonly child: ChildProcessWithoutNullStreams
   private readonly waiters = new Map<string, { resolve: (value: ClaudeFrame) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private readonly writes = new Set<(error: Error) => void>()
   private ended = false
   private stopping = false
   readonly closed: Promise<void>
@@ -25,11 +32,17 @@ export class ClaudeProtocol {
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
     this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); resolve(); if (!this.stopping) onExit() }))
+    // Let final output drain, then release handles a descendant may still hold.
+    this.child.once('exit', () => {
+      const timer = setTimeout(() => { this.child.stdout.destroy(); this.child.stderr.destroy() }, OUTPUT_DRAIN_GRACE_MS)
+      timer.unref(); this.child.once('close', () => clearTimeout(timer))
+    })
     // The unfinished line is kept as fragments with a running byte count, so a large frame arriving in
     // many chunks costs one pass over each chunk and one join, not a rescan of everything so far.
-    let fragments: string[] = []; let pendingBytes = 0; let stderrBytes = 0
+    let fragments: string[] = []; let pendingBytes = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
+      if (this.ended) return
       pendingBytes += Buffer.byteLength(chunk)
       if (pendingBytes > CLAUDE_MAX_FRAME_BYTES) { fragments = []; this.abort(); return }
       let start = 0
@@ -54,6 +67,8 @@ export class ClaudeProtocol {
           }
           onFrame(frame)
         }
+      } catch {
+        this.abort()
       } finally {
         // Whatever this chunk did not consume stays pending, as the rest of the old buffer did, even
         // when a malformed line or a throwing listener ends the loop early.
@@ -61,8 +76,9 @@ export class ClaudeProtocol {
         else { const rest = chunk.slice(start); fragments = rest ? [rest] : []; pendingBytes = Buffer.byteLength(rest) }
       }
     })
-    this.child.stderr.on('data', (chunk: Buffer) => { stderrBytes += chunk.length; if (stderrBytes > 1024 * 1024) this.abort() })
-    this.child.on('error', () => this.abort()); this.child.stdin.on('error', () => this.abort())
+    const stderrExceeded = stderrRateExceeded()
+    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.abort() })
+    this.child.on('error', () => this.abort()); this.child.stdin.on('error', () => this.abort()); this.child.stdin.on('close', () => this.fail())
   }
   control(request: ClaudeFrame): Promise<ClaudeFrame> {
     const id = randomUUID()
@@ -75,12 +91,19 @@ export class ClaudeProtocol {
     })
   }
   write(frame: ClaudeFrame): Promise<void> {
-    if (this.ended || this.stopping) return Promise.reject(new ClaudeUncertain('Claude is disconnected.'))
+    if (this.ended || this.stopping || this.child.stdin.destroyed) return Promise.reject(new ClaudeUncertain('Claude is disconnected.'))
+    const completion = new Promise<void>((resolve, reject) => {
+      this.writes.add(reject)
+      const finish = (error?: Error | null): void => {
+        this.writes.delete(reject)
+        if (error) reject(new ClaudeUncertain('Claude delivery is uncertain.')); else resolve()
+      }
+      try { this.child.stdin.write(`${JSON.stringify(frame)}\n`, finish) }
+      catch { finish(new Error('Claude stdin write failed.')) }
+    })
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new ClaudeUncertain('Claude delivery is uncertain.')), this.timeout)
-      this.child.stdin.write(`${JSON.stringify(frame)}\n`, error => {
-        clearTimeout(timer); if (error) reject(new ClaudeUncertain('Claude delivery is uncertain.')); else resolve()
-      })
+      const timer = setTimeout(() => reject(new ClaudeWritePending(completion)), this.timeout)
+      void completion.then(() => { clearTimeout(timer); resolve() }, error => { clearTimeout(timer); reject(error) })
     })
   }
   stop(): void {
@@ -92,6 +115,8 @@ export class ClaudeProtocol {
   private abort(): void { this.fail(); this.child.kill() }
   private fail(): void {
     this.ended = true
+    for (const reject of this.writes) reject(new ClaudeUncertain('Claude is disconnected.'))
+    this.writes.clear()
     for (const waiter of this.waiters.values()) { clearTimeout(waiter.timer); waiter.reject(new ClaudeUncertain('Claude disconnected before acknowledging the request.')) }
     this.waiters.clear()
   }

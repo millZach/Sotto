@@ -9,7 +9,11 @@ import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
 import { devinFixture } from '../fixtures/devinFixture'
 
-describeAdapterContract('Devin ACP', session => devinFixture(undefined, undefined, undefined, session))
+// devin.ts is #770's to change; it marks no send stage yet.
+describeAdapterContract('Devin ACP', async session => {
+  const f = await devinFixture(undefined, undefined, undefined, session)
+  return { ...f, skips: { sendStages: 'Devin does not yet mark the prompt written or acknowledged.' } }
+})
 
 describe('Devin dispatch and decision boundaries', () => {
   let f: Awaited<ReturnType<typeof devinFixture>>
@@ -39,6 +43,24 @@ describe('Devin dispatch and decision boundaries', () => {
     const nativeIds = prompts.map(record => (record.params?._meta as Record<string, unknown>)['cognition.ai/clientMessageId'])
     expect(new Set(nativeIds).size).toBe(2)
     expect(await readFile(join(f.root, 'devin-threads.json'), 'utf8')).not.toContain('Identical synthetic prompt')
+  })
+
+  it('receives multi-megabyte output live and reopens the same thread through native replay', async () => {
+    const reply = 'x'.repeat(4 * 1024 * 1024)
+    await send()
+    const native = await f.realId(threadId)
+    await f.driver.completeTurn(threadId, reply)
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    expect((await thread()).messages.find(message => message.role === 'assistant')?.text === reply).toBe(true)
+    // The next fixture process must replay saved history, not repeat the completion command.
+    await rm(join(f.root, `control-${native}.json`))
+
+    f = await f.driver.restart(); f.host.observeThreads([threadId]); await f.host.connect()
+    await f.host.refreshThread(threadId)
+    expect((await thread()).status).toBe('idle')
+    expect((await thread()).messages.find(message => message.role === 'assistant')?.text === reply).toBe(true)
+    expect(await f.realId(threadId)).toBe(native)
+    expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
   })
 
   it('rejects duplicate permission answers without sending another native decision', async () => {

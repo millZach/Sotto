@@ -107,3 +107,48 @@ of one host's shell to both windows costs one where it used to cost four.
 
 The draft save's reply fell from 542 KB to 2.3 KB. The preload's parse of it fell from about 2.5 ms to 0.04 ms
 and its copy from about 2.2 ms to 0.015 ms. See [the measurement](../perf/2026-09-26-command-receipt.md).
+
+### October 3 amendment: a paired phone gets the catalog once per revision
+
+Issue #699. This changes the Consequences above, which left the remote host socket protocol untouched. Every
+shell the socket listener sends a client carried the whole model catalog: on the owner's 753-model install,
+765 KB of a 1.1 MB shell, written again on every 50 ms publish while any thread worked, over Tailscale to the
+iPhone, which decoded all of it each time.
+
+**A client that accepts the `model-catalog-revision` host feature is sent the catalog once per revision per
+connection.** Protocol version 1 is frozen (ADR-0025), so this is a host feature the client asks for in hello's
+`accepts`, offered by both the headless host and the desktop's phone listener. To such a client every shell
+names the catalog's revision in a new optional field, `host.modelsRevision`, and carries `host.models` only when
+no frame on this connection has carried that revision whole yet. The rule is the same for hello, a `shell` read,
+a command's answer and every shell push. The shape differs from the window broadcast's on purpose: there
+`models` becomes `{ revision, omitted: true }`, but on the socket `models` keeps the one meaning v1 gives it, a
+list, and is left out beside the revision. `docs/host-protocol.md` has the rule as a client reads it.
+
+The revisions come from the same machinery as the broadcast's. `ModelCatalogRevisions` is the counter and
+content comparison `AgentStateBroadcaster` already used, now its own class in `agentStateBroadcast.ts`, which
+the broadcaster keeps using. Each socket listener has one, so a revision names one catalog for as long as the
+listener runs. What each connection was sent is its own: the revision a written frame last carried whole,
+recorded only once `deliver()` reports the frame itself went, not a `too_large` error in its place. The listener
+encodes a shell for its connection only as it writes it, so that record follows the order the frames go out
+in. Hello starts the record afresh, and a new connection starts with nothing recorded.
+
+A command's answer follows the same rule rather than always naming the catalog, as a window's receipt does.
+A window recovers through `AGENT_GET`; a socket client has no read that ignores what it was sent, because a
+`shell` read follows this rule too. Its recovery is a new connection. The iPhone keeps the last catalog its
+connection carried whole and puts it back into every shell that names that revision, in `HostConnection`, the
+one place frames enter the app, so every reader still sees a whole catalog. It keeps it in the order frames
+arrive: a reply's catalog is read with its envelope as it arrives, and each reply is matched with the catalog
+that was current then, however much later its caller decodes it. A shell naming a revision the phone does not
+hold should not happen; the phone then drops the connection and connects again, and the new hello carries the
+catalog whole, rather than showing the computer with no models.
+
+A client that does not accept the feature is sent exactly what it was sent before. That includes every iPhone
+build from before this change and the desktop's own host client (`SocketHostService`), which does not ask for
+it: a remote host's catalog still reaches the desktop whole, and the broadcast then spares the windows the
+repeat as it always has. Asking for it there is left for later.
+
+A repeat shell to the phone fell from 692,553 bytes to 7,173 bytes on a synthetic 753-model catalog. Comparing
+the catalog costs the listener about as much per publish as writing it out used to, about 1.5 to 2 ms for each
+client that accepts the feature, so the saving is on the wire and on the phone, not in the listener. See
+[the measurement](../perf/2026-10-03-phone-model-catalog.md). It takes effect with an iPhone build that asks
+for the feature.

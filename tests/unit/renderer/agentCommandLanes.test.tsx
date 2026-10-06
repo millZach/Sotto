@@ -29,7 +29,7 @@ async function laneFixture(holdReply: (request: AgentCommand) => boolean = () =>
   const host = new E2EAgentHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   await credentials.load(); await control.start(); await control.command({ type: 'connect' })
   let release!: () => void
   const gate = new Promise<void>(done => { release = done })

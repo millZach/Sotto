@@ -4,6 +4,7 @@ import { DEFAULT_HOTKEY } from './constants'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
+  FROST_SEE_THROUGH,
   GLASS_OPACITY,
   customThemesSchema,
   isThemeId,
@@ -29,7 +30,7 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
- * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0019), the same four
+ * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0041), the same four
  * T3 Code offers. `afterDays` counts idle days since the thread's last activity; `null` is never.
  * `unchanged` means the folder's commits are all in the repository's default branch already;
  * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
@@ -109,6 +110,10 @@ export interface AppSettings {
   appearanceContrast: number
   /** How solid dialogs, menus and floating panels are, 40-100 percent. */
   glassOpacity: number
+  /** Let the desktop show through the main window, blurred, where the system can draw it (ADR-0048). */
+  frostedWindow: boolean
+  /** How much of the desktop shows through the frosted room, 10-80 percent. */
+  frostSeeThrough: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
   /** Themes the user created, duplicated or imported, already canonical. */
@@ -125,7 +130,7 @@ export interface AppSettings {
   /** Explicit project overrides; an absent key inherits the global default. */
   projectThreadWorkingCopyDefaults: Record<string, 'shared' | 'independent'>
   /**
-   * When Sotto may reclaim a thread's worktree on its own (ADR-0019). Every rule
+   * When Sotto may reclaim a thread's worktree on its own (ADR-0041). Every rule
    * is off by default, and none of them ever removes uncommitted work.
    */
   worktreeCleanup: WorktreeCleanupRules
@@ -219,6 +224,12 @@ export interface AppSettings {
   /** This computer's name as phones show it. Empty uses the Tailscale machine name, or the computer's own. */
   phoneAccessName: string
   /**
+   * Host-local, read only by a headless host (ADR-0053): Tailscale Serve carries the host's tailnet listener for paired
+   * desktops' tailnet connections while this or `phoneAccess` is on. The host's administrative route sets it; nothing on
+   * a desktop does, so it is not on the settings allow-list.
+   */
+  tailnetConnections: boolean
+  /**
    * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
    * widget's voice controls and assignment) is hidden for the beta. Off keeps
    * every one of those surfaces out of the window; dictation is unaffected.
@@ -230,11 +241,17 @@ export interface AppSettings {
    * the beta; the store and its code stay in place.
    */
   memoryEnabled: boolean
+  /** The cloud iPhone's (ADR-0047) monthly minute cap, about run.cloud's free $15 at its default. */
+  cloudIphoneMonthlyMinutes: number
+  /** Minutes of neither an agent action nor the user's input before a cloud iPhone session ends (ADR-0047). */
+  cloudIphoneIdleMinutes: number
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup'>
+  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup'>
 > & {
+  /** Merge only the supplied cleanup rules with the latest saved settings. */
+  worktreeCleanup?: Partial<WorktreeCleanupRules>
   /**
    * @deprecated The accent was replaced by themes (ADR-0011). A patch that
    * still carries it is accepted and the value ignored, so an older caller
@@ -251,6 +268,8 @@ const fieldSchemas = {
   darkTheme: z.string().refine(isThemeId),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
+  frostedWindow: z.boolean(),
+  frostSeeThrough: z.number().int().min(FROST_SEE_THROUGH.min).max(FROST_SEE_THROUGH.max).refine(value => value % FROST_SEE_THROUGH.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -309,8 +328,11 @@ const fieldSchemas = {
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
+  tailnetConnections: z.boolean(),
   voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
+  cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
+  cloudIphoneIdleMinutes: z.number().int().min(1).max(60),
 } satisfies { [Key in keyof AppSettings]: z.ZodType<AppSettings[Key]> }
 
 export const settingsSchema = z.object(fieldSchemas)
@@ -326,6 +348,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   darkTheme: DEFAULT_THEME_ID,
   appearanceContrast: APPEARANCE_CONTRAST.default,
   glassOpacity: GLASS_OPACITY.default,
+  // Solid until asked: a see-through window is a look the user picks, never one an upgrade hands them.
+  frostedWindow: false,
+  frostSeeThrough: FROST_SEE_THROUGH.default,
   // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
   effortColor: 'ember',
   customThemes: [],
@@ -397,11 +422,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off by default: nothing listens beyond this computer until the owner turns it on (ADR-0033).
   phoneAccess: false,
   phoneAccessName: '',
+  // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
+  tailnetConnections: false,
   // Off for the beta: the voice coordinator is not ready to ship, so nothing
   // voice-shaped is shown until it is turned on here.
   voiceCoordinatorEnabled: false,
   // Off for the beta: memory does not ship in the first one.
   memoryEnabled: false,
+  // About run.cloud's free $15 a month at its $0.02-a-minute price (ADR-0047).
+  cloudIphoneMonthlyMinutes: 750,
+  cloudIphoneIdleMinutes: 5,
 }
 
 /**
@@ -444,6 +474,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
     glassOpacity: parseField(persisted, 'glassOpacity', defaults),
+    frostedWindow: parseField(persisted, 'frostedWindow', defaults),
+    frostSeeThrough: parseField(persisted, 'frostSeeThrough', defaults),
     effortColor: parseField(persisted, 'effortColor', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
@@ -497,7 +529,10 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
+    tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
     voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
+    cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
+    cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),
   }
 }

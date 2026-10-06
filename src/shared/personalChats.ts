@@ -20,6 +20,12 @@ export const personalChatSchema = agentThreadSchema.omit({ projectId: true, work
   draft: personalDraftSchema, submissions: z.array(personalSubmissionSchema), decisions: z.array(personalDecisionSchema).optional(),
 })
 export type PersonalChat = z.infer<typeof personalChatSchema>
+/** An old uncertain intent remains evidence; checking a still-offered Claude request permits a new choice. */
+export function personalAnswerHeld(chat: PersonalChat, requestId: string): boolean {
+  const decisions = chat.decisions?.filter(decision => decision.requestId === requestId) ?? []
+  return decisions.some(decision => decision.status === 'submitting')
+    || decisions.at(-1)?.status === 'uncertain' && !(chat.providerId === 'claude' && chat.requests.some(request => request.id === requestId && request.answerRetryReady))
+}
 export type PersonalDraft = z.infer<typeof personalDraftSchema>
 export const personalChatStateSchema = z.object({
   selectedChatId: id.nullable(), chats: z.array(personalChatSchema), connected: z.boolean(), connecting: z.boolean(), error: z.string().optional(),

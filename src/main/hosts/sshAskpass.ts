@@ -1,8 +1,57 @@
+import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
+
+const compile = promisify(execFile)
+
+const WINDOWS_HELPER_SOURCE = String.raw`
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Sockets;
+using System.Text;
+using System.Web.Script.Serialization;
+
+class Askpass {
+  static int Main(string[] args) {
+    try {
+      int port;
+      string token = Environment.GetEnvironmentVariable("SOTTO_ASKPASS_TOKEN");
+      if (!Int32.TryParse(Environment.GetEnvironmentVariable("SOTTO_ASKPASS_PORT"), out port)
+          || port < 1 || port > 65535 || String.IsNullOrEmpty(token)) return 1;
+      var json = new JavaScriptSerializer();
+      var utf8 = new UTF8Encoding(false);
+      using (var client = new TcpClient("127.0.0.1", port))
+      using (var stream = client.GetStream())
+      using (var writer = new StreamWriter(stream, utf8))
+      using (var reader = new StreamReader(stream, utf8)) {
+        writer.WriteLine(json.Serialize(new Dictionary<string, object> {
+          { "token", token }, { "prompt", String.Join(" ", args) },
+          { "hint", Environment.GetEnvironmentVariable("SSH_ASKPASS_PROMPT") ?? "" }
+        }));
+        writer.Flush();
+        var input = new StringBuilder();
+        int character;
+        while ((character = reader.Read()) != -1 && character != '\n') {
+          if (input.Length >= 16384) return 1;
+          input.Append((char)character);
+        }
+        if (character == -1) return 1;
+        var reply = json.Deserialize<Dictionary<string, object>>(input.ToString());
+        object answer;
+        if (reply == null || !reply.TryGetValue("answer", out answer) || !(answer is string)) return 1;
+        Console.OutputEncoding = utf8;
+        Console.WriteLine((string)answer);
+        return 0;
+      }
+    } catch { return 1; }
+  }
+}
+`
 
 /**
  * The helper OpenSSH runs through SSH_ASKPASS for a password, a key passphrase or a host-key answer.
@@ -33,7 +82,7 @@ socket.on('error', fail); socket.on('close', fail);
 `
 
 export interface AskpassQuestion {
-  /** OpenSSH's own prompt text. On Windows only its first line arrives: cmd.exe cuts an argument at a line break. */
+  /** OpenSSH's own prompt text. */
   readonly prompt: string
   /**
    * SSH_ASKPASS_PROMPT: `confirm` for a yes-or-no question answered by exit status, `none` for a notice
@@ -60,19 +109,28 @@ export class AskpassBroker {
   private readonly sockets = new Set<Socket>()
   private closed = false
   private constructor(private readonly server: Server, private readonly port: number, private readonly directory: string,
-    private readonly program: string, private readonly node: string, private readonly platform: NodeJS.Platform) {}
+    private readonly program: string) {}
 
   static async start(handler: AskpassHandler, options: { readonly node: string; readonly platform: NodeJS.Platform }): Promise<AskpassBroker> {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-askpass-'))
     try {
-      const script = join(directory, 'askpass.cjs')
-      await writeFile(script, ASKPASS_HELPER_SOURCE, { encoding: 'utf8', mode: 0o600 })
       let program: string
       if (options.platform === 'win32') {
-        // OpenSSH for Windows starts SSH_ASKPASS with CreateProcess, which runs a .cmd but not a script.
-        program = join(directory, 'askpass.cmd')
-        await writeFile(program, '@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"%SOTTO_ASKPASS_NODE%" "%~dp0askpass.cjs" %*\r\n', 'utf8')
+        // OpenSSH starts this executable directly; its arguments stay with the askpass helper.
+        const source = join(directory, 'askpass.cs')
+        program = join(directory, 'askpass.exe')
+        await writeFile(source, WINDOWS_HELPER_SOURCE, 'utf8')
+        const compiler = join(process.env.SystemRoot ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+        // A budget only a hung compiler reaches: csc usually takes a second or two, but a loaded machine (or a virus
+        // scan of the new executable) has held it past 15 seconds, which failed a connect that would have worked.
+        try {
+          await compile(compiler, ['/nologo', '/target:exe', '/reference:System.Web.Extensions.dll', `/out:${program}`, source], { windowsHide: true, timeout: 60_000 })
+        } catch {
+          throw new Error('Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect.')
+        }
       } else {
+        const script = join(directory, 'askpass.cjs')
+        await writeFile(script, ASKPASS_HELPER_SOURCE, { encoding: 'utf8', mode: 0o600 })
         program = join(directory, 'askpass.sh')
         const quote = (value: string): string => `'${value.replace(/'/gu, "'\\''")}'`
         await writeFile(program, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${quote(options.node)} ${quote(script)} "$@"\n`, { encoding: 'utf8', mode: 0o700 })
@@ -82,7 +140,7 @@ export class AskpassBroker {
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.removeListener('error', reject); resolve() }) })
       const address = server.address()
       if (!address || typeof address === 'string') { server.close(); throw new Error('askpass-listen-failed') }
-      const broker = new AskpassBroker(server, address.port, directory, program, options.node, options.platform)
+      const broker = new AskpassBroker(server, address.port, directory, program)
       // Nobody knows the port until an ssh process is given it, so no helper can connect before this.
       server.on('connection', socket => broker.accept(socket, handler))
       return broker
@@ -96,7 +154,6 @@ export class AskpassBroker {
     return {
       SSH_ASKPASS: this.program, SSH_ASKPASS_REQUIRE: 'force',
       SOTTO_ASKPASS_PORT: String(this.port), SOTTO_ASKPASS_TOKEN: token.toString('base64url'),
-      ...(this.platform === 'win32' ? { SOTTO_ASKPASS_NODE: this.node } : {}),
     }
   }
   /** A finished ssh process's token stops working. */
@@ -108,7 +165,7 @@ export class AskpassBroker {
     this.callers.clear()
     for (const socket of this.sockets) socket.destroy()
     await new Promise<void>(resolve => this.server.close(() => resolve()))
-    await rm(this.directory, { recursive: true, force: true }).catch(() => undefined)
+    await rm(this.directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }).catch(() => undefined)
   }
 
   private accept(socket: Socket, handler: AskpassHandler): void {

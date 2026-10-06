@@ -50,7 +50,6 @@ describe('wake acknowledgement in the real application voice session', () => {
       composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
       speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
       credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-      membership: { status: 'beta', label: 'Development beta', expiresAt: null },
     }
     const command = vi.fn(async () => state)
     vi.stubGlobal('sotto', { agents: agentWireBridge({ get: async () => state, onState: () => () => undefined, command }) })

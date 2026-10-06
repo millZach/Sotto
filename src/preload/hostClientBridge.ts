@@ -23,7 +23,15 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     }
     return hostId === undefined ? value : mapHostReferences(value, id => parseHostEntityKey(id) ? id : hostEntityKey(hostId, id))
   }
-  const domains = new Set(['agents', 'terminal', 'terminals', 'browser', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory'])
+  // A remote host's thread has no cloud iPhone here (ADR-0047): wrapped like `browser`, so a host-scoped
+  // thread ID reaching this local bridge is refused the same way.
+  const domains = new Set(['agents', 'terminal', 'terminals', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory'])
+  // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
+  // October 5 amendment): these calls keep another host's key. Every other call naming another host is refused here.
+  const hostReads: Readonly<Record<string, ReadonlySet<string>>> = {
+    files: new Set(['list', 'preview', 'copyPath']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
+  }
+  const elsewhere = (id: string): boolean => { const key = parseHostEntityKey(id); return key !== null && key.hostId !== hostId }
   const wrap = (object: object, domain?: string): object => Object.freeze(Object.fromEntries(Object.entries(object).map(([name, member]) => {
     if (!domain) return [name, domains.has(name) && member && typeof member === 'object' ? wrap(member as object, name) : member]
     if (typeof member !== 'function') return [name, member]
@@ -32,7 +40,7 @@ export function hostClientBridge<T extends object>(bridge: T): T {
         if (typeof arg === 'function') return (value: unknown) => (arg as (value: unknown) => void)(routed && domain === 'agents' && name !== 'onState' ? value : receive(value))
         if (routed && domain === 'agents') return arg
         if (typeof arg === 'string' && domain === 'agents' && (name === 'threadDetail' || name === 'workingCopyOptions')) return decode(arg)
-        const request = mapHostReferences(arg, id => routed && domain === 'requestDrafts' && parseHostEntityKey(id)?.hostId !== hostId ? id : decode(id))
+        const request = mapHostReferences(arg, id => routed && (domain === 'requestDrafts' && parseHostEntityKey(id)?.hostId !== hostId || hostReads[domain]?.has(name) && elsewhere(id)) ? id : decode(id))
         // Attention IDs, unlike follow-up IDs, are keyed globally by the client.
         if (request && typeof request === 'object' && 'type' in request && request.type === 'select-attention' && 'itemId' in request && typeof request.itemId === 'string') return { ...request, itemId: decode(request.itemId) }
         return request

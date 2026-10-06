@@ -8,6 +8,8 @@ import type { SubscriptionAccount, SubscriptionClient } from './subscriptionType
 import { withCliPath } from './cliLookup'
 import { findGrokExecutable } from './grokRpc'
 
+const OUTPUT_DRAIN_GRACE_MS = 300
+
 interface GrokSubscriptionOptions {
   executable?: string
   prefixArgs?: readonly string[]
@@ -226,6 +228,11 @@ class GrokRpc {
 
   constructor(private readonly child: ChildProcessWithoutNullStreams, timeoutMs: number, private readonly limit: number) {
     this.closed = new Promise(resolve => child.once('close', () => { this.stopped = true; this.rejectAll(new Error('Grok closed before returning a reasoning response.')); resolve() }))
+    // Let final output drain, then release handles a descendant may still hold.
+    child.once('exit', () => {
+      const timer = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy() }, OUTPUT_DRAIN_GRACE_MS)
+      timer.unref(); child.once('close', () => clearTimeout(timer))
+    })
     this.timeout = setTimeout(() => this.fail(new Error('Grok reasoning timed out. Check its subscription and connection, then try again.')), timeoutMs)
     child.on('error', () => this.fail(new Error('Could not start the native Grok client.')))
     child.stdin.on('error', () => this.fail(new Error('The native Grok connection closed.')))

@@ -36,6 +36,8 @@ public struct SavedComputer: Codable, Equatable, Sendable {
 /// each computer is the item `computer.<host ID>`. Before many computers there was one item, `host`.
 public enum ComputerStore {
     public static let indexAccount = "computers"
+    /// A damaged original index is preserved; recovered computers use this index instead.
+    public static let recoveredIndexAccount = "computers.recovered"
     public static let legacyAccount = "host"
     public static let pendingAccount = "pending"
     public static func account(_ hostID: String) -> String { "computer." + hostID }

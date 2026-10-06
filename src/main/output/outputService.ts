@@ -22,6 +22,12 @@ export interface OutputServiceDependencies {
   readonly buildPasteInvocation: () => PasteInvocation
 }
 
+interface DeliveryOptions {
+  readonly autoPaste: boolean
+  readonly pasteDelayMs: number
+  readonly restoreWidget?: boolean
+}
+
 export interface SpawnedProcessLike {
   once(event: 'error', listener: (error: Error) => void): SpawnedProcessLike
   once(
@@ -40,6 +46,8 @@ export type SpawnProcess = (
     readonly stdio: 'ignore'
   },
 ) => SpawnedProcessLike
+
+export const PASTE_SETTLE_MS = 150
 
 export const PASTE_PROCESS_TIMEOUT_MS = 5_000
 
@@ -95,20 +103,28 @@ export function createSpawnProcessAdapter(spawn: SpawnProcess): PasteProcessAdap
 }
 
 export class OutputService {
+  private deliveryTail: Promise<void> = Promise.resolve()
+
   constructor(private readonly dependencies: OutputServiceDependencies) {}
 
   async deliver(
     text: string,
-    options: {
-      readonly autoPaste: boolean
-      readonly pasteDelayMs: number
-      readonly restoreWidget?: boolean
-    },
+    options: DeliveryOptions,
   ): Promise<OutputOutcome> {
     if (text.trim().length === 0) {
       return 'empty'
     }
 
+    const snapshot = { ...options }
+    const delivery = this.deliveryTail.then(() => this.deliverImmediately(text, snapshot))
+    this.deliveryTail = delivery.then(() => undefined, () => undefined)
+    return delivery
+  }
+
+  private async deliverImmediately(
+    text: string,
+    options: DeliveryOptions,
+  ): Promise<OutputOutcome> {
     try {
       this.dependencies.clipboard.writeText(text)
     } catch {
@@ -127,9 +143,14 @@ export class OutputService {
       await this.dependencies.widget.hideWidget()
       hidForPaste = true
       await this.dependencies.delay(options.pasteDelayMs)
-      const pasted = await this.dependencies.process.run(
-        this.dependencies.buildPasteInvocation(),
-      )
+      const invocation = this.dependencies.buildPasteInvocation()
+      let pasted: boolean
+      try {
+        pasted = await this.dependencies.process.run(invocation)
+      } finally {
+        // A failed or lost acknowledgement can still follow dispatched input.
+        await this.dependencies.delay(PASTE_SETTLE_MS)
+      }
       return pasted ? 'pasted' : 'copied'
     } catch {
       return 'copied'

@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // Requires the shared tools slot to be mounted (ThreadsView `tools={props => <ToolsPanel {...props} />}` and one
-// ToolsPanelToggle in the focused pane header). Real Files IPC reads real temporary folders; only providers are fixtures.
+// ToolsPanelToggle in the focused pane header). Real Files IPC reads real temporary folders; providers and clipboard output are fixtures.
 const SHOTS = 'test-results/issue74-ui-captures/files'
 
 function crc32(buffer: Buffer): number {
@@ -79,8 +79,7 @@ test('browses real working folders in the shared tools panel, following focus or
   })
   const docs = await project(root, 'docs-site', { 'CHANGELOG.md': '# Changes\n\n1. First\n', 'package.json': '{ "name": "docs-site" }\n' })
   const launched = await launchSotto()
-  const { app, page } = launched
-  const clipboard = await app.evaluate(({ clipboard }) => clipboard.readText())
+  const { page } = launched
   try {
     const ids = await page.evaluate(async folders => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
@@ -108,7 +107,7 @@ test('browses real working folders in the shared tools panel, following focus or
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(page.getByRole('tab', { name: 'Files' })).toBeFocused()
-    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'iPhone', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', workshop)
     const tree = panel.getByRole('tree')
     await expect(tree.getByRole('treeitem')).toHaveText(['assets', 'docs', 'src', 'build.log', 'data.bin', 'notes.txt', 'README.md'])
@@ -137,7 +136,9 @@ test('browses real working folders in the shared tools panel, following focus or
 
     await panel.getByRole('button', { name: 'Copy path of README.md' }).click()
     await expect(panel.getByRole('status').filter({ hasText: 'Path copied' })).toBeVisible()
-    expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(join(workshop, 'README.md'))
+    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+      clipboardText: join(workshop, 'README.md'), pasteAttempts: 0,
+    })
 
     await tree.getByRole('treeitem', { name: 'assets' }).click()
     await tree.getByRole('treeitem', { name: 'logo.png' }).click()
@@ -214,7 +215,6 @@ test('browses real working folders in the shared tools panel, following focus or
     const scale = await page.evaluate(() => window.devicePixelRatio)
     await page.screenshot({ path: `${SHOTS}/reduced-motion-1280-at-${Math.round(scale * 100)}-dark.png`, animations: 'disabled' })
   } finally {
-    await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), clipboard).catch(() => undefined)
     await closeSotto(launched)
     await rm(root, { recursive: true, force: true })
   }

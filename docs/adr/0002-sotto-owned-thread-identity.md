@@ -33,3 +33,7 @@ Constraints:
 - A binding written after a crash window could be lost, which would give a discovered thread a new Sotto ID on next start and orphan an assignment. The flush-before-return rule makes this window small; a durable fix belongs to the SQLite persistence work. A corrupt `threads.json` is backed up and replaced by an empty registry, which re-mints every discovered thread; that is the same loss and gets the same fix.
 - Project IDs in bindings are still the provider's project IDs. Sotto-owned project identity is a later change.
 - The renderer still labels the connection "T3 Code". That is presentation, not identity, and changes with the native adapters.
+
+## October 1, 2026 clarification: registry writes after dispatch
+
+Creation identity is flushed before dispatch, and a failure there still prevents the provider command. A flush after the provider returns is best effort, as it is for a read. Its failure must not turn an accepted command into a failed send or discard the coordinator's delivery intent. The in-memory bindings remain authoritative until a later flush succeeds.

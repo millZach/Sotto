@@ -1,0 +1,32 @@
+/* Tools > iPhone: the test iPhone's controls. The phone itself floats in the phone player (ADR-0045). */
+.iphone-surface { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.iphone-surface__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 16px; }
+.iphone-surface__empty { display: grid; justify-items: center; gap: 4px; padding: 18px 12px 6px; text-align: center; color: var(--tt-text-muted); }
+.iphone-surface__empty strong { color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.iphone-surface__empty p { margin: 0; max-width: 360px; font-size: 13px; }
+.iphone-surface__empty code { font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-text-2); }
+
+.iphone-surface__card { border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface); padding: 12px 14px; }
+.iphone-surface__card h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--tt-text); }
+.iphone-surface__card .browser-task { border: 0; padding: 0; }
+.iphone-surface__address { display: flex; align-items: center; gap: 6px; }
+.iphone-surface__address .browser-address { flex: 1; min-width: 0; }
+.iphone-surface__address .tt-button { flex: none; white-space: nowrap; }
+.iphone-surface__card .browser-problem { margin: 8px 0 0; }
+
+.iphone-surface__facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 12px 0 0; font-size: 13px; }
+.iphone-surface__facts dt { color: var(--tt-text-muted); }
+.iphone-surface__facts dd { margin: 0; color: var(--tt-text-2); }
+.iphone-surface__facts .browser-review-link { margin-left: 6px; font-size: 12px; min-height: 22px; padding: 2px 6px; vertical-align: baseline; }
+
+/* The Cloud iPhone card (ADR-0047): a run.cloud session's build, device, minutes and steps. */
+.iphone-surface__card h3 { display: flex; align-items: center; gap: 8px; }
+.iphone-surface__cloud-badge { font-size: 11px; font-weight: 600; color: var(--tt-accent-text); background: var(--tt-accent-surface); padding: 1px 8px; border-radius: 99px; }
+.iphone-surface__cloud-meter { height: 5px; border-radius: 99px; background: var(--tt-surface-sunken); overflow: hidden; margin-top: 4px; }
+.iphone-surface__cloud-meter > i { display: block; height: 100%; background: var(--tt-accent); }
+.iphone-surface__card .tt-button { margin-top: 10px; }
+.iphone-surface__cloud-steps { margin: 10px 0 0; padding: 0 0 0 20px; color: var(--tt-text-2); font-size: 13px; }
+.iphone-surface__cloud-steps [data-status='failed'] { color: var(--tt-error-text); }
+.iphone-surface__facts-note { margin: 10px 0 0; color: var(--tt-text-muted); font-size: 12px; }
+.iphone-surface__cloud-pointer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--tt-text-muted); font-size: 13px; }
+.iphone-surface__cloud-pointer p { margin: 0; flex: 1 1 240px; }

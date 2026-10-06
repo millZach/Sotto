@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import type { AdapterFixture } from './adapterContract'
+import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} does not replay an already dispatched native request after reconnect`, async () => {
   let f: AdapterFixture = provider === 'claude' ? await claudeFixture() : await grokFixture()
@@ -83,5 +84,35 @@ it('codex stays quiet about requests Sotto is never meant to answer', async () =
     await f.action(threadId, { type: 'permission', text: 'What time is it?', method: 'currentTime/read' })
     await expect.poll(async () => (await f.driver.requests()).some(record => (record as { error?: { code?: number } }).error?.code === -32601)).toBe(true)
     expect((await f.host.snapshot()).error ?? '').not.toContain('only you can answer')
+  } finally { await f.cleanup() }
+})
+
+it.each(['unknown-child', null])('codex reports a refused approval with thread ID %s on a session app-server', async nativeThreadId => {
+  const f = await codexFixture()
+  const threadId = randomUUID()
+  try {
+    await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId, projectId: 'p', modelId: f.modelId, title: 'T' })
+    // The payload's thread ID is unknown; only the app-server's session ownership is established.
+    await f.action(threadId, { type: 'permission', text: 'Build?', params: { threadId: nativeThreadId } })
+    await expect.poll(async () => (await f.driver.requests()).some(record => (record as { error?: { code?: number } }).error?.code === -32601)).toBe(true)
+    await expect.poll(async () => (await f.host.snapshot()).error ?? '').toContain('Codex asked for an approval Sotto could not show')
+    expect((await f.host.snapshot()).error).toContain('The request was refused')
+    expect((await f.host.snapshot()).threads[0]!.requestNotice).toContain('The request was refused')
+    expect((await f.host.snapshot()).threads[0]!.requests).toEqual([])
+    expect((await f.driver.requests()).some(record => record.result?.decision?.toString().startsWith('accept'))).toBe(false)
+  } finally { await f.cleanup() }
+})
+
+it('codex keeps an unknown approval on the provider app-server quiet', async () => {
+  const f = await codexFixture()
+  try {
+    await f.host.connect()
+    const adapter = f.adapter as unknown as { provider: CodexProcess; frame(server: CodexProcess, frame: RpcFrame): Promise<void> }
+    const write = vi.spyOn(adapter.provider, 'write')
+    await adapter.frame(adapter.provider, { id: 999, method: 'item/commandExecution/requestApproval', params: { threadId: 'foreign' } })
+    expect(write).toHaveBeenCalledWith({ id: 999, error: { code: -32601, message: 'Sotto does not handle this request.' } })
+    expect((await f.host.snapshot()).error).toBeUndefined()
+    write.mockRestore()
   } finally { await f.cleanup() }
 })

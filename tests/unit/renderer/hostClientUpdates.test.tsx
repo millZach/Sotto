@@ -50,6 +50,17 @@ describe('the words', () => {
     expect(chipText(view([reading('codex', { canInstall: false })]), undefined)).toEqual({ tone: 'update', text: '1 update' })
   })
 
+  it('reads an update that left the client behind what is published as behind, Done or not', () => {
+    const view = (updates: ProviderClientUpdate[], acknowledged = false) => hostClientUpdatesView(updates, ['claude', 'codex', 'grok', 'devin'], () => acknowledged)
+    const stillBehind = reading('claude', { state: 'updated', installed: '2.1.283', ranAt: 'a' })
+    expect(view([stillBehind]).phases.get('claude')).toBe('behind')
+    expect(view([stillBehind], true).phases.get('claude')).toBe('behind')
+    expect(chipText(view([stillBehind]), undefined)).toEqual({ tone: 'update', text: '1 update' })
+    expect(view([{ ...stillBehind, canInstall: false }]).phases.get('claude')).toBe('by-hand')
+    expect(view([{ ...stillBehind, behind: false }]).phases.get('claude')).toBe('updated')
+    expect(view([{ ...stillBehind, behind: false }], true).phases.get('claude')).toBe('current')
+  })
+
   it('keeps a failed tile to one line, the owner’s words', () => {
     expect(failedShort(reading('codex', { state: 'failed', failure: 'download' }), 'forge')).toBe('The download dropped partway. 0.155.1 is still installed.')
     expect(failedShort(reading('grok', { state: 'failed', failure: 'install-step', step: 2 }), 'forge')).toBe('The install step did not finish, so forge still starts 1.0.41.')

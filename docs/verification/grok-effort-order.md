@@ -20,7 +20,7 @@ this branch:
 
 On `main` the list is Grok's own, highest first. Grok 4.7's default on `main` is Extra high because this
 machine's Grok settings put that model's session there, while Grok flags High as its default. That is the
-difference ADR-0023 decides.
+difference ADR-0044 decides.
 
 ## In the running app
 

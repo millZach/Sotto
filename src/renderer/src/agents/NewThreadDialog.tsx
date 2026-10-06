@@ -42,6 +42,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   // The managed form's own chosen project or folder; the instant flow never sets these; and its own fields.
   const [project, setProject] = useState<AgentProject | null>(null)
   const [folder, setFolder] = useState<string | null>(null)
+  const [folderIsNew, setFolderIsNew] = useState(false)
   const [title, setTitle] = useState('')
   // With threads from more than one host listed, New thread starts by choosing the host; its projects follow.
   const hosts = listedHosts(state)
@@ -56,6 +57,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const [runtimeMode, setRuntimeMode] = useState<AgentRuntimeMode | undefined>(undefined)
   const [providerMode, setProviderMode] = useState<string | undefined>(undefined)
   const [creating, setCreating] = useState(false)
+  const creationInFlight = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const latestState = useRef(state)
   latestState.current = state
@@ -67,34 +69,36 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
     setError(null)
     setCreating(true)
     void beginNewThread(latestState.current, command, project, managed).then(start => {
-      if ('error' in start) { setCreating(false); setError(start.error); return }
+      if ('error' in start) { creationInFlight.current = false; setCreating(false); setError(start.error); return }
       completed.current = true
       // A caller that shows the thread itself takes over from here; one that only awaits keeps the dialog
       // locked until the command answers, since it is what closes the dialog on success.
       if (onCreating) { onCreating(start); return }
       void start.created.then(creationError => {
         setCreating(false)
-        if (creationError !== null) setError(creationError); else onCreated()
+        if (creationError !== null) { completed.current = false; creationInFlight.current = false; setError(creationError) } else onCreated()
       })
     })
   }
   const chooser = useProjectChooser(state, choice => {
+    if (creationInFlight.current || completed.current) return
     setError(null)
     if (managed) {
-      if (choice.project) { setProject(choice.project); setFolder(null) } else { setProject(null); setFolder(choice.folder) }
+      if (choice.project) { setProject(choice.project); setFolder(null) } else { setProject(null); setFolder(choice.folder); setFolderIsNew(choice.isNew === true) }
       return
     }
+    creationInFlight.current = true
     if (choice.project) { startThread(choice.project); return }
     const provider = isSubscriptionReasoning(state.configuration.reasoning) ? state.configuration.reasoning
       : resolveModel(projectHost.models, defaultNewThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts))?.providerId
     setCreating(true)
     void (async () => {
       if (chosenHost && chosenHost.hostId !== latestState.current.hostId) await window.sotto?.hosts?.command({ type: 'select', hostId: chosenHost.hostId })
-      const found = await projectForFolder({ folder: choice.folder, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: provider, hostId: chosenHost?.hostId })
-      if (found.project === null) { setCreating(false); setError(found.error); return }
+      const found = await projectForFolder({ folder: choice.folder, isNew: choice.isNew === true, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: provider, hostId: chosenHost?.hostId })
+      if (found.project === null) { creationInFlight.current = false; setCreating(false); setError(found.error); return }
       startThread(found.project)
     })()
-  }, { hostId: chosenHost?.hostId })
+  }, { hostId: chosenHost?.hostId, disabled: creating })
   const focusSearch = useRef(chooser.focusSearch)
   focusSearch.current = chooser.focusSearch
   const selectedFolder = managed ? (project?.path ?? folder) : null
@@ -130,7 +134,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   // Providers connect one at a time; follow the default as models become ready until a model is picked here.
   useEffect(() => { if (managed && !modelChosen.current) setModelId(defaultNewThreadModelId(state.configuration, projectHost.models, state.reasoningAccounts)) }, [managed, state.configuration, projectHost.models, state.reasoningAccounts])
   const createManaged = async (): Promise<void> => {
-    if (creating || completed.current || state.globalLaneBusy || !connected || !canCreateThread || !selectedFolder || !modelId) return
+    if (creationInFlight.current || completed.current || state.globalLaneBusy || !connected || !canCreateThread || !selectedFolder || !modelId) return
+    creationInFlight.current = true
     setCreating(true)
     setError(null)
     try {
@@ -138,7 +143,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       if (!selectedProject && folder) {
         // A new folder becomes a project on the host chosen above: main adds it to the host selected for new work.
         if (chosenHost && chosenHost.hostId !== latestState.current.hostId) await window.sotto?.hosts?.command({ type: 'select', hostId: chosenHost.hostId })
-        const found = await projectForFolder({ folder, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: selectedModel?.providerId ?? state.configuration.provider, hostId: chosenHost?.hostId })
+        const found = await projectForFolder({ folder, isNew: folderIsNew, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: selectedModel?.providerId ?? state.configuration.provider, hostId: chosenHost?.hostId })
         if (found.project === null) { setError(found.error); return }
         selectedProject = found.project
         setProject(selectedProject)
@@ -155,7 +160,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       if (!result || result.error) { setError(result?.error ?? 'Could not confirm creation. Your choices are retained; try again to check the existing action.'); return }
       completed.current = true
       onCreated()
-    } finally { setCreating(false) }
+    } finally { creationInFlight.current = false; setCreating(false) }
   }
   return <dialog ref={dialog} className={`new-thread-dialog${managed ? ' new-thread-dialog--thread' : ''}`} aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!creating) onClose() }}

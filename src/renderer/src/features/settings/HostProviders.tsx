@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { DEVIN_SIGN_IN_COMMAND, HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
@@ -57,7 +58,7 @@ const PENDING_LABEL: Readonly<Record<Pending, string>> = { connect: 'Connectingâ
 function SignInCommand({ host }: { readonly host: string }): ReactNode {
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
-  const copy = async (): Promise<void> => { try { await navigator.clipboard.writeText(DEVIN_SIGN_IN_COMMAND); setCopied('copied') } catch { setCopied('failed') } }
+  const copy = async (): Promise<void> => { try { await writeClipboard(DEVIN_SIGN_IN_COMMAND); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
     <p>Sign in on {host} with:</p>
     <code>{DEVIN_SIGN_IN_COMMAND}</code>

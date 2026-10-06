@@ -3,8 +3,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
+import { RequestDraftService, personalRequestDraftState, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
 import { requestDraftQuestions, requestDraftSchema, type RequestDraft, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { personalChatStateSchema } from '../../../src/shared/personalChats'
 import type { AgentRequest } from '../../../src/shared/agents'
 
 const questions = [
@@ -367,4 +368,20 @@ it('retains legacy choices across restart and checks definition and delivery ide
   state = { ...state, completed: [{ ...receipt, decisionId: 'retry' }] }
   await restarted.reconcile()
   expect(await restarted.get(legacyTarget)).toBeNull()
+})
+
+it.each([true, false])('uses the personal answer owner connection when it is %s', async connected => {
+  const personalTarget = { ...target, kind: 'personal' as const, providerId: 'claude' as const }
+  const state = personalChatStateSchema.parse({ selectedChatId: 'owner', connected: !connected, connecting: connected,
+    availability: { provider: 'codex', supported: true }, chats: [{ id: 'owner', kind: 'personal', providerId: 'claude', connected,
+      title: 'Personal chat', modelId: 'model', status: 'idle', messages: [], requests: [request],
+      createdAt: 'now', updatedAt: 'now', nativeState: 'ready', draft: { revision: 0, text: '', skills: [] }, submissions: [] }] })
+  const projection = personalRequestDraftState(state, personalTarget)
+  expect(projection?.connected).toBe(connected)
+  const service = new RequestDraftService(directory, owner => personalRequestDraftState(state, owner), async () => {})
+  await service.start()
+  await service.save(draft({ target: personalTarget }))
+  const save = service.save(draft({ target: personalTarget, revision: 2, held: true }))
+  if (connected) await expect(save).resolves.toBeDefined()
+  else await expect(save).rejects.toThrow('Reconnect and check')
 })

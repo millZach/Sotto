@@ -56,7 +56,9 @@ function codexBrowserText(params: z.infer<typeof paramsSchema>): string | undefi
 export function pendingRequest(id: string | number, method: string, value: unknown, sessionId: string, fileSummary?: string): CodexPendingRequest | undefined {
   const mapping = requestMethods[method]
   if (!mapping) return
-  const params = paramsSchema.parse(value)
+  const parsed = paramsSchema.safeParse(value)
+  if (!parsed.success) return
+  const params = parsed.data
   const permission = mapping.kind === 'permission'
   const questions = params.questions ?? []
   const browser = method === 'mcpServer/elicitation/request' ? codexBrowserText(params) : undefined

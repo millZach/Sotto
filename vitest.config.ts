@@ -3,6 +3,7 @@ import { configDefaults, defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'jsdom',
+    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
     exclude: [...configDefaults.exclude, 'tests/e2e/**', 'scripts/tts-bench/**', 'scripts/voice-perf/**', '**/.worktrees/**', '.claude/**'],
     setupFiles: ['./tests/setup.ts'],
     // Waiting is not the assertion. A two-core CI runner with two workers on it takes several times

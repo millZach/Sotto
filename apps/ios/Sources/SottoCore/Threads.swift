@@ -77,6 +77,9 @@ public struct HostedThread: Identifiable, Sendable {
     public let settled: Bool
     public var id: String { ref.id }
     public var reachable: Bool { status == .online }
+    /// Finished while nothing showed it, and not opened since on either device, by its computer's word (ADR-0046).
+    /// Only a computer this iPhone can reach says it now, and only of a thread with nothing left running or asked.
+    public var finishedUnread: Bool { reachable && thread.finishedUnread == true && ThreadState(thread) == .done }
 }
 
 /// One request waiting on the user, with the thread and computer it belongs to.

@@ -1,0 +1,39 @@
+/* Frost (ADR-0048): with the Frosted window setting on, and a system that can draw it, the window's own material
+   (acrylic on Windows 11, vibrancy on macOS) blurs the desktop behind the room. appearance.ts marks the root with
+   data-frost only then, so nothing here applies on a solid window.
+
+   The room's layers stop painting the canvas one over another: the page paints it once, part see-through, and the
+   sidebar and the docked Tools panel sit on that a little more solid. A pane's terminal drawer is more solid
+   again, its terminal see-through over it (terminalView.ts). Messages, the composer, dialogs and menus keep their
+   own surfaces so text stays readable. The :root prefix outranks each layer's own background. Colours come from
+   tokens.css only. */
+
+:root[data-frost] {
+  background: transparent;
+}
+
+:root[data-frost] body {
+  background: var(--tt-frost-room);
+}
+
+:root[data-frost] :is(.app-shell, .agent-room) {
+  background: transparent;
+}
+
+:root[data-frost] :is(.thread-nav) {
+  background: var(--tt-frost-sidebar);
+}
+
+/* The Tools panel docked beside the panes is part of the room. Floating over them it stays solid, or the
+   conversation would show through it; its sticky bars keep their own colour over what scrolls beneath. */
+:root[data-frost] .tools-panel:not([data-mode='overlay']) .tools-panel__sheet {
+  background: var(--tt-frost-sidebar);
+}
+
+:root[data-frost] .pane-terminal {
+  background: var(--tt-frost-terminal);
+}
+
+:root[data-frost] .pane-terminal .terminal-view {
+  background: transparent;
+}

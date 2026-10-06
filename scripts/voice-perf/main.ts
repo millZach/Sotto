@@ -25,11 +25,10 @@ app.whenReady().then(async () => {
   if (!savedCredentials.has('formatting')) throw new Error('Saved OpenRouter transcription key unavailable')
   const credentials = new AgentCredentials(isolated, safeStorage)
   await credentials.load()
-  const recorder = new TurnRecorder({ directory: isolated, historyEnabled: () => false, resolveSession: () => undefined })
-  control = new AgentControl({ directory: isolated, credentials, turns: recorder, historyEnabled: () => false,
+  const recorder = new TurnRecorder({ directory: isolated, resolveSession: () => undefined })
+  control = new AgentControl({ directory: isolated, credentials, turns: recorder,
     host: new E2EAgentHost(),
     reasoner: { async intent() { throw new Error('Fixture unexpectedly requested reasoning') }, async decide() { throw new Error('Fixture unexpectedly requested supervision') } },
-    membership: { async status() { return { status: 'beta', label: 'Isolated benchmark', expiresAt: null } }, async action() { return { status: 'beta', label: 'Isolated benchmark', expiresAt: null } } },
   })
   await control.start()
   await control.command({ type: 'connect' })

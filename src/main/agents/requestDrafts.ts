@@ -2,7 +2,7 @@ import { readFile, readdir, unlink } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import type { PersonalChatState } from '../../shared/personalChats'
+import { personalAnswerHeld, type PersonalChatState } from '../../shared/personalChats'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
   requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
@@ -30,9 +30,9 @@ export interface RequestDraftOwnerState {
 /** Shared production projection: legacy redacted decisions deliberately have no digest fallback. */
 export function personalRequestDraftState(state: PersonalChatState, owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
   const chat = state.chats.find(item => owner.kind === 'personal' && item.id === owner.ownerId && item.providerId === owner.providerId)
-  return chat ? { connected: state.connected && !state.connecting, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
+  return chat ? { connected: chat.connected === true, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
     requests: chat.requests,
-    uncertainRequestIds: (chat.decisions ?? []).filter(item => item.status === 'submitting' || item.status === 'uncertain').map(item => item.requestId),
+    uncertainRequestIds: [...new Set((chat.decisions ?? []).map(item => item.requestId))].filter(id => personalAnswerHeld(chat, id)),
     completed: (chat.decisions ?? []).filter(item => item.status === 'accepted').map(item => ({ requestId: item.requestId,
       decisionId: item.id, ...(item.questionsDigest ? { questionsDigest: item.questionsDigest } : {}) })) } : undefined
 }

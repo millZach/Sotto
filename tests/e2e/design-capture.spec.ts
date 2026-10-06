@@ -130,7 +130,7 @@ function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown
   return {
     configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
       followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
-      reasoning: 'none', reasoningModel: '', reasoningEffort: '', membershipEndpoint: '' },
+      reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
     assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],
     queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', contextSavedAt: Date.now(), outbox: [],

@@ -2,7 +2,7 @@ import type { SottoBridge } from '../../../shared/contracts'
 import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
-import type { MicrophoneTestController } from '../features/onboarding/microphoneTest'
+import { BrowserMicrophoneTest, type MicrophoneTestController } from '../features/onboarding/microphoneTest'
 import {
   createProductionDictationController,
   type AppControllerFactory,
@@ -12,6 +12,7 @@ import {
 let microphoneRequestCount = 0
 
 export function createE2EMicrophoneTest(scenario: E2EScenario): MicrophoneTestController {
+  if (scenario === 'microphone-browser') return new BrowserMicrophoneTest()
   return {
     async start(onLevel): Promise<'ready' | 'denied'> {
       microphoneRequestCount += 1

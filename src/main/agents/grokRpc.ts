@@ -1,3 +1,4 @@
+import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -5,7 +6,7 @@ import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
- * Grok Build's floor: the oldest client Sotto connects (ADR-0021), and what a host's tile says an update needs
+ * Grok Build's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
  * (ADR-0035). The reason: the adapter reads the ACP 1 shapes 1.0.5 was checked against (docs/research/
  * 2026-09-11-issue-23-grok-acp-verification.md): `initialize._meta.agentVersion` and `_meta.modelState` for the
  * model catalog, `cached_token` sign-in without an API key, and `session/load` for resuming a thread. An older
@@ -21,12 +22,12 @@ export class GrokUncertain extends Error {}
 export class GrokUnreadable extends GrokUncertain {}
 /** A client Sotto will not drive: an older CLI, another protocol version, or no subscription sign-in. */
 export class GrokUnsupported extends Error {}
-/** A client older than the version Sotto checked (ADR-0021), carrying the version it reported. */
+/** A client older than the version Sotto checked (ADR-0042), carrying the version it reported. */
 export class GrokTooOld extends GrokUnsupported { constructor(message: string, readonly version: string) { super(message) } }
 /** A client that offers no cached sign-in: Grok Build is not signed in on this machine. */
 export class GrokSignedOut extends GrokUnsupported {}
 export class GrokRejected extends Error {}
-const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'home', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
+const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 export function grokEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
   for (const key of ['GROK_HOME', 'GROK_AUTH_PATH']) if (environment[key] && isAbsolute(environment[key]!)) env[key] = environment[key]
@@ -51,8 +52,6 @@ type Waiter = { resolve(): void; reject(error: Error): void; apply(value: unknow
 // loaded such a thread. These caps are a runaway guard, sized like the Codex transport's.
 const MAX_FRAME_BYTES = 128 * 1024 * 1024
 const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
-/** Diagnostics, not protocol: a client that answers nothing and only floods stderr is still lost. */
-const MAX_STDERR_BYTES = 1024 * 1024
 
 /** Bounded stdio transport. Late responses still apply; mutation timeouts never trigger retries. */
 export class GrokRpc {
@@ -70,7 +69,7 @@ export class GrokRpc {
     // exits those inherited handles must not keep the adapter's shutdown barrier open.
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
-    let buffer = ''; let bufferedBytes = 0; let queued = 0; let stderr = 0
+    let buffer = ''; let bufferedBytes = 0; let queued = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
       buffer += chunk; bufferedBytes += Buffer.byteLength(chunk)
@@ -101,7 +100,8 @@ export class GrokRpc {
         }).catch(() => this.fail())
       }
     })
-    this.child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.length; if (stderr > MAX_STDERR_BYTES) this.fail() })
+    const stderrExceeded = stderrRateExceeded()
+    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.fail() })
   }
   /** The client process's ID, for telling one thread's process from another's. */
   get pid(): number | undefined { return this.child.pid }

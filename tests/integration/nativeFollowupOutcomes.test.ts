@@ -12,7 +12,7 @@ it.each([{ name: 'Claude', create: () => claudeFixture() }, { name: 'Grok', crea
   const f = await create(); const threadId = randomUUID()
   const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, path: f.root, title: 'Fixture' })

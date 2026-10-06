@@ -114,11 +114,12 @@ function samePalette(a: DiagramPalette, b: DiagramPalette): boolean {
   return (Object.keys(a) as (keyof DiagramPalette)[]).every(key => a[key] === b[key])
 }
 
-/** The current palette, updated when the window's mode, theme, contrast or editor draft changes. */
+/** The current palette, updated once the window's mode, theme, contrast or editor draft stops changing. */
 export function useDiagramPalette(): DiagramPalette {
   const [palette, setPalette] = useState(readDiagramPalette)
   useEffect(() => {
     const root = document.documentElement
+    let pending: number | undefined
     const update = (): void => setPalette(current => {
       const next = readDiagramPalette(root)
       return samePalette(current, next) ? current : next
@@ -126,10 +127,14 @@ export function useDiagramPalette(): DiagramPalette {
     update()
     const observer = new MutationObserver(records => {
       // The theme inspector swaps roles for sentinels and puts them back within a task; nothing changed.
-      if (!rootStyleUnchanged(records, root)) update()
+      if (!rootStyleUnchanged(records, root)) {
+        window.clearTimeout(pending)
+        // Keep the last drawing during a colour drag; read and redraw only its settled palette.
+        pending = window.setTimeout(update, 150)
+      }
     })
     observer.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['data-theme', 'data-theme-id', 'style'] })
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); window.clearTimeout(pending) }
   }, [])
   return palette
 }

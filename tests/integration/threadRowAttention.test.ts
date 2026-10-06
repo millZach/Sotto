@@ -21,7 +21,7 @@ for (const kind of ['question', 'permission'] as const) it(`says a Claude thread
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   const row = (state: AgentState) => describeThreads(agentShell(state), Date.now()).find(entry => entry.thread.id === threadId)!
   try {
     await f.host.connect()

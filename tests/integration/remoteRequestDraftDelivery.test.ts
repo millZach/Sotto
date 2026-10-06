@@ -21,7 +21,7 @@ const question: AgentRequest = { id: 'question-one', kind: 'question', text: 'Sy
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function fixture(provider: ProviderId) {
+async function fixture(provider: ProviderId, onPushError?: (message: string) => void) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-remote-answer-'))
   cleanups.push(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-remote-answer-')) await rm(root, { recursive: true, force: true }) })
   const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }
@@ -37,7 +37,7 @@ async function fixture(provider: ProviderId) {
     Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json',
   }, body: JSON.stringify({ clientId: paired.clientId }) })
   expect(permission.status).toBe(200)
-  const client = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId })
+  const client = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId, ...(onPushError ? { onPushError } : {}) })
   cleanups.push(() => client.close())
   await client.connect()
   await client.command({ type: 'configure', patch: { provider, enabledProviders: [provider] } })
@@ -230,16 +230,22 @@ it.each(['accepted', 'unknown'] as const)('checks a saved answer when its receip
   expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
 })
 
-it.each(['unknown', 'uncertain'] as const)('keeps a detail refresh failure visible when answer acceptance is %s', async outcome => {
-  const f = await fixture('codex')
+it.each(['unknown', 'uncertain'] as const)('keeps a held answer and reports a detail refresh failure when acceptance is %s', async outcome => {
+  const onPushError = vi.fn()
+  const f = await fixture('codex', onPushError)
+  const saved = await f.drafts.get(f.target)
   const execute = vi.spyOn(f.native, 'execute')
   if (outcome === 'unknown') vi.spyOn(f.client, 'receipt').mockResolvedValueOnce({ status: 'unknown' })
-  else execute.mockResolvedValueOnce({ accepted: false, uncertain: true })
-  vi.spyOn(f.client, 'readThreadDetail').mockRejectedValueOnce(new Error('Synthetic detail refresh failed'))
-  await expect(f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
-    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))).rejects.toThrow('Synthetic detail refresh failed')
+  else execute.mockResolvedValueOnce({ accepted: false, uncertain: true, error: 'Synthetic answer unconfirmed' })
+  const detail = vi.spyOn(f.client, 'readThreadDetail').mockRejectedValueOnce(new Error('Synthetic detail refresh failed'))
+  const result = await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+  // An acknowledged command keeps its own outcome; the host row reports a failed display refresh.
+  expect(result.error).toBe(outcome === 'unknown' ? null : 'Synthetic answer unconfirmed')
+  expect(detail).toHaveBeenCalledWith(f.threadId)
+  expect(onPushError).toHaveBeenCalledExactlyOnceWith('The host confirmed the command, but its latest details could not be read. Nothing was lost. Refresh or reconnect to see them.')
   await f.drafts.reconcile()
-  expect(await f.drafts.list(f.owner)).toHaveLength(1)
+  expect(await f.drafts.list(f.owner)).toEqual([{ ...saved, held: true, decisionId: expect.any(String) }])
   expect(f.router.requestDraftState(f.owner)?.completed).toEqual([])
   expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
 })

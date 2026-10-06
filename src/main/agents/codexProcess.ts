@@ -1,7 +1,8 @@
+import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { z } from 'zod'
 
-const MAX_OUTPUT_BYTES = 1024 * 1024
+const OUTPUT_DRAIN_GRACE_MS = 300
 // Legacy history and completed turns can echo multiple screenshot batches. Keep a
 // separate history budget rather than limiting a frame to one submitted prompt.
 const MAX_FRAME_BYTES = 128 * 1024 * 1024
@@ -59,8 +60,13 @@ export class CodexProcess {
   constructor(private readonly options: CodexProcessOptions) {
     const child = spawn(options.executable, [...options.args], { cwd: options.cwd, env: options.env, windowsHide: true, shell: false, stdio: 'pipe' })
     this.child = child
-    let buffer: string[] = []; let bufferedBytes = 0; let stderrBytes = 0; let queuedBytes = 0
+    let buffer: string[] = []; let bufferedBytes = 0; let queuedBytes = 0
     this.closed = new Promise<void>(resolve => child.once('close', () => { this.fail(); resolve() }))
+    // Let final output drain, then release handles a descendant may still hold.
+    child.once('exit', () => {
+      const timer = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy() }, OUTPUT_DRAIN_GRACE_MS)
+      timer.unref(); child.once('close', () => clearTimeout(timer))
+    })
     child.on('error', () => this.abort())
     child.stdin.on('error', () => this.abort())
     child.stdout.setEncoding('utf8')
@@ -85,7 +91,8 @@ export class CodexProcess {
         }).catch(() => this.abort())
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => { stderrBytes += chunk.length; if (stderrBytes > MAX_OUTPUT_BYTES) this.abort() })
+    const stderrExceeded = stderrRateExceeded()
+    child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.abort() })
   }
 
   /** Whether an answer to something Sotto asked is still owed, a late one included: a late answer is still applied. */

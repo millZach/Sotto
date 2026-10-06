@@ -296,6 +296,11 @@ export class DictationController {
 
   stop(): Promise<void> {
     const session = this.session
+    if (session !== null && this.state.status === 'requesting-permission') {
+      // Remember Stop without finalizing audio or starting transcription.
+      session.stopClaimed = true
+      return Promise.resolve()
+    }
     if (session === null || this.state.status !== 'listening') {
       return session?.processing ?? Promise.resolve()
     }
@@ -325,11 +330,10 @@ export class DictationController {
 
   toggle(): Promise<void> {
     if (this.disposed) return Promise.resolve()
-    if (this.state.status === 'listening') return this.stop()
-    if (
-      this.state.status === 'requesting-permission' ||
-      this.state.status === 'processing'
-    ) {
+    if (this.state.status === 'listening' || this.state.status === 'requesting-permission') {
+      return this.stop()
+    }
+    if (this.state.status === 'processing') {
       return Promise.resolve()
     }
     return this.start()
@@ -397,6 +401,10 @@ export class DictationController {
       return
     }
     if (!this.isCurrent(session) || this.state.status !== 'requesting-permission') return
+    if (session.stopClaimed) {
+      await this.cancel()
+      return
+    }
     this.dispatch(
       { type: 'STARTED', sessionId: session.id, startedAt: finiteTimestamp(this.now()) },
       session,

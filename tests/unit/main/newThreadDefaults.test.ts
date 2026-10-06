@@ -46,7 +46,7 @@ async function controlFixture() {
   const host = new GrokLikeHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() }); await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   disposers.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); await control.command({ type: 'connect' })
   return { root, host, control }

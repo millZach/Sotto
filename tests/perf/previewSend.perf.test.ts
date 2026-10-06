@@ -57,7 +57,7 @@ describe.skipIf(!PERF_BENCH)('send with an image', () => {
     await credentials.load()
     const host = new TimedHost()
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     try {
       await control.start(); await control.command({ type: 'connect' })
       // Queued behind any preview write still running, so it resolves once the store is idle.

@@ -6,7 +6,12 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
+import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
+import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
+import type { HostThreadToolReads } from './threadToolReads'
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -20,6 +25,7 @@ export interface ClientIdentity {
   readonly clientId: string
   readonly user: string
   readonly transport: 'ipc' | 'socket'
+  readonly selectedThreadId?: string | null
 }
 
 /**
@@ -38,7 +44,8 @@ export interface HostService {
   /** The published state without any thread's history: what every client needs on every frame. */
   shell(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
-  /** Runs one client's command and answers with the shell: no thread's history rides on the answer. */
+  /** Runs one client's command and answers with the shell, without history. A socket answer's returned
+   * error is its own command outcome; it is independent of the published shell's shared error. */
   command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
   requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
@@ -55,6 +62,18 @@ export interface HostService {
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
+  /** A folder's entries in a thread's working copy, for Files (ADR-0025, October 5 amendment). */
+  threadFiles?(request: FileListRequest): Promise<FilesResult<FileListing>>
+  /** One file's preview from a thread's working copy, for Files. */
+  threadFilePreview?(request: FileRequest): Promise<FilesResult<FilePreview>>
+  /** A thread's changed files as Git's status lists them, for Changes. */
+  gitChanges?(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
+  /** A thread's Working tree or Branch changes comparison, for Changes. */
+  gitReview?(request: GitReviewRequest): Promise<ToolsResult<GitReview>>
+  /** A page of a thread's agents, for Agents. */
+  subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
+  /** One agent's assignments, for Agents. */
+  subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
 }
 
 export interface RequestAnswerRecovery {
@@ -106,6 +125,8 @@ export interface LocalHostControl {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  /** The threads some client shows now, for the finished-unread mark (ADR-0046); true when a mark was cleared. */
+  showThreads?(threadIds: readonly string[]): boolean
 }
 
 /**
@@ -115,12 +136,21 @@ export interface LocalHostControl {
  */
 export class LocalHostService implements HostService {
   private readonly observations = new Map<string, string[]>()
+  /**
+   * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
+   * thread that finishes behind another app, minimised or hidden to the tray is finished unread. A host with no window
+   * to ask leaves it true, and a host without a screen has no window client at all.
+   */
+  private windowFocused = true
   private readonly control: LocalHostControl
   private readonly eventSource: ThreadEventSource | undefined
+  private readonly tools: HostThreadToolReads | undefined
 
-  constructor(options: { control: LocalHostControl; events?: ThreadEventSource }) {
+  /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
+  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads }) {
     this.control = options.control
     this.eventSource = options.events
+    this.tools = options.tools
   }
 
   /** Empty when no event source is wired: the window reads history through the thread detail today. */
@@ -157,12 +187,33 @@ export class LocalHostService implements HostService {
   requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
     return this.control.requestAnswerRecovery?.(threadId, providerId) ?? { uncertainRequestIds: [], completed: [] }
   }
-  command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
-    if (command.type === 'observe-threads') {
-      if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
-      else this.observations.delete(client.clientId)
-      command = { type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }
-    }
-    return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
+  // A thread's Files, Changes and Agents, read as the window's own IPC reads them, with the same bounds.
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return this.reads().threadFiles(request) }
+  async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return this.reads().threadFilePreview(request) }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return this.reads().gitChanges(request) }
+  async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return this.reads().gitReview(request) }
+  async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.reads().subagentPage(request) }
+  async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.reads().subagentAssignments(request) }
+  private reads(): HostThreadToolReads {
+    if (!this.tools) throw new Error('Files, Changes and Agents are unavailable on this host.')
+    return this.tools
+  }
+  async command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
+    if (command.type !== 'observe-threads') return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
+    if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
+    else this.observations.delete(client.clientId)
+    // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
+    const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
+    return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
+  }
+  /** Main reports the window's focus as it moves; gaining it shows the window's panes again, which reads their finish. */
+  setWindowFocused(focused: boolean): void {
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    this.control.showThreads?.(this.shownThreads())
+  }
+  /** The threads some client shows: every client's observed threads, the window's only while it has the focus. */
+  private shownThreads(): string[] {
+    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? [] : ids))]
   }
 }

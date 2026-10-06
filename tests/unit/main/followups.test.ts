@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { CheckoutSendRefusal } from '../../../src/main/agents/checkoutMutations'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -54,7 +55,7 @@ async function fixture() {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
   const create = () => {
     const c = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     controls.push(c); return c
   }
   const control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
@@ -145,6 +146,7 @@ it('keeps uncertain dispatch immutable across restart and reconciles exact evide
   const f = await fixture(); f.host.update('workshop', { status: 'running' }); await f.control.command(queued('uncertain'))
   f.host.result = { accepted: false, uncertain: true }; complete(f.host)
   await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('uncertain')
+  expect(f.control.pendingThreadWorkReason('workshop')).toBe('uncertain-send')
   const item = f.control.get().followups![0]!
   expect((await f.control.command({ type: 'remove-followup', threadId: item.threadId, itemId: item.id })).error).toMatch(/may already/)
   f.control.dispose(); await f.control.privacyChanged()
@@ -450,6 +452,7 @@ it('requires explicit resume when an idle thread has no known turn outcome', asy
   delete f.host.state.threads.find(thread => thread.id === 'workshop')!.lastTurn
   f.host.update('workshop', { status: 'idle' })
   await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('paused')
+  expect(f.control.pendingThreadWorkReason('workshop')).toBe('paused-followups')
   f.host.emit(); await f.control.command({ type: 'refresh' })
   expect(f.control.get().followups?.[0]?.status).toBe('paused')
   expect(f.host.attempts).toEqual([])
@@ -457,7 +460,6 @@ it('requires explicit resume when an idle thread has no known turn outcome', asy
   await expect.poll(() => f.control.get().followups?.length).toBe(0)
   expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(1)
 })
-
 
 it('steers a selected edited queue item once, preserving the remaining queue and newer draft', async () => {
   const f = await fixture()
@@ -504,7 +506,6 @@ it.each(['unsupported', 'question', 'refused', 'uncertain'] as const)('preserves
   }
 })
 
-
 it('reconciles a late steer confirmation behind an untouched queue head', async () => {
   const f = await fixture(); f.host.state.capabilities.steer = true
   f.host.update('workshop', { status: 'running' })
@@ -542,4 +543,46 @@ it('keeps a view it handed out unchanged when the queue changes after it', async
   await store.edit(before.items[0]!.threadId, before.items[0]!.id, { text: 'edited', attachments: [] })
   expect(before.items.map(item => item.text)).toEqual(['first'])
   expect(store.peek().items.map(item => item.text)).toEqual(['edited', 'second'])
+})
+
+it('keeps a checkout-refused follow-up failed in the queue until the user resumes it', async () => {
+  const f = await fixture()
+  f.host.update('workshop', { status: 'running' })
+  await f.control.command(queued('Keep these words'))
+  const execute = vi.spyOn(f.host, 'execute').mockRejectedValue(new CheckoutSendRefusal())
+  complete(f.host)
+  await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('failed')
+  expect(f.control.pendingThreadWorkReason('workshop')).toBe('failed-followups')
+  expect(f.control.get().followups?.[0]).toMatchObject({ text: 'Keep these words', error: 'A Git action is running in this folder. Your follow-up was not sent. It is kept in the queue. Resume the queue when the action finishes.' })
+  expect(f.host.state.threads.find(t => t.id === 'workshop')?.messages.some(m => m.text === 'Keep these words')).toBe(false)
+  execute.mockRestore()
+  await f.control.command({ type: 'resume-followups', threadId: 'workshop' })
+  await expect.poll(() => f.control.get().followups?.length).toBe(0)
+  expect(f.host.state.threads.find(t => t.id === 'workshop')?.messages.filter(m => m.text === 'Keep these words')).toHaveLength(1)
+})
+
+it('distinguishes managed work from a paused assignment with a queue and leaves an empty paused assignment unblocked', async () => {
+  const f = await fixture()
+  f.host.update('workshop', { status: 'running' })
+  await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep working' })
+  expect(f.control.pendingThreadWorkReason('workshop')).toBe('managed-assignment')
+  await f.control.command({ type: 'pause', threadId: 'workshop' })
+  expect(f.control.hasPendingThreadWork('workshop')).toBe(false)
+  await f.control.command(queued('Review this work'))
+  await f.control.command({ type: 'resume', threadId: 'workshop' })
+  await f.control.command({ type: 'pause', threadId: 'workshop' })
+  expect(f.control.pendingThreadWorkReason('workshop')).toBe('paused-assignment')
+  expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
+})
+
+it('says a checkout-refused manual prompt is kept and retains its durable draft', async () => {
+  const f = await fixture()
+  f.host.update('workshop', { status: 'idle', requests: [] })
+  vi.spyOn(f.host, 'execute').mockRejectedValue(new CheckoutSendRefusal())
+  const command = { ...queued('Keep this manual prompt'), type: 'manual-send' as const }
+  const result = await f.control.command(command)
+  expect(result.error).toBe('A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.')
+  expect(result.threadDrafts).toContainEqual(expect.objectContaining({ draftId: command.draftId, text: command.text }))
+  expect(result.deliveries).toContainEqual(expect.objectContaining({ draftId: command.draftId, status: 'failed' }))
+  expect(f.host.state.threads.find(t => t.id === 'workshop')?.messages.some(m => m.text === command.text)).toBe(false)
 })

@@ -10,7 +10,7 @@ export interface BrowserAgentTools {
   call(threadId: string, name: string, args: unknown): Promise<BrowserToolResult>
   mcpServer(threadId: string): Promise<BrowserMcpServer>
 }
-const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again.'
+const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again. To check a web or Expo-web build on a phone, use iphone_open: the test iPhone is a phone-sized page in this browser, not iOS.'
 
 /** Thread-bound local MCP transport. Admission is never permission to read or operate a page. */
 export class BrowserAgentServer extends ThreadToolServer implements BrowserAgentTools {

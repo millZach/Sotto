@@ -118,7 +118,6 @@ test('a pull request is checked out from the branch picker, opened from its badg
     const newThread = page.getByRole('dialog', { name: 'New thread', exact: true })
     await newThread.getByRole('searchbox', { name: 'Search projects' }).fill('Review app')
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter')
-    await newThread.getByRole('button', { name: 'Create thread', exact: true }).click()
     await expect(newThread).toHaveCount(0)
 
     // Before the checkout the thread is on main: nothing to merge yet, and Create PR says why it waits, as the Git action does.

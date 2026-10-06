@@ -1,6 +1,8 @@
 export type SottoPlatform = 'win32' | 'darwin'
 
 export const PLATFORM_ARGUMENT_PREFIX = '--sotto-platform='
+/** Present on the main window when the system can draw a frosted material behind it (ADR-0048). */
+export const WINDOW_FROST_ARGUMENT = '--sotto-window-frost'
 
 // Unsupported hosts resolve to win32 so an unexpected process.platform (or a
 // missing launch argument) degrades to the shipped Windows behavior instead of

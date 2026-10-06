@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
 import { platformProfile } from '../../../src/main/platformProfile'
 import { DEFAULT_SETTINGS, defaultSettings, type AppSettings } from '../../../src/shared/settings'
+import { hostEntityKey } from '../../../src/shared/clientIdentity'
 
 const roots: string[] = []
 
@@ -25,6 +26,29 @@ afterEach(async () => {
 })
 
 describe('SettingsRepository', () => {
+  it('migrates only local host project defaults durably and preserves existing raw overrides', async () => {
+    const local = '11111111-1111-4111-8111-111111111111'
+    const remote = '22222222-2222-4222-8222-222222222222'
+    const { filePath, repository } = await createRepository()
+    await repository.save({ projectThreadWorkingCopyDefaults: {
+      [hostEntityKey(local, 'one')]: 'independent',
+      two: 'shared', [hostEntityKey(local, 'two')]: 'independent',
+      [hostEntityKey(remote, 'one')]: 'shared',
+    } })
+    await repository.migrateProjectWorkingCopyDefaults(local)
+    const expected = { one: 'independent', two: 'shared', [hostEntityKey(remote, 'one')]: 'shared' }
+    expect((await new SettingsRepository(filePath).get()).projectThreadWorkingCopyDefaults).toEqual(expected)
+    const bytes = await readFile(filePath, 'utf8')
+    await repository.migrateProjectWorkingCopyDefaults(local)
+    expect(await readFile(filePath, 'utf8')).toBe(bytes)
+  })
+
+  it('does not create settings when no project defaults need migration', async () => {
+    const { repository } = await createRepository()
+    await repository.migrateProjectWorkingCopyDefaults('11111111-1111-4111-8111-111111111111')
+    expect(await repository.exists()).toBe(false)
+  })
+
   it('returns fresh defaults for a missing settings file without creating it', async () => {
     const { repository } = await createRepository()
 

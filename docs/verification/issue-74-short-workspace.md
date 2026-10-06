@@ -1,4 +1,4 @@
-﻿# Issue 74 short workspace regressions
+# Issue 74 short workspace regressions
 
 Scope: the existing Windows desktop Threads workspace at 1280x560, 820x560 and regular desktop sizes. Preserve the selected Sidecar composition, fonts, colors, draft contents, attachments and thread ownership. No new design direction or animation is needed for this scoped fix.
 

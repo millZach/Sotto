@@ -15,6 +15,42 @@ permissions:
   contents: read
 
 jobs:
+  # Decides which of the slower jobs a pull request needs. Gates (Windows) never waits on it and always
+  # runs. A push to main runs every job. The host job runs unless every changed file is in an area it
+  # cannot reach; the iOS job runs only when the native client, the protocol it mirrors or this file changed.
+  changes:
+    name: Changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      host: ${{ steps.areas.outputs.host }}
+      ios: ${{ steps.areas.outputs.ios }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Name the changed areas
+        id: areas
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A pull request checks out its merge commit; its first parent is the base branch.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          if [ -z "$files" ]; then
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          host=false; ios=false
+          if printf '%s\n' "$files" | grep -qvE '^(src/renderer/|src/preload/|apps/ios/|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' \
+            || printf '%s\n' "$files" | grep -qxE 'THIRD_PARTY_NOTICES\.md'; then host=true; fi
+          if printf '%s\n' "$files" | grep -qE '^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'; then ios=true; fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "Host job: $host. iOS job: $ios."
+
   gates:
     name: Gates (Windows)
     runs-on: windows-latest
@@ -63,6 +99,8 @@ jobs:
 
   host:
     name: Host archive and socket contract (Linux)
+    needs: changes
+    if: needs.changes.outputs.host == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -113,8 +151,11 @@ jobs:
 
   ios:
     name: Native iOS client (macOS)
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 35
+    # Fifteen simulator journeys on two phones, with the package tests and two builds before them.
+    timeout-minutes: 75
     env:
       # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.
       # Its Swift 6 compiler builds in Swift 5 mode, above Package.swift's 5.9 tools and the iOS 17 minimum.

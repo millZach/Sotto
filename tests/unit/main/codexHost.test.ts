@@ -10,7 +10,6 @@ import type { CodexProcess } from '../../../src/main/agents/codexProcess'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { promptImageOf } from '../../fixtures/stagedImages'
 
-
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 const controls: AgentControl[] = []
 afterEach(async () => {
@@ -35,7 +34,7 @@ async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: v => Buffer.from(v), decryptString: v => v.toString() }); await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   controls.push(control); await control.start(); await control.command({ type: 'connect' })
   return control
 }

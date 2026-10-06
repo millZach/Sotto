@@ -75,41 +75,70 @@ export function attachmentTypeLabel(mimeType: string | undefined): string | null
   return label || 'File'
 }
 
-const validatedPreviews = new Map<string, boolean>()
+// Raster data URLs are ASCII (one byte per character); other retained strings use two.
+const PREVIEW_CACHE_BYTES = 8 * 1024 * 1024
+function evictPreviews<T extends { size: number }>(cache: Map<string, T>, limit: number): void {
+  let bytes = 0
+  for (const entry of cache.values()) bytes += entry.size
+  for (const [key, entry] of cache) {
+    if (cache.size <= limit && bytes <= PREVIEW_CACHE_BYTES) break
+    cache.delete(key); bytes -= entry.size
+  }
+}
+const validatedPreviews = new Map<string, { valid: boolean; size: number }>()
 const VALIDATED_PREVIEW_CACHE = 48
 
 /** The preview as an image source only when it is a validated raster data URL. */
 function trustedPreviewSource(dataUrl: string | undefined): string | null {
   if (typeof dataUrl !== 'string') return null
-  let valid = validatedPreviews.get(dataUrl)
-  if (valid === undefined) {
-    valid = agentAttachmentPreviewDataSchema.safeParse({ dataUrl }).success
-    if (validatedPreviews.size >= VALIDATED_PREVIEW_CACHE) validatedPreviews.delete(validatedPreviews.keys().next().value!)
-    validatedPreviews.set(dataUrl, valid)
+  let entry = validatedPreviews.get(dataUrl)
+  if (entry === undefined) {
+    const valid = agentAttachmentPreviewDataSchema.safeParse({ dataUrl }).success
+    entry = { valid, size: dataUrl.length * (valid ? 1 : 2) }
+    if (entry.size <= PREVIEW_CACHE_BYTES) {
+      validatedPreviews.set(dataUrl, entry)
+      evictPreviews(validatedPreviews, VALIDATED_PREVIEW_CACHE)
+    }
   }
-  return valid ? dataUrl : null
+  return entry.valid ? dataUrl : null
 }
 
 /** The message a submitted attachment belongs to, which is how main finds its preview bytes. */
 export interface AttachmentOrigin { readonly threadId: string; readonly messageId: string }
 
-// Published state carries markers alone, so each image is fetched once and kept for the session.
-const fetchedPreviews = new Map<string, Promise<string | null>>()
+// Published state carries markers alone; cache fetched images within count and byte bounds.
+const fetchedPreviews = new Map<string, { source: Promise<string | null>; size: number }>()
+const pendingPreviews = new Map<string, { source: Promise<string | null>; size: number }>()
 const FETCHED_PREVIEW_CACHE = 64
 
 function requestPreview(origin: AttachmentOrigin, attachmentId: string): Promise<string | null> {
   const key = JSON.stringify([origin.threadId, origin.messageId, attachmentId])
-  const cached = fetchedPreviews.get(key)
-  if (cached) return cached
+  const cached = fetchedPreviews.get(key) ?? pendingPreviews.get(key)
+  if (cached) return cached.source
   const bridge = window.sotto?.agents ?? window.sottoWidget?.agents
   const pending: Promise<string | null> = bridge?.attachmentPreview
     ? bridge.attachmentPreview({ threadId: origin.threadId, messageId: origin.messageId, attachmentId })
       .then(result => trustedPreviewSource(result?.dataUrl), () => null)
     : Promise.resolve(null)
-  if (fetchedPreviews.size >= FETCHED_PREVIEW_CACHE) fetchedPreviews.delete(fetchedPreviews.keys().next().value!)
-  fetchedPreviews.set(key, pending)
+  const entry = { source: pending, size: key.length * 2 }
+  // Deduplicate reads separately: an unknown result cannot evict a retained image yet.
+  if (entry.size <= PREVIEW_CACHE_BYTES) {
+    pendingPreviews.set(key, entry)
+    evictPreviews(pendingPreviews, FETCHED_PREVIEW_CACHE)
+  }
   // A preview main could not hand over may exist later; only the bytes themselves are worth keeping.
-  void pending.then(source => { if (source === null) fetchedPreviews.delete(key) })
+  void pending.then(source => {
+    // An evicted request may finish after another request for the same image was cached.
+    if (pendingPreviews.get(key) !== entry) return
+    pendingPreviews.delete(key)
+    if (source !== null) {
+      entry.size += source.length
+      if (entry.size <= PREVIEW_CACHE_BYTES) {
+        fetchedPreviews.set(key, entry)
+        evictPreviews(fetchedPreviews, FETCHED_PREVIEW_CACHE)
+      }
+    }
+  })
   return pending
 }
 

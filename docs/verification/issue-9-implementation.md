@@ -1,5 +1,6 @@
 # Issue 9 implementation record
 
+Historical evidence: #610 removed the membership implementation and its tests. Membership and paid-launch statements below no longer describe Sotto.
 Baseline: `63c3c6e913da561deb314e8d337f7eaf04c0672e` on `main`. Issue: [#9](https://github.com/millZach/Sotto/issues/9). Implementation date: 2026-09-09.
 
 This is a working desktop development implementation, with explicit prerequisites still blocking a complete paid release. It does not claim that the membership service is deployed or that physical voice and macOS acceptance have passed.

@@ -1,3 +1,4 @@
+import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -5,7 +6,7 @@ import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
- * Devin's floor: the oldest client Sotto connects (ADR-0021), and what a host's tile says an update needs
+ * Devin's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
  * (ADR-0035). The reason: 3000.10.31 is the version whose ACP `session/load` replay, standard elicitation for
  * questions and the ask-before-everything profile Sotto writes for it were checked (ADR-0016, ADR-0017, ADR-0022);
  * earlier versions changed exactly those. Move it only after checking a newer one against the adapter contract.
@@ -43,6 +44,10 @@ const frameSchema = z.object({
 export type DevinFrame = z.infer<typeof frameSchema>
 type Waiter = { operation: string; resolve(): void; reject(error: Error): void; apply(value: unknown): Promise<void> | void; timer: ReturnType<typeof setTimeout> | undefined }
 const MAX_BYTES = 1024 * 1024
+// Live tool output and session/load replay can exceed a megabyte. Match Grok and Codex's
+// incoming transport guards; the adapter separately bounds transcripts and tool details.
+const MAX_FRAME_BYTES = 128 * 1024 * 1024
+const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
 
 /** One bounded ACP process. A timeout leaves the mutation pending so late evidence is applied, never retried. */
 export class DevinRpc {
@@ -58,18 +63,19 @@ export class DevinRpc {
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
-    let buffer = ''; let queued = 0; let stderr = 0
+    let buffer = ''; let bufferedBytes = 0; let queued = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
       if (this.stopped) return
-      buffer += chunk
-      if (Buffer.byteLength(buffer) > MAX_BYTES) { this.fail(); return }
+      buffer += chunk; bufferedBytes += Buffer.byteLength(chunk)
+      if (bufferedBytes > MAX_FRAME_BYTES) { this.fail(); return }
       let end: number
       while ((end = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1)
+        const size = Buffer.byteLength(line); bufferedBytes -= size + 1
         if (!line.trim()) continue
-        const size = Buffer.byteLength(line); queued += size
-        if (queued > MAX_BYTES) { this.fail(); return }
+        queued += size
+        if (queued > MAX_QUEUED_BYTES) { this.fail(); return }
         this.frames = this.frames.then(async () => {
           try {
             if (this.stopped) return
@@ -89,7 +95,8 @@ export class DevinRpc {
       }
     })
     // Consume without decoding, retaining or logging native stderr.
-    this.child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.length; if (stderr > MAX_BYTES) this.fail() })
+    const stderrExceeded = stderrRateExceeded()
+    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.fail() })
   }
   request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false): Promise<void> {
     return new Promise((resolve, reject) => {

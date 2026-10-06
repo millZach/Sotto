@@ -45,6 +45,12 @@ Independent Files review cleared the path, pinning and focus findings. At 1280px
 
 ## Evidence and limits
 
+The historical `tests/review/composer-polish` harness was removed in #605 because
+it had no runner and depended on fixed sleeps. The captures and verdicts below
+remain historical evidence. Current composer regressions live in the regular
+`tests/e2e/composer-short-window.spec.ts`; this note does not claim that the old
+review harness still runs.
+
 - Final builder captures: `artifacts/phase-two-composer-fixed/` and `artifacts/phase-two-composer-final-gaps/`. Native evidence: `artifacts/phase-two-native/`. The independent review's own tests and captures are retained in `.worktrees/phase2-visual-review`; full reports/logs are in `.worktrees/phase2-orchestration`.
 - Main-app journeys use the real Windows Electron shell. Codex-only picker/steer fixtures reserve the actual 60px header and 44px footer and are clearly labelled; they are not the real AppShell. Actual native invocation is separate evidence.
 - Checked 1280/1600 widths, 820 minimum, 820x560 short windows, and the existing 760x850 recovery stress case; keyboard/pointer, light/dark and existing accents, reduced motion and Electron zoom 125/150% on a 1.5-DPR display. OS scaling was not changed; no macOS acceptance is claimed.

@@ -42,7 +42,7 @@ function fixture() {
   native.fromWebContents.mockReturnValue(parent)
   native.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\Existing Folder\\project'] })
   const workingCopyOptions = vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] }))
-  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, workingCopyOptions })
+  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: { configuration: vi.fn() }, encodeReceipt: new AgentStateBroadcaster().encodeReceipt, workingCopyOptions })
   disposables.push(dispose)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (source = event, ...args: unknown[]) => handlers.get(AGENT_CHOOSE_PROJECT_DIRECTORY)!(source, ...args)

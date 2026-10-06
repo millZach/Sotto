@@ -46,6 +46,12 @@ async function reviewOf(service: GitChangesService, threadId: string, scope: { k
 }
 
 describe('Working tree: the working copy against HEAD, untracked files included', () => {
+  it('reports an asynchronous clipboard failure to the copy caller', async () => {
+    const f = await fixture()
+    f.copyPath.mockRejectedValueOnce(new Error('clipboard unavailable'))
+    expect(await f.service.copyPath({ ...f.target, path: 'changed.txt' })).toMatchObject({ ok: false })
+  })
+
   it('reads changed, new, deleted, binary and large files with their counts, staged or not, in the selected worktree only', async () => {
     const f = await fixture()
     await writeFile(join(f.repo, 'changed.txt'), 'staged\n'); git(f.repo, 'add', 'changed.txt')

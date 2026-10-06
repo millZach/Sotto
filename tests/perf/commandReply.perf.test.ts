@@ -86,7 +86,7 @@ describe.skipIf(!PERF_BENCH)('command reply cost', () => {
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
     await credentials.load()
     control = new AgentControl({ schedule: neverPublish, directory: root, host: new LongHistoryHost(), credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     await control.start(); await control.command({ type: 'connect' })
     const live = control
     expect(live.get().host.threads.reduce((count, thread) => count + thread.messages.length, 0)).toBe(THREADS * MESSAGES_PER_THREAD)
@@ -99,7 +99,7 @@ describe.skipIf(!PERF_BENCH)('command reply cost', () => {
     const url = 'file:///main.html'
     const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
     const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-      { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
+      { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: live, encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
     dispose = () => { unregister(); router.dispose() }
     const send = (command: AgentCommand) =>
       listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>

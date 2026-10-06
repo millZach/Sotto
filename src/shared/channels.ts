@@ -32,6 +32,7 @@ export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 export const TRANSCRIPTION_TRANSCRIBE = 'sotto:transcription:transcribe' as const
 export const TRANSCRIPTION_CANCEL = 'sotto:transcription:cancel' as const
 export const TRANSCRIPTION_CHECK_KEY = 'sotto:transcription:check-key' as const
+export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const
 export const UPDATE_CHECK = 'sotto:update:check' as const
@@ -45,9 +46,11 @@ export const STARTUP_SET = 'sotto:startup:set' as const
 
 export const APP_SHOW = 'sotto:app:show' as const
 export const EXTERNAL_LINK_OPEN = 'sotto:external-link:open' as const
+export const SYSTEM_SETTINGS_OPEN = 'sotto:system-settings:open' as const
 export const APP_HIDE = 'sotto:app:hide' as const
 export const APP_TOGGLE_MAXIMIZE = 'sotto:app:toggle-maximize' as const
 export const APP_MAXIMIZED = 'sotto:app:maximized' as const
+export const APP_WINDOW_HIDDEN = 'sotto:app:window-hidden' as const
 export const APP_RELOAD = 'sotto:app:reload' as const
 export const APP_MINIMIZE = 'sotto:app:minimize' as const
 export const APP_QUIT = 'sotto:app:quit' as const

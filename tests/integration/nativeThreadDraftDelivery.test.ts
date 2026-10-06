@@ -15,7 +15,7 @@ it('restores drafts and reconciles a lost native acknowledgement under the origi
   await credentials.load()
   const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   let control = create()
   try {
     await f.host.connect()

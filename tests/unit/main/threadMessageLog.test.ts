@@ -69,6 +69,27 @@ describe('the append path a provider rail is handed to', () => {
     expect(log.holding('t')).toBe(true)
     expect(log.publishedThread(thread).messages.map(item => item.id)).toEqual(['u', 'a'])
   })
+  it('names the user’s newest message whether the window holds it, put it away or took it back up empty', () => {
+    const log = new ThreadMessageLog()
+    const thread: { id: string; messages: AgentMessage[]; lastUserMessageId?: string } = { id: 't', messages: [] }
+    expect(log.publishedThread(thread)).not.toHaveProperty('lastUserMessageId')
+    log.pin('t')
+    log.set('t', [message('u', 'user', 'Ask'), message('a', 'assistant', 'Answer')])
+    expect(log.publishedThread(thread).lastUserMessageId).toBe('u')
+    // The session closes while no window looks at the thread, so its messages are put away.
+    log.observe(['other']); log.release('t')
+    expect(log.holding('t')).toBe(false)
+    expect(log.publishedThread(thread)).toMatchObject({ messages: [], lastUserMessageId: 'u' })
+    expect(log.activityThread(thread, true).lastUserMessageId).toBe('u')
+    // The thread is looked at again: the window starts over empty, and the ID still comes from the facts.
+    log.observe(['t'])
+    expect(log.publishedThread(thread)).toMatchObject({ messages: [], lastUserMessageId: 'u' })
+    log.add('t', message('u2', 'user', 'Typed in the provider'))
+    expect(log.publishedThread(thread).lastUserMessageId).toBe('u2')
+    // Seeded identities carry no words, and still name the user's newest message.
+    log.seed('seeded', [{ id: 's0', role: 'user' }, { id: 's1', role: 'assistant' }])
+    expect(log.publishedThread({ ...thread, id: 'seeded' }).lastUserMessageId).toBe('s0')
+  })
   it('knows a thread has messages from seeded identities alone, and asking does not block a later seed', () => {
     const log = new ThreadMessageLog()
     expect(log.hasMessages('t')).toBe(false)

@@ -585,7 +585,8 @@ function redactedPayload(payload: string): string | undefined {
     case 'message-text-appended':
       return JSON.stringify({ kind: event.kind, at: event.at, redacted: true, messageId: event.messageId, appendText: '' })
     case 'answer-given':
-      return JSON.stringify({ ...event, answer: '' })
+      // Option IDs can be the provider's labels, so they are words too.
+      return JSON.stringify({ ...event, questionOptionIds: undefined, answer: '' })
     default:
       return undefined
   }

@@ -43,6 +43,7 @@ test('personal native questions and exact approvals work in the complete app and
     await form.getByRole('button', { name: 'Send answers' }).click()
     await expect(form.getByRole('alert')).toHaveText('Native provider refused this answer. Try again.')
     await expect(form.getByRole('radio', { name: 'The coast' })).toBeChecked()
+    await page.screenshot({ path: 'artifacts/thread-activity/personal-requests-retained-choice.png' })
     await form.getByRole('button', { name: 'Send answers' }).click()
     await expect(form).toHaveCount(0)
     await page.getByRole('button', { name: 'Allow this lookup' }).click()

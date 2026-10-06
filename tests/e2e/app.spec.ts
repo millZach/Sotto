@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { mkdir, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
@@ -152,6 +153,48 @@ test('keeps history disabled without blocking dictation', async () => {
     await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByRole('heading', { name: 'History is off.' })).toBeVisible()
+  } finally {
+    await closeSotto(launched)
+  }
+})
+
+test('deletes retained transcripts one at a time from disk while history is off', async () => {
+  const testInfo = test.info()
+  const launched = await launchSotto()
+  try {
+    await completeOnboarding(launched.page)
+    await dictateWithButton(launched.page)
+    await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
+    await dictateWithButton(launched.page)
+    await expect(launched.page.getByRole('heading', { name: 'Pasted.' })).toBeVisible()
+    await openPage(launched.page, 'History')
+    await expect(launched.page.locator('.history-entry')).toHaveCount(2)
+    const retained = JSON.parse(await readFile(join(launched.userData, 'history.json'), 'utf8')) as { id: string }[]
+    await launched.page.evaluate(async () => window.sotto!.updateSettings({ historyEnabled: false }))
+    await expect(launched.page.getByText('History is off. Older transcripts are still here.')).toBeVisible()
+    await launched.page.locator('.history-entry__toggle').first().click()
+    await launched.page.screenshot({ path: testInfo.outputPath('retained-history-off.png') })
+    await launched.page.getByRole('button', { name: 'Delete saved transcript' }).click()
+    await launched.page.getByRole('dialog').getByRole('button', { name: 'Delete transcript', exact: true }).click()
+    await expect(launched.page.getByRole('dialog')).toHaveCount(0)
+    await expect(launched.page.locator('.history-entry')).toHaveCount(1)
+    const remaining = JSON.parse(await readFile(join(launched.userData, 'history.json'), 'utf8')) as { id: string }[]
+    expect(remaining).toHaveLength(1)
+    expect(retained.map(entry => entry.id)).toContain(remaining[0]!.id)
+    await expect(launched.page.locator('.history-entry')).toBeVisible()
+    await launched.page.screenshot({ path: testInfo.outputPath('remaining-history-off.png') })
+    await launched.page.locator('.history-entry__toggle').click()
+    await launched.page.getByRole('button', { name: 'Delete saved transcript' }).click()
+    await launched.page.getByRole('dialog').getByRole('button', { name: 'Delete transcript', exact: true }).click()
+    await expect(launched.page.getByRole('dialog')).toHaveCount(0)
+    await expect(launched.page.locator('.history-entry')).toHaveCount(0)
+
+    expect(JSON.parse(await readFile(join(launched.userData, 'history.json'), 'utf8'))).toEqual([])
+    await launched.page.evaluate(async () => window.sotto!.updateSettings({ historyEnabled: true }))
+    await launched.page.reload()
+    await openPage(launched.page, 'History')
+    await expect(launched.page.getByRole('heading', { name: 'Nothing here yet.' })).toBeVisible()
+    await launched.page.screenshot({ path: testInfo.outputPath('deleted-after-reload.png') })
   } finally {
     await closeSotto(launched)
   }
@@ -504,6 +547,35 @@ test('a second instance reveals the existing hidden window', async () => {
     })
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(true)
   } finally {
+    await closeSotto(launched)
+  }
+})
+
+test('quitting retains native windows during the drain and releases the lock for relaunch', async () => {
+  const launched = await launchSotto()
+  let relaunched: Awaited<ReturnType<typeof launchSotto>> | undefined
+  try {
+    await mkdir('artifacts/review-quit-drain', { recursive: true })
+    await launched.page.screenshot({ path: 'artifacts/review-quit-drain/before-quit.png' })
+    const exited = new Promise<number | null>(resolve => launched.app.process().once('exit', resolve))
+    const state = await launched.app.evaluate(({ app, BrowserWindow }) => {
+      let observed: { prevented: boolean; windows: number } | undefined
+      app.once('before-quit', event => {
+        observed = {
+          prevented: event.defaultPrevented,
+          windows: BrowserWindow.getAllWindows().length,
+        }
+      })
+      app.quit()
+      return observed
+    })
+    expect(state?.prevented).toBe(true)
+    expect(state?.windows).toBeGreaterThan(0)
+    expect(await exited).toBe(0)
+    relaunched = await launchSotto('success', launched.userData)
+    await expect(relaunched.page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible()
+  } finally {
+    if (relaunched) await closeSotto(relaunched)
     await closeSotto(launched)
   }
 })

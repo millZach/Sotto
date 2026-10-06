@@ -53,6 +53,29 @@ function barHeights(container: HTMLElement): number[] {
 }
 
 describe('DictateRoom', () => {
+  it('uses local calendar days for Yesterday across both daylight-saving changes', context => {
+    const previousTimezone = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      const dates = [
+        ['2026-03-09T12:00:00', '2026-03-08T00:00:00', '2026-03-07T23:30:00'],
+        ['2026-11-02T12:00:00', '2026-11-01T00:00:00', '2026-10-31T23:30:00'],
+      ]
+      if (dates.some(([today, yesterday]) => new Date(today!).getTimezoneOffset() === new Date(yesterday!).getTimezoneOffset())) {
+        context.skip('This worker does not apply America/Los_Angeles at runtime; the dates must cross a DST offset change.')
+      }
+      for (const [today, yesterday, dayBefore] of dates) {
+        expect(new Date(today!).getTimezoneOffset()).not.toBe(new Date(yesterday!).getTimezoneOffset())
+        const now = new Date(today!).valueOf()
+        expect(transcriptStamp(new Date(yesterday!).valueOf(), now).label).toBe('Yesterday')
+        expect(transcriptStamp(new Date(dayBefore!).valueOf(), now).label).not.toBe('Yesterday')
+      }
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = previousTimezone
+    }
+  })
+
   it('keeps selectable completed text and normal controls through failed and successful Copy retries', async () => {
     const onCopy = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     const onDismissRecovery = vi.fn()

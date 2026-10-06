@@ -1,4 +1,4 @@
-﻿# Backend integration audit
+# Backend integration audit
 
 Pinned HEAD: `9a493bf596fda6473507070852c0191f5f302fba`.
 Baseline: `bf500b42f91cfc1bd198c2d75d62ee48ef4232a8` (three-dot comparison).

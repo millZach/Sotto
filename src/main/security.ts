@@ -1,4 +1,13 @@
-import type { WebPreferences } from 'electron'
+import type { Session, WebPreferences } from 'electron'
+
+/** Keep the OS spellchecker available without contacting Chromium's dictionary CDN. */
+export function blockSpellcheckDictionaryDownloads(
+  session: Pick<Session, 'setSpellCheckerDictionaryDownloadURL'>,
+): void {
+  // Electron appends the dictionary filename to this base URL. A data URL has
+  // no host and cannot produce a valid Hunspell dictionary or a network fetch.
+  session.setSpellCheckerDictionaryDownloadURL('data:,')
+}
 
 export type RendererRole = 'main' | 'widget'
 

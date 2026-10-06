@@ -4,7 +4,7 @@ import { requestQuestionsDigest, type BindRequestDraftDecision } from './request
 import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { personalChatSchema, personalDraftInputSchema, personalSendInputSchema, personalAnswerInputSchema, type PersonalChat, type PersonalChatState, type PersonalChatCommand } from '../../shared/personalChats'
+import { personalAnswerHeld, personalChatSchema, personalDraftInputSchema, personalSendInputSchema, personalAnswerInputSchema, type PersonalChat, type PersonalChatState, type PersonalChatCommand } from '../../shared/personalChats'
 import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { CodexAppServerHost } from './codex'
@@ -78,16 +78,17 @@ function settleDropped(chat: PersonalChat): void {
 function definedFields<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
   return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as { [K in keyof T]: Exclude<T[K], undefined> }
 }
+const uncertainAnswer = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'
 export type PersonalConversationHost = Pick<CodexAppServerHost, 'closed' | 'connect' | 'createPersonalConversation' | 'disconnect' | 'execute' | 'listThreadSkills' | 'personalSnapshot' | 'refreshThread' | 'sendPersonalConversation' | 'subscribe'>
-  /** Told that a new client is on disk, so each process moves to it as it goes idle (ADR-0021). */
-  & { clientUpdated?(): Promise<void> }
+  /** Told that a new client is on disk, so each process moves to it as it goes idle (ADR-0042). */
+  & { clientUpdated?(): Promise<void>; forgetPersonalMemories?(ids: readonly string[]): void }
 export interface PersonalChatOptions {
   userDataPath: string
   configuration: () => { reasoning: string; reasoningModel: string; reasoningEffort: string }
   host?: PersonalConversationHost
   claudeHistoryModulePath?: string
   hosts?: Partial<Record<PersonalChat['providerId'], PersonalConversationHost>>
-  preferences?: Pick<MemoryProfile, 'retrieve'>
+  preferences?: Pick<MemoryProfile, 'retrieve'> & Partial<Pick<MemoryProfile, 'subscribeDeleted'>>
   bindRequestDraftDecision?: BindRequestDraftDecision
   historyEnabled?: () => boolean
 }
@@ -173,6 +174,7 @@ export class PersonalChatService {
       this.emit(); return
     }
     await this.mutate(() => undefined)
+    if (this.options.preferences?.subscribeDeleted) this.unsubscribers.push(this.options.preferences.subscribeDeleted(ids => this.hosts.claude.forgetPersonalMemories?.(ids)))
     for (const provider of ['codex', 'claude', 'grok'] as const) this.unsubscribers.push(this.hosts[provider].subscribe(snapshot => {
       const conversations = this.hosts[provider].personalSnapshot()
       const wasConnected = this.observeConnection(provider, snapshot.connected)
@@ -354,7 +356,7 @@ export class PersonalChatService {
     return this.get()
   }
   /**
-   * A new client is on disk for one provider (ADR-0021). The chats keep their connection: the client's
+   * A new client is on disk for one provider (ADR-0042). The chats keep their connection: the client's
    * host moves each of its processes to the new one as it goes idle, and a chat mid-answer finishes on
    * the old one first. Nothing here disconnects, and a provider the chats do not use is left alone. A host that
    * cannot move to the new client says why, and the update reports it.
@@ -454,7 +456,7 @@ export class PersonalChatService {
     const chat = this.chat(chatId)
     if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before refreshing this conversation.`)
     if (chat.nativeState !== 'unstarted' && chat.nativeState !== 'error') {
-      const host = this.host(chatId), snapshot = await host.refreshThread(chatId); await this.accept(chat.providerId, snapshot, host.personalSnapshot())
+      const host = this.host(chatId), snapshot = await host.refreshThread(chatId, { retryUncertainAnswers: true }); await this.accept(chat.providerId, snapshot, host.personalSnapshot())
     }
     return this.get()
   }
@@ -471,7 +473,7 @@ export class PersonalChatService {
       const chat = this.chat(chatId, saved)
       const request = chat.requests.find(r => r.id === answer.requestId)
       if (!this.connections.has(chat.providerId) || !request) throw new Error('This request is no longer pending in this conversation.')
-      if (chat.decisions?.some(d => d.requestId === answer.requestId && (d.status === 'submitting' || d.status === 'uncertain'))) throw new Error('Answer delivery is uncertain. Refresh without replaying the answer.')
+      if (personalAnswerHeld(chat, answer.requestId)) throw new Error('Answer delivery is uncertain. Refresh without replaying the answer.')
       const decisions = chat.decisions ??= []
       const questions = requestDraftQuestions(request)
       decisions.push({ ...answer, request, ...(questions.length ? { questionsDigest: requestQuestionsDigest(questions) } : {}), id: decisionId, status: 'submitting', createdAt: new Date().toISOString() })
@@ -484,12 +486,24 @@ export class PersonalChatService {
       const draftAnswers = request.questions?.length ? answer.questionAnswers : { [request.id]: { optionIds: [answer.answer] } }
       if (questions.length) await this.options.bindRequestDraftDecision?.({ kind: 'personal', ownerId: chatId, providerId: this.chat(chatId).providerId, requestId: request.id, questions }, decisionId, draftAnswers)
       const result = await this.host(chatId).execute({ ...definedFields(answer), type: 'answer', commandId: decisionId, threadId: chatId })
+      if (result.answerCompletion) {
+        const completion = result.answerCompletion.then(async delivered => {
+          if (!delivered) return
+          await this.mutate(saved => {
+            const decision = this.chat(chatId, saved).decisions!.find(d => d.id === decisionId)!
+            decision.status = 'accepted'; delete decision.error
+            if (this.error === uncertainAnswer) this.error = undefined
+          })
+        }).catch(() => { this.error = 'Answer delivery was confirmed, but could not be saved. Restore local storage access and refresh.'; this.emit() })
+        this.jobs.add(completion); void completion.finally(() => this.jobs.delete(completion))
+      }
       status = result.accepted && !result.uncertain ? 'accepted' : 'uncertain'
-      if (!result.accepted) this.error = 'Answer delivery is uncertain. Refresh the conversation; the answer will not be replayed.'
+      if (!result.accepted) this.error = uncertainAnswer
+      else if (status === 'accepted' && this.error === uncertainAnswer) this.error = undefined
     } catch (error) { status = 'failed'; failure = error }
     await this.mutate(saved => {
       const decision = this.chat(chatId, saved).decisions!.find(d => d.id === decisionId)!
-      decision.status = status
+      if (decision.status !== 'accepted') decision.status = status
       if (failure) decision.error = failure instanceof Error ? failure.message : 'Answer could not be sent.'
     })
     if (failure) throw failure

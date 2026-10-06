@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { FinishedThreadWatch, showThreads, watchThreads } from '../../../src/renderer/src/agents/finishedThreads'
 import { NewThreadDialog } from '../../../src/renderer/src/agents/NewThreadDialog'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
@@ -33,10 +32,10 @@ function twoHosts(): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<><FinishedThreadWatch /><ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} /></>)
+  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
   return live
 }
-beforeEach(() => { vi.mocked(useAgents).mockReset(); watchThreads([]); showThreads([]) })
+beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('the host is visible where work happens', () => {

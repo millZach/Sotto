@@ -199,9 +199,14 @@ export class TerminalWorkspaceStore {
   attach(bridge: TerminalWorkspaceBridge | undefined, id: string, container: HTMLElement, factory: TerminalViewFactory): TerminalViewLike | null {
     const record = this.ensureRecord(id)
     if (!record.view) {
+      let copyNotice: string | null = null
       record.view = factory({
         onInput: data => this.write(bridge, id, data),
         onInterrupt: () => this.interrupt(bridge, id),
+        onNotice: notice => {
+          if (notice !== null || this.state.notice === copyNotice) this.set({ ...this.state, notice })
+          copyNotice = notice
+        },
         onPasteImage: dataUrl => void this.pasteImage(bridge, id, dataUrl),
       })
     }

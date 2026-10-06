@@ -110,7 +110,7 @@ export function describeProblem(error: unknown): string | null {
 function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
   if (left.phase !== right.phase) return false
   if (left.phase === 'available' && right.phase === 'available') {
-    return left.version === right.version && left.problem === right.problem
+    return left.version === right.version && left.problem === right.problem && left.failedStep === right.failedStep
   }
   if (left.phase === 'downloaded' && right.phase === 'downloaded') {
     return left.version === right.version && left.problem === right.problem
@@ -142,6 +142,7 @@ export class UpdateService {
   private adapter: UpdaterAdapter | null = null
   private adapterResolved = false
   private phase: UpdatePhase = { phase: 'idle' }
+  private previousOffer: Extract<UpdatePhase, { phase: 'available' }> | null = null
   private checkedAt: number | null = null
   private checkInFlight: Promise<UpdateStatus> | null = null
   /** True from a `quitAndInstall` call until the installer refuses or the process quits. */
@@ -194,11 +195,6 @@ export class UpdateService {
     if (this.phase.phase === 'downloading' || this.phase.phase === 'downloaded') {
       return this.status()
     }
-    // A failed download keeps its offer and its reason until the user acts on
-    // it; the poll must not quietly replace that with a fresh, wordless offer.
-    if (trigger === 'automatic' && this.phase.phase === 'available' && this.phase.problem !== null) {
-      return this.status()
-    }
     const active = this.checkInFlight
     if (active !== null) return active
 
@@ -227,7 +223,7 @@ export class UpdateService {
     } catch (error) {
       // The offer survives a failed download so the user can simply try again.
       if (this.currentPhase() === 'downloading') {
-        this.setPhase({ phase: 'available', version, problem: describeProblem(error) })
+        this.setPhase({ phase: 'available', version, problem: describeProblem(error), failedStep: 'download' })
       }
       return UNAVAILABLE
     }
@@ -307,17 +303,25 @@ export class UpdateService {
   }
 
   private async runCheck(adapter: UpdaterAdapter): Promise<UpdateStatus> {
+    this.previousOffer = this.phase.phase === 'available' ? this.phase : null
     this.checkedAt = this.now()
     this.setPhase({ phase: 'checking' })
     try {
       await adapter.check()
     } catch (error) {
-      if (this.currentPhase() === 'checking') this.setPhase({ phase: 'failed', problem: describeProblem(error) })
+      if (this.currentPhase() !== 'downloading' && this.currentPhase() !== 'downloaded') this.recordCheckFailure(describeProblem(error))
+      this.previousOffer = null
       return this.status()
     }
     // A check that completed without offering a version found nothing newer.
     if (this.currentPhase() === 'checking') this.setPhase({ phase: 'up-to-date' })
+    this.previousOffer = null
     return this.status()
+  }
+
+  private recordCheckFailure(problem: string | null): void {
+    problem ??= 'The update check could not be completed. Check the connection and try again.'
+    this.setPhase(this.previousOffer === null ? { phase: 'failed', problem } : { ...this.previousOffer, problem, failedStep: 'check' })
   }
 
   private ensureAdapter(): UpdaterAdapter | null {
@@ -383,9 +387,9 @@ export class UpdateService {
           this.installing = false
           this.installRefusal = { problem }
           this.recordInstallRefusal(problem)
-        } else if (current.phase === 'checking') this.setPhase({ phase: 'failed', problem })
+        } else if (current.phase === 'checking') this.recordCheckFailure(problem)
         else if (current.phase === 'downloading') {
-          this.setPhase({ phase: 'available', version: current.version, problem })
+          this.setPhase({ phase: 'available', version: current.version, problem, failedStep: 'download' })
         }
       }
     }

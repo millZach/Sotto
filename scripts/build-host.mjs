@@ -4,8 +4,11 @@ import { pathToFileURL } from 'node:url'
 import process from 'node:process'
 import { build } from 'vite'
 
-export async function buildHost(outDir = resolve('out/host')) {
+const root = resolve(import.meta.dirname, '..')
+
+export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host')) {
   await build({
+    root,
     configFile: false,
     plugins: [{
       name: 'sotto-host-inventory',
@@ -27,7 +30,7 @@ export async function buildHost(outDir = resolve('out/host')) {
       },
     }],
     build: {
-      ssr: resolve('src/host/index.ts'), target: 'node24', outDir, emptyOutDir: true, minify: false,
+      ssr: resolve(root, 'src/host/index.ts'), target: 'node24', outDir, emptyOutDir: true, minify: false,
       rollupOptions: {
         external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
         output: { format: 'cjs', entryFileNames: 'index.js' },

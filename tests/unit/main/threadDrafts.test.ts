@@ -51,7 +51,7 @@ async function fixture() {
   let history = true
   const create = () => {
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history,
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     controls.add(control); return control
   }
   let control = create()

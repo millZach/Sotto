@@ -33,6 +33,47 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertTrue(FocusThreads(hosts, query: "missing").isEmpty)
         XCTAssertFalse(FocusThreads(hosts, query: " \n ").searching)
     }
+    func testUnreadFinishedThreadsKeepTheirPlaceAndCountOnlyInRecent() throws {
+        let unread = try thread("unread", #", "finishedUnread":true"#)
+        let read = try thread("read")
+        let settled = try thread("settled", #", "finishedUnread":true, "settledAt":"yesterday""#)
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [read, unread, settled])])
+        // The mark changes how a row looks, never which group it is in or where.
+        XCTAssertEqual(rows.recent.map(\.id), ["h/read", "h/unread"])
+        XCTAssertEqual(rows.settled.map(\.id), ["h/settled"])
+        XCTAssertEqual(rows.recent.map(rows.isUnreadFinish), [false, true])
+        XCTAssertTrue(rows.isUnreadFinish(rows.settled[0]))
+        // A closed Settled shelf would hide what it counted, so the count is Recent's.
+        XCTAssertEqual(rows.unreadFinishedCount, 1)
+    }
+    func testOpeningAThreadReadsItBeforeItsComputerSaysSo() throws {
+        let unread = try thread("unread", #", "finishedUnread":true"#)
+        let other = try thread("other", #", "finishedUnread":true"#)
+        let computers = [ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [unread, other])]
+        XCTAssertEqual(FocusThreads(computers).unreadFinishedCount, 2)
+        let opened = FocusThreads(computers, opened: ThreadRef(hostID: "h", threadID: "unread"))
+        XCTAssertEqual(opened.recent.map(opened.isUnreadFinish), [false, true])
+        XCTAssertEqual(opened.unreadFinishedCount, 1)
+        // The same thread ID on another computer is another thread.
+        XCTAssertEqual(FocusThreads(computers, opened: ThreadRef(hostID: "other", threadID: "unread")).unreadFinishedCount, 2)
+    }
+    func testUnreadFinishedNeedsAReachableComputerAndAFinishedThread() throws {
+        let unread = try thread("unread", #", "finishedUnread":true"#)
+        for status in [ComputerStatus.connecting, .unreachable] {
+            let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: status, threads: [unread])])
+            XCTAssertEqual(rows.recent.map(\.id), ["h/unread"])
+            XCTAssertEqual(rows.unreadFinishedCount, 0)
+        }
+        // A mark that rides on a thread that failed, works or asks is not shown; the thread says what it is doing instead.
+        let failed = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"failed","projectId":"p","title":"Failed","status":"error","finishedUnread":true,"requests":[]}"#.utf8))
+        let working = try thread("working", #", "finishedUnread":true, "backgroundWork":[{"type":"subagent"}]"#)
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [failed, working])])
+        XCTAssertEqual(rows.recent.map(rows.isUnreadFinish), [false])
+        XCTAssertEqual(rows.working.map(\.id), ["h/working"])
+        XCTAssertEqual(rows.unreadFinishedCount, 0)
+        // An older computer never sends the field, and nothing is marked.
+        XCTAssertNil(try thread("old").finishedUnread)
+    }
     func testWaitingAndCompactionCountAlongsideForegroundWork() throws {
         let waiting = try thread("command", #", "backgroundWork":[{"type":"command"}]"#)
         let compacting = try thread("context", #", "compaction":{"status":"running"}"#)

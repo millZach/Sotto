@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
-import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
-import { useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
+import { browserPages, useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
 import { ToolsChrome } from './ToolsChrome'
@@ -47,33 +47,40 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const [reviewBusy, setReviewBusy] = useState(false)
   const [stoppingGrant, setStoppingGrant] = useState(false)
   const address = useRef<HTMLInputElement>(null)
+  const shareButton = useRef<HTMLButtonElement>(null)
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const surface = useRef<HTMLDivElement>(null)
-  const active = browser?.pages.find(page => page.id === browser.activePageId) ?? null
+  const active = browser?.pages.find(page => page.id === browser.activePageId && !page.device) ?? null
   const activeId = active?.id ?? null
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
-  const pageTasks = tasks.filter(item => item.threadId === threadId && item.pageId === activeId)
+  const pageTasks = tasks.filter(item => item.threadId === threadId && item.pageId === activeId && !item.device)
   const task = pageTasks.find(item => item.id === selectedTask) ?? pageTasks[0]
   useEffect(() => { setFeedback(null) }, [activeId])
 
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
 
-  if (!browser || browser.status === 'loading' && browser.pages.length === 0) return <><ToolsChrome title="Browser" /><p className="files-preview__loading" role="status">Loading pages…</p></>
-  if (browser.status === 'error' && browser.pages.length === 0) {
+  if (!browser || browser.status === 'loading' && browserPages(browser.pages).length === 0) return <><ToolsChrome title="Browser" /><p className="files-preview__loading" role="status">Loading pages…</p></>
+  if (browser.status === 'error' && browserPages(browser.pages).length === 0) {
     return <><ToolsChrome title="Browser" /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(browser.error ?? { code: 'unavailable', message: '' }, bridge !== undefined)}</strong>
       {bridge ? <button type="button" className="files-link tt-focusable" onClick={() => void store.activate(bridge, threadId)}>Try again</button> : null}
     </div></>
   }
-  const { pages } = browser
+  // The test iPhone is the thread's too, but Tools > iPhone shows it (ADR-0045).
+  const pages = browserPages(browser.pages)
   const newPage = creating || pages.length === 0
   const shown = draft !== null && draft.pageId === (newPage ? null : activeId) ? draft.text : newPage ? '' : active?.url ?? ''
-  const full = pages.length >= 32
+  const full = browser.pages.length >= 32
+  // Under the grant every page is shared, so an unshared one is a page the user made private (ADR-0029). A page an
+  // agent asked to open and nobody has opened yet, its request waiting, denied or expired, is not, so it says nothing.
+  const madePrivate = Boolean(browser.grant && active && !newPage && !active.sharedOrigin && !agentToolsUnavailable && !task?.pendingAction && active.error !== BROWSER_WAITING_TO_OPEN)
+  const shareTitle = browser.grant ? active?.sharedOrigin ? 'The agent in this thread can see and use this page. Stop sharing keeps it private.' : 'This page is private. Share it with the agent in this thread.'
+    : active?.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Opening, clicking and typing still ask you.'
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -160,8 +167,8 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
         {active && !newPage ? <>
           <button type="button" className="tools-chrome__button tt-focusable" title="Comment on page" disabled={reviewBusy || feedback !== null || !agents} onClick={() => void reviewPage('capture')}>
             <MessageSquarePlus size={16} aria-hidden="true" /><span className="tools-chrome__button-label">Comment on page</span></button>
-          {!agentToolsUnavailable ? <button type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
-            title={active.sharedOrigin ? 'Stop sharing page contents with the agent' : `Let the agent in this thread read page contents and screenshots.${browser.grant ? ' It can already open, click and type here without asking.' : ' Opening, clicking and typing still ask you.'}`} onClick={() => void reviewPage('share')}>
+          {!agentToolsUnavailable ? <button ref={shareButton} type="button" className="tools-chrome__button tt-focusable" disabled={reviewBusy} aria-pressed={Boolean(active.sharedOrigin)}
+            title={shareTitle} onClick={() => void reviewPage('share')}>
             <Share2 size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{active.sharedOrigin ? 'Stop sharing' : 'Share with agent'}</span></button> : null}
         </> : null}
         {onFloat ? <button type="button" className="files-icon tt-focusable" aria-label="Float the browser over the thread" title="Float the browser over the thread" onClick={onFloat}><PictureInPicture2 size={16} aria-hidden="true" /></button> : null}
@@ -199,6 +206,11 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
       <span>This thread uses the browser without asking</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread use the browser without asking" title="This thread will ask before opening, clicking or typing again" disabled={stoppingGrant} onClick={stopGrant}>Stop</button>
     </div> : null}
+    {/* Sharing takes this line away, so focus goes to the Share button that now shows the page shared. */}
+    {madePrivate ? <div className="browser-grant">
+      <span>This page is private. The agent cannot see it</span><span aria-hidden="true">·</span>
+      <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy} onClick={() => void reviewPage('share').then(() => requestAnimationFrame(() => shareButton.current?.focus()))}>Share with agent</button>
+    </div> : null}
     {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">This Devin client does not support Sotto browser tools.</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">Browser checks<select aria-label="Browser check" className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
     {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
@@ -227,7 +239,7 @@ function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenE
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(surface, host)
-  const show = page.status !== 'unavailable' && !covered
+  const show = page.status !== 'unavailable' && covered === false
   const pageId = page.id
 
   const mount = useCallback((bounds: BrowserBounds | null) => store.mount(bridge, threadId, pageId, bounds), [store, bridge, threadId, pageId])

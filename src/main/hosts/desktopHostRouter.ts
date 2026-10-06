@@ -9,8 +9,15 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
+import type { FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
+import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { ToolListRequest, ToolsResult } from '../../shared/tools'
+import type { HostThreadToolReads } from '../agents/threadToolReads'
+import { HostConnectionError } from '../agents/socketHostService'
 
-export interface DesktopHostConnection {
+/** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
+export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
@@ -44,6 +51,30 @@ function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
   void _updates; void _run; void _dismissed
   return rest
+}
+
+/** Which surface each tool read is for, as its refusals name it. */
+const TOOL_SURFACES: Record<keyof HostThreadToolReads, { readonly surface: string; readonly what: string }> = {
+  threadFiles: { surface: 'Files', what: 'files' }, threadFilePreview: { surface: 'Files', what: 'files' },
+  gitChanges: { surface: 'Changes', what: 'changes' }, gitReview: { surface: 'Changes', what: 'changes' },
+  subagentPage: { surface: 'Agents', what: 'agents' }, subagentAssignments: { surface: 'Agents', what: 'agents' },
+}
+
+/** Files and Changes show a refusal where the answer would go, so a read the host could not make answers as one. */
+async function answeredAsRefusal<T extends { ok: boolean }>(read: () => Promise<T>): Promise<T | { ok: false; error: { code: 'unavailable'; message: string } }> {
+  try { return await read() }
+  catch (error) { return { ok: false, error: { code: 'unavailable', message: (error instanceof Error ? error.message : '').slice(0, 2000) || 'The host could not be read. Nothing was changed. Try again.' } } }
+}
+
+/**
+ * A path on a paired host, in that host's own format: its working folder joined with a slash-separated relative path.
+ * A Windows folder (`C:\...`, `\\server\...`) joins with the separator it is written with; every other host's with `/`.
+ * Nothing is translated to this computer's format, since the path is the host's.
+ */
+export function hostAbsolutePath(root: string, path: string): string {
+  if (path === '') return root
+  const separator = (/^[A-Za-z]:/u.test(root) || root.startsWith('\\\\')) && root.includes('\\') ? '\\' : '/'
+  return `${root.endsWith(separator) ? root.slice(0, -1) : root}${separator}${path.split('/').join(separator)}`
 }
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
@@ -295,6 +326,48 @@ export class DesktopHostRouter {
     if (!connection.hostFolders) throw new Error('This host cannot list its folders yet. Update Sotto on it, then try again.')
     return connection.hostFolders(request.path === undefined ? {} : { path: request.path })
   }
+  /**
+   * One of a thread's Files, Changes or Agents reads, on the host that runs it (ADR-0025, October 5 amendment). The key's
+   * host-local ID goes to that host, and every thread and project ID in its answer comes back as this window's key, so
+   * the window's stores keep the key they asked with. A read the host could not make throws a sentence the surface shows:
+   * the version sentence for a host from before the read, or what the connection said.
+   */
+  private async threadToolRead<K extends keyof HostThreadToolReads>(read: K, request: Parameters<HostThreadToolReads[K]>[0]): Promise<Awaited<ReturnType<HostThreadToolReads[K]>>> {
+    const { connection, id } = this.target(request.threadId)
+    const { surface, what } = TOOL_SURFACES[read]
+    const method = connection[read] as ((request: Parameters<HostThreadToolReads[K]>[0]) => ReturnType<HostThreadToolReads[K]>) | undefined
+    if (!method) throw new Error(`${surface} is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.`)
+    if (connection.available?.() === false) throw new Error(`This host is disconnected. Nothing was changed. Connect again to read its ${what}.`)
+    let answer: Awaited<ReturnType<HostThreadToolReads[K]>>
+    try { answer = await method({ ...request, threadId: id! }) }
+    catch (error) { throw new Error(error instanceof HostConnectionError ? error.message : `${connection.name} could not read this thread's ${what}. Nothing was changed. Try again.`, { cause: error }) }
+    return mapHostReferences(answer, value => hostEntityKey(connection.hostId, value))
+  }
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return answeredAsRefusal(() => this.threadToolRead('threadFiles', request)) }
+  async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFilePreview', request)) }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return answeredAsRefusal(() => this.threadToolRead('gitChanges', request)) }
+  async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return answeredAsRefusal(() => this.threadToolRead('gitReview', request)) }
+  subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.threadToolRead('subagentPage', request) }
+  subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.threadToolRead('subagentAssignments', request) }
+  /**
+   * Copy path in Files for a thread on a paired host: the host's own path to the file or folder, in the host's format,
+   * once a listing of its folder shows the working folder is still the one the window read and the entry is still there.
+   * Copying it is the caller's; nothing on the host is touched.
+   */
+  async threadFilePath(request: FileRequest): Promise<FilesResult<FilePath>> {
+    const folder = request.path.includes('/') ? request.path.slice(0, request.path.lastIndexOf('/')) : ''
+    const listing = await this.threadFiles({ threadId: request.threadId, path: folder, workspaceId: request.workspaceId })
+    if (!listing.ok) return listing
+    const listed = request.path === '' || listing.value.truncated || listing.value.entries.some(entry => entry.path === request.path && entry.kind !== 'unavailable')
+    if (!listed) return { ok: false, error: { code: 'path-unavailable', message: 'This path is unavailable or changed. Refresh Files and try again.' } }
+    return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
+  }
+  /** Copy path in Changes for a thread on a paired host, the same way, once the change list shows the same working folder. */
+  async gitChangesPath(request: GitPathRequest): Promise<ToolsResult<FilePath>> {
+    const listing = await this.gitChanges({ threadId: request.threadId, workspaceId: request.workspaceId })
+    if (!listing.ok) return listing
+    return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
+  }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     this.notice = undefined
     const references = new Set<string>()
@@ -324,8 +397,7 @@ export class DesktopHostRouter {
       } else {
         this.selectedProjectId = command.projectId ? hostEntityKey(connection.hostId, command.projectId) : null; this.selectedThreadId = null
       }
-      // The window's selection is client-local, but the owning host keeps its own active thread:
-      // without the forward, compose and send would still target the previous one.
+      // Forward selection so the remote peer can target its own picked thread.
       if (connection.available?.() !== false) {
         const result = await connection.service.command(command, client)
         if (result.error) this.notice = this.refusal(connection, result.error)
@@ -334,9 +406,20 @@ export class DesktopHostRouter {
     }
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before sending. No command was sent.')
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
+    if (command.type === 'preview-reclaim-thread-worktree') {
+      try {
+        const result = await connection.service.command(command, client)
+        if (result.error || !result.worktreeReclaimPreview) return { ...this.shell(), error: 'This host could not check the worktree. Nothing was removed. Update the host and try again.' }
+        return { ...this.shell(), error: null, worktreeReclaimPreview: result.worktreeReclaimPreview }
+      } catch {
+        return { ...this.shell(), error: 'This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again.' }
+      }
+    }
     // Read as values: a host's shell can be its live state, which the command is about to change.
     const { activeThreadId, activeProjectId } = connection.service.shell()
     const selections = this.selections
+    const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
+    let refused = false
     try {
       let decisionId: string | undefined
       if (connection.kind === 'remote' && command.type === 'answer') {
@@ -353,12 +436,36 @@ export class DesktopHostRouter {
       }
       const result = await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
         : connection.service.command(command as AgentCommand, client))
-      if (result.error) this.notice = this.refusal(connection, result.error)
+      if (result.error) { refused = true; this.notice = this.refusal(connection, result.error) }
+    } catch (error) {
+      // The host refused this action before dispatch. Return its account through the same state error
+      // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
+      // A dropped connection is still uncertain and must keep the renderer's recovery path.
+      if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
+      refused = true; this.notice = this.refusal(connection, error.message)
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
+    // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
+    const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
+    if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
+      await this.openCreated(connection, command.threadId, client)
+    }
     this.emit()
     return agentShell(this.shell())
+  }
+  /**
+   * A remote host keeps a selection for each client and leaves it where it was when that client creates a thread, so
+   * the window opens the thread it just created itself and tells the host, which then composes and sends there.
+   */
+  private async openCreated(connection: DesktopHostConnection, threadId: string, client: ClientIdentity): Promise<void> {
+    if (this.hosts.get(connection.hostId)?.connection !== connection) return
+    const created = connection.service.shell().host.threads.find(thread => thread.id === threadId)
+    if (!created) return
+    this.moveTo(connection.hostId, threadId, created.projectId)
+    // The creation is confirmed either way, and its answer must not read as a refusal: a forward the host refuses or
+    // loses leaves it composing for its earlier selection until the window selects again.
+    await connection.service.command({ type: 'select-thread', threadId }, client).catch(() => undefined)
   }
   /**
    * The window goes where one of its selecting commands took the host, so the thread it shows is the one the host
@@ -369,9 +476,13 @@ export class DesktopHostRouter {
   private follow(connection: DesktopHostConnection, before: Pick<AgentState, 'activeThreadId' | 'activeProjectId'>): void {
     const after = connection.service.shell()
     if (after.activeThreadId === before.activeThreadId && after.activeProjectId === before.activeProjectId) return
-    this.selectedHostId = connection.hostId
-    this.selectedThreadId = after.activeThreadId === null ? null : hostEntityKey(connection.hostId, after.activeThreadId)
-    this.selectedProjectId = after.activeProjectId === null ? null : hostEntityKey(connection.hostId, after.activeProjectId)
+    this.moveTo(connection.hostId, after.activeThreadId, after.activeProjectId)
+  }
+  /** Shows a host's thread and project, given by that host's own IDs. */
+  private moveTo(hostId: string, threadId: string | null, projectId: string | null): void {
+    this.selectedHostId = hostId
+    this.selectedThreadId = threadId === null ? null : hostEntityKey(hostId, threadId)
+    this.selectedProjectId = projectId === null ? null : hostEntityKey(hostId, projectId)
   }
   /** A remote host cannot know the name this computer saved it under, so its refusals are given it here (#459). */
   private refusal(connection: DesktopHostConnection, message: string): string {

@@ -1,6 +1,6 @@
 # Replacing a client while it runs, on Windows
 
-The evidence for the September 28, 2026 amendment to [ADR-0021](../adr/0021-provider-client-updates.md) and for [ADR-0038](../adr/0038-one-client-process-per-thread.md): a client update can run while threads keep working, because Windows lets the installer put a new client beside a running one.
+The evidence for the September 28, 2026 amendment to [ADR-0042](../adr/0042-provider-client-updates.md) and for [ADR-0038](../adr/0038-one-client-process-per-thread.md): a client update can run while threads keep working, because Windows lets the installer put a new client beside a running one.
 
 Measured September 28, 2026 on Windows 11 Home 10.0.26200, Node 24.14.1 and npm 11.11.0. The running executable was a copy of `C:\Windows\System32\PING.EXE` (`-n 6 127.0.0.1`, about five seconds), so nothing on the machine was touched outside a temporary folder, and the npm install used a temporary `--prefix` rather than the machine's global folder.
 

@@ -65,7 +65,6 @@ async function coordinator(host: ThreeClients, run: (executable: string, args: r
       fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[IDS.find(id => url.includes(encodeURIComponent(CLIENT_PACKAGES[id]!.split('/')[0]!)))!] }), { status: 200 }) }),
     locateClient: async provider => join(prefix, `${provider}.exe`),
     reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) },
   })
   await control.start()
   await control.command({ type: 'connect' })
@@ -207,6 +206,52 @@ describe('the client update line', () => {
     } finally { releaseCheck?.(); control.dispose() }
   })
 
+  it('puts a cancelled client back as behind, not with its old failure, when a newer release came out while it waited', async () => {
+    const host = new ThreeClients()
+    const installer = heldInstaller(host, new Set(['codex']))
+    const control = await coordinator(host, installer.run)
+    try {
+      await control.command({ type: 'queue-client-updates', providers: ['codex'] })
+      await installer.finish()
+      await vi.waitFor(() => { expect(states(control)).toMatchObject({ codex: 'failed' }) })
+      await control.command({ type: 'queue-client-updates', providers: ['claude', 'codex'] })
+      const clients = (control as unknown as { clients: ProviderClients }).clients
+      clients.publishedVersion = async provider => provider === 'codex' ? '0.159.0' : PUBLISHED[provider]
+      await control.command({ type: 'check-client-updates' })
+      expect(states(control)).toMatchObject({ claude: 'updating', codex: 'queued' })
+      await control.command({ type: 'cancel-client-updates', providers: ['codex'] })
+      const codex = control.get().clientUpdates?.find(update => update.id === 'codex')
+      expect(codex).toMatchObject({ state: 'idle', published: '0.159.0', behind: true, canInstall: true })
+      expect(codex).not.toHaveProperty('failure')
+      await installer.finish()
+    } finally { control.dispose() }
+  })
+
+  it('lets a newer release found by a waiting check win over how an update ended meanwhile', async () => {
+    const host = new ThreeClients()
+    const installer = heldInstaller(host, new Set(['codex']))
+    let holdCheck: Promise<void> | undefined
+    let releaseCheck!: () => void
+    const control = await coordinator(host, installer.run)
+    const clients = (control as unknown as { clients: ProviderClients }).clients
+    const check = clients.check.bind(clients)
+    clients.check = async (...args) => { if (holdCheck) await holdCheck; return check(...args) }
+    try {
+      await control.command({ type: 'queue-client-updates', providers: ['codex'] })
+      holdCheck = new Promise<void>(resolve => { releaseCheck = resolve })
+      const checking = control.command({ type: 'check-client-updates' })
+      await installer.finish()
+      await vi.waitFor(() => { expect(states(control)).toMatchObject({ codex: 'failed' }) })
+      // The check that was waiting reads a release newer than the one the update failed to reach.
+      clients.publishedVersion = async provider => provider === 'codex' ? '0.159.0' : PUBLISHED[provider]
+      releaseCheck()
+      await checking
+      const codex = control.get().clientUpdates?.find(update => update.id === 'codex')
+      expect(codex).toMatchObject({ state: 'idle', published: '0.159.0', behind: true })
+      expect(codex).not.toHaveProperty('failure')
+    } finally { releaseCheck?.(); control.dispose() }
+  })
+
   it('keeps a client’s place in the line through a fresh check', async () => {
     const host = new ThreeClients()
     const installer = heldInstaller(host)
@@ -239,7 +284,7 @@ describe('the client update line', () => {
     await credentials.load()
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined,
       reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     await control.start()
     try {
       await control.command({ type: 'connect' })

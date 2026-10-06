@@ -1,4 +1,4 @@
-import { APP_MAXIMIZED, WIDGET_VISIBILITY } from '../../shared/channels'
+import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type {
   WidgetDragPayload,
@@ -6,11 +6,12 @@ import type {
   WidgetPresentationPayload,
   WidgetVisibilityPayload,
 } from '../../shared/contracts'
-import { PLATFORM_ARGUMENT_PREFIX, type SottoPlatform } from '../../shared/platform'
+import { PLATFORM_ARGUMENT_PREFIX, WINDOW_FROST_ARGUMENT, type SottoPlatform } from '../../shared/platform'
 import type {
   MainWindowChrome,
   TrafficLightPosition,
   WidgetAlwaysOnTopLevel,
+  WindowFrost,
 } from '../platformProfile'
 import { selectRendererSource, type RendererRole } from '../security'
 import {
@@ -49,7 +50,7 @@ export interface WindowWebPreferences {
   readonly preload: string
   // A mutable tuple: Electron's BrowserWindowConstructorOptions declares
   // additionalArguments as string[], which a readonly array cannot satisfy.
-  readonly additionalArguments: [string, string]
+  readonly additionalArguments: [string, string, ...string[]]
   readonly contextIsolation: true
   readonly nodeIntegration: false
   readonly sandbox: true
@@ -64,6 +65,9 @@ export interface WindowConstructorOptions {
   readonly show: false
   readonly title?: string
   readonly backgroundColor?: string
+  readonly backgroundMaterial?: 'acrylic'
+  readonly vibrancy?: 'under-window'
+  readonly visualEffectState?: 'followWindow'
   readonly autoHideMenuBar: true
   readonly resizable?: false
   readonly maximizable?: false
@@ -77,6 +81,8 @@ export interface WindowConstructorOptions {
   readonly skipTaskbar?: true
   readonly focusable?: boolean
   readonly hasShadow?: true
+  /** macOS only: a nonactivating panel that can join other apps' full-screen desktops. */
+  readonly type?: 'panel'
   /** Absolute path to a window icon file; omitted where the platform ignores it. */
   readonly icon?: string
   readonly webPreferences: WindowWebPreferences
@@ -102,6 +108,19 @@ function mainWindowChromeOptions(
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: chrome.trafficLightPosition,
   }
+}
+
+const SOLID_BACKGROUND = '#000000'
+const CLEAR_BACKGROUND = '#00000000'
+
+/**
+ * A frosted main window starts clear over the system's material, so the room's own translucent colours sit on the
+ * blurred desktop. A solid one keeps the black it always had (ADR-0009).
+ */
+function mainWindowFrostOptions(frost: WindowFrost | null, frosted: boolean): Pick<WindowConstructorOptions, 'backgroundColor' | 'backgroundMaterial' | 'vibrancy' | 'visualEffectState'> {
+  if (frost === null || !frosted) return { backgroundColor: SOLID_BACKGROUND }
+  if (frost === 'acrylic') return { backgroundColor: CLEAR_BACKGROUND, backgroundMaterial: 'acrylic' }
+  return { backgroundColor: CLEAR_BACKGROUND, vibrancy: 'under-window', visualEffectState: 'followWindow' }
 }
 
 /** The window icon is absent wherever the platform or the build supplies it. */
@@ -156,9 +175,9 @@ export interface WebContentsLike {
 
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
-  on(event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize', listener: (event: CloseEventLike) => void): void
+  on(event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize', listener: (event: CloseEventLike) => void): void
   removeListener(
-    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize',
+    event: 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize',
     listener: (event: CloseEventLike) => void,
   ): void
   hide(): void
@@ -170,13 +189,20 @@ export interface BrowserWindowLike {
   isMaximized(): boolean
   minimize(): void
   isMinimized(): boolean
+  /** True when the green button has given this window its own desktop. */
+  isFullScreen?(): boolean
+  /** False when the window was hidden. A full-screen window on another desktop is still visible. */
+  isVisible?(): boolean
   restore(): void
   showInactive(): void
   setAlwaysOnTop(flag: boolean, level?: WidgetAlwaysOnTopLevel): void
   /** Absent on window backends that cannot span workspaces. */
   setVisibleOnAllWorkspaces?(
     visible: boolean,
-    options?: { readonly visibleOnFullScreen: boolean },
+    options?: {
+      readonly visibleOnFullScreen?: boolean
+      readonly skipTransformProcessType?: boolean
+    },
   ): void
   /** Managed widget geometry uses the renderer content area in Electron DIPs. */
   getBounds(): Rectangle
@@ -185,6 +211,10 @@ export interface BrowserWindowLike {
   getPosition(): readonly [number, number]
   setSize(width: number, height: number, animate?: boolean): void
   setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void
+  /** Absent on window backends that cannot change their native background after creation. */
+  setBackgroundColor?(color: string): void
+  setBackgroundMaterial?(material: 'acrylic' | 'none'): void
+  setVibrancy?(type: 'under-window' | null): void
   destroy(): void
   isDestroyed(): boolean
   loadURL(url: string): Promise<void>
@@ -208,12 +238,7 @@ export interface WindowChromeProfile {
   readonly widgetAlwaysOnTopLevel: WidgetAlwaysOnTopLevel
   readonly widgetFocusable: boolean
   readonly widgetVisibleOnAllWorkspaces: boolean
-}
-
-/** Runtime Dock presence; null where the platform has no runtime-controlled Dock. */
-export interface DockAdapter {
-  show(): void
-  hide(): void
+  readonly widgetIsPanel: boolean
 }
 
 export interface WindowManagerDependencies {
@@ -221,7 +246,6 @@ export interface WindowManagerDependencies {
   readonly display: DisplayAdapter
   readonly platform: SottoPlatform
   readonly chrome: WindowChromeProfile
-  readonly dock: DockAdapter | null
   readonly preloadPath: string
   readonly mainHtmlPath: string
   readonly widgetHtmlPath: string
@@ -238,6 +262,10 @@ export interface WindowManagerDependencies {
   readonly onRendererProcessGone?: (kind: RendererRole) => void
   readonly getWidgetPlacement: () => StoredWidgetPlacement | null
   readonly onWidgetMoved: (placement: WidgetPlacement) => void
+  /** The material the system can draw behind a frosted main window; null or absent where it has none (ADR-0048). */
+  readonly windowFrost?: WindowFrost | null
+  /** Whether the user asked for a frosted main window, read when the window is made. */
+  readonly frostedWindow?: () => boolean
 }
 
 type WindowKind = RendererRole
@@ -300,12 +328,14 @@ function securePreferences(
   preloadPath: string,
   role: RendererRole,
   platform: SottoPlatform,
+  frost = false,
 ): WindowWebPreferences {
   return {
     preload: preloadPath,
     additionalArguments: [
       `--sotto-renderer-role=${role}`,
       `${PLATFORM_ARGUMENT_PREFIX}${platform}`,
+      ...(frost ? [WINDOW_FROST_ARGUMENT] : []),
     ],
     contextIsolation: true,
     nodeIntegration: false,
@@ -381,6 +411,22 @@ export class WindowManager {
 
   constructor(private readonly dependencies: WindowManagerDependencies) {}
 
+  private frost(): WindowFrost | null {
+    return this.dependencies.windowFrost ?? null
+  }
+
+  /** Turns the main window's frost on or off in place; the renderer's room follows from the same setting. */
+  setMainWindowFrosted(frosted: boolean): void {
+    const window = this.mainWindow
+    const frost = this.frost()
+    if (window === null || window.isDestroyed() || frost === null) return
+    // The same options a new window would be made with, so the material is chosen in one place.
+    const options = mainWindowFrostOptions(frost, frosted)
+    if (frost === 'acrylic') window.setBackgroundMaterial?.(options.backgroundMaterial ?? 'none')
+    else window.setVibrancy?.(options.vibrancy ?? null)
+    window.setBackgroundColor?.(options.backgroundColor ?? SOLID_BACKGROUND)
+  }
+
   createMainWindow(): Promise<BrowserWindowLike> {
     if (this.isStopped()) {
       return Promise.reject(new WindowManagerStoppedError())
@@ -399,7 +445,7 @@ export class WindowManager {
       minHeight: 560,
       show: false,
       title: APP_NAME,
-      backgroundColor: '#000000',
+      ...mainWindowFrostOptions(this.frost(), this.dependencies.frostedWindow?.() ?? false),
       autoHideMenuBar: true,
       ...windowIconOptions(this.dependencies),
       ...mainWindowChromeOptions(this.dependencies.chrome),
@@ -407,6 +453,7 @@ export class WindowManager {
         this.dependencies.preloadPath,
         'main',
         this.dependencies.platform,
+        this.frost() !== null,
       ),
     })
     this.mainWindow = window
@@ -478,6 +525,7 @@ export class WindowManager {
       focusable: this.dependencies.chrome.widgetFocusable,
       hasShadow: true,
       autoHideMenuBar: true,
+      ...(this.dependencies.chrome.widgetIsPanel ? { type: 'panel' as const } : {}),
       ...windowIconOptions(this.dependencies),
       webPreferences: {
         ...securePreferences(
@@ -498,7 +546,14 @@ export class WindowManager {
     window.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
     if (this.dependencies.chrome.widgetVisibleOnAllWorkspaces) {
       try {
-        window.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true })
+        // Without skipTransformProcessType, Electron hides the Dock for the
+        // whole app so one window can cover full-screen apps. Every window
+        // then can, including the main one. The collection behavior below
+        // stays on this window only.
+        window.setVisibleOnAllWorkspaces?.(true, {
+          visibleOnFullScreen: true,
+          skipTransformProcessType: true,
+        })
       } catch {
         // Spanning workspaces is best effort; the widget stays usable on the
         // active one.
@@ -560,16 +615,33 @@ export class WindowManager {
     if (window.isMinimized()) {
       window.restore()
     }
-    this.showDock()
     window.show()
     window.focus()
+  }
+
+  /**
+   * Dock and Command-Tab already move to a full-screen window's desktop.
+   * Focusing it again does too, and activation also arrives when nothing
+   * asked for that desktop. A hidden or minimized window still opens.
+   */
+  async showMainFromActivation(): Promise<void> {
+    const window = this.mainWindow
+    if (
+      window !== null &&
+      !window.isDestroyed() &&
+      !window.isMinimized() &&
+      window.isFullScreen?.() === true &&
+      window.isVisible?.() !== false
+    ) {
+      return
+    }
+    await this.showMain()
   }
 
   hideMain(): void {
     const main = this.mainWindow
     if (main === null) return
     main.hide()
-    this.hideDock()
   }
 
   isMainMaximized(): boolean {
@@ -607,10 +679,14 @@ export class WindowManager {
       if (visibilityGeneration !== this.widgetVisibilityGeneration) return
       if (this.widgetDrag !== null) return
 
-      // Reassert on every reveal (and every no-op show while already visible).
-      // Windows 11 can drop WS_EX_TOPMOST after competing foreground windows or
-      // showInactive races; create-time setAlwaysOnTop alone is not enough.
-      widget.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+      // Windows 11 drops WS_EX_TOPMOST after competing foreground windows or
+      // showInactive races, so a show while the widget is already up sets the
+      // level again. On macOS that call reorders the app's windows, and a
+      // full-screen main window then takes its desktop back. The level set
+      // at creation stays.
+      if (!this.widgetVisible || this.dependencies.platform !== 'darwin') {
+        widget.setAlwaysOnTop(true, this.dependencies.chrome.widgetAlwaysOnTopLevel)
+      }
 
       this.loadWidgetPlacement()
       const workArea = this.resolveCurrentWidgetWorkArea()
@@ -893,32 +969,11 @@ export class WindowManager {
     }
   }
 
-  private showDock(): void {
-    const dock = this.dependencies.dock
-    if (dock === null) return
-    try {
-      dock.show()
-    } catch {
-      // Dock presence is cosmetic; the window still opens without it.
-    }
-  }
-
-  private hideDock(): void {
-    const dock = this.dependencies.dock
-    if (dock === null) return
-    try {
-      dock.hide()
-    } catch {
-      // Dock presence is cosmetic; the window still hides without it.
-    }
-  }
-
   private installMainLifecycle(window: BrowserWindowLike): void {
     const onClose = (event: CloseEventLike): void => {
       if (!this.quitting) {
         event.preventDefault()
         window.hide()
-        this.hideDock()
       }
     }
     const onClosed = (): void => {
@@ -931,11 +986,18 @@ export class WindowManager {
     window.on('maximize', onMaximized)
     const onUnmaximized = (): void => onMaximized()
     window.on('unmaximize', onUnmaximized)
+    // Capture can keep Chromium's page visible after the native window hides.
+    const onHidden = (): void => window.webContents.send(APP_WINDOW_HIDDEN, null)
+    const onMinimized = (): void => onHidden()
+    window.on('hide', onHidden)
+    window.on('minimize', onMinimized)
     window.on('close', onClose)
     window.on('closed', onClosed)
     this.addCleanup(window, () => {
       window.removeListener('maximize', onMaximized)
       window.removeListener('unmaximize', onUnmaximized)
+      window.removeListener('hide', onHidden)
+      window.removeListener('minimize', onMinimized)
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
     })

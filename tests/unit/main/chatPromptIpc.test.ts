@@ -10,7 +10,8 @@ it('limits prompt generation and edited clipboard text to the trusted main frame
   const sender = (role: 'main' | 'widget'): TrustedIpcSender => { const url = `file:///${role}.html`, mainFrame = { parent: null, url }; return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } } }
   const main = sender('main'), widget = sender('widget'), event = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   let copied = '', generated = ''
-  const dispose = registerChatPromptIpc(ipc, { generate: async ({ chatId }) => { generated = chatId; return { chatId, text: 'Reviewed prompt', sourceMessageIds: ['u1'], generatedAt: '2026-09-13T12:00:00Z' } } }, () => [main, widget], text => { copied = text })
+  const copyState: { wait?: Promise<void> } = {}
+  const dispose = registerChatPromptIpc(ipc, { generate: async ({ chatId }) => { generated = chatId; return { chatId, text: 'Reviewed prompt', sourceMessageIds: ['u1'], generatedAt: '2026-09-13T12:00:00Z' } } }, () => [main, widget], text => { copied = text; return copyState.wait })
   for (const channel of [CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY]) {
     expect(() => handlers.get(channel)!({ sender: widget.webContents, senderFrame: widget.webContents.mainFrame }, 'text')).toThrow('CHAT_PROMPT_MAIN_WINDOW_REQUIRED')
     expect(() => handlers.get(channel)!({ ...event, senderFrame: { parent: {}, url: main.url } }, 'text')).toThrow('CHAT_PROMPT_MAIN_WINDOW_REQUIRED')
@@ -21,5 +22,14 @@ it('limits prompt generation and edited clipboard text to the trusted main frame
   await handlers.get(CHAT_PROMPT_GENERATE)!(event, { chatId: 'chat' })
   handlers.get(CHAT_PROMPT_COPY)!(event, 'My edited prompt')
   expect(generated).toBe('chat'); expect(copied).toBe('My edited prompt')
+  let release!: () => void
+  copyState.wait = new Promise(resolve => { release = resolve })
+  let settled = false
+  const pending = Promise.resolve(handlers.get(CHAT_PROMPT_COPY)!(event, 'Queued prompt')).then(() => { settled = true })
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  release()
+  await pending
+  expect(settled).toBe(true)
   dispose(); expect(handlers.size).toBe(0)
 })

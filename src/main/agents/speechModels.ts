@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { lstat, mkdir, readdir, realpath, rm } from 'node:fs/promises'
+import { lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 
 import { createHttpsDownloader, replaceDirectoryAtomic, type LockedFile, type ModelDownloader } from '../models/modelDownload'
@@ -55,6 +55,7 @@ export class NaturalSpeechModels {
   private readonly parent: string
   private readonly root: string
   private readonly downloader: ModelDownloader
+  private initialization: Promise<void> | null = null
   private operation: Promise<NaturalSpeechModelStatus> | null = null
   private verification: Promise<boolean> | null = null
   private fingerprint: string | null = null
@@ -66,6 +67,46 @@ export class NaturalSpeechModels {
     this.parent = join(this.userRoot, 'onnx-community')
     this.root = join(this.userRoot, ...manifest.repository.split('/'))
     this.downloader = options.downloader ?? createHttpsDownloader()
+  }
+
+  initialize(): Promise<void> {
+    this.initialization ??= this.sweepTemporary()
+    return this.initialization
+  }
+
+  private async sweepTemporary(): Promise<void> {
+    let names: string[]
+    try {
+      await this.assertDirectory(this.userRoot)
+      await this.assertDirectory(this.parent)
+      names = (await readdir(this.parent)).sort()
+    } catch { return /* Missing or unsafe roots cannot be swept safely. */ }
+    const backups = names.filter(name => /^Supertonic-TTS-ONNX\.backup-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name))
+    try {
+      const installed = await lstat(this.root).then(() => true, (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return false
+        throw error
+      })
+      if (!installed) {
+        for (const name of backups) {
+          try {
+            const backup = join(this.parent, name)
+            await this.assertDirectory(backup)
+            await rename(backup, this.root)
+            break
+          } catch { console.warn('natural-voice-backup-restore-failed') }
+        }
+      }
+      // Keep recovery copies until the installed model passes its integrity check.
+      if (backups.length > 0 && await this.verified()) {
+        for (const name of backups) await this.removeTemporary(join(this.parent, name))
+      }
+    } catch { console.warn('natural-voice-backup-cleanup-failed') }
+    for (const name of names) {
+      if (/^\.Supertonic-TTS-ONNX\.partial-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) {
+        await this.removeTemporary(join(this.parent, name))
+      }
+    }
   }
 
   async status(): Promise<NaturalSpeechModelStatus> {
@@ -99,6 +140,7 @@ export class NaturalSpeechModels {
   }
 
   private async install(): Promise<NaturalSpeechModelStatus> {
+    await this.initialize()
     let temporary: string | null = null
     this.completedBytes = 0
     try {
@@ -249,11 +291,11 @@ export class NaturalSpeechModels {
 
   private async removeTemporary(path: string): Promise<void> {
     try {
-      if (dirname(path) !== this.parent || !path.startsWith(join(this.parent, '.Supertonic-TTS-ONNX.partial-'))) return
+      if (dirname(path) !== this.parent || !/^\.?Supertonic-TTS-ONNX\.(?:partial|backup)-[0-9a-f-]{36}$/i.test(path.slice(this.parent.length + 1))) return
       await this.assertDirectory(this.userRoot)
       await this.assertDirectory(this.parent)
       await this.assertDirectory(path)
       await rm(path, { recursive: true, force: true })
-    } catch { /* Never recurse into a staging directory that escaped its boundary. */ }
+    } catch { console.warn('natural-voice-temporary-cleanup-failed') }
   }
 }

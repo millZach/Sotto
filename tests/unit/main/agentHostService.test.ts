@@ -49,10 +49,6 @@ async function fixture(authority?: Authority) {
     schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner, logFailure,
     ...(authority === undefined ? {} : { authority }),
-    membership: {
-      status: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-      action: async () => ({ status: 'beta', label: 'Fixture beta', expiresAt: null }),
-    },
   })
   controls.push(control)
   await control.start()
@@ -171,7 +167,7 @@ describe('attribution on an answer', () => {
     f.permission()
     expect((await f.answer(desktopWindowClient('tester'))).error).toBeNull()
     expect(f.host.executed).toContainEqual(expect.objectContaining({ type: 'answer' }))
-    expect(f.logFailure).toHaveBeenCalledWith('thread-answer-attribution-failed', 'workshop')
+    expect(f.logFailure).toHaveBeenCalledWith('thread-answer-attribution-failed', 'failed')
   })
 })
 

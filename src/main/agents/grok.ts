@@ -31,6 +31,7 @@ import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActi
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
+import { markSendStage } from './sendStages'
 
 // Only strip our suffix after durable origin/digest matching; foreign native
 // messages remain untouched and no extra plaintext prompt is stored in aliases.
@@ -62,7 +63,7 @@ function sessionPolicy(mode: GrokRuntimeMode | undefined): { yoloMode: boolean; 
  * Each thread session is its own agent process, never a proxy to Grok's shared leader. A leader serves every
  * client from one binary, and a client newer than the leader asks it to relaunch onto the new binary with a
  * five-second grace for running turns, so an update would cut off every working thread. An agent of its own
- * keeps a working thread on the binary it started with until it goes idle (ADR-0021).
+ * keeps a working thread on the binary it started with until it goes idle (ADR-0042).
  */
 export function grokArguments(): string[] {
   return ['--permission-mode', 'default', 'agent', '--no-leader', 'stdio']
@@ -83,7 +84,7 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 type GrokClient = z.infer<typeof initializeSchema>
 /** Why Sotto will not drive this client, or undefined when it will. */
 function clientRefusal(client: GrokClient): GrokUnsupported | undefined {
-  // The pin is a floor, not one exact version (ADR-0021): an exact pin is what kept an installed
+  // The pin is a floor, not one exact version (ADR-0042): an exact pin is what kept an installed
   // client on 1.0.5 while 1.0.40 was published. Older than the checked version is still refused.
   if (client.protocolVersion !== GROK_ACP_VERSION) return new GrokUnsupported(`Sotto speaks ACP ${GROK_ACP_VERSION}, and this client answered ACP ${client.protocolVersion}.`)
   if (compareClientVersions(client._meta.agentVersion, GROK_CLI_VERSION) < 0) return new GrokTooOld(`Grok CLI ${GROK_CLI_VERSION} or newer is required, and this client is ${client._meta.agentVersion}.`, client._meta.agentVersion)
@@ -539,7 +540,7 @@ export class GrokAcpHost implements AgentHost {
   /**
    * The Grok client on disk was updated while Sotto stayed connected. Find it again (the installer may have
    * moved it), ask the new binary which client it is, and hold it to the same checks connecting applies
-   * (ADR-0021). An accepted client becomes the provider's version and the one every new process starts
+   * (ADR-0042). An accepted client becomes the provider's version and the one every new process starts
    * from; each thread moves onto it as it goes idle: an idle session stops now, invisibly, as the reaper
    * stops one, and a working one finishes its turn on the process it started with and stops after. Nothing
    * is disconnected, cancelled or answered here. A client Sotto cannot find, or would refuse, is refused with
@@ -911,6 +912,7 @@ export class GrokAcpHost implements AgentHost {
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
+          markSendStage(command.commandId, 'written')
           void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
@@ -925,6 +927,7 @@ export class GrokAcpHost implements AgentHost {
             this.emit()
           }).catch(() => this.disconnect())
           try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
+          markSendStage(command.commandId, 'acknowledged')
           await this.refreshThread(command.threadId)
         } else if (command.type === 'answer') {
           const pending = this.pending.get(command.requestId)
@@ -977,9 +980,11 @@ export class GrokAcpHost implements AgentHost {
         rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } })
         // Grok reads that refusal as an answer and keeps going, so a renamed or reshaped approval would
         // otherwise pass as the user declining. Foreign sessions stay none of Sotto's business.
-        if (threadId && needsPerson(method) && this.state.error !== unreadableRequest('Grok')) {
-          this.state.error = unreadableRequest('Grok')
-          this.emit()
+        if (threadId && needsPerson(method)) {
+          const notice = unreadableRequest('Grok'); const thread = this.thread(threadId)
+          if (this.state.error !== notice || thread.requestNotice !== notice) {
+            thread.requestNotice = notice; this.state.error = notice; this.emit()
+          }
         }
       }
       return

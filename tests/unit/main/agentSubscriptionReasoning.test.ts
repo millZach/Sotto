@@ -106,8 +106,7 @@ describe('Sotto subscription reasoning integration', () => {
       models: [{ id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'high'] }] })) }
     const control: AgentControl = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
       reasoner: new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client, grok }),
-      membership: { status: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }),
-        action: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }) } })
+    })
     controls.push(control)
     await control.start()
     const published: string[][] = []
@@ -125,8 +124,7 @@ describe('Sotto subscription reasoning integration', () => {
     const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client })
     const start = async () => {
       control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
-        membership: { status: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }),
-          action: async () => ({ status: 'beta', label: 'Test beta', expiresAt: null }) } })
+      })
       controls.push(control)
       await control.start()
       return control

@@ -120,6 +120,5 @@ export function AgentSetupFields(): ReactNode {
       <SavedField label="Wake runtime directory" value={configuration.wakeRuntimeDirectory} onSave={wakeRuntimeDirectory => save({ wakeRuntimeDirectory })} />
     </div>
   </details></> : null}
-  <div className="agent-billing"><p><b>{state.membership.label}</b></p><p>Provider usage is separate from Sotto access. Free dictation remains available without an account.</p>{configuration.membershipEndpoint ? <div className="agent-actions"><Button variant="secondary" onClick={() => void command({ type: 'membership', action: 'signin' })}>Sign in to Sotto</Button><Button variant="secondary" onClick={() => void command({ type: 'membership', action: state.membership.status === 'active' ? 'portal' : 'checkout' })}>{state.membership.status === 'active' ? 'Manage subscription' : 'Get Sotto Pro'}</Button><Button variant="ghost" onClick={() => void command({ type: 'membership', action: 'refresh' })}>Refresh membership</Button></div> : <p>Hosted sign-in and checkout are not available in this private development beta.</p>}</div>
   </div>
 }

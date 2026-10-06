@@ -1,4 +1,4 @@
-# Reclaiming a thread's worktree (ADR-0019), 2026-09-22
+# Reclaiming a thread's worktree (ADR-0041), 2026-09-22
 
 Proof that a thread's own worktree can be given back from the running app, that its branch survives, that the next send puts the folder back, and that the four cleanup rules appear in Settings and start off. Screenshots are in `artifacts/reclaim-worktrees/`; `index.html` there lays them out.
 

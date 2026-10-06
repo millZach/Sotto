@@ -37,7 +37,9 @@ export function grokBrowserAdmission(pending: GrokPending, server: string, tools
 export function grokPending(wireId: string | number, method: string, value: unknown, threadId: string): GrokPending | undefined {
   const id = `grok-request-${JSON.stringify(wireId)}`
   if (method === 'session/request_permission') {
-    const permission = permissionSchema.parse(value)
+    const parsed = permissionSchema.safeParse(value)
+    if (!parsed.success) return
+    const permission = parsed.data
     const browser = grokBrowserText(permission.toolCall.rawInput)
     return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission', text: browser ?? `${permission.toolCall.title ?? 'Grok requests permission to use a tool.'}${permission.toolCall.rawInput === undefined ? '' : `\n${JSON.stringify(permission.toolCall.rawInput).slice(0, 20000)}`}`, options: [],
       permissionChoices: permission.options.map(option => ({ id: option.optionId, label: option.name, kind: option.kind === 'allow_once' ? 'allow-once' : option.kind === 'allow_always' ? 'allow-always' : 'deny',
@@ -45,7 +47,9 @@ export function grokPending(wireId: string | number, method: string, value: unkn
       context: { toolCallId: permission.toolCall.toolCallId, details: permission.toolCall.rawInput === undefined ? undefined : JSON.stringify(permission.toolCall.rawInput).slice(0, 100000) } } }
   }
   if (method === 'x.ai/ask_user_question') {
-    const question = questionSchema.parse(value)
+    const parsed = questionSchema.safeParse(value)
+    if (!parsed.success) return
+    const question = parsed.data
     return { wireId, threadId, toolCallId: question.toolCallId, question, request: { id, kind: 'question', text: question.questions.map(q => q.question).join('\n'), options: question.questions.length === 1 ? question.questions[0]!.options.map(option => ({ id: option.label, label: option.label })) : [],
       questions: question.questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, options: q.options.map(option => ({ id: option.label, ...option })), multiSelect: q.multiSelect ?? false, allowFreeText: true })), context: { toolCallId: question.toolCallId } } }
   }

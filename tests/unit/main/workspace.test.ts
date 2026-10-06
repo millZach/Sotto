@@ -317,12 +317,14 @@ describe('durable project/thread organization', () => {
     await git(repository, ['add', '.'])
     await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
     let finish!: (name: string) => void
-    const writer = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
+    const started = Promise.withResolvers<void>()
+    const writer = vi.fn(() => new Promise<string>(resolve => { finish = resolve; started.resolve() }))
     f.host.setWorkingCopyDefaults(() => 'independent')
     f.host.setBranchNameWriter(writer)
     await local(f)
     await f.host.execute(send())
-    await vi.waitFor(() => expect(writer).toHaveBeenCalledOnce())
+    await started.promise
+    expect(writer).toHaveBeenCalledOnce()
     const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
     const rename = vi.spyOn(ThreadWorktrees.prototype, 'renameTemporaryBranch')
     f.host.disconnect()
@@ -344,12 +346,14 @@ describe('durable project/thread organization', () => {
     await git(repository, ['add', '.'])
     await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
     let finish!: (name: string | null) => void
-    const writer = vi.fn(() => new Promise<string | null>(resolve => { finish = resolve }))
+    const started = Promise.withResolvers<void>()
+    const writer = vi.fn(() => new Promise<string | null>(resolve => { finish = resolve; started.resolve() }))
     f.host.setWorkingCopyDefaults(() => 'independent')
     f.host.setBranchNameWriter(writer)
     await local(f)
     await f.host.execute(send())
-    await vi.waitFor(() => expect(writer).toHaveBeenCalledTimes(1))
+    await started.promise
+    expect(writer).toHaveBeenCalledTimes(1)
     // The branch is named by the thread whose first prompt it is, so its own provider is the one asked.
     expect(writer).toHaveBeenCalledWith('local', send().text)
     const thread = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
@@ -639,7 +643,7 @@ describe('durable project/thread organization', () => {
     let behind = 1
     const status = (): GitStatus => ({ isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' })
     const source = { read: vi.fn(async () => status()), invalidate: vi.fn() }
-    // The real GitActions, whose one-action-per-folder rule is what keeps a press from racing the pull; only Git is scripted.
+    // The real GitActions run under the host's checkout guard; only Git is scripted.
     const pulling = deferred(), started = deferred()
     let head = 'aaa'
     const run = vi.fn(async (_cwd: string, _command: 'git' | 'gh', args: readonly string[]) => {
@@ -660,8 +664,8 @@ describe('durable project/thread organization', () => {
     await started.promise
     // Mid-pull, the other thread in the same folder presses Commit & push: refused, not run beside the pull, and told
     // what holds the folder, since the automatic pull shows nothing on screen.
-    await f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })
-    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toMatchObject({ status: 'failed', error: 'Sotto is pulling this folder. Try again in a moment.' })
+    await expect(f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })).rejects.toThrow('Sotto is pulling this folder. Try again in a moment.')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toBeUndefined()
     expect(run.mock.calls.filter(call => call[2][0] === 'commit')).toHaveLength(0)
     pulling.release()
     await refresh
@@ -854,7 +858,8 @@ describe('durable project/thread organization', () => {
     // A thread mid-turn keeps its folder to itself.
     session.status = 'running'; f.adapters.codex.emit()
     await vi.waitFor(() => expect(record_()?.status).toBe('running'))
-    await expect(f.host.runGitAction({ threadId: 'local', actionId: 'action-3', action: 'commit' })).rejects.toThrow('Wait for the thread to finish its turn before changing Git.')
+    await expect(f.host.runGitAction({ threadId: 'local', actionId: 'action-3', action: 'commit' })).rejects.toThrow('is working in this folder')
+    expect(record_()?.gitAction).toMatchObject({ actionId: 'action-2', status: 'failed', error: 'Commit local changes before creating a PR.' })
     session.status = 'idle'; f.adapters.codex.emit()
     await vi.waitFor(() => expect(record_()?.status).toBe('idle'))
     expect((await f.host.pullThreadBranch('local')).result).toEqual({ status: 'pulled', branch: 'main', upstream: 'origin/main' })
@@ -874,6 +879,8 @@ describe('durable project/thread organization', () => {
     const switched = vi.spyOn(ThreadWorktrees.prototype, 'switchBranch').mockImplementation(async (metadata, branch) => { checkedOut = branch; return { ...metadata, status: 'ready', branch, dirty } })
     await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
     await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
     checkedOut = 'feat/agent-chose'
     await expect(f.host.restoreThreadBranch('local', false)).rejects.toThrow('uncommitted changes')
     expect(switched).not.toHaveBeenCalled()
@@ -916,6 +923,78 @@ describe('durable project/thread organization', () => {
     expect(worktree()?.status).toBe('error')
     await expect(f.host.threadWorkingDirectory('local')).resolves.toBe(project.path)
     expect(worktree()).toMatchObject({ status: 'ready', error: undefined })
+  })
+
+  it.each(['missing', 'reclaimed', 'unreadable', 'shared-after-missing', 'missing-shared-subfolder'] as const)('checks checkout ownership with a %s thread folder', async kind => {
+    const f = await fixture()
+    const repository = f.adapters.codex.state.projects[0]!.path
+    await git(repository, ['init'])
+    await writeFile(join(repository, 'tracked.txt'), 'baseline')
+    await git(repository, ['add', '.'])
+    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    await local(f)
+    await f.host.execute(send())
+    const owner = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
+    const provider = f.adapters.codex.state.threads
+    provider.at(-1)!.status = 'idle'
+    const missing = join(kind === 'missing-shared-subfolder' ? owner.workingDirectory! : repository, 'missing-folder')
+    provider[0]!.workingDirectory = missing
+    if (kind === 'reclaimed') provider[0]!.worktree = { mode: 'independent', status: 'ready', path: missing, reclaimedAt: '2026-09-22T00:00:00.000Z' }
+    if (kind === 'shared-after-missing') {
+      f.adapters.claude.state.threads[0]!.workingDirectory = owner.workingDirectory
+      f.adapters.claude.emit()
+    }
+    const original = ThreadWorktrees.prototype.checkoutIdentity
+    const service = new ThreadWorktrees(f.root)
+    const identity = vi.spyOn(ThreadWorktrees.prototype, 'checkoutIdentity')
+    if (kind === 'unreadable') {
+      identity.mockImplementation(async path => {
+        if (path === missing) throw Object.assign(new Error('Unreadable folder'), { code: 'EACCES' })
+        return original.call(service, path)
+      })
+    }
+    f.adapters.codex.emit()
+    await f.host.snapshot()
+    await f.host.renameTemporaryBranch('local', 'sotto/available-name')
+    const blocked = kind === 'unreadable' || kind === 'shared-after-missing' || kind === 'missing-shared-subfolder'
+    expect((await git(owner.workingDirectory!, ['branch', '--show-current'])).trim()).toBe(blocked ? owner.worktree!.branch : 'sotto/available-name')
+    if (kind === 'reclaimed') expect(identity).not.toHaveBeenCalledWith(missing)
+    if (blocked) await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Another thread works in this folder')
+    else {
+      await f.host.reclaimThreadWorktree('local', { automatic: kind === 'reclaimed' })
+      expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.reclaimedAt).toBeDefined()
+    }
+  })
+
+  it('checks each shared folder once per ownership decision and checks it again before the next decision', async () => {
+    const f = await fixture()
+    const project = (await f.host.connect()).projects.find(project => project.providerId === 'codex')!
+    const checkout = join(project.path, 'owned-copy')
+    await mkdir(checkout)
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: checkout, repositoryRoot: project.path, branch: 'sotto/fixture', baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', dirty: false }))
+    const identity = vi.spyOn(ThreadWorktrees.prototype, 'checkoutIdentity').mockImplementation(async path => path)
+    f.host.setWorkingCopyDefaults(() => 'independent')
+    await local(f)
+    await f.host.execute(send())
+    const provider = f.adapters.codex.state.threads
+    provider.at(-1)!.status = 'idle'
+    provider[0]!.workingDirectory = project.path
+    for (let index = 0; index < 30; index++) provider.push({ ...provider[0]!, id: `shared-${index}`, messages: [], requests: [] })
+    f.adapters.codex.emit()
+    await f.host.snapshot()
+    const reclaim = vi.spyOn(ThreadWorktrees.prototype, 'reclaim').mockRejectedValue(new Error('Stopped after ownership check'))
+    identity.mockClear()
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Stopped after ownership check')
+    expect(identity.mock.calls.filter(([path]) => path === project.path)).toHaveLength(1)
+    // A moved/replaced checkout must be discovered afresh by the next operation.
+    identity.mockImplementation(async path => path === project.path ? checkout : path)
+    reclaim.mockClear()
+    await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Another thread works in this folder')
+    expect(reclaim).not.toHaveBeenCalled()
   })
 
   it('reclaims a thread’s own worktree on request, keeps the record, and lets only a send put the folder back', async () => {

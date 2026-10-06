@@ -4,6 +4,10 @@ import { runInNewContext } from 'node:vm'
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../src/shared/audio'
+import { transcriptionRequestSchema } from '../../../src/shared/contracts'
+import { encodeWavPcm16 } from '../../../src/shared/wav'
+
 import {
   AUDIO_CAPTURE_PROCESSOR_NAME,
   AudioRecorder,
@@ -11,6 +15,7 @@ import {
   type AudioContextAdapter,
   type AudioNodeAdapter,
   type AudioRecorderDependencies,
+  type AudioRecordingResult,
   type AudioWorkletNodeAdapter,
   type MediaStreamAdapter,
 } from '../../../src/renderer/src/audio/audioRecorder'
@@ -25,11 +30,13 @@ class FakeWorkletNode extends FakeNode implements AudioWorkletNodeAdapter {
 }
 
 class FakeContext implements AudioContextAdapter {
-  readonly sampleRate = 48_000
+  constructor(readonly sampleRate = 48_000) {}
   readonly destination = new FakeNode()
   readonly source = new FakeNode()
   readonly gain = Object.assign(new FakeNode(), { gain: { value: 1 } })
   readonly audioWorklet = { addModule: vi.fn(async () => undefined) }
+  state: 'suspended' | 'running' | 'closed' = 'running'
+  readonly resume = vi.fn(async () => { this.state = 'running' })
   readonly createMediaStreamSource = vi.fn(() => this.source)
   readonly createGain = vi.fn(() => this.gain)
   readonly close = vi.fn(async () => undefined)
@@ -45,8 +52,8 @@ function deferred<T>() {
   return { promise, reject: rejectPromise, resolve: resolvePromise }
 }
 
-function createHarness(overrides: Partial<AudioRecorderDependencies> = {}) {
-  const context = new FakeContext()
+function createHarness(overrides: Partial<AudioRecorderDependencies> = {}, sampleRate = 48_000) {
+  const context = new FakeContext(sampleRate)
   const worklet = new FakeWorkletNode()
   const trackListeners = new Set<() => void>()
   const track = {
@@ -191,6 +198,26 @@ describe('audio capture worklet', () => {
 })
 
 describe('AudioRecorder', () => {
+  it('resumes a context the permission dialog left suspended', async () => {
+    const harness = createHarness()
+    const order: string[] = []
+    const context = harness.context
+    context.state = 'suspended'
+    context.resume.mockImplementation(async () => {
+      order.push(context.state)
+      context.state = 'running'
+    })
+    harness.getUserMedia.mockImplementation(async () => {
+      order.push('capture')
+      context.state = 'suspended'
+      return harness.stream
+    })
+
+    await harness.recorder().start()
+
+    expect(order).toEqual(['suspended', 'capture', 'suspended'])
+  })
+
   it('requests exact constraints and wires a silent processing graph', async () => {
     const harness = createHarness()
     const recorder = harness.recorder({ selectedDeviceId: 'mic-2' })
@@ -232,6 +259,19 @@ describe('AudioRecorder', () => {
         autoGainControl: true,
       },
     })
+  })
+
+  it('keeps the selected input when extra constraints are rejected', async () => {
+    const harness = createHarness()
+    const overconstrained = new Error('constraints')
+    overconstrained.name = 'OverconstrainedError'
+    harness.getUserMedia
+      .mockRejectedValueOnce(overconstrained)
+      .mockResolvedValueOnce(harness.stream)
+
+    await harness.recorder({ selectedDeviceId: 'mic-c922' }).start()
+
+    expect(harness.getUserMedia).toHaveBeenNthCalledWith(2, { audio: { deviceId: { exact: 'mic-c922' } } })
   })
 
   it('throttles level callbacks to the emit interval while chunks arrive at audio rate', async () => {
@@ -277,6 +317,24 @@ describe('AudioRecorder', () => {
     expect(result?.samples[0]).toBeCloseTo(0.5)
     expect(result?.durationMs).toBe(100)
     expect(await recorder.stop()).toBeNull()
+  })
+
+  it('keeps no audio in levels-only mode but still reports levels', async () => {
+    const harness = createHarness()
+    const onLevel = vi.fn()
+    const onSegment = vi.fn()
+    const recorder = harness.recorder({ onLevel, onSegment, levelsOnly: true })
+    await recorder.start()
+
+    for (let index = 0; index < 400; index += 1) {
+      harness.worklet.port.onmessage?.({ data: new Float32Array(4_800).fill(0.5) })
+    }
+
+    expect(onLevel).toHaveBeenCalledWith(0.5)
+    expect(onSegment).not.toHaveBeenCalled()
+    await expect(recorder.stop()).resolves.toBeNull()
+    expect(harness.track.stop).toHaveBeenCalledOnce()
+    expect(harness.context.close).toHaveBeenCalledOnce()
   })
 
   it('allows only one active or start-in-flight session', async () => {
@@ -354,7 +412,6 @@ describe('AudioRecorder', () => {
       else media.reject(new Error('late permission details'))
       await expect(starting).resolves.toBeUndefined()
 
-      expect(recorder.getLastResult()).toBeNull()
       expect(recorder.getLastError()).toBeNull()
       expect(harness.track.stop).toHaveBeenCalledTimes(outcome === 'resolve' ? 1 : 0)
       // The pre-built audio graph is torn down with the cancelled session.
@@ -381,7 +438,6 @@ describe('AudioRecorder', () => {
       else moduleLoad.reject(new Error('late module details'))
       await expect(starting).resolves.toBeUndefined()
 
-      expect(recorder.getLastResult()).toBeNull()
       expect(recorder.getLastError()).toBeNull()
       // Worklet loading now precedes the permission request: the microphone
       // was never opened, so there is no track to stop.
@@ -406,12 +462,82 @@ describe('AudioRecorder', () => {
     harness.fireTimer()
     await vi.waitFor(() => expect(onDurationLimit).toHaveBeenCalledOnce())
 
-    expect(recorder.getLastResult()?.durationMs).toBe(1_000)
-    expect(onDurationLimit).toHaveBeenCalledWith(recorder.getLastResult())
+    expect(onDurationLimit).toHaveBeenCalledWith({
+      samples: new Float32Array(TRANSCRIPTION_SAMPLE_RATE).fill(0.25),
+      sourceSampleRate: 48_000,
+      durationMs: 1_000,
+    })
     expect(await recorder.stop()).toBeNull()
     expect(harness.context.close).toHaveBeenCalledOnce()
     expect(harness.track.stop).toHaveBeenCalledOnce()
   })
+
+  it.each([['stop', TRANSCRIPTION_SAMPLE_RATE], ['limit', 48_000]] as const)(
+    'keeps the first five minutes accepted by transcription when %s at %i Hz follows a delayed limit timer',
+    async (delivery, sampleRate) => {
+      const harness = createHarness({}, sampleRate)
+      const onDurationLimit = vi.fn<(result: AudioRecordingResult) => void>()
+      const recorder = harness.recorder({ maxRecordingSeconds: 300, onDurationLimit })
+      await recorder.start()
+      harness.worklet.port.onmessage?.({
+        data: new Float32Array(300 * sampleRate).fill(0.25),
+      })
+      // Audio keeps arriving before a throttled renderer runs its limit timer.
+      harness.worklet.port.onmessage?.({ data: new Float32Array(128).fill(0.75) })
+
+      let result: AudioRecordingResult | null
+      if (delivery === 'limit') {
+        harness.fireTimer()
+        await vi.waitFor(() => expect(onDurationLimit).toHaveBeenCalledOnce())
+        result = onDurationLimit.mock.calls[0]![0]
+      } else {
+        result = await recorder.stop()
+      }
+
+      expect(result).not.toBeNull()
+      const wav = encodeWavPcm16(result!.samples, TRANSCRIPTION_SAMPLE_RATE)
+      expect(transcriptionRequestSchema.safeParse({
+        requestId: 'delayed-limit', wav: wav.buffer, timeoutMs: 30_000,
+      }).success).toBe(true)
+      expect(result!.samples).toHaveLength(MAX_TRANSCRIPTION_SAMPLES)
+      expect(result!.samples[0]).toBe(0.25)
+      // Downsampling's low-pass filter blends samples near the cut boundary.
+      expect(result!.samples[MAX_TRANSCRIPTION_SAMPLES - 1]).toBeCloseTo(0.25, 1)
+      expect(await recorder.stop()).toBeNull()
+      expect(harness.track.stop).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each(['stop', 'limit'] as const)(
+    'releases its audio result after %s delivers it',
+    async (delivery) => {
+      const harness = createHarness()
+      const onDurationLimit = vi.fn<(result: AudioRecordingResult) => void>()
+      const recorder = harness.recorder({ maxRecordingSeconds: 1, onDurationLimit })
+      await recorder.start()
+      harness.worklet.port.onmessage?.({ data: new Float32Array(48_000).fill(0.25) })
+
+      let result: AudioRecordingResult | null
+      if (delivery === 'limit') {
+        harness.fireTimer()
+        await vi.waitFor(() => expect(onDurationLimit).toHaveBeenCalledOnce())
+        result = onDurationLimit.mock.calls[0]![0]
+      } else {
+        result = await recorder.stop()
+      }
+
+      expect(result?.samples).toHaveLength(TRANSCRIPTION_SAMPLE_RATE)
+      expect(result?.samples[0]).toBe(0.25)
+      // Inspect ownership directly rather than relying on nondeterministic GC.
+      const retainsAudio = Object.values(recorder).some((value) =>
+        typeof value === 'object' && value !== null &&
+        'samples' in value && value.samples instanceof Float32Array,
+      )
+      expect(retainsAudio).toBe(false)
+      expect(recorder).toHaveProperty('session', null)
+      expect(await recorder.stop()).toBeNull()
+    },
+  )
 
   it('reports a finite device-unavailable error and releases capture when the active track ends', async () => {
     const harness = createHarness()

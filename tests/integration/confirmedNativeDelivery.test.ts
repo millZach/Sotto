@@ -15,7 +15,7 @@ it.each(['before-read', 'during-read'] as const)('keeps a native-confirmed send 
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })

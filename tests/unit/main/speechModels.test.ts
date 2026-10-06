@@ -1,9 +1,27 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { cp, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('node:fs', async importOriginal => {
+  const original = await importOriginal<typeof import('node:fs')>()
+  return { ...original, createReadStream: vi.fn(original.createReadStream) }
+})
+
+const faults = vi.hoisted(() => ({ rename: false, remove: '' }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const original = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...original, rm: vi.fn(async (...args: Parameters<typeof original.rm>) => {
+    if (args[0] === faults.remove) throw Object.assign(new Error('private path'), { code: 'EACCES' })
+    return original.rm(...args)
+  }), rename: vi.fn(async (...args: Parameters<typeof original.rename>) => {
+    if (faults.rename) throw Object.assign(new Error('private path'), { code: 'EACCES' })
+    return original.rename(...args)
+  }) }
+})
 
 const fixture = vi.hoisted(() => ({
   repository: 'onnx-community/Supertonic-TTS-ONNX',
@@ -26,6 +44,9 @@ import { NaturalSpeechModels } from '../../../src/main/agents/speechModels'
 
 const roots: string[] = []
 afterEach(async () => {
+  faults.rename = false
+  faults.remove = ''
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) {
     const resolved = resolve(root)
     if (!resolved.startsWith(`${resolve(tmpdir())}${sep}sotto-speech-models-`)) throw new Error('Unexpected test directory')
@@ -45,6 +66,109 @@ async function setup(download?: (url: string, target: string, bytes: number) => 
 }
 
 describe('NaturalSpeechModels', () => {
+  it('sweeps interrupted staging on startup without touching installed or unrelated assets or link targets', async () => {
+    const { manager, userRoot, root, downloader } = await setup()
+    const parent = join(userRoot, 'onnx-community')
+    await mkdir(parent, { recursive: true })
+    const partial = '.Supertonic-TTS-ONNX.partial-12345678-1234-1234-1234-123456789abc'
+    await mkdir(join(parent, partial))
+    await writeFile(join(parent, partial, 'unfinished'), 'partial bytes')
+    await mkdir(join(parent, 'Supertonic-TTS-ONNX'))
+    await writeFile(join(parent, 'unrelated.partial-file'), 'keep')
+    const outside = join(root, 'outside')
+    await mkdir(outside)
+    await writeFile(join(outside, 'keep'), 'outside')
+    await symlink(outside, join(parent, partial.replace('12345678', 'abcdefab')), 'junction')
+    await manager.initialize()
+    expect(await readdir(parent)).not.toContain(partial)
+    expect(await readdir(parent)).toContain('Supertonic-TTS-ONNX')
+    expect(await readFile(join(parent, 'unrelated.partial-file'), 'utf8')).toBe('keep')
+    expect(await readFile(join(outside, 'keep'), 'utf8')).toBe('outside')
+    expect(downloader).not.toHaveBeenCalled()
+    await manager.download()
+    await manager.initialize()
+    expect((await manager.status()).ready).toBe(true)
+  })
+
+  it.each([false, true])('recovers interrupted replacement when installed exists: %s', async installedExists => {
+    const { manager, userRoot, installed, downloader } = await setup()
+    await manager.download()
+    const backup = `${installed}.backup-12345678-1234-1234-1234-123456789abc`
+    await rename(installed, backup)
+    if (installedExists) {
+      await cp(backup, installed, { recursive: true })
+    }
+    const restarted = new NaturalSpeechModels(userRoot, { downloader })
+    const before = downloader.mock.calls.length
+    await restarted.initialize()
+    expect((await restarted.status()).ready).toBe(true)
+    expect(await readdir(join(userRoot, 'onnx-community'))).toEqual(['Supertonic-TTS-ONNX'])
+    expect(downloader).toHaveBeenCalledTimes(before)
+  })
+
+  it('does not read installed model contents at startup when no backups need cleanup', async () => {
+    const { manager, userRoot, downloader } = await setup()
+    await manager.download()
+    vi.mocked(createReadStream).mockClear()
+    const restarted = new NaturalSpeechModels(userRoot, { downloader })
+    await restarted.initialize()
+    expect(createReadStream).not.toHaveBeenCalled()
+  })
+
+  it('continues partial cleanup after a backup permission error and logs only an event name', async () => {
+    const { manager, installed, userRoot, downloader } = await setup()
+    await manager.download()
+    const backup = `${installed}.backup-12345678-1234-1234-1234-123456789abc`
+    await rename(installed, backup)
+    const partial = join(userRoot, 'onnx-community', '.Supertonic-TTS-ONNX.partial-12345678-1234-1234-1234-123456789abc')
+    await mkdir(partial)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    faults.rename = true
+    await new NaturalSpeechModels(userRoot, { downloader }).initialize()
+    expect(await readdir(join(userRoot, 'onnx-community'))).toEqual([backup.split(/[\\/]/).at(-1)])
+    expect(warn.mock.calls).toEqual([['natural-voice-backup-restore-failed']])
+  })
+
+  it('continues removing other temporary folders after one removal fails', async () => {
+    const { manager, installed, userRoot, downloader } = await setup()
+    await manager.download()
+    const backup = `${installed}.backup-12345678-1234-1234-1234-123456789abc`
+    await cp(installed, backup, { recursive: true })
+    const partial = join(userRoot, 'onnx-community', '.Supertonic-TTS-ONNX.partial-12345678-1234-1234-1234-123456789abc')
+    await mkdir(partial)
+    faults.remove = backup
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await new NaturalSpeechModels(userRoot, { downloader }).initialize()
+    expect(await readdir(join(userRoot, 'onnx-community'))).toEqual(['Supertonic-TTS-ONNX', backup.split(/[\\/]/).at(-1)])
+    expect(warn.mock.calls).toEqual([['natural-voice-temporary-cleanup-failed']])
+  })
+
+  it('keeps backups when the installed model fails integrity verification', async () => {
+    const { manager, installed, userRoot, downloader } = await setup()
+    await manager.download()
+    const backup = `${installed}.backup-12345678-1234-1234-1234-123456789abc`
+    await cp(installed, backup, { recursive: true })
+    await writeFile(join(installed, 'LICENSE'), 'x'.repeat(Buffer.byteLength('LICENSE')))
+    const restarted = new NaturalSpeechModels(userRoot, { downloader })
+    await restarted.initialize()
+    expect((await restarted.status()).ready).toBe(false)
+    expect(await readFile(join(backup, 'LICENSE'), 'utf8')).toBe('LICENSE')
+  })
+
+  it('does not restore or remove a backup directory link', async () => {
+    const { manager, userRoot, root } = await setup()
+    const parent = join(userRoot, 'onnx-community')
+    const outside = join(root, 'outside')
+    await mkdir(parent, { recursive: true })
+    await mkdir(outside)
+    await writeFile(join(outside, 'keep'), 'safe')
+    const backup = 'Supertonic-TTS-ONNX.backup-12345678-1234-1234-1234-123456789abc'
+    await symlink(outside, join(parent, backup), 'junction')
+    await manager.initialize()
+    expect(await readdir(parent)).toEqual([backup])
+    expect(await readFile(join(outside, 'keep'), 'utf8')).toBe('safe')
+  })
+
   it('does not download on status or protocol lookup, then publishes all verified files only after explicit download', async () => {
     const { manager, downloader, userRoot } = await setup()
     expect(await manager.status()).toEqual({ ready: false, completedBytes: 0, totalBytes: fixture.paths.reduce((n, p) => n + Buffer.byteLength(p), 0) })

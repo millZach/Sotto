@@ -89,12 +89,10 @@ export async function verifyPackagedMemoryStore(target) {
     const smokeEnvironment = await profile.smokeEnvironment(probeRoot)
     application = await electron.launch({
       executablePath: profile.executablePath(target),
-      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`],
+      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`, ...profile.smokeArgs],
       env: Object.fromEntries(Object.entries({
         ...process.env,
         ...smokeEnvironment,
-        SOTTO_MEMORY_PROBE: '1',
-        SOTTO_MEMORY_PROBE_USER_DATA: join(probeRoot, 'user-data'),
       }).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)),
       timeout: 45_000,
     })
@@ -122,23 +120,18 @@ export async function verifyPackagedMemoryStore(target) {
         })
       })
     }, probeRoot)
-    const exited = new Promise((resolveExit, rejectExit) => {
-      child.once('close', (code, signal) => {
-        if (code === 0 && signal === null) resolveExit()
-        else rejectExit(new Error(`packaged app exited with code ${code}, signal ${signal}`))
-      })
-      timeout = globalThis.setTimeout(() => rejectExit(new Error('packaged app probe timed out')), 60_000)
-    })
-    // The startup flag installs this one-shot handler only in probe mode. The
-    // process may exit before evaluate's reply; its exit code/output are decisive.
-    void application.evaluate(({ app }) => app.quit()).catch(() => undefined)
-    await exited
-    let result
-    try {
-      result = JSON.parse(stdout.trim())
-    } catch {
-      throw new Error('invalid JSON evidence')
-    }
+    // Invoke the shipped main graph through the debugger; installed startup
+    // never accepts a probe mode from the environment.
+    const result = await Promise.race([application.evaluate(({ app }, root) => {
+      const { createRequire } = process.getBuiltinModule('node:module')
+      const { join } = process.getBuiltinModule('node:path')
+      const requireApp = createRequire(join(app.getAppPath(), 'package.json'))
+      const { main } = requireApp('./package.json')
+      const { probeMemoryStore } = requireApp(join(app.getAppPath(), main))
+      return probeMemoryStore(join(root, 'memory.sqlite'))
+    }, probeRoot), new Promise((_, reject) => {
+      timeout = globalThis.setTimeout(() => reject(new Error('packaged app probe timed out')), 60_000)
+    })])
     if (typeof result?.sqliteVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(result.sqliteVersion) ||
         result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
@@ -163,7 +156,7 @@ async function verifyNormalPackagedLaunch(target) {
   try {
     application = await electron.launch({
       executablePath: executable,
-      args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`],
+      args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`, ...profile.smokeArgs],
       env: Object.fromEntries(Object.entries({
         ...process.env,
         ...smokeEnvironment,

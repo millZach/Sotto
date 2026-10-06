@@ -368,6 +368,18 @@ describe('Chats', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     await waitFor(() => expect(bridge.refresh).toHaveBeenCalledWith('trip'))
   })
+  it('lets Check again reopen Claude choices while retaining an earlier uncertain decision', async () => {
+    const question = { id: 'pick', kind: 'question' as const, text: 'Which?', delivery: 'uncertain' as const, options: [{ id: 'a', label: 'Coast' }] }
+    const { bridge, update } = mount(snapshot({ chats: [chat({ providerId: 'claude', requests: [question], decisions: [{ id: 'd1', requestId: 'pick', answer: 'a', createdAt: AT, status: 'uncertain' }] })] }))
+    expect(await screen.findByRole('radio', { name: 'Coast' })).toBeDisabled()
+    bridge.refresh.mockImplementation(async () => update('trip', item => { delete item.requests[0]!.delivery; item.requests[0]!.answerRetryReady = true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Coast' })).toBeEnabled())
+    expect(bridge.answer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('radio', { name: 'Coast' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send answer' }))
+    await waitFor(() => expect(bridge.answer).toHaveBeenCalledExactlyOnceWith({ chatId: 'trip', requestId: 'pick', answer: 'a' }))
+  })
 
   it('picks a native Codex skill with the keyboard and saves it with the draft', async () => {
     const { bridge } = mount(snapshot())

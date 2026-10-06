@@ -34,6 +34,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
+import { markSendStage } from './sendStages'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -130,7 +131,7 @@ class Rejected extends Error {
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
 type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
-type Runtime = { server: CodexProcess; clientRevision: number }
+type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.serial}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
@@ -256,6 +257,44 @@ export class CodexAppServerHost implements AgentHost {
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
   }
   private codexHome(): string { return this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex') }
+  /** Metadata only: config may contain credentials and is never read or logged here. */
+  private async configStamp(): Promise<string | undefined> {
+    try {
+      const file = await stat(join(this.codexHome(), 'config.toml'), { bigint: true })
+      return `${file.dev}:${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}`
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+      // This optional change signal must not prevent Codex from using its already loaded configuration.
+      return undefined
+    }
+  }
+  /** Refresh only the app-server about to receive a prompt. No prompt or UI action is retried. */
+  private async refreshRuntimeConfig(id: string): Promise<void> {
+    const runtime = this.runtimes.get(id)
+    const generation = this.generation
+    if (!runtime) throw new Error('Codex stopped before sending the prompt. Nothing was sent. Try again.')
+    const current = (): boolean => generation === this.generation && this.runtimes.get(id) === runtime && runtime.server.alive
+    try {
+      if (!runtime.reloadSupported) return
+      runtime.refreshing ??= (async () => {
+        const stamp = await this.configStamp()
+        if (!current()) throw new Error('Codex connection changed.')
+        if (stamp === undefined || stamp === runtime.configStamp) return
+        try { await this.rpc('config/mcpServer/reload', undefined, undefined, undefined, runtime.server) }
+        catch (error) {
+          // Older clients can still send ordinary prompts. Discover support per process, not by version.
+          if (error instanceof Rejected && (error.methodNotFound || error.unknownVariant === 'config/mcpServer/reload')) { runtime.reloadSupported = false; return }
+          throw error
+        }
+        if (!current()) throw new Error('Codex connection changed.')
+        runtime.configStamp = stamp
+      })().finally(() => { delete runtime.refreshing })
+      await runtime.refreshing
+      if (!current()) throw new Error('Codex connection changed.')
+    } catch (error) {
+      throw new Error('Codex could not refresh its tools. Nothing was sent. Try again, or reconnect Codex if it keeps happening.', { cause: error })
+    }
+  }
   /** Start an app-server from `executable`. What it says reaches `frame` only while this connection lasts. */
   private spawnServer(executable: string): CodexProcess {
     const generation = this.generation
@@ -354,6 +393,8 @@ export class CodexAppServerHost implements AgentHost {
     const launch = (async () => {
       if (!this.executable || !this.state.connected) throw new Error('Connect to Codex before sending a command.')
       const clientRevision = this.clientRevision
+      const configStamp = await this.configStamp()
+      if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while starting this thread.')
       const server = this.spawnServer(this.executable)
       try {
         // Only the provider's app-server says which version is installed: a thread's may be finishing on a replaced client.
@@ -364,7 +405,7 @@ export class CodexAppServerHost implements AgentHost {
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
-      this.runtimes.set(id, { server, clientRevision })
+      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true })
       // Launched from a client an update replaced meanwhile: it moves too, once its thread is idle.
       if (clientRevision !== this.clientRevision) { this.outdated.add(id); this.scheduleOutdatedStop() }
       return server
@@ -408,7 +449,7 @@ export class CodexAppServerHost implements AgentHost {
     this.emit()
   }
   /**
-   * The client on disk was replaced while Sotto stayed connected (ADR-0021). Every thread runs its own app-server,
+   * The client on disk was replaced while Sotto stayed connected (ADR-0042). Every thread runs its own app-server,
    * so nothing is disconnected: the client is found again (an update may have moved it), a new provider app-server
    * reads its version and models, and each thread moves to it as it goes idle. An idle thread's app-server stops
    * now the way the reaper stops one, and its next action starts the new client; a busy one finishes on the old
@@ -1241,6 +1282,7 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
           try {
+            await this.refreshRuntimeConfig(id)
             input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
             skillsRevision = this.skillsRevision
             validate()
@@ -1291,7 +1333,10 @@ export class CodexAppServerHost implements AgentHost {
           this.dispatching.add(id)
           const generation = this.generation
           let input: Awaited<ReturnType<CodexAppServerHost['prepareSkillInput']>>
-          try { input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments) }
+          try {
+            await this.refreshRuntimeConfig(id)
+            input = await this.prepareSkillInput(id, command.text, command.skills, command.files, command.attachments)
+          }
           catch (error) { this.dispatching.delete(id); throw error }
           const skillsRevision = this.skillsRevision
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true,
@@ -1312,6 +1357,7 @@ export class CodexAppServerHost implements AgentHost {
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
+            markSendStage(command.commandId, 'written')
             await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
               input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
@@ -1320,7 +1366,9 @@ export class CodexAppServerHost implements AgentHost {
               origin.turnId = turn.id
               this.applyTurn(id, turn)
               if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id); this.emit()
+              this.unconfirmedDispatchSessionIds.delete(id)
+              markSendStage(command.commandId, 'acknowledged')
+              this.emit()
               return this.persist()
             }, () => {
               alias.origins = alias.origins.filter(o => o !== origin)
@@ -1360,15 +1408,21 @@ export class CodexAppServerHost implements AgentHost {
     if (frame.method && frame.id !== undefined) {
       const params = z.object({ threadId: z.string() }).safeParse(frame.params)
       const id = params.success ? this.sessionId(params.data.threadId) : undefined
+      const item = z.object({ itemId: z.string().optional() }).safeParse(frame.params)
       const parsed = id ? pendingRequest(frame.id, frame.method, frame.params, id,
-        this.fileSummaries.get(z.object({ itemId: z.string().optional() }).parse(frame.params).itemId ?? '')) : undefined
+        this.fileSummaries.get(item.success ? item.data.itemId ?? '' : '')) : undefined
       if (!parsed) {
         try { server.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }) } catch { /* A closed process asks nothing more. */ }
-        // Codex treats the refusal as the answer, so a renamed or reshaped approval would otherwise read
-        // as the user declining. Requests Sotto never answers, and foreign threads, stay quiet.
-        if (id && needsPerson(frame.method) && this.state.error !== unreadableRequest('Codex')) {
-          this.state.error = unreadableRequest('Codex')
-          this.emit()
+        // A session's app-server can ask for a child whose ID Sotto cannot resolve. Its ownership
+        // establishes where the refusal came from, without assuming the child's request payload.
+        const owner = id ?? [...this.runtimes].find(([, runtime]) => runtime.server === server)?.[0]
+        if (owner && needsPerson(frame.method)) {
+          const notice = id ? unreadableRequest('Codex')
+            : 'Codex asked for an approval Sotto could not show. The request was refused. Nothing was approved. Answer it in Codex, and check for a Sotto or Codex update.'
+          const thread = this.ensureThread(owner)
+          if (this.state.error !== notice || thread.requestNotice !== notice) {
+            thread.requestNotice = notice; this.state.error = notice; this.emit()
+          }
         }
         return
       }

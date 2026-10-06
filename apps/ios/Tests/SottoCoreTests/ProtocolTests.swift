@@ -103,6 +103,15 @@ final class ProtocolTests: XCTestCase {
         let accepted = try decode(Delivery.self, "{\"threadId\":\"t\",\"draftId\":\"\(draft)\",\"status\":\"accepted\"}")
         XCTAssertTrue(pending.reconciled(receipt: receipt, deliveries: [accepted]))
     }
+    func testOnlyExplicitSuccessfulAnswerOutcomeConfirmsAnAnswer() throws {
+        let pending = PendingOperation(hostID: host, clientID: "phone", threadID: "t", kind: "answer")
+        let older = try decode(Receipt.self, #"{"status":"completed"}"#)
+        XCTAssertFalse(pending.reconciled(receipt: older, deliveries: []))
+        let success = try decode(Receipt.self, #"{"status":"completed","answerDelivered":true}"#)
+        XCTAssertTrue(pending.reconciled(receipt: success, deliveries: []))
+        let failure = try decode(Receipt.self, #"{"status":"completed","answerDelivered":false,"error":{"code":"unavailable","message":"Unavailable"}}"#)
+        XCTAssertFalse(pending.reconciled(receipt: failure, deliveries: []))
+    }
     func testGenericPostAdmissionFailureStaysUnconfirmed() throws {
         let pending = PendingOperation(hostID: host, clientID: "phone", threadID: "t", kind: "answer")
         let receipt = try decode(Receipt.self, #"{"status":"completed","error":{"code":"unavailable","message":"Unavailable"}}"#)

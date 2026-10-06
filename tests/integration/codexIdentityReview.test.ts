@@ -21,7 +21,7 @@ async function fixture() {
   await credentials.load()
   const c = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Synthetic', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Synthetic', expiresAt: null }) } })
+  })
   cleanup.push(async () => { c.dispose(); await c.privacyChanged() })
   await c.start(); await c.command({ type: 'connect' })
   const current = () => c.get().host.threads.find(t => t.id === threadId)!

@@ -53,6 +53,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   const titleId = useId()
   const [project, setProject] = useState<AgentProject | null>(() => state.host.projects.find(item => item.id === initialProjectId) ?? null)
   const [folder, setFolder] = useState<string | null>(null)
+  const [folderIsNew, setFolderIsNew] = useState(false)
   const [title, setTitle] = useState('')
   // A terminal usually wants the project itself; a worktree is a deliberate choice, and takes a moment to check out.
   const [workingCopy, setWorkingCopy] = useState<WorkingCopyChoice>('shared')
@@ -92,7 +93,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
   latestState.current = state
   const creating = useRef(false)
   const attemptedFolders = useRef(new Set<string>())
-  const chooser = useProjectChooser(state, choice => { setError(null); if (choice.project) setProject(choice.project); else setFolder(choice.folder) })
+  const chooser = useProjectChooser(state, choice => { setError(null); if (choice.project) setProject(choice.project); else { setFolder(choice.folder); setFolderIsNew(choice.isNew === true) } })
   const focusSearch = useRef(chooser.focusSearch)
   focusSearch.current = chooser.focusSearch
   const selectedFolder = project?.path ?? folder
@@ -131,7 +132,7 @@ export function NewTerminalDialog({ state, command, store, bridge, shell, onClos
     try {
       let selectedProject = project
       if (!selectedProject && folder) {
-        const found = await projectForFolder({ folder, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: provider ?? undefined })
+        const found = await projectForFolder({ folder, isNew: folderIsNew, command, latest: () => latestState.current, attempted: attemptedFolders.current, providerId: provider ?? undefined })
         if (found.project === null) { setError(found.error); return }
         selectedProject = found.project
         setProject(selectedProject)

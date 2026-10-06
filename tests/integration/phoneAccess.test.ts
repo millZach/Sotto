@@ -1,14 +1,16 @@
 // @vitest-environment node
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { PhoneAccess, type PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
+import { rawPeer } from '../fixtures/rawHostPeer'
 import { serveTarget } from '../../src/main/phones/tailscale'
 
 /**
@@ -113,4 +115,54 @@ it('closes every phone’s socket when phone access turns off', async () => {
   await expect.poll(() => access.get().phase).toBe('off')
   await expect.poll(() => access.get().phones[0]?.connected).toBe(false)
   await expect(fetch(await url() + '/v1/health')).rejects.toBeDefined()
+})
+
+
+it.each(['turn-off', 'quit'])('disconnects phones and reserves the port while %s cleanup retries', async action => {
+  const changes: boolean[] = []
+  const { client } = await pairPhone('Phone', connected => changes.push(connected))
+  await client.connect()
+  const base = await url()
+  const port = Number(new URL(base).port)
+  const status = vi.spyOn(tailscale, 'serveStatus').mockResolvedValue({ TCP: { 8443: { HTTPS: true } }, Web: { 'studio.tail5728ca.ts.net:8443': { Handlers: { '/': { Proxy: base } } } } })
+  const remove = vi.spyOn(tailscale, 'unserve').mockResolvedValue(false)
+  try {
+    if (action === 'quit') await access.close()
+    else { settings.phoneAccess = false; access.settingsChanged() }
+    await expect.poll(() => access.get().phase).toBe('cleanup-failed')
+    await expect.poll(() => changes.includes(false)).toBe(true)
+    expect(access.get().phones[0]!.connected).toBe(false)
+    await expect(fetch(base + '/v1/health')).rejects.toBeDefined()
+    const competitor = createServer()
+    await expect(new Promise<void>((resolve, reject) => {
+      competitor.once('error', reject)
+      competitor.listen(port, '127.0.0.1', resolve)
+    })).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    remove.mockResolvedValue(true)
+    await access.command({ type: 'retry' })
+    expect(access.get().phase).toBe('off')
+    const rebound = createServer()
+    await new Promise<void>(resolve => rebound.listen(port, '127.0.0.1', resolve))
+    await new Promise<void>(resolve => rebound.close(() => resolve()))
+  } finally { status.mockRestore(); remove.mockRestore() }
+})
+
+it('pushes Can answer changes to each connected phone without reconnecting', async () => {
+  const phones = [await pairPhone('First phone'), await pairPhone('Second phone')]
+  const base = await url()
+  const peers = await Promise.all(phones.map(async ({ paired }) => {
+    const session = await (await fetch(base + '/v1/session', { method: 'POST', headers: { Authorization: 'Bearer ' + paired.token } })).json() as { session: string }
+    return rawPeer(Number(new URL(base).port), session.session)
+  }))
+  try {
+    for (const peer of peers) expect(await peer.call('hello', { op: 'hello' })).toMatchObject({ ok: true, result: { capabilities: { mayAnswer: false } } })
+    for (const peer of peers) peer.messages.length = 0
+    await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: true })
+    await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: true } } })
+    await expect.poll(() => peers[1]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
+    for (const peer of peers) peer.messages.length = 0
+    await access.command({ type: 'set-can-answer', clientId: phones[0]!.paired.clientId, allowed: false })
+    await expect.poll(() => peers[0]!.messages.find(message => message.event === 'shell')).toMatchObject({ state: { clientCapabilities: { mayAnswer: false } } })
+    expect(access.get().phones.every(phone => phone.connected)).toBe(true)
+  } finally { for (const peer of peers) peer.frames.close() }
 })

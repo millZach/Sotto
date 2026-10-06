@@ -32,7 +32,7 @@ The selected light and dark palettes also colour the Sotto mark, the voice spher
 
 - **Server environment themes.** A T3 server watches `<stateDir>/themes/*.json` and streams palettes to connected clients, so a machine can retint every client. Sotto has no server and no remote clients, and there is nothing to publish to.
 - **`t3 theme` CLI.** This sets an environment's `defaultTheme` for connected clients. Sotto has no environment or CLI, and a user's own choice is made in Settings.
-- **Mobile appearance.** T3's mobile app keeps its own appearance settings. Sotto was desktop only when this decision was made. Amended September 29, 2026 by [ADR-0039](0039-the-iphone-opens-on-focus-threads.md): the native iPhone client keeps Dark or Light appearance and Larger text locally, independent of the desktop's theme settings.
+- **Mobile appearance.** T3's mobile app keeps its own appearance settings. Sotto was desktop only when this decision was made. Amended September 29, 2026 by [ADR-0039](0039-the-iphone-opens-on-focus-threads.md), and October 4, 2026 by [ADR-0051](0051-the-iphone-takes-the-glow-look.md), which gives the iPhone Sotto's six palettes, generated from the desktop's definitions, with System appearance and five text sizes: the native iPhone client keeps Dark or Light appearance and Larger text locally, independent of the desktop's theme settings.
 
 ## Considered Options
 
@@ -42,4 +42,4 @@ The selected light and dark palettes also colour the Sotto mark, the voice spher
 
 ## Consequences
 
-The accent capture tuples in the design gate became one tuple per built-in theme in each room. Other workers' E2E specs that still pass `accent` keep working because the key is ignored. The window's native `backgroundColor` is still black, as ADR-0009 notes. Any new surface must take its colours from `--tt-*` tokens, or the theme and contrast settings will skip it.
+The accent capture tuples in the design gate became one tuple per built-in theme in each room. Other workers' E2E specs that still pass `accent` keep working because the key is ignored. The window's native `backgroundColor` is still black, as ADR-0009 notes, except while the Frosted window setting is on (ADR-0048). Any new surface must take its colours from `--tt-*` tokens, or the theme and contrast settings will skip it.

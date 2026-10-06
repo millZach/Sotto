@@ -26,7 +26,7 @@ it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting fo
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   let release!: () => void
   let sending: ReturnType<AgentControl['command']> | undefined
   try {

@@ -1,8 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
 
 test('project defaults remain editable in Application and terminal creation keeps its layout', async () => {
+  test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page, app } = launched
   try {
@@ -15,10 +16,22 @@ test('project defaults remain editable in Application and terminal creation keep
     await page.getByRole('tab', { name: 'Application', exact: true }).click()
     await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
     const project = page.getByRole('combobox', { name: 'Project', exact: true })
-    const projectId = await project.inputValue()
+    const projectId = bareEntityId(await project.inputValue())!
     const choice = page.getByRole('combobox', { name: 'New threads in this project work in' })
     await choice.selectOption('independent')
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.getSettings()).projectThreadWorkingCopyDefaults[id], projectId)).toBe('independent')
+    await openThreads(page)
+    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+    await sidebar.getByRole('button', { name: 'New thread', exact: true }).click()
+    await page.getByRole('dialog', { name: 'New thread', exact: true }).getByRole('button', { name: /^Sotto test/ }).click()
+    await expect.poll(() => page.evaluate(async () => {
+      const state = await window.sotto!.agents!.get()
+      return state.host.threads.find(thread => thread.id === state.activeThreadId)?.worktree?.mode
+    })).toBe('independent')
+    await openPage(page, 'Settings')
+    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
+    await expect(choice).toHaveValue('independent')
     await mkdir('artifacts/new-thread-setup', { recursive: true })
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await app.evaluate(({ BrowserWindow }, size) => {
@@ -37,6 +50,7 @@ test('project defaults remain editable in Application and terminal creation keep
     }
     await choice.selectOption('inherit')
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.getSettings()).projectThreadWorkingCopyDefaults[id], projectId)).toBeUndefined()
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await choice.press('Escape')
     await expect(page.getByRole('button', { name: 'Project defaults', exact: true })).toBeFocused()
     await expect(choice).toBeHidden()
@@ -51,5 +65,36 @@ test('project defaults remain editable in Application and terminal creation keep
     await page.screenshot({ path: 'artifacts/new-thread-setup/terminal-820-light.png', animations: 'disabled' })
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
+  } finally { await closeSotto(launched) }
+})
+
+test('a saved host-keyed local project default is migrated before a new thread opens', async () => {
+  let launched = await launchSotto('design-threads-empty')
+  try {
+    const projectId = await launched.page.evaluate(async () => {
+      await window.sotto!.updateSettings({ onboardingComplete: true })
+      const state = await window.sotto!.agents!.command({ type: 'connect' })
+      const id = state.host.projects[0]!.id
+      await window.sotto!.updateSettings({ projectThreadWorkingCopyDefaults: { [id]: 'independent' } })
+      return id
+    })
+    expect(projectId).toMatch(/^host:/)
+    const profile = launched.userData
+    await launched.app.close()
+    launched = { ...await launchSotto('design-threads-empty', profile), ownsUserData: true }
+    const { page } = launched
+    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'connect' }))
+    await page.reload()
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).projectThreadWorkingCopyDefaults)).toEqual({ [bareEntityId(projectId)!]: 'independent' })
+    await openPage(page, 'Settings')
+    await page.getByRole('tab', { name: 'Application', exact: true }).click()
+    await page.getByRole('button', { name: 'Project defaults', exact: true }).click()
+    await expect(page.getByRole('combobox', { name: 'New threads in this project work in' })).toHaveValue('independent')
+    await openThreads(page)
+    await page.getByRole('button', { name: 'New thread in workshop', exact: true }).click()
+    await expect.poll(() => page.evaluate(async () => {
+      const state = await window.sotto!.agents!.get()
+      return state.host.threads.find(thread => thread.id === state.activeThreadId)?.worktree?.mode
+    })).toBe('independent')
   } finally { await closeSotto(launched) }
 })

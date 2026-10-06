@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 
 /** Every capture this spec takes; the verification note copies the few it cites into `artifacts/pending-settings/`. */
 const ARTIFACTS = 'artifacts/pending-settings-run'
@@ -181,6 +182,17 @@ test('a permission choice shows at once, marked pending with what is in force; a
     await expect(lines.getByRole('alert')).toHaveText(`Claude did not switch to Allow edits. ${reason}Try again`)
     await expect(chip).toHaveText('Full access')
     await page.screenshot({ path: `${ARTIFACTS}/refused-reason-dark-1280.png` })
+
+    // The desktop router returns a socket policy refusal as this same state error. Its reason must
+    // reach the permission chip, rather than becoming an unknown provider answer and a connection error.
+    await page.evaluate(async text => window.sottoE2E!.agentEvent!({ type: 'reject', threadId: 'workshop', text }), REMOTE_PERMISSION_DENIED)
+    await choose(page, chip, 'Auto')
+    await expect(lines.getByRole('alert')).toContainText(REMOTE_PERMISSION_DENIED)
+    await expect(chip).toHaveText('Full access')
+    await expect(chip).not.toHaveAttribute('data-pending')
+    await expect(page.getByText(/Sotto did not get .*answer/)).toHaveCount(0)
+    await expect(page.getByText('The action could not be confirmed.', { exact: false })).toHaveCount(0)
+    await across(launched, 'remote-policy-refused', null, lines.getByRole('alert'))
 
     // A lost answer: no result, so main keeps the change for the thread's next start and the chip keeps showing it.
     const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread. Ask Claude to start it again if you still need it.'

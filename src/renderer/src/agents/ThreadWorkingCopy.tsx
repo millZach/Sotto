@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Folder, FolderGit2, FolderMinus, FolderOpen, GitBranch, RefreshCw, Undo2 } from 'lucide-react'
-import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread } from '../../../shared/agents'
+import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, RESTORE_BRANCH_NEEDS_CONFIRMATION, type AgentProject, type AgentThread, type WorktreeReclaimPreview } from '../../../shared/agents'
 import { useOptionalApp } from '../state/AppContext'
 import { resolveThreadWorkingDirectory } from '../../../shared/threadWorkingDirectory'
 import type { AgentConnection } from './AgentContext'
@@ -61,13 +61,13 @@ function useWorkingCopyAction(threadId: string, command: AgentConnection['comman
   const [error, setError] = useState<string | null>(null)
   const lastError = useRef<string | null>(null)
   const inFlight = useRef(false)
-  const run = async (type: Action, withUncommittedChanges?: boolean): Promise<boolean> => {
+  const run = async (type: Action, withUncommittedChanges?: boolean, confirmedIgnored?: string[], confirmedRepositories?: WorktreeReclaimPreview['repositories'], confirmedItems?: { path: string; fileCount: number }[]): Promise<boolean> => {
     if (inFlight.current) return false
     inFlight.current = true
     setRunning(type); setError(null); lastError.current = null
     const fail = (message: string): false => { lastError.current = message; setError(message); return false }
     try {
-      const result = await command(type === 'restore-thread-branch' || type === 'reclaim-thread-worktree' ? { type, threadId, withUncommittedChanges } : { type, threadId })
+      const result = await command(type === 'restore-thread-branch' || type === 'reclaim-thread-worktree' ? { type, threadId, withUncommittedChanges, ...(type === 'reclaim-thread-worktree' && confirmedIgnored ? { confirmedIgnored, confirmedRepositories, confirmedItems } : {}) } : { type, threadId })
       if (!result || result.error) return fail(result?.error ?? 'Could not confirm this action. Try again.')
       return true
     } catch { return fail('Could not confirm this action. Try again.') }
@@ -97,8 +97,8 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
   useEffect(() => { setOpen(false); setReclaiming(false) }, [thread.id])
   // The worktree Sotto made for this thread alone can be given back; a shared or reused folder is never offered.
   const reclaimable = isReclaimable(thread)
-  const confirmReclaim = async (): Promise<boolean> => {
-    const done = await run('reclaim-thread-worktree', reclaiming === 'dirty')
+  const confirmReclaim = async (preview: WorktreeReclaimPreview): Promise<boolean> => {
+    const done = await run('reclaim-thread-worktree', reclaiming === 'dirty' || preview.dirty, preview.ignored, preview.repositories, preview.items.map(({ path, fileCount }) => ({ path, fileCount })))
     if (done) { setOpen(false); return true }
     // The record can lag the folder: when main finds work it did not know about, the question is asked again, naming it.
     if (reclaiming === 'clean' && lastError.current === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setReclaiming('dirty')
@@ -153,7 +153,7 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
       </div>
       {error && !reclaiming ? <p className="agent-error" role="alert">{error}</p> : null}
     </div> : null}
-    {reclaiming ? <ReclaimWorktreeDialog facts={facts} dirty={reclaiming === 'dirty'} fallbackFocusRef={trigger} onCancel={() => setReclaiming(false)} onConfirm={confirmReclaim} /> : null}
+    {reclaiming ? <ReclaimWorktreeDialog facts={facts} dirty={reclaiming === 'dirty'} threadId={thread.id} command={command} fallbackFocusRef={trigger} removalError={error} onCancel={() => setReclaiming(false)} onConfirm={confirmReclaim} /> : null}
   </span>
 }
 
@@ -163,46 +163,87 @@ export function isReclaimable(thread: Pick<AgentThread, 'worktree'>): boolean {
   return worktree?.mode === 'independent' && worktree.status === 'ready' && Boolean(worktree.path) && !worktree.reused && !worktree.reclaimedAt
 }
 
-/** The one question before a worktree folder goes: what is in it, and that the branch stays (ADR-0019). */
-export function ReclaimWorktreeDialog({ facts, dirty, title, onConfirm, onCancel, fallbackFocusRef }: {
+/** The one question before a worktree folder goes: what is in it, and that the branch stays (ADR-0041). */
+export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, onConfirm, onCancel, fallbackFocusRef, removalError }: {
   readonly facts: Pick<WorkingCopyFacts, 'branch'>
   readonly dirty: boolean
   readonly title?: string | undefined
-  readonly onConfirm: () => Promise<boolean>
+  readonly threadId: string
+  readonly command: AgentConnection['command']
+  readonly removalError?: string | null
+  readonly onConfirm: (preview: WorktreeReclaimPreview) => Promise<boolean>
   readonly onCancel: () => void
   readonly fallbackFocusRef?: React.RefObject<HTMLElement | null> | undefined
 }): ReactNode {
-  return <ConfirmationDialog title={title ?? 'Remove this worktree?'} danger={dirty}
+  const [preview, setPreview] = useState<WorktreeReclaimPreview | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  useEffect(() => {
+    let active = true
+    void command({ type: 'preview-reclaim-thread-worktree', threadId }).then(result => {
+      if (!active) return
+      const facts = result?.worktreeReclaimPreview
+      if (result?.error || !facts) setFailure(result?.error ?? 'The folder could not be checked. Nothing was removed. Close this question and try again.')
+      else setPreview(facts)
+    }).catch(() => { if (active) setFailure('The folder could not be checked. Nothing was removed. Close this question and try again.') })
+    return () => { active = false }
+  }, [command, threadId])
+  const hasChanges = dirty || preview?.dirty === true
+  const blocked = Boolean(preview?.outsideLink || (preview && !preview.branch))
+  const nestedKinds = preview ? [...new Set(preview.repositories.map(item => item.kind))] : []
+  const nestedName = nestedKinds.length === 1 ? (preview!.repositories.length === 1 ? `${nestedKinds[0]}’s` : `${nestedKinds[0] === 'repository' ? 'repositories' : 'worktrees'}’`) : 'repositories and worktrees’'
+  const listedPaths = preview ? [...new Set([...preview.ignored, ...preview.repositories.map(repository => repository.path)])] : []
+  return <ConfirmationDialog title={title ?? 'Remove this worktree?'} danger
+    confirmDisabled={!preview || blocked || (preview.ignored.length > 0 && !acknowledged)}
     description={<>
       <p>This thread’s worktree folder and everything installed in it is removed. {facts.branch ? <>The branch {facts.branch} keeps its commits</> : <>Its commits are kept</>}, and sending to this thread puts the folder back.</p>
-      {dirty ? <p><strong>This folder has uncommitted changes.</strong> They are lost with it.</p> : null}
+      {!preview && !failure ? <p role="status">Checking the folder…</p> : null}
+      {failure ? <p role="alert">{failure}</p> : null}
+      {hasChanges ? <p><strong>This folder has uncommitted changes.</strong> They are lost with it.</p> : null}
+      {preview && listedPaths.length ? <>
+        <div className="working-copy__callout">These files are ignored by Git and are deleted with the folder:</div>
+        <ul className="working-copy__ignored">{listedPaths.map(path => {
+          const repository = preview.repositories.find(item => item.path === path)
+          const item = preview.items.find(item => item.path === path)
+          const size = item ? `${Math.max(1, Math.ceil(item.bytes / 1024)).toLocaleString()} KB${path.endsWith('/') ? `, ${item.fileCount} ${item.fileCount === 1 ? 'file' : 'files'}` : ''}, ignored` : 'Ignored'
+          return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{repository ? `Nested ${repository.kind} · ${repository.changeCount} uncommitted ${repository.changeCount === 1 ? 'change' : 'changes'}${repository.kind === 'repository' ? ` · ${repository.unpushedCommitCount ?? 0} ${(repository.unpushedCommitCount ?? 0) === 1 ? 'commit' : 'commits'} not on any remote` : ''}` : size}</span></li>
+        })}</ul>
+        {!blocked ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />{listedPaths.length === 1 ? 'Delete this 1 ignored item' : `Delete these ${listedPaths.length} ignored items`} with the folder{preview.repositories.length ? `, including the nested ${nestedName} uncommitted work` : ''}</label> : null}
+      </> : null}
+      {preview && !preview.branch ? <p role="alert">This folder has no branch checked out. Switch it to a branch before removing it. Nothing was changed.</p> : null}
+      {preview?.outsideLink ? <p role="alert">Remove the link to another folder ({preview.outsideLink}) before removing this folder. Nothing was changed.</p> : null}
     </>}
-    confirmLabel={dirty ? 'Remove and lose changes' : 'Remove worktree'} cancelLabel="Keep folder" {...(fallbackFocusRef ? { fallbackFocusRef } : {})}
-    failureMessage="The folder could not be removed. Nothing was changed." onConfirm={onConfirm} onCancel={onCancel} />
+    confirmLabel={listedPaths.length ? 'Remove with these files' : hasChanges ? 'Remove and lose changes' : 'Remove worktree'} cancelLabel="Keep folder" {...(fallbackFocusRef ? { fallbackFocusRef } : {})}
+    failureMessage={removalError ?? "Nothing was removed. Close this question and choose Remove worktree again to review the folder."} onConfirm={async () => preview && !blocked && (!preview.ignored.length || acknowledged) ? onConfirm(preview) : false} onCancel={onCancel} />
 }
 
 /**
- * Settle a thread, then ask whether its own worktree should go with it (ADR-0019). The Settle press
+ * Settle a thread, then ask whether its own worktree should go with it (ADR-0041). The Settle press
  * settles at once, as it always has; the question is a separate one, answered by Keep folder or Escape.
  * With the on-settle rule turned on, a clean folder goes without the question and a dirty one still asks.
  */
-export function useSettleThread(command: AgentConnection['command']) {
+export function useSettleThread(command: AgentConnection['command'], fallbackFocusRef?: React.RefObject<HTMLElement | null>) {
   const app = useOptionalApp()
+  const [removalError, setRemovalError] = useState<string | null>(null)
   const onSettleRule = app?.settings?.worktreeCleanup.onSettle === true
-  const [asking, setAsking] = useState<{ thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean } | null>(null)
+  const [questions, setQuestions] = useState<readonly { thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean }[]>([])
+  const asking = questions[0]
+  const nextQuestion = (): void => { setRemovalError(null); setQuestions(current => current.slice(1)) }
   const settle = useCallback(async (thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): Promise<void> => {
     const result = await command({ type: 'settle-thread', threadId: thread.id })
     if (!result || result.error || !isReclaimable(thread)) return
     const dirty = thread.worktree?.dirty === true
     if (onSettleRule && !dirty) { await command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return }
-    setAsking({ thread, project, dirty })
+    setQuestions(current => current.some(question => question.thread.id === thread.id) ? current : [...current, { thread, project, dirty }])
   }, [command, onSettleRule])
-  const dialog = asking ? <ReclaimWorktreeDialog facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title="Remove its worktree too?"
-    onCancel={() => setAsking(null)}
-    onConfirm={async () => {
-      const result = await command({ type: 'reclaim-thread-worktree', threadId: asking.thread.id, withUncommittedChanges: asking.dirty })
+  const dialog = asking ? <ReclaimWorktreeDialog key={asking.thread.id} facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title="Remove its worktree too?" removalError={removalError} threadId={asking.thread.id} command={command} fallbackFocusRef={fallbackFocusRef}
+    onCancel={nextQuestion}
+    onConfirm={async preview => {
+      setRemovalError(null)
+      const result = await command({ type: 'reclaim-thread-worktree', threadId: asking.thread.id, withUncommittedChanges: asking.dirty || preview.dirty, confirmedIgnored: preview.ignored, confirmedItems: preview.items.map(({ path, fileCount }) => ({ path, fileCount })), confirmedRepositories: preview.repositories })
       if (result && !result.error) return true
-      if (!asking.dirty && result?.error === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setAsking({ ...asking, dirty: true })
+      setRemovalError(result?.error ?? null)
+      if (!asking.dirty && result?.error === RECLAIM_WORKTREE_NEEDS_CONFIRMATION) setQuestions(current => current.map(question => question.thread.id === asking.thread.id ? { ...question, dirty: true } : question))
       return false
     }} /> : null
   return { settle, dialog }

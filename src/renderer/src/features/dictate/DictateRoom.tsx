@@ -29,7 +29,6 @@ export interface DictateRoomProps {
   readonly onCopy: (text: string) => Promise<boolean>
 }
 
-const DAY_MS = 86_400_000
 const TIMER_TICK_MS = 250
 
 export function formatElapsed(milliseconds: number): string {
@@ -54,7 +53,9 @@ export function transcriptStamp(createdAt: number, now: number): { dateTime?: st
   if (createdAt >= startOfToday.valueOf()) {
     return { dateTime, label: date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) }
   }
-  if (createdAt >= startOfToday.valueOf() - DAY_MS) return { dateTime, label: 'Yesterday' }
+  const startOfYesterday = new Date(startOfToday)
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+  if (createdAt >= startOfYesterday.valueOf()) return { dateTime, label: 'Yesterday' }
   return { dateTime, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 }
 

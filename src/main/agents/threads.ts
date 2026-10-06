@@ -265,7 +265,7 @@ export class SottoThreadHost implements AgentHost {
     const result = await this.inner.execute(translated)
     // A settings change's snapshot crosses this boundary the way every snapshot does: under Sotto's thread IDs.
     const mapped = result.snapshot ? { ...result, snapshot: this.mapSnapshot(result.snapshot) } : result
-    await this.registry.flush()
+    await this.registry.flush().catch(() => { console.warn('registry-flush-deferred') })
     return mapped
   }
 

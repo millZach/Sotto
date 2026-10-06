@@ -538,3 +538,13 @@ describe('Thread transcript scrolling', () => {
     await waitFor(() => { expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'grok-previews' }) })
   })
 })
+
+
+it('shows a history save notice on its thread while keeping its composer available', () => {
+  const state = manualState()
+  const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+  thread.historySaveNotice = 'Part of this thread’s history could not be saved. Other messages were kept.'
+  mount(state)
+  expect(screen.getByText(thread.historySaveNotice)).toHaveAttribute('role', 'alert')
+  expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
+})

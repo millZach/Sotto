@@ -36,3 +36,11 @@ Constraints:
 - Agent voice commands share the hosted route. The earlier rule that agent voice must use the local worker no longer applies, because there is no local worker.
 - OpenRouter's transcription endpoint has no streaming partials, so streaming transcription still means per-segment requests during a long dictation, not live text.
 - If OpenRouter drops or re-prices the model, the bench harness in `scripts/asr-bench/bench-stt.mjs` is the tool for choosing the replacement; adding a second hosted model is a settings choice, not an architecture change.
+
+## Older saved key migration recovery
+
+Amended 2026-09-30 (#513). If a key saved by an older version of Sotto cannot be moved into the credential store, Sotto removes the plaintext key from settings anyway. Settings says it could not be stored securely and asks you to enter it again. A headless host refuses startup before migration when no key file is supplied, leaving the saved key untouched. With a key file, a failed write removes the plaintext key and stops startup with safe guidance to enter it again; only a stable event name is logged. The recovery notice carries only a stable code; no key or vault error reaches the renderer or logs.
+
+## Reset keeps the saved key
+
+Amended 2026-09-30 (#571). Reset settings restores preferences without changing the formatting credential slot. Reset and its rollback never decrypt, clear or rewrite the saved OpenRouter key, so even a locked credential store or a failed reset leaves it intact. Removing the key remains an explicit edit in Settings.

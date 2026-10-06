@@ -42,7 +42,7 @@ async function fixture() {
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   disposables.push(() => control.dispose())
   await control.start(); await control.command({ type: 'connect' })
   host.event({ type: 'manual', threadId: 'workshop', text: 'Pick the palette' })
@@ -59,7 +59,7 @@ async function fixture() {
   const url = 'file:///main.html'
   const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
   disposables.push(registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const send = (command: AgentCommand) =>
     listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>
   return { control, send }

@@ -9,7 +9,7 @@ function threadsStateFixture(): AgentState {
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
     composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
     speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [], membership: { status: 'free', label: 'Free', expiresAt: null } }
+    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],  }
 }
 
 const HOST = '11111111-1111-4111-8111-111111111111'
@@ -22,7 +22,9 @@ function setup() {
     onThreadDetail: (listener: (detail: AgentThreadDetail) => void) => { detailListener = listener; return () => { detailListener = undefined } },
     attachmentPreview: vi.fn(async (_request: { threadId: string; messageId: string; attachmentId: string }) => { void _request; return null }),
     workingCopyOptions: vi.fn(async (_projectId: string) => { void _projectId; return { isGit: false } }) },
-    files: { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
+    files: { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), reveal: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
+    gitChanges: { review: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), watch: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
+    subagents: { page: vi.fn(async (request: { threadId: string }) => ({ ...request })) },
     requestDrafts: { list: vi.fn(async (owner: { kind: string; ownerId: string }) => [owner]) } }
   return { state, raw, bridge: hostClientBridge(raw), push: (detail: AgentThreadDetail) => detailListener?.(detail) }
 }
@@ -71,7 +73,7 @@ it('rejects another host before dispatch and preserves legacy host-less bridges'
   expect((await hostClientBridge(raw).agents.get()).host.threads[0]!.id).toBe('visual-gate')
 })
 
-it('keeps routed agent and remote answer references intact while refusing remote local tools', async () => {
+it('keeps routed agent and remote answer references intact, passes a paired host\'s tool reads to main, and refuses the rest', async () => {
   const { raw, state } = setup()
   const remote = '22222222-2222-4222-8222-222222222222'
   state.clientScoped = true
@@ -83,9 +85,23 @@ it('keeps routed agent and remote answer references intact while refusing remote
   expect(raw.agents.command).toHaveBeenCalledWith({ type: 'select-thread', threadId: key })
   expect(await bridge.requestDrafts.list({ kind: 'thread', ownerId: key })).toEqual([{ kind: 'thread', ownerId: key }])
   expect(raw.requestDrafts.list).toHaveBeenCalledWith({ kind: 'thread', ownerId: key })
-  expect(() => bridge.files.list({ threadId: key })).toThrow('another host')
-  expect(raw.files.list).not.toHaveBeenCalled()
+  // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
+  // October 5 amendment); this computer's own thread is still handed over by its own ID.
+  expect(await bridge.files.list({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
+  expect(raw.files.list).toHaveBeenLastCalledWith({ threadId: key })
+  expect(await bridge.files.list({ threadId: hostEntityKey(HOST, 'thread') })).toEqual({ ok: true, value: { threadId: hostEntityKey(HOST, 'thread') } })
+  expect(raw.files.list).toHaveBeenLastCalledWith({ threadId: 'thread' })
+  // Anything else that would act here for another host's thread is refused before dispatch.
+  expect(() => bridge.files.reveal({ threadId: key })).toThrow('another host')
+  expect(raw.files.reveal).not.toHaveBeenCalled()
+  // Changes' comparison and Agents' roster pass the same way; Changes' watch does not.
+  expect(await bridge.gitChanges.review({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
+  expect(await bridge.subagents.page({ threadId: key })).toEqual({ threadId: key })
+  expect(() => bridge.gitChanges.watch({ threadId: key })).toThrow('another host')
+  expect(raw.gitChanges.watch).not.toHaveBeenCalled()
   state.connections = [{ hostId: remote, name: 'Forge', kind: 'remote', connected: true }]
   await bridge.agents.get()
-  expect(() => bridge.files.list({ threadId: key })).toThrow('host machine')
+  expect(await bridge.files.list({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
+  expect(() => bridge.files.reveal({ threadId: key })).toThrow('host machine')
+  expect(raw.files.reveal).not.toHaveBeenCalled()
 })

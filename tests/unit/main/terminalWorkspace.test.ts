@@ -278,6 +278,17 @@ describe('terminal workspace service', () => {
     expect(opened.output).toContain('· claude --model claude-sonnet-5 --effort high --dangerously-skip-permissions')
   })
 
+  it.each(["'", '\u2018', '\u2019', '\u201a', '\u201b'])('preserves quoted provider options on Windows', async quote => {
+    const f = await fixture()
+    const model = `model${quote}name`, reasoning = `effort${quote}level`
+    await started(f.service, { projectId: 'p1', title: 'Agent', workingCopy: 'shared', launch: {
+      provider: 'claude', modelId: `native:claude:model:${encodeURIComponent(model)}`, reasoning, permission: 'ask',
+    } })
+    expect(f.spawn).toHaveBeenCalledWith(expect.stringMatching(/powershell\.exe$/u), ['-NoLogo', '-Command',
+      `& 'claude' '--model' 'model${quote}${quote}name' '--effort' 'effort${quote}${quote}level'`,
+    ], expect.anything())
+  })
+
   it('runs the CLI through a login shell on macOS', async () => {
     const f = await fixture({ platform: 'darwin', env: { SHELL: '/bin/zsh', PATH: '/usr/bin' } })
     await started(f.service, { projectId: 'p1', title: 'Agent', workingCopy: 'shared', launch: { provider: 'codex', modelId: null, reasoning: null, permission: 'edits' } })

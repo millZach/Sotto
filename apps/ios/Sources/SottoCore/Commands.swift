@@ -6,14 +6,16 @@ public struct QuestionAnswer: Codable, Equatable, Sendable {
 }
 /// The commands this client builds, each with the only fields the host accepts from a paired device.
 /// A copy of the rows it uses from the host's closed allow-list in src/host/remoteCommands.ts, which is
-/// the authority: anything not listed there is refused. The app builds nothing that list gates behind
-/// the remote-answer policy except `answer` (runtime and provider modes, discarding uncommitted work).
+/// the authority: anything not listed there is refused. A permissive creation mode, like an answer,
+/// needs the computer's remote-answer policy. The host checks that policy again when it acts.
 public enum RemoteCommands {
     public static let allowed: [String: Set<String>] = [
         "manual-send": ["threadId", "text", "attachments", "skills", "files", "draftId"],
         "interrupt": ["threadId"],
         "load-earlier-messages": ["threadId"],
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
+        "create-project": ["provider", "title", "path", "useExisting"],
+        "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
     ]
     /// Commands the host accepts only from a client holding its remote-answer policy (`mayAnswer`).
     public static let needAnswerPolicy: Set<String> = ["answer"]
@@ -25,10 +27,15 @@ public enum RemoteCommands {
     }
 }
 public enum Commands {
-    public static func prompt(threadID: String, text: String, draftID: String) throws -> JSONValue {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf16.count <= 100_000,
-              UUID(uuidString: draftID) != nil else { throw ClientError.invalidRequest }
-        return try RemoteCommands.checked(.object(["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]))
+    /// A reply: its words, its staged photos, or both. Photos go by handle, within the host's limits.
+    public static func prompt(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty, text.utf16.count <= 100_000,
+              UUID(uuidString: draftID) != nil, images.count <= PhotoLimits.count, images.allSatisfy(\.valid),
+              Set(images.map(\.id)).count == images.count,
+              images.reduce(0, { $0 + $1.sizeBytes }) <= PhotoLimits.bytesTogether else { throw ClientError.invalidRequest }
+        var fields: [String: JSONValue] = ["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
+        if !images.isEmpty { fields["attachments"] = .array(images.map(\.wire)) }
+        return try RemoteCommands.checked(.object(fields))
     }
     public static func interrupt(threadID: String) throws -> JSONValue {
         try RemoteCommands.checked(.object(["type": .string("interrupt"), "threadId": .string(threadID)]))
@@ -93,6 +100,7 @@ public struct PendingOperation: Codable, Identifiable, Equatable, Sendable {
     }
     public func matches(hostID: String, clientID: String) -> Bool { self.hostID == hostID && self.clientID == clientID }
     public func reconciled(receipt: Receipt, deliveries: [Delivery]) -> Bool {
+        if kind == "answer" { return receipt.confirmsAnswer }
         // Completed transport receipt only confirms provider delivery when its draft status agrees.
         if let draftID, let delivery = deliveries.first(where: { $0.draftId == draftID && $0.threadId == threadID }) {
             return delivery.status == "accepted" || delivery.status == "failed"

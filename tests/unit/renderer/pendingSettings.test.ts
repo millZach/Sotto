@@ -11,7 +11,7 @@ function state(thread: Partial<AgentThread> = {}, error: string | null = null, u
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Work', modelId: 'model', status: 'idle', messages: [], requests: [], runtimeMode: 'approval-required', ...thread }] },
     assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', globalLaneBusy: false, notice: '', error, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [], membership: { status: 'beta', label: 'Test', expiresAt: null },
+    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
     ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}),
   }
 }

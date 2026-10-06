@@ -63,7 +63,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+  })
   await control.start(); await control.command({ type: 'connect' })
 
   const router = new DesktopHostRouter(() => emptyDesktopState(RECEIPT_HOST_ID))
@@ -77,7 +77,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const broadcaster = new AgentStateBroadcaster()
   const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { encodeReceipt: broadcaster.encodeReceipt })
+    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: broadcaster.encodeReceipt })
   const handle = (channel: string, ...args: unknown[]): Promise<unknown> => Promise.resolve(handlers.get(channel)!(event, ...args))
 
   const wire: Array<{ channel: string; payload: unknown }> = []

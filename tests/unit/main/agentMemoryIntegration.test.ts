@@ -35,7 +35,7 @@ async function fixture() {
   let store: MemoryStore
   let profile: MemoryProfile
   let control: AgentControl
-  const turns = new TurnRecorder({ directory: root, historyEnabled: () => true, resolveSession: () => undefined })
+  const turns = new TurnRecorder({ directory: root, resolveSession: () => undefined })
   const complete = vi.fn<SubscriptionClient['complete']>(async (_system, input) => {
     const request = input as { utterance?: string; preferences?: { content: string; topic?: string }[] }
     const communication = request.preferences?.find(memory => memory.topic === 'communication')?.content
@@ -50,7 +50,7 @@ async function fixture() {
       complete, status: async () => ({ provider: 'claude', installed: true, ready: true, label: 'Fixture', detail: '', models: [] }),
     } })
     control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, preferences: profile, authority: new PolicyStore(store), turns,
-      membership: { status: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Fixture', expiresAt: null }) } })
+    })
     controls.push(control)
     await control.start()
     if (!control.get().host.connected) await control.command({ type: 'connect' })

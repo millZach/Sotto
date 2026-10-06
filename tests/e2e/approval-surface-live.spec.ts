@@ -5,7 +5,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 
 /**
- * The approval surface, end to end through the installed Claude Code client (ADR-0021). Sotto used to
+ * The approval surface, end to end through the installed Claude Code client (ADR-0043). Sotto used to
  * launch the CLI without naming itself the answerer, which made the CLI deny every prompt itself and
  * withhold its question tool: a thread kept working and nothing reached the user. Only a real client
  * can show that fixed, so this sends two native turns and looks at what appears above the message bar.

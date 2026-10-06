@@ -62,6 +62,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    ensureMicrophoneAccess: vi.fn(async () => true),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     downloadUpdate: vi.fn(async () => OK),
@@ -77,6 +78,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     toggleMaximizeApp: vi.fn(async () => undefined),
     getWindowMaximized: vi.fn(async () => false),
     onWindowMaximized: vi.fn(() => () => undefined),
+    onWindowHidden: vi.fn(() => () => undefined),
     quitApp: vi.fn(async () => undefined),
     ...overrides,
   }

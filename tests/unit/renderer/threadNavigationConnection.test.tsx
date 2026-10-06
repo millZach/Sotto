@@ -26,7 +26,7 @@ async function draftFixture() {
   const host = new E2EAgentHost()
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-    membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+  })
   await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
   const bridge: AgentBridge = agentBridgeFor(control)
   return { control, host, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
@@ -254,7 +254,7 @@ describe('thread navigation through the real renderer connection and controller'
     const host = new E2EAgentHost()
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     let release!: () => void
     const gate = new Promise<void>(done => { release = done })
     let sending: Promise<AgentState | null> | undefined
@@ -293,7 +293,7 @@ describe('thread navigation through the real renderer connection and controller'
     const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
     const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
-      membership: { status: async () => ({ status: 'beta', label: 'Test', expiresAt: null }), action: async () => ({ status: 'beta', label: 'Test', expiresAt: null }) } })
+    })
     let release!: () => void
     let operation: Promise<AgentState | null> | undefined
     let selection: Promise<AgentState | null> | undefined

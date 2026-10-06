@@ -1,19 +1,20 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
-import { AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
+import { AGENT_WAKE, AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
 vi.mock('../../../src/main/agents/speech', () => ({ synthesizeAgentSpeech: vi.fn(async () => ({ audioBase64: 'system-fixture', mimeType: 'audio/wav' })) }))
 import { synthesizeAgentSpeech } from '../../../src/main/agents/speech'
 import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
+import { AgentWakeService } from '../../../src/main/agents/wake'
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
 
 const disposables: Array<() => void> = []
-afterEach(() => { for (const dispose of disposables.splice(0)) dispose(); vi.clearAllMocks() })
+afterEach(() => { for (const dispose of disposables.splice(0)) dispose(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
-function fixture() {
+function fixture(voiceCoordinatorEnabled = true) {
   const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
   const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
@@ -23,7 +24,7 @@ function fixture() {
   }
   const main = sender('main'), widget = sender('widget')
   const state = { configuration: { ...defaultAgentConfiguration(), speechProvider: 'grok', grokSpeechVoice: 'custom-voice' }, host: EMPTY_AGENT_HOST } as AgentState
-  const control = { get: () => state, shell: () => state, threadDetail: () => null, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(async () => null) }
+  const control = { get: vi.fn(() => state), configuration: vi.fn(() => state.configuration), shell: () => state, threadDetail: () => null, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(async () => null) }
   const grok = {
     synthesize: vi.fn<(text: string, voice: string) => Promise<{ audioBase64: string; mimeType: 'audio/wav' }>>(async () => ({ audioBase64: 'grok-fixture', mimeType: 'audio/wav' })),
     voices: vi.fn(async () => [{ id: 'custom-voice', name: 'Custom' }]), cancel: vi.fn(),
@@ -32,7 +33,7 @@ function fixture() {
   disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', {
     status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-  }, grok, kokoro, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  }, grok, kokoro, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, voiceCoordinatorEnabled, wakeControl: control }))
   const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => listeners.get(channel)!({ sender: source.webContents, senderFrame: frame }, payload)
   // A command answers with a receipt: the shell with its catalog named by revision (issue #323).
   const reply = new AgentStateBroadcaster().encodeReceipt(agentShell(state))
@@ -70,13 +71,19 @@ describe('agent command IPC authorization', () => {
   })
 
   it.each([
-    ...['reasoning', 'membership', 'grokSpeech'].map(slot => ({ type: 'credential', slot, value: 'fixture' })),
+    ...['reasoning', 'grokSpeech'].map(slot => ({ type: 'credential', slot, value: 'fixture' })),
     { type: 'connect' }, { type: 'disconnect' },
-    { type: 'membership', action: 'refresh' },
     { type: 'voice-state', status: 'idle', error: null },
     { type: 'check-reasoning', provider: 'codex' },
     { type: 'preview-voice' },
     { type: 'observe-threads', threadIds: ['workshop', 'docs'] },
+    { type: 'update-client', provider: 'codex' },
+    { type: 'git-pull', threadId: 'workshop' },
+    { type: 'create-project', title: 'Workshop' },
+    { type: 'reclaim-thread-worktree', threadId: 'workshop' },
+    { type: 'git-publish', threadId: 'workshop', repository: 'owner/workshop', visibility: 'private' },
+    { type: 'git-pull-request-action', threadId: 'workshop', url: 'https://github.com/owner/workshop/pull/1', action: 'merge' },
+    { type: 'git-action', threadId: 'workshop', actionId: '11111111-1111-4111-8111-111111111111', action: 'commit' },
   ])('keeps privileged command %j main-only', async command => {
     const f = fixture()
     await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
@@ -94,6 +101,20 @@ describe('agent command IPC authorization', () => {
     f.widget.webContents.getURL = () => 'https://untrusted.example/'
     await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
     expect(f.control.command).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { type: 'compose', text: 'Continue' }, { type: 'send' },
+    { type: 'answer', threadId: 'workshop', requestId: 'request', answer: 'Yes' },
+    { type: 'steer', threadId: 'workshop', draftId: '11111111-1111-4111-8111-111111111111', text: 'Continue' },
+    { type: 'queue-followup', threadId: 'workshop', draftId: '11111111-1111-4111-8111-111111111111', text: 'Continue' },
+    { type: 'assign', threadId: 'workshop' }, { type: 'resume', threadId: 'workshop' },
+    { type: 'select-thread', threadId: 'workshop' }, { type: 'next' }, { type: 'later' },
+    { type: 'cancel-draft' }, { type: 'resume-draft', threadId: 'workshop' },
+  ])('preserves widget command %j', async command => {
+    const f = fixture()
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(f.reply)
+    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
   })
 
   it.each(['mute', 'unmute'])('preserves widget microphone %s commands', async action => {
@@ -163,5 +184,33 @@ describe('native speech IPC', () => {
     await old
     expect(f.grok.cancel).toHaveBeenCalledOnce()
     await expect(f.invoke(AGENT_SPEECH, 'Next reply')).resolves.toMatchObject({ audioBase64: 'grok-fixture' })
+  })
+})
+
+describe('wake IPC reads', () => {
+  it('blocks wake preparation when the startup voice beta gate is off', async () => {
+    const prepare = vi.spyOn(AgentWakeService.prototype, 'prepare').mockResolvedValue(undefined)
+    const f = fixture(false)
+    f.state.configuration.enabled = true
+    await expect(f.invoke(AGENT_WAKE, { type: 'prepare' })).rejects.toThrow('not enabled')
+    expect(prepare).not.toHaveBeenCalled()
+    await f.invoke(AGENT_WAKE, { type: 'release' })
+  })
+
+  it('reads only configuration for repeated detections', async () => {
+    const prepare = vi.spyOn(AgentWakeService.prototype, 'prepare').mockResolvedValue(undefined)
+    const detect = vi.spyOn(AgentWakeService.prototype, 'detect').mockResolvedValue({ detected: false, endSeconds: 0 })
+    const f = fixture()
+    f.state.configuration.enabled = true
+    const audio = new Float32Array(160)
+    for (let i = 0; i < 3; i++) await f.invoke(AGENT_WAKE, { type: 'detect', audio })
+    expect(f.control.get).not.toHaveBeenCalled()
+    expect(f.control.configuration).toHaveBeenCalledTimes(3)
+    expect(prepare).toHaveBeenCalledWith(f.state.configuration.wakeModelDirectory, undefined)
+    expect(detect).toHaveBeenCalledTimes(3)
+    f.state.configuration.enabled = false
+    await expect(f.invoke(AGENT_WAKE, { type: 'prepare' })).rejects.toThrow('not enabled')
+    expect(prepare).toHaveBeenCalledTimes(3)
+    await f.invoke(AGENT_WAKE, { type: 'release' })
   })
 })

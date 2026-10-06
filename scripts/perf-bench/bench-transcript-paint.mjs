@@ -1,4 +1,4 @@
-﻿/**
+/**
  * What a long transcript costs a real browser, which jsdom cannot say: layout and paint for 400 messages, with
  * and without the transcript's CSS containment. Also checks the two behaviours containment can break â€” landing
  * exactly at the end (Jump to latest, following the stream) and scrolling up without the content jumping.

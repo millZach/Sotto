@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { basename, join } from 'node:path'
+import { basename, join, win32 as win32Path } from 'node:path'
 import { z } from 'zod'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { FileWorkspace } from '../../shared/files'
 import type { ToolsResult } from '../../shared/tools'
-import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSessionSchema, TERMINAL_MAX_OUTPUT, type TerminalSession, type TerminalSnapshot, type TerminalEvent } from '../../shared/terminal'
-import { toolListRequestSchema } from '../../shared/tools'
+import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSessionSchema, terminalListRequestSchema, TERMINAL_MAX_OUTPUT, type TerminalPlace, type TerminalSession, type TerminalSnapshot, type TerminalEvent } from '../../shared/terminal'
 import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ToolOperations, fail, parse, workspace } from './common'
@@ -42,7 +41,7 @@ export class TerminalService extends ToolOperations {
     await this.persistence
   }
   private publish(record: LiveTerminal): void { this.dependencies.emit({ type: 'session', session: { ...record.session } }) }
-  /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. */
+  /** Whether a shell of this thread's is still running in its working copy, so the folder is not reclaimed under it. Counts a Tools shell and a pane drawer's shell alike: either keeps the folder in use. */
   hasRunningTerminal(threadId: string): boolean {
     return [...this.sessions.values()].some(record => record.session.workspace.threadId === threadId && record.pty !== undefined)
   }
@@ -56,18 +55,19 @@ export class TerminalService extends ToolOperations {
     return record
   }
   list(payload: unknown) { return this.run(async () => {
-    const request = parse(toolListRequestSchema, payload)
+    const request = parse(terminalListRequestSchema, payload)
     await this.ready
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return { workspace: owner, sessions: [...this.sessions.values()].filter(record => record.session.workspace.workspaceId === owner.workspaceId).map(record => ({ ...record.session })) }
+    const place = request.place ?? 'tools'
+    return { workspace: owner, sessions: [...this.sessions.values()].filter(record => record.session.workspace.workspaceId === owner.workspaceId && record.session.place === place).map(record => ({ ...record.session })) }
   }) }
   create(payload: unknown) { return this.run(async () => {
     const request = parse(terminalCreateSchema, payload)
     await this.ready
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24))
+    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools'))
   }) }
-  private async start(owner: FileWorkspace, cols: number, rows: number): Promise<LiveTerminal> {
+  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace): Promise<LiveTerminal> {
     // Reserve synchronously before importing/spawning so concurrent create calls respect limits.
     if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
     if (this.sessions.size >= 32) return fail('busy', 'Close an existing terminal before opening another (32 maximum).')
@@ -84,8 +84,10 @@ export class TerminalService extends ToolOperations {
     env.TERM = 'xterm-256color'
     env.COLORTERM = 'truecolor'
     env.TERM_PROGRAM = 'Sotto'
-    const shell = platform === 'win32' ? join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
-    const record: LiveTerminal = { session: { id: randomUUID(), workspace: owner, title: basename(shell), shell, status: 'running', cols, rows, exitCode: null, createdAt: Date.now() }, output: '', sequence: 0, subscriptions: [] }
+    const shell = platform === 'win32'
+      ? win32Path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
+    const record: LiveTerminal = { session: { id: randomUUID(), workspace: owner, title: (platform === 'win32' ? win32Path.basename(shell) : basename(shell)), shell, status: 'running', cols, rows, exitCode: null, createdAt: Date.now(), place }, output: '', sequence: 0, subscriptions: [] }
     this.sessions.set(record.session.id, record)
     try {
       const spawn = this.dependencies.spawn ?? (await import('node-pty')).spawn
@@ -102,7 +104,7 @@ export class TerminalService extends ToolOperations {
           record.output = (record.output + chunk).slice(-TERMINAL_MAX_OUTPUT)
           if (/^[\uDC00-\uDFFF]/.test(record.output)) record.output = record.output.slice(1)
           record.sequence++
-          this.dependencies.emit({ type: 'output', threadId: owner.threadId, workspaceId: owner.workspaceId, sessionId: record.session.id, data: chunk, sequence: record.sequence })
+          this.dependencies.emit({ type: 'output', threadId: owner.threadId, workspaceId: owner.workspaceId, sessionId: record.session.id, data: chunk, sequence: record.sequence, place: record.session.place })
           offset = end
         }
       }), pty.onExit(({ exitCode }) => {
@@ -168,7 +170,7 @@ export class TerminalService extends ToolOperations {
     // start reserves its new slot synchronously before yielding.
     this.sessions.delete(record.session.id)
     let replacement: LiveTerminal
-    try { replacement = await this.start(record.session.workspace, record.session.cols, record.session.rows) }
+    try { replacement = await this.start(record.session.workspace, record.session.cols, record.session.rows, record.session.place) }
     catch (error) {
       this.sessions.set(record.session.id, record)
       await this.save()
