@@ -371,19 +371,51 @@ describe('ThreadDraftStore revisions and saves', () => {
 })
 
 describe('ThreadDraftStore sending', () => {
-  it('saves the exact revision before recording it as sent', () => {
+  it('saves nothing around a send main saves itself, and records the emptied composer once the send resolves', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())
     store.edit('thread', { text: '  Ship it  ' })
     const draft = store.submit('thread', 12)
-    expect(draft?.draftId).toBe(held.saves()[0]!.draftId)
     expect(store.submissions()).toEqual([expect.objectContaining({ threadId: 'thread', draftId: draft!.draftId, text: 'Ship it', submittedAt: 12, resolved: false })])
-    // The press empties the composer under a revision of its own, which is saved after the debounce.
+    // The press empties the composer under a revision of its own.
     expect(store.draft('thread')).toMatchObject({ text: '', attachments: [] })
     expect(store.draft('thread').draftId).not.toBe(draft!.draftId)
-    vi.advanceTimersByTime(500)
-    expect(held.saves()).toEqual([expect.objectContaining({ text: '  Ship it  ' }), expect.objectContaining({ draftId: store.draft('thread').draftId, text: '', attachments: [] })])
+    // The manual-send carries the revision and main saves it as it admits it: no save of the sent revision
+    // goes first, and none of the empty one lands while the send is on its way.
+    vi.advanceTimersByTime(5_000)
+    expect(held.saves()).toEqual([])
+    store.resolve('thread', draft!.draftId, null)
+    vi.advanceTimersByTime(250)
+    expect(held.saves()).toEqual([expect.objectContaining({ draftId: store.draft('thread').draftId, text: '', attachments: [] })])
     expect(store.submit('empty', 1)).toBeNull()
+  })
+
+  it('waits for every send of the thread before recording its emptied composer', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'first' })
+    const first = store.submit('thread', 1)!
+    store.edit('thread', { text: 'second' })
+    vi.advanceTimersByTime(100)
+    const second = store.submit('thread', 2, 'queue')!
+    store.resolve('thread', first.draftId, null)
+    vi.advanceTimersByTime(1_000)
+    // The typing between the two was dropped with its debounce: the queue command carries it.
+    expect(held.saves()).toEqual([])
+    store.resolve('thread', second.draftId, null)
+    vi.advanceTimersByTime(250)
+    expect(held.saves()).toEqual([expect.objectContaining({ text: '' })])
+  })
+
+  it('saves an answer before it goes, as main keeps no draft for one', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Yes', requestId: 'question' })
+    const answer = store.submit('thread', 3, 'send', 'window')!
+    expect(held.saves()).toEqual([expect.objectContaining({ draftId: answer.draftId, text: 'Yes', requestId: 'question' })])
+    vi.advanceTimersByTime(250)
+    expect(held.saves()).toHaveLength(2)
+    expect(held.saves()[1]).toMatchObject({ draftId: store.draft('thread').draftId, text: '' })
   })
 
   it('empties the composer on the press and leaves later typing alone when the send is accepted', () => {
@@ -393,7 +425,8 @@ describe('ThreadDraftStore sending', () => {
     const sent = store.submit('thread', 0)!
     expect(store.draft('thread').text).toBe('')
     // The state that still carries the sent revision cannot put it back: the empty revision is newer.
-    store.receive(published(held.saves()[0]!, { deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'queued', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))
+    const admitted: SaveCommand = { type: 'save-thread-draft', threadId: 'thread', draftId: sent.draftId, text: sent.text, requestId: null }
+    store.receive(published(admitted, { deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'queued', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))
     expect(store.draft('thread').text).toBe('')
     store.edit('thread', { text: 'written while sending' })
     store.receive(baseState({ deliveredDrafts: [{ threadId: 'thread', draftId: sent.draftId }], deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'accepted', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))

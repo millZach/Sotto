@@ -192,7 +192,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (field !== null && document.activeElement !== field && field.form?.contains(document.activeElement)) field.focus()
     if (question?.requestId) {
       if (draft.requestId !== question.requestId) store.edit(threadId, { requestId: question.requestId })
-      const answer = store.submit(threadId, submittedAt)
+      // Main keeps no draft for an answer, so this window saves the revision it answers with.
+      const answer = store.submit(threadId, submittedAt, 'send', 'window')
       if (answer === null) return
       store.dismiss(threadId, answer.draftId)
       store.setAnswerState(threadId, { sending: true, error: null })

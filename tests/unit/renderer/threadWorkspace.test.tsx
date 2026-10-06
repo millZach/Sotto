@@ -197,10 +197,9 @@ describe('Threads manual composer', () => {
     expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(false)
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Ship the preview')
     expect(live.command).toHaveBeenCalledWith({ type: 'manual-send', threadId: 'grok-previews', draftId: expect.any(String), text: 'Ship the preview' })
-    const save = live.command.mock.calls.findIndex(([request]) => request.type === 'save-thread-draft')
+    // Main saves the revision as it admits the send, so no draft save goes in front of it.
     const send = live.command.mock.calls.findIndex(([request]) => request.type === 'manual-send')
-    expect(save).toBeGreaterThanOrEqual(0)
-    expect(save).toBeLessThan(send)
+    expect(live.command.mock.calls.slice(0, send).some(([request]) => request.type === 'save-thread-draft')).toBe(false)
     expect(live.command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'assign' }))
   })
 
