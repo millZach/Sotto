@@ -53,8 +53,10 @@ it('rejects screenshots before sending when the native Grok client cannot accept
  expect((await f!.driver.requests()).some(request=>request.method==='session/prompt')).toBe(false)
 })
 it('filters API keys and keeps native home/auth paths without disabling coding tools',()=>{
- const env=grokEnvironment({PATH:'native-path',XAI_API_KEY:'must-not-copy',ANTHROPIC_API_KEY:'must-not-copy',GROK_HOME:'C:/native-grok',GROK_AUTH_PATH:'C:/native-auth.json'})
- expect(env.XAI_API_KEY).toBeUndefined();expect(env.ANTHROPIC_API_KEY).toBeUndefined();expect(env.GROK_HOME).toBe('C:/native-grok')
+ const grokHome = process.platform === 'win32' ? 'C:/native-grok' : '/tmp/native-grok'
+ const grokAuth = process.platform === 'win32' ? 'C:/native-auth.json' : '/tmp/native-auth.json'
+ const env=grokEnvironment({PATH:'native-path',XAI_API_KEY:'must-not-copy',ANTHROPIC_API_KEY:'must-not-copy',GROK_HOME:grokHome,GROK_AUTH_PATH:grokAuth})
+ expect(env.XAI_API_KEY).toBeUndefined();expect(env.ANTHROPIC_API_KEY).toBeUndefined();expect(env.GROK_HOME).toBe(grokHome)
  expect(env.GROK_DISABLE_API_KEY_AUTH).toBe('1');expect(env.GROK_WRITE_FILE).toBeUndefined();expect(env.GROK_SUBAGENTS).toBeUndefined()
 })
 it('keeps live authored and streamed messages while durable history lags',async()=>{

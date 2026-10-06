@@ -89,7 +89,7 @@ export async function verifyPackagedMemoryStore(target) {
     const smokeEnvironment = await profile.smokeEnvironment(probeRoot)
     application = await electron.launch({
       executablePath: profile.executablePath(target),
-      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`],
+      args: [`--user-data-dir=${join(probeRoot, 'Chromium')}`, ...profile.smokeArgs],
       env: Object.fromEntries(Object.entries({
         ...process.env,
         ...smokeEnvironment,
@@ -156,7 +156,7 @@ async function verifyNormalPackagedLaunch(target) {
   try {
     application = await electron.launch({
       executablePath: executable,
-      args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`],
+      args: [`--user-data-dir=${join(smokeRoot, 'Chromium')}`, ...profile.smokeArgs],
       env: Object.fromEntries(Object.entries({
         ...process.env,
         ...smokeEnvironment,

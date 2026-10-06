@@ -80,6 +80,7 @@ artifacts/agents-view/
 
 artifacts/agent-browser/
 artifacts/browser-grant/
+artifacts/remote-thread-tools/
 artifacts/test-iphone/
 artifacts/cloud-iphone/
 artifacts/new-thread-setup/
@@ -133,3 +134,9 @@ artifacts/pkg-34-workspace-git/
 /artifacts/pkg-17-hostconnection/
 
 artifacts/computer-use-guidance/
+
+# Hidden-player verification; retain only the capture cited by the note.
+artifacts/hidden-player-typing/
+
+# Disabled-coordinator verification; retain only the capture cited by the note.
+artifacts/disabled-coordinator-voice/

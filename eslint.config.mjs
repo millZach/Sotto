@@ -4,6 +4,8 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/disabled-coordinator-voice/**',
+      'artifacts/hidden-player-typing/**',
       'artifacts/computer-use-guidance/**',
       'artifacts/pkg-17-hostconnection/**',
       'artifacts/pkg-34-workspace-git/**',
@@ -24,6 +26,7 @@ export default tseslint.config(
       'artifacts/codex-questions-thread-agents/**',
       'artifacts/agent-browser/**',
       'artifacts/browser-grant/**',
+      'artifacts/remote-thread-tools/**',
       'artifacts/test-iphone/**',
       'artifacts/cloud-iphone/**',
       'artifacts/new-thread-setup/**',

@@ -50,7 +50,29 @@ describe('buildApplicationMenuTemplate', () => {
     expect(darwinTemplate({ appName: 'Sotto' }).map((item) => item.label)).toEqual([
       'Sotto',
       'Edit',
+      'View',
       'Window',
+    ])
+  })
+
+  it('leaves out the update check where Sotto cannot update itself', () => {
+    const items = buildApplicationMenuTemplate({
+      platform: 'darwin',
+      appName: 'Sotto',
+      includeDeveloperTools: false,
+      onShowSettings: () => undefined,
+    })
+    expect(entries(submenu(items ?? [], 'Sotto'))).toEqual([
+      'about',
+      'separator',
+      'Settings…',
+      'separator',
+      'services',
+      'hide',
+      'hideOthers',
+      'unhide',
+      'separator',
+      'quit',
     ])
   })
 
@@ -115,21 +137,27 @@ describe('buildApplicationMenuTemplate', () => {
     ])
   })
 
-  it('adds the view menu only when developer tools are included', () => {
-    const withTools = darwinTemplate({ includeDeveloperTools: true })
-
-    expect(withTools.map((item) => item.label)).toEqual([
-      'Sotto',
-      'Edit',
-      'View',
-      'Window',
+  it('zooms and enters full screen from the View menu in a packaged build', () => {
+    expect(entries(submenu(darwinTemplate({ includeDeveloperTools: false }), 'View'))).toEqual([
+      'resetZoom',
+      'zoomIn',
+      'zoomOut',
+      'separator',
+      'togglefullscreen',
     ])
-    expect(entries(submenu(withTools, 'View'))).toEqual(['reload', 'toggleDevTools'])
-    expect(
-      darwinTemplate({ includeDeveloperTools: false }).some(
-        (item) => item.label === 'View',
-      ),
-    ).toBe(false)
+  })
+
+  it('adds reload and developer tools to the View menu only when developer tools are included', () => {
+    expect(entries(submenu(darwinTemplate({ includeDeveloperTools: true }), 'View'))).toEqual([
+      'reload',
+      'toggleDevTools',
+      'separator',
+      'resetZoom',
+      'zoomIn',
+      'zoomOut',
+      'separator',
+      'togglefullscreen',
+    ])
   })
 
   it('builds an independent template on every call', () => {
@@ -163,6 +191,12 @@ describe('buildApplicationMenuTemplate', () => {
       'toggleDevTools',
       'separator',
       'Show recent turn records',
+      'separator',
+      'resetZoom',
+      'zoomIn',
+      'zoomOut',
+      'separator',
+      'togglefullscreen',
     ])
 
     view.find((item) => item.label === 'Show recent turn records')?.click?.()

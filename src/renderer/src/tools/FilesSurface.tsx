@@ -23,6 +23,8 @@ function RootProblem({ error, bridge, onRetry }: { error: FilesError; bridge: bo
           : 'Files could not read the working folder.'
   return <div className="files-problem files-problem--root" role="status">
     <strong>{title}</strong>
+    {/* What could not be reached says why, such as a paired host that runs another Sotto version. */}
+    {bridge && error.code === 'unavailable' && error.message ? <p>{error.message}</p> : null}
     {bridge ? <button type="button" className="files-link tt-focusable" onClick={onRetry}>Retry</button> : null}
   </div>
 }
@@ -35,7 +37,10 @@ export interface FilesSurfaceProps {
   readonly onPathAction: (action: PathAction, path: string) => void
 }
 
-/** Files for one thread: its line of chrome, then the working-folder tree above its preview, beside it once the panel is wide. */
+/**
+ * Files for one thread: its line of chrome, then the working-folder tree above its preview, beside it once the panel is
+ * wide. A bridge without reveal (a thread on a paired host, whose folder is on that machine) offers no Show in folder.
+ */
 export function FilesSurface({ threadId, store, bridge, platform, onPathAction }: FilesSurfaceProps): ReactNode {
   const files = useThreadFiles(store, threadId)
   const folder = files?.workspace ? folderName(files.workspace.workingDirectory) : null
@@ -57,7 +62,7 @@ export function FilesSurface({ threadId, store, bridge, platform, onPathAction }
       : <FileTree files={files} store={store} bridge={bridge} label={label} />}
     {preview && !rootError ? <FilePreview key={preview.path} files={files} preview={preview} platform={platform}
       scrollTop={store.scrollOf(threadId).preview} onScroll={top => store.setScroll(threadId, 'preview', top)}
-      onCopyPath={() => onPathAction('copyPath', preview.path)} onReveal={() => onPathAction('reveal', preview.path)}
+      onCopyPath={() => onPathAction('copyPath', preview.path)} onReveal={bridge?.reveal ? () => onPathAction('reveal', preview.path) : undefined}
       onClose={() => store.closePreview(threadId)} onRetry={() => store.openFile(bridge, threadId, preview.path)}
       onRefreshFolder={() => store.recoverMissing(bridge, threadId, preview.path)}
       onMarkdownView={view => store.setMarkdownView(threadId, view)} /> : null}

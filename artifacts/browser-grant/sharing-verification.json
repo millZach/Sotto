@@ -1,0 +1,8 @@
+{
+  "userPageSharedAtOnce": true,
+  "sharedAcrossRedirect": true,
+  "addressFollowsRedirect": true,
+  "stopSharingMakesPrivate": true,
+  "shareRestores": true,
+  "errors": []
+}

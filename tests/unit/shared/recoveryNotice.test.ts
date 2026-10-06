@@ -9,6 +9,8 @@ const ALL_CODES = [
   { code: 'HISTORY_RECOVERED' },
   { code: 'CREDENTIALS_RECOVERED' },
   { code: 'ACCESSIBILITY_PERMISSION_REQUIRED' },
+  { code: 'AUTOMATION_PERMISSION_REQUIRED' },
+  { code: 'OPENROUTER_KEY_UNREADABLE' },
 ] as const
 
 describe('recoveryNoticeSchema', () => {

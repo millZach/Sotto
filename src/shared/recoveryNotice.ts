@@ -8,6 +8,8 @@ export const recoveryNoticeSchema = z
       'HISTORY_RECOVERED',
       'CREDENTIALS_RECOVERED',
       'ACCESSIBILITY_PERMISSION_REQUIRED',
+      'AUTOMATION_PERMISSION_REQUIRED',
+      'OPENROUTER_KEY_UNREADABLE',
     ]),
   })
   .strict()

@@ -46,7 +46,7 @@ function savedDraftOffer(state: AgentState): SavedDraftOffer {
  * in sight with a way to finish it or let it go. It shows with voice off too (ADR-0012): the draft is text the
  * user typed, which a send from a thread's own composer leaves here, and this page is the only place it shows.
  */
-export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThreadWithDraft, onOpenThread, onOpenAgents }: {
+export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThreadWithDraft, onOpenThread, onOpenAgents, error }: {
   readonly state: AgentState
   readonly command: AgentConnection['command']
   readonly voice: boolean
@@ -55,6 +55,7 @@ export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThread
   readonly onNewThreadWithDraft: (draft: CarriedDraft) => Promise<void>
   readonly onOpenThread: (threadId: string) => void
   readonly onOpenAgents: () => void
+  readonly error?: string | null
 }): ReactNode {
   const [confirming, setConfirming] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -63,7 +64,7 @@ export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThread
   const offer = savedDraftOffer(state)
   const connecting = state.connection === 'connecting'
   const images = state.draftAttachments ?? []
-  const connect = <Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? 'Connecting...' : 'Connect providers'}</Button>
+  const connect = <>{error && !connecting ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}<Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? 'Connecting...' : 'Connect providers'}</Button></>
   const moveDraft = (draft: CarriedDraft): void => {
     if (moving) return
     setMoving(true)

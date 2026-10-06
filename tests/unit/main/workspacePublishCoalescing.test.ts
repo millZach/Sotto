@@ -5,6 +5,8 @@ import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
+import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
+import { DEFAULT_WORKTREE_CLEANUP } from '../../../src/shared/settings'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { expectWithinBudget, PERF_ASSERT } from '../../fixtures/perfBudget'
@@ -32,6 +34,74 @@ async function fixture() {
 const tick = () => new Promise<void>(resolve => { setTimeout(resolve, 0) })
 
 describe('workspace publish coalescing', () => {
+  it('does not copy thread histories for the cleanup settlement observer during provider updates', async () => {
+    const f = await fixture()
+    const sweeper = new WorktreeCleanup({ host: f.host, rules: () => DEFAULT_WORKTREE_CLEANUP })
+    cleanup.push(() => sweeper.close())
+    const snapshot = vi.spyOn(f.host, 'workspaceSnapshot')
+    sweeper.start()
+    await sweeper.request()
+
+    f.adapter.state.threads[0]!.title = 'Provider update with cleanup listening'
+    f.adapter.state.threads[0]!.messages.push({ id: 'retained-message', role: 'assistant', text: 'Retained history', createdAt: new Date().toISOString() })
+    f.adapter.emit()
+
+    expect(snapshot).not.toHaveBeenCalled()
+    expect(f.host.workspaceSnapshot().threads[0]!.messages).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'retained-message', text: 'Retained history' })]))
+  })
+
+  it('reports initial, restored and inherited settlement and stops after unsubscribe', async () => {
+    const f = await fixture()
+    const [first, second] = f.host.workspaceSnapshot().threads
+    await f.host.setWorkspaceSettled('thread', first!.id, true)
+    const changed = vi.fn()
+    const unsubscribe = f.host.subscribeSettledThreads(changed)
+    expect(changed).toHaveBeenLastCalledWith([first!.id])
+
+    await f.host.setWorkspaceSettled('thread', first!.id, false)
+    expect(changed).toHaveBeenLastCalledWith([])
+    await f.host.setWorkspaceSettled('project', first!.projectId, true)
+    expect(changed).toHaveBeenLastCalledWith([first!.id, second!.id])
+    // Restoring a thread does not override its project's settlement.
+    await f.host.setWorkspaceSettled('thread', first!.id, false)
+    expect(changed).toHaveBeenLastCalledWith([first!.id, second!.id])
+    await f.host.setWorkspaceSettled('project', first!.projectId, false)
+    expect(changed).toHaveBeenLastCalledWith([])
+
+    unsubscribe()
+    changed.mockClear()
+    await f.host.setWorkspaceSettled('thread', first!.id, true)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('requests cleanup only for newly settled threads, including a restored thread settled again', async () => {
+    const f = await fixture()
+    const first = f.host.workspaceSnapshot().threads[0]!
+    await f.host.setWorkspaceSettled('thread', first.id, true)
+    const sweeper = new WorktreeCleanup({ host: f.host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }) })
+    cleanup.push(() => sweeper.close())
+    const request = vi.spyOn(sweeper, 'request')
+    sweeper.start()
+    expect(request).toHaveBeenCalledTimes(1)
+    await sweeper.request()
+    request.mockClear()
+
+    await f.host.setWorkspaceSettled('thread', first.id, false)
+    expect(request).not.toHaveBeenCalled()
+    await f.host.setWorkspaceSettled('thread', first.id, true)
+    expect(request).toHaveBeenCalledTimes(1)
+    await f.host.setWorkspaceSettled('thread', first.id, true)
+    expect(request).toHaveBeenCalledTimes(1)
+    await f.host.setWorkspaceSettled('project', first.projectId, true)
+    expect(request).toHaveBeenCalledTimes(2)
+    await f.host.setWorkspaceSettled('project', first.projectId, false)
+    expect(request).toHaveBeenCalledTimes(2)
+
+    sweeper.dispose()
+    await f.host.setWorkspaceSettled('project', first.projectId, true)
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
   it('turns a flood of adapter snapshots into a handful of publishes and one write', async () => {
     const f = await fixture()
     const write = vi.spyOn(AtomicJsonStore.prototype, 'write')

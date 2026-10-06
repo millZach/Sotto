@@ -11,7 +11,7 @@ it.each([true, false])('prepares user data only after acquiring the instance loc
     whenReady: async () => { order.push('ready') }, quit: vi.fn(),
   })
   const prepareUserData = vi.fn(() => { order.push('migrate') })
-  const runtime = { start: vi.fn(async () => undefined), showMain: vi.fn(), beginQuit: vi.fn(), dispose: vi.fn() }
+  const runtime = { start: vi.fn(async () => undefined), showMain: vi.fn(), showFromActivation: vi.fn(), beginQuit: vi.fn(), dispose: vi.fn() }
   const result = await bootstrapSotto({ app, prepareUserData, initialize: () => runtime, log: vi.fn() })
   expect(order).toEqual(locked ? ['lock', 'migrate', 'ready'] : ['lock'])
   expect(prepareUserData).toHaveBeenCalledTimes(locked ? 1 : 0)

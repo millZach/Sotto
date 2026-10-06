@@ -33,6 +33,70 @@ function fake(initial: BrowserTask[] = [task()]) {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('the phone player', () => {
+  it.each(['first shown', 'reopened'])('never mounts over an existing dialog when %s', async phase => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 800, y: 300, width: 240, height: 520 }))
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([DOMRect.fromRect({ width: 100, height: 100 })] as unknown as DOMRectList)
+    const browser = fake(); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    if (phase === 'first shown') document.body.append(dialog)
+    try {
+      render(<PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} phoneStore={phoneStore} />)
+      await screen.findByRole('complementary', { name: 'Test iPhone for Visual gate flake' })
+      if (phase === 'reopened') {
+        await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ bounds: expect.any(Object) })))
+        act(() => phoneStore.hide('visual-gate'))
+        await act(async () => { document.body.append(dialog) })
+        vi.mocked(browser.bridge.mount).mockClear()
+        act(() => phoneStore.show('visual-gate'))
+      }
+      expect(screen.getByText('The phone steps aside while a menu or dialog is open.')).toBeInTheDocument()
+      expect(browser.bridge.mount).not.toHaveBeenCalledWith(expect.objectContaining({ bounds: expect.any(Object) }))
+      await act(async () => { dialog.remove() })
+      await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ bounds: expect.any(Object) })))
+    } finally { dialog.remove() }
+  })
+
+  it('does no overlay scans or pane measurement while hidden, but still opens a new task', async () => {
+    const browser = fake([]); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()
+    const scans = vi.spyOn(document, 'querySelectorAll')
+    const geometry = vi.spyOn(phoneStore, 'pointFor')
+    render(<PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} phoneStore={phoneStore} />)
+    await act(async () => { await Promise.resolve() })
+    const mutation = document.createElement('span')
+    await act(async () => { document.body.append(mutation); mutation.remove() })
+    expect(scans.mock.calls.filter(([selector]) => selector.includes('[data-covers-native-view]'))).toHaveLength(0)
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => browser.emit({ type: 'task', task: task() }))
+    await screen.findByRole('complementary', { name: 'Test iPhone for Visual gate flake' })
+    expect(geometry).toHaveBeenCalled()
+  })
+
+  it('stops scanning when hidden and checks existing overlays again when reopened', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([DOMRect.fromRect({ width: 100, height: 100 })] as unknown as DOMRectList)
+    const browser = fake(); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()
+    render(<PhonePlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} phoneStore={phoneStore} />)
+    await screen.findByRole('complementary', { name: 'Test iPhone for Visual gate flake' })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    await act(async () => { document.body.append(dialog) })
+    expect(screen.getByText('The phone steps aside while a menu or dialog is open.')).toBeInTheDocument()
+    act(() => phoneStore.hide('visual-gate'))
+    const scans = vi.spyOn(document, 'querySelectorAll')
+    const geometry = vi.spyOn(phoneStore, 'pointFor')
+    await act(async () => { dialog.remove() })
+    expect(scans.mock.calls.filter(([selector]) => selector.includes('[data-covers-native-view]'))).toHaveLength(0)
+    expect(geometry).not.toHaveBeenCalled()
+    act(() => phoneStore.show('visual-gate'))
+    expect(screen.queryByText('The phone steps aside while a menu or dialog is open.')).not.toBeInTheDocument()
+    await act(async () => { document.body.append(dialog) })
+    expect(screen.getByText('The phone steps aside while a menu or dialog is open.')).toBeInTheDocument()
+    act(() => phoneStore.hide('visual-gate'))
+    act(() => phoneStore.show('visual-gate'))
+    expect(screen.getByText('The phone steps aside while a menu or dialog is open.')).toBeInTheDocument()
+    await act(async () => { dialog.remove() })
+  })
+
   it('shows the focused thread’s test iPhone with its status, and Pause controls the task', async () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 800, y: 300, width: 240, height: 520 }))
     const browser = fake(); const store = new ToolsPanelStore(); const phoneStore = new PhonePlayerStore()

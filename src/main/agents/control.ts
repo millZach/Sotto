@@ -11,7 +11,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -343,6 +343,8 @@ export class AgentControl {
      * providers the user connected in Settings → Providers.
      */
     runsAs?: 'desktop' | 'headless-host'
+    /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
+    installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
     this.followupStore = new FollowupStore(dependencies.directory)
     this.clients = dependencies.clients ?? new ProviderClients()
@@ -483,7 +485,7 @@ export class AgentControl {
     this.unsubscribe = subscribeActivitySnapshots(this.dependencies.host, snapshot => this.acceptSnapshot(snapshot))
     this.observe()
     if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
-      const connection = this.commandShell({ type: 'connect' })
+      const connection = this.commandShell(this.automaticConnect())
       if (!this.dependencies.host.concurrentProviders) await connection
       // Independent native discovery must not delay constructing the desktop IPC surface.
       else void connection
@@ -2101,7 +2103,7 @@ export class AgentControl {
           this.state.configuration = withTurnedOff(this.state.configuration, turnedOff(this.state.configuration, [], [command.provider]))
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
           await this.persist()
-        }
+        } else if (!this.automaticConnects.has(command)) await this.useInstalledProviders()
         if (!this.state.host.connected) this.state.connection = 'connecting'
         this.publish(); this.observe()
         try {
@@ -2117,6 +2119,8 @@ export class AgentControl {
           if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)
         } catch (error) {
           if (!this.state.host.providers) this.disconnect()
+          // Intermediate publishes keep `connecting` until this attempt finishes. A failure has to release it.
+          else if (this.state.connection === 'connecting') this.state.connection = 'disconnected'
           throw error
         }
         return
@@ -3028,7 +3032,7 @@ export class AgentControl {
         this.reconnect = null
         // The answer is the shell, whose threads carry no history: marking the host disconnected reads
         // the live host instead, so a failed reconnect never empties the histories it holds.
-        void this.commandShell({ type: 'connect' }).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...this.state.host, connected: false }) })
+        void this.commandShell(this.automaticConnect()).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...this.state.host, connected: false }) })
       }, 5000)
       this.publish(); return
     }
@@ -3268,6 +3272,24 @@ export class AgentControl {
       } else this.presentQueue(false)
       this.publish()
     }
+  }
+  /** Connects Sotto starts on its own. They reconnect what the user chose and never pick providers for them. */
+  private readonly automaticConnects = new WeakSet<AgentCommand>()
+  private automaticConnect(): AgentCommand {
+    const command: AgentCommand = { type: 'connect' }
+    this.automaticConnects.add(command)
+    return command
+  }
+  /** On a Connect providers press, point a missing selection at the clients that are installed, then remember that choice. */
+  private async useInstalledProviders(): Promise<void> {
+    const detect = this.dependencies.installedProviders
+    if (!detect) return
+    let installed: readonly ProviderId[]
+    try { installed = await detect() } catch { return }
+    const selection = selectInstalledProviders(this.state.configuration, installed)
+    if (!selection) return
+    this.state.configuration = { ...this.state.configuration, ...selection }
+    await this.persist()
   }
   private disconnect(): void {
     if (this.reconnect) clearTimeout(this.reconnect)

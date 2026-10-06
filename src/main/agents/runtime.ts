@@ -18,6 +18,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
+import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitActions } from './gitActions'
 import { GitPullRequests } from './gitPullRequests'
@@ -59,6 +60,7 @@ export interface AgentRuntimeOptions {
   /** A journey's stand-ins for the client update check and installer, and for where each client is (#480). */
   clients?: ControlDependencies['clients']
   locateClient?: ControlDependencies['locateClient']
+  installedProviders?: ControlDependencies['installedProviders']
   /**
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
@@ -140,6 +142,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
+    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     reasoner,
@@ -151,11 +154,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup })
+  // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
+  // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
+  const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       await worktreeCleanup.close()
+      toolReads.dispose()
       agentControl.dispose()
       try {
         const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
@@ -178,6 +185,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost })
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads })
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, close }
 }

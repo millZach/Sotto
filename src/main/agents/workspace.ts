@@ -21,6 +21,7 @@ import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, ty
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
@@ -151,6 +152,7 @@ export class WorkspaceHost implements AgentHost {
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
   private activityJsonFallbackAllowed = true
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly settledThreadListeners = new Set<(ids: readonly string[]) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
@@ -792,8 +794,16 @@ export class WorkspaceHost implements AgentHost {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    // Threads often share a project folder. Discover that exact path once for this
+    // decision; the next rename/removal must revalidate every path from scratch.
+    const identities = new Map<string, Promise<string>>()
+    const identify = (path: string): Promise<string> => {
+      let pending = identities.get(path)
+      if (!pending) { pending = this.worktrees.checkoutIdentity(path); identities.set(path, pending) }
+      return pending
+    }
     try {
-      const identity = await this.worktrees.checkoutIdentity(metadata.path)
+      const identity = await identify(metadata.path)
       const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
@@ -802,7 +812,7 @@ export class WorkspaceHost implements AgentHost {
           ?? this.state.snapshot.projects.find(project => project.id === other.projectId)?.path
         if (!path) return false
         try {
-          if (await this.worktrees.checkoutIdentity(path) === identity) return false
+          if (await identify(path) === identity) return false
         } catch (error) {
           // Resolve missing subfolders through their nearest available parent. Other failures leave ownership unproven.
           const cause = error instanceof Error ? error.cause : undefined
@@ -810,7 +820,7 @@ export class WorkspaceHost implements AgentHost {
           let parent = dirname(path)
           while (true) {
             try {
-              if (await this.worktrees.checkoutIdentity(parent) === identity) return false
+              if (await identify(parent) === identity) return false
               break
             } catch (parentError) {
               const parentCause = parentError instanceof Error ? parentError.cause : undefined
@@ -1390,7 +1400,7 @@ export class WorkspaceHost implements AgentHost {
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
-    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear()
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
     this.subagentInputs.clear()
     this.ready = false
   }
@@ -1496,6 +1506,10 @@ export class WorkspaceHost implements AgentHost {
     }
   }
   private publish(): void {
+    if (this.settledThreadListeners.size) {
+      const ids = this.settledThreadIds()
+      for (const listener of this.settledThreadListeners) listener(ids)
+    }
     for (const listener of this.listeners) listener(this.workspaceSnapshot())
     if (this.activityListeners.size) {
       this.applyEvents()
@@ -2315,6 +2329,16 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
+  }
+  private settledThreadIds(): readonly string[] {
+    const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
+    return this.state.snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id)
+  }
+  /** Settlement metadata, immediately and on publication, without materializing thread histories. */
+  subscribeSettledThreads(listener: (ids: readonly string[]) => void): () => void {
+    this.settledThreadListeners.add(listener)
+    listener(this.settledThreadIds())
+    return () => this.settledThreadListeners.delete(listener)
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.activityListeners.add(listener); return () => this.activityListeners.delete(listener) }
