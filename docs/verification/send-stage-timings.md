@@ -15,13 +15,17 @@ prompt, the reply nor the project's title. One run:
 
 | | Admission | Read | Preparation | Adapter | Acknowledgement | First output |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Claude, first send | 10 ms | 0 ms | 652 ms | 4 ms | 5 ms | 13 ms |
-| Claude, second send | 11 ms | 1 ms | 320 ms | 3 ms | 3 ms | 12 ms |
-| Codex, first send | 11 ms | 0 ms | 697 ms | 12 ms | 21 ms | 3 ms |
-| Codex, second send | 13 ms | 12 ms | 328 ms | 7 ms | 27 ms | 0 ms |
+| Claude, first send | 12 ms | 0 ms | 881 ms | 3 ms | 4 ms | 16 ms |
+| Claude, second send | 15 ms | 1 ms | 458 ms | 6 ms | 3 ms | 13 ms |
+| Codex, first send | 11 ms | 0 ms | 851 ms | 19 ms | 36 ms | 0 ms |
+| Codex, second send | 13 ms | 15 ms | 481 ms | 7 ms | 34 ms | 0 ms |
 
 The first send's read is 0 ms because a thread that has never been sent to has no provider thread to read yet;
 the coordinator's read returns the workspace's own record.
+
+The send path's own journeys still pass after the review's changes: `npm run test:recovery` (its seven files, then
+the dictation recovery, command receipt and queued steering specs, which send from the composer and queue follow-ups)
+and `tests/e2e/thread-composer-recovery.spec.ts`.
 
 ## Automated checks
 
