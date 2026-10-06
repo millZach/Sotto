@@ -50,7 +50,9 @@ async function main() {
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],
-    ...(process.env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' } : {}) }
+    ...(process.env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' } : {}),
+    // The address Tailscale Serve carries the host's tailnet listener at, which the real host records once Serve is on.
+    ...(process.env.FAKE_HOST_TAILNET_ADDRESS ? { tailnetAddress: process.env.FAKE_HOST_TAILNET_ADDRESS } : {}) }
   await publishDescriptor(descriptor)
   process.on('SIGTERM', () => server.close(async () => { await fs.rm(lockPath, { force: true }); process.exit(0) }))
 }

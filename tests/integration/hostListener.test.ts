@@ -6,6 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { parseHostArguments, startHeadlessHost } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { standInTailscale } from '../fixtures/standInTailscale'
+import type { PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
 
 let root: string | undefined, host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
 afterEach(async () => {
@@ -13,7 +15,7 @@ afterEach(async () => {
   if (root && dirname(root) === tmpdir()) await rm(root, { recursive: true, force: true })
   root = undefined
 })
-async function start(options: { startedBy?: 'launch-script' } = {}) {
+async function start(options: { startedBy?: 'launch-script'; tailscale?: PhoneAccessTailscale } = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-host-listener-'))
   host = await startHeadlessHost({ dataDirectory: root, port: 0, ...options, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
@@ -59,4 +61,28 @@ it('records in its descriptor that the launch script started it, and only then',
 it('reads the launch script mark from SOTTO_HOST_STARTED_BY and nothing else', () => {
   expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'launch-script' })).toEqual({ dataDirectory: resolve('data'), port: 0, startedBy: 'launch-script' })
   expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'someone' })).toEqual({ dataDirectory: resolve('data'), port: 0 })
+})
+it('keeps both its listeners on loopback with tailnet connections on, and the administrative routes off the one Serve carries', async () => {
+  const stand = standInTailscale()
+  const listen = vi.spyOn(Server.prototype, 'listen')
+  let servers: Server[]
+  try {
+    await start({ tailscale: stand.tailscale })
+    const { adminToken } = JSON.parse(await readFile(join(root!, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const turned = await fetch(`http://127.0.0.1:${host!.descriptor!.port}/v1/admin/tailnet`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
+    expect(await turned.json()).toMatchObject({ enabled: true, state: { phase: 'on' } })
+  } finally { servers = [...listen.mock.contexts] as Server[]; listen.mockRestore() }
+  const tailnetPort = stand.proxied()!
+  const listening = servers.map(server => server.address()).filter(address => typeof address === 'object' && address !== null)
+  expect(listening).toEqual(expect.arrayContaining([
+    { address: '127.0.0.1', family: 'IPv4', port: host!.descriptor!.port },
+    { address: '127.0.0.1', family: 'IPv4', port: tailnetPort },
+  ]))
+  for (const address of listening) expect(address).toMatchObject({ address: '127.0.0.1' })
+  // The listener Serve carries has no administrative routes, even for the host's own token.
+  const { adminToken } = JSON.parse(await readFile(join(root!, 'host-listener.json'), 'utf8')) as { adminToken: string }
+  for (const route of ['tailnet', 'pairing-code', 'revoke-client', 'phones']) {
+    const response = await fetch(`http://127.0.0.1:${tailnetPort}/v1/admin/${route}`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: '{}' })
+    expect(response.status).toBe(400)
+  }
 })

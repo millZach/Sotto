@@ -1257,6 +1257,8 @@ describe('IPC validation and lifecycle', () => {
     const fullPatch: Record<string, unknown> = { ...DEFAULT_SETTINGS }
     delete fullPatch['hotkey']
     delete fullPatch['launchAtStartup']
+    // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
+    delete fullPatch['tailnetConnections']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
 

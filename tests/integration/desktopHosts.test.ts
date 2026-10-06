@@ -224,6 +224,20 @@ describe('desktop remote host management over a real socket', () => {
     expect(host.pairing.list()).toHaveLength(1)
   })
 
+  it('records a desktop that may already answer as a desktop on its next SSH connect, so the host’s tailnet listener knows it (ADR-0053)', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    // Granted before this build, so its grant is there and no record of desktops is.
+    await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, paired.clientId)
+    await rm(join(root, 'remote', 'desktop-clients.json'))
+    const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
+    try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(JSON.parse(await readFile(join(root, 'remote', 'desktop-clients.json'), 'utf8'))).toEqual([paired.clientId])
+  })
+
   it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {
     const remote = await add()
     expect(manager.get().hosts[0]!.phase).toBe('connected')

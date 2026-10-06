@@ -26,6 +26,10 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  * A headless host runs the same phone access over its own host service (ADR-0050). It shares the host's pairing
  * store, so a phone and a desktop pair with one set of clients, and the desktop it is connected to administers it
  * through the host's own administrative routes rather than a Phones page.
+ *
+ * On a headless host the listener is the host's tailnet listener, and carries desktops too (ADR-0053): it runs, and Serve
+ * carries it, while phone access or the host's `tailnetConnections` setting is on. With phone access off and the listener
+ * up for desktops, it takes no pairing, opens nothing for a client that is not a desktop, and shows no code.
  */
 
 /** What phone access logs: stable event names only, never a name, a code or an address. */
@@ -56,7 +60,8 @@ export interface PhoneAccessOptions {
   /** The local host's service, or nothing when the local host is off. */
   readonly service: HostService | undefined
   readonly tailscale: PhoneAccessTailscale
-  readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string }
+  /** `tailnetConnections` is a headless host's own (ADR-0053); the desktop's phone access never has it. */
+  readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string; readonly tailnetConnections?: boolean | undefined }
   readonly policy?: PhoneAccessPolicy | undefined
   readonly openExternal: (url: string) => Promise<void>
   readonly hostname?: () => string
@@ -72,6 +77,11 @@ export interface PhoneAccessOptions {
   readonly retryMs?: number
   /** The longest quitting waits for the Serve setting to be removed. */
   readonly quitTimeoutMs?: number
+  /**
+   * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
+   * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
+   */
+  readonly listener?: Pick<Parameters<typeof startSocketServer>[0], 'signIns' | 'clientUpdates' | 'desktops' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked'>
 }
 
 const recordSchema = z.object({
@@ -155,8 +165,12 @@ export class PhoneAccess {
 
   /** Called when any setting changed: turns phone access on or off to match, and republishes the name. */
   settingsChanged(): void {
-    if (!this.wanted()) {
+    if (!this.phonesWanted()) {
       this.cancelCode()
+      // The listener stays up for desktops; the phones on it go now.
+      this.listener?.dropRevoked()
+    }
+    if (!this.wanted()) {
       if (this.listener) { this.listener.stopServing(); this.listenerStopped = true }
     }
     this.enqueue(() => this.reconcile())
@@ -192,7 +206,7 @@ export class PhoneAccess {
         await this.queue
         break
       case 'show-code': {
-        if (this.phase !== 'on' || !this.wanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
+        if (this.phase !== 'on' || !this.phonesWanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
         this.cancelCode()
         const code = this.pairing.issuePairingCode()
         this.code = code
@@ -271,9 +285,22 @@ export class PhoneAccess {
     return this.pairingReady
   }
 
+  /** Whether the listener and the Serve setting are wanted: for phones, or on a headless host for desktops too. */
   private wanted(): boolean {
+    const settings = this.options.settings()
+    return !this.closed && (settings.phoneAccess || settings.tailnetConnections === true) && this.options.service !== undefined
+  }
+
+  /** Whether phones may pair and connect: phone access itself is on. */
+  private phonesWanted(): boolean {
     return !this.closed && this.options.settings().phoneAccess && this.options.service !== undefined
   }
+
+  /** Waits for the changes in progress, so an answer can say how Serve came out. */
+  settled(): Promise<void> { return this.queue }
+
+  /** How many paired clients hold an open socket on the listener now, phones and desktops alike. */
+  peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
 
   private async reconcile(): Promise<void> {
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {
@@ -431,7 +458,11 @@ export class PhoneAccess {
   private async listen(): Promise<Listener> {
     const start = this.options.startServer ?? startSocketServer
     const base = {
+      ...this.options.listener,
       service: this.options.service!, pairing: this.pairing, admin: false,
+      // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.
+      observationKey: 'tailnet-observations',
+      phonesAdmitted: () => this.phonesWanted(),
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onPaired: (clientId: string) => {

@@ -803,8 +803,10 @@ export class DesktopHosts {
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     // Use the host's authenticated client identity, never a saved or renderer-supplied ID. The SSH
-    // account establishes the default only when this client has no policy history (ADR-0025).
-    if (!hello.capabilities.mayAnswer) await active.tunnel!.ensureDesktopAnswers(hello.clientId)
+    // account establishes the default only when this client has no policy history (ADR-0025), and
+    // records it as a desktop on every connect, so the host's tailnet listener knows it, a desktop
+    // paired before that record existed included (ADR-0053).
+    await active.tunnel!.ensureDesktopAnswers(hello.clientId)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId
