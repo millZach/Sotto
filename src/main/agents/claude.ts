@@ -15,7 +15,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -145,9 +145,26 @@ export interface ClaudeStreamJsonHostOptions {
   historyModulePath?: string
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
+  /** How many of the watched set's CLIs a connect starts at once; `CONNECT_STARTS` unless a measurement says otherwise. */
+  connectStarts?: number
   /** Stable event names only; never a model, a level, a mode or anything a thread said. */
   logEvent?: (event: ClaudeAdapterEvent) => void
 }
+/**
+ * How many CLIs a connect starts at once for the watched set. Each is a process of its own that takes about a second
+ * to answer `initialize`; a few at a time keeps a send to the last of them from waiting on all the others, without a
+ * burst of processes on a machine with many open panes.
+ */
+const CONNECT_STARTS = 4
+/** The frames a spare may say before its thread's first send adopts it. A fresh CLI says two or three; more is not kept. */
+const SPARE_FRAMES = 64
+/**
+ * A spare (#769): the CLI a thread's first send would start, started early because the user began typing. It is
+ * keyed by the session ID that send will create the thread under, holds the Claude session ID and the settings it was
+ * started with, and is the thread's only once that send adopts it.
+ */
+type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames: ClaudeFrame[]; setupTools: boolean; exited: boolean
+  runtime?: Runtime; ready?: Promise<{ runtime: Runtime; initialized: ClaudeFrame }> }
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; contextMemoryIds: Set<string>; clientRevision: number }
 
@@ -168,6 +185,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly personalContexts = new Map<string, string>()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly starting = new Map<string, Promise<Runtime>>()
+  /** Early-started CLIs for threads whose first send has not happened yet: see `startThreadSession`. */
+  private readonly spares = new Map<string, Spare>()
   /**
    * Per thread: a CLI Sotto let go, until it has exited. It can take half a second, and background work may still
    * be writing to the session meanwhile, so a start waits for it: one session never has two CLIs.
@@ -264,6 +283,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * read, and the next action launches the CLI again from the stored session.
    */
   private async stopSession(id: string): Promise<void> {
+    if (this.spares.has(id)) { this.discardSpare(id); return }
     const runtime = this.runtimes.get(id)
     if (!runtime) return
     this.messageLog.release(id)
@@ -281,6 +301,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.runtimes.get(id) === runtime) {
       ended = thread?.backgroundWork?.length ? [...thread.backgroundWork] : [...thread?.monitoring ?? []]
       this.runtimes.delete(id); this.clearMonitoring(id)
+      if (thread && 'providerSessionOpen' in thread) { delete thread.providerSessionOpen; this.emit() }
     }
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
@@ -346,12 +367,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.state.connected = true
     this.reaper.start()
     // Lazy sessions: connecting starts a CLI only for the watched set (and the personal chats added above).
-    // Every other known thread is in the snapshot from its alias, and starts on its first action.
-    for (const id of this.observed) {
-      if (!aliases[id] || aliases[id].rollbackPending) continue
-      try { await this.start(id) } catch { this.threads.get(id)!.status = 'error'; this.state.error = 'A Claude thread could not resume. Check its native session before sending again.' }
-      if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
+    // Every other known thread is in the snapshot from its alias, and starts on its first action. The watched set's
+    // start a few at a time, so a send to the last of them does not wait for every other to start first (#769).
+    const watched = [...this.observed].filter(id => aliases[id] && !aliases[id].rollbackPending)
+    const startNext = async (): Promise<void> => {
+      for (let id = watched.shift(); id !== undefined && generation === this.generation; id = watched.shift()) {
+        try { await this.start(id) } catch { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.state.error = 'A Claude thread could not resume. Check its native session before sending again.' } }
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
+    if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.pollTimer = setInterval(() => { void this.pollSessionLogs().catch(() => { this.state.error = 'Claude history is unavailable. Check the native client before continuing.'; this.emit() }) }, this.options.pollIntervalMs ?? 1000)
     this.pollTimer.unref(); this.emit(); return this.view()
   }
@@ -376,6 +401,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.executable = executable; this.clientRevision++
     this.state.version = version
     for (const id of this.runtimes.keys()) this.outdated.add(id)
+    // A spare nobody has used yet runs the old client too; the thread's first send starts the new one.
+    for (const id of [...this.spares.keys()]) this.discardSpare(id)
     this.emit()
     await Promise.all(this.stopOutdated())
   }
@@ -602,7 +629,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       validateThreadOptions(this.state, command)
       const project = command.type === 'create-thread' ? this.state.projects.find(candidate => candidate.id === command.projectId) : undefined
       if (command.type === 'create-thread' && !project) throw new Error('Choose an existing project.')
-      const alias: Alias = { sessionId: randomUUID(), ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId,
+      const cwd = await existingWorkingDirectory(command.workingDirectory ?? project!.path)
+      // A spare started for exactly this thread hands it the session ID its CLI already runs (#769); any other spare goes.
+      const spare = command.type === 'create-thread' ? this.spareFor(command.threadId, cwd, { modelId: command.modelId, reasoningEffort: command.reasoningEffort, runtimeMode: command.runtimeMode ?? 'approval-required' }) : undefined
+      if (!spare) this.discardSpare(command.threadId)
+      const alias: Alias = { sessionId: spare?.sessionId ?? randomUUID(), ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd, title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
@@ -922,7 +953,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     for (const [id, runtime] of this.runtimes) {
       const closure = this.denyPending(id, runtime).catch(() => undefined).then(() => { runtime.protocol.stop(); return runtime.protocol.closed })
       this.trackClosure(closure)
+      const thread = this.threads.get(id); if (thread) delete thread.providerSessionOpen
     }
+    for (const id of [...this.spares.keys()]) this.discardSpare(id)
     this.runtimes.clear(); this.starting.clear(); this.outdated.clear(); this.emit()
   }
   async closed(): Promise<void> { while (this.closures.size) await Promise.all(this.closures); await this.usage.flushed() }
@@ -931,7 +964,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const pending = this.starting.get(id); if (pending) return pending
     const runtime = this.runtimes.get(id); if (runtime) return runtime
     const work = this.launch(id); this.starting.set(id, work)
-    try { const started = await work; this.messageLog.pin(id); return started } finally { if (this.starting.get(id) === work) this.starting.delete(id); this.scheduleOutdatedStop() }
+    try {
+      const started = await work; this.messageLog.pin(id)
+      const thread = this.threads.get(id)
+      if (thread && this.runtimes.get(id) === started && !thread.providerSessionOpen) { thread.providerSessionOpen = true; this.emit() }
+      return started
+    } finally { if (this.starting.get(id) === work) this.starting.delete(id); this.scheduleOutdatedStop() }
   }
   private async launch(id: string): Promise<Runtime> {
     const generation = this.generation
@@ -943,11 +981,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const resume = await this.log(id).exists()
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (!resume && alias.origins.length) throw new Error('Claude native history is unavailable. Restore its session before continuing; Sotto will not recreate or resend an uncertain turn.')
+    const adopted = resume ? undefined : await this.adoptSpare(id, alias)
+    if (adopted) return adopted
+    const { runtime, initialized } = await this.spawn(id, alias, resume)
+    this.settleStart(id, alias, initialized)
+    return runtime
+  }
+  /**
+   * Start a CLI for this session and answer its `initialize`. A thread's own CLI is its runtime from the moment it
+   * starts, so what it says while starting is applied as it comes. A spare's is held, with what it said, until the
+   * thread's first send adopts it (`adoptSpare`); until then it is nobody's, and its exit only lets it go.
+   */
+  private async spawn(id: string, alias: Pick<Alias, 'kind' | 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
+    const generation = this.generation
     const browser = alias.kind !== 'personal' ? await this.browserTools?.mcpServer(id) : undefined
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // A host setup thread also gets the host setup tools, while its setup runs; every other thread gets none.
     const setup = alias.kind !== 'personal' ? await this.hostSetupTools?.mcpServer(id) : undefined
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
+    if (spare) spare.setupTools = !!setup
     const servers = [...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
       ...(setup ? [{ server: setup, definitions: this.hostSetupTools?.definitions ?? [] }] : [])]
     const mcpConfig = servers.length ? join(this.options.userDataPath, `claude-mcp-${randomUUID()}.json`) : undefined
@@ -966,7 +1018,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
     try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), contextMemoryIds: new Set(this.personalMemories.get(id)?.map(memory => memory.id)), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(setup ? { MCP_TOOL_TIMEOUT: '600000' } : browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
-      frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
+      frame => {
+        if (this.runtimes.get(id) === runtime) this.frame(id, frame)
+        // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
+        else if (spare?.runtime === runtime && this.spares.get(id) === spare && spare.frames.push(frame) > SPARE_FRAMES) this.discardSpare(id)
+      }, () => {
+        if (spare?.runtime === runtime) { spare.exited = true; if (this.spares.get(id) === spare) this.spares.delete(id) }
         if (this.runtimes.get(id) !== runtime) return
         // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others
         // keep running, and this one starts again from its native session on its next action.
@@ -975,6 +1032,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
         this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
+        delete thread.providerSessionOpen
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }
           thread.compaction = saved.compaction; this.trackClosure(this.persist().catch(() => undefined))
@@ -988,20 +1046,81 @@ export class ClaudeStreamJsonHost implements AgentHost {
         }
         this.emit()
       }) } } catch (error) { if (mcpConfig) await this.removeConfig(mcpConfig); throw error }
-    this.runtimes.set(id, runtime)
+    if (spare) spare.runtime = runtime; else this.runtimes.set(id, runtime)
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
-    try {
-      const initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] })
-      this.threads.get(id)!.manualCompactionSupported = Array.isArray(initialized.commands) && initialized.commands.some(command => object(command)?.name === 'compact')
-      for (const pending of Array.isArray(initialized.pending_user_dialog_requests) ? initialized.pending_user_dialog_requests : []) {
-        if (object(pending)) this.frame(id, pending as ClaudeFrame)
-      }
-    }
+    let initialized: ClaudeFrame
+    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
     catch (error) { void this.stopRuntime(id, runtime); throw error }
     if (generation !== this.generation) { await this.stopRuntime(id, runtime); throw new Error('Claude connection was cancelled.') }
+    return { runtime, initialized }
+  }
+  /** What a thread takes from its CLI's answer to `initialize`, once that CLI is the thread's. */
+  private settleStart(id: string, alias: Alias, initialized: ClaudeFrame): void {
+    this.threads.get(id)!.manualCompactionSupported = Array.isArray(initialized.commands) && initialized.commands.some(command => object(command)?.name === 'compact')
+    for (const pending of Array.isArray(initialized.pending_user_dialog_requests) ? initialized.pending_user_dialog_requests : []) {
+      if (object(pending)) this.frame(id, pending as ClaudeFrame)
+    }
     // A change left unconfirmed is shown from the launch that carries it (see `unconfirmedSettings`).
     if (!sameSettings(settingsOf(this.threads.get(id)!), settingsOf(alias))) { this.showSettings(id); this.emit() }
-    return runtime
+  }
+  /**
+   * Early start (#769). A thread Claude Code already has starts its CLI the way its next action would, which the
+   * reaper counts as activity. A thread whose first send has not happened gets a spare: the CLI that send would
+   * start, on the session ID it will be created with and in the folder it will run in, started and answered
+   * `initialize` and nothing more. Claude Code writes no session file until a prompt arrives (checked against 2.1.289),
+   * so a spare that is never used leaves nothing behind; the reaper stops it once idle, as it would a session.
+   */
+  async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
+    if (!this.state.connected) return
+    if (this.aliases[id]) { await this.start(id); return }
+    if (!draft || this.spares.has(id) || !this.state.models.some(model => model.id === draft.modelId && model.ready)) return
+    const generation = this.generation
+    const cwd = await existingWorkingDirectory(draft.workingDirectory)
+    if (generation !== this.generation || this.aliases[id] || this.spares.has(id)) return
+    const settings: ClaudeSettings = { modelId: draft.modelId, reasoningEffort: draft.reasoningEffort, runtimeMode: draft.runtimeMode ?? 'approval-required' }
+    const spare: Spare = { sessionId: randomUUID(), cwd, settings, frames: [], setupTools: false, exited: false }
+    this.spares.set(id, spare)
+    this.reaper.touch(id)
+    spare.ready = this.spawn(id, { sessionId: spare.sessionId, cwd, ...settings }, false, spare)
+    try { await spare.ready } catch { if (this.spares.get(id) === spare) this.spares.delete(id) }
+  }
+  /** The spare a thread's first send may run on, when it was started for exactly what that send creates. */
+  private spareFor(id: string, cwd: string, settings: ClaudeSettings): Spare | undefined {
+    const spare = this.spares.get(id)
+    return spare && !spare.exited && spare.cwd === cwd && sameSettings(spare.settings, settings) ? spare : undefined
+  }
+  /**
+   * Make a spare this thread's CLI, as if the start had launched it now: what it said while it waited is applied,
+   * then its answer to `initialize`. One that no longer fits (it ended, it runs a client an update replaced, the
+   * thread was created with other settings, or it now needs the host setup tools) is stopped instead, and the thread
+   * starts a CLI of its own the usual way.
+   */
+  private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
+    const spare = this.spares.get(id)
+    if (!spare) return undefined
+    // It stays the spare while it finishes starting, so what it says meanwhile is kept for this thread too.
+    const started = await spare.ready?.catch(() => undefined)
+    if (this.spares.get(id) !== spare) return undefined
+    this.spares.delete(id)
+    if (!started) return undefined
+    const setup = alias.kind !== 'personal' && !!await this.hostSetupTools?.mcpServer(id)
+    if (spare.exited || spare.sessionId !== alias.sessionId || spare.cwd !== alias.cwd || !sameSettings(spare.settings, settingsOf(alias)) || setup !== spare.setupTools
+      || started.runtime.clientRevision !== this.clientRevision || this.runtimes.has(id)) {
+      await this.stopRuntime(id, started.runtime)
+      return undefined
+    }
+    this.runtimes.set(id, started.runtime)
+    for (const frame of spare.frames) if (this.runtimes.get(id) === started.runtime) this.frame(id, frame)
+    if (this.runtimes.get(id) !== started.runtime) return undefined
+    this.settleStart(id, alias, started.initialized)
+    return started.runtime
+  }
+  /** Let a spare go; its CLI is stopped once it has started. */
+  private discardSpare(id: string): void {
+    const spare = this.spares.get(id)
+    if (!spare) return
+    this.spares.delete(id)
+    this.trackClosure((spare.ready ?? Promise.resolve(undefined)).catch(() => undefined).then(started => started ? this.stopRuntime(id, started.runtime).then(() => undefined) : undefined))
   }
   private async removeConfig(path: string): Promise<void> {
     // Node applies maxRetries only to recursive removal. These are individual files, so

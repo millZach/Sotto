@@ -353,6 +353,40 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect(await starts(sessionId)).toBe(before + 1)
     })
 
+    // Early start (#769): the first keystroke in a thread's composer starts its session, so the send does not.
+    it('starts a stopped session for an early start, says it is open, and the send that follows starts none', async context => {
+      if (!await open()) { context.skip(); return }
+      await reconnect()
+      const before = await starts(sessionId)
+      expect((await thread(sessionId)).providerSessionOpen).toBeUndefined()
+      await f.host.startThreadSession!(sessionId)
+      expect(await starts(sessionId)).toBe(before + 1)
+      await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBe(true)
+      expect(await send(sessionId, 'after-early-start', 'Synthetic prompt')).toEqual({ accepted: true })
+      expect(await starts(sessionId)).toBe(before + 1)
+    })
+
+    it('says a session the reaper stopped after an early start is no longer open', async context => {
+      if (!await open(impatient)) { context.skip(); return }
+      await f.host.startThreadSession!(sessionId)
+      await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBe(true)
+      await untilStopped(sessionId).toBe(true)
+      await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBeUndefined()
+    })
+
+    it('creates no provider session for an early start before a thread’s first send', async context => {
+      if (!await open()) { context.skip(); return }
+      const created = async () => (await f.driver.requests()).filter(record => ['thread/start', 'session/new'].includes(record.method ?? '')).length
+      const before = await created()
+      const draft = randomUUID()
+      await f.host.startThreadSession!(draft, { modelId: f.modelId, workingDirectory: f.root })
+      expect((await f.host.snapshot()).threads.some(item => item.id === draft)).toBe(false)
+      expect(await created()).toBe(before)
+      // The send that creates it afterwards is the first thing that does.
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: draft, projectId: f.projectId, modelId: f.modelId, title: 'Typed into first' })
+      expect(await send(draft, 'first-after-early-start', 'Synthetic prompt')).toEqual({ accepted: true })
+    })
+
     it('stops a session left idle and starts it again on the next send, with its messages', async context => {
       if (!await open(impatient)) { context.skip(); return }
       f.host.observeThreads?.([sessionId])

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 
 const bindingSchema = z.object({
@@ -107,6 +107,8 @@ export class ThreadRegistry {
 export class SottoThreadHost implements AgentHost {
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */
+  private readonly unbound = new Map<string, string>()
 
   /** Thread events cross this boundary the way snapshots do: under Sotto's own thread ID (ADR-0002).
    * Absent when the adapter inside publishes none, so the host above knows to read its arrays instead. */
@@ -124,9 +126,9 @@ export class SottoThreadHost implements AgentHost {
 
   useBrowserTools(tools: BrowserAgentTools): void {
     const thread = (sessionId: string): string => {
-      const binding = this.registry.bySession(this.provider, sessionId)
-      if (!binding) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
-      return binding.threadId
+      const threadId = this.registry.bySession(this.provider, sessionId)?.threadId ?? this.unboundThread(sessionId)
+      if (!threadId) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+      return threadId
     }
     this.inner.useBrowserTools?.({ definitions: tools.definitions,
       call: (id, name, args) => tools.call(thread(id), name, args),
@@ -137,8 +139,8 @@ export class SottoThreadHost implements AgentHost {
   useHostSetupTools(tools: ScopedThreadTools): void {
     this.inner.useHostSetupTools?.({ name: tools.name, definitions: tools.definitions,
       mcpServer: async id => {
-        const binding = this.registry.bySession(this.provider, id)
-        return binding ? tools.mcpServer(binding.threadId) : undefined
+        const threadId = this.registry.bySession(this.provider, id)?.threadId ?? this.unboundThread(id)
+        return threadId ? tools.mcpServer(threadId) : undefined
       },
     })
   }
@@ -251,7 +253,8 @@ export class SottoThreadHost implements AgentHost {
     if (command.type === 'create-thread') {
       const existing = this.registry.byThread(command.threadId)
       const binding = this.registry.reserve(command.threadId, this.provider,
-        existing?.sessionId ?? randomUUID(), command.projectId)
+        existing?.sessionId ?? this.unbound.get(command.threadId) ?? randomUUID(), command.projectId)
+      this.unbound.delete(command.threadId)
       translated = { ...command, threadId: binding.sessionId }
     } else if ('threadId' in command) {
       const binding = this.registry.byThread(command.threadId)
@@ -269,6 +272,26 @@ export class SottoThreadHost implements AgentHost {
     return mapped
   }
 
+  /**
+   * Early start (#769), under the provider's own session ID. A thread with no binding yet (its first send has not
+   * created it) is given the session ID that send will reserve, held in memory only: nothing is bound or saved
+   * until the send, and a draft that is never sent leaves nothing behind.
+   */
+  async startThreadSession(threadId: string, draft?: ThreadSessionDraft): Promise<void> {
+    if (!this.inner.startThreadSession) return
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (binding) { if (binding.provider === this.provider) await this.inner.startThreadSession(binding.sessionId); return }
+    if (!draft) return
+    let sessionId = this.unbound.get(threadId)
+    if (!sessionId) { sessionId = randomUUID(); this.unbound.set(threadId, sessionId) }
+    await this.inner.startThreadSession(sessionId, draft)
+  }
+  /** The Sotto thread an unbound early-started session belongs to, until its first send binds it. */
+  private unboundThread(sessionId: string): string | undefined {
+    for (const [threadId, id] of this.unbound) if (id === sessionId) return threadId
+    return undefined
+  }
   observeThreads(threadIds: readonly string[]): void {
     this.observed = [...threadIds]
     this.inner.observeThreads?.(threadIds.flatMap(threadId => {

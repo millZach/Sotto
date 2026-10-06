@@ -53,6 +53,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'git-checkout-pull-request': ['threadId', 'reference', 'mode'],
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
+  // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
+  'start-thread-session': ['threadId'],
   'select-attention': ['itemId'],
   assign: ['threadId', 'instruction', 'expectedDraftId'], unassign: ['threadId'],
   resume: ['threadId', 'expectedDraftId'], pause: ['threadId'], interrupt: ['threadId'], 'compact-thread': ['threadId'],

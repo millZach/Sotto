@@ -287,6 +287,7 @@ export class DesktopHostRouter {
     return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
+    if (input && typeof input === 'object' && 'type' in input && input.type === 'start-thread-session') return this.startThreadSession(input, client)
     this.notice = undefined
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
@@ -356,6 +357,21 @@ export class DesktopHostRouter {
       await this.openCreated(connection, command.threadId, client)
     }
     this.emit()
+    return agentShell(this.shell())
+  }
+  /**
+   * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know
+   * about, so a host that is away, refuses it or predates it leaves no notice and no error: the send says what it finds.
+   */
+  private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
+    try {
+      const references = new Set<string>()
+      mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
+      const hostId = [...references][0] ?? this.selectedHostId
+      const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
+      const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+      if (connection.available?.() !== false) await connection.service.command(command, client)
+    } catch { /* The send that follows starts the session itself and reports what it finds. */ }
     return agentShell(this.shell())
   }
   /**
