@@ -149,7 +149,7 @@ test('client-only desktop keeps local history, renders Hosts, and retains dictat
     // Tailscale not installed: the row offers Get Tailscale once the window comes back to the front.
     await rm(tailscaleStatus)
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-    await expect(tailscale.getByText('Not installed. Any machine you reach over SSH works without it.')).toBeVisible()
+    await expect(tailscale.getByText('Not installed. Any machine you reach over SSH works without it, and Sotto connects to it over SSH each time.')).toBeVisible()
     await tailscale.getByRole('button', { name: 'Get Tailscale' }).click()
     await capture('hosts-tailscale-missing', false)
 
