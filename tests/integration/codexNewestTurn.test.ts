@@ -40,6 +40,20 @@ async function elsewhere(f: Fixture, id: string, action: Record<string, unknown>
   const acted = await f.action(id, action)
   await expect.poll(() => f.acted(acted)).toBe(true)
 }
+/**
+ * Settles with 'waiting' once a send has reached its wait on the read of `id` in flight. It watches the adapter's
+ * private chain of reads, the one thing that wait touches, because nothing the send does before it reaches the fake.
+ */
+function readAwaited(f: Fixture, id: string): Promise<'waiting'> {
+  const reads = (f.adapter as unknown as { threadReads: Map<string, Promise<void>> }).threadReads
+  return new Promise(resolve => {
+    const get = vi.spyOn(reads, 'get').mockImplementation(function (this: Map<string, Promise<void>>, key: string) {
+      const read = Map.prototype.get.call(this, key) as Promise<void> | undefined
+      if (key === id && read) { get.mockRestore(); resolve('waiting') }
+      return read
+    })
+  })
+}
 /** The history requests made since `from`, as `turns` (the newest-turn check) and `read` (the whole transcript). */
 const historyRequests = async (f: Fixture, from: number): Promise<('turns' | 'read')[]> => historyReads((await f.driver.requests()).slice(from))
 
@@ -218,13 +232,19 @@ describe('Codex send checks the newest turn before reading the whole transcript'
   it('waits for a read of the thread in flight before turn/start when the read before the send was made for it (#765)', async () => {
     const { f, id } = await answeredThread()
     await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'own-2' })
-    // Another read of the thread, a whole one the fake answers late, is in flight when the send arrives.
-    await f.script({ delay: { method: 'thread/read', ms: 300 } })
+    // Another read of the thread, a whole one the fake holds until it is released, is in flight when the send arrives.
+    await f.script({ holdReply: 'thread/read' })
     const from = (await f.driver.requests()).length
     const order: string[] = []
     const reading = f.host.refreshThread!(id).then(() => { order.push('read') })
     await expect.poll(async () => (await f.driver.requests()).slice(from).some(request => request.method === 'thread/read')).toBe(true)
-    await expect(send(f, id, 'own-2', 'own-1').finally(() => { order.push('send') })).resolves.toEqual({ accepted: true })
+    const waiting = readAwaited(f, id)
+    const sending = send(f, id, 'own-2', 'own-1').finally(() => { order.push('send') })
+    // The send reaches its wait on that read before anything releases it, and does not go out across it.
+    expect(await Promise.race([waiting, sending.then(() => 'sent')])).toBe('waiting')
+    const released = await f.action(id, { type: 'release-reply', method: 'thread/read' })
+    await expect.poll(() => f.acted(released)).toBe(true)
+    await expect(sending).resolves.toEqual({ accepted: true })
     await reading
     // The send went out after the read had applied the thread, not across it, and made no check of its own.
     expect(order).toEqual(['read', 'send'])
