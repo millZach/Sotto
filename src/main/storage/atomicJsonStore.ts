@@ -57,11 +57,12 @@ export class AtomicJsonStore<T> {
 
   /**
    * Writes `value` as it is now: it is serialized before this returns, so the caller may change it at once
-   * and need not hand over a copy.
+   * and need not hand over a copy. A caller of a compact store that already has `JSON.stringify(value)`, to
+   * compare states, passes it as `compact` so the state is not serialized twice.
    */
-  write(value: T): Promise<void> {
+  write(value: T, compact?: string): Promise<void> {
     let serialized: string
-    try { serialized = this.serialize(value) } catch (error) { return Promise.reject(error) }
+    try { serialized = compact !== undefined && this.format === 'compact' ? compact : this.serialize(value) } catch (error) { return Promise.reject(error) }
     return this.writeSerialized(serialized)
   }
 

@@ -106,7 +106,7 @@ type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promi
 class SupersededSupervision extends Error {}
 class RefusedInterrupt extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
-const PROMPT_NOT_SAVED = 'Could not save this prompt. No new prompt was sent.'
+const PROMPT_NOT_SAVED = 'Could not save this prompt, so it was not sent. Check access to local storage and send it again.'
 /** The 30-second upkeep of previews and staged images failed: nothing anyone still needs was touched. */
 const ATTACHMENT_UPKEEP_ERROR = 'Could not remove screenshots Sotto no longer needs. Nothing was lost. Check access to local storage.'
 /**
@@ -788,13 +788,14 @@ export class AgentControl {
     return () => this.listeners.delete(listener)
   }
   private saved(): Saved {
-    return structuredClone(this.savedView())
+    return structuredClone(this.savedOverLiveState())
   }
   /**
-   * What `agents.json` holds, built over the live state rather than copied from it. Serialize it before anything
-   * can change; `saved()` is the copy for a caller that keeps it.
+   * What `agents.json` holds, built over the live state rather than copied from it. It shares the live state's
+   * objects, so it is good only until the next await: serialize it before then. `saved()` is the copy for a caller
+   * that keeps it.
    */
-  private savedView(): Saved {
+  private savedOverLiveState(): Saved {
     this.syncLegacyDraft()
     const { configuration, assignments, queue, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing, pendingRequest } = this.state
     const retainContext = this.dependencies.historyEnabled?.() !== false
@@ -840,7 +841,7 @@ export class AgentControl {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
     // Most calls follow a provider snapshot that changed nothing saved, so the state is serialized to compare
     // and never copied: the store serializes what it writes as it is handed it.
-    const saved = this.savedView()
+    const saved = this.savedOverLiveState()
     const serialized = JSON.stringify(saved)
     const queued = this.queuedWrite
     if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
@@ -851,7 +852,7 @@ export class AgentControl {
       const outbox = structuredClone(saved.outbox)
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      const written = this.store.write(saved)
+      const written = this.store.write(saved, serialized)
       const current: QueuedWrite = { serialized, outbox, written }
       this.queuedWrite = current
       try {
@@ -3203,21 +3204,21 @@ export class AgentControl {
     this.pumpFollowups()
     this.generateTitles()
     if (!announcedManualControl) this.presentQueue(false)
-    this.persistSnapshot()
+    this.persistAfterSnapshots()
     this.publish()
   }
-  private snapshotPersistQueued = false
+  private afterSnapshotsPersistQueued = false
   /**
    * Saves what a snapshot changed once the code that accepted it has run on, so the snapshots one run accepts
    * share a single comparison. A send reads its thread, accepts that snapshot and goes straight on to the
    * write that makes its outbox entry durable: that write then carries the snapshot's changes too, and this
    * finds nothing left to write rather than putting another write in front of the provider.
    */
-  private persistSnapshot(): void {
-    if (this.snapshotPersistQueued) return
-    this.snapshotPersistQueued = true
+  private persistAfterSnapshots(): void {
+    if (this.afterSnapshotsPersistQueued) return
+    this.afterSnapshotsPersistQueued = true
     queueMicrotask(() => {
-      this.snapshotPersistQueued = false
+      this.afterSnapshotsPersistQueued = false
       void this.persist().catch(() => {
         if (this.disposed) return
         this.state.assignments.forEach(a => { a.paused = true }); this.state.error = 'Agent state could not be saved. Management paused.'; this.publish()
