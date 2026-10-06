@@ -740,6 +740,18 @@ describe('Add host, the switch and reconnect on launch', () => {
     await manager.command({ type: 'set-enabled', id: manager.get().hosts[0]!.id, enabled: true })
     await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected' }))
   })
+  it('stops retrying when the boot unit would not start it or keep it running, which only its journal explains', async () => {
+    await add()
+    for (const code of ['boot-start-refused', 'boot-unit-failed'] as const) {
+      scheduled.length = 0
+      const launched = launchers.length
+      failures.push(new SshFailure(code))
+      await relaunch()
+      await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false, error: expect.stringContaining('systemd unit') }))
+      expect(scheduled).toEqual([])
+      expect(launchers.length - launched).toBe(1)
+    }
+  })
   it('reads a saved-hosts file written before the switch and the port existed', async () => {
     const legacy = { id: randomUUID(), name: 'forge', target: 'zach@forge', identityFile: '', installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto' }
     failures.push(new SshFailure('auth-failed'))

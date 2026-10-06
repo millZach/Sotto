@@ -47,7 +47,7 @@ export interface HostUpdateSource {
 /** The launch script's answers to a restart that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'update-stop-failed', 'update-busy', 'update-missing', 'update-invalid'])
 /** The launch script's answers to a start at boot change that it gave before stopping anything, so the host runs as it did. */
-const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'update-busy', 'archive-missing'])
+const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'boot-stop-failed', 'update-busy', 'archive-missing'])
 /** The commands that act on one saved host's connection, which wait while that host is being updated. */
 const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
@@ -231,26 +231,8 @@ export class DesktopHosts {
     if (!host) throw new Error('This host is no longer saved. Nothing was changed.')
     const active = this.live.get(id)
     this.requireOwnedConnection(host, active)
-    active!.closing = true
-    this.clearRetry(id)
-    const registered = active!.registeredHostId
-    if (registered) { this.held.set(id, registered); delete active!.registeredHostId; this.options.router.setReconnecting(registered, true) }
-    let result: SshHostUpdateResult | undefined, unsent = false
-    try { result = await active!.tunnel!.updateHost({ op: 'update-restart', version }, options); return result }
-    catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
-    finally {
-      // Nothing was stopped: the restart was never sent, or the host refused it before stopping anything. The same
-      // connection carries on, and the threads read as they did.
-      const untouched = unsent || (result?.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
-      if (untouched && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
-        active!.closing = false
-        if (registered) { this.held.delete(id); active!.registeredHostId = registered; this.options.router.setReconnecting(registered, false) }
-      } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
-        // A reconnect, with the backoff behind it: the row reads Reconnecting…, as it does after a drop.
-        this.retries.set(id, { timer: undefined, attempt: 0, active: undefined })
-        await this.open(host).catch(() => undefined)
-      } else this.releaseHeld(id)
-    }
+    return this.restartOnPurpose(host, active!, () => active!.tunnel!.updateHost({ op: 'update-restart', version }, options),
+      result => result.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
   }
   /**
    * Start at boot for a saved host (ADR-0054): installs its unit, or removes it. Removing starts the host again only when
@@ -266,23 +248,35 @@ export class DesktopHosts {
     if (busy) throw new Error(busy)
     const active = this.live.get(id)
     if (!active?.tunnel || this.status.get(id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before changing whether its host starts at boot. Nothing was changed.`)
+    const tunnel = active.tunnel
+    return this.restartOnPurpose(host, active, async () => {
+      const result = await tunnel.boot(action === 'install' ? { op: 'boot-install' } : { op: 'boot-remove', restart: host.enabled !== false })
+      if (result.type !== 'error') this.update(id, { bootStart: result.bootStart })
+      return result
+    }, result => result.type === 'error' ? UNTOUCHED_BOOT_CHANGES.has(result.reason) : result.type === 'boot-status' || !result.stopped)
+  }
+  /**
+   * Runs an operation that may stop the host this computer is connected to on purpose: an update's restart, or a change to
+   * start at boot. Its drop is not a lost connection, so the host's threads stay on the Threads page reading Reconnecting
+   * until a new connection takes their place, and the promise waits for the first connect. When nothing was stopped,
+   * because the operation was never sent or `untouched` says the host answered before stopping anything, the same
+   * connection carries on and the threads read as they did.
+   */
+  private async restartOnPurpose<T>(host: SavedHost, active: LiveHost, operation: () => Promise<T>, untouched: (result: T) => boolean): Promise<T> {
+    const id = host.id
     active.closing = true
     this.clearRetry(id)
     const registered = active.registeredHostId
     if (registered) { this.held.set(id, registered); delete active.registeredHostId; this.options.router.setReconnecting(registered, true) }
-    let result: SshBootResult | undefined, unsent = false
-    try {
-      result = await active.tunnel.boot(action === 'install' ? { op: 'boot-install' } : { op: 'boot-remove', restart: host.enabled !== false })
-      if (result.type !== 'error') this.update(id, { bootStart: result.bootStart })
-      return result
-    } catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
+    let result: { readonly value: T } | undefined, unsent = false
+    try { result = { value: await operation() }; return result.value }
+    catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
     finally {
-      // Nothing was stopped: the same connection carries on, and the threads read as they did.
-      const untouched = unsent || (result !== undefined && (result.type === 'error' ? UNTOUCHED_BOOT_CHANGES.has(result.reason) : result.type === 'boot-status' || !result.stopped))
-      if (untouched && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
+      if ((unsent || (result !== undefined && untouched(result.value))) && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
         active.closing = false
         if (registered) { this.held.delete(id); active.registeredHostId = registered; this.options.router.setReconnecting(registered, false) }
       } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
+        // A reconnect, with the backoff behind it: the row reads Reconnecting…, as it does after a drop.
         this.retries.set(id, { timer: undefined, attempt: 0, active: undefined })
         await this.open(host).catch(() => undefined)
       } else this.releaseHeld(id)
@@ -448,7 +442,8 @@ export class DesktopHosts {
         try { if (host.clientId) await active.tunnel.revokeClient(host.clientId) }
         catch (error) { await this.disconnect(host.id); throw error }
         // Then its boot unit, so a forgotten host does not come back at the next boot (ADR-0054). Removing it starts
-        // nothing and stops a host the unit runs; a unit that could not be removed stays on the host.
+        // nothing and stops a host the unit runs. A unit that could not be removed stays on the host, and Forget does not
+        // say so yet: saying what Forget left behind, and Forget over an admin connection, belong to #758.
         if (this.status.get(host.id)?.bootStart?.installed) await active.tunnel.boot({ op: 'boot-remove', restart: false }).catch(() => undefined)
         if (active.tunnel.owned && !(await this.stopOwnedHost(active))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
       }
