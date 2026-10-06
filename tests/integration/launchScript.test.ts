@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -173,6 +173,18 @@ it('records a confirmed desktop even when its grant cannot be written, since the
   await rm(join(configuration.dataDirectory, 'memory.sqlite'))
   expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'failed' })
   expect(await desktops(configuration)).toEqual([clientId])
+})
+
+it('leaves a record of desktops it cannot read as it is, and still writes the grant', async () => {
+  const { configuration, memory, policies, client, operation } = await desktopPermissionFixture()
+  try {
+    // A folder where the file should be cannot be read as one, on every system the host runs on.
+    const record = join(configuration.dataDirectory, 'desktop-clients.json')
+    await mkdir(join(record, 'kept'), { recursive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    expect((await stat(join(record, 'kept'))).isDirectory()).toBe(true)
+  } finally { memory.close() }
 })
 
 it('reports the tailnet address and who started the host, as its descriptor records them, and only a well-formed address', async () => {

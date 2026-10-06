@@ -207,9 +207,10 @@ const admin = async () => {
 // owner's SSH session, ever adds one. Written whole and renamed into place, so the host never reads half a file, and read
 // back, so two connects recording at once both stay. A record that cannot be written costs only the tailnet connection,
 // which falls back to SSH and records again there, so it never fails the grant.
-// Missing is nobody yet. A file that could not be read this time is left alone, since writing over it would drop every
-// other desktop it names; the next connect records this one. A file that reads but holds no list already counts nobody
-// on the host, which never rewrites it, so this desktop starts it again.
+// Missing is nobody yet. A file that could not be read is never written over, since that would drop every other desktop
+// it names: the read is tried again, as a rename in progress can refuse it for a moment on some systems, and if it still
+// fails the file is left alone and the next connect records this one. A file that reads but holds no list already counts
+// nobody on the host, which never rewrites it, so this desktop starts it again.
 const readDesktops = async () => {
   let text;
   try { text = await fs.readFile(desktopsPath, 'utf8'); } catch (error) { return error && error.code === 'ENOENT' ? [] : undefined; }
@@ -219,7 +220,8 @@ const readDesktops = async () => {
 const recordDesktop = async clientId => {
   for (let attempt = 0; attempt < 8; attempt++) {
     const ids = await readDesktops();
-    if (!ids || ids.includes(clientId)) return;
+    if (!ids) { await pause(25 + Math.floor(Math.random() * 50)); continue; }
+    if (ids.includes(clientId)) return;
     const temporary = desktopsPath + '.' + process.pid + '.' + crypto.randomUUID() + '.tmp';
     try {
       await fs.writeFile(temporary, JSON.stringify([...ids, clientId].slice(-${DESKTOP_CLIENTS_MAX})) + '\n', { mode: 0o600 });
