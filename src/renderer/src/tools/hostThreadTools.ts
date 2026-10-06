@@ -21,15 +21,25 @@ type ChangedListener = Parameters<GitChangesBridge['onChanged']>[0]
 
 /**
  * The host pushes no change events, so the watch asks it for the change list on a timer while Changes shows the thread,
- * as main's own watch polls a working copy on this computer. Each answer is passed on with its revision, and the
- * Changes store reads the comparison again only when the revision moved.
+ * as main's own watch polls a working copy on this computer, and says so the same way: a revision when it moved, and a
+ * refusal as `error:<code>`, so a replaced or unreadable folder reaches the Changes store as it would here. A read the
+ * connection itself could not make says nothing; the next one tries again.
  */
 export function hostThreadChanges(bridge: GitChangesBridge, pollMs = HOST_CHANGES_POLL_MS): GitChangesBridge {
   const listeners = new Set<ChangedListener>()
-  const watched = new Map<string, ReturnType<typeof setInterval>>()
-  const poll = async (target: { threadId: string; workspaceId: string }): Promise<void> => {
-    const result = await bridge.list(target).catch(() => null)
-    if (result?.ok) for (const listener of listeners) listener({ ...target, revision: result.value.revision })
+  const watched = new Map<string, { timer: ReturnType<typeof setInterval>; revision: string | null; polling: boolean }>()
+  const poll = async (key: string, target: { threadId: string; workspaceId: string }): Promise<void> => {
+    const watch = watched.get(key)
+    if (!watch || watch.polling) return
+    watch.polling = true
+    try {
+      const result = await bridge.list(target).catch(() => null)
+      if (!result || watched.get(key) !== watch) return
+      const revision = result.ok ? result.value.revision : `error:${result.error.code}`
+      if (revision === watch.revision) return
+      watch.revision = revision
+      for (const listener of listeners) listener({ ...target, revision })
+    } finally { watch.polling = false }
   }
   return Object.freeze<GitChangesBridge>({
     list: request => bridge.list(request),
@@ -37,9 +47,9 @@ export function hostThreadChanges(bridge: GitChangesBridge, pollMs = HOST_CHANGE
     copyPath: request => bridge.copyPath(request),
     watch: async ({ enabled, ...target }) => {
       const key = `${target.threadId}\n${target.workspaceId}`
-      const timer = watched.get(key)
-      if (!enabled && timer !== undefined) { clearInterval(timer); watched.delete(key) }
-      if (enabled && timer === undefined) watched.set(key, setInterval(() => { void poll(target) }, pollMs))
+      const watch = watched.get(key)
+      if (!enabled && watch !== undefined) { clearInterval(watch.timer); watched.delete(key) }
+      if (enabled && watch === undefined) watched.set(key, { timer: setInterval(() => { void poll(key, target) }, pollMs), revision: null, polling: false })
       return { ok: true, value: undefined }
     },
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
