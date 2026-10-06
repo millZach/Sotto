@@ -405,8 +405,8 @@ const admin = async () => {
   } catch { return finish({ type: 'failed' }); }
 };
 // Records a confirmed paired client as a desktop, for the host's tailnet listener (ADR-0053). Only this script, over the
-// owner's SSH session, ever adds one. Written whole and renamed into place, so the host never reads half a file, and read
-// back, so two connects recording at once both stay. A record that cannot be written costs only the tailnet connection,
+// owner's SSH session, ever adds one. Written whole and renamed into place, so the host never reads half a file, under a
+// lock and read back, so two connects recording at once both stay. A record that cannot be written costs only the tailnet connection,
 // which falls back to SSH and records again there, so it never fails the grant.
 // Missing is nobody yet. A file that could not be read is never written over, since that would drop every other desktop
 // it names: the read is tried again, as a rename in progress can refuse it for a moment on some systems, and if it still
@@ -418,7 +418,28 @@ const readDesktops = async () => {
   try { const value = JSON.parse(text); return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= ${DESKTOP_CLIENT_ID_MAX}) : []; }
   catch { return []; }
 };
-const recordDesktop = async clientId => {
+// One connect changes the record at a time. Two that read it together would each write back a list without the other's
+// desktop, and the one that read its own back first would never see it go. The lock is a file only this step makes; one a
+// connect left behind when it died is taken over once it is older than any write takes. A connect that cannot take it
+// records nothing, and the next connect records this one.
+const desktopsLockPath = desktopsPath + '.lock';
+const withDesktopsLock = async work => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    let handle;
+    try { handle = await fs.open(desktopsLockPath, 'wx', 0o600); }
+    catch (error) {
+      if (!error || error.code !== 'EEXIST') return;
+      const held = await fs.stat(desktopsLockPath).then(info => Date.now() - info.mtimeMs, () => 0);
+      if (held > 10000) await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined);
+      else await pause(10 + Math.floor(Math.random() * 40));
+      continue;
+    }
+    try { await work(); }
+    finally { await handle.close().catch(() => undefined); await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined); }
+    return;
+  }
+};
+const recordDesktop = clientId => withDesktopsLock(async () => {
   for (let attempt = 0; attempt < 8; attempt++) {
     const ids = await readDesktops();
     if (!ids) { await pause(25 + Math.floor(Math.random() * 50)); continue; }
@@ -429,7 +450,7 @@ const recordDesktop = async clientId => {
       await fs.rename(temporary, desktopsPath);
     } catch { await fs.rm(temporary, { force: true }).catch(() => undefined); await pause(25 + Math.floor(Math.random() * 50)); }
   }
-};
+});
 // The authenticated SSH account establishes its desktop's default authority, through the same policy
 // records the running host reads. One conditional write preserves revoked decisions and works with
 // existing host archives, without exposing a new grant operation to paired socket clients.
