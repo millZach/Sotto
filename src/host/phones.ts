@@ -135,7 +135,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     address: () => tailnetAddress(access.brief()),
     summary: () => phoneAccessSummary(access.brief()),
     peers: () => access.peers(),
-    subscribe: listener => access.subscribe(state => listener(tailnetAddress(state))),
+    subscribe: listener => access.watch(brief => listener(tailnetAddress(brief))),
     revoked,
     close: async () => { await started; await revoking; await access.close() },
   }

@@ -88,6 +88,9 @@ export interface PhoneAccessOptions {
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
+/** What health and hello read of phone access: whether it is on, the phase and address `get()` reports, and how many phones are paired. */
+export type PhoneAccessBrief = Pick<PhonesState, 'enabled' | 'phase' | 'address'> & { readonly phones: number }
+
 const recordSchema = z.object({
   /** The loopback port last listened on, tried first next time so the Serve setting stays recognisably Sotto's. */
   port: z.number().int().min(1).max(65535).nullable(),
@@ -120,6 +123,7 @@ export class PhoneAccess {
   private queue: Promise<void> = Promise.resolve()
   private closed = false
   private readonly listeners = new Set<(state: PhonesState) => void>()
+  private readonly watchers = new Set<(brief: PhoneAccessBrief) => void>()
   /**
    * With a shared pairing store, the clients that paired through phone access, which are the phones: the desktops that
    * pair with the same host are not phones, and the Phones dialog must never offer to remove one. Kept in
@@ -184,6 +188,15 @@ export class PhoneAccess {
   subscribe(listener: (state: PhonesState) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /**
+   * Told the brief state (see `brief()`) on every change `subscribe` is told of. A socket opening or closing is one, so
+   * a watcher that needs only the phase and address costs no per-phone policy lookups.
+   */
+  watch(watcher: (brief: PhoneAccessBrief) => void): () => void {
+    this.watchers.add(watcher)
+    return () => { this.watchers.delete(watcher) }
   }
 
   get(): PhonesState {
@@ -311,7 +324,7 @@ export class PhoneAccess {
    * The parts of `get()` health and hello read, without the per-phone policy lookups: whether phone access is on, the
    * phase and address as `get()` reports them, and how many phones are paired.
    */
-  brief(): Pick<PhonesState, 'enabled' | 'phase' | 'address'> & { readonly phones: number } {
+  brief(): PhoneAccessBrief {
     return {
       enabled: this.options.settings().phoneAccess,
       phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
@@ -546,6 +559,10 @@ export class PhoneAccess {
   }
 
   private publish(): void {
+    if (this.watchers.size > 0) {
+      const brief = this.brief()
+      for (const watcher of this.watchers) watcher(brief)
+    }
     if (this.listeners.size === 0) return
     const state = this.get()
     for (const listener of this.listeners) listener(state)
