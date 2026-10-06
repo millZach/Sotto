@@ -4,6 +4,11 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentVoiceTiming } from '../../shared/agents'
+import { SEND_STAGE_FIELDS, type SendStageClock, type SendStageField } from './sendStages'
+
+/** A send's stage durations (`SendStageTimings`): absent from older records and from every turn that sent nothing. */
+const stageMs = z.number().int().nonnegative().nullable().optional()
+const sendStageShape = Object.fromEntries(SEND_STAGE_FIELDS.map(field => [field, stageMs])) as Record<SendStageField, typeof stageMs>
 
 export const turnRecordSchema = z.object({
   id: z.string(),
@@ -26,7 +31,7 @@ export const turnRecordSchema = z.object({
     retrievalMs: z.number().int().nonnegative(),
     delegationMs: z.number().int().nonnegative(),
     totalMs: z.number().int().nonnegative(),
-  }),
+  }).extend(sendStageShape),
   retrievedMemoryIds: z.array(z.string()),
   contextTokenEstimate: z.number().int().nonnegative(),
   outcome: z.enum(['completed', 'clarified', 'failed']),
@@ -48,6 +53,10 @@ export interface ActiveTurn {
   retrievalMs: number
   retrievedMemoryIds: string[]
   delegationMs: number
+  /** When the coordinator received the command this turn carries out (`performance.now()`): where a send's admission starts. */
+  receivedAt?: number
+  /** A send's stopwatch, from Send to the reply's first output. Only turns that send a prompt carry one. */
+  stages?: SendStageClock
   contextTokenEstimate: number
   contextCharacters: number
   threadId: string | null | undefined
@@ -79,6 +88,8 @@ function hasErrorCode(error: unknown, code: string): boolean {
 export class TurnRecorder {
   private scrubbed = false
   private lane: Promise<void> = Promise.resolve()
+  /** Records of sends waiting for their first output (`finish`). */
+  private readonly pending = new Set<Promise<void>>()
   private readonly directory: string
   private readonly resolveSession: (threadId: string) => { provider: string; sessionId: string } | undefined
   private readonly maxBytes: number
@@ -136,56 +147,80 @@ export class TurnRecorder {
     }
   }
 
+  /**
+   * Record the turn. Most records are written before this resolves. A send whose client confirmed the prompt waits
+   * for the reply's first output, or for watching it to stop (`SendStageClock.untilFirstOutput`), and is written
+   * then; this resolves at once and `drain` waits for it. Either way the finish time and `totalMs` are now.
+   */
   async finish(turn: ActiveTurn | undefined, outcome: TurnRecord['outcome']): Promise<void> {
     if (!turn) return
     try {
       const finishedAtMs = Date.now()
-      const threadId = turn.threadId ?? null
-      const record: TurnRecord = {
-        id: randomUUID(),
-        startedAt: turn.startedAt,
-        finishedAt: new Date(finishedAtMs).toISOString(),
-        source: turn.source,
-        commandType: turn.commandType,
-        threadId,
-        providerSessionId: (threadId ? this.resolveSession(threadId)?.sessionId : undefined) ?? null,
-        projectId: turn.projectId ?? null,
-        timings: {
-          speechEndedAt: turn.speechEndedAt,
-          voicePhase: turn.voiceTiming?.phase ?? null,
-          speechEndBasis: turn.voiceTiming?.basis ?? null,
-          feedbackBasis: turn.firstFeedbackAtMs === undefined ? null : 'main-state-published',
-          retrievalCount: turn.retrievalCount,
-          speechToIntentMs: speechElapsed(turn.speechEndedAt, turn.intentResolvedAtMs),
-          speechToFirstFeedbackMs: speechElapsed(turn.speechEndedAt, turn.firstFeedbackAtMs),
-          intentMs: turn.intentMs,
-          retrievalMs: turn.retrievalMs,
-          delegationMs: turn.delegationMs,
-          totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
-        },
-        retrievedMemoryIds: turn.retrievedMemoryIds,
-        contextTokenEstimate: turn.contextTokenEstimate,
-        outcome,
-        failureCode: outcome === 'failed' ? turn.failureCode ?? 'action-failed' : null,
+      const stages = turn.stages
+      if (stages && outcome !== 'failed' && stages.awaitsFirstOutput()) {
+        // The record holds no text; the prompt need not stay in memory while it waits for the first output.
+        turn.text = ''
+        const pending: Promise<void> = stages.untilFirstOutput().then(() => this.write(turn, outcome, finishedAtMs))
+          .catch(() => undefined).finally(() => { this.pending.delete(pending) })
+        this.pending.add(pending)
+        return
       }
-      await this.enqueue(async () => {
-        await this.scrub()
-        await mkdir(this.directory, { recursive: true })
-        const filePath = this.path()
-        await appendFile(filePath, `${JSON.stringify(record)}\n`, 'utf8')
-        if ((await stat(filePath)).size > this.maxBytes) {
-          const lines = (await readFile(filePath, 'utf8')).split(/\r?\n/u).filter(line => line.length > 0)
-          // Keep the newest lines, then drop the oldest until the file sits at half the cap,
-          // so the next append does not trigger another full rewrite.
-          const newest = lines.slice(-this.maxLines)
-          let bytes = newest.reduce((total, line) => total + Buffer.byteLength(line, 'utf8') + 1, 0)
-          while (newest.length > 1 && bytes > this.maxBytes / 2) bytes -= Buffer.byteLength(newest.shift()!, 'utf8') + 1
-          await this.replace(newest.length > 0 ? `${newest.join('\n')}\n` : '')
-        }
-      })
+      stages?.close()
+      await this.write(turn, outcome, finishedAtMs)
     } catch {
       // Recording must never throw into the command path.
     }
+  }
+
+  /** Wait for the records of sends still waiting for their first output. */
+  async drain(): Promise<void> { await Promise.allSettled([...this.pending]) }
+
+  private async write(turn: ActiveTurn, outcome: TurnRecord['outcome'], finishedAtMs: number): Promise<void> {
+    const threadId = turn.threadId ?? null
+    const record: TurnRecord = {
+      id: randomUUID(),
+      startedAt: turn.startedAt,
+      finishedAt: new Date(finishedAtMs).toISOString(),
+      source: turn.source,
+      commandType: turn.commandType,
+      threadId,
+      providerSessionId: (threadId ? this.resolveSession(threadId)?.sessionId : undefined) ?? null,
+      projectId: turn.projectId ?? null,
+      timings: {
+        speechEndedAt: turn.speechEndedAt,
+        voicePhase: turn.voiceTiming?.phase ?? null,
+        speechEndBasis: turn.voiceTiming?.basis ?? null,
+        feedbackBasis: turn.firstFeedbackAtMs === undefined ? null : 'main-state-published',
+        retrievalCount: turn.retrievalCount,
+        speechToIntentMs: speechElapsed(turn.speechEndedAt, turn.intentResolvedAtMs),
+        speechToFirstFeedbackMs: speechElapsed(turn.speechEndedAt, turn.firstFeedbackAtMs),
+        intentMs: turn.intentMs,
+        retrievalMs: turn.retrievalMs,
+        delegationMs: turn.delegationMs,
+        totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
+        // Only a turn whose prompt reached its host has send stages; one refused before then carries none.
+        ...(turn.stages?.has('dispatched') ? turn.stages.durations() : {}),
+      },
+      retrievedMemoryIds: turn.retrievedMemoryIds,
+      contextTokenEstimate: turn.contextTokenEstimate,
+      outcome,
+      failureCode: outcome === 'failed' ? turn.failureCode ?? 'action-failed' : null,
+    }
+    await this.enqueue(async () => {
+      await this.scrub()
+      await mkdir(this.directory, { recursive: true })
+      const filePath = this.path()
+      await appendFile(filePath, `${JSON.stringify(record)}\n`, 'utf8')
+      if ((await stat(filePath)).size > this.maxBytes) {
+        const lines = (await readFile(filePath, 'utf8')).split(/\r?\n/u).filter(line => line.length > 0)
+        // Keep the newest lines, then drop the oldest until the file sits at half the cap,
+        // so the next append does not trigger another full rewrite.
+        const newest = lines.slice(-this.maxLines)
+        let bytes = newest.reduce((total, line) => total + Buffer.byteLength(line, 'utf8') + 1, 0)
+        while (newest.length > 1 && bytes > this.maxBytes / 2) bytes -= Buffer.byteLength(newest.shift()!, 'utf8') + 1
+        await this.replace(newest.length > 0 ? `${newest.join('\n')}\n` : '')
+      }
+    })
   }
 
   /** Remove legacy content before the recorder is used, even when no new turn finishes. */
