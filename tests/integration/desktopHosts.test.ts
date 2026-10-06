@@ -925,6 +925,63 @@ describe('start at boot (ADR-0054)', () => {
     await manager.command({ type: 'forget', id: remote.id })
     expect(boots).toEqual([])
   })
+
+  it('says Forget left the unit behind when the host would not remove it, with the line that does, though the revoke went through', async () => {
+    bootStart = on
+    const remote = await add()
+    boot = async () => ({ type: 'error', reason: 'boot-remove-failed' })
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().hosts).toEqual([])
+    const [notice] = manager.get().forgotten ?? []
+    expect(notice).toEqual({ id: remote.id, name: 'Forge fixture', bootCommand: expect.stringContaining('systemctl --user disable --now sotto-host') as unknown })
+    expect(notice!.bootCommand).toContain('"/opt/sotto"/boot-start.sh')
+  })
+
+  it('says a host that refused the revoke still has its unit, since Forget left it running as it was', async () => {
+    bootStart = on
+    const remote = await add()
+    revokeFails = true
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(boots).toEqual([])
+    expect(manager.get().forgotten?.[0]).toMatchObject({ cause: 'refused', command: expect.stringContaining('--revoke-client') as unknown, bootCommand: expect.stringContaining('sotto-host') as unknown })
+  })
+
+  it('says the unit stays when the host stops answering partway through Forget', async () => {
+    bootStart = on
+    const remote = await add()
+    // The revoke and the unit's removal both go unanswered, the way they do over a connection that has just died.
+    revokeError = new SshFailure('admin-failed')
+    boot = async () => { throw new SshFailure('boot-failed') }
+    await manager.command({ type: 'forget', id: remote.id })
+    expect(manager.get().hosts).toEqual([])
+    expect(manager.get().forgotten?.[0]).toMatchObject({ cause: 'unreachable', bootCommand: expect.stringContaining('sotto-host') as unknown })
+  })
+
+  it('offers the boot state of a connected host to a change, and none for a host whose launch did not say', async () => {
+    const remote = await add()
+    expect(manager.bootCandidate(remote.id)).toBeUndefined()
+    await manager.command({ type: 'forget', id: remote.id })
+    bootStart = off
+    const again = await add()
+    expect(manager.bootCandidate(again.id)).toMatchObject({ id: again.id, name: 'Forge fixture', hostId: reportedHostId, owned: true, bootStart: off, installPath: '/opt/sotto' })
+    await manager.command({ type: 'set-enabled', id: again.id, enabled: false })
+    expect(manager.bootCandidate(again.id)).toBeUndefined()
+  })
+
+  it('hands Start at boot to the start at boot changes, and keeps Stop host and Forget waiting while one runs', async () => {
+    bootStart = off
+    const remote = await add()
+    const pressed: string[] = []
+    const changing: { sentence?: string } = {}
+    manager.useBoot({ state: () => [], subscribe: () => () => undefined, busy: () => changing.sentence,
+      command: async (id, action) => { pressed.push(`${id} ${action}`) } })
+    await manager.command({ type: 'host-boot', id: remote.id, action: 'install' })
+    expect(pressed).toEqual([`${remote.id} install`])
+    const busy = changing.sentence = 'Sotto is changing whether the host on Forge fixture starts at boot. Nothing was changed. Wait for it to finish, then try again.'
+    await expect(manager.command({ type: 'stop-host', id: remote.id })).rejects.toThrow(busy)
+    await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow(busy)
+    expect(manager.get().hosts).toHaveLength(1)
+  })
 })
 
 describe('updating a host from the Threads page (ADR-0040)', () => {

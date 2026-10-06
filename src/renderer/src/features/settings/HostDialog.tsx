@@ -10,6 +10,7 @@ import { HostSetupChecklist, hostSetupSummary, hostSetupTitle, TAILSCALE_GUIDE_U
 import { HostAddChoices, HostSetupProgress, hostSetupEnded, hostSetupViewTitle, SetupModelSelect, type HostAddChoice } from './HostSetupView'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
+import { HostBootOffer } from './HostBootStart'
 
 /** How many Hosts modals are open, so a saved host's SSH question waits rather than stacking on one. */
 let openModals = 0
@@ -325,6 +326,8 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     </>}>
     {checklist ? <HostSetupChecklist name={submitted.name} summary={hostSetupSummary(submitted.user, submitted.port)} host={adding ?? addedHost} outcome={outcome}
       error={shownError} approvalError={approvalError} question={question} offer={offer} {...(outcome === 'connected' ? {} : { onChange: change })}
+      // The connected card offers to start the new host at boot, one consented press (ADR-0054).
+      boot={outcome === 'connected' && addedHost ? <HostBootOffer host={addedHost} view={state?.boot?.find(item => item.id === addedHost.id)} bridge={bridge} /> : undefined}
       onOpenApproval={() => void openApproval()} onOpenGuide={openGuide} /> : <>
     <p className="hosts-dialog__intro">{editing ? 'The new connection is used the next time Sotto connects. A host that is on connects again now.' : 'Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.'}</p>
     {!editing && tailscale ? <TailscalePrompt control={tailscale} /> : null}

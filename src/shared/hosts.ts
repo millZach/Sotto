@@ -4,7 +4,7 @@ import { providerIdSchema } from './agents'
 import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
-import type { BootStatus } from './bootStart'
+import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -132,20 +132,27 @@ export interface HostsState {
    * user dismisses it. A second Forget adds its own and leaves the others alone.
    */
   forgotten?: HostForgotten[]
+  /** Each saved host's start at boot change, from its press until its result is put away (ADR-0054), in saved order. */
+  boot?: HostBootState[]
 }
 /** Why Forget could not revoke this computer on a host: SSH could not reach it, its host was not running, or the host refused. */
 export type HostForgottenCause = 'unreachable' | 'not-running' | 'refused'
 /**
- * A host Forget removed from this computer without revoking this computer's pairing there. The host still trusts this
- * computer until the command, run on the host while its host is running, removes it. Kept in memory only.
+ * A host Forget removed from this computer without finishing there: without revoking this computer's pairing, so the host
+ * still trusts this computer until `command`, run on the host while its host is running, removes it; or without removing
+ * its start at boot unit, so its host still starts when its machine does until `bootCommand` removes it (ADR-0054). At
+ * least one of the two is set. Kept in memory only.
  */
 export interface HostForgotten {
   /** The forgotten saved host's ID, which Dismiss names. */
   readonly id: string
   readonly name: string
-  readonly cause: HostForgottenCause
+  /** Why this computer was not revoked there, with the one line that revokes it. Absent when the revoke happened. */
+  readonly cause?: HostForgottenCause | undefined
   /** The one line to run on the host. Sotto never runs it. */
-  readonly command: string
+  readonly command?: string | undefined
+  /** The one line that removes the host's start at boot unit, when Forget could not. Sotto never runs it. */
+  readonly bootCommand?: string | undefined
 }
 /**
  * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
@@ -203,6 +210,8 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('host-phones'), id: z.uuid(), command: hostPhonesCommandSchema }).strict(),
   /** A host's Phones dialog is open, said again every half minute, or closed: while open, the host is read every couple of seconds. */
   z.object({ type: z.literal('watch-host-phones'), id: z.uuid(), watching: z.boolean() }).strict(),
+  /** One press of Start at boot, Stop starting at boot or their busy-host question, for one saved host (ADR-0054). */
+  hostBootCommandSchema,
 ])
 export type HostsCommand = z.infer<typeof hostsCommandSchema>
 

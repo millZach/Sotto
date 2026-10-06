@@ -17,6 +17,8 @@ export interface HostUpdateCandidate {
   readonly owned: boolean
   readonly installPath: string
   readonly dataDirectory: string
+  /** The host starts at boot, so its systemd unit runs it and restarts it (ADR-0054). */
+  readonly boot?: boolean
 }
 /** What an update needs of the saved hosts: `DesktopHosts`. */
 export interface HostUpdateHosts {
@@ -47,7 +49,7 @@ export interface HostUpdatesOptions {
   readonly download?: (url: string, limit: number, signal: AbortSignal) => Promise<Uint8Array>
 }
 interface Entry {
-  id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string
+  id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string; boot?: boolean | undefined
   phase: HostUpdatePhase; step?: HostUpdateStep | undefined; route?: HostUpdateRoute | undefined
   failure?: HostUpdateFailure | undefined; error?: string | undefined
   /** The launch script's code, or this computer's, for the failure shown. */
@@ -297,13 +299,13 @@ export class HostUpdates {
   }
   private view(entry: Entry): HostUpdateState {
     return { id: entry.id, name: entry.name, from: entry.from, to: this.options.version, phase: entry.phase, owned: entry.owned,
-      working: this.working(entry).length, commands: this.commands(entry),
+      working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
       ...(entry.failure ? { failure: entry.failure } : {}), ...(entry.error ? { error: entry.error } : {}) }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
-    Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory })
+    Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
   }
   /**

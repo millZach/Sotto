@@ -64,6 +64,16 @@ The pull request that built the launch script's side (`feat/host-boot-start`) se
 - **What is left for later.** Editing a saved host's installation folder leaves the old folder's unit behind: it is no longer this installation's, so Sotto neither starts nor removes it, and `boot-install` refuses beside it with `boot-unit-taken` until the owner removes it on the host. Two saved hosts that share one installation folder with different data folders would each move the unit to their own folder at every launch; Settings > Hosts does not stop that yet.
 - **The phone access retry.** For 5 minutes after a host starts, its phone access looks again every 30 seconds at a Tailscale that is missing and at a Serve setting that failed, as well as at one that is not running.
 
+## Amendment, October 6, 2026: what the Settings side settled
+
+The pull request that built the surface in Settings > Hosts (`feat/host-boot-start-ui`) settled these, under the same delegation.
+
+- **Where a change runs.** Main runs Start at boot and Stop starting at boot, keyed by saved host and kept in memory, the way it runs an update (ADR-0040): the modal and the card only show where it stands. Closing the modal while the change waits for its threads, or while it runs, leaves it going, and the row reads "Starts at boot when its threads finish" or "Starting at boot…" until it ends. Closing it on the question cancels, and closing it on a result puts the result away. While a change runs, the host's connection commands (Stop host, Forget, Edit connection, the switch) and Update wait for it, as they wait for an update.
+- **The busy-host question's words.** "1 thread on forge is working. Starting at boot restarts forge's host, which stops it." Its answers are **Wait until they finish**, **Stop 1 thread now** and **Cancel**, shorter than Update's because "Stop 1 thread and stop starting at boot" does not fit the narrowest window; each button's accessible name says the rest. It is asked only when the change restarts the host: installing over a host Sotto started that the unit does not run yet, or removing a unit that runs the host.
+- **Where the offer is.** On Add host's connected card when the host is added with Add it, and in the More menu above a line, for a connected host whose launch said it can start at boot. A host an agent set up (ADR-0035) gets it from the More menu. A host whose launch did not say, such as one running a Sotto from before this, gets nothing.
+- **What Forget says about the unit.** When Forget could not take the unit away (the host refused the revoke and was left running, the removal failed, or the host stopped answering partway through), its notice says the host still starts at boot and gives one line that removes the unit on the host: `systemctl --user disable --now sotto-host`, the unit file and `boot-start.sh` removed, and `daemon-reload`. When the revoke went through and only the unit was left, the notice says that alone. Sotto never runs the line.
+- **The update panel.** For a host that starts at boot, it says the host restarts through its systemd unit and still starts at boot after.
+
 ## Consequences
 
 - A host started at boot keeps its threads reachable from phones and tailnet connections across a restart of its machine, with no desktop and no SSH.

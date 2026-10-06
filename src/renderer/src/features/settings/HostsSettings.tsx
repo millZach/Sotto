@@ -1,5 +1,5 @@
 import { isCompositionKey } from '../../agents/composerKeys'
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, Copy, Laptop, MoreHorizontal, Plus, Server, Smartphone } from 'lucide-react'
 import { type HostForgotten, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
 import type { HostProviderJobState } from '../../../../shared/hostProviders'
@@ -13,6 +13,8 @@ import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
+import { HostBootDialog, bootMenuLabel, bootStartOn, canChangeBoot } from './HostBootStart'
+import type { HostBootState } from '../../../../shared/bootStart'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
 import './hosts.css'
 
@@ -29,7 +31,7 @@ const reachable = (host: HostStatus): boolean => host.phase === 'connected' || h
 /** Stop host is offered only for a host Sotto started that it can still reach. */
 const canStop = (host: HostStatus): boolean => host.owned === true && reachable(host)
 
-type MenuAction = 'stop' | 'rename' | 'edit' | 'forget'
+type MenuAction = 'boot' | 'stop' | 'rename' | 'edit' | 'forget'
 
 /** The row's More menu: arrow keys move through it, Escape and Tab close it, and focus goes back to its button. */
 function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAction: (action: MenuAction) => void }): ReactNode {
@@ -37,7 +39,9 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
   const button = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const menuId = useId()
-  const items: { action: MenuAction; label: string; danger?: boolean }[] = [
+  // Start at boot… or Stop starting at boot… comes first, above a line, where the host can start at boot (ADR-0054).
+  const items: { action: MenuAction; label: string; danger?: boolean; line?: boolean }[] = [
+    ...(canChangeBoot(host) ? [{ action: 'boot' as const, label: bootMenuLabel(host), line: true }] : []),
     ...(canStop(host) ? [{ action: 'stop' as const, label: 'Stop host' }] : []),
     { action: 'rename', label: 'Rename' },
     { action: 'edit', label: 'Edit connection' },
@@ -64,8 +68,11 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
         else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); entries[(index + (event.key === 'ArrowDown' ? 1 : entries.length - 1)) % entries.length]?.focus() }
         else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); (event.key === 'Home' ? entries[0] : entries.at(-1))?.focus() }
       }}>
-      {items.map(item => <button key={item.action} type="button" role="menuitem" tabIndex={-1} className="tt-focusable" data-danger={item.danger || undefined}
-        onClick={() => { close(); onAction(item.action) }}>{item.label}</button>)}
+      {items.map(item => <React.Fragment key={item.action}>
+        <button type="button" role="menuitem" tabIndex={-1} className="tt-focusable" data-danger={item.danger || undefined}
+          onClick={() => { close(); onAction(item.action) }}>{item.label}</button>
+        {item.line ? <div role="separator" /> : null}
+      </React.Fragment>)}
     </div> : null}
   </span>
 }
@@ -74,8 +81,17 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
  * A saved host: its name, where it is and how it is, the switch that keeps it connected, and its menu. A connected host
  * also says how many of its providers are connected, and Show providers opens its tiles (ADR-0037).
  */
-function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, client, bridge, job, choice }: {
+/** What the row says of a start at boot change that carries on after its modal closed. */
+function bootLabel(boot: HostBootState | undefined): string | undefined {
+  if (boot?.phase === 'waiting') return boot.change === 'install' ? 'Starts at boot when its threads finish' : 'Stops starting at boot when its threads finish'
+  if (boot?.phase === 'changing') return boot.change === 'install' ? 'Starting at boot…' : 'Stopping start at boot…'
+  return undefined
+}
+
+function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, client, bridge, job, choice, boot }: {
   readonly host: HostStatus
+  /** The host's start at boot change, while one is waiting or running (ADR-0054). */
+  readonly boot?: HostBootState | undefined
   /** The host's phone access as this computer last read it, and the press that opens its Phones dialog (ADR-0050). */
   readonly phones?: HostPhonesView | undefined
   readonly onOpenPhones: () => void
@@ -95,11 +111,12 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
   const route = `SSH ${host.target}${host.sshPort ? `, port ${host.sshPort}` : ''}`
   const shown = host.phase === 'connected' && providers?.length ? providers : undefined
   const phonesLabel = hostPhonesLabel(phones)
+  const booting = bootLabel(boot)
   return <section ref={rowRef} className="hosts-row" aria-label={host.name} data-phase={host.phase}>
     <span className="hosts-row__icon" aria-hidden="true"><Server size={18} /></span>
     <div className="hosts-row__info">
       <h4>{host.name}</h4>
-      <p className="hosts-row__meta">{route} · <span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : hostStatusLabel(host)}</span>{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
+      <p className="hosts-row__meta">{route} · <span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : hostStatusLabel(host)}</span>{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}{booting ? ` · ${booting}` : ''}</p>
       {host.error ? <p className="hosts-row__error" role="alert">{host.error}</p> : null}
     </div>
     <div className="hosts-row__actions">
@@ -159,37 +176,49 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
 
 /** What a not-revoked notice says happened, by its cause, and what the owner runs on the host to finish the job. */
 function forgottenSentence({ name, cause }: HostForgotten): string {
+  if (!cause) return `Sotto revoked this computer’s access on ${name} and removed it here, but could not remove ${name}’s start at boot unit, so its host still starts when ${name} restarts. To remove the unit, run this on ${name}:`
   const trusts = `${name} still trusts this computer until it is removed there.`
   if (cause === 'refused') return `The host on ${name} did not revoke this computer’s access, so Sotto removed ${name} from this computer and left its host running. ${trusts} To remove it, run this on ${name}:`
   if (cause === 'not-running') return `The host on ${name} was not running, so Sotto removed ${name} from this computer without revoking this computer’s access there. ${trusts} To remove it, start the host on ${name}, then run this there:`
   return `SSH could not reach ${name}, so Sotto removed it from this computer without revoking this computer’s access there. ${trusts} To remove it, run this on ${name} while its host is running:`
 }
 
-/**
- * A not-revoked notice (ADR-0053): Forget removed a host here without revoking this computer there, so the host still
- * trusts this computer, and the one line that removes it there, which Sotto never runs. It stays until dismissed.
- */
-function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostForgotten; readonly onDismiss: () => void }): ReactNode {
+/** One command of a not-revoked notice, with Copy. When it cannot be copied, it is selected for the keyboard's copy shortcut. */
+function ForgottenCommand({ command, label, copyLabel, children }: { readonly command: string; readonly label: string; readonly copyLabel: string; readonly children?: ReactNode }): ReactNode {
   const [copied, showCopied] = useTransientFlag()
   const [failed, setFailed] = useState(false)
   const commandRef = useRef<HTMLElement>(null)
-  const { name, command } = forgotten
   /** Selects the whole command, so the keyboard's copy shortcut takes exactly that line. */
   const select = (): void => { const element = commandRef.current; if (element) window.getSelection()?.selectAllChildren(element) }
   const copy = async (): Promise<void> => {
     try { await writeClipboard(command); setFailed(false); showCopied('copied') }
     catch { setFailed(true); commandRef.current?.focus(); select() }
   }
-  return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={`${name} still trusts this computer`}>
+  return <>
+    <code ref={commandRef} className="hosts-forgotten__command tt-focusable" role="region" aria-label={label} tabIndex={0} onFocus={select}>{command}</code>
+    <span className="hosts-forgotten__actions">
+      <Button variant="secondary" aria-label={copyLabel} onClick={() => void copy()}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? 'Copied' : 'Copy command'}</Button>
+      {children}
+      {failed ? <span className="hosts-forgotten__failed" role="alert">The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.</span> : null}
+    </span>
+  </>
+}
+
+/**
+ * A not-revoked notice (ADR-0053): Forget removed a host here without revoking this computer there, so the host still
+ * trusts this computer, and the one line that removes it there, which Sotto never runs. When Forget could not remove the
+ * host's start at boot unit either, it says so with the line that does (ADR-0054). It stays until dismissed.
+ */
+function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostForgotten; readonly onDismiss: () => void }): ReactNode {
+  const { name, command, bootCommand } = forgotten
+  const dismiss = <Button variant="ghost" aria-label={`Dismiss what Sotto said about ${name}`} onClick={onDismiss}>Dismiss</Button>
+  return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={command ? `${name} still trusts this computer` : `${name} still starts at boot`}>
     <AlertTriangle size={16} aria-hidden="true" />
     <div className="hosts-forgotten__copy">
       <p>{forgottenSentence(forgotten)}</p>
-      <code ref={commandRef} className="hosts-forgotten__command tt-focusable" role="region" aria-label={`Command to run on ${name}`} tabIndex={0} onFocus={select}>{command}</code>
-      <span className="hosts-forgotten__actions">
-        <Button variant="secondary" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy()}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? 'Copied' : 'Copy command'}</Button>
-        <Button variant="ghost" aria-label={`Dismiss what Sotto said about ${name}`} onClick={onDismiss}>Dismiss</Button>
-        {failed ? <span className="hosts-forgotten__failed" role="alert">The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.</span> : null}
-      </span>
+      {command ? <ForgottenCommand command={command} label={`Command to run on ${name}`} copyLabel={`Copy the command to run on ${name}`}>{bootCommand ? null : dismiss}</ForgottenCommand> : null}
+      {command && bootCommand ? <p>{name}’s host also still starts when {name} restarts, since Sotto could not remove its start at boot unit there. To remove the unit, run this on {name} afterwards:</p> : null}
+      {bootCommand ? <ForgottenCommand command={bootCommand} label={`Command that removes start at boot on ${name}`} copyLabel={`Copy the command that removes start at boot on ${name}`}>{dismiss}</ForgottenCommand> : null}
     </div>
   </section>
 }
@@ -220,6 +249,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const [forgetId, setForgetId] = useState<string | null>(null)
   const [stopId, setStopId] = useState<string | null>(null)
   const [phonesId, setPhonesId] = useState<string | null>(null)
+  const [bootId, setBootId] = useState<string | null>(null)
+  // Which change the modal is for is fixed when it opens: the change itself flips what the menu offers.
+  const [bootChange, setBootChange] = useState<'install' | 'remove'>('install')
   const addButton = useRef<HTMLButtonElement>(null)
   const tailscale = useTailscale(bridge)
   // Each connected host's providers, as that host publishes them (ADR-0037).
@@ -241,6 +273,10 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const stopping = state?.hosts.find(host => host.id === stopId)
   const renaming = state?.hosts.find(host => host.id === renameId)
   const phonesHost = state?.hosts.find(host => host.id === phonesId)
+  const bootHost = state?.hosts.find(host => host.id === bootId)
+  const closeBoot = useRef(() => setBootId(null)).current
+  // The start at boot modal's presses show what they changed at once, before main's next broadcast.
+  const bootBridge = useMemo<HostsBridge | undefined>(() => bridge && { ...bridge, command: async command => { const next = await bridge.command(command); setState(next); return next } }, [bridge])
   const closePhones = useRef(() => setPhonesId(null)).current
   const { resumeQuestion } = useHostQuestionDismissals(bridge)
   const forgetDescription = (host: HostStatus): string => {
@@ -249,7 +285,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
         + `If ${host.name} can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.`
     }
     const stop = host.owned ? ' It also stops the host Sotto started there.' : ''
-    return `This revokes this computer's access on the host and removes the saved connection.${stop} Threads stay on the host.`
+    // Forget takes a boot unit away too, so a forgotten host does not start again at the next boot (ADR-0054).
+    const boot = host.bootStart?.installed ? ` It removes start at boot from ${host.name}, so its host does not start again when ${host.name} restarts.` : ''
+    return `This revokes this computer's access on the host and removes the saved connection.${stop}${boot} Threads stay on the host.`
   }
   /**
    * Forget's own sign-in, while it waits for the user (ADR-0053): Tailscale SSH holding it for approval, or SSH's question,
@@ -265,7 +303,8 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${host.name}`} onClick={() => void run({ type: 'open-approval', id: host.id })}>Open approval page</Button> : null}</span>
   }
   const act = (host: HostStatus, action: MenuAction): void => {
-    if (action === 'stop') setStopId(host.id)
+    if (action === 'boot') { setBootChange(bootStartOn(host) ? 'remove' : 'install'); setBootId(host.id) }
+    else if (action === 'stop') setStopId(host.id)
     else if (action === 'rename') setRenameId(host.id)
     else if (action === 'edit') setDialog({ kind: 'edit', host })
     else setForgetId(host.id)
@@ -292,13 +331,14 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       onDismiss={() => { addButton.current?.focus(); void run({ type: 'dismiss-forgotten', id: forgotten.id }) }} />)}
     <div className="hosts-list">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
-        phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)}
+        phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)} boot={state.boot?.find(item => item.id === host.id)}
         providers={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId)?.providers : undefined}
         client={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId) : undefined} />)}
       {state && !state.hosts.length ? <p className="hosts-empty">No remote hosts yet.</p> : null}
     </div>
     {error && <p className="hosts-error" role="alert">{error}</p>}
     {dialog && bridge ? <HostDialog key={dialog.kind === 'edit' ? dialog.host.id : dialog.kind} mode={dialog} bridge={bridge} state={state} tailscale={tailscale} onClose={closeDialog} /> : null}
+    {bootHost && bootBridge ? <HostBootDialog host={bootHost} view={state?.boot?.find(item => item.id === bootHost.id)} change={bootChange} bridge={bootBridge} onClose={closeBoot} /> : null}
     {phonesHost && bridge ? <HostPhonesDialog host={phonesHost} view={state?.phones?.find(item => item.id === phonesHost.id)} bridge={bridge} onClose={closePhones} /> : null}
     {renaming ? <RenameDialog host={renaming} onClose={() => setRenameId(null)} onRename={async name => {
       if (!bridge) return 'Hosts are not available in this window.'
@@ -311,6 +351,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       onCancelPending={forget.adminSignIn ? () => void run({ type: 'stop-admin-sign-in', id: forget.id }) : undefined} />}
     {stopping && <ConfirmationDialog title={`Stop the host on ${stopping.name}?`} confirmLabel="Stop host" cancelLabel="Keep it running" onCancel={() => setStopId(null)}
       failureMessage={error} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
-      description={`This stops the host Sotto started on ${stopping.name} and switches it off. Turns running there are interrupted; threads and history stay in its data folder. Switch it on to start it again.`} />}
+      description={bootStartOn(stopping)
+        // A host that starts at boot comes back with its machine, whatever this computer's switch says (ADR-0054).
+        ? `${stopping.name}’s host stops now and starts again when ${stopping.name} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder.`
+        : `This stops the host Sotto started on ${stopping.name} and switches it off. Turns running there are interrupted; threads and history stay in its data folder. Switch it on to start it again.`} />}
   </div>
 }
