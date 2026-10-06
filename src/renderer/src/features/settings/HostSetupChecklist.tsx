@@ -50,8 +50,8 @@ function StepMark({ state }: { readonly state: StepState }): ReactNode {
   </span>
 }
 
-/** A command the user runs to fix a failure, with Copy. Sotto never runs it. */
-export function FixCommand({ fix }: { readonly fix: NonNullable<HostStatus['fix']> }): ReactNode {
+/** A command the user runs to fix a failure, with Copy, under the sentence that introduces it when there is one. Sotto never runs it. */
+export function FixCommand({ fix }: { readonly fix: { readonly text?: string | undefined; readonly command: string } }): ReactNode {
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => {

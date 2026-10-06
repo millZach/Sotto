@@ -1,5 +1,5 @@
-import { bootUnsupportedSentence, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
-import type { HostUpdateThreads } from './hostUpdate'
+import { bootChangeRestarts, bootUnsupportedSentence, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
+import { idleNow, stopWorkingThreads, whenIdle, type BusyHostThreads } from './busyHost'
 import { shellQuoted } from './revokeCommand'
 import type { SshBootResult } from './sshLauncher'
 
@@ -21,6 +21,11 @@ export interface HostBootCandidate {
 export interface HostBootHosts {
   candidate(id: string): HostBootCandidate | undefined
   /**
+   * Whether the saved host is still saved and switched on. A change waiting for it carries on through a drop and its
+   * reconnect, and goes only when the host is forgotten or switched off.
+   */
+  keeps(id: string): boolean
+  /**
    * Installs or removes the unit over the host's SSH connection or an admin connection. The host's threads stay on the
    * Threads page through any restart it causes, and the promise waits for the first connect after it.
    */
@@ -30,7 +35,7 @@ export interface HostBootHosts {
 export interface HostBootChangesOptions {
   readonly hosts: HostBootHosts
   /** The threads, as an update reads them: which of a host's are working, and the Stop their composer sends. */
-  readonly threads: HostUpdateThreads
+  readonly threads: BusyHostThreads
 }
 interface Entry {
   id: string; name: string; hostId: string; installPath: string; change: 'install' | 'remove'; phase: HostBootPhase; restarts: boolean
@@ -43,12 +48,18 @@ const UNCHANGED = 'Nothing was changed, and the host keeps running as before.'
 const JOURNAL = 'journalctl --user -u sotto-host -n 50 --no-pager'
 
 /**
- * The one line that takes start at boot away on a host by hand, for when Sotto could not (ADR-0054): it stops and disables
- * the unit, removes the unit and the script it runs from the installation folder, and reloads the user manager. A host
- * the unit ran stops with it. Sotto never runs it.
+ * The one line that takes start at boot away on a host by hand, for when Sotto could not (ADR-0054). Like `boot-remove`,
+ * it acts only on this installation's unit, the one whose `ExecStart=` runs the installation folder's `boot-start.sh`:
+ * it stops and disables it, removes the unit and the script, reloads the user manager and clears the unit's failed
+ * state. A host the unit ran stops with it. A unit another installation owns is left alone. Sotto never runs it.
  */
 export function bootRemovalCommand(installPath: string): string {
-  return `systemctl --user disable --now sotto-host; rm -f "\${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service" ${shellQuoted(installPath)}/boot-start.sh; systemctl --user daemon-reload`
+  const folder = installPath.length > 1 ? installPath.replace(/\/+$/u, '') : installPath
+  return [
+    `B=${shellQuoted(folder)}/boot-start.sh`,
+    'U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"',
+    'grep -qxF "ExecStart=/bin/sh \\"$B\\"" "$U" && { systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; }',
+  ].join('; ')
 }
 
 /**
@@ -82,11 +93,12 @@ export class HostBootChanges {
     const entry = this.entries.get(id)
     if (action === 'install' || action === 'remove') this.press(id, action)
     else if (!entry) throw new Error('This start at boot change is no longer there. Nothing was changed.')
-    else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (this.working(entry).length) entry.phase = 'waiting'; else this.begin(entry) } }
+    else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.working(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
     else if (action === 'stop-threads') {
-      if (entry.phase === 'confirm' || entry.phase === 'waiting') {
-        await Promise.all(this.working(entry).map(threadId => this.options.threads.interrupt(threadId).catch(() => undefined)))
-        if (entry.phase === 'confirm' || entry.phase === 'waiting') this.begin(entry)
+      if (this.asking(entry)) {
+        await stopWorkingThreads(this.options.threads, entry.hostId)
+        // A Cancel, or another press, that came while the turns stopped wins: only the question still on screen goes ahead.
+        if (this.asking(entry)) this.begin(entry)
       }
     } else if (entry.phase === 'changing') throw new Error(`Sotto is already changing whether the host on ${entry.name} starts at boot. Wait for it to finish.`)
     // Cancel before anything was sent, and Dismiss once it is over, both put it away.
@@ -100,8 +112,7 @@ export class HostBootChanges {
     if (current?.phase === 'changing') throw new Error(`Sotto is already changing whether the host on ${current.name} starts at boot. Wait for it to finish.`)
     const host = this.options.hosts.candidate(id)
     if (!host) throw new Error('Connect to this host before changing whether it starts at boot. Nothing was changed.')
-    // Installing hands a host Sotto started to the unit, and removing takes the unit's host off it: each restarts it once.
-    const restarts = change === 'install' ? host.owned && !host.bootStart.active : host.bootStart.active
+    const restarts = bootChangeRestarts(change, host)
     const entry: Entry = { id, name: host.name, hostId: host.hostId, installPath: host.installPath, change, phase: 'confirm', restarts }
     this.entries.set(id, entry)
     if (!restarts || !this.working(entry).length) this.begin(entry)
@@ -121,6 +132,10 @@ export class HostBootChanges {
     else if (result.type === 'boot-installed' || result.type === 'boot-status') this.fail(entry, this.notInstalled(entry.name, result.bootStart))
     else this.fail(entry, this.refused(entry, result.reason, result.restarted === true))
     this.emit()
+  }
+  /** Whether this entry is still the host's, asking its question or waiting for its threads. */
+  private asking(entry: Entry): boolean {
+    return this.entries.get(entry.id) === entry && (entry.phase === 'confirm' || entry.phase === 'waiting')
   }
   private fail(entry: Entry, failure: HostBootFailure): void {
     if (this.entries.get(entry.id) !== entry) return
@@ -165,17 +180,18 @@ export class HostBootChanges {
       ...(entry.restarted !== undefined ? { restarted: entry.restarted } : {}), ...(entry.failure ? { failure: entry.failure } : {}) }
   }
   /**
-   * Follows the hosts and the threads: a change waiting for its threads starts once none is working, and a question
-   * about a host that is no longer connected goes away, since nothing was sent.
+   * Follows the hosts and the threads. A question, or a wait, goes ahead once none of the host's threads is working,
+   * since the user has already pressed. Through a drop it waits for the host to connect again; a host forgotten or
+   * switched off ends it, and nothing was sent.
    */
   private sync(): void {
     for (const entry of [...this.entries.values()]) {
       if (entry.phase !== 'confirm' && entry.phase !== 'waiting') continue
-      if (!this.options.hosts.candidate(entry.id)) {
-        this.fail(entry, { kind: 'failed', message: `${entry.name} disconnected before start at boot changed. Nothing was changed. Connect to it, then try again.` })
+      if (!this.options.hosts.keeps(entry.id)) {
+        this.fail(entry, { kind: 'failed', message: `${entry.name} was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again.` })
         continue
       }
-      if (entry.phase === 'waiting' && this.working(entry).length === 0) this.begin(entry)
+      if (this.options.hosts.candidate(entry.id) && idleNow(entry.phase, this.working(entry).length)) this.begin(entry)
     }
     this.emit()
   }

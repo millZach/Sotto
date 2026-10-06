@@ -43,7 +43,8 @@ describe('the More menu (ADR-0054)', () => {
     settings(bridge)
     const menu = await openMenu(user)
     expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Start at boot…', 'Stop host', 'Rename', 'Edit connection', 'Forget forge…'])
-    expect(within(menu).getByRole('separator')).toBeInTheDocument()
+    // One line under start at boot, and one above Forget, as the prototype draws them.
+    expect([...menu.children].map(item => item.getAttribute('role'))).toEqual(['menuitem', 'separator', 'menuitem', 'menuitem', 'menuitem', 'separator', 'menuitem'])
     expect(document.activeElement?.textContent).toBe('Start at boot…')
     await user.keyboard('{Escape}')
     push({ hosts: [forge({ bootStart: on })] })
@@ -57,7 +58,8 @@ describe('the More menu (ADR-0054)', () => {
       settings(bridge)
       const menu = await openMenu(user)
       expect(within(menu).queryByRole('menuitem', { name: /at boot/u })).toBeNull()
-      expect(within(menu).queryByRole('separator')).toBeNull()
+      // Only the line above Forget.
+      expect(within(menu).getAllByRole('separator')).toHaveLength(1)
       cleanup()
     }
   })
@@ -160,6 +162,43 @@ describe('Start at boot’s modal', () => {
     expect(screen.getByRole('dialog', { name: 'Stop starting forge’s host at boot?' })).toBeInTheDocument()
     await waitFor(() => expect(boots(command)).toEqual([{ type: 'host-boot', id: FORGE, action: 'dismiss' }]))
   })
+
+  it('opens on a failure nobody has read yet, rather than putting it away unseen', async () => {
+    const user = userEvent.setup()
+    const failed = change({ phase: 'failed', failure: { kind: 'failed', message: 'forge’s systemd would not take the unit, so Sotto took it away again.' } })
+    const { bridge, command, push } = fixture([forge()], () => ({ boot: [] }))
+    settings(bridge)
+    await screen.findByRole('region', { name: 'forge' })
+    push({ boot: [failed] })
+    await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Start at boot…' }))
+    const dialog = screen.getByRole('dialog', { name: 'forge’s host does not start at boot' })
+    expect(dialog).toHaveTextContent('forge’s systemd would not take the unit, so Sotto took it away again.')
+    expect(boots(command)).toEqual([])
+    // The row leaves it to the modal while the modal shows it.
+    expect(screen.queryByRole('status', { name: 'What Sotto said about start at boot on forge' })).toBeNull()
+  })
+
+  it('shows on the row a change that failed after its modal was closed, until Dismiss', async () => {
+    const user = userEvent.setup()
+    const { bridge, command, push } = fixture([forge({ bootStart: on })], input => input.type === 'host-boot' && input.action === 'remove' ? { boot: [change({ change: 'remove' })] } : input.type === 'host-boot' && input.action === 'dismiss' ? { boot: [] } : {})
+    settings(bridge)
+    await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Stop starting at boot…' }))
+    await user.click(screen.getByRole('button', { name: 'Stop starting at boot' }))
+    const running = await screen.findByRole('dialog', { name: 'Stopping forge’s host starting at boot…' })
+    await user.click(within(running).getByRole('button', { name: 'Close. Stop starting at boot carries on' }))
+    expect(screen.getByRole('region', { name: 'forge' })).toHaveTextContent('Stopping start at boot…')
+    const message = 'Sotto turned off start at boot on forge but could not remove the unit’s files there. Nothing was lost, and this computer starts the host again when it connects.'
+    push({ boot: [change({ change: 'remove', phase: 'failed', failure: { kind: 'failed', message, fix: { text: 'To remove them, run this on forge:', command: 'B="$HOME/.local/share/sotto-host"/boot-start.sh' } } })] })
+    const notice = screen.getByRole('status', { name: 'What Sotto said about start at boot on forge' })
+    expect(notice).toHaveTextContent(message)
+    expect(within(notice).getByText('B="$HOME/.local/share/sotto-host"/boot-start.sh')).toBeInTheDocument()
+    // Nothing was put away while nobody had read it.
+    expect(boots(command).map(item => item.type === 'host-boot' && item.action)).toEqual(['remove'])
+    await user.click(within(notice).getByRole('button', { name: 'Dismiss what Sotto said about start at boot on forge' }))
+    expect(boots(command).at(-1)).toEqual({ type: 'host-boot', id: FORGE, action: 'dismiss' })
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'What Sotto said about start at boot on forge' })).toBeNull())
+    expect(screen.getByRole('button', { name: 'More for forge' })).toHaveFocus()
+  })
 })
 
 describe('Stop starting at boot’s modal', () => {
@@ -202,18 +241,26 @@ describe('Stop host and Forget for a host that starts at boot', () => {
     expect(screen.getByRole('dialog', { name: 'Forget forge?' })).toHaveTextContent('It removes start at boot from forge, so its host does not start again when forge restarts.')
   })
 
+  it('says Forget removes start at boot from a host that is not connected too, since the row cannot know', async () => {
+    const user = userEvent.setup()
+    const { bridge } = fixture([forge({ phase: 'disconnected', enabled: false, owned: undefined, bootStart: undefined })])
+    settings(bridge)
+    await user.click(within(await openMenu(user)).getByRole('menuitem', { name: 'Forget forge…' }))
+    expect(screen.getByRole('dialog', { name: 'Forget forge?' })).toHaveTextContent('If its host starts at boot, Sotto removes that too, so it does not start again when forge restarts.')
+  })
+
   it('says Forget left the unit behind, with the command that removes it, beside the revoke’s own when both are needed', async () => {
-    const bootCommand = 'systemctl --user disable --now sotto-host; rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service" "$HOME/.local/share/sotto-host"/boot-start.sh; systemctl --user daemon-reload'
+    const bootCommand = 'B="$HOME/.local/share/sotto-host"/boot-start.sh; U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"; grep -qxF "ExecStart=/bin/sh \\"$B\\"" "$U" && { systemctl --user disable --now sotto-host; }'
     const { bridge } = fixture([], () => ({}))
     const state: Partial<HostsState> = { forgotten: [{ id: FORGE, name: 'forge', bootCommand }] }
     const withNotice = { ...bridge, get: async () => ({ ...(await bridge.get()), ...state }) } as HostsBridge
     settings(withNotice)
     const notice = await screen.findByRole('status', { name: 'forge still starts at boot' })
-    expect(notice).toHaveTextContent('Sotto revoked this computer’s access on forge and removed it here, but could not remove forge’s start at boot unit, so its host still starts when forge restarts. To remove the unit, run this on forge:')
+    expect(notice).toHaveTextContent('Sotto removed forge from this computer but could not remove its start at boot unit there, so its host still starts when forge restarts. To remove the unit, run this on forge:')
     expect(within(notice).getByRole('region', { name: 'Command that removes start at boot on forge' })).toHaveTextContent(bootCommand)
     expect(within(notice).getByRole('button', { name: 'Dismiss what Sotto said about forge' })).toBeInTheDocument()
     cleanup()
-    const both = { ...bridge, get: async () => ({ ...(await bridge.get()), forgotten: [{ id: FORGE, name: 'forge', cause: 'refused' as const, command: 'node … --revoke-client "x"', bootCommand }] }) } as HostsBridge
+    const both = { ...bridge, get: async () => ({ ...(await bridge.get()), forgotten: [{ id: FORGE, name: 'forge', revoke: { cause: 'refused' as const, command: 'node … --revoke-client "x"' }, bootCommand }] }) } as HostsBridge
     settings(both)
     const trusts = await screen.findByRole('status', { name: 'forge still trusts this computer' })
     expect(trusts).toHaveTextContent('forge’s host also still starts when forge restarts, since Sotto could not remove its start at boot unit there.')
@@ -236,6 +283,19 @@ describe('Add host’s connected card', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Installing the unit on forge. The host restarts once under it, and this computer connects again.')
     rerender(<div className="hosts-settings"><HostBootOffer host={forge({ bootStart: on })} view={change({ phase: 'done', restarted: true })} bridge={bridge} /></div>)
     expect(screen.getByRole('status')).toHaveTextContent('forge’s host starts at boot. It restarted once under its systemd unit and is connected again.')
+  })
+
+  it('keeps drawing the change while the restart it caused reconnects, when the row knows nothing of start at boot', () => {
+    const { bridge } = fixture([])
+    // A restart drops the connection, and with it what the row knew of start at boot, until the host connects again.
+    const away = forge({ phase: 'connecting', reconnecting: true, bootStart: undefined })
+    const { rerender } = render(<div className="hosts-settings"><HostBootOffer host={away} view={change()} bridge={bridge} /></div>)
+    expect(screen.getByRole('status')).toHaveTextContent('Installing the unit on forge. The host restarts once under it, and this computer connects again.')
+    rerender(<div className="hosts-settings"><HostBootOffer host={away} view={change({ phase: 'done', restarted: true })} bridge={bridge} /></div>)
+    expect(screen.getByRole('status')).toHaveTextContent('forge’s host starts at boot. It restarted once under its systemd unit and Sotto is connecting to it again.')
+    rerender(<div className="hosts-settings"><HostBootOffer host={away} view={change({ phase: 'failed', failure: { kind: 'failed', message: 'The unit did not bring forge’s host back, so Sotto took the unit away again.', fix: { text: 'To see why the unit failed, run this on forge:', command: 'journalctl --user -u sotto-host -n 50 --no-pager' } } })} bridge={bridge} /></div>)
+    expect(screen.getByRole('alert')).toHaveTextContent('The unit did not bring forge’s host back, so Sotto took the unit away again.')
+    expect(screen.getByText('journalctl --user -u sotto-host -n 50 --no-pager')).toBeInTheDocument()
   })
 
   it('says linger needs an administrator on the card, with the command, and offers the press again', async () => {

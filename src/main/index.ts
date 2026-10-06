@@ -7,7 +7,8 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { HostProviderJobs } from './hosts/hostProviderJob'
-import { HostUpdates, type HostUpdateThreads } from './hosts/hostUpdate'
+import { HostUpdates } from './hosts/hostUpdate'
+import type { BusyHostThreads } from './hosts/busyHost'
 import { HostBootChanges } from './hosts/hostBootStart'
 import { threadKeepsHostBusy } from '../shared/hostUpdates'
 import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
@@ -751,13 +752,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
-  // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). Stop N threads
-  // and update stops a turn the way the composer's Stop does. A development end-to-end run serves its own releases.
-  const busyThreads: HostUpdateThreads = {
+  // The threads as the busy-host question reads them, for an update and a start at boot change alike: Stop N threads
+  // stops a turn the way the composer's Stop does.
+  const busyThreads: BusyHostThreads = {
     working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
     interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
     subscribe: listener => hostRouter.subscribe(() => listener()),
   }
+  // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
+  // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
   const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
@@ -767,7 +770,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostUpdates = hostUpdates
   // Start at boot from Settings > Hosts (ADR-0054), which asks the same busy-host question before it restarts a host.
   const hostBoot = new HostBootChanges({ threads: busyThreads,
-    hosts: { candidate: id => desktopHosts.bootCandidate(id), setBootStart: (id, action) => desktopHosts.setBootStart(id, action), subscribe: listener => desktopHosts.subscribe(() => listener()) } })
+    hosts: { candidate: id => desktopHosts.bootCandidate(id), keeps: id => desktopHosts.bootKeeps(id), setBootStart: (id, action) => desktopHosts.setBootStart(id, action), subscribe: listener => desktopHosts.subscribe(() => listener()) } })
   desktopHosts.useBoot(hostBoot)
   quitHandles.hostBoot = hostBoot
   // Each remote host runs its own phone access; its Phones dialog reads and changes it over the host's SSH connection (ADR-0050).

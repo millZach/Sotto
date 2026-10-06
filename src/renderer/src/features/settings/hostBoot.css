@@ -38,5 +38,10 @@
 .host-boot__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .host-boot__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
 
-/* The More menu's line between start at boot and the rest. */
+/* The More menu's lines: below start at boot, and above Forget. */
 .hosts-menu__list [role='separator'] { margin: 4px 2px; border-top: 1px solid var(--tt-hairline); }
+
+/* A change that failed after its modal or card was closed, on its host's row until it is dismissed. */
+.hosts-settings .host-boot-result { flex: 1 0 100%; margin-top: 0; }
+.host-boot-result > svg { color: var(--tt-error-text); }
+.hosts-settings .host-boot-result p { overflow-wrap: anywhere; }

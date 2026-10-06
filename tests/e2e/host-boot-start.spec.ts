@@ -162,10 +162,30 @@ test('starts a host at boot from Add host’s card once linger is on, stops it a
     await expect(boot.getByRole('list', { name: 'What Sotto found on forge' })).toContainText('Linger · On for zach')
     await expect(boot.getByRole('list', { name: 'What changes on forge' })).toContainText('One restart, now')
     await capture(launched, 'start-boot-consent', async () => { expect(await inside(boot)).toBe(true) })
-    // Meanwhile linger went off on forge, and turning it on wants an administrator again: the modal says so, changes nothing,
-    // and offers Start at boot again once the owner has run the command.
+    await boot.getByRole('button', { name: 'Cancel' }).click()
+    await expect(boot).toHaveCount(0)
+
+    // Linger goes off on forge, and turning it on wants an administrator again. Connected again, the modal says linger
+    // comes first, with the command to run if forge asks for an administrator, and its button still fits the window.
     await systemd.set({ linger: false, enableLinger: 'refuse' })
-    await boot.getByRole('button', { name: 'Start at boot', exact: true }).click()
+    const keep = row.getByRole('switch', { name: 'Keep forge connected, now and when Sotto starts' })
+    await keep.click()
+    await expect(row.getByText('SSH zach@forge · Switched off')).toBeVisible({ timeout: 60_000 })
+    await keep.click()
+    await expect(row.getByText('SSH zach@forge · Connected')).toBeVisible({ timeout: 90_000 })
+    await (await menu()).getByRole('menuitem', { name: 'Start at boot…' }).click()
+    await expect(boot.getByRole('list', { name: 'What Sotto found on forge' })).toContainText('Linger, first · Off. Sotto turns it on for zach before anything else')
+    await expect(boot.locator('.host-setup__command code')).toHaveText(/^sudo loginctl enable-linger \S+$/u)
+    const press = boot.getByRole('button', { name: 'Start at boot', exact: true })
+    await capture(launched, 'start-boot-linger-consent', async () => {
+      expect(await inside(boot)).toBe(true)
+      // The dialog scrolls when the window is short; its button is reachable there, and the dialog never runs off the window.
+      await press.scrollIntoViewIfNeeded()
+      expect(await inside(press)).toBe(true)
+    })
+
+    // The press changes nothing on forge, and offers Start at boot again once the owner has run the command.
+    await press.click()
     const lingering = page.getByRole('dialog', { name: 'forge’s host does not start at boot yet' })
     await expect(lingering).toContainText('Nothing changed on forge. Its host is still running as before, and this computer is still connected.', { timeout: 60_000 })
     await expect(lingering.getByRole('button', { name: 'Start at boot', exact: true })).toBeFocused()

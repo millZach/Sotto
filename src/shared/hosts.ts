@@ -128,29 +128,28 @@ export interface HostsState {
   /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
   phones?: HostPhonesView[]
   /**
-   * Each not-revoked notice (ADR-0053): a host Forget removed without revoking this computer there, oldest first, until the
-   * user dismisses it. A second Forget adds its own and leaves the others alone.
+   * Each Forget notice (ADR-0053, ADR-0054): a host Forget removed here without finishing there, because it did not revoke
+   * this computer or could not take the host's start at boot unit away, oldest first, until the user dismisses it. A
+   * second Forget adds its own and leaves the others alone.
    */
   forgotten?: HostForgotten[]
-  /** Each saved host's start at boot change, from its press until its result is put away (ADR-0054), in saved order. */
+  /** Each saved host's start at boot change, from its press until its result is put away (ADR-0054), in the order they were pressed. */
   boot?: HostBootState[]
 }
 /** Why Forget could not revoke this computer on a host: SSH could not reach it, its host was not running, or the host refused. */
 export type HostForgottenCause = 'unreachable' | 'not-running' | 'refused'
 /**
- * A host Forget removed from this computer without finishing there: without revoking this computer's pairing, so the host
- * still trusts this computer until `command`, run on the host while its host is running, removes it; or without removing
- * its start at boot unit, so its host still starts when its machine does until `bootCommand` removes it (ADR-0054). At
- * least one of the two is set. Kept in memory only.
+ * A Forget notice: a host Forget removed from this computer without finishing there. Without revoking this computer's
+ * pairing (`revoke`), so the host still trusts this computer until its command, run on the host while its host is running,
+ * removes it; or without removing its start at boot unit (`bootCommand`), so its host still starts when its machine does
+ * until that command removes it (ADR-0054). At least one of the two is set. Kept in memory only.
  */
 export interface HostForgotten {
   /** The forgotten saved host's ID, which Dismiss names. */
   readonly id: string
   readonly name: string
-  /** Why this computer was not revoked there, with the one line that revokes it. Absent when the revoke happened. */
-  readonly cause?: HostForgottenCause | undefined
-  /** The one line to run on the host. Sotto never runs it. */
-  readonly command?: string | undefined
+  /** Why this computer was not revoked there, and the one line to run on the host that revokes it. Sotto never runs it. */
+  readonly revoke?: { readonly cause: HostForgottenCause; readonly command: string } | undefined
   /** The one line that removes the host's start at boot unit, when Forget could not. Sotto never runs it. */
   readonly bootCommand?: string | undefined
 }

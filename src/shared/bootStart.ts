@@ -16,6 +16,14 @@ export function bootUnsupportedSentence(reason: BootUnsupportedReason | undefine
  * is shown for the owner to paste into a shell on the host, so nothing else a host might send is taken for it.
  */
 const LINGER_FIX = /^sudo loginctl enable-linger (?:[A-Za-z0-9._-]+|'[^'\p{Cc}]+')$/u
+const LINGER_COMMAND = 'sudo loginctl enable-linger '
+
+/** The account a linger command names, as the launch script wrote it: bare, or unquoted from its single quotes. */
+export function lingerAccount(fix: string | undefined): string | undefined {
+  if (!fix || !LINGER_FIX.test(fix)) return undefined
+  const name = fix.slice(LINGER_COMMAND.length)
+  return name.startsWith("'") ? name.slice(1, -1) : name
+}
 
 /**
  * Start at boot (ADR-0054): a host's systemd user unit, installed by Sotto, that starts the host when its machine starts.
@@ -42,6 +50,16 @@ export const bootStatusSchema = z.object({
   fix: z.string().max(300).regex(LINGER_FIX).optional().catch(undefined),
 })
 export type BootStatus = Readonly<z.infer<typeof bootStatusSchema>>
+
+/**
+ * Whether a start at boot change restarts the host, which is when it asks the busy-host question first (ADR-0054):
+ * installing hands a host Sotto started to the unit, unless the unit runs it already, and removing takes the host the
+ * unit runs off it. Main decides with it, and the consent's words say the same.
+ */
+export function bootChangeRestarts(change: 'install' | 'remove', host: { readonly owned: boolean; readonly bootStart?: Pick<BootStatus, 'active'> | undefined }): boolean {
+  const active = host.bootStart?.active === true
+  return change === 'install' ? host.owned && !active : active
+}
 
 /**
  * The presses of a start at boot change in Settings > Hosts (ADR-0054): `install` is Start at boot, `remove` is Stop

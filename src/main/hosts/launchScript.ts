@@ -356,8 +356,10 @@ const launch = async () => {
   if (cfg.start === false && !found) {
     // Forget of a stopped host (ADR-0054): there is no host to revoke on, but this installation's boot unit still goes, the
     // way boot-remove takes it, so the forgotten host does not come back at the next boot. Nothing is started either way.
+    // One it could not take away stays, and the answer says so, for Forget to tell the owner.
     if (cfg.removeBoot === true && await unitOurs()) {
       try { await takeUpdateLock(); try { await bootRemove(); } finally { await releaseUpdateLock(); } } catch { /* the unit stays */ }
+      if (await unitOurs()) return finish({ type: 'error', reason: 'host-not-running', bootLeft: true });
     }
     return finish({ type: 'error', reason: 'host-not-running' });
   }

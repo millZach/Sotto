@@ -6,14 +6,15 @@ import type { HostProviderJobState } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
-import { HostDialog, HostsModal, type HostDialogMode } from './HostDialog'
+import { HostDialog, type HostDialogMode } from './HostDialog'
+import { HostsModal } from './HostsModal'
 import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
 import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
-import { HostBootDialog, bootMenuLabel, bootStartOn, canChangeBoot } from './HostBootStart'
+import { HostBootDialog, HostBootResult, bootMenuLabel, bootStartOn, canChangeBoot } from './HostBootStart'
 import type { HostBootState } from '../../../../shared/bootStart'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
 import './hosts.css'
@@ -39,12 +40,13 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
   const button = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const menuId = useId()
-  // Start at boot… or Stop starting at boot… comes first, above a line, where the host can start at boot (ADR-0054).
+  // Start at boot… or Stop starting at boot… comes first, above a line, where the host can start at boot (ADR-0054), and
+  // Forget comes last, below another, as the prototype draws them.
   const items: { action: MenuAction; label: string; danger?: boolean; line?: boolean }[] = [
     ...(canChangeBoot(host) ? [{ action: 'boot' as const, label: bootMenuLabel(host), line: true }] : []),
     ...(canStop(host) ? [{ action: 'stop' as const, label: 'Stop host' }] : []),
     { action: 'rename', label: 'Rename' },
-    { action: 'edit', label: 'Edit connection' },
+    { action: 'edit', label: 'Edit connection', line: true },
     { action: 'forget', label: `Forget ${host.name}…`, danger: true },
   ]
   useEffect(() => {
@@ -77,10 +79,6 @@ function HostMenu({ host, onAction }: { readonly host: HostStatus; readonly onAc
   </span>
 }
 
-/**
- * A saved host: its name, where it is and how it is, the switch that keeps it connected, and its menu. A connected host
- * also says how many of its providers are connected, and Show providers opens its tiles (ADR-0037).
- */
 /** What the row says of a start at boot change that carries on after its modal closed. */
 function bootLabel(boot: HostBootState | undefined): string | undefined {
   if (boot?.phase === 'waiting') return boot.change === 'install' ? 'Starts at boot when its threads finish' : 'Stops starting at boot when its threads finish'
@@ -88,10 +86,16 @@ function bootLabel(boot: HostBootState | undefined): string | undefined {
   return undefined
 }
 
-function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, client, bridge, job, choice, boot }: {
+/**
+ * A saved host: its name, where it is and how it is, the switch that keeps it connected, and its menu. A connected host
+ * also says how many of its providers are connected, and Show providers opens its tiles (ADR-0037).
+ */
+function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, client, bridge, job, choice, boot, bootShownElsewhere = false }: {
   readonly host: HostStatus
-  /** The host's start at boot change, while one is waiting or running (ADR-0054). */
+  /** The host's start at boot change, while one is waiting or running, or failed with nothing showing it (ADR-0054). */
   readonly boot?: HostBootState | undefined
+  /** A start at boot modal or Add host's card shows the change now, so the row leaves its failure to them. */
+  readonly bootShownElsewhere?: boolean
   /** The host's phone access as this computer last read it, and the press that opens its Phones dialog (ADR-0050). */
   readonly phones?: HostPhonesView | undefined
   readonly onOpenPhones: () => void
@@ -145,6 +149,11 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
       </span>
       <HostMenu host={host} onAction={action => onAction(host, action)} />
     </div>
+    {boot && !bootShownElsewhere ? <HostBootResult view={boot} onDismiss={() => {
+      // The notice and its focused button go away, so focus goes to the row's More button.
+      rowRef.current?.querySelector<HTMLElement>('[aria-haspopup="menu"]')?.focus()
+      void onCommand({ type: 'host-boot', id: host.id, action: 'dismiss' })
+    }} /> : null}
     {shown && bridge ? <HostProviders host={host} providers={shown} bridge={bridge} job={job} choice={choice} updates={client?.clientUpdates} run={client?.clientUpdateRun} /> : null}
   </section>
 }
@@ -174,16 +183,17 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
   </HostsModal>
 }
 
-/** What a not-revoked notice says happened, by its cause, and what the owner runs on the host to finish the job. */
-function forgottenSentence({ name, cause }: HostForgotten): string {
-  if (!cause) return `Sotto revoked this computer’s access on ${name} and removed it here, but could not remove ${name}’s start at boot unit, so its host still starts when ${name} restarts. To remove the unit, run this on ${name}:`
+/** What a Forget notice says happened, by its cause, and what the owner runs on the host to finish the job. */
+function forgottenSentence({ name, revoke }: HostForgotten): string {
+  if (!revoke) return `Sotto removed ${name} from this computer but could not remove its start at boot unit there, so its host still starts when ${name} restarts. To remove the unit, run this on ${name}:`
+  const { cause } = revoke
   const trusts = `${name} still trusts this computer until it is removed there.`
   if (cause === 'refused') return `The host on ${name} did not revoke this computer’s access, so Sotto removed ${name} from this computer and left its host running. ${trusts} To remove it, run this on ${name}:`
   if (cause === 'not-running') return `The host on ${name} was not running, so Sotto removed ${name} from this computer without revoking this computer’s access there. ${trusts} To remove it, start the host on ${name}, then run this there:`
   return `SSH could not reach ${name}, so Sotto removed it from this computer without revoking this computer’s access there. ${trusts} To remove it, run this on ${name} while its host is running:`
 }
 
-/** One command of a not-revoked notice, with Copy. When it cannot be copied, it is selected for the keyboard's copy shortcut. */
+/** One command of a Forget notice, with Copy. When it cannot be copied, it is selected for the keyboard's copy shortcut. */
 function ForgottenCommand({ command, label, copyLabel, children }: { readonly command: string; readonly label: string; readonly copyLabel: string; readonly children?: ReactNode }): ReactNode {
   const [copied, showCopied] = useTransientFlag()
   const [failed, setFailed] = useState(false)
@@ -205,12 +215,13 @@ function ForgottenCommand({ command, label, copyLabel, children }: { readonly co
 }
 
 /**
- * A not-revoked notice (ADR-0053): Forget removed a host here without revoking this computer there, so the host still
- * trusts this computer, and the one line that removes it there, which Sotto never runs. When Forget could not remove the
- * host's start at boot unit either, it says so with the line that does (ADR-0054). It stays until dismissed.
+ * A Forget notice (ADR-0053, ADR-0054): Forget removed a host here without finishing there. When it did not revoke this
+ * computer, the host still trusts this computer, and the notice gives the one line that removes it there; when it could
+ * not remove the host's start at boot unit, it says so with the line that does. Sotto never runs either. It stays until
+ * dismissed.
  */
 function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostForgotten; readonly onDismiss: () => void }): ReactNode {
-  const { name, command, bootCommand } = forgotten
+  const { name, bootCommand } = forgotten, command = forgotten.revoke?.command
   const dismiss = <Button variant="ghost" aria-label={`Dismiss what Sotto said about ${name}`} onClick={onDismiss}>Dismiss</Button>
   return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={command ? `${name} still trusts this computer` : `${name} still starts at boot`}>
     <AlertTriangle size={16} aria-hidden="true" />
@@ -282,6 +293,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const forgetDescription = (host: HostStatus): string => {
     if (!reachable(host)) {
       return `Sotto signs in to ${host.name} over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. `
+        + `If its host starts at boot, Sotto removes that too, so it does not start again when ${host.name} restarts. `
         + `If ${host.name} can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.`
     }
     const stop = host.owned ? ' It also stops the host Sotto started there.' : ''
@@ -332,6 +344,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     <div className="hosts-list">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
         phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)} boot={state.boot?.find(item => item.id === host.id)}
+        bootShownElsewhere={bootId === host.id || dialog?.kind === 'add'}
         providers={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId)?.providers : undefined}
         client={host.hostId ? clientHosts?.find(item => item.hostId === host.hostId) : undefined} />)}
       {state && !state.hosts.length ? <p className="hosts-empty">No remote hosts yet.</p> : null}

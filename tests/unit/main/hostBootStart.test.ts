@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { HostBootChanges, bootRemovalCommand, type HostBootCandidate, type HostBootHosts } from '../../../src/main/hosts/hostBootStart'
-import type { HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import type { BusyHostThreads } from '../../../src/main/hosts/busyHost'
 import type { SshBootResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { BootStatus, HostBootState } from '../../../src/shared/bootStart'
@@ -15,16 +15,19 @@ const forge = (patch: Partial<HostBootCandidate> = {}): HostBootCandidate => ({ 
 /** The saved hosts, scripted: each change answers as `answer` says, once `release` lets it. */
 class Hosts implements HostBootHosts {
   host: HostBootCandidate | undefined = forge()
+  /** Whether the saved host is still saved and switched on. */
+  kept = true
   readonly changes: string[] = []
   readonly listeners = new Set<() => void>()
   answer: (action: 'install' | 'remove') => Promise<SshBootResult> = async action => action === 'install'
     ? { type: 'boot-installed', installed: true, stopped: true, pid: 7, bootStart: on } : { type: 'boot-removed', stopped: true, pid: 8, bootStart: off }
   candidate(id: string): HostBootCandidate | undefined { return id === ID ? this.host : undefined }
+  keeps(id: string): boolean { return id === ID && this.kept }
   async setBootStart(_id: string, action: 'install' | 'remove'): Promise<SshBootResult> { this.changes.push(action); return this.answer(action) }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   emit(): void { for (const listener of this.listeners) listener() }
 }
-class Threads implements HostUpdateThreads {
+class Threads implements BusyHostThreads {
   busy: string[] = []
   readonly interrupted: string[] = []
   readonly listeners = new Set<() => void>()
@@ -168,24 +171,73 @@ describe('start at boot changes (ADR-0054)', () => {
     expect((await settled())!.failure!.message).toBe('The connection to the host closed before start at boot was changed. Connect again to see whether it changed.')
   })
 
-  it('refuses a host that is not connected, and says so when one waiting for its threads goes', async () => {
-    const { boot, hosts, threads, view } = setup()
+  it('refuses a host that is not connected', async () => {
+    const { boot, hosts } = setup()
     hosts.host = undefined
     await expect(boot.command(ID, 'install')).rejects.toThrow('Connect to this host before changing whether it starts at boot. Nothing was changed.')
-    hosts.host = forge()
+    expect(hosts.changes).toEqual([])
+  })
+
+  it('keeps waiting for the threads through a drop and its reconnect, and goes ahead once the host is back and idle', async () => {
+    const { boot, hosts, threads, view, settled } = setup()
     threads.set(['a'])
     await boot.command(ID, 'install')
     await boot.command(ID, 'when-idle')
     hosts.host = undefined
     hosts.emit()
-    expect(view()).toMatchObject({ phase: 'failed', failure: { kind: 'failed', message: 'forge disconnected before start at boot changed. Nothing was changed. Connect to it, then try again.' } })
+    // The threads finish while the host is away: nothing is sent to a host that is not there.
+    threads.set([])
+    expect(view()).toMatchObject({ phase: 'waiting', working: 0 })
     expect(hosts.changes).toEqual([])
+    hosts.host = forge()
+    hosts.emit()
+    expect(hosts.changes).toEqual(['install'])
+    expect(await settled()).toMatchObject({ phase: 'done' })
+  })
+
+  it('ends a wait, saying nothing changed, when the host is switched off or forgotten', async () => {
+    const { boot, hosts, threads, view } = setup()
+    threads.set(['a'])
+    await boot.command(ID, 'install')
+    await boot.command(ID, 'when-idle')
+    hosts.host = undefined
+    hosts.kept = false
+    hosts.emit()
+    expect(view()).toMatchObject({ phase: 'failed', failure: { kind: 'failed', message: 'forge was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again.' } })
+    expect(hosts.changes).toEqual([])
+  })
+
+  it('goes ahead when the last working thread ends while the question is still on screen, since the user already pressed', async () => {
+    const { boot, hosts, threads, settled } = setup()
+    threads.set(['a'])
+    await boot.command(ID, 'install')
+    threads.set([])
+    expect(hosts.changes).toEqual(['install'])
+    expect(await settled()).toMatchObject({ phase: 'done', working: 0 })
+  })
+
+  it('changes nothing when Cancel comes while Stop N threads now is still stopping them', async () => {
+    const { boot, hosts, threads } = setup()
+    threads.set(['a'])
+    let stopped!: () => void
+    threads.interrupt = threadId => { threads.interrupted.push(threadId); return new Promise(resolve => { stopped = () => { threads.busy = []; resolve() } }) }
+    await boot.command(ID, 'install')
+    const stopping = boot.command(ID, 'stop-threads')
+    await Promise.resolve()
+    expect(threads.interrupted).toEqual(['a'])
+    await boot.command(ID, 'cancel')
+    stopped()
+    await stopping
+    expect(hosts.changes).toEqual([])
+    expect(boot.state()).toEqual([])
+    expect(boot.busy(ID)).toBeUndefined()
   })
 })
 
 describe('the command that removes start at boot by hand', () => {
-  it('names the unit and the script in the installation folder, quoted for the shell', () => {
-    expect(bootRemovalCommand('~/.local/share/sotto-host')).toBe('systemctl --user disable --now sotto-host; rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service" "$HOME/.local/share/sotto-host"/boot-start.sh; systemctl --user daemon-reload')
-    expect(bootRemovalCommand('/opt/my "sotto" $x')).toContain('"/opt/my \\"sotto\\" \\$x"/boot-start.sh')
+  it('acts only on the unit that runs this installation’s script, as boot-remove does, and clears its failed state', () => {
+    expect(bootRemovalCommand('~/.local/share/sotto-host/')).toBe('B="$HOME/.local/share/sotto-host"/boot-start.sh; U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"; '
+      + 'grep -qxF "ExecStart=/bin/sh \\"$B\\"" "$U" && { systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; }')
+    expect(bootRemovalCommand('/opt/my "sotto" $x')).toContain('B="/opt/my \\"sotto\\" \\$x"/boot-start.sh;')
   })
 })

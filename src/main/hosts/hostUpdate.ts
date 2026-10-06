@@ -4,6 +4,7 @@ import { HOST_ARCHIVE_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpda
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from './sshLauncher'
+import { idleNow, stopWorkingThreads, whenIdle, type BusyHostThreads } from './busyHost'
 
 /** A saved host that is connected, or kept reachable for Stop host, and has said which Sotto it runs. */
 export interface HostUpdateCandidate {
@@ -32,12 +33,8 @@ export interface HostUpdateHosts {
   restart(id: string, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
   subscribe(listener: () => void): () => void
 }
-/** What an update needs of the threads: which of a host's are working, and the interrupt the composer's Stop sends. */
-export interface HostUpdateThreads {
-  working(hostId: string): readonly string[]
-  interrupt(threadId: string): Promise<void>
-  subscribe(listener: () => void): () => void
-}
+/** What an update needs of the threads: the busy-host question's (`busyHost.ts`). */
+export type HostUpdateThreads = BusyHostThreads
 export interface HostUpdatesOptions {
   readonly hosts: HostUpdateHosts
   readonly threads: HostUpdateThreads
@@ -131,7 +128,7 @@ export class HostUpdates {
     delete entry.error
     try {
       if (action === 'update') this.update(entry)
-      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (this.working(entry).length) entry.phase = 'waiting'; else this.begin(entry) } }
+      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.working(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
       else if (action === 'stop-threads') { if (entry.phase === 'confirm' || entry.phase === 'waiting') await this.stopThreadsAndUpdate(entry) }
       else if (action === 'cancel') this.cancel(entry)
       else if (action === 'not-now') {
@@ -155,8 +152,7 @@ export class HostUpdates {
     this.begin(entry)
   }
   private async stopThreadsAndUpdate(entry: Entry): Promise<void> {
-    // A turn that has already ended refuses its Stop; the restart ends whatever is left either way.
-    await Promise.all(this.working(entry).map(threadId => this.options.threads.interrupt(threadId).catch(() => undefined)))
+    await stopWorkingThreads(this.options.threads, entry.hostId)
     if (entry.phase === 'confirm' || entry.phase === 'waiting') this.begin(entry)
   }
   private cancel(entry: Entry): void {
@@ -328,7 +324,7 @@ export class HostUpdates {
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
       // Waiting, or asking, for threads that have all finished: the user has already pressed Update.
-      if ((entry.phase === 'waiting' || entry.phase === 'confirm') && this.working(entry).length === 0) { this.begin(entry); return }
+      if (idleNow(entry.phase, this.working(entry).length)) { this.begin(entry); return }
     }
     for (const [id, entry] of this.entries) {
       if (!seen.has(id) && (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting')) this.entries.delete(id)

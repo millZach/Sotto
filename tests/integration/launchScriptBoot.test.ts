@@ -376,6 +376,16 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await expect(readFile(join(configuration.installPath, 'boot-start.sh'))).rejects.toMatchObject({ code: 'ENOENT' })
       expect(await systemd!.spawned()).toHaveLength(hosts)
     })
+
+    it('says so when Forget’s admin connection finds the host stopped and cannot take the unit away', async () => {
+      const configuration = await installed()
+      await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      // Another update or change holds the installation, so the unit cannot be taken away now.
+      await mkdir(join(configuration.installPath, 'versions', '.update-lock'), { recursive: true })
+      await writeFile(join(configuration.installPath, 'versions', '.update-lock', 'pid'), String(process.pid))
+      expect((await run(configuration, { op: 'launch', start: false, removeBoot: true })).result).toEqual({ type: 'error', reason: 'host-not-running', bootLeft: true })
+      expect(await readFile(configuration.systemd.unitPath, 'utf8')).toContain('boot-start.sh')
+    })
   })
 
   describe('an update of a host the unit runs', () => {

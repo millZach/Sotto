@@ -162,7 +162,7 @@ export class DesktopHosts {
   private readonly admins: AdminConnections
   /** The Node each host's launch script last ran under, for the command that revokes this computer there by hand. Memory only. */
   private readonly nodePaths = new Map<string, string>()
-  /** Each not-revoked notice Forget left, oldest first, until dismissed. */
+  /** Each Forget notice Forget left, oldest first, until dismissed. */
   private forgotten: HostForgotten[] = []
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
@@ -288,10 +288,18 @@ export class DesktopHosts {
     return this.restartOnPurpose(host, () => connection.updateHost({ op: 'update-restart', version }, options),
       result => result.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
   }
-  /** A saved host connected now whose launch said how start at boot stands on it, which is what a change to it needs. */
+  /** Whether a saved host is still saved and switched on, so a start at boot change waiting for it carries on. */
+  bootKeeps(id: string): boolean {
+    return this.saved.some(host => host.id === id && host.enabled !== false)
+  }
+  /**
+   * A saved host connected now whose launch said how start at boot stands on it, which is what a change to it needs. None
+   * while Stop host, Forget or a restart is closing its connection on purpose, so a change waiting for its threads does
+   * not start over a connection that is going away.
+   */
   bootCandidate(id: string): HostBootCandidate | undefined {
-    const host = this.saved.find(item => item.id === id), status = this.status.get(id)
-    if (!host || !status?.hostId || !status.bootStart || status.phase !== 'connected' || !this.live.has(id)) return undefined
+    const host = this.saved.find(item => item.id === id), status = this.status.get(id), active = this.live.get(id)
+    if (!host || !status?.hostId || !status.bootStart || status.phase !== 'connected' || !active || active.closing) return undefined
     return { id, name: host.name, hostId: status.hostId, owned: status.owned === true, bootStart: status.bootStart, installPath: host.installPath }
   }
   /**
@@ -528,7 +536,7 @@ export class DesktopHosts {
    * here. The revoke goes over the SSH connection the socket is on, or over an admin connection when it is on none, and
    * comes first, since it goes through the running host's administrative route and so cannot follow a stop. A host the
    * admin connection cannot reach or finds stopped, or one that refuses the revoke, is still removed here, and a
-   * not-revoked notice names the command that revokes this computer on the host by hand. A host that refused is left
+   * Forget notice names the command that revokes this computer on the host by hand. A host that refused is left
    * running, so that command can run there now. Only a stop that may have failed keeps the host saved, and so does a
    * sign-in the user stopped, which changes nothing.
    */
@@ -567,8 +575,9 @@ export class DesktopHosts {
       // the next press, which wants no such thing, opens one of its own.
       if (error instanceof SignInStopped) { await this.admins.close(host.id); return this.keepAfterForget(host, active) }
       cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
-      // A stopped host's unit went with the admin connection's own launch; one SSH could not reach keeps its unit.
-      if (cause === 'unreachable' && unit) unitLeft = true
+      // A stopped host's unit goes with the admin connection's own launch, which says when it could not take it away; one
+      // SSH could not reach keeps the unit this computer knew of. One it did not know of, it cannot speak for.
+      if (cause === 'not-running' ? error instanceof SshFailure && error.bootLeft === true : unit) unitLeft = true
     }
     if (stopFailed) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
     await this.disconnect(host.id)
@@ -578,7 +587,7 @@ export class DesktopHosts {
     this.status.delete(host.id)
     const revoke = cause && host.clientId ? { cause, command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
     if (revoke || unitLeft) {
-      this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...revoke, ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
+      this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...(revoke ? { revoke } : {}), ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
     }
     this.nodePaths.delete(host.id)
     this.emit()
@@ -1080,7 +1089,7 @@ export class DesktopHosts {
    */
   async close(): Promise<void> {
     this.closed = true
-    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.()
+    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
     // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
     // the quit drain does not end before its credential is cleared and its pairing revoked.
