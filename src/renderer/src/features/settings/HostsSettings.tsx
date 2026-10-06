@@ -9,7 +9,7 @@ import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { HostDialog, HostsModal, type HostDialogMode } from './HostDialog'
 import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
-import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
+import { HostPhonesDialog, hostPhonesLabel, TAILSCALE_OPERATOR_COMMAND } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -23,6 +23,30 @@ export function hostStatusLabel(host: HostStatus): string {
   if (host.phase === 'connecting') return host.reconnecting ? 'Reconnecting…' : 'Connecting…'
   if (host.phase === 'error') return 'Needs attention'
   return host.enabled ? 'Not connected' : 'Switched off'
+}
+/**
+ * How a saved host is connected, for the start of its row (ADR-0053): `Tailnet` on its tailnet connection, and its SSH
+ * target otherwise, and so does a reconnect. While a host that prefers the tailnet connects for the first time, the whole line
+ * says which connection it is trying. The words after the connection are as they were.
+ */
+export function hostConnectionLine(host: HostStatus): { readonly route: string | null; readonly status: string | null; readonly note: string | null } {
+  const ssh = `SSH ${host.target}${host.sshPort ? `, port ${host.sshPort}` : ''}`
+  const tailnet = host.prefer === 'tailnet'
+  if (host.phase === 'connected' && host.via === 'tailnet') return { route: 'Tailnet', status: 'Connected', note: null }
+  if (tailnet && host.phase === 'connecting' && !host.reconnecting && !host.tailscale?.waiting && !host.prompt) {
+    return { route: null, status: host.via === 'tailnet' ? 'Connecting over your tailnet…' : 'Connecting over SSH…', note: null }
+  }
+  const note = tailnet && host.phase === 'connected' && host.via === 'ssh' && host.tailnetNote ? 'Tailnet did not answer' : null
+  // A reconnect says which connection it is trying, as a connected host does.
+  return { route: host.phase === 'connecting' && host.via === 'tailnet' ? 'Tailnet' : ssh, status: hostStatusLabel(host), note }
+}
+/** A host's phone access as its hello said it on a tailnet connection, in the row's words, until the Phones dialog reads it. */
+function phoneAccessLabel(summary: HostStatus['phoneAccess']): string | null {
+  if (!summary) return null
+  if (summary.status === 'off') return 'Phones off'
+  if (summary.status === 'starting') return 'Phones starting…'
+  if (summary.status === 'needs-you') return 'Phones need you'
+  return summary.phones ? `Phones on, ${summary.phones} paired` : 'Phones on'
 }
 /** A host of another version Sotto started is still reached through the SSH session kept for Stop host. */
 const reachable = (host: HostStatus): boolean => host.phase === 'connected' || host.phase === 'error' && host.owned === true
@@ -92,14 +116,18 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
   const rowRef = useRef<HTMLElement>(null)
   const questionKey = hostQuestionKey(host)
   const waitingForAnswer = questionKey !== null && dismissedQuestionKeys.has(questionKey)
-  const route = `SSH ${host.target}${host.sshPort ? `, port ${host.sshPort}` : ''}`
+  const line = hostConnectionLine(host)
   const shown = host.phase === 'connected' && providers?.length ? providers : undefined
-  const phonesLabel = hostPhonesLabel(phones)
+  const phonesLabel = hostPhonesLabel(phones) ?? (host.phase === 'connected' ? phoneAccessLabel(host.phoneAccess) : null)
   return <section ref={rowRef} className="hosts-row" aria-label={host.name} data-phase={host.phase}>
     <span className="hosts-row__icon" aria-hidden="true"><Server size={18} /></span>
     <div className="hosts-row__info">
       <h4>{host.name}</h4>
-      <p className="hosts-row__meta">{route} · <span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : hostStatusLabel(host)}</span>{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
+      <p className="hosts-row__meta">{line.route ? `${line.route} · ` : ''}<span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
+      {line.note ? <p className="hosts-row__note">{host.tailnetNote === 'operator'
+        ? <>{host.name}’s Tailscale Serve needs <code className="phones-mono">{TAILSCALE_OPERATOR_COMMAND}</code>, run on {host.name}. Sotto stays on SSH until it can, and tries again every 5 minutes.</>
+        : host.tailnetNote === 'no-tailscale' ? `Tailscale isn’t running on ${host.name}, so Sotto connects over SSH. It tries the tailnet again every 5 minutes.`
+          : host.tailnetNote === 'no-address' ? `${host.name} hasn’t said where your tailnet reaches it yet. Sotto tries again every 5 minutes.` : 'Sotto tries it again every 5 minutes.'}</p> : null}
       {host.error ? <p className="hosts-row__error" role="alert">{host.error}</p> : null}
     </div>
     <div className="hosts-row__actions">

@@ -153,6 +153,12 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
     footer={<Button onClick={onClose}>Done</Button>}>
     <div className="hosts-settings phones-settings host-phones">
       <p className="host-phones__intro">Reach {name}’s threads from Sotto on your iPhone, over Tailscale.</p>
+      {/* On a tailnet connection the dialog reads and changes phone access over an admin connection, whose sign-in Tailscale may hold (ADR-0053). */}
+      {host.adminSignIn && host.tailscale?.waiting ? <div className="hosts-notice phones-needs-host" role="status">
+        <Info size={16} aria-hidden="true" />
+        <p>Waiting for your approval in Tailscale. Sotto signs in to {name} over SSH to read and change its phone access.</p>
+        {host.tailscale.url ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>Open approval page</Button> : null}
+      </div> : null}
       <div className="phones-switch">
         <Toggle label={`Let phones reach ${name}`} checked={state?.enabled ?? false} disabled={!live || busy}
           onCheckedChange={enabled => void run({ type: 'set-enabled', enabled })}

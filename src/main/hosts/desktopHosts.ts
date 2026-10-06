@@ -7,6 +7,10 @@ import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
+import { classifyTailnetFailure, connectOrder, isTailnetAddress, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
+import { TailnetStore } from './tailnetStore'
+import { hostTailnetSetting, settingAddress, settingNote, TailnetSettingRefused, type HostTailnetSetting } from './hostTailnetSetting'
+import type { HostHello } from '../../shared/hostProtocol'
 import { validateSshHost } from './sshConfiguration'
 import { SshFailure, SshHostLauncher, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
 import { failureStep } from './sshFailure'
@@ -50,25 +54,29 @@ export interface HostUpdateSource {
 /** The launch script's answers to a restart that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'update-stop-failed', 'update-busy', 'update-missing', 'update-invalid'])
 /** The commands that act on one saved host's connection, which wait while that host is being updated. */
-const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'connect', 'disconnect', 'stop-host', 'forget'])
+const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'set-connection', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
- * One connect to a saved host and what it opened. `ssh` is the SSH connection, while it is open. The socket rides its
- * forward today, but opens at an address of its own, so a socket on another connection needs no SSH connection beside it
+ * One connect to a saved host and what it opened. `via` is the connection its socket is on: the SSH connection's forward,
+ * where `ssh` is that connection while it is open, or the host's tailnet address, with no `ssh` and no launcher at all
  * (ADR-0053). A press that needs the launch script goes over `ssh` when it is there, and over an admin connection
- * otherwise (see `press()`).
+ * otherwise (see `press()`). `up` follows the socket.
  *
  * `closing` is set while Stop host or Forget runs. Both drop the socket on purpose before the SSH reply
  * arrives (the host closes its listener to stop, and a revoke closes the revoked peer), and a drop then
  * must not be read as a lost connection: reconnecting would restart the host being stopped, or pair again
  * with the host just told to forget this computer.
  */
-interface LiveHost { launcher: SshHostLauncher; ssh?: SshHostConnection; sshClosed?: boolean; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
-/** Where a socket opens: the address, and the host that must answer there. */
-interface SocketTarget { readonly url: string; readonly expectedHostId: string }
+interface LiveHost { via: HostVia; launcher?: SshHostLauncher; ssh?: SshHostConnection; sshClosed?: boolean; socket?: SocketHostService; up?: boolean; registeredHostId?: string; generation: number; closing?: boolean
+  /** While the socket moves to the tailnet: the connect it is leaving, which keeps its threads and presses until the move ends. */
+  from?: LiveHost }
+/** Where a socket opens: the address, and the host that must answer there. A tailnet connection's health check is shorter. */
+interface SocketTarget { readonly url: string; readonly expectedHostId: string; readonly healthTimeoutMs?: number }
 /** A pending reconnect. `timer` is absent while the first attempt of a launch or a switch-on runs. */
 interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined
   /** Set for the first attempt after a switch-on or an edit, which reads Connecting… rather than Reconnecting…. */
-  first?: boolean }
+  first?: boolean
+  /** When the drop that began these retries happened, for the first minute of a host that starts at boot (ADR-0053). */
+  since?: number }
 /**
  * Failures only the user can resolve stop the reconnect backoff instead of retrying: SSH refused this
  * account, a host key changed or was not trusted, a prompt went unanswered, the host machine lacks what
@@ -147,6 +155,17 @@ export class DesktopHosts {
   private readonly nodePaths = new Map<string, string>()
   /** Each not-revoked notice Forget left, oldest first, until dismissed. */
   private forgotten: HostForgotten[] = []
+  /** How this computer reaches each saved host over its tailnet (ADR-0053). */
+  private readonly tailnet: TailnetStore
+  /** Each host on its SSH connection that prefers the tailnet, and its next try of the tailnet, every 5 minutes. */
+  private readonly returns = new Map<string, ReturnType<typeof setTimeout>>()
+  /** The connection each saved host was last on, in memory: a host that starts at boot retries the tailnet alone at first. */
+  private readonly lastVia = new Map<string, HostVia>()
+  /**
+   * Hosts whose tailnet connection said this computer may not answer yet. The grant is written only over SSH, so it waits
+   * for the next SSH or admin connection; nothing opens SSH for it alone (ADR-0053, "Authority").
+   */
+  private readonly grantPending = new Set<string>()
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
   private writing: Promise<void> = Promise.resolve()
@@ -157,8 +176,18 @@ export class DesktopHosts {
     retryDelayMs?: (attempt: number) => number;
     /** Opens a Tailscale approval page in the default browser, on the user's press. */
     openExternal?: (url: string) => Promise<void>;
+    /**
+     * Where a tailnet address is opened. In the app it is the address itself; an end-to-end run maps one MagicDNS name to
+     * a loopback stand-in for Tailscale Serve (SOTTO_E2E_TAILNET_MAP), which plain HTTP may reach.
+     */
+    resolveTailnet?: (address: string) => string;
+    /** How long a host on its SSH connection waits before it tries the tailnet again; 5 minutes unless a test says. */
+    tailnetReturnMs?: number;
+    fetch?: typeof fetch;
+    now?: () => number;
   }) {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
+    this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
       node: (id, node) => this.nodePaths.set(id, node), identityChanged: () => new FinalHostError('The host identity changed. Check its data folder before connecting again.') })
   }
@@ -169,6 +198,7 @@ export class DesktopHosts {
    */
   async start(): Promise<void> {
     this.saved = await this.store.read()
+    await this.tailnet.load()
     for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
     for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host, true)
   }
@@ -177,7 +207,7 @@ export class DesktopHosts {
     const adding = this.adding ? this.status.get(this.adding.id) : undefined
     const setup = this.setup?.state(), setupChoice = this.setup?.choice(), providerJob = this.providerJob?.state()
     return { ...(state.hostId ? { activeHostId: state.hostId } : {}), ...(local ? { localHostId: local.hostId } : {}),
-      hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...this.fields(host) })),
+      hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...this.fields(host), ...this.tailnetFields(host) })),
       ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
       ...(setup ? { setup } : {}), ...(setupChoice ? { setupChoice } : {}), ...(providerJob ? { providerJob } : {}),
       ...(this.updates ? { updates: this.updates.state() } : {}),
@@ -324,7 +354,7 @@ export class DesktopHosts {
     const status = this.status.get(id)
     if (!status) return undefined
     const host = this.attemptHost(id) ?? this.saved.find(item => item.id === id)
-    return host ? { ...status, ...this.fields(host) } : undefined
+    return host ? { ...status, ...this.fields(host), ...this.tailnetFields(host) } : undefined
   }
   /** Add host's attempt or the setup's with this ID. */
   private attemptHost(id: string): SavedHost | undefined {
@@ -354,6 +384,12 @@ export class DesktopHosts {
   private fields(host: SavedHost): Omit<HostStatus, 'phase'> {
     const { enabled, ...fields } = remoteHostSchema.strip().parse(host)
     return { ...fields, enabled: enabled !== false }
+  }
+  /** What a row shows of how a saved host is reached (ADR-0053): the owner's choice and the host's tailnet address. */
+  private tailnetFields(host: SavedHost): Pick<HostStatus, 'prefer' | 'tailnetAddress'> {
+    if (!this.saved.includes(host)) return {}
+    const entry = this.tailnet.get(host.id)
+    return { prefer: entry.prefer, ...(entry.address ? { tailnetAddress: entry.address } : {}) }
   }
   private emit(): void { const state = this.get(); for (const listener of this.listeners) listener(state) }
   private update(id: string, patch: Partial<HostStatus>): void { const current = this.status.get(id); if (current) { this.status.set(id, { ...current, ...patch }); this.emit() } }
@@ -449,6 +485,7 @@ export class DesktopHosts {
       return this.get()
     }
     if (command.type === 'forget') return this.forget(host)
+    if (command.type === 'set-connection') { await this.setConnection(host, command.prefer); return this.get() }
     if (this.closed) return this.get()
     await this.open(host)
     return this.get()
@@ -490,6 +527,7 @@ export class DesktopHosts {
     await this.options.credentials.set(`remote-host:${host.id}`, '')
     this.saved = this.saved.filter(item => item.id !== host.id)
     await this.save()
+    await this.forgetTailnet(host.id)
     this.status.delete(host.id)
     if (cause && host.clientId) {
       const command = revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) })
@@ -555,7 +593,13 @@ export class DesktopHosts {
     this.status.delete(id)
     this.nodePaths.delete(id)
     await this.forgetCredential(id)
+    await this.forgetTailnet(id)
     this.emit()
+  }
+  /** What this computer kept about reaching a host over its tailnet goes with the host. */
+  private async forgetTailnet(id: string): Promise<void> {
+    this.lastVia.delete(id); this.grantPending.delete(id); this.clearReturn(id)
+    await this.tailnet.delete(id).catch(() => undefined)
   }
   /**
    * Opens the approval page Tailscale SSH gave for a connect it is holding, in the default browser. Main holds
@@ -670,13 +714,58 @@ export class DesktopHosts {
     if (this.live.has(host.id)) await this.disconnect(host.id, true)
     // Tearing down the previous session takes a moment. A switch-off, Forget, edit or cancelled add in that
     // moment already cleared the row, so this attempt has nothing left to connect for.
-    if (this.closed || (adding ? !this.isAttempt(host) : !this.saved.includes(host)) || (wasOn && host.enabled === false)) return
-    const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
+    const gone = (): boolean => this.closed || (adding ? !this.isAttempt(host) : !this.saved.includes(host)) || (wasOn && host.enabled === false)
+    if (gone()) return
+    // The order of a connect (ADR-0053): the tailnet first when the owner prefers it and this computer can use it.
+    const retry = this.retries.get(host.id), entry = this.tailnet.get(host.id)
+    const order = connectOrder({ prefer: entry.prefer, address: entry.address, adding, paired: this.paired(host),
+      startedBy: this.status.get(host.id)?.startedBy, lastVia: this.lastVia.get(host.id), retryingForMs: retry?.since === undefined ? undefined : this.now() - retry.since })
+    let note: HostStatus['tailnetNote']
+    if (order[0] === 'tailnet' && entry.address) {
+      const outcome = await this.openTailnet(host, entry.address)
+      if (outcome === 'connected' || outcome === 'superseded' || gone()) return
+      // A host that starts at boot is back by itself in a moment: its first minute of retries asks SSH nothing.
+      if (order.length === 1) { this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined }); this.scheduleReconnect(host, undefined); return }
+      // The tailnet did not answer, or answered as another host: SSH carries the socket, and the tailnet is tried again in
+      // 5 minutes. A refused pairing, a client the host does not know as a desktop yet, or another version is what the SSH
+      // connection mends, so the tailnet is tried again as soon as it has.
+      if (outcome === 'tailnet-unreachable' || outcome === 'tailnet-wrong-host') note = 'unreachable'
+    }
+    await this.openSsh(host, adding, note)
+  }
+  /**
+   * A tailnet connection (ADR-0053): the host service at the host's tailnet address, health within 5 seconds, then a
+   * session and the socket, authenticated by this computer's pairing. No ssh is spawned. A failure is classed, and the
+   * connect goes on to SSH; only the class decides, never the message.
+   */
+  private async openTailnet(host: SavedHost, address: string): Promise<'connected' | 'superseded' | TailnetFailure> {
+    const active: LiveHost = { via: 'tailnet', generation: ++this.generation }
+    this.live.set(host.id, active)
+    const retry = this.retries.get(host.id)
+    this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: retry !== undefined && !retry.first, via: 'tailnet', error: undefined,
+      step: undefined, tailscale: undefined, fix: undefined, reason: undefined, checked: undefined, version: undefined }); this.emit()
+    try { await this.openSocket(host, active, { url: this.resolveTailnet(address), expectedHostId: host.hostId!, healthTimeoutMs: TAILNET_HEALTH_MS }) }
+    catch (error) {
+      await active.socket?.close().catch(() => undefined)
+      if (this.live.get(host.id) !== active) return 'superseded'
+      this.live.delete(host.id)
+      return classifyTailnetFailure(error)
+    }
+    if (this.live.get(host.id) !== active) return 'superseded'
+    await this.connectedOverTailnet(host, address)
+    return 'connected'
+  }
+  /** The SSH connection: today's launch, pairing and desktop grant, with the socket on its forward. `note` says why the tailnet was passed over. */
+  private async openSsh(host: SavedHost, adding: boolean, note: HostStatus['tailnetNote']): Promise<void> {
+    // Add host's own add turns the host's tailnet connections on, once it is saved; the setup's add leaves the host on SSH.
+    const fromDialog = this.adding === host
+    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
+    const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined,
-      step: 'reach', tailscale: undefined, fix: undefined, reason: undefined, checked: undefined, version: undefined }); this.emit()
+      via: 'ssh', tailnetNote: note, step: 'reach', tailscale: undefined, fix: undefined, reason: undefined, checked: undefined, version: undefined }); this.emit()
     try {
-      const ssh = active.ssh = await active.launcher.connect(this.route(host), {
+      const ssh = active.ssh = await launcher.connect(this.route(host), {
         ...this.progress(host, active),
         onDisconnected: () => { active.sshClosed = true; if (this.live.get(host.id) === active && !active.closing) this.dropped(host, active) },
       })
@@ -694,6 +783,9 @@ export class DesktopHosts {
         // Cancelled while the socket opened: the credential it paired with belongs to nothing.
         else await this.forgetCredential(host.id)
       }
+      // Add host waits for its tailnet step, which its checklist shows after Paired; any other connect is done already.
+      const following = this.connectedOverSsh(host, active, note, fromDialog)
+      if (fromDialog) await following
     } catch (error) {
       let failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
       const otherVersion = error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active
@@ -723,6 +815,7 @@ export class DesktopHosts {
           await this.pairOverSsh(host, active)
           await this.openSocket(host, active, { url: active.ssh.url, expectedHostId: active.ssh.hostId })
           this.clearRetry(host.id)
+          void this.connectedOverSsh(host, active, note, false)
           return
         } catch (repair) {
           // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
@@ -737,7 +830,7 @@ export class DesktopHosts {
         await active.ssh.revokeClient(host.clientId).catch(() => false)
       }
       await active.socket?.close().catch(() => undefined)
-      await active.launcher.disconnect().catch(() => undefined)
+      await launcher.disconnect().catch(() => undefined)
       // Superseded: switched off, disconnected, stopped or replaced by a newer attempt while this one ran. Whatever
       // did that has already set the row, and a cancelled connect is not something to report or retry.
       const current = this.live.get(host.id) === active
@@ -805,19 +898,20 @@ export class DesktopHosts {
     return this.attempt(host.id)
   }
   private async runCheck(host: SavedHost): Promise<void> {
-    const active: LiveHost = { launcher: this.options.launcher?.() ?? new SshHostLauncher(), generation: ++this.generation }
+    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
+    const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     try {
-      active.ssh = await active.launcher.connect(this.route(host), this.progress(host, active))
+      active.ssh = await launcher.connect(this.route(host), this.progress(host, active))
       // Reached, signed in, installed and started: everything a check asks. The forward closes unpaired.
       active.closing = true
-      await active.launcher.disconnect().catch(() => undefined)
+      await launcher.disconnect().catch(() => undefined)
       if (this.live.get(host.id) !== active) return
       this.live.delete(host.id)
       if (this.setupAttempt === host) this.update(host.id, { phase: 'disconnected', step: 'pair', checked: true, owned: active.ssh.owned })
     } catch (error) {
       const failure = error instanceof Error ? error : new Error('The host could not connect. Check its SSH settings and try again.')
-      await active.launcher.disconnect().catch(() => undefined)
+      await launcher.disconnect().catch(() => undefined)
       if (this.live.get(host.id) !== active) return
       this.live.delete(host.id)
       const { step, fix, reason, waited } = this.failureFields(host, active, failure)
@@ -847,11 +941,12 @@ export class DesktopHosts {
     return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
   }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
-  private scheduleReconnect(host: SavedHost, active: LiveHost | undefined): void {
+  private scheduleReconnect(host: SavedHost, active: LiveHost | undefined, droppedAt?: number): void {
     if (this.closed) return
     const previous = this.retries.get(host.id)
     if (previous) clearTimeout(previous.timer)
-    const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined }
+    const since = previous?.since ?? droppedAt
+    const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined, ...(since === undefined ? {} : { since }) }
     entry.timer = setTimeout(() => {
       if (this.retries.get(host.id) !== entry) return
       if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return
@@ -877,9 +972,13 @@ export class DesktopHosts {
     // the user can fix takes them away (ADR-0053).
     this.hold(host.id, active)
     this.update(host.id, { phase: 'connecting', reconnecting: true, error: undefined })
-    if (!this.status.get(host.id)!.prompt) this.scheduleReconnect(host, active)
+    if (!this.status.get(host.id)!.prompt) this.scheduleReconnect(host, active, this.now())
   }
-  private async openSocket(host: SavedHost, active: LiveHost, target: SocketTarget): Promise<void> {
+  /**
+   * Opens the host's socket at `target` for `active`, and puts its threads on the Threads page. `from` is the connect a move
+   * to the tailnet leaves: the new socket takes its place on the page, the way an update's restart does.
+   */
+  private async openSocket(host: SavedHost, active: LiveHost, target: SocketTarget, from?: LiveHost): Promise<void> {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
@@ -887,9 +986,10 @@ export class DesktopHosts {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
-    }, onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) },
+    }, onConnectionChange: value => { connected = value; active.up = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) },
       onPushError: message => { if (this.live.get(host.id) === active) { pushError = message; this.update(host.id, { error: message }) } },
       onPushErrorCleared: () => { if (this.live.get(host.id) === active && pushError !== undefined && this.status.get(host.id)?.error === pushError) this.update(host.id, { error: undefined }); pushError = undefined }, url: target.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: target.expectedHostId, owned: active.ssh?.owned === true,
+      ...(target.healthTimeoutMs ? { healthTimeoutMs: target.healthTimeoutMs } : {}),
       // Nothing on the desktop reads a host's event log, so a connect asks for none of it.
       catchUpEvents: false })
     active.socket = socket
@@ -907,9 +1007,12 @@ export class DesktopHosts {
       else await active.ssh.ensureDesktopAnswers(hello.clientId)
     }
     if (this.live.get(host.id) !== active) { await socket.close(); return }
+    // On a tailnet connection the grant waits for the next SSH or admin connection; nothing opens SSH for it.
+    if (!active.ssh) { if (hello.capabilities.mayAnswer) this.grantPending.delete(host.id); else this.grantPending.add(host.id) }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId
     if (this.saved.includes(host)) await this.save()
+    await this.learnAddress(host, hello)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     if (!connected) throw new Error('The host disconnected while connecting. Try connecting again.')
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
@@ -924,13 +1027,178 @@ export class DesktopHosts {
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
     }
     // Back from an update's restart: the new connection takes the place its threads kept on the page.
+    // A move to the tailnet takes the place the connection it leaves has on the page.
     const held = this.held.get(host.id)
     this.held.delete(host.id)
-    if (held === hello.hostId) this.options.router.replace(connection)
+    if (from?.registeredHostId === hello.hostId) { delete from.registeredHostId; this.options.router.replace(connection) }
+    else if (held === hello.hostId) this.options.router.replace(connection)
     else { if (held) this.options.router.remove(held); this.options.router.add(connection) }
     active.registeredHostId = hello.hostId
     this.clearRetry(host.id)
-    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.ssh?.owned === true })
+    // A host on its tailnet connection says itself whether the launch script started it, which Stop host needs.
+    const owned = active.ssh ? active.ssh.owned === true : hello.startedBy === 'launch-script'
+    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via, startedBy: hello.startedBy,
+      phoneAccess: active.ssh ? undefined : hello.phoneAccess })
+  }
+  /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
+  private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
+    if (!this.saved.includes(host) || !isTailnetAddress(about.tailnetAddress) || this.tailnet.get(host.id).address === about.tailnetAddress) return
+    await this.tailnet.set(host.id, { address: about.tailnetAddress }).catch(() => undefined)
+  }
+  /** Whether this computer holds the host's pairing and knows its ID: a tailnet connection never pairs (ADR-0053). */
+  private paired(host: SavedHost): boolean { return host.hostId !== undefined && this.options.credentials.has(`remote-host:${host.id}`) }
+  private now(): number { return this.options.now?.() ?? Date.now() }
+  private resolveTailnet(address: string): string { return this.options.resolveTailnet?.(address) ?? address }
+  /** The socket is on the tailnet connection: the row says so, and the SSH-only note and its 5-minute check go. */
+  private async connectedOverTailnet(host: SavedHost, address: string): Promise<void> {
+    this.lastVia.set(host.id, 'tailnet')
+    this.clearReturn(host.id)
+    this.update(host.id, { via: 'tailnet', tailnetNote: undefined })
+    await this.tailnet.set(host.id, { addressSeen: this.now(), address }).catch(() => undefined)
+  }
+  /**
+   * The socket is on the SSH connection. When the owner prefers the tailnet, the desktop tries it now and moves across when
+   * it answers (ADR-0053, step 3). Add host's own add first turns the host's tailnet connections on, which its press there
+   * is the owner's consent to, and writes the tailnet as this host's choice, unless Tailscale is not running on the host.
+   */
+  private async connectedOverSsh(host: SavedHost, active: LiveHost, note: HostStatus['tailnetNote'], fromDialog: boolean): Promise<void> {
+    this.lastVia.set(host.id, 'ssh')
+    if (this.live.get(host.id) !== active || !this.saved.includes(host)) return
+    try {
+      let setting: HostTailnetSetting | undefined
+      if (fromDialog) {
+        await this.tailnet.set(host.id, { prefer: 'tailnet' })
+        this.emit()
+        setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, true, this.options.fetch)).catch(() => undefined)
+        // A host with no Tailscale running has no tailnet to be reached on: it stays on SSH, with its setting off again,
+        // until the owner chooses the tailnet for it.
+        if (setting && settingNote(setting) === 'no-tailscale' && this.live.get(host.id) === active) {
+          await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, false, this.options.fetch)).catch(() => undefined)
+          await this.tailnet.set(host.id, { prefer: 'ssh' })
+          this.emit()
+          setting = undefined
+        }
+      }
+      await this.followTailnet(host, active, { setting, note })
+    } catch { /* The host stays where it is, on its SSH connection. */ }
+  }
+  /**
+   * A host on its SSH connection whose owner prefers the tailnet: learn its address, from a setting's answer, the launch or
+   * the given health, try the tailnet, and move the socket there when it answers. Otherwise the row says why, and the
+   * desktop tries again in 5 minutes.
+   */
+  private async followTailnet(host: SavedHost, active: LiveHost, found: { setting?: HostTailnetSetting | undefined; learned?: string | undefined; note?: HostStatus['tailnetNote'] } = {}): Promise<void> {
+    const current = (): boolean => this.live.get(host.id) === active && !active.closing && this.saved.includes(host) && this.status.get(host.id)?.phase === 'connected'
+    if (!current()) return
+    if (this.tailnet.get(host.id).prefer !== 'tailnet') { this.clearReturn(host.id); this.update(host.id, { tailnetNote: undefined }); return }
+    const learned = (found.setting ? settingAddress(found.setting) : undefined) ?? found.learned ?? active.ssh?.tailnetAddress
+    const known = this.tailnet.get(host.id).address
+    if (learned && learned !== known) await this.tailnet.set(host.id, { address: learned }).catch(() => undefined)
+    const address = this.tailnet.get(host.id).address
+    if (!current()) return
+    // The tailnet at this address just did not answer this connect: it is tried again in 5 minutes, not at once.
+    const justFailed = found.note === 'unreachable' && !found.setting && address === known
+    if (address && !justFailed && tryTailnetAfterSsh({ prefer: 'tailnet', address, paired: this.paired(host) }) && await this.moveToTailnet(host, active, address)) return
+    if (!current()) return
+    // What the host said about its Tailscale stays the reason until the host gives an address.
+    const said = found.setting ? settingNote(found.setting) : this.status.get(host.id)?.tailnetNote
+    this.update(host.id, { tailnetNote: address ? 'unreachable' : said === 'operator' || said === 'no-tailscale' ? said : 'no-address' })
+    this.scheduleReturn(host)
+  }
+  /**
+   * Moves a connected host's socket from its SSH connection to its tailnet connection: the tailnet socket opens beside the
+   * SSH one, takes its place on the Threads page, and the SSH connection closes, taking the administrative token with it.
+   * False when the tailnet did not answer, and the host stays where it was.
+   */
+  private async moveToTailnet(host: SavedHost, from: LiveHost, address: string): Promise<boolean> {
+    if (this.live.get(host.id) !== from || from.closing || !host.hostId) return false
+    const next: LiveHost = { via: 'tailnet', generation: ++this.generation, from }
+    this.live.set(host.id, next)
+    try { await this.openSocket(host, next, { url: this.resolveTailnet(address), expectedHostId: host.hostId, healthTimeoutMs: TAILNET_HEALTH_MS }, from) }
+    catch {
+      await next.socket?.close().catch(() => undefined)
+      if (this.live.get(host.id) === next) {
+        this.live.set(host.id, from)
+        // The SSH connection or its socket went while the move ran: that is the drop it would have been.
+        if (!from.up || from.sshClosed) this.dropped(host, from)
+      }
+      return false
+    }
+    // Disconnected, switched off or replaced while the move ran: whatever did that closed both.
+    if (this.live.get(host.id) !== next) return true
+    delete next.from
+    from.closing = true
+    await from.socket?.close().catch(() => undefined)
+    await from.launcher?.disconnect().catch(() => undefined)
+    await this.connectedOverTailnet(host, address)
+    return true
+  }
+  /** Leaves the tailnet for the SSH connection, as SSH only asks: a reconnect, with the threads kept on the page meanwhile. */
+  private async reconnectOverSsh(host: SavedHost, active: LiveHost): Promise<void> {
+    active.closing = true
+    this.clearRetry(host.id)
+    this.hold(host.id, active)
+    this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined })
+    await this.open(host).catch(() => undefined)
+  }
+  private scheduleReturn(host: SavedHost): void {
+    this.clearReturn(host.id)
+    if (this.closed) return
+    const timer = setTimeout(() => { this.returns.delete(host.id); void this.returnToTailnet(host).catch(() => undefined) }, this.options.tailnetReturnMs ?? TAILNET_RETURN_MS)
+    timer.unref?.()
+    this.returns.set(host.id, timer)
+  }
+  private clearReturn(id: string): void { const timer = this.returns.get(id); if (timer) { clearTimeout(timer); this.returns.delete(id) } }
+  /** The 5-minute check (ADR-0053, step 4). The host's health over the SSH forward says its address now, with no new sign-in. */
+  private async returnToTailnet(host: SavedHost): Promise<void> {
+    const active = this.live.get(host.id)
+    if (this.closed || !active || active.via !== 'ssh' || !this.saved.includes(host)) return
+    const learned = active.ssh ? await this.forwardedAddress(active.ssh.url) : undefined
+    await this.followTailnet(host, active, { learned })
+  }
+  private async forwardedAddress(url: string): Promise<string | undefined> {
+    try {
+      const response = await (this.options.fetch ?? fetch)(`${url}/v1/health`, { redirect: 'error', signal: AbortSignal.timeout(TAILNET_HEALTH_MS) })
+      const body = await response.json() as { tailnetAddress?: unknown }
+      return isTailnetAddress(body.tailnetAddress) ? body.tailnetAddress : undefined
+    } catch { return undefined }
+  }
+  /**
+   * How Sotto connects (ADR-0053, Edit connection): the owner's choice, and the host's own tailnet connections setting,
+   * set over the SSH connection or an admin connection so the press is the owner's consent to that Serve setting. The
+   * choice is written first, so a drop the host's change causes reconnects the way the owner chose; a press that does not
+   * reach the host puts it back, and nothing is changed.
+   */
+  private async setConnection(host: SavedHost, prefer: HostConnectionPreference): Promise<void> {
+    if (!host.hostId) throw new Error(`Connect to ${host.name} over SSH once before choosing how Sotto connects. Nothing was changed.`)
+    const before = this.tailnet.get(host.id).prefer
+    await this.tailnet.set(host.id, { prefer })
+    this.emit()
+    let setting: HostTailnetSetting
+    try {
+      setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, prefer === 'tailnet', this.options.fetch))
+      if (setting.error) throw new Error(setting.error)
+    } catch (error) {
+      await this.tailnet.set(host.id, { prefer: before }).catch(() => undefined)
+      this.emit()
+      if (error instanceof SignInStopped) throw error
+      throw new Error(error instanceof TailnetSettingRefused
+        ? `The host on ${host.name} can't be reached over your tailnet yet. Nothing was changed. Update the host on ${host.name} from the Threads page, then try again.`
+        : error instanceof Error && /Nothing was changed/u.test(error.message) ? error.message
+          : `How Sotto connects to ${host.name} could not be changed. Nothing was changed. Check that ${host.name} is reachable over SSH and its host is running, then try again.`, { cause: error })
+    }
+    const active = this.live.get(host.id)
+    const connected = active !== undefined && this.status.get(host.id)?.phase === 'connected'
+    if (prefer === 'ssh') {
+      this.clearReturn(host.id)
+      this.update(host.id, { tailnetNote: undefined })
+      if (connected && active.via === 'tailnet' && host.enabled !== false) await this.reconnectOverSsh(host, active)
+      return
+    }
+    const address = settingAddress(setting)
+    if (address) await this.tailnet.set(host.id, { address }).catch(() => undefined)
+    this.emit()
+    if (connected && active.via === 'ssh') await this.followTailnet(host, active, { setting })
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost): void {
@@ -941,7 +1209,9 @@ export class DesktopHosts {
   /** The SSH connection a saved host's current connect signed in with, while it is open. */
   private onSsh(id: string): SshHostConnection | undefined {
     const active = this.live.get(id)
-    return active?.ssh && !active.sshClosed ? active.ssh : undefined
+    // While the socket moves to the tailnet, the SSH connection it is leaving still carries presses.
+    const owner = active?.ssh ? active : active?.from
+    return owner?.ssh && !owner.sshClosed ? owner.ssh : undefined
   }
   /**
    * Runs one press that needs the launch script or the host's administrative routes over what it goes over (ADR-0053):
@@ -953,7 +1223,15 @@ export class DesktopHosts {
     const ssh = this.onSsh(host.id)
     if (ssh) return press(ssh)
     if (this.closed || !this.saved.includes(host)) return Promise.reject(new Error(`${host.name} is no longer saved. Nothing was changed.`))
-    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId }, press)
+    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId }, async connection => { await this.writePendingGrant(host, connection); return press(connection) })
+  }
+  /**
+   * The desktop grant a tailnet connection found missing, written over the next admin connection, the only place besides
+   * the SSH connection it is written (ADR-0053, "Authority"). A failure leaves it for the next one.
+   */
+  private async writePendingGrant(host: SavedHost, connection: PressConnection): Promise<void> {
+    if (!this.grantPending.has(host.id) || !host.clientId) return
+    await connection.ensureDesktopAnswers(host.clientId).then(() => { this.grantPending.delete(host.id) }, () => undefined)
   }
   /** The same press, over a connection already open, opening none: undefined when the host has none. */
   private pressIfOpen<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T | undefined> {
@@ -974,7 +1252,7 @@ export class DesktopHosts {
   }
   /** An answer to SSH's question goes to the connection that asked it: the admin connection's sign-in, or the connect's. */
   private answerPrompt(id: string, promptId: string, answer: string): void {
-    if (!this.admins.answer(id, promptId, answer)) this.live.get(id)?.launcher.answerPrompt(promptId, answer)
+    if (!this.admins.answer(id, promptId, answer)) this.live.get(id)?.launcher?.answerPrompt(promptId, answer)
   }
   /** Whether the host's SSH session can reach it: connected, or kept open in the error phase for a host of another version. */
   private reachable(id: string): boolean {
@@ -988,13 +1266,20 @@ export class DesktopHosts {
   private notStopped(host: SavedHost): string { return `The host on ${host.name} could not be stopped and may still be running. Check it on that machine, then connect and try again.` }
   private async disconnect(id: string, keepRetry = false): Promise<void> {
     if (!keepRetry) { this.clearRetry(id); this.releaseHeld(id); await this.admins.close(id) }
+    this.clearReturn(id)
     const active = this.live.get(id)
     this.live.delete(id)
-    if (active?.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
-    await active?.socket?.close()
-    await active?.launcher.disconnect()
+    // A move to the tailnet under way still has the SSH connection it is leaving, which goes too.
+    for (const item of [active, active?.from]) {
+      if (!item) continue
+      item.closing = true
+      if (item.registeredHostId) { this.options.router.remove(item.registeredHostId); delete item.registeredHostId }
+      await item.socket?.close()
+      await item.launcher?.disconnect()
+    }
     const status = this.status.get(id)
-    if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version; status.phase = 'disconnected'; this.emit() }
+    if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version
+      delete status.via; delete status.tailnetNote; delete status.phoneAccess; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer
@@ -1004,12 +1289,13 @@ export class DesktopHosts {
     this.closed = true
     this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.()
     for (const id of [...this.retries.keys()]) this.clearRetry(id)
+    for (const id of [...this.returns.keys()]) this.clearReturn(id)
     // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
     // the quit drain does not end before its credential is cleared and its pairing revoked.
     if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
     if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
     await Promise.all([this.pendingAdd, this.pendingSetup])
     await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
-    await this.admins.closeAll(); await this.writing
+    await this.admins.closeAll(); await this.writing; await this.tailnet.flush()
   }
 }

@@ -15,7 +15,23 @@ Settled while building the admin connection (plan pull request 3), and after its
 - **The not-revoked notice.** Each host Forget removed without revoking gets its own notice, which says which of the three causes applied (SSH could not reach the host, its host was not running, or it refused), and which stays on the Hosts page until the owner dismisses it. A later Forget adds its own and leaves the others alone. Notices are kept in memory only. The Node path in the command is the one the host's last launch, over either connection, reported, and `node` when this run of Sotto never saw one.
 - **Stopping a sign-in.** While an admin connection signs in, its SSH question says it is for a change the user asked for, and its secondary button is **Stop signing in** rather than **Switch it off**. In Forget's dialog **Keep host** does the same while the sign-in runs. Nothing has been sent by then, so the press changes nothing: Forget keeps the host saved, and a host that is on connects again.
 
-## Context
+## October 6 amendment: the tailnet connection as built
+
+Settled while building the tailnet connection (plan pull request 4):
+
+- **A version mismatch on the tailnet goes on to SSH.** Its launch gives the same final answer, and keeps the SSH session that Stop host and Update need for a host Sotto started, so the row offers what it offered before. It is still final there: nothing retries it.
+- **Pairing again after a 401** is the SSH connection's, as step 2 says, rather than an admin connection's: the connect goes on to SSH, which pairs again over its forward and then moves the socket back to the tailnet.
+- **Which failures try the tailnet again at once.** After a refused pairing, a client the host does not know as a desktop yet, or another version, the SSH connection mends the cause, so the tailnet is tried as soon as the socket is on SSH. After a tailnet that did not answer, or answered as another host, it is tried again in 5 minutes, not at once.
+- **The 5-minute check signs in nothing.** It reads the host's health over the SSH connection's own forward, which says the host's tailnet address now, and tries that.
+- **A move to the tailnet keeps the threads where they are.** The tailnet socket opens beside the SSH one and takes its place on the page; only then does the SSH connection close. A drop still reads Reconnecting, as step 5 says. A press made while the move runs goes over the SSH connection it is leaving.
+- **Add host waits for its tailnet step.** Turning on the host's tailnet connections and trying the tailnet run inside Add host's own connect, after Paired, so the add ends on the connection the host will keep. Only Add host's own **Add it** turns them on, since its form says so; the host setup's add leaves the host on SSH until the owner chooses the tailnet. A host whose Tailscale is not running has no tailnet to be reached on, so Add host turns its tailnet connections off again and leaves it preferring SSH, and its row says nothing about the tailnet; the owner can choose the tailnet for it later.
+- **Why the row says the tailnet did not answer.** Besides the tailnet not answering, the row says when Tailscale is not running on the host, when the host's Serve needs the SSH account to be Tailscale's operator (with `sudo tailscale set --operator=$USER`), and when the host has not reported an address yet.
+- **Who started a host on its tailnet connection** is what its hello says: `launch-script` counts as started by Sotto, so Stop host is offered there too.
+- **A host that answers as another one is sent nothing of the pairing.** The desktop checks the host ID in health before it opens a session, as well as the session's.
+- **Edit connection's choice is written first.** Choosing SSH only or the tailnet writes the choice, then sets the host's `tailnetConnections` over the SSH connection or an admin connection, so a drop the host's change causes reconnects the way the owner chose. A press that cannot reach the host, or that the host refuses, puts the choice back, and nothing is changed.
+- **A tailnet connection that finds the grant missing** writes it at the start of the next admin connection's first press, before the press itself.
+- **On the tailnet connection the row's phone words come from hello** until the Phones dialog reads the host.
+
 
 A desktop reaches a remote host only through an SSH port forward (ADR-0025). Every connect is an `ssh` sign-in, and on a tailnet whose policy holds Tailscale SSH in `check` mode, every connect after the check period has lapsed waits for the owner to approve it in a browser. On October 5 forge, the owner's headless host, asked for an approval on every relaunch of Sotto, and a host Sotto started does not come back after its machine restarts until a desktop connects over SSH and starts it.
 
