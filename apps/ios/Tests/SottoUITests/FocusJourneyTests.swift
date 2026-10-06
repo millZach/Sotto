@@ -673,6 +673,7 @@ import XCTest
     func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
     /// The same still thread with the reply keyboard open and nothing typed: the page must not keep itself busy there either.
     func testIdleCPUInAThreadWithTheKeyboardOpen() throws {
+        try skipUnlessMeasuring()
         openWorkingThread()
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
@@ -685,6 +686,7 @@ import XCTest
     /// again unchanged each time, on Threads and in that thread. The comparison passes --ui-publish-everything, which
     /// publishes every change on the whole model as the app did before its stores.
     private func streamingCPU(_ arguments: [String], openThread: Bool) throws {
+        try skipUnlessMeasuring()
         launch(["--ui-fixture", "--reset-ui-preferences", "--ui-streaming"] + arguments)
         measureCPUForThreeSeconds(openThread: openThread)
     }
@@ -726,6 +728,7 @@ import XCTest
     /// The app's CPU while a sentence is typed into a thread's reply box, three times. The comparison passes
     /// --ui-publish-everything, which publishes each keystroke on the whole model as the app did before the draft store.
     private func typingCPU(_ arguments: [String]) throws {
+        try skipUnlessMeasuring()
         launch(["--ui-fixture", "--reset-ui-preferences"] + arguments)
         openWorkingThread()
         let reply = byID("thread-reply")
