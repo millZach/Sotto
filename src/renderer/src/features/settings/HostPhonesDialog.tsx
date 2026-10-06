@@ -119,7 +119,9 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
 
   const live = connected && state !== undefined
   const approving = host.adminSignIn === true && host.tailscale?.waiting === true
-  const busy = view?.busy === true
+  // What the dialog last read stays on show while Tailscale holds a new admin connection, but nothing is pressed through it
+  // until the user approves: a change would only wait behind the approval.
+  const busy = view?.busy === true || approving
   const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
   const failure = state ? hostPhonesFailure(state, name) : null

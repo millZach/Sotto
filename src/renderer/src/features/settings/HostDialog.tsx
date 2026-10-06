@@ -154,6 +154,9 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     if (setup) { if (hostSetupEnded(setup)) void bridge.command({ type: 'dismiss-setup', id: setup.id }).catch(() => undefined); onClose(); return }
     // An add that has not saved the host is dropped with the dialog, and main keeps nothing for it. A saved host stays.
     if (attempt !== null && !added) void bridge.command({ type: 'cancel-add', id: attempt }).catch(() => undefined)
+    // Edit connection closed while its save signs in to an admin connection: the sign-in stops with it, as Forget's does,
+    // rather than waiting for an answer or an approval nobody can see any more. The save then changes nothing.
+    if (editing && sending && edited?.adminSignIn) void bridge.command({ type: 'stop-admin-sign-in', id: editing.id }).catch(() => undefined)
     onClose()
   }
   const connection = (): Omit<RemoteHost, 'enabled' | 'id' | 'name'> | string => {

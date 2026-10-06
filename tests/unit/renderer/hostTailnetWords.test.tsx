@@ -22,6 +22,11 @@ describe('what Add host’s tailnet step says when it kept the host on SSH (ADR-
       .toEqual({ text: 'The host on forge is busy. Nothing was changed. Try again in a moment.' })
     expect(tailnetStepNote({ state: 'ssh', why: 'unreachable' }, 'forge', undefined).text).toMatch(/^forge didn’t answer at its tailnet address,/u)
   })
+
+  it('says the host’s own sentence when it could not save its tailnet setting', () => {
+    expect(tailnetStepNote({ state: 'ssh', why: 'refused', error: 'The tailnet setting could not be saved. Nothing was changed.' }, 'forge', ADDRESS))
+      .toEqual({ text: 'The tailnet setting could not be saved. Nothing was changed. forge is connected over SSH and nothing was lost. Press Try the tailnet again.' })
+  })
 })
 
 describe('the line under a row on SSH although the tailnet was chosen', () => {

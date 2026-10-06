@@ -10,9 +10,12 @@ import './hostSetup.css'
 export type HostSetupOutcome = 'connecting' | 'failed' | 'connected'
 type StepState = 'done' | 'active' | 'waiting' | 'failed' | 'todo'
 
-/** The dialog's title while the checklist shows: where the add stands, in one line, and over SSH when the tailnet step kept it there. */
+/**
+ * The dialog's title while the checklist shows: where the add stands, in one line, and over SSH when the tailnet step kept it
+ * there. A host connected before its step runs again, as Try the tailnet again runs it, is on SSH until that step is done.
+ */
 export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?: TailnetStepView): string {
-  if (outcome === 'connected') return tailnet?.state === 'ssh' ? `${name} is connected over SSH` : `${name} is connected`
+  if (outcome === 'connected') return tailnet?.state === 'ssh' || tailnet?.state === 'active' ? `${name} is connected over SSH` : `${name} is connected`
   return outcome === 'failed' ? `${name} could not be added` : `Connecting to ${name}`
 }
 
@@ -164,7 +167,8 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   // Said to a screen reader as the connect moves on; the failure and the connected card speak for themselves.
   const progress = outcome !== 'connecting' ? '' : waiting ? stepTitle('tailscale', 'waiting', name) : current ? stepTitle(current, 'active', name)
     : tailnet?.state === 'active' ? tailnetStepTitle('active', name) : ''
-  const over = tailnet?.state === 'done' ? ' over your tailnet' : tailnet?.state === 'ssh' ? ' over SSH' : ''
+  // The connected card: a host whose tailnet step runs again, as Try the tailnet again runs it, is still on SSH meanwhile.
+  const over = tailnet?.state === 'done' ? ' over your tailnet' : tailnet?.state === 'ssh' || tailnet?.state === 'active' ? ' over SSH' : ''
   return <div className="host-setup">
     <span className="tt-visually-hidden" role="status">{progress}</span>
     <div className="host-setup__summary">

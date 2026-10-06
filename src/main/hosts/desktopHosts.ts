@@ -118,7 +118,8 @@ class MoveWaits extends Error {}
 interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined }
 /** What Add host's tailnet step found: the host's setting once it is on, or why the host stays on its SSH connection. */
 type StayedOnSsh = 'no-tailscale' | 'old-host' | 'refused'
-type AddStepAnswer = { readonly setting: HostTailnetSetting } | { readonly why: StayedOnSsh }
+/** Add host's tailnet step: the setting once it is on, or why the host stays on SSH, with the host's sentence when it gave one. */
+type AddStepAnswer = { readonly setting: HostTailnetSetting } | { readonly why: StayedOnSsh; readonly error?: string | undefined }
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
 const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
 export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
@@ -1221,19 +1222,20 @@ export class DesktopHosts {
     this.lastVia.set(host.id, 'ssh')
     // Superseded or forgotten: the status is the next connect's, or gone, and says nothing of this step.
     if (this.live.get(host.id) !== active || !this.saved.includes(host)) return
-    let why: StayedOnSsh | undefined
+    let kept: Extract<AddStepAnswer, { why: StayedOnSsh }> | undefined
     try {
       const step = addStep ? await addStep() : undefined
-      if (step && 'why' in step) why = step.why
+      if (step && 'why' in step) kept = step
       await this.followTailnet(host, active, { setting: step && 'setting' in step ? step.setting : undefined, ...miss })
     } catch { /* The host stays where it is, on its SSH connection. */ }
     // Add host's tailnet step ends here, on whichever connection the socket is on now.
-    if (addStep) this.update(host.id, { addTailnet: this.addTailnetOutcome(host, why) })
+    if (addStep) this.update(host.id, { addTailnet: this.addTailnetOutcome(host, kept) })
   }
   /** How Add host's tailnet step came out: done when the socket is on the tailnet connection, and otherwise why it is not. */
-  private addTailnetOutcome(host: SavedHost, why: StayedOnSsh | undefined): HostAddTailnet {
+  private addTailnetOutcome(host: SavedHost, kept: Extract<AddStepAnswer, { why: StayedOnSsh }> | undefined): HostAddTailnet {
     if (this.live.get(host.id)?.via === 'tailnet') return { state: 'done' }
-    return { state: 'ssh', why: why ?? this.status.get(host.id)?.tailnetNote ?? 'unreachable' }
+    if (kept?.why === 'refused') return { state: 'ssh', why: 'refused', ...(kept.error ? { error: kept.error } : {}) }
+    return { state: 'ssh', why: kept?.why ?? this.status.get(host.id)?.tailnetNote ?? 'unreachable' }
   }
   /**
    * Add host's tailnet step: turns on the host's tailnet connections, which the press on Add host is the owner's consent to,
@@ -1253,7 +1255,8 @@ export class DesktopHosts {
       // A host too old for the route answers 400; anything else that does not reach it, or that it refuses, keeps it on SSH.
       return { why: error instanceof HostAdminRefused && error.status === 400 ? 'old-host' : 'refused' }
     }
-    if (setting.error) return { why: 'refused' }
+    // The host's own sentence says why it could not save the setting; the step shows it.
+    if (setting.error) return { why: 'refused', error: setting.error }
     if (settingNote(setting) === 'no-tailscale') {
       if (!before.enabled) await this.press(host, connection => hostTailnetSetting(connection, hostId, false)).catch(() => undefined)
       return { why: 'no-tailscale' }
@@ -1396,7 +1399,11 @@ export class DesktopHosts {
     }
     // The host's own sentence when it could not save its setting, which says nothing was changed.
     if (setting.error) { await putBack(); throw new Error(setting.error) }
-    const active = this.live.get(host.id)
+    // A move to the tailnet under way ends first, there or back on SSH, so the choice acts on the connection the host is on
+    // after it, as a restart does, rather than on a socket still opening beside the SSH one.
+    let settled = this.live.get(host.id)
+    while (settled?.moving) { await settled.moving.catch(() => false); settled = this.live.get(host.id) }
+    const active = settled
     const connected = active !== undefined && this.status.get(host.id)?.phase === 'connected'
     if (prefer === 'ssh') {
       this.clearReturn(host.id)

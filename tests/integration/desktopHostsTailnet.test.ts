@@ -410,6 +410,29 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(launchers[0]!.disconnected).toBe(true)
   })
 
+  it('lets a move to the tailnet under way end before SSH only acts, so the host stays on the SSH connection it was on', async () => {
+    returnMs = 200
+    await relaunch()
+    stand.answer(502)
+    const remote = await add()
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' })
+    // The 5-minute check (shortened here) finds the tailnet answering, and its health waits: the move is under way.
+    let answerHealth!: () => void
+    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    const asked = stand.requests.length
+    stand.answer('proxy')
+    await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })
+    // SSH only is pressed meanwhile: the host's setting goes off, and the choice waits for the move before it acts.
+    const choosing = manager.command({ type: 'set-connection', id: remote.id, prefer: 'ssh' })
+    await vi.waitFor(async () => expect(await admin('tailnet', {})).toMatchObject({ enabled: false }), { timeout: 20_000 })
+    stand.hold(undefined); answerHealth()
+    await choosing
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh' }), { timeout: 20_000 })
+    // The move ended back on SSH, since the host had turned its tailnet connections off: the host stays on the SSH
+    // connection it was on, rather than SSH only connecting again over a socket the move was still opening.
+    expect(launchers.map(launcher => launcher.disconnected)).toEqual([false])
+  })
+
   it('keeps a host on its SSH connection when an update begins while a move to the tailnet is under way, and moves after it', async () => {
     returnMs = 200
     await relaunch()

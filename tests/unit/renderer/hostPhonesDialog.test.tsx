@@ -130,6 +130,14 @@ it('shows an admin connection’s Tailscale approval at the top of the dialog wh
   expect(within(dialog).getByRole('button', { name: 'Why Tailscale asks' })).toBeTruthy()
 })
 
+it('keeps what it last read on show, with nothing to press, while Tailscale waits to approve a new admin connection (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  fixture({ state: phones() }, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByText(/^Waiting for your approval in Tailscale\./u)).toBeTruthy()
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toBeDisabled()
+})
+
 it('shows phone access as not read yet until the host is read, with no switch to mislead (ADR-0053)', async () => {
   const user = userEvent.setup()
   const { push } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))
