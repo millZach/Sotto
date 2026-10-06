@@ -1146,6 +1146,8 @@ private struct UnconfirmedRow: View {
 /// A reply the computer refused, with a way to put it back in the reply box.
 private struct FailedReplyCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so Put it back follows what the reply box holds; typing publishes here, not on the model.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let text: String
     var body: some View {
@@ -1172,6 +1174,8 @@ private struct FailedReplyCard: View {
 /// While a request waits, the box offers it instead of the field.
 private struct ReplyDock: View {
     @EnvironmentObject var model: AppModel
+    /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let openRequest: (AgentRequest) -> Void
     @FocusState private var focused: Bool

@@ -68,6 +68,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
+/// The reply boxes' words, by `ThreadRef.id`. A store of its own so that typing publishes here and not on `AppModel`,
+/// which nearly every view watches: with the words on the model, each keystroke made the thread page, its conversation
+/// and the Threads list underneath it evaluate their bodies again.
+final class DraftStore: ObservableObject {
+    @Published var text: [String: String] = [:]
+}
+
 @MainActor final class AppModel: ObservableObject {
     private static let requestNoLongerWaiting = "That request is no longer waiting."
     private static let markersUnreadable = "Saved unconfirmed actions could not be read. Check your threads before sending again. Nothing was resent."
@@ -98,8 +105,22 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     private var deliveryChecks: [String: Int] = [:]
     /// What went wrong while finding or pairing a computer.
     @Published var pairFeedback: String?
-    /// Unsent replies, by `ThreadRef.id`.
-    @Published var drafts: [String: String] = [:]
+    /// Unsent replies, by `ThreadRef.id`. They live in `draftStore`, which publishes on its own: only the reply box and
+    /// what depends on it watch that, so a keystroke redraws the reply box, not every view that watches the model.
+    let draftStore = DraftStore()
+    var drafts: [String: String] {
+        get { draftStore.text }
+        set {
+            draftStore.text = newValue
+            #if DEBUG && os(iOS)
+            // The typing journeys' comparison: each keystroke publishing on the model, as it did before the store.
+            if Self.draftsPublishOnModel { objectWillChange.send() }
+            #endif
+        }
+    }
+    #if DEBUG && os(iOS)
+    private static let draftsPublishOnModel = ProcessInfo.processInfo.arguments.contains("--ui-drafts-on-model")
+    #endif
     @Published private(set) var submitted: [String: String] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
     /// Photos in each thread's reply box, by `ThreadRef.id`, in the order they were chosen.

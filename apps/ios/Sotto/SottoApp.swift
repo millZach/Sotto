@@ -13,7 +13,7 @@ import UserNotifications
     }
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(model).environmentObject(previews)
+            RootView().environmentObject(model).environmentObject(model.draftStore).environmentObject(previews)
                 .font(.sotto(.body))
                 .foregroundStyle(Palette.ink)
                 .overlay {
