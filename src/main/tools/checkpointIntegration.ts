@@ -28,7 +28,7 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
       return { threadId, providerId: thread.providerId, bindingId: `${thread.providerId}:${binding?.sessionId ?? threadId}`,
         userMessageIds: thread.messages.filter(message => message.role === 'user').map(message => message.id),
         running: !connected || thread.status === 'running' || thread.historyStatus === 'loading' || thread.historyStatus === 'error',
-        busy: !held?.historyOnly && (!connected || await pending(threadId) || !held?.mutationHeld && await host.isCheckoutMutating(threadId)),
+        ...(held?.historyOnly ? {} : { busy: !connected || await pending(threadId) || !held?.mutationHeld && await host.isCheckoutMutating(threadId) }),
         rollbackSupported: capability.supported, ...(capability.reason ? { unsupportedReason: capability.reason } : {}),
       }
     },

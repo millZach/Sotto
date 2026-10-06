@@ -399,7 +399,7 @@ export class CheckpointService extends ToolOperations {
     const record = [...this.records.values()].find(record => record.threadId === threadId && record.status === 'capturing')
     if (!record) return
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })
-    if (!thread || (thread.running ?? thread.busy)) return
+    if (!thread || (thread.running ?? thread.busy) !== false) return
     if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); return }
     if (thread.userMessageIds.length === record.beforeUsers.length) return
     await workspace(this.dependencies.files, threadId, record.workspaceId)
@@ -488,7 +488,7 @@ export class CheckpointService extends ToolOperations {
     const { confirmed: _confirmed, ...request } = parsed; void _confirmed
     const { record, thread } = await this.requested(request)
     if (!thread.rollbackSupported) return fail('blocked', thread.unsupportedReason ?? 'Matching native conversation rollback is unavailable.')
-    if (thread.busy || await this.isWorkspaceBlocked(thread.threadId)) return fail('blocked', 'Finish or resolve active and pending work before reverting.')
+    if (thread.busy !== false || await this.isWorkspaceBlocked(thread.threadId)) return fail('blocked', 'Finish or resolve active and pending work before reverting.')
     if (record.status !== 'ready' || !record.afterUsers || !equal(thread.userMessageIds, record.afterUsers)) return fail('blocked', 'Only the latest completed checkpoint with unchanged native history can be reverted.')
     this.locks.add(thread.threadId)
     let release: (() => void) | undefined
@@ -496,7 +496,7 @@ export class CheckpointService extends ToolOperations {
       release = await this.dependencies.acquireMutation?.(thread.threadId)
       await this.checkFiles(record)
       const guarded = await this.dependencies.resolveThread(thread.threadId, { mutationHeld: Boolean(release) })
-      if (!guarded || guarded.busy || !this.matches(record, guarded) || !equal(guarded.userMessageIds, record.afterUsers)) return fail('blocked', 'Thread work changed while checking the checkpoint. Review it again before reverting.')
+      if (!guarded || guarded.busy !== false || !this.matches(record, guarded) || !equal(guarded.userMessageIds, record.afterUsers)) return fail('blocked', 'Thread work changed while checking the checkpoint. Review it again before reverting.')
       await this.save()
       if (!this.records.has(record.id)) return fail('blocked', 'This checkpoint expired or local history changed. No rollback was sent. Review the working copy.')
       record.status = 'reverting'; await this.save()
@@ -523,7 +523,7 @@ export class CheckpointService extends ToolOperations {
     try {
       const { record, thread } = await this.requested(payload)
       if (!['uncertain', 'reverting'].includes(record.status)) return this.public(record, thread)
-      if (thread.busy) return fail('blocked', 'Wait for active or pending work to finish before recovery.')
+      if (thread.busy !== false) return fail('blocked', 'Wait for active or pending work to finish before recovery.')
       release = await this.dependencies.acquireMutation?.(thread.threadId)
       await this.dependencies.refresh(thread.threadId)
       const current = await this.dependencies.resolveThread(thread.threadId)
