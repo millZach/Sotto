@@ -43,11 +43,22 @@ const storablePath = fileRelativePathSchema.refine(value => value.length > 0)
 /** An error from `git ls-files` itself: the folder cannot be listed, so it cannot be captured. */
 class ListingFailure extends Error {}
 
+/**
+ * Run `work` over `items`, at most `limit` at once, results in item order. After a failure no further item starts,
+ * and the first failure is thrown once the items already started have finished, so nothing outlives the call.
+ */
 async function inOrder<T, R>(items: readonly T[], limit: number, work: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length)
-  let next = 0
-  const worker = async (): Promise<void> => { while (next < items.length) { const index = next++; results[index] = await work(items[index]!, index) } }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  let next = 0, failed = false
+  const worker = async (): Promise<void> => {
+    while (!failed && next < items.length) {
+      const index = next++
+      try { results[index] = await work(items[index]!, index) } catch (error) { failed = true; throw error }
+    }
+  }
+  const settled = await Promise.allSettled(Array.from({ length: Math.min(limit, items.length) }, worker))
+  const rejected = settled.find(outcome => outcome.status === 'rejected')
+  if (rejected) throw rejected.reason
   return results
 }
 
@@ -211,7 +222,10 @@ export class CheckpointCapture {
       if (!info || typeof info === 'string') return null
       const path = paths[index]!, before = previous?.get(path)
       if (before?.reusable && unchanged(before, info) && this.options.blobSizes.has(before.hash)) return before
-      const bytes = await readFile(join(root, path)), hash = createHash('sha256').update(bytes).digest('hex')
+      // A file removed since its lstat is not in the snapshot, as if it had gone a moment sooner.
+      const bytes = await readFile(join(root, path)).catch(missing)
+      if (!bytes) return null
+      const hash = createHash('sha256').update(bytes).digest('hex')
       await writeFile(join(blobDirectory, hash), bytes, { flag: 'wx', mode: 0o600 }).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error })
       this.options.blobSizes.set(hash, bytes.length)
       // A file that changed size while it was read is not trusted next time, whatever its times say.

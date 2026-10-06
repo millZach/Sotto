@@ -189,14 +189,40 @@ describe('checkpoint capture', () => {
   it('reads at most eight files at once', async () => {
     const files = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`file-${index}.txt`, `${index}\n`]))
     const f = await fixture({ files })
-    let active = 0, most = 0
+    // Every read is held open until eight are, then released together; a ninth would show in `most`.
+    const held: (() => void)[] = []
+    let hold = true, active = 0, most = 0
     vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args) => {
       active++; most = Math.max(most, active)
-      try { await new Promise(resolve => setTimeout(resolve, 1)); return await realReadFile(...args) } finally { active-- }
+      try { if (hold) await new Promise<void>(resolve => held.push(resolve)); return await realReadFile(...args) } finally { active-- }
     })
-    await f.capture.snapshot(f.repo, { reuse: true })
-    expect(most).toBeGreaterThan(1)
-    expect(most).toBeLessThanOrEqual(8)
+    const snapshot = f.capture.snapshot(f.repo, { reuse: true })
+    await expect.poll(() => held.length).toBe(8)
+    hold = false
+    for (const release of held.splice(0)) release()
+    await snapshot
+    expect(most).toBe(8)
+  })
+
+  it('starts no read after one fails, and settles the reads already started before it throws', async () => {
+    const files = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`file-${index}.txt`, `${index}\n`]))
+    const f = await fixture({ files })
+    let started = 0, finished = 0
+    vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args) => {
+      if (typeof args[0] !== 'string' || !args[0].startsWith(f.repo)) return realReadFile(...args)
+      if (started++ === 0) throw Object.assign(new Error('locked'), { code: 'EBUSY' })
+      try { return await realReadFile(...args) } finally { finished++ }
+    })
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('locked')
+    expect(started).toBeLessThanOrEqual(8)
+    expect(finished).toBe(started - 1)
+  })
+
+  it('leaves out a file removed between its lstat and its read', async () => {
+    const f = await fixture()
+    vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args) => args[0] === join(f.repo, 'notes.txt')
+      ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' })) : realReadFile(...args))
+    expect(Object.keys((await f.capture.snapshot(f.repo, { reuse: true })).files)).toEqual(['app.txt'])
   })
 
   it('asks Git for a folder\'s checkout once', async () => {
