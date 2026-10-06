@@ -1,6 +1,7 @@
 import { bootChangeRestarts, bootUnsupportedSentence, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
 import { idleNow, stopWorkingThreads, whenIdle, type BusyHostThreads } from './busyHost'
-import { shellQuoted } from './revokeCommand'
+import { posix } from 'node:path'
+import { shellEscaped } from './revokeCommand'
 import type { SshBootResult } from './sshLauncher'
 
 /** A saved host that is connected now, as a start at boot change needs it. */
@@ -51,16 +52,32 @@ const JOURNAL = 'journalctl --user -u sotto-host -n 50 --no-pager'
  * The one line that takes start at boot away on a host by hand, for when Sotto could not (ADR-0054). Like `boot-remove`,
  * it acts only on this installation's unit, the one whose `ExecStart=` runs the installation folder's `boot-start.sh`:
  * it stops and disables it, removes the unit and the script, reloads the user manager and clears the unit's failed
- * state. A host the unit ran stops with it. A unit another installation owns is left alone. Sotto never runs it.
+ * state. A host the unit ran stops with it. A unit another installation owns is left alone, and the line says it found
+ * none. Sotto never runs it.
+ *
+ * It looks for the `ExecStart=` line the launch script writes (`resolvePath` and `unitQuote` in `launchScript.ts`): the
+ * folder resolved, with `~/` as the home folder, and quoted for systemd. Under `~/` the shell supplies the home folder,
+ * without a trailing slash and less one folder for each `..` that climbs above it, as `path.resolve` would. A home
+ * folder whose own path holds `%`, `$`, `\` or `"` finds nothing, and the line changes nothing.
  */
 export function bootRemovalCommand(installPath: string): string {
-  const folder = installPath.length > 1 ? installPath.replace(/\/+$/u, '') : installPath
+  const underHome = installPath.startsWith('~/')
+  // The script's path, absolute, or under `~/` relative to the home folder with any `..` above it at its front.
+  const script = posix.join(underHome ? '.' : '/', underHome ? installPath.slice(2) : installPath, 'boot-start.sh')
+  const climbs = underHome ? /^(?:\.\.\/)*/u.exec(script)![0].length / 3 : 0
+  const rest = script.slice(climbs * 3)
+  const front = underHome ? '$H/' : ''
   return [
-    `B=${shellQuoted(folder)}/boot-start.sh`,
+    ...(underHome ? [`H=\${HOME%/}${'; H=${H%/*}'.repeat(climbs)}`] : []),
+    `B="${front}${shellEscaped(rest)}"`,
     'U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"',
-    'grep -qxF "ExecStart=/bin/sh \\"$B\\"" "$U" && { systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; }',
+    `L="ExecStart=/bin/sh \\"${front}${shellEscaped(unitEscaped(rest))}\\""`,
+    'if grep -qxF "$L" "$U" 2>/dev/null; then systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; '
+      + 'else echo "Found no start at boot unit for this installation, so nothing was changed. To see the unit this machine has, run systemctl --user cat sotto-host."; fi',
   ].join('; ')
 }
+/** A path the way the launch script writes it inside `ExecStart=`'s double quotes, without the quotes. */
+const unitEscaped = (value: string): string => value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"').replace(/%/gu, '%%').replace(/\$/gu, '$$$$')
 
 /**
  * Start at boot changes (ADR-0054): Start at boot and Stop starting at boot for each saved host, from the press in
