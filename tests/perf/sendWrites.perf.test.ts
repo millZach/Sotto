@@ -1,11 +1,12 @@
 // @vitest-environment node
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { sourceAt } from '../fixtures/baselineSource'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import type { SendWrites } from '../fixtures/sendWritesWorkload'
 
@@ -29,13 +30,7 @@ describe.skipIf(!PERF_BENCH)('durable writes between Send and the provider heari
       await build({ entryPoints: ['tests/fixtures/sendWritesBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,
         external: ['electron', 'node-pty'],
         banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
-        plugins: label === 'before' ? [{ name: 'fixed-baseline', setup(builder) {
-          builder.onLoad({ filter: /\.[cm]?tsx?$/ }, args => {
-            const path = relative(resolve('.'), args.path).replaceAll('\\', '/')
-            if (!path.startsWith('src/')) return undefined
-            return { contents: execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8' }), loader: path.endsWith('x') ? 'tsx' : 'ts' }
-          })
-        } }] : [],
+        plugins: label === 'before' ? [sourceAt(BASE)] : [],
       })
       bundles[label] = outfile
     }

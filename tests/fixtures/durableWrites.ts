@@ -24,6 +24,11 @@ export interface DurableWriteRecorder {
    * write of it is open.
    */
   hold(file: string): () => void
+  /**
+   * Resolves once no fsync is running and none has started for `ms`: the writes something set going have landed,
+   * however long they took, rather than after a fixed sleep.
+   */
+  quiet(ms?: number): Promise<void>
   restore(): void
 }
 
@@ -39,6 +44,7 @@ export function recordDurableWrites(): DurableWriteRecorder {
   const original = promises.open
   const writes: DurableWrite[] = []
   const holds = new Map<string, { held: Promise<void>; release: () => void }>()
+  let syncing = 0
   const wrap = (handle: FileHandle, path: string): FileHandle => {
     let bytes = 0
     const writeFile = handle.writeFile.bind(handle)
@@ -51,8 +57,11 @@ export function recordDurableWrites(): DurableWriteRecorder {
       const file = storeName(path)
       writes.push({ file, at: performance.now(), bytes })
       bytes = 0
-      await holds.get(file)?.held
-      return sync()
+      syncing += 1
+      try {
+        await holds.get(file)?.held
+        return await sync()
+      } finally { syncing -= 1 }
     }
     return handle
   }
@@ -76,6 +85,13 @@ export function recordDurableWrites(): DurableWriteRecorder {
       const held = new Promise<void>(done => { release = done })
       holds.set(file, { held, release })
       return () => { if (holds.get(file)?.held === held) holds.delete(file); release() }
+    },
+    quiet: async (ms = 100) => {
+      for (;;) {
+        const last = writes.at(-1)?.at ?? Number.NEGATIVE_INFINITY
+        if (syncing === 0 && performance.now() - last >= ms) return
+        await new Promise(done => setTimeout(done, 10))
+      }
     },
     restore: () => {
       promises.open = original

@@ -1,12 +1,13 @@
 // @vitest-environment node
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
+import { sourceAt } from '../fixtures/baselineSource'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 // The commit #767 started from. "before" is its source; "after" is the working tree.
@@ -34,13 +35,7 @@ describe.skipIf(!PERF_BENCH)('usage ledger writes while a reply streams', () => 
     for (const label of ['before', 'after']) {
       const outfile = join(root, `${label}.mjs`)
       await build({ entryPoints: ['tests/fixtures/usageStreamBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,
-        plugins: label === 'before' ? [{ name: 'fixed-baseline', setup(builder) {
-          builder.onLoad({ filter: /\.[cm]?tsx?$/ }, args => {
-            const path = relative(resolve('.'), args.path).replaceAll('\\', '/')
-            if (!path.startsWith('src/')) return undefined
-            return { contents: execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8' }), loader: 'ts' }
-          })
-        } }] : [],
+        plugins: label === 'before' ? [sourceAt(BASE)] : [],
       })
       bundles[label] = outfile
     }

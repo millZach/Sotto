@@ -27,7 +27,7 @@ async function until(check: () => boolean | Promise<boolean>, what: string, dead
   }
 }
 
-/** The sizes of the stores on the development machine when #767 was written. */
+/** The sizes of the stores on the development machine when #767 was written, as the old code wrote them: indented. */
 export const DEVELOPMENT_STORE_BYTES = { claude: 388 * 1024, codex: 1300 * 1024 } as const
 
 const synthetic = (seed: string): string => createHash('sha256').update(seed).digest('hex')
@@ -43,7 +43,8 @@ async function growThreadStore(provider: 'claude' | 'codex', root: string, threa
   const template = aliases[threadId] ?? Object.values(aliases)[0]
   if (!template) throw new Error('There is no thread record to grow the store from.')
   const createdAt = new Date().toISOString()
-  for (let index = 0; JSON.stringify(aliases).length < bytes; index += 1) {
+  // Measured as the old code laid the store out, so "before" rewrites a file the size the issue saw.
+  for (let index = 0; JSON.stringify(aliases, null, 2).length < bytes; index += 1) {
     const id = randomUUID()
     aliases[id] = provider === 'claude'
       ? { ...template, sessionId: randomUUID(), title: `Other ${index}`, origins: Array.from({ length: 40 }, (_, turn) => ({
@@ -99,10 +100,11 @@ export async function measureSendWrites(provider: 'claude' | 'codex', recorder: 
       store.edit(threadId, { text: `Synthetic prompt ${index}` })
       await until(() => store.snapshot(threadId).save === 'saved', 'the typed draft to be saved')
       // Whatever the last reply set going lands before the press, so each send is measured on its own.
-      await delay(300)
+      await recorder.quiet()
       const start = performance.now()
       const already = heard.length
-      const draft = store.submit(threadId, start)!
+      // As the Threads page sends: main saves the revision the command carries.
+      const draft = store.submit(threadId, start, 'send', 'main')!
       const result = await control.command({ type: 'manual-send', threadId, draftId: draft.draftId, text: draft.text })
       store.resolve(threadId, draft.draftId, result.error)
       if (result.error) throw new Error(`The send was refused: ${result.error}`)
