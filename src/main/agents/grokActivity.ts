@@ -1,36 +1,38 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
-import { settledThoughts, thoughtChunk } from './thoughtActivity'
+import { acpThinkingActivities, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
-/** What Grok's `_meta` says about the stream an update belongs to; history keeps it as the live notification had it. */
-export type GrokStream = { promptId?: string | undefined; streamStartMs?: number | undefined }
 
-const THOUGHT = 'grok-thought-'
-/** Updates that say the model has moved on from a thought: its reply, a new tool, a plan, or the turn's end. */
-const AFTER_THOUGHT = new Set(['agent_message_chunk', 'tool_call', 'plan', 'user_message_chunk', 'turn_completed', 'subagent_spawned'])
+export const GROK_THINKING_ID_PREFIX = 'grok-thinking-'
+/** Updates that say the model has moved on from a thought: its reply, a new tool, a plan, or a new prompt or agent. */
+const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan', 'user_message_chunk', 'subagent_spawned'])
+const GROK_THINKING: AcpThinking = {
+  idPrefix: GROK_THINKING_ID_PREFIX,
+  settles: update => update.sessionUpdate === 'turn_completed'
+    ? thinkingSettledAs((update.stop_reason ?? update.stopReason) === 'end_turn' ? 'completed' : 'interrupted')
+    : MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined,
+}
 
 /**
  * Grok's activity for one update, live or read from its history. A thought (`agent_thought_chunk`) streams into one
- * Thinking row per stream: Grok gives a thought and the reply that follows it the same `streamStartMs`, and its history
- * keeps both, so the row a live thought made is the row a read of history finds.
+ * Thinking row per stream: Grok gives a thought and the reply that follows it the same `streamStartMs` in `_meta`, and
+ * its history keeps both, so the row a live thought made is the row a read of history finds.
  */
-export function grokActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false, stream: GrokStream = {}): AgentActivity[] {
-  if (update.sessionUpdate === 'agent_thought_chunk') return thoughtChunk(update, { prefix: THOUGHT, turnId: context.turnId, afterMessageId: context.afterMessageId,
-    key: stream.streamStartMs === undefined ? undefined : `${stream.promptId ?? context.turnId}-${stream.streamStartMs}` }, previous, live)
-  const rows = grokWork(update, context, previous, live)
-  if (!AFTER_THOUGHT.has(String(update.sessionUpdate))) return rows
-  const stopped = update.sessionUpdate === 'turn_completed' && (update.stop_reason ?? update.stopReason) === 'cancelled'
-  return [...settledThoughts(THOUGHT, previous, stopped ? 'interrupted' : 'completed', live), ...rows]
+export function grokActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false,
+  stream: { promptId?: string | undefined; streamStartMs?: number | undefined } = {}): AgentActivity[] {
+  const key = stream.streamStartMs === undefined ? undefined : `${stream.promptId ?? context.turnId}-${stream.streamStartMs}`
+  return acpThinkingActivities(GROK_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
+    () => grokWork(update, context, previous, live))
 }
 
 /**
  * A history read can trail the live stream it describes. Its copy of a thought still being written is a prefix of the
  * one the stream has shown, and must not take the stream's later words back.
  */
-export function keepStreamedThoughts(history: readonly AgentActivity[], shown: readonly AgentActivity[] | undefined): AgentActivity[] {
+export function keepStreamedThinking(history: readonly AgentActivity[], shown: readonly AgentActivity[] | undefined): AgentActivity[] {
   if (!shown?.length) return [...history]
-  const streamed = new Map(shown.filter(row => row.id.startsWith(THOUGHT) && row.text).map(row => [row.id, row.text!]))
+  const streamed = new Map(shown.filter(row => row.id.startsWith(GROK_THINKING_ID_PREFIX) && row.text).map(row => [row.id, row.text!]))
   return history.map(row => {
     const longer = streamed.get(row.id)
     return longer !== undefined && longer.length > (row.text?.length ?? 0) && longer.startsWith(row.text ?? '') ? { ...row, text: longer } : row

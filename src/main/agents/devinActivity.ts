@@ -1,11 +1,13 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
-import { settledThoughts, thoughtChunk } from './thoughtActivity'
+import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string; cwd: string }
-const THOUGHT = 'devin-thought-'
-/** Updates that say the model has moved on from a thought: its reply, a new tool or a plan. */
-const AFTER_THOUGHT = new Set(['agent_message_chunk', 'tool_call', 'plan'])
+
+export const DEVIN_THINKING_ID_PREFIX = 'devin-thinking-'
+/** Updates that say the model has moved on from a thought: its reply, a new tool or a plan. The turn's end is `devin.ts`'s. */
+const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan'])
+const DEVIN_THINKING: AcpThinking = { idPrefix: DEVIN_THINKING_ID_PREFIX, settles: update => MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined }
 
 /**
  * ACP activity updates are upserts. Partial updates retain the original action and transcript anchor. A thought
@@ -13,15 +15,9 @@ const AFTER_THOUGHT = new Set(['agent_message_chunk', 'tool_call', 'plan'])
  */
 export function devinActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
   // ACP may name the message a chunk belongs to; without it, chunks that run on in order are one thought.
-  if (update.sessionUpdate === 'agent_thought_chunk') return thoughtChunk(update, { prefix: THOUGHT, turnId: context.turnId, afterMessageId: context.afterMessageId,
-    key: typeof update.messageId === 'string' && update.messageId ? `${context.turnId}-${update.messageId.slice(0, 128)}` : undefined }, previous, live)
-  const rows = devinWork(update, context, previous, live)
-  return AFTER_THOUGHT.has(String(update.sessionUpdate)) ? [...settledThoughts(THOUGHT, previous, 'completed', live), ...rows] : rows
-}
-
-/** Devin's Thinking rows still running, settled: the turn ended with nothing more to come for them. */
-export function settledDevinThoughts(previous: readonly AgentActivity[], status: AgentActivity['status'], live = true): AgentActivity[] {
-  return settledThoughts(THOUGHT, previous, status, live)
+  const key = typeof update.messageId === 'string' && update.messageId ? `${context.turnId}-${update.messageId.slice(0, 128)}` : undefined
+  return acpThinkingActivities(DEVIN_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
+    () => devinWork(update, context, previous, live))
 }
 
 function devinWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {

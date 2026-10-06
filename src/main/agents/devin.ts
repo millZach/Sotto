@@ -17,7 +17,8 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
-import { devinActivities, settledDevinThoughts } from './devinActivity'
+import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
+import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
@@ -847,7 +848,7 @@ export class DevinAcpHost implements AgentHost {
       this.thread(id).status = status === 'failed' ? 'error' : 'idle'
       this.thread(id).lastTurn = { id: origin.messageId, status }
       // A thought the turn ended on gets no later update to settle it.
-      const thoughts = settledDevinThoughts(this.thread(id).activities ?? [], status === 'interrupted' ? 'interrupted' : 'completed')
+      const thoughts = settledThinking(DEVIN_THINKING_ID_PREFIX, this.thread(id).activities ?? [], thinkingSettledAs(status), true)
       this.thread(id).activities = markTurnActivity(thoughts.length ? mergeAgentActivities(this.thread(id).activities, thoughts) : this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
       this.reaper.touch(id); this.emit()
     }, true).catch(() => {

@@ -22,7 +22,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { grokActivities, keepStreamedThoughts } from './grokActivity'
+import { grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -721,7 +721,7 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (!current()) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThoughts(history.activities, thread.activities))
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThinking(history.activities, thread.activities))
     let status = history.status; let lastTurn = history.lastTurn
     // A turn whose process ended before it finished never records its end in Grok's history, which would
     // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how.
