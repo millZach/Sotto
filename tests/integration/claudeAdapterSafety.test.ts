@@ -119,6 +119,36 @@ describe('Claude recovery and safety', () => {
     expect(await f.host.execute({ ...command, expectedLastUserMessageId: latest })).toEqual({ accepted: true })
     expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
   })
+  it('folds an origin only the journal holds back into the thread store on connect, past a line a crash cut short', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    // Nothing wrote the store whole since the send, so the origin is in the journal alone, as a crash would leave
+    // it. A second append that a crash cut short follows it.
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[] }>
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins).toEqual([])
+    const lines = (await readFile(journalPath, 'utf8')).split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as { threadId: string; origin: { messageId: string } })
+    const origin = lines.find(line => line.threadId === id && line.origin.messageId === 'journaled')!.origin
+    await writeFile(journalPath, `${await readFile(journalPath, 'utf8')}\n{"threadId":"${id}","origin":{"messageId":"cut-sh`)
+    f = await claudeFixture(f.root); await f.host.connect()
+    const stored = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    expect(stored[id]!.origins).toContainEqual(origin)
+    expect(stored[id]!.origins.filter(candidate => candidate.messageId === 'journaled')).toHaveLength(1)
+    // Folded in and cleared, so this connection's lines never follow the one cut short.
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    f.host.disconnect(); await f.adapter.closed()
+    // A journal holding nothing the store lacks is cleared too, a cut-short line and all.
+    await writeFile(journalPath, `\n${JSON.stringify({ threadId: id, origin })}\n\n{"threadId":"${id}","orig`)
+    f = await claudeFixture(f.root); await f.host.connect()
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins.filter(candidate => candidate.messageId === 'journaled')).toHaveLength(1)
+  })
+  it('counts a whole write of the thread store as saved when the journal behind it cannot be cleared', async () => {
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    const other = randomUUID()
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: other, projectId: f.projectId, title: 'Other', modelId: f.modelId })).resolves.toEqual({ accepted: true })
+    expect(Object.keys(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, unknown>)).toContain(other)
+  })
   it('reconciles image-only native frames over 1 MiB and restores references without persisting image bytes', async () => {
     const image = Buffer.alloc(1024 * 1024); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(image)
     const attachment = promptImageOf(image, 'image', 'image.png')

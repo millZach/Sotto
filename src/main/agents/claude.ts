@@ -94,7 +94,7 @@ type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
  * by starting the CLI again, refused by the CLI (a restart or a refusal follows), or left unconfirmed. Event
  * names only; a model, a level or a mode never reaches the log.
  */
-export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
+export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
 /** What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required. */
 const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode'>): ClaudeSettings =>
   ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required' })
@@ -247,11 +247,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'claude')
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
-    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}),
-      undefined, undefined, undefined, 'compact')
-    const journaled = z.object({ threadId: z.string(), origin: originSchema })
+    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    const journalLine = z.object({ threadId: z.string(), origin: originSchema })
     this.originJournal = new ClaudeOriginJournal(join(options.userDataPath, 'claude-origins.jsonl'), value => {
-      const entry = journaled.safeParse(value)
+      const entry = journalLine.safeParse(value)
       return entry.success ? entry.data : undefined
     })
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'claude-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -1346,11 +1345,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.queuedAliasWrite) return this.queuedAliasWrite
     const queued = this.inAliasOrder(async () => {
       if (this.queuedAliasWrite === queued) this.queuedAliasWrite = undefined
-      await this.aliasStore.write(this.aliases)
-      await this.originJournal.clear()
+      await this.writeWhole(this.aliases)
     })
     this.queuedAliasWrite = queued
     return queued
+  }
+  /**
+   * Writes the thread store whole and clears the journal, which the store now holds. Run in alias order only. The
+   * store holding the state is what the caller waits for: a journal left behind by a failed clear is harmless,
+   * because reading it back finds every origin in it already in the store, and the next whole write clears it.
+   */
+  private async writeWhole(aliases: Record<string, Alias>): Promise<void> {
+    await this.aliasStore.write(aliases)
+    try { await this.originJournal.clear() }
+    catch { this.options.logEvent?.('claude-origin-journal-clear-failed') }
   }
   /**
    * Makes one new origin durable before its prompt is written to the CLI: a synced line in the journal rather than
@@ -1361,17 +1369,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /** The thread store with the journal's origins over it, read in order with the writes of both. */
   private async readAliases(): Promise<Record<string, Alias>> {
-    const { aliases, journaled } = await this.inAliasOrder(async () => ({ aliases: await this.aliasStore.read(), journaled: await this.originJournal.read() }))
+    const { aliases, journal } = await this.inAliasOrder(async () => ({ aliases: await this.aliasStore.read(), journal: await this.originJournal.read() }))
     let merged = false
-    for (const { threadId, origin } of journaled) {
+    for (const { threadId, origin } of journal.entries) {
       const alias = aliases[threadId]
       if (!alias || alias.origins.some(candidate => candidate.uuid === origin.uuid)) continue
       alias.origins.push(origin); merged = true
     }
-    // Folded into the store at once, so the journal starts empty for this connection.
-    if (merged) {
-      await this.inAliasOrder(async () => { await this.aliasStore.write(aliases); await this.originJournal.clear() })
-    }
+    // Folded into the store and cleared at once, so this connection's appends never follow a line a crash cut short.
+    if (merged) await this.inAliasOrder(() => this.writeWhole(aliases))
+    else if (journal.present) await this.inAliasOrder(() => this.originJournal.clear())
     return aliases
   }
   private inAliasOrder<Result>(operation: () => Promise<Result>): Promise<Result> {
