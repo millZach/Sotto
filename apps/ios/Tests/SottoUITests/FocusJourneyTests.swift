@@ -403,10 +403,9 @@ import XCTest
         capture("computers")
     }
 
-    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
-    /// title block and Git chips scroll away with it; messages read as Markdown blocks.
-    /// A long thread whose messages arrive a moment after it opens shows its end at once. The page used to sit over rows a
-    /// lazy list had not drawn yet, black until the user scrolled.
+    /// A long thread whose messages arrive a moment after it opens shows its end at once. On the phone a thread sometimes
+    /// opened black until scrolled; a lazy list landing over rows it had not drawn is the likely cause. The simulator did
+    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix.
     func testALongThreadShowsItsEndWithoutAScroll() {
         launch(["--ui-fixture", "--reset-ui-preferences", "--ui-long-thread", "--ui-slow-detail"])
         let thread = row("drives")
@@ -423,6 +422,8 @@ import XCTest
         capture("thread-long-open")
     }
 
+    /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
+    /// title block and Git chips scroll away with it; messages read as Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
         let thread = row("iphone")
         reveal(thread)
