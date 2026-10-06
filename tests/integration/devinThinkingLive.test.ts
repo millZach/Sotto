@@ -22,7 +22,8 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('shows Devin’s thought chun
   const id = randomUUID()
   const model = process.env['SOTTO_DEVIN_THINKING_MODEL'] ?? 'swe-1-6-fast'
   const thread = async () => (await host.snapshot()).threads.find(thread => thread.id === id)!
-  const seen = { running: 0 }
+  // Snapshots that showed a Thinking row while no reply text had arrived yet.
+  const seen = { beforeReply: 0 }
   try {
     const connected = await host.connect()
     expect(connected.models.some(entry => entry.id === model && entry.ready)).toBe(true)
@@ -31,7 +32,7 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('shows Devin’s thought chun
     host.observeThreads([id])
     const unsubscribe = host.subscribe(state => {
       const current = state.threads.find(entry => entry.id === id)
-      if (current?.activities?.some(row => row.kind === 'reasoning' && row.status === 'running')) seen.running++
+      if (current?.activities?.some(row => row.kind === 'reasoning') && !current.messages.some(message => message.role === 'assistant' && message.text)) seen.beforeReply++
     })
     const messageId = randomUUID()
     expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId, threadId: id,
@@ -40,7 +41,10 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('shows Devin’s thought chun
     unsubscribe()
     const rows = ((await thread()).activities ?? []).filter(row => row.kind === 'reasoning')
     // Counts only; run with --disable-console-intercept to see them.
-    console.info('devin-thinking-live', { model, thoughtRows: rows.length, withText: rows.filter(row => row.text).length, runningUpdates: seen.running })
+    console.info('devin-thinking-live', { model, thinkingRows: rows.length, withText: rows.filter(row => row.text).length, snapshotsBeforeReply: seen.beforeReply })
+    // The run is the evidence that Devin streams thought chunks, so it fails when none came, or none came before the reply.
+    expect(rows.length).toBeGreaterThan(0)
+    expect(seen.beforeReply).toBeGreaterThan(0)
     for (const row of rows) {
       expect(row).toMatchObject({ title: 'Thinking', turnId: messageId, afterMessageId: messageId })
       expect(['completed', 'interrupted']).toContain(row.status)
