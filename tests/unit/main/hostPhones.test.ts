@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
 import { HOST_PHONES_WATCH_MS, HostPhones, type HostPhonesLink } from '../../../src/main/hosts/hostPhones'
-import type { SshHostConnection } from '../../../src/main/hosts/sshLauncher'
+import type { AdminConnection } from '../../../src/main/hosts/adminConnection'
 import type { PhonesState } from '../../../src/shared/phones'
 
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
@@ -14,7 +14,10 @@ const state = (patch: Partial<PhonesState> = {}): PhonesState => ({
 /** A connected host behind a stand-in for the forwarded port: what each request asked for, and what the host says next. */
 function fixture() {
   let tokens = 0
-  const connection = { url: 'http://127.0.0.1:4500', hostId: HOST_ID, hostAdminToken: vi.fn(async () => `token-${++tokens}-0000000000000000`) } as unknown as SshHostConnection
+  const sshConnection = (): AdminConnection => ({ url: 'http://127.0.0.1:4500', hostId: HOST_ID, hostAdminToken: vi.fn(async () => `token-${++tokens}-0000000000000000`) }) as unknown as AdminConnection
+  const connection = sshConnection()
+  /** What each request goes over: the connection the host is on, until a test hands out an admin connection instead. */
+  let admin = connection
   const requests: { route: string; token: string; body: unknown }[] = []
   let answer: (route: string, body: unknown) => { status?: number; body?: unknown } = () => ({ body: { v: 1, hostId: HOST_ID, state: state() } })
   const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -24,14 +27,18 @@ function fixture() {
     const reply = answer(route, body)
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 })
   }) as unknown as typeof globalThis.fetch
-  let links: HostPhonesLink[] = [{ id: ID, name: 'forge', connection }]
+  const live = {}
+  const link = vi.fn(async () => admin)
+  let links: HostPhonesLink[] = [{ id: ID, name: 'forge', hostId: HOST_ID, connection: live, admin: link }]
   const listeners = new Set<() => void>()
   const opened: string[] = []
   const phones = new HostPhones({ hosts: { links: () => links, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) } },
     openExternal: async url => { opened.push(url) }, fetch, pollMs: 1000 })
   return {
-    phones, requests, opened, connection,
+    phones, requests, opened, connection, link,
     answer: (next: typeof answer) => { answer = next },
+    /** The admin connection closed while idle, and the next press opened another. */
+    reopen: () => { admin = sshConnection(); return admin },
     disconnect: () => { links = []; for (const listener of listeners) listener() },
   }
 }
@@ -91,6 +98,29 @@ it('asks the connection for the token again once when the host no longer takes t
   await phones.command(ID, { type: 'set-enabled', enabled: true })
   expect(connection.hostAdminToken).toHaveBeenCalledTimes(2)
   expect(phones.state()[0]!.state).toMatchObject({ enabled: true })
+  phones.close()
+})
+
+it('asks each press for its connection, and reads the token again from a new admin connection', async () => {
+  const { phones, requests, link, connection, reopen } = fixture()
+  await vi.waitFor(() => expect(phones.state()[0]?.state).toBeDefined())
+  await phones.command(ID, { type: 'retry' })
+  // The same connection keeps its token: the host's launch read it once.
+  expect(link).toHaveBeenCalledTimes(2)
+  expect(connection.hostAdminToken).toHaveBeenCalledTimes(1)
+  const next = reopen()
+  await phones.command(ID, { type: 'retry' })
+  expect(next.hostAdminToken).toHaveBeenCalledTimes(1)
+  expect(requests.map(item => item.token)).toEqual(['Bearer token-1-0000000000000000', 'Bearer token-1-0000000000000000', 'Bearer token-2-0000000000000000'])
+  phones.close()
+})
+
+it('says the host cannot be reached when no connection to it opens, and changes nothing', async () => {
+  const { phones, link, requests } = fixture()
+  await vi.waitFor(() => expect(phones.state()[0]?.state).toBeDefined())
+  link.mockRejectedValueOnce(new Error('SSH could not reach the host.'))
+  await expect(phones.command(ID, { type: 'set-enabled', enabled: true })).rejects.toThrow('Phone access on forge could not be reached. Nothing was changed.')
+  expect(requests).toHaveLength(1)
   phones.close()
 })
 

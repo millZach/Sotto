@@ -24,6 +24,7 @@ export type SshFailureCode =
   | 'host-busy'
   | 'host-start-failed'
   | 'host-timeout'
+  | 'host-not-running'
   | 'forward-failed'
   | 'forward-timeout'
   | 'pairing-failed'
@@ -60,6 +61,7 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'host-busy': 'A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect.',
   'host-start-failed': 'The host could not start. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account.',
   'host-timeout': 'The host was not ready in time. Check that it starts on the SSH host, then reconnect.',
+  'host-not-running': 'The host is not running on the SSH host, so nothing was changed there.',
   'forward-failed': 'The SSH port forward could not open. Reconnect, and if it fails again, check that the SSH server allows port forwarding.',
   'forward-timeout': 'The SSH forward was not ready in time. Check SSH access and reconnect.',
   'pairing-failed': 'The pairing code could not be read from the host. Check that the host is running and try again.',
@@ -106,7 +108,7 @@ export class SshFailure extends Error {
 
 /** The launch script's reasons that name a failure on the host side; anything else it says is `host-start-failed`. */
 export const LAUNCH_REASONS: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>([
-  'archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout',
+  'archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout', 'host-not-running',
   'node-missing', 'node-too-old', 'node-too-new',
 ])
 
@@ -120,7 +122,7 @@ const FAILURE_STEPS: Partial<Readonly<Record<SshFailureCode, HostSetupStep>>> = 
   'auth-failed': 'sign-in', 'host-key-changed': 'sign-in', 'host-key-rejected': 'sign-in', 'identity-file-unreadable': 'sign-in', 'prompt-unanswered': 'sign-in',
   // Until the host archive carries its own Node (#207), a missing or unsuitable Node is part of the installation.
   'node-missing': 'install', 'node-too-old': 'install', 'node-too-new': 'install', 'archive-missing': 'install',
-  'descriptor-invalid': 'start', 'port-taken': 'start', 'host-busy': 'start', 'host-start-failed': 'start', 'host-timeout': 'start',
+  'descriptor-invalid': 'start', 'port-taken': 'start', 'host-busy': 'start', 'host-start-failed': 'start', 'host-timeout': 'start', 'host-not-running': 'start',
   'forward-failed': 'start', 'forward-timeout': 'start',
   'pairing-failed': 'pair',
   'permission-setup-failed': 'pair',

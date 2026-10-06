@@ -54,6 +54,11 @@ export interface SshHostConnection {
   readonly owned: boolean
   /** Where the user's SSH configuration sent the target, from `ssh -G`. */
   readonly route: SshRoute
+  /**
+   * The Node the launch script ran under on the host, for the command that revokes this computer there by hand when Forget
+   * cannot (ADR-0053). A path, never a secret; kept in memory only. Absent from a host whose launch script did not say.
+   */
+  readonly node?: string
   showHostPairingCode(): Promise<SshPairingCode>
   /** Establish this SSH desktop's default policy once; prior policy decisions are never changed. */
   ensureDesktopAnswers(clientId: string): Promise<void>
@@ -67,6 +72,14 @@ export interface SshHostConnection {
   /** One operation of a host update on this host. A failure the host reports comes back as its `error` result; a lost connection throws. */
   updateHost(operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
   close(): Promise<void>
+}
+/** How a connect treats a host that is not running. */
+export interface SshConnectOptions {
+  /**
+   * False for an admin connection (ADR-0053): it finds the running host and starts none, so a press that needs a running
+   * host fails with `host-not-running` rather than starting one.
+   */
+  readonly start?: boolean
 }
 export interface SshLauncherDependencies {
   readonly spawn?: SpawnSsh
@@ -84,7 +97,9 @@ export interface SshLauncherDependencies {
 const healthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535) })
 const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boolean(),
   /** Only a launch's result carries it (ADR-0050). It stays on this connection's attempt and goes nowhere else. */
-  adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional() })
+  adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional(),
+  /** The launch's Node, from `process.execPath` on the host. Only a launch's result carries it; one Sotto cannot read is left out. */
+  node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined) })
 const pairingSchema = z.object({ type: z.literal('pairing-code'), code: z.string().min(1).max(256), expiresAt: z.string().datetime(), hostId: z.uuid() })
 const desktopAnswersSchema = z.object({ type: z.literal('desktop-answers'), hostId: z.uuid() })
 const revokedSchema = z.object({ type: z.literal('revoked'), revoked: z.boolean(), hostId: z.uuid() })
@@ -224,7 +239,7 @@ export class SshHostLauncher {
   private revision = 0
   constructor(private readonly dependencies: SshLauncherDependencies = {}) {}
 
-  async connect(configuration: SshHostConfiguration, callbacks: SshCallbacks = {}): Promise<SshHostConnection> {
+  async connect(configuration: SshHostConfiguration, callbacks: SshCallbacks = {}, options: SshConnectOptions = {}): Promise<SshHostConnection> {
     const validated = validateSshHost(configuration)
     const revision = ++this.revision
     if (this.attempt) await this.closeAttempt(this.attempt)
@@ -254,7 +269,7 @@ export class SshHostLauncher {
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       timeout = setTimeout(expire, authentication)
       const route = attempt.route = await this.resolve(attempt)
-      const result = await this.control(attempt, { op: 'launch' }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
+      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
       if (!parsed.success) throw new SshFailure('host-start-failed')
@@ -289,7 +304,7 @@ export class SshHostLauncher {
       this.signedIn(attempt, forward)
       attempt.connected = true
       this.status(attempt, 'ready')
-      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route,
+      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}),
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
         hostAdminToken: () => this.adminToken(attempt),
         stopHost: async () => { try { return await this.stopHost(attempt) } finally { await this.closeAttempt(attempt) } },

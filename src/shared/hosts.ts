@@ -119,6 +119,20 @@ export interface HostsState {
   updates?: HostUpdateState[]
   /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
   phones?: HostPhonesView[]
+  /** The host Forget last removed without revoking this computer there, until the user dismisses it (ADR-0053). */
+  forgotten?: HostForgotten
+}
+/**
+ * A host Forget removed from this computer whose pairing it could not revoke there: SSH could not reach the host, or its
+ * host was not running. The host still trusts this computer until the command, run on the host while its host runs,
+ * removes it. Kept in memory only.
+ */
+export interface HostForgotten {
+  /** The forgotten saved host's ID, which Dismiss names. */
+  readonly id: string
+  readonly name: string
+  /** The one line to run on the host. Sotto never runs it. */
+  readonly command: string
 }
 /**
  * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
@@ -145,6 +159,8 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('disconnect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('stop-host'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('forget'), id: z.uuid() }).strict(),
+  /** Puts away what Forget said about a host it could not revoke this computer on. */
+  z.object({ type: z.literal('dismiss-forgotten'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),
   /** Opens the Tailscale approval page a connect is waiting on, in the default browser. Main holds the URL. */
   z.object({ type: z.literal('open-approval'), id: z.uuid() }).strict(),

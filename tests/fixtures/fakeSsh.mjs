@@ -194,7 +194,7 @@ async function control(script) {
 }
 
 const script = !tunnel && !resolveOnly ? await readAll(process.stdin) : ''
-record({ type: 'spawn', args, target, tunnel, resolve: resolveOnly, op: configuration?.op, stdinSha256: createHash('sha256').update(script).digest('hex'),
+record({ type: 'spawn', args, target, tunnel, resolve: resolveOnly, op: configuration?.op, ...(configuration?.start === false ? { start: false } : {}), stdinSha256: createHash('sha256').update(script).digest('hex'),
   askpass: process.env.SSH_ASKPASS_REQUIRE === 'force' && !!process.env.SSH_ASKPASS })
 if (resolveOnly) process.stdout.write(`host ${target}\nhostname forge.example.net\nuser user\nport 2222\nidentityfile ~/.ssh/id_ed25519\nidentityfile ~/.ssh/id_rsa\n`)
 else if (await authenticate()) { if (tunnel) forward(); else await control(script) }

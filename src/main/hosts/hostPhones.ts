@@ -2,14 +2,15 @@ import { z } from 'zod'
 
 import { phonesStateSchema, type HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesView } from '../../shared/hosts'
-import type { SshHostConnection } from './sshLauncher'
+import type { AdminConnection } from './adminConnection'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 
 /**
  * Phones on a remote host (ADR-0050). Each connected host runs its own phone access, the desktop's own over its host
  * service, and this reads and changes it for the Hosts page's Phones dialog: through the host's administrative routes
- * on the port the SSH connection forwards, with the host's administrative token, which the connection's launch handed
- * back and which stays in memory here. Every SSH command is a full sign-in, so nothing here runs one.
+ * on the port an SSH connection forwards, with the host's administrative token, which that connection's launch handed
+ * back and which stays in memory here. The connection is the one the host is on, or an admin connection opened for the
+ * press (ADR-0053). Every SSH command is a full sign-in, so nothing here runs one.
  *
  * A host is read once when it connects, so its row can say whether phones reach it, and again every couple of seconds
  * while it is still setting up, or while the dialog is open, so a phone pairing or connecting shows up there. Nothing
@@ -17,8 +18,17 @@ import { isTailscaleApprovalUrl } from './tailscaleApproval'
  * cannot change anything then.
  */
 
-/** The connection to a saved host, while it is connected. */
-export interface HostPhonesLink { readonly id: string; readonly name: string; readonly connection: SshHostConnection }
+/** A saved host, while it is connected. */
+export interface HostPhonesLink {
+  readonly id: string
+  readonly name: string
+  /** The host's own ID, which every answer must carry. */
+  readonly hostId: string
+  /** The connection the host is on now. Only its identity is read: a new one is read afresh. */
+  readonly connection: object
+  /** What the request goes over: the SSH connection the host is on, or an admin connection opened for it (ADR-0053). */
+  admin(): Promise<AdminConnection>
+}
 export interface HostPhonesHosts {
   /** Every saved host connected now. */
   links(): HostPhonesLink[]
@@ -53,8 +63,10 @@ class HostRefused extends Error {}
 
 interface Entry {
   view: HostPhonesView
-  /** The connection the view and token came from; a new one is read afresh. */
-  connection?: SshHostConnection | undefined
+  /** The connection the view came from; a new one is read afresh. */
+  connection?: object | undefined
+  /** The SSH connection the token came from, which is the only one it is good for. */
+  admin?: AdminConnection | undefined
   token?: Promise<string> | undefined
   reading?: Promise<void> | undefined
   /** Until when an open dialog wants this host read again and again. */
@@ -134,13 +146,13 @@ export class HostPhones {
     for (const link of links) {
       const entry = this.entry(link.id)
       if (entry.connection === link.connection) continue
-      entry.connection = link.connection; entry.token = undefined
+      entry.connection = link.connection; entry.admin = undefined; entry.token = undefined
       void this.read(link.id)
     }
     for (const [id, entry] of this.entries) {
       if (links.some(link => link.id === id)) continue
       // Disconnected: keep what it last said, and the open dialog's watch, for when it connects again.
-      entry.connection = undefined; entry.token = undefined
+      entry.connection = undefined; entry.admin = undefined; entry.token = undefined
     }
   }
 
@@ -166,12 +178,14 @@ export class HostPhones {
 
   /** One administrative request, with the token read again once if the host no longer takes the one held. */
   private async post(entry: Entry, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number, again = true): Promise<Answer> {
-    const connection = link.connection
-    entry.token ??= connection.hostAdminToken()
+    const admin = await link.admin()
+    // Another SSH connection, after an admin connection closed while idle: its launch read the token afresh.
+    if (entry.admin !== admin) { entry.admin = admin; entry.token = undefined }
+    entry.token ??= admin.hostAdminToken()
     const token = entry.token
     let response: Response
     try {
-      response = await (this.options.fetch ?? fetch)(`${connection.url}/v1/admin/${route}`, {
+      response = await (this.options.fetch ?? fetch)(`${admin.url}/v1/admin/${route}`, {
         method: 'POST', headers: { Authorization: `Bearer ${await token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       })
@@ -185,7 +199,7 @@ export class HostPhones {
     const parsed = answerSchema.safeParse(await response.json())
     if (!parsed.success) throw new HostRefused('The host answered with something else.')
     const answer = parsed.data
-    if (answer.hostId !== connection.hostId) throw new Error('The host identity changed.')
+    if (answer.hostId !== link.hostId) throw new Error('The host identity changed.')
     return answer
   }
 

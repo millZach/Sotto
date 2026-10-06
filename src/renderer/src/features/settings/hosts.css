@@ -73,3 +73,14 @@
 .hosts-setup-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; }
 .hosts-settings .hosts-setup-line > p { flex: 1 1 260px; min-width: 0; margin: 0; color: var(--tt-text); font-size: 13px; }
 .hosts-setup-line b { font-weight: 600; }
+
+/* What Forget says when it could not revoke this computer on the host (ADR-0053): the command, and the way to put it away. */
+.hosts-settings .hosts-forgotten { margin-top: 0; }
+.hosts-forgotten > svg { color: var(--tt-error-text); }
+.hosts-forgotten__copy { display: grid; flex: 1 1 auto; gap: 8px; min-width: 0; }
+.hosts-forgotten__command { display: block; border-radius: var(--tt-radius-sm); background: var(--tt-surface); padding: 6px 8px; color: var(--tt-text); font: 12px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.hosts-forgotten__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.hosts-forgotten__actions .tt-button { gap: 6px; }
+.hosts-forgotten__failed { color: var(--tt-error-text); font-size: 13px; }
+/* Forget's own sign-in waiting on Tailscale, inside its confirmation. */
+.hosts-forget-wait { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }

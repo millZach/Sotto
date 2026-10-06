@@ -69,3 +69,11 @@ Each surface is checked at 1600×1000, 1280×800 and 820×560, in light and dark
 - On Linux, Serve needs the SSH account to be Tailscale's operator. Until it is, the desktop stays on SSH and the row says why, with `sudo tailscale set --operator=$USER` for the owner to run there. Sotto never runs it.
 - Real TLS and MagicDNS cannot run in CI. The tests stand a loopback proxy in front of the host's tailnet listener, and only a check on a real host, recorded in `docs/verification/`, proves the certificate path.
 - `docs/host-protocol.md` changes with the host side: the tailnet listener carries desktops, hello reports `tailnetAddress`, `startedBy` and a desktop's phone access, and features are per client.
+
+## Build notes
+
+**October 5, 2026, keeping the admin SSH apart from a host's socket connection.** Three details the decision left open, settled as it was built:
+
+- An admin connection's launch finds the running host and starts none. A press on a host that is not running fails at the connect, before any operation runs, so Forget of a stopped host takes the "not revoked" path the decision describes without starting the host only to stop it again.
+- Forget opens an admin connection for any host whose socket is on no SSH connection: one on its tailnet connection, and one that is switched off, disconnected or waiting to reconnect. Forget used to revoke only a host it was connected to; now it revokes wherever SSH reaches a running host.
+- What Forget says when it did not revoke stays on the Hosts page until the owner dismisses it, and is kept in memory only. The Node path in its command is the one the host's last launch, over either connection, reported, and `node` when this run of Sotto never saw one.

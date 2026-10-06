@@ -1,7 +1,7 @@
 import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Laptop, MoreHorizontal, Plus, Server, Smartphone } from 'lucide-react'
-import { type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
+import { AlertTriangle, Check, Copy, Laptop, MoreHorizontal, Plus, Server, Smartphone } from 'lucide-react'
+import { type HostForgotten, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostsBridge, type HostsCommand, type HostsState, type HostStatus } from '../../../../shared/hosts'
 import type { HostProviderJobState } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
@@ -12,6 +12,7 @@ import { HostProviders, connectedProvidersLabel } from './HostProviders'
 import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
+import { writeClipboard } from '../../agents/richActions'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
 import './hosts.css'
 
@@ -156,6 +157,28 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
   </HostsModal>
 }
 
+/**
+ * What Forget says when it removed a host here without revoking this computer there (ADR-0053): the host still trusts
+ * this computer, and the one line that removes it there, which Sotto never runs. It stays until dismissed.
+ */
+function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostForgotten; readonly onDismiss: () => void }): ReactNode {
+  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
+  const { name, command } = forgotten
+  const copy = async (): Promise<void> => { try { await writeClipboard(command); setCopied('copied') } catch { setCopied('failed') } }
+  return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={`${name} still trusts this computer`}>
+    <AlertTriangle size={16} aria-hidden="true" />
+    <div className="hosts-forgotten__copy">
+      <p>Sotto removed {name} from this computer, but could not revoke this computer’s access there: SSH could not reach {name}, or its host was not running. {name} still trusts this computer until it is removed there. To remove it, run this on {name} while its host is running:</p>
+      <code className="hosts-forgotten__command">{command}</code>
+      <span className="hosts-forgotten__actions">
+        <Button variant="secondary" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy()}>{copied === 'copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy command'}</Button>
+        <Button variant="ghost" aria-label={`Dismiss what Sotto said about ${name}`} onClick={onDismiss}>Dismiss</Button>
+        {copied === 'failed' ? <span className="hosts-forgotten__failed" role="alert">The command could not be copied. Select it and copy it instead.</span> : null}
+      </span>
+    </div>
+  </section>
+}
+
 /** A host setup running without its dialog, or ended and not yet put away (ADR-0035). */
 function HostSetupLine({ setup, onShow, onDismiss }: { readonly setup: HostSetupState; readonly onShow: () => void; readonly onDismiss: () => void }): ReactNode {
   const running = setup.phase === 'starting' || setup.phase === 'running'
@@ -205,12 +228,18 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const phonesHost = state?.hosts.find(host => host.id === phonesId)
   const closePhones = useRef(() => setPhonesId(null)).current
   const forgetDescription = (host: HostStatus): string => {
-    const stop = reachable(host) && host.owned ? ' It also stops the host Sotto started there.' : ''
-    const access = reachable(host)
-      ? "This revokes this computer's access on the host and removes the saved connection."
-      : `This removes the saved connection. This computer's access on ${host.name} stays until you connect again or revoke it there.`
-    return `${access}${stop} Threads stay on the host.`
+    if (!reachable(host)) {
+      return `Sotto signs in to ${host.name} over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. `
+        + `If ${host.name} can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.`
+    }
+    const stop = host.owned ? ' It also stops the host Sotto started there.' : ''
+    return `This revokes this computer's access on the host and removes the saved connection.${stop} Threads stay on the host.`
   }
+  /** Forget's own sign-in, while Tailscale SSH holds it for approval: the dialog that asked shows it (ADR-0053). */
+  const forgetWaiting = (host: HostStatus): ReactNode => host.tailscale?.waiting
+    ? <span className="hosts-forget-wait">Waiting for your approval in Tailscale.{host.tailscale.url
+      ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${host.name}`} onClick={() => void run({ type: 'open-approval', id: host.id })}>Open approval page</Button> : null}</span>
+    : undefined
   const act = (host: HostStatus, action: MenuAction): void => {
     if (action === 'stop') setStopId(host.id)
     else if (action === 'rename') setRenameId(host.id)
@@ -234,6 +263,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     <p>Connect to machines you reach over SSH. Sotto signs in with your SSH setup, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, and a host Sotto started keeps running until you stop it.</p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
+    {state?.forgotten ? <ForgottenNotice key={state.forgotten.id} forgotten={state.forgotten} onDismiss={() => void run({ type: 'dismiss-forgotten', id: state.forgotten!.id })} /> : null}
     <div className="hosts-list">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
         phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)}
@@ -250,7 +280,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       catch (failure) { return failure instanceof Error ? failure.message : 'The name could not be saved. Try again.' }
     }} /> : null}
     {forget && <ConfirmationDialog title={`Forget ${forget.name}?`} confirmLabel="Forget host" cancelLabel="Keep host" onCancel={() => setForgetId(null)} onConfirm={() => run({ type: 'forget', id: forget.id })}
-      fallbackFocusRef={addButton} failureMessage={error} description={forgetDescription(forget)} />}
+      fallbackFocusRef={addButton} failureMessage={error} description={forgetDescription(forget)} pendingStatus={forgetWaiting(forget)} />}
     {stopping && <ConfirmationDialog title={`Stop the host on ${stopping.name}?`} confirmLabel="Stop host" cancelLabel="Keep it running" onCancel={() => setStopId(null)}
       failureMessage={error} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
       description={`This stops the host Sotto started on ${stopping.name} and switches it off. Turns running there are interrupted; threads and history stay in its data folder. Switch it on to start it again.`} />}
