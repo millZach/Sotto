@@ -979,7 +979,7 @@ describe('start at boot (ADR-0054)', () => {
     expect(manager.get().hosts).toEqual([])
     const [notice] = manager.get().forgotten ?? []
     expect(notice).toEqual({ id: remote.id, name: 'Forge fixture', bootCommand: expect.stringContaining('systemctl --user disable --now sotto-host') as unknown })
-    expect(notice!.bootCommand).toContain('B="/opt/sotto"/boot-start.sh')
+    expect(notice!.bootCommand).toContain('B="/opt/sotto/boot-start.sh"')
   })
 
   it('says a host that refused the revoke still has its unit, since Forget left it running as it was', async () => {

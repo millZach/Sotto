@@ -2,8 +2,10 @@
 export function shellQuoted(value: string): string {
   const home = value === '~' || value.startsWith('~/')
   const rest = home ? value.slice(1) : value
-  return `"${home ? '$HOME' : ''}${rest.replace(/["$`\\]/gu, character => `\\${character}`)}"`
+  return `"${home ? '$HOME' : ''}${shellEscaped(rest)}"`
 }
+/** A value for inside a POSIX shell's double quotes, without the quotes. */
+export const shellEscaped = (value: string): string => value.replace(/["$`\\]/gu, character => `\\${character}`)
 
 /**
  * The one line that revokes this computer on a host by hand, for when Forget could not (ADR-0053, "Forget"). It resolves

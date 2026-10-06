@@ -4,6 +4,8 @@ import { HostBootChanges, bootRemovalCommand, type HostBootCandidate, type HostB
 import type { BusyHostThreads } from '../../../src/main/hosts/busyHost'
 import type { SshBootResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
+import { LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/launchScript'
+import { posix } from 'node:path'
 import type { BootStatus, HostBootState } from '../../../src/shared/bootStart'
 
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -235,9 +237,41 @@ describe('start at boot changes (ADR-0054)', () => {
 })
 
 describe('the command that removes start at boot by hand', () => {
-  it('acts only on the unit that runs this installation’s script, as boot-remove does, and clears its failed state', () => {
-    expect(bootRemovalCommand('~/.local/share/sotto-host/')).toBe('B="$HOME/.local/share/sotto-host"/boot-start.sh; U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"; '
-      + 'grep -qxF "ExecStart=/bin/sh \\"$B\\"" "$U" && { systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; }')
-    expect(bootRemovalCommand('/opt/my "sotto" $x')).toContain('B="/opt/my \\"sotto\\" \\$x"/boot-start.sh;')
+  it('acts only on the unit that runs this installation’s script, as boot-remove does, clears its failed state, and says when it finds none', () => {
+    expect(bootRemovalCommand('~/.local/share/sotto-host/')).toBe('H=${HOME%/}; B="$H/.local/share/sotto-host/boot-start.sh"; U="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service"; '
+      + 'L="ExecStart=/bin/sh \\"$H/.local/share/sotto-host/boot-start.sh\\""; '
+      + 'if grep -qxF "$L" "$U" 2>/dev/null; then systemctl --user disable --now sotto-host; rm -f "$U" "$B"; systemctl --user daemon-reload; systemctl --user reset-failed sotto-host; '
+      + 'else echo "Found no start at boot unit for this installation, so nothing was changed. To see the unit this machine has, run systemctl --user cat sotto-host."; fi')
+    expect(bootRemovalCommand('/opt/my "sotto" $x')).toMatch(/^B="\/opt\/my \\"sotto\\" \\\$x\/boot-start\.sh"; /u)
+  })
+
+  it('looks for the ExecStart= line the launch script writes, however the saved folder is spelled or quoted', () => {
+    // The launch script's own lines for the script's path and the unit's ExecStart=, taken from its source so the two
+    // cannot drift apart, run for a host whose home folder is `home`.
+    const line = (name: string): string => new RegExp(`\\nconst ${name} = (.*);\\n`, 'u').exec(LAUNCH_SCRIPT_SOURCE)![1]!
+    const launch = (home: string) => new Function('path', 'os', `const resolvePath = ${line('resolvePath')}; const unitQuote = ${line('unitQuote')};
+      return installPath => { const install = resolvePath(installPath); const bootScriptPath = ${line('bootScriptPath')}; return [bootScriptPath, ${line('execStart')}]; }`)(
+      posix, { homedir: () => home }) as (installPath: string) => [string, string]
+    // What a POSIX shell makes of the command's assignments, up to its `if`: `${NAME%pattern}` for the two patterns it
+    // uses, and inside double quotes, `$NAME` expanded, `\` taken off the four characters it escapes, and no command run.
+    const shell = (command: string, home: string): Record<string, string> => {
+      const values: Record<string, string> = { HOME: home }
+      for (const [, name, value] of command.slice(0, command.indexOf('; if ')).matchAll(/(?:^|; )(\w+)=("(?:[^"\\]|\\.)*"|\$\{\w+%[^}]*\})(?=; |$)/gu)) {
+        const strip = /^\$\{(\w+)%(.*)\}$/u.exec(value!)
+        values[name!] = strip ? values[strip[1]!]!.replace(strip[2] === '/' ? /\/$/u : /\/[^/]*$/u, '')
+          : value!.slice(1, -1).replace(/\\(["$`\\])|\$(\w+)|`/gu, (match, escaped?: string, variable?: string) => {
+            if (match === '`') throw new Error(`${name!} would run a command`)
+            return escaped ?? values[variable!] ?? ''
+          })
+      }
+      return values
+    }
+    const folders = ['/opt//my 100% $x/./a/../sotto/', '/srv/back\\slash "q" `t`', '/opt/$HOME/sotto', '/', '~/', '~//sotto 100%/',
+      '~/.local/share/./sotto-host/../sotto-host', '~/..', '~/../sotto', '~/a/../../../sotto']
+    for (const home of ['/home/zach', '/home/zach/', '/'])
+      for (const saved of folders) {
+        const [script, execStart] = launch(home)(saved)
+        expect(shell(bootRemovalCommand(saved), home)).toMatchObject({ B: script, L: execStart })
+      }
   })
 })
