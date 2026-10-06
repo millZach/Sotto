@@ -106,6 +106,9 @@ describe('SocketHostService thread tool features (ADR-0025, October 5 amendment)
     const url = await hostAnswering({ ...frozen, features: ['thread-changes'] })
     const client = new SocketHostService({ url, token: 'paired-token', owned: true })
     await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    // Only a hello lists what this client may use (ADR-0053), and the stand-in refuses the session before one, so the
+    // test lists what that hello would. tests/integration/socketHost.test.ts covers the hello itself.
+    Object.assign(client, { features: ['thread-changes'] })
     await expect(client.threadFiles({ threadId: 'thread', path: '' })).rejects.toMatchObject({ code: 'version_mismatch' })
     await expect(client.subagentPage({ threadId: 'thread' })).rejects.toMatchObject({ code: 'version_mismatch' })
     // Listed, so the read is sent: with no socket open it fails as a dropped connection, not as the version.
