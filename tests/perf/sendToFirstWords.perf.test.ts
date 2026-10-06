@@ -61,9 +61,8 @@ const PROVIDERS = ['claude', 'codex'] as const satisfies readonly ProviderId[]
 const PROMPT = 'Synthetic prompt'
 const REPLY = 'Synthetic reply'
 
-/** A Git working copy of `files` committed filler files totalling about `mib` MiB, a hundred to a folder. */
-async function workingCopy(name: string, files: number, mib: number): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), `sotto-perf-repo-${name}-`))
+/** Fill `root` with a Git working copy of `files` committed filler files totalling about `mib` MiB, a hundred to a folder. */
+async function workingCopy(root: string, files: number, mib: number): Promise<void> {
   const each = Math.max(1, Math.floor(mib * 1024 * 1024 / files))
   const line = 'Filler text for a send benchmark working copy.\n'
   const body = line.repeat(Math.ceil(each / line.length)).slice(0, each)
@@ -76,7 +75,6 @@ async function workingCopy(name: string, files: number, mib: number): Promise<st
   const git = (...args: string[]) => execFileSync('git', ['-c', 'core.autocrlf=false', '-c', 'user.name=Sotto benchmark', '-c', 'user.email=benchmark@example.invalid', ...args],
     { cwd: root, stdio: 'ignore', windowsHide: true })
   git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'Filler')
-  return root
 }
 
 interface Counts { reads: number; git: number; writes: number; stores: Record<string, number>; checkpointMs: number }
@@ -148,18 +146,23 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
       const records = (await runtime.turns.recent(1_000)).length
       const before = threadSummaryOf(thread()).lastAssistant?.id
       let seenAt: number | undefined
+      let finishedShown = false
       const unsubscribe = runtime.agentControl.subscribe(state => {
         const shown = state.host.threads.find(item => item.id === threadId)
         if (seenAt === undefined && shown && threadSummaryOf(shown).lastAssistant?.id !== before) seenAt = performance.now()
+        if (seenAt !== undefined && shown?.status === 'idle' && shown.lastTurn && shown.lastTurn.status !== 'running') finishedShown = true
       })
       whole = counts(); beforeWritten = undefined; counted.git = 0
       const startedAt = performance.now()
       try {
         await command({ type: 'manual-send', threadId, text: PROMPT })
         const commandMs = performance.now() - startedAt
-        // Finished when the reply is over, its record is written and the window has been sent the reply.
-        await expect.poll(async () => thread().status === 'idle' && seenAt !== undefined && (await runtime.turns.recent(1_000)).length > records,
+        // Finished when the reply is over, its record is written and the window has been sent the reply and its end.
+        await expect.poll(async () => thread().status === 'idle' && finishedShown && (await runtime.turns.recent(1_000)).length > records,
           { timeout: 120_000, interval: 10 }).toBe(true)
+        // The checkpoint that completes this turn was queued when its end was published; it is part of this send,
+        // and the next send's checkpoint would otherwise wait behind it.
+        await checkpoints.checkpoints.afterTurn(threadId)
         const [record] = await runtime.turns.recent(1)
         expect(record?.commandType).toBe('manual-send')
         const t = record!.timings
@@ -168,7 +171,8 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
           stages: t, whole: { ...whole, git: counted.git }, beforeWritten: beforeWritten ?? counts() }
       } finally { unsubscribe() }
     }
-    // The first send starts the provider's session; it is reported apart from the rest.
+    // The first send starts the provider's session; it is reported apart from the rest. Each send starts once the
+    // one before it, its record and its completing checkpoint have finished.
     const first = await send()
     const samples: Sample[] = []
     for (let index = 0; index < SENDS; index++) samples.push(await send())
@@ -182,6 +186,8 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
 
 const figures = (sample: Sample) => ({ hearsMs: round(sample.hearsMs), firstWordsMs: round(sample.firstWordsMs), seenMs: round(sample.seenMs), commandMs: round(sample.commandMs),
   ...Object.fromEntries(SEND_STAGE_FIELDS.map(field => [field, sample.stages[field]])), whole: sample.whole, beforeWritten: sample.beforeWritten })
+/** A per-send count: its median, and its least and most, since some reads and writes race the reply. */
+const spread = (values: number[]) => ({ median: median(values), min: Math.min(...values), max: Math.max(...values) })
 const medians = (samples: readonly Sample[]) => ({
   hearsMs: round(median(samples.map(sample => sample.hearsMs))),
   firstWordsMs: round(median(samples.map(sample => sample.firstWordsMs))),
@@ -189,9 +195,9 @@ const medians = (samples: readonly Sample[]) => ({
   commandMs: round(median(samples.map(sample => sample.commandMs))),
   ...Object.fromEntries(SEND_STAGE_FIELDS.map(field => [field, round(median(samples.map(sample => sample.stages[field] ?? Number.NaN)))])),
   checkpointBeforeTurnMs: round(median(samples.map(sample => sample.whole.checkpointMs))),
-  threadReads: median(samples.map(sample => sample.whole.reads)), threadReadsBeforeWritten: median(samples.map(sample => sample.beforeWritten.reads)),
-  gitProcesses: median(samples.map(sample => sample.whole.git)), gitProcessesBeforeWritten: median(samples.map(sample => sample.beforeWritten.git)),
-  storeWrites: median(samples.map(sample => sample.whole.writes)), storeWritesBeforeWritten: median(samples.map(sample => sample.beforeWritten.writes)),
+  threadReads: spread(samples.map(sample => sample.whole.reads)), threadReadsBeforeWritten: spread(samples.map(sample => sample.beforeWritten.reads)),
+  gitProcesses: spread(samples.map(sample => sample.whole.git)), gitProcessesBeforeWritten: spread(samples.map(sample => sample.beforeWritten.git)),
+  storeWrites: spread(samples.map(sample => sample.whole.writes)), storeWritesBeforeWritten: spread(samples.map(sample => sample.beforeWritten.writes)),
   storeWritesByFile: samples.at(-1)!.whole.stores, storeWritesBeforeWrittenByFile: samples.at(-1)!.beforeWritten.stores,
 })
 
@@ -199,7 +205,12 @@ describe.skipIf(!PERF_BENCH)('Send to first words', () => {
   const repositories = new Map<string, string>()
   beforeAll(async () => {
     instrument()
-    for (const size of SIZES) repositories.set(size.name, await workingCopy(size.name, size.files, size.mib))
+    for (const size of SIZES) {
+      // Held before it is filled, so a failure part-way still removes it.
+      const root = await mkdtemp(join(tmpdir(), `sotto-perf-repo-${size.name}-`))
+      repositories.set(size.name, root)
+      await workingCopy(root, size.files, size.mib)
+    }
   }, 600_000)
   afterAll(async () => {
     vi.restoreAllMocks()
