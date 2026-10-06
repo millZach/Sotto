@@ -1,6 +1,7 @@
 import { HOST_NODE_MAJOR } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
+import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
 
 /**
  * The launch script: fixed Node source the desktop pipes to one `ssh` command per operation. It finds or
@@ -47,7 +48,7 @@ const descriptorPath = path.join(data, 'host-listener.json');
 // Written by launch scripts before a host recorded its own start. Read so a host started that way stays stoppable; never written.
 const legacyLauncherPath = path.join(data, 'host-launcher.json');
 const lockPath = path.join(data, 'host-listener.lock');
-const desktopsPath = path.join(data, 'desktop-clients.json');
+const desktopsPath = path.join(data, ${JSON.stringify(DESKTOP_CLIENTS_FILE)});
 // Only an address the host's Serve setting could carry, on the owner's tailnet: https on a MagicDNS name, with its port.
 const TAILNET_ADDRESS = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net:\d{1,5}$/;
 const RELEASE = /^\d+\.\d+\.\d+$/;
@@ -206,17 +207,22 @@ const admin = async () => {
 // owner's SSH session, ever adds one. Written whole and renamed into place, so the host never reads half a file, and read
 // back, so two connects recording at once both stay. A record that cannot be written costs only the tailnet connection,
 // which falls back to SSH and records again there, so it never fails the grant.
+// Missing is nobody yet. A file that could not be read this time is left alone, since writing over it would drop every
+// other desktop it names; the next connect records this one. A file that reads but holds no list already counts nobody
+// on the host, which never rewrites it, so this desktop starts it again.
 const readDesktops = async () => {
-  try { const value = JSON.parse(await fs.readFile(desktopsPath, 'utf8')); return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= 512) : []; }
+  let text;
+  try { text = await fs.readFile(desktopsPath, 'utf8'); } catch (error) { return error && error.code === 'ENOENT' ? [] : undefined; }
+  try { const value = JSON.parse(text); return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= ${DESKTOP_CLIENT_ID_MAX}) : []; }
   catch { return []; }
 };
 const recordDesktop = async clientId => {
   for (let attempt = 0; attempt < 8; attempt++) {
     const ids = await readDesktops();
-    if (ids.includes(clientId)) return;
+    if (!ids || ids.includes(clientId)) return;
     const temporary = desktopsPath + '.' + process.pid + '.' + crypto.randomUUID() + '.tmp';
     try {
-      await fs.writeFile(temporary, JSON.stringify([...ids, clientId].slice(-1000)) + '\n', { mode: 0o600 });
+      await fs.writeFile(temporary, JSON.stringify([...ids, clientId].slice(-${DESKTOP_CLIENTS_MAX})) + '\n', { mode: 0o600 });
       await fs.rename(temporary, desktopsPath);
     } catch { await fs.rm(temporary, { force: true }).catch(() => undefined); await pause(25 + Math.floor(Math.random() * 50)); }
   }

@@ -2,10 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
+import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../shared/desktopClients'
 
-/** The file the launch script writes, in the host's data folder: a JSON array of client IDs. */
-export const DESKTOP_CLIENTS_FILE = 'desktop-clients.json'
-const listSchema = z.array(z.string().min(1).max(512)).max(1000)
+const listSchema = z.array(z.string().min(1).max(DESKTOP_CLIENT_ID_MAX)).max(DESKTOP_CLIENTS_MAX)
 
 /**
  * The paired clients that are desktops (ADR-0053). Only the launch script, over the owner's SSH session, adds one: at
