@@ -8,8 +8,8 @@ and threw it away, Grok read every watched thread again each time the coordinato
 which it does before every send, and each read through the workspace wrote `workspace.json` and published.
 
 The change: the coordinator's read before a send stands for the adapter's own first read while the thread has not
-moved since, so a Codex send makes the newest-turn check once; Claude and Grok keep their recheck after their last
-await; nothing inside an adapter builds a snapshot it does not read; a read before a send that changed nothing writes
+moved since, so a Codex send makes the newest-turn check once; Claude and Grok keep their recheck just before the
+prompt; nothing inside an adapter builds a snapshot it does not read; a read before a send that changed nothing writes
 and publishes nothing; and the read after an accepted send asks the workspace for the echo it holds before reading
 whole. What it rests on is ADR-0005's amendment "one read before a send". The checkpoint hook's own read before a
 send is #764's and is not in either measurement below: it is wired only in the desktop app, not in the headless
@@ -42,25 +42,32 @@ four runs.
 
 | | Send, before | Send, after | Reads reaching the adapter | History reads before the prompt | History reads after it |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Claude | 107-116 ms | 77-87 ms | 4 → 1 | 3 → 2 transcript polls | 1 → 0 |
-| Claude, 1,000 earlier exchanges | 121-123 ms | 74-92 ms | 4 → 1 | 3 → 2 transcript polls | 1 → 0 |
+| Claude | 107-116 ms | 77-87 ms | 4 → 1 | 4 → 2 transcript polls, over the whole send | not split |
+| Claude, 1,000 earlier exchanges | 121-123 ms | 74-92 ms | 4 → 1 | 4 → 2 transcript polls, over the whole send | not split |
 | Codex | 109-143 ms | 86-100 ms | 3 → 1 | 2 → 1 newest-turn check | 1 whole read → 0 |
 | Grok | 98-131 ms | 87-89 ms | 4-5 → 1 | 4 → 2 | 2-3 → 1 |
 
-The benchmark counts Claude's transcript polls over the whole send, 4 → 2, since the transcript is a file read in
-process. The table splits them by where each read sat: before the change the fourth was the reconciliation read
-after the provider accepted.
+The history reads are the measured drop. Most of the drop in reads reaching the adapter is by construction: the
+adapter's own reads inside a send moved from `refreshThread` to `sync`, which that count cannot see, so it shows where
+the reads come from rather than how many there are.
+
+The benchmark counts Claude's transcript polls over the whole send, since the transcript is a file read in process, so
+the table does not split them around the prompt. Reading the code before the change, the fourth poll was the
+reconciliation read after the provider accepted; that is inferred, not measured.
 
 | | Adapter publishes | `workspace.json` writes | Workspace publishes |
 | --- | ---: | ---: | ---: |
-| Claude | 4 → 3 | 2 → 0 | 4 → 2 |
-| Codex | 4 → 4 | 2 → 0-1 | 5 → 1-2 |
-| Grok | 7-8 → 5 | 1-2 → 0 | 5 → 2-3 |
+| Claude | 4 → 3 | 2 → 0-1 | 4 → 2 |
+| Codex | 4 → 4 | 2 → 0-1 | 5 → 1-3 |
+| Grok | 7-8 → 5 | 1-2 → 0-1 | 5 → 2-3 |
 
-Codex's write is 0 or 1 across runs, and its median was 1 in a later run of the head of this branch. It is not traced
-to a cause here. A read before or after a send that changed nothing writes nothing (`readsAroundSend.test.ts`), so
-it is either the workspace's write window, set going by what Codex publishes as the turn starts, or the read before
-the send taking in the end of the previous turn. The writes a send makes on purpose are #767's.
+The writes do not measure the read, and they did not hold steady across runs. The counter covers the window from the
+press to the coordinator's answer, 80-180 ms, and the workspace's write window is 250 ms, so a write set going by
+the previous turn's events can land in it. The four runs above gave 0 for Claude and Grok and 0 or 1 for Codex. A
+review's four runs of the same head on a slower machine gave medians of 0 or 1 for Claude and Grok, 1 for Codex in
+every run, and up to 3 workspace publishes for Codex. What the change guarantees is narrower and is a test, not this
+table: a read before a send that changed nothing writes and publishes nothing (`readsAroundSend.test.ts`). The
+writes a send makes on purpose are #767's.
 
 Where the reads were. Before, each send's adapter reads were the coordinator's read before the send, the adapter's
 own read at the start of the send, Claude's and Grok's recheck before the prompt, and, in all three, the coordinator's
