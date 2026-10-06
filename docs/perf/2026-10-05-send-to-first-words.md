@@ -47,9 +47,9 @@ send's checkpoint queued behind the previous turn's, and its Git processes and w
 Two working copies, each committed: 50 files of filler, 1 MiB; and 3,843 files, 278 MiB, the shape of this
 repository, past the checkpoint's 64 MiB limit.
 
-For each send it reads the turn record, times the command, and times from Send to the first state the window is
-sent with the reply in it ("in the window" below). It counts the adapter's `refreshThread` calls (every read of
-the provider's thread, whoever asks), Git processes started (`spawn` and `execFile` of `git`), and atomic store
+For each send it reads the turn record, times the command, and times from Send to the first state the coordinator
+publishes with a new reply message in it ("in the coordinator's state" below). It counts the adapter's
+`refreshThread` calls (every read of the provider's thread, whoever asks), Git processes started (`spawn` and `execFile` of `git`), and atomic store
 writes, by file; each up to the moment the prompt is written and over the whole send, including the checkpoint that
 completes it. Each timing is the median of seven sends; each range is across three runs on the development machine
 (Windows 11), shared with another build. Each count is reported with its median and its least and most across the
@@ -63,7 +63,7 @@ Median per send, range across three runs on October 6.
 | --- | ---: | ---: | ---: | ---: |
 | To the provider hearing the prompt | 493-557 ms | 508-629 ms | 4,249-5,462 ms | 4,339-5,359 ms |
 | To the first words (record) | 507-572 ms | 550-667 ms | 4,267-5,480 ms | 4,409-5,402 ms |
-| To the first words in the window | 511-574 ms | 540-660 ms | 4,268-5,481 ms | 4,400-5,391 ms |
+| To the first words in the coordinator's state | 511-574 ms | 540-660 ms | 4,268-5,481 ms | 4,400-5,391 ms |
 | Admission | 12-13 ms | 11-14 ms | 14-17 ms | 8-12 ms |
 | Read before the send | 2-3 ms | 7 ms | 2-3 ms | 12-21 ms |
 | Workspace preparation | 471-534 ms | 476-594 ms | 4,217-5,429 ms | 4,297-5,313 ms |
@@ -113,8 +113,11 @@ capture fails and leaves nothing to wait for, so the wait does not explain the d
   handling plus a Node process reading and writing a line. With Claude Code the echo comes at the API's
   `message_start`, about 1-2 s after it hears the prompt, and the first output is the model's first block; 100 of
   114 Claude replies in #762 opened with thinking, which this version drops until #768.
-- Not paint. "In the window" is the first state handed to the window's listeners with the reply in it; the
-  renderer's own work after that is #771's to measure. The record's first output is when the coordinator saw it.
+- Not paint, and not the window. "In the coordinator's state" is the first state the coordinator publishes with a
+  new reply message in it, before main's IPC coalescing (up to 50 ms) and the renderer; both are #771's to measure.
+- Not a first output for Codex. Its acknowledgement is marked once `turn/start`'s reply has been applied, and the
+  fake's first delta reaches the coordinator before that, so the step would be negative and reads 0 ms. Read Codex's
+  first words as arriving with its acknowledgement. The record's first output is when the coordinator saw it.
 - Not a quiet machine. Another build ran alongside, which is why the large working copy's ranges are wide and why
   they moved between days. Compare a change against a run on the same machine at the same time.
 - Not every provider. Grok and Devin are not in the benchmark. Grok's records time every step; Devin's time

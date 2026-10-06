@@ -166,8 +166,10 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
         const [record] = await runtime.turns.recent(1)
         expect(record?.commandType).toBe('manual-send')
         const t = record!.timings
-        const hearsMs = (t.admissionMs ?? 0) + (t.readBeforeSendMs ?? 0) + (t.preparationMs ?? 0) + (t.adapterMs ?? 0)
-        return { hearsMs, firstWordsMs: hearsMs + (t.acknowledgementMs ?? 0) + (t.firstOutputMs ?? 0), seenMs: (seenAt ?? Number.NaN) - startedAt, commandMs,
+        // A step the send did not time fails the run rather than shortening the headline figures.
+        const timed = (ms: number | null | undefined, step: string): number => { if (ms === null || ms === undefined) throw new Error(`The ${step} step was not timed.`); return ms }
+        const hearsMs = timed(t.admissionMs, 'admission') + timed(t.readBeforeSendMs, 'read') + timed(t.preparationMs, 'preparation') + timed(t.adapterMs, 'adapter')
+        return { hearsMs, firstWordsMs: hearsMs + timed(t.acknowledgementMs, 'acknowledgement') + timed(t.firstOutputMs, 'first output'), seenMs: (seenAt ?? Number.NaN) - startedAt, commandMs,
           stages: t, whole: { ...whole, git: counted.git }, beforeWritten: beforeWritten ?? counts() }
       } finally { unsubscribe() }
     }
