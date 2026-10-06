@@ -237,9 +237,12 @@ export class ThreadMessageLog {
    * grew by a suffix is an append, and anything else about a message already recorded is a replacement.
    * A message opened with no text yet is held back until it says something.
    */
-  add(threadId: string, message: AgentMessage): void {
+  add(threadId: string, message: AgentMessage): void { this.record(threadId, message) }
+
+  /** `add`, with the held messages already indexed by a caller recording a whole list. */
+  private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
-    const existing = track.messages?.find(value => value.id === message.id)
+    const existing = held ? held.get(message.id) : track.messages?.find(value => value.id === message.id)
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!message.text.length) { if (existing) Object.assign(existing, message); return }
@@ -247,11 +250,11 @@ export class ThreadMessageLog {
       } else if (!message.text.length && message.role === 'assistant') {
         // Nothing was said yet. Keep the place in the window and wait for the first words.
         track.empty.add(message.id)
-        if (!existing) track.messages?.push({ ...message })
+        if (!existing) this.hold(track, message, held)
         return
       }
       if (existing) Object.assign(existing, message)
-      else track.messages?.push({ ...message })
+      else this.hold(track, message, held)
       this.publish(threadId, track, { kind: 'message-added', at: message.createdAt || new Date().toISOString(), message: { ...message } })
       return
     }
@@ -260,7 +263,7 @@ export class ThreadMessageLog {
       track.ids.set(message.id, mark(message.text))
       if (track.growing?.id === message.id) track.growing = undefined
       if (existing) Object.assign(existing, message)
-      else track.messages?.push({ ...message })
+      else this.hold(track, message, held)
       return
     }
     const previous = track.last?.id === message.id ? track.last : undefined
@@ -310,7 +313,11 @@ export class ThreadMessageLog {
    * providers are read to append and never to rebuild (ADR-0016), and only `reset` takes words back.
    */
   set(threadId: string, messages: readonly AgentMessage[]): void {
-    for (const message of messages) this.add(threadId, message)
+    // One index for the whole list: looking each message up in the held window made a re-read cost the
+    // square of the thread's length.
+    const held = new Map<string, AgentMessage>()
+    for (const message of this.track(threadId).messages ?? []) if (!held.has(message.id)) held.set(message.id, message)
+    for (const message of messages) this.record(threadId, message, held)
     // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
     if (!this.wanted(threadId)) { current.messages = undefined; return }
@@ -365,6 +372,14 @@ export class ThreadMessageLog {
     if (!track?.empty.size) return
     if (track.messages) track.messages = track.messages.filter(message => !track.empty.has(message.id))
     track.empty.clear()
+  }
+
+  /** Put a copy of a message in the held window, and in the caller's index of it when there is one. */
+  private hold(track: Track, message: AgentMessage, held: Map<string, AgentMessage> | undefined): void {
+    if (!track.messages) return
+    const copy = { ...message }
+    track.messages.push(copy)
+    if (held && !held.has(copy.id)) held.set(copy.id, copy)
   }
 
   private track(threadId: string): Track {
