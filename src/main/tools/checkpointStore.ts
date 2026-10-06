@@ -58,7 +58,7 @@ export class CheckpointStore {
   private readonly file: AtomicJsonStore<z.infer<typeof storageSchema>>
   /** The generation the file was last written with; journal lines carry it. */
   private generation: string | undefined
-  /** The journal's bytes this generation's appends wrote. */
+  /** The journal's bytes as this generation's appends left them. Anything past them is stale. */
   private appended = 0
   private fileBytes = 0
   private readonly sizes = new Map<string, number>()
@@ -196,18 +196,34 @@ export class CheckpointStore {
     this.appended = 0
     this.fileBytes = bytes ?? this.measure(records)
     await retryWindowsFileOperation(() => unlink(this.journal)).catch(error => {
-      // A journal left behind holds only an older generation's lines, which are ignored.
+      // A journal left behind holds only an older generation's lines, which are ignored and cut off by the next append.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.report?.('checkpoint-cleanup-failed')
     })
   }
 
-  /** Add `records` to the journal and wait until they are on disk; `all` and `bytes` are for a file of no format yet. */
+  /**
+   * Add `records` to the journal and wait until they are on disk. Anything past this generation's earlier appends
+   * (a write that failed part-way, or a journal that could not be removed) is cut off first, so a line never lands
+   * on a torn one. An append that cannot be completed rewrites the file with `all` instead, which retires the journal.
+   */
   async append(records: readonly CheckpointRecord[], all: readonly CheckpointRecord[], bytes?: number): Promise<void> {
     if (!this.generation) return this.write(all, bytes)
     const data = Buffer.from(records.map(record => `${JSON.stringify({ generation: this.generation, record })}\n`).join(''))
-    const handle = await open(this.journal, 'a', 0o600)
-    try { await handle.writeFile(data); await handle.sync() }
-    finally { await handle.close() }
+    try {
+      await retryWindowsFileOperation(async () => {
+        const handle = await open(this.journal, constants.O_WRONLY | constants.O_CREAT, 0o600)
+        try {
+          const size = (await handle.stat()).size
+          if (size < this.appended) throw new Error('The checkpoint journal lost lines it was given.')
+          if (size > this.appended) await handle.truncate(this.appended)
+          for (let written = 0; written < data.length;) written += (await handle.write(data, written, data.length - written, this.appended + written)).bytesWritten
+          await handle.sync()
+        } finally { await handle.close() }
+      })
+    } catch {
+      await this.write(all, bytes)
+      return
+    }
     this.appended += data.length
   }
 }
