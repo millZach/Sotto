@@ -53,6 +53,22 @@ describe('checkpoint storage and its journal', () => {
     expect(f.store.mustRewrite()).toBe(true)
   })
 
+  it('sets aside a damaged journal line beside a damaged file that still names its generation', async () => {
+    const f = await fixture()
+    const first = record(), second = record()
+    await f.store.write([first])
+    await f.store.append([second], [first, second])
+    const stored = JSON.parse(await readFile(f.store.path, 'utf8')) as { generation: string; records: unknown[] }
+    await writeFile(f.store.path, JSON.stringify({ ...stored, records: [...stored.records, { not: 'a record' }] }))
+    const journal = `${await readFile(f.store.journal, 'utf8')}not a line
+`
+    await writeFile(f.store.journal, journal)
+    const loaded = await f.open().load()
+    expect(ids(loaded.records)).toEqual(ids([first, second]))
+    const backups = await Promise.all((await readdir(f.directory)).filter(name => name.startsWith('checkpoints.json.corrupt-')).map(name => readFile(join(f.directory, name), 'utf8')))
+    expect(backups).toContain(journal)
+  })
+
   it('cuts off an append that failed part-way, so the next one lands on a whole line', async () => {
     const f = await fixture()
     const first = record(), second = record(), third = record()

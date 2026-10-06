@@ -124,8 +124,9 @@ export class CheckpointStore {
       const backup = this.backupPath()
       try { await copyFile(this.path, backup, constants.COPYFILE_EXCL) }
       catch { throw new Error(`Checkpoint storage at ${this.path} could not be repaired. No checkpoints were discarded. Restore access and try again; the backup could not be saved at ${backup}.`) }
-      // Without the file's generation the journal cannot be matched to it, so it is kept beside the backup.
-      if (journal.text && generation === undefined) await this.setAsideJournal(journal.text)
+      // Without the file's generation the journal cannot be matched to it, and a damaged line cannot be folded,
+      // so either way the journal is kept beside the backup.
+      if (journal.text && (generation === undefined || journal.damaged)) await this.setAsideJournal(journal.text)
       try { await this.write(records) }
       catch { throw new Error(`Checkpoint storage at ${this.path} could not be repaired. The original file is backed up at ${backup}. Restore access to local storage and try again.`) }
       return { records, setAside: backup }
