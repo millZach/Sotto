@@ -178,7 +178,15 @@ const adminToken = async ready => {
     return value.hostId === ready.hostId && value.pid === ready.pid && typeof value.adminToken === 'string' && /^[A-Za-z0-9_-]{16,256}$/.test(value.adminToken) ? value.adminToken : undefined;
   } catch { return undefined; }
 };
-const launch = async () => { const ready = await start(); const token = await adminToken(ready); return finish(token ? { ...ready, adminToken: token } : ready); };
+// An admin connection (ADR-0053) finds the running host and starts none: a host that is not running stays stopped.
+// The result names the Node this script runs under, which is the one the host's own --revoke-client would take.
+const launch = async () => {
+  const found = cfg.start === false ? await discover() : null;
+  if (cfg.start === false && !found) return finish({ type: 'error', reason: 'host-not-running' });
+  const ready = found ? { type: 'ready', ...found } : await start();
+  const token = await adminToken(ready);
+  return finish({ ...ready, node: process.execPath, ...(token ? { adminToken: token } : {}) });
+};
 const admin = async () => {
   const current = await discover().catch(() => null);
   if (!current || current.hostId !== cfg.hostId) return finish({ type: 'failed' });
@@ -537,7 +545,8 @@ export const HOST_DOWNLOAD_TIMEOUT_MS = 5 * 60_000
 export const HOST_ARCHIVE_LIMIT_BYTES = 512 * 1024 * 1024
 
 export type LaunchOperation =
-  | { readonly op: 'launch' }
+  /** Find or start the host. `start: false` only finds one, for an admin connection, and starts nothing. */
+  | { readonly op: 'launch'; readonly start?: false }
   | { readonly op: 'pairing-code'; readonly hostId: string }
   | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string }
   | { readonly op: 'revoke-client'; readonly hostId: string; readonly clientId: string }

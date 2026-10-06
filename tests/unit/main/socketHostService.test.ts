@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../../package.json'
@@ -106,6 +106,9 @@ describe('SocketHostService thread tool features (ADR-0025, October 5 amendment)
     const url = await hostAnswering({ ...frozen, features: ['thread-changes'] })
     const client = new SocketHostService({ url, token: 'paired-token', owned: true })
     await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    // Only a hello lists what this client may use (ADR-0053), and the stand-in refuses the session before one, so the
+    // test lists what that hello would. tests/integration/socketHost.test.ts covers the hello itself.
+    Object.assign(client, { features: ['thread-changes'] })
     await expect(client.threadFiles({ threadId: 'thread', path: '' })).rejects.toMatchObject({ code: 'version_mismatch' })
     await expect(client.subagentPage({ threadId: 'thread' })).rejects.toMatchObject({ code: 'version_mismatch' })
     // Listed, so the read is sent: with no socket open it fails as a dropped connection, not as the version.
@@ -137,4 +140,32 @@ it('keeps the saved pairing when an older host refuses an upgrade with 401', asy
   server!.on('upgrade', (_request, stream) => stream.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'))
   const client = new SocketHostService({ url, token: 'paired-token' })
   await expect(client.connect()).rejects.toMatchObject({ code: 'unavailable', pairingRequired: false })
+})
+
+describe('what a desktop uses of a host, and where it pairs (ADR-0053)', () => {
+  it('uses only the features a hello listed, never the ones health listed for the listener', async () => {
+    // Health lists everything the listener offers; this session is refused before any hello says what this client may use.
+    const url = await hostAnswering({ ...frozen, features: [...frozen.features, 'provider-sign-in', 'client-updates', 'attachment-staging'] })
+    const client = new SocketHostService({ url, token: 'paired-token' })
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    expect(client.offersSignIn()).toBe(false)
+    expect(client.offersClientUpdates()).toBe(false)
+    await expect(client.signIn({ op: 'sign-in-start', provider: 'codex' })).rejects.toMatchObject({ code: 'version_mismatch' })
+    await expect(client.gitRefs({ threadId: randomUUID() })).rejects.toMatchObject({ code: 'version_mismatch' })
+    expect(requested).toEqual(['/v1/health', '/v1/session'])
+  })
+
+  it('sends a pairing code to this computer only, and never to a host’s tailnet address', async () => {
+    const url = await hostAnswering(frozen)
+    const sent = vi.spyOn(globalThis, 'fetch')
+    try {
+      for (const address of ['https://forge.tail5728ca.ts.net:8443', 'https://127.0.0.1:4319']) {
+        await expect(SocketHostService.pair(address, 'synthetic-code', 'Sotto desktop')).rejects.toThrow('This computer pairs with a host only through its SSH connection. Nothing was sent.')
+      }
+      expect(sent).not.toHaveBeenCalled()
+      // The forward on this computer is where pairing goes; the stand-in refuses the code, which is enough to show it was sent.
+      await expect(SocketHostService.pair(url, 'synthetic-code', 'Sotto desktop')).rejects.toMatchObject({ code: 'unauthenticated' })
+      expect(requested).toEqual(['/v1/pair'])
+    } finally { sent.mockRestore() }
+  })
 })

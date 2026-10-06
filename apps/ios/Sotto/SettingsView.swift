@@ -87,7 +87,7 @@ private struct ThemeChoice: View {
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
                         .strokeBorder(selected ? theme.color(.accent) : Color.clear, lineWidth: 2))
-                    .shadow(color: selected ? theme.color(.accent).opacity(0.45) : Color.clear, radius: 10)
+                    .softShadow(RoundedRectangle(cornerRadius: 17, style: .continuous), color: theme.color(.accent).opacity(0.45), radius: 10, showing: selected)
                 HStack(spacing: 6) {
                     Text(palette.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.8)
                     if selected {
@@ -128,7 +128,7 @@ private struct ThemeRoom: View {
                         Capsule().fill(swatch.messageSurface.color).frame(width: width * 0.46, height: 14)
                             .offset(x: width * 0.54 - 10, y: 44)
                         Capsule().fill(swatch.accent.color).frame(width: 26, height: 12)
-                            .shadow(color: swatch.accent.color, radius: 6)
+                            .softShadow(Capsule(), color: swatch.accent.color, radius: 6)
                             .offset(x: 10, y: height - 22)
                     }
                     .frame(width: width, height: height, alignment: .topLeading)
@@ -189,7 +189,7 @@ private struct TextSizeStep: View {
                     if selected {
                         shape.fill(scheme == .dark ? Palette.raised : Palette.surface)
                             .overlay(shape.strokeBorder(theme.color(.accent).opacity(0.35), lineWidth: 1))
-                            .shadow(color: theme.color(.accent).opacity(0.4), radius: 8)
+                            .softShadow(shape, color: theme.color(.accent).opacity(0.4), radius: 8)
                     }
                 }
                 .contentShape(shape)
@@ -493,7 +493,7 @@ private struct AboutPanel: View {
             Text("S").font(.custom("Figtree-Bold", fixedSize: 20)).foregroundStyle(Palette.onAccent)
                 .frame(width: 44, height: 44)
                 .background(Palette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .shadow(color: theme.color(.accent).opacity(0.5), radius: 10)
+                .softShadow(RoundedRectangle(cornerRadius: 13, style: .continuous), color: theme.color(.accent).opacity(0.5), radius: 10)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sotto \(version)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)

@@ -16,6 +16,8 @@ export interface ConfirmationDialogProps {
   readonly confirmDisabled?: boolean
   readonly failureMessage?: ReactNode
   readonly pendingStatus?: ReactNode
+  /** While the confirmation is under way, Cancel and Escape call this instead of waiting for it. Absent: they wait. */
+  readonly onCancelPending?: (() => void) | undefined
   readonly fallbackFocusRef?: RefObject<HTMLElement | null>
   /** Host questions start at their field or key text; other confirmations focus their secondary action. */
   readonly initialFocus?: 'confirm' | RefObject<HTMLElement | null>
@@ -37,6 +39,7 @@ export function ConfirmationDialog({
   confirmDisabled = false,
   failureMessage,
   pendingStatus,
+  onCancelPending,
   fallbackFocusRef,
   initialFocus,
   confirmFirst = false,
@@ -48,13 +51,15 @@ export function ConfirmationDialog({
   const confirmRef = useRef<HTMLButtonElement>(null)
   const submittingRef = useRef(false)
   const onDismissRef = useRef(onDismiss)
+  const onCancelPendingRef = useRef(onCancelPending)
   const titleId = useId()
   const descriptionId = useId()
 
   onDismissRef.current = onDismiss
+  onCancelPendingRef.current = onCancelPending
   submittingRef.current = submitting
-  // Escape dismisses, except while the confirmation is under way.
-  const dialogRef = useDialogFocus({ onEscape: () => { if (!submittingRef.current) onDismissRef.current() }, initialFocus: initialFocus === 'confirm' ? confirmRef : initialFocus ?? cancelRef, fallbackFocus: fallbackFocusRef })
+  // Escape dismisses, except while the confirmation is under way, when only a confirmation that can be stopped answers it.
+  const dialogRef = useDialogFocus({ onEscape: () => { if (!submittingRef.current) onDismissRef.current(); else onCancelPendingRef.current?.() }, initialFocus: initialFocus === 'confirm' ? confirmRef : initialFocus ?? cancelRef, fallbackFocus: fallbackFocusRef })
 
   const confirm = async (): Promise<void> => {
     if (submittingRef.current || confirmDisabled) return
@@ -106,7 +111,7 @@ export function ConfirmationDialog({
           : null}
         <div className="tt-dialog__actions">
           {confirmFirst && confirmButton}
-          <Button ref={cancelRef} variant="secondary" disabled={submitting} onClick={onCancel}>
+          <Button ref={cancelRef} variant="secondary" disabled={submitting && !onCancelPending} onClick={submitting ? onCancelPending : onCancel}>
             {cancelLabel}
           </Button>
           {!confirmFirst && confirmButton}
