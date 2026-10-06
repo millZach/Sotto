@@ -4,6 +4,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import http from 'node:http'
+import { randomUUID } from 'node:crypto'
 import console from 'node:console'
 import { setTimeout as delay } from 'node:timers/promises'
 const args = process.argv.slice(2)
@@ -51,6 +52,8 @@ async function main() {
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],
+    // `instance` tells this start from any other, even one Windows gave the same PID; the launch script ignores it.
+    instance: randomUUID(),
     // FAKE_HOST_BEFORE_BOOT_MARK stands in for a host release from before the 'boot' mark, which records only a launch script's start.
     ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}) }
   await publishDescriptor(descriptor)
