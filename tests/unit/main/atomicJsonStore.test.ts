@@ -454,8 +454,7 @@ describe('AtomicJsonStore', () => {
 
   it('writes compact JSON when asked, which reads back the same', async () => {
     const filePath = join(await createRoot(), 'store.json')
-    const store = new AtomicJsonStore(filePath, (input) => exampleSchema.parse(input), () => ({ value: 'default' }),
-      undefined, undefined, undefined, 'compact')
+    const store = AtomicJsonStore.compact(filePath, (input) => exampleSchema.parse(input), () => ({ value: 'default' }))
 
     await store.write({ value: 'compact' })
 
@@ -510,5 +509,20 @@ describe('AtomicJsonStore', () => {
     await Promise.all([first, second])
     expect(reads).toEqual(['one', 'two'])
     await expect(store.read()).resolves.toEqual({ value: 'two' })
+  })
+
+  it('ends at a later latest call, not at a plain write made between two of them', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    let current = 'one'
+    const latest = (): Example => ({ value: current })
+    const first = store.writeLatest(latest)
+    const plain = store.write({ value: 'plain' })
+    current = 'newest'
+    const last = store.writeLatest(latest)
+
+    expect(last).not.toBe(first)
+    await Promise.all([first, plain, last])
+    await expect(store.read()).resolves.toEqual({ value: 'newest' })
   })
 })

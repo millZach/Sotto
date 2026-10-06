@@ -363,8 +363,7 @@ export class AgentControl {
       reasoningAccounts: [],
     }
     // Compact: it is rewritten before every send.
-    this.store = new AtomicJsonStore(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved(),
-      undefined, undefined, undefined, 'compact')
+    this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false)

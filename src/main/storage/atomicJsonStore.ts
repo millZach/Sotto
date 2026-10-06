@@ -7,7 +7,7 @@ import { retryWindowsFileOperation } from './windowsFileRetry'
 const MAX_CORRUPT_BACKUP_ATTEMPTS = 100
 const MAX_TEMPORARY_FILE_ATTEMPTS = 100
 
-function hasErrorCode(error: unknown, code: string): boolean {
+export function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
@@ -42,6 +42,11 @@ export class AtomicJsonStore<T> {
     private readonly format: AtomicJsonFormat = 'pretty',
   ) {}
 
+  /** A store written as compact JSON, for the large stores rewritten around a send and while a reply streams. */
+  static compact<T>(filePath: string, parse: (input: unknown) => T, createDefault: () => T): AtomicJsonStore<T> {
+    return new AtomicJsonStore(filePath, parse, createDefault, undefined, undefined, undefined, 'compact')
+  }
+
   read(): Promise<T> {
     return this.enqueueOperation(() => this.readInternal(true))
   }
@@ -57,7 +62,7 @@ export class AtomicJsonStore<T> {
   write(value: T): Promise<void> {
     let serialized: string
     try { serialized = this.serialize(value) } catch (error) { return Promise.reject(error) }
-    return this.enqueueOperation(() => this.writeImmediately(serialized))
+    return this.writeSerialized(serialized)
   }
 
   /**
@@ -65,13 +70,16 @@ export class AtomicJsonStore<T> {
    * decide whether to write at all hands that same text here rather than serializing it twice.
    */
   writeSerialized(serialized: string): Promise<void> {
+    // A `writeLatest` call after this one must not share a write queued in front of it, or the file would end here.
+    this.queuedLatest = undefined
     return this.enqueueOperation(() => this.writeImmediately(serialized))
   }
 
   /**
    * Writes whatever `latest` returns when the write starts, sharing one write among every call made before it
    * does. A call made while a write is running queues one more, so the file always ends at a state no older than
-   * the newest call, and a burst of calls costs at most the write in flight and one more.
+   * the newest call, and a burst of calls costs at most the write in flight and one more. A `write` or
+   * `writeSerialized` in between ends the sharing, so a later call queues behind it rather than in front.
    */
   writeLatest(latest: () => T): Promise<void> {
     if (this.queuedLatest) return this.queuedLatest

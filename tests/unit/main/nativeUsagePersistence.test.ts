@@ -217,7 +217,7 @@ it('reports a failed repricing migration and retries it through the same drain',
 
 it('writes a streaming reply at most once an interval, and the end of its turn at once, without copying the ledger', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-usage-writes-')); roots.push(root)
-  const usage = new NativeUsage(root, 'claude', 1000); await usage.load()
+  const usage = new NativeUsage(root, 'claude'); await usage.load()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const write = vi.spyOn(AtomicJsonStore.prototype, 'writeSerialized').mockResolvedValue(undefined)
   const clone = vi.spyOn(globalThis, 'structuredClone')

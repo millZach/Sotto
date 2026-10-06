@@ -46,7 +46,7 @@ export const USAGE_WRITE_INTERVAL_MS = 1000
  * Accounting observation only: never changes delivery, native sessions, or billing settings.
  *
  * The ledger holds every request of every thread and is written whole. A reply reports usage on nearly every
- * frame, so while it streams the ledger is written at most once every `writeIntervalMs`, and at once when a turn
+ * frame, so while it streams the ledger is written at most once every `USAGE_WRITE_INTERVAL_MS`, and at once when a turn
  * ends (`elapsed`, Grok's `turn_completed`) or a compaction is recorded. What a crash between two writes loses is
  * that second's counts, which the provider reports again when the thread is read.
  */
@@ -63,8 +63,9 @@ export class NativeUsage {
   /** A turn ended while a write was running: the next one goes as soon as it finishes. */
   private urgent = false
   private draining = 0
-  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly writeIntervalMs = USAGE_WRITE_INTERVAL_MS) {
-    this.store = new AtomicJsonStore(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
+  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok') {
+    // Compact, as `serialized` writes it: the ledger is rewritten whole while a reply streams.
+    this.store = AtomicJsonStore.compact(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
   }
   async load(): Promise<void> {
     await this.flushed()
@@ -137,7 +138,7 @@ export class NativeUsage {
   private writePending(now = false): void {
     if (!this.dirty.size && !this.failed.size) return
     if (this.writing) { this.urgent ||= now; return }
-    const wait = now || this.draining ? 0 : this.lastWriteAt + this.writeIntervalMs - performance.now()
+    const wait = now || this.draining ? 0 : this.lastWriteAt + USAGE_WRITE_INTERVAL_MS - performance.now()
     if (wait > 0) {
       this.timer ??= setTimeout(() => { this.timer = undefined; this.writePending(true) }, wait)
       return

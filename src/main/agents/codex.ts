@@ -220,8 +220,7 @@ export class CodexAppServerHost implements AgentHost {
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'codex')
     // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
-    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}),
-      undefined, undefined, undefined, 'compact')
+    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
