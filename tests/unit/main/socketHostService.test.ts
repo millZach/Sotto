@@ -88,6 +88,31 @@ describe('SocketHostService host-folders feature', () => {
   })
 })
 
+describe('SocketHostService thread tool features (ADR-0025, October 5 amendment)', () => {
+  it('sends no Files, Changes or Agents read to a host that does not list its feature, and names the version instead', async () => {
+    const url = await hostAnswering({ ...frozen, features: ['detail-delta', 'git-refs'] })
+    const client = new SocketHostService({ url, token: 'paired-token', owned: false })
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    const message = hostVersionMismatch(packageVersion, '0.1.16', false)
+    const workspaceId = 'a'.repeat(64)
+    for (const read of [
+      () => client.threadFiles({ threadId: 'thread', path: '' }), () => client.threadFilePreview({ threadId: 'thread', path: 'a.txt', workspaceId }),
+      () => client.gitChanges({ threadId: 'thread' }), () => client.gitReview({ threadId: 'thread', workspaceId, scope: { kind: 'working' } }),
+      () => client.subagentPage({ threadId: 'thread' }), () => client.subagentAssignments({ threadId: 'thread', agentId: 'agent' }),
+    ]) await expect(read()).rejects.toMatchObject({ code: 'version_mismatch', message })
+    expect(requested).toEqual(['/v1/health', '/v1/session'])
+  })
+  it('lets each surface\'s read through only on a host that lists that surface\'s own feature', async () => {
+    const url = await hostAnswering({ ...frozen, features: ['thread-changes'] })
+    const client = new SocketHostService({ url, token: 'paired-token', owned: true })
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated' })
+    await expect(client.threadFiles({ threadId: 'thread', path: '' })).rejects.toMatchObject({ code: 'version_mismatch' })
+    await expect(client.subagentPage({ threadId: 'thread' })).rejects.toMatchObject({ code: 'version_mismatch' })
+    // Listed, so the read is sent: with no socket open it fails as a dropped connection, not as the version.
+    await expect(client.gitChanges({ threadId: 'thread' })).rejects.toMatchObject({ code: 'disconnected' })
+  })
+})
+
 describe('the version sentence', () => {
   it('says which side to bring up to date, and offers Stop host only for a host Sotto started', () => {
     expect(hostIsNewer('0.1.16', '0.1.15')).toBe(true)

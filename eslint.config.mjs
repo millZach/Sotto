@@ -26,6 +26,7 @@ export default tseslint.config(
       'artifacts/codex-questions-thread-agents/**',
       'artifacts/agent-browser/**',
       'artifacts/browser-grant/**',
+      'artifacts/remote-thread-tools/**',
       'artifacts/test-iphone/**',
       'artifacts/cloud-iphone/**',
       'artifacts/new-thread-setup/**',

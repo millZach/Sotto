@@ -97,8 +97,9 @@
 .tools-chrome__button:disabled:hover { background: transparent; color: var(--tt-text-2); }
 .tools-panel .terminal-bar.tools-chrome { gap: 4px; padding-left: 8px; }
 
-/* The working copy the panel reads, as one quiet line: project, then the branch in mono, then the folder's kind.
-   The branch loses its end first, never the project. The folder's two actions sit at the line's end. */
+/* The working copy the panel reads, as one quiet line: project, then the branch in mono, then the folder's kind, and
+   for a thread on a paired host, the host it is on. The branch loses its end first, never the project. The folder's
+   actions sit at the line's end. */
 .tools-panel__foot {
   display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 6px 0 14px;
   border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; white-space: nowrap;
@@ -109,6 +110,9 @@
 .tools-panel__sep { flex: none; color: var(--tt-text-muted); }
 .tools-panel__branch { flex: 0 10 auto; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); text-overflow: ellipsis; }
 .tools-panel__label { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+.tools-panel__host { display: inline-flex; flex: 0 2 auto; align-items: center; gap: 4px; min-width: 0; color: var(--tt-text-muted); }
+.tools-panel__host > svg { flex: none; }
+.tools-panel__host-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tools-panel__pinned-owner { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
 .tools-panel__pinned-owner > svg { flex: none; color: var(--tt-accent-text); }
 .tools-panel__pinned-owner .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; }

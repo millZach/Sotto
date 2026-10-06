@@ -902,6 +902,10 @@ export class DesktopHosts {
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
       hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(),
+      // A thread's Files, Changes and Agents, read on the host (ADR-0025, October 5 amendment).
+      threadFiles: request => socket.threadFiles(request), threadFilePreview: request => socket.threadFilePreview(request),
+      gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
+      subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
     }
     // Back from an update's restart: the new connection takes the place its threads kept on the page.
