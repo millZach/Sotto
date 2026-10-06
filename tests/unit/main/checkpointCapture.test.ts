@@ -66,7 +66,8 @@ describe('checkpoint capture', () => {
 
   it('never reuses a hash for an edit that keeps the size and lands in the same timestamp tick', async () => {
     // A snapshot taken right after the write cannot tell a later write in the same tick from this one.
-    const f = await fixture({ now: Date.now })
+    // The clock is behind the files, so every file reads as written just now.
+    const f = await fixture({ now: () => Date.now() - 60_000 })
     const path = join(f.repo, 'app.txt')
     const first = await f.capture.snapshot(f.repo, { reuse: true })
     const seen = await lstat(path, { bigint: true })
@@ -325,7 +326,8 @@ describe('checkpoint capture', () => {
   })
 
   it('holds no verdict over a path changed too recently to trust', async () => {
-    const f = await fixture({ files: { 'a.txt': 'small\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) }, now: Date.now })
+    // The clock is behind the files, so the large file reads as written just now.
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) }, now: () => Date.now() - 60_000 })
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
