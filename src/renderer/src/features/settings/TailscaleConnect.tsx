@@ -110,7 +110,7 @@ export function TailscaleRow({ control }: { readonly control: TailscaleControl }
       {summary === null ? <p>Checking Tailscale on this computer…</p>
         : summary.state === 'running' ? <p><span className="hosts-dot" data-online="true" aria-hidden="true" />Connected as {summary.user} · {devicesOnTailnet(summary.deviceCount)}</p>
         : summary.state === 'off' ? <p>Off on this computer. Connect to reach your other machines.</p>
-        : <p>Not installed. Any machine you reach over SSH works without it.</p>}
+        : <p>Not installed. Any machine you reach over SSH works without it, and Sotto connects to it over SSH each time.</p>}
       {control.notice ? <p className="hosts-tailscale__notice" role="status">{control.notice}</p> : null}
     </div>
     {summary ? <div className="hosts-tailscale__action"><TailscaleAction control={control} summary={summary} /></div> : null}
