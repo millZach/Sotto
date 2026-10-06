@@ -584,12 +584,16 @@ export class SshHostLauncher {
     attempt.callbacks.onPrompt?.(null)
     this.nextPrompt(attempt)
   }
+  /**
+   * One launch script request. `failure` is what an answer the script gave but `parse` refused says; `noAnswer` is what a
+   * request that ended with no answer says, which is `failure` too unless the caller has to tell the two apart.
+   */
   private async request<T>(attempt: Attempt, operation: LaunchOperation, failure: SshFailureCode, budgetMs: number, parse: (value: Record<string, unknown>) => T | undefined,
-    events: Parameters<SshHostLauncher['control']>[4] = {}): Promise<T> {
+    events: Parameters<SshHostLauncher['control']>[4] = {}, noAnswer: SshFailureCode = failure): Promise<T> {
     if (attempt.busy) throw new SshFailure('request-busy')
     attempt.busy = true
     try {
-      const value = parse(await this.control(attempt, operation, (this.dependencies.authenticationTimeoutMs ?? 120_000) + budgetMs, failure, events))
+      const value = parse(await this.control(attempt, operation, (this.dependencies.authenticationTimeoutMs ?? 120_000) + budgetMs, noAnswer, events))
       if (value === undefined) throw new SshFailure(failure)
       return value
     } finally { attempt.busy = false }
@@ -606,10 +610,12 @@ export class SshHostLauncher {
     if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before forgetting a client.'))
     if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) return Promise.reject(new Error('Choose a valid paired client.'))
     const hostId = attempt.ready.hostId
+    // `revoke-failed` is the launch script saying the host did not revoke; a request that got no answer is SSH failing,
+    // which Forget must not report as the host refusing (ADR-0053).
     return this.request(attempt, { op: 'revoke-client', hostId, clientId }, 'revoke-failed', REQUEST_BUDGET_MS, value => {
       const revoked = revokedSchema.safeParse(value)
       return revoked.success && revoked.data.hostId === hostId ? revoked.data.revoked : undefined
-    })
+    }, {}, 'ssh-failed')
   }
   private async adminToken(attempt: Attempt): Promise<string> {
     if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', 'Connect to the SSH host before changing its phone access.')

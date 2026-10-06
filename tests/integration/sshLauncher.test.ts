@@ -92,6 +92,14 @@ it('starts the sign-in deadline after the askpass helper is ready', async () => 
     await connecting.catch(() => undefined)
   }
 })
+it('says the host refused a revoke only when the launch script answered so, and that SSH failed when no answer came', async () => {
+  for (const [mode, code] of [['revoke-refused', 'revoke-failed'], ['revoke-silent', 'ssh-failed']] as const) {
+    const { launcher } = await fixture(mode)
+    const connection = await launcher.connect(configuration)
+    await expect(connection.revokeClient('22222222-2222-4222-8222-222222222222')).rejects.toMatchObject({ code })
+    await connection.close()
+  }
+})
 it('turns multiplexing and any configured remote command off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
   const { launcher, spawns } = await fixture('started')
   const connection = await launcher.connect(configuration)
