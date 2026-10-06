@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../../shared/hosts'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
-import { useHostsModalOpen } from './HostDialog'
+import { useHostsModalOpen } from './HostsModal'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import './hosts.css'
 

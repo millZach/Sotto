@@ -169,3 +169,40 @@ describe('what a desktop uses of a host, and where it pairs (ADR-0053)', () => {
     } finally { sent.mockRestore() }
   })
 })
+
+describe('SocketHostService on a tailnet connection (ADR-0053)', () => {
+  it('sends a host that answers as another one nothing of this device’s pairing', async () => {
+    const url = await hostAnswering({ ...frozen, sottoVersion: packageVersion, hostId: randomUUID() })
+    const client = new SocketHostService({ url, token: 'paired-token', expectedHostId: hostId })
+    await expect(client.connect()).rejects.toMatchObject({ name: 'Error', code: 'unauthenticated', message: 'This address belongs to a different host. Check the connection before continuing.' })
+    expect(requested).toEqual(['/v1/health'])
+  })
+
+  it('reads a 403 as the host refusing this device here, which keeps the pairing, and a 401 as pairing again', async () => {
+    requested.length = 0
+    let status = 403
+    server = createServer((request, response) => {
+      requested.push(request.url ?? '')
+      if (request.url === '/v1/health') { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ ...frozen, sottoVersion: packageVersion })); return }
+      response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ v: 1, error: { code: 'forbidden', message: 'Phones are off on forge.' } }))
+    })
+    await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No loopback port.')
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + address.port, token: 'paired-token', expectedHostId: hostId })
+    await expect(client.connect()).rejects.toMatchObject({ code: 'forbidden', pairingRequired: false })
+    status = 401
+    await expect(client.connect()).rejects.toMatchObject({ code: 'unauthenticated', pairingRequired: true })
+  })
+
+  it('gives up on a health check that takes longer than the time it was given', async () => {
+    requested.length = 0
+    server = createServer(request => { requested.push(request.url ?? '') })
+    await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No loopback port.')
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + address.port, token: 'paired-token', healthTimeoutMs: 50 })
+    await expect(client.connect()).rejects.toMatchObject({ name: 'TimeoutError' })
+    server.closeAllConnections()
+  })
+})

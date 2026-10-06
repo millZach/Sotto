@@ -25,8 +25,17 @@ import { version as clientVersion } from '../../../package.json'
 export class HostConnectionError extends Error {
   constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
 }
+/** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
+export class WrongHostError extends HostConnectionError {
+  constructor(message = 'This address belongs to a different host. Check the connection before continuing.') { super(message, 'unauthenticated') }
+}
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
+  /**
+   * How long the health check may take. A tailnet connection allows 5 seconds before it counts the tailnet as not
+   * answering (ADR-0053); everything else allows 15.
+   */
+  healthTimeoutMs?: number
   onConnectionChange?: (connected: boolean) => void
   getSelectedThreadId?: () => string | null
   /** A push the host could not send, such as a thread too large for one frame. The message is plain copy. */
@@ -47,9 +56,14 @@ export interface SocketHostServiceOptions {
 const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost'])
 /** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
 const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
-/** A 429 is the host's request budget, not this device's pairing, so it says to wait rather than to pair again. */
+/**
+ * A 429 is the host's request budget, not this device's pairing, so it says to wait rather than to pair again. A 403 keeps
+ * the pairing: the host knows this client but will not take it here, as a tailnet listener refuses a client it does not
+ * know as a desktop while phone access is off (ADR-0053).
+ */
 const refusal = (status: number, otherwise: string, code: HostErrorCode, pairingRequired = false): HostConnectionError =>
-  status === 429 ? new HostConnectionError(HOST_BUSY, 'busy') : new HostConnectionError(otherwise, code, undefined, pairingRequired)
+  status === 429 ? new HostConnectionError(HOST_BUSY, 'busy') : status === 403 ? new HostConnectionError('This host refused this device here. The pairing is kept.', 'forbidden')
+    : new HostConnectionError(otherwise, code, undefined, pairingRequired)
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
   private frames: SocketFrames | undefined
@@ -113,7 +127,7 @@ export class SocketHostService implements HostService {
     this.frames?.close()
     // The host says what it speaks before anything is sent to it, so a host of another version is named
     // as one instead of answering a request it cannot read with a refusal or a closed socket.
-    const healthResponse = await fetch(this.endpoint('/v1/health'), { signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
+    const healthResponse = await fetch(this.endpoint('/v1/health'), { signal: AbortSignal.any([opening.signal, AbortSignal.timeout(this.options.healthTimeoutMs ?? 15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
     if (!healthResponse.ok) throw new HostConnectionError('The host did not answer its health check. Connect again.', 'unavailable')
     const healthBody: unknown = await healthResponse.json().catch(() => null)
@@ -125,11 +139,14 @@ export class SocketHostService implements HostService {
       throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     }
     this.hostVersion = health.sottoVersion; this.features = []
+    // A host that says it is another one is not sent this device's token at all.
+    if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
     if (!response.ok) throw refusal(response.status, 'This device needs to connect again or be paired on the host.', 'unauthenticated', response.status === 401)
     const session = hostSessionSchema.parse(await response.json())
-    if (session.v !== 1 || typeof session.session !== 'string' || (this.options.expectedHostId && session.hostId !== this.options.expectedHostId)) throw new HostConnectionError('This address belongs to a different host. Check the connection before continuing.', 'unauthenticated')
+    if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError('The host answered with something else. Connect again.', 'unauthenticated')
+    if (this.options.expectedHostId && session.hostId !== this.options.expectedHostId) throw new WrongHostError()
     this.session = session
     this.details.clear(); this.tooLarge.clear()
     const url = this.endpoint('/v1/socket'), key = randomBytes(16).toString('base64')

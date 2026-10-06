@@ -83,6 +83,7 @@ const customSettings = {
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
+  tailnetConnections: true,
   voiceCoordinatorEnabled: true,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
@@ -317,6 +318,7 @@ describe('settings', () => {
       localHostEnabled: true,
       phoneAccess: false,
       phoneAccessName: '',
+      tailnetConnections: false,
       cloudIphoneMonthlyMinutes: 750,
       cloudIphoneIdleMinutes: 5,
     })
@@ -329,6 +331,14 @@ describe('settings', () => {
     expect(parseSettings(legacy)).toMatchObject({ phoneAccess: false, phoneAccessName: '' })
     expect(parseSettings({ ...customSettings, phoneAccessName: 'x'.repeat(64) }).phoneAccessName).toBe('')
     expect(parseSettings({ ...customSettings, phoneAccessName: '  Studio Mac  ' }).phoneAccessName).toBe('Studio Mac')
+  })
+
+  it('keeps a host saved before tailnet connections existed off them until a desktop turns them on (ADR-0053)', () => {
+    const legacy = { ...customSettings } as Record<string, unknown>
+    delete legacy.tailnetConnections
+    expect(parseSettings(legacy).tailnetConnections).toBe(false)
+    expect(parseSettings(customSettings).tailnetConnections).toBe(true)
+    expect(parseSettings({ ...customSettings, tailnetConnections: 'yes' }).tailnetConnections).toBe(false)
   })
 
 

@@ -74,7 +74,8 @@ const bypassAllowed = args.includes('--allow-dangerously-skip-permissions')
 const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode') }
 const saveSettings = () => { if (!metadata) writeFileSync(join(root, `settings-${session}.json`), JSON.stringify({ ...settings, pid: process.pid })) }
 saveSettings()
-const timer = setInterval(() => {
+// control-<session>.json: the one scripted action a test holds for this session, read every 10 ms or at once by `act`.
+const act = () => {
   const control = join(root, `control-${session}.json`)
   if (!existsSync(control)) return
   let action; try { action = JSON.parse(readFileSync(control, 'utf8')) } catch { return }
@@ -135,7 +136,8 @@ const timer = setInterval(() => {
     const request = { subtype: 'can_use_tool', tool_name: action.type === 'question' ? 'AskUserQuestion' : 'Bash', tool_use_id: randomUUID(), input: action.type === 'question' ? { questions: [{ question: action.text, header: 'Choice', options: [{ label: 'Blue', description: 'Blue color' }], multiSelect: false }] } : { command: 'npm run build', description: action.text } }
     const request_id = action.requestId ?? randomUUID(); pending.set(request_id, request); output({ type: 'control_request', request_id, request }); return
   }
-}, 10)
+}
+const timer = setInterval(act, 10)
 const lines = createInterface({ input: process.stdin })
 lines.on('line', line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
@@ -220,6 +222,8 @@ lines.on('line', line => {
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
+    // script.json `reply`: a model that answers every prompt at once, as the scripted `complete` action answers it.
+    if (!script.delay && script.reply !== undefined) { writeFileSync(join(root, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: script.reply })); act() }
   } else if (frame.type === 'control_response') {
     const envelope = frame.response; const request = pending.get(envelope?.request_id); const answer = envelope?.response
     if (envelope?.subtype === 'error' && typeof envelope.error === 'string') { pending.delete(envelope.request_id); return }

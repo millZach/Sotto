@@ -39,6 +39,7 @@ import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
+import { markSendStage } from './sendStages'
 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 /**
@@ -715,11 +716,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
         })
         thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
         try {
+          markSendStage(command.commandId, 'written')
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
         catch { forget(); return { accepted: false, uncertain: true } }
-        return await acknowledged ? { accepted: true } : { accepted: false, uncertain: true }
+        if (!await acknowledged) return { accepted: false, uncertain: true }
+        markSendStage(command.commandId, 'acknowledged')
+        return { accepted: true }
       } finally { this.dispatching.delete(id) }
     }
     // Answering and interrupting start the session too, so a reaped thread behaves like a live one.
