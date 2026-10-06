@@ -203,6 +203,41 @@ describe('DictateRoom', () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
+  it('says when Try again failed too', () => {
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true, retried: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(`Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED}`)
+  })
+
+  it('dismisses an error with Escape, but not from a text field or over a dialog', async () => {
+    const user = userEvent.setup()
+    const onDismiss = vi.fn(async () => undefined)
+    const error = { status: 'error' as const, sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }
+    const { rerender } = render(<>
+      <input aria-label="Search threads" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.click(screen.getByRole('textbox', { name: 'Search threads' }))
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    rerender(<>
+      <div role="dialog" aria-label="Open dialog" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />)
+    screen.getByRole('button', { name: 'Try again' }).focus()
+    await user.keyboard('{Escape}')
+    expect(onDismiss).toHaveBeenCalledOnce()
+
+    rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} />)
+    await user.keyboard('{Escape}')
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
   it('still points at Settings when a kept recording failed on the key', async () => {
     const user = userEvent.setup()
     const onOpenSettings = vi.fn()

@@ -108,6 +108,8 @@ interface ActiveSession {
   durationMs: number
   /** A transcription failed and the parts without text are kept for Try again. */
   kept: boolean
+  /** Try again has been pressed for this recording. */
+  retried: boolean
 }
 
 /**
@@ -282,6 +284,7 @@ export class DictationController {
       parts: [],
       durationMs: 0,
       kept: false,
+      retried: false,
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
@@ -368,6 +371,7 @@ export class DictationController {
     }
     this.clearResetTimer()
     session.kept = false
+    session.retried = true
     delete session.errorCode
     session.cancellable = true
     session.acceptProgress = true
@@ -701,6 +705,7 @@ export class DictationController {
         code,
         message: kept ? TRANSCRIPTION_KEPT_DETAIL[code] : ERROR_MESSAGES[code],
         ...(kept ? { kept: true } : {}),
+        ...(kept && session.retried ? { retried: true } : {}),
       },
       session,
     )
@@ -787,6 +792,7 @@ export class DictationController {
           ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
           code: session.errorCode ?? 'TRANSCRIPTION_FAILED',
           ...(state.kept === true ? { kept: true } : {}),
+          ...(state.retried === true ? { retried: true } : {}),
           ...metadata,
           cancellable: false,
         }

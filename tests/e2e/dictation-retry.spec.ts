@@ -27,7 +27,7 @@ async function withTurnedAwayDictation(
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   let launched: LaunchedSotto | undefined
   try {
-    launched = await launchSotto('transcription-turned-away-once', profile)
+    launched = await launchSotto('transcription-turned-away-twice', profile)
     const widget = await widgetOf(launched)
     await openPage(launched.page, 'Dictate')
     await launched.page.getByRole('button', { name: 'Start dictation' }).click()
@@ -48,6 +48,14 @@ test('keeps a turned-away dictation and delivers it when the widget pill is pres
     await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
     await page.screenshot({ path: resolve(evidenceRoot, 'dictate-kept.png') })
     await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept.png'), animations: 'disabled' })
+
+    // The first Try again is turned away too, and the pill says so, whole.
+    await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
+    const again = widget.locator('.widget-copy', { hasText: 'Still busy · retry' })
+    await expect(again).toBeVisible({ timeout: 15_000 })
+    expect(await again.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await expect(page.getByText('Try again did not get through.', { exact: false })).toBeVisible()
+    await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept-again.png'), animations: 'disabled' })
 
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
     await expect(widget.locator('.widget-shell[data-status="success"]')).toBeVisible({ timeout: 15_000 })
@@ -82,4 +90,13 @@ test('lets go of a turned-away dictation when Discard recording is pressed', asy
     await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('dictate-last')).toHaveCount(0)
   }, { appearance: 'light' })
+})
+
+test('lets go of a turned-away dictation when Escape is pressed in Sotto’s window', async () => {
+  await withTurnedAwayDictation(async ({ page }, widget) => {
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 15_000 })
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
+    await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
+  })
 })

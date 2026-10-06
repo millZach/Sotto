@@ -245,6 +245,22 @@ describe('WidgetApp', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    ['TRANSCRIPTION_RATE_LIMITED', 'Still busy · retry'],
+    ['TRANSCRIPTION_OFFLINE', 'Failed again · retry'],
+  ] as const)('says when Try again on %s failed too', (code, title) => {
+    const onRetry = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'error', sessionId: 'again', code, kept: true, retried: true })}
+        platform="win32" now={0} onRetry={onRetry}
+      />,
+    )
+    expect(screen.getByText(title)).toHaveAttribute('title', expect.stringMatching(/^Try again did not get through\. /))
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
   it('dismisses an error that keeps nothing when the pill is clicked', () => {
     const onRetry = vi.fn()
     const onCancel = vi.fn()

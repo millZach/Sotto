@@ -15,6 +15,8 @@ export type DictationState =
       message: string
       /** The recording is kept in memory and can be sent again (a kept recording). */
       kept?: boolean | undefined
+      /** The kept recording was tried again and failed again. */
+      retried?: boolean | undefined
     }
 
 export type WidgetProcessingStage =
@@ -147,6 +149,8 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly code: WidgetErrorCode
         /** Whether the recording is kept, so the widget offers Try again. */
         readonly kept?: boolean | undefined
+        /** Whether Try again was pressed and failed too, so the pill says so. */
+        readonly retried?: boolean | undefined
       }
   )
 
@@ -162,7 +166,7 @@ export type DictationEvent =
       output?: 'pasted' | 'copied'
     }
   | { type: 'CANCELLED'; sessionId: string }
-  | { type: 'FAILED'; sessionId: string; code: string; message: string; kept?: boolean }
+  | { type: 'FAILED'; sessionId: string; code: string; message: string; kept?: boolean; retried?: boolean }
   /** Try again on a kept recording: back to processing for the same session. */
   | { type: 'RETRIED'; sessionId: string; startedAt: number }
   | { type: 'RESET' }
@@ -260,6 +264,7 @@ export function reduceDictation(
         code: event.code,
         message: event.message,
         ...(event.kept === true ? { kept: true } : {}),
+        ...(event.kept === true && event.retried === true ? { retried: true } : {}),
       }
 
     case 'RETRIED':

@@ -243,8 +243,13 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       // A kept recording makes the whole pill Try again; what went wrong rides
       // in the tooltip and the announcement.
       if (snapshot.kept === true && isTranscriptionErrorCode(snapshot.code)) {
+        // After a Try again that failed too, the pill says so rather than
+        // looking as though nothing happened.
+        const again = snapshot.retried === true
         return {
-          tone: 'error', title: 'Click to try again', detail: `${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
+          tone: 'error',
+          title: again ? (snapshot.code === 'TRANSCRIPTION_RATE_LIMITED' ? 'Still busy · retry' : 'Failed again · retry') : 'Click to try again',
+          detail: `${again ? 'Try again did not get through. ' : ''}${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
           icon: <RotateCcw aria-hidden="true" size={23} strokeWidth={2.2} />,
         }
       }

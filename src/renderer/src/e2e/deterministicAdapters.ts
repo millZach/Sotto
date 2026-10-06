@@ -35,7 +35,7 @@ function recording(scenario: E2EScenario): AudioRecordingResult | null {
 }
 
 function createE2EFactories(scenario: E2EScenario): ProductionControllerFactories {
-  let turnedAway = false
+  let turnedAway = 0
   return {
     createRecorder(options: AudioRecorderOptions) {
       return {
@@ -53,9 +53,9 @@ function createE2EFactories(scenario: E2EScenario): ProductionControllerFactorie
       return {
         async transcribe(options) {
           if (scenario === 'transcription-failure') throw new Error('DETERMINISTIC_TRANSCRIPTION_FAILURE')
-          // The provider turns the first request away and accepts the next, as a rate-limit burst does.
-          if (scenario === 'transcription-turned-away-once' && !turnedAway) {
-            turnedAway = true
+          // The provider turns the first two requests away and accepts the next, as a rate-limit burst does.
+          if (scenario === 'transcription-turned-away-twice' && turnedAway < 2) {
+            turnedAway += 1
             throw new TranscriptionError('rate-limited')
           }
           options.onProgress?.({ stage: 'loading-model', progress: 1 })

@@ -1203,8 +1203,12 @@ describe('kept recordings', () => {
   it('keeps the recording again when Try again is turned away too', async () => {
     const { harness, calls, record } = turnedAway(['rate-limited', 'rate-limited'])
     await record()
+    expect(harness.controller.getState()).not.toHaveProperty('retried')
     await harness.controller.retry()
-    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true, retried: true })
+    const again = snapshots(harness).at(-1)!
+    expect(again).toMatchObject({ status: 'error', kept: true, retried: true })
+    expect(widgetSnapshotSchema.safeParse(again).success).toBe(true)
     await harness.controller.retry()
     expect(calls).toEqual([1, 2, 3, 2, 2])
     expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'part-1 part-2 part-3' }))

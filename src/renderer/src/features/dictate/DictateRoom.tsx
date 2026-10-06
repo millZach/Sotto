@@ -64,8 +64,10 @@ export function transcriptStamp(createdAt: number, now: number): { dateTime?: st
   return { dateTime, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 }
 
-function errorDetail(code: string, copy: PlatformCopy, kept = false): string {
-  if (kept && isTranscriptionErrorCode(code)) return TRANSCRIPTION_KEPT_DETAIL[code]
+function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = false): string {
+  if (kept && isTranscriptionErrorCode(code)) {
+    return retried ? `Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL[code]}` : TRANSCRIPTION_KEPT_DETAIL[code]
+  }
   switch (code) {
     case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
     case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
@@ -96,7 +98,7 @@ export function dictateSentence(
     case 'processing': return { sentence: 'Turning speech into text.', tone: 'normal' }
     case 'success': return { sentence: state.output === 'pasted' ? 'Pasted.' : 'Copied.', tone: 'normal' }
     case 'cancelled': return { sentence: 'Cancelled.', tone: 'normal' }
-    case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy, state.kept === true), tone: 'error' }
+    case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy, state.kept === true, state.retried === true), tone: 'error' }
     default: return { sentence: 'Ready when you are.', tone: 'normal' }
   }
 }
@@ -185,6 +187,22 @@ export function DictateRoom({
     action = onRetry
   }
   const dismiss = dictation.status === 'error' && onDismiss !== undefined ? onDismiss : undefined
+  // Escape dismisses an error, and lets go of a kept recording, inside this
+  // window. Sotto does not claim the key system-wide for it, so other apps keep
+  // their Escape while an error waits.
+  useEffect(() => {
+    if (dismiss === undefined) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return
+      event.preventDefault()
+      void dismiss()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [dismiss])
   const keyProblem = !configured || (dictation.status === 'error'
     && (dictation.code === 'TRANSCRIPTION_UNCONFIGURED' || dictation.code === 'TRANSCRIPTION_UNAUTHORIZED'))
 

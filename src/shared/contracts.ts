@@ -82,6 +82,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       sessionId: boundedSessionId.optional(),
       code: widgetErrorCodeSchema,
       kept: z.boolean().optional(),
+      retried: z.boolean().optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
