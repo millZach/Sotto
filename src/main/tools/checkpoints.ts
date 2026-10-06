@@ -1,19 +1,18 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { execFile } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { checkpointInspectionSchema, checkpointRequestSchema, checkpointRevertSchema, type Checkpoint } from '../../shared/checkpoints'
-import { fileRelativePathSchema, type FileWorkspace } from '../../shared/files'
+import type { FileWorkspace } from '../../shared/files'
 import { toolListRequestSchema } from '../../shared/tools'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { checkoutIdentity } from '../agents/threadWorktrees'
-import { CheckpointCapture } from './checkpointCapture'
+import { CheckpointCapture, LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointCapture'
 import { CheckpointStore, type CheckpointRecord as Record, type Snapshot } from './checkpointStore'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
-const digest = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
 
 /** Durable per-turn file associations. Native effects are never retried after an uncertain delivery. */
 export class CheckpointService extends ToolOperations {
@@ -174,10 +173,7 @@ export class CheckpointService extends ToolOperations {
     if (record.checkout) return record.checkout === checkout
     // Older records predate checkout identity. An unavailable unrelated folder must not block every project.
     try { return await checkoutIdentity(record.cwd) === checkout }
-    catch {
-      const path = relative(checkout, record.cwd)
-      return !isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`)
-    }
+    catch { return isInside(checkout, record.cwd) }
   }
   async isWorkspaceBlocked(threadId: string, destinationFolder?: string): Promise<boolean> {
     await this.load()
@@ -194,22 +190,21 @@ export class CheckpointService extends ToolOperations {
     return new Promise((done, reject) => execFile('git', ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', ...args], { cwd, env, windowsHide: true, encoding: 'utf8', timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (error, output) => error ? reject(error) : done(output)))
   }
   private async safe(cwd: string, path: string): Promise<string> {
-    parse(fileRelativePathSchema.refine(value => value.length > 0), path)
+    parse(checkpointPathSchema, path)
     const root = await realpath(cwd), absolute = resolve(root, path)
-    const inside = (candidate: string): boolean => { const rel = relative(root, candidate); return rel === '' || !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`) }
-    if (!inside(absolute)) return fail('blocked', 'A checkpoint path is outside the working folder.')
+    if (!isInside(root, absolute)) return fail('blocked', 'A checkpoint path is outside the working folder.')
     let component = root
     for (const part of relative(root, absolute).split(sep)) {
       component = join(component, part)
       const info = await lstat(component).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error })
       if (!info) break
-      if (info.isSymbolicLink()) return fail('blocked', 'Checkpoint paths cannot follow symbolic links or directory junctions.')
+      if (info.isSymbolicLink()) return fail('blocked', LINK_MESSAGE)
     }
     let candidate = absolute
     for (;;) {
       try {
         const info = await lstat(candidate)
-        if (info.isSymbolicLink() || !inside(await realpath(candidate))) return fail('blocked', 'Checkpoint paths cannot follow symbolic links or directory junctions.')
+        if (info.isSymbolicLink() || !isInside(root, await realpath(candidate))) return fail('blocked', LINK_MESSAGE)
         return absolute
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -313,7 +308,7 @@ export class CheckpointService extends ToolOperations {
   private async blob(hash: string | undefined): Promise<Buffer | null> {
     if (!hash) return null
     const bytes = await readFile(join(this.dependencies.directory, 'blobs', hash))
-    if (digest(bytes) !== hash) return fail('blocked', 'A checkpoint file backup failed its integrity check.')
+    if (blobName(bytes) !== hash) return fail('blocked', 'A checkpoint file backup failed its integrity check.')
     return bytes
   }
   private async checkFiles(record: Record, recovery = false): Promise<void> {
@@ -331,7 +326,7 @@ export class CheckpointService extends ToolOperations {
     for (const { path } of this.changes(record)) {
       const absolute = await this.safe(record.cwd, path), before = record.before.files[path]
       const current = await readFile(absolute).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error })
-      if (current && digest(current) !== record.after?.files[path]?.hash && digest(current) !== before?.hash) return fail('blocked', `Later edits in ${path} would be overwritten.`)
+      if (current && blobName(current) !== record.after?.files[path]?.hash && blobName(current) !== before?.hash) return fail('blocked', `Later edits in ${path} would be overwritten.`)
       if (before) {
         const bytes = await this.blob(before.hash)
         await mkdir(dirname(absolute), { recursive: true })
