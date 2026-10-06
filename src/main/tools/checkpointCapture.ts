@@ -221,7 +221,9 @@ export class CheckpointCapture {
     try { listing = await git(root, ['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']) }
     catch (error) {
       if (!refusedByGit(error)) throw error
-      return new Refusal(new Error(error instanceof Error ? error.message : 'Git could not list this working copy.', { cause: error }), [])
+      // No listing names the ignore files, so the verdict watches the two an outgrown list is usually fixed in.
+      const ignores = [join(root, '.gitignore'), ...(folder.gitDirectory ? [join(folder.gitDirectory, 'info', 'exclude')] : [])]
+      return new Refusal(new Error(error instanceof Error ? error.message : 'Git could not list this working copy.', { cause: error }), ignores)
     }
     const paths = [...new Set(listing.split('\0').filter(Boolean))].sort()
     const valid = (path: string): boolean => checkpointPathSchema.safeParse(path).success && isInside(root, join(root, path))
@@ -260,7 +262,8 @@ export class CheckpointCapture {
     }
     const entries = await inOrder<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
       if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', 'This working copy contains a file name that checkpoint storage cannot safely represent.', [path, ''])
-      if (!valid(path)) return refuse('invalid-request', INVALID_REQUEST, [])
+      // The path itself cannot be watched; its directory's listing changes when it is renamed or removed.
+      if (!valid(path)) return refuse('invalid-request', INVALID_REQUEST, [parentOf(path)])
       const parent = await directorySafety(parentOf(path))
       if (parent !== true) return parent || null
       return lstat(join(root, path), { bigint: true }).catch(absentAsNull)

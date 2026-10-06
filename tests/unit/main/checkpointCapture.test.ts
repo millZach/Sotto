@@ -176,6 +176,37 @@ describe('checkpoint capture', () => {
     }
   })
 
+  it('holds a listing that outgrew Git\'s buffer only until an ignore file changes', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', '.gitignore': 'ignored/\n' } })
+    const overflow = Object.assign(new Error('stdout maxBuffer length exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' })
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => args[0] === 'ls-files' && args[1] === '-c' ? Promise.reject(overflow)
+        : new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' }, (error, output) => error ? reject(error) : done(output))) })
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('maxBuffer')
+    expect(await capture.heldVerdict(f.repo)).toMatch('maxBuffer')
+    // Saved in place, as an editor does: nothing in Git's state or the top-level listing moves.
+    await writeFile(join(f.repo, '.gitignore'), 'ignored/\nnode_modules/\n')
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('maxBuffer')
+    expect(await capture.heldVerdict(f.repo)).toMatch('maxBuffer')
+    await writeFile(join(f.repo, '.git', 'info', 'exclude'), 'build/\n')
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
+  it('holds an invalid listed path\'s verdict only until its directory changes', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'deep/inner.txt': 'inner\n' } })
+    // A name the checkpoint store cannot represent, as Git might list one from another platform.
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' },
+        (error, output) => error ? reject(error) : done(args[0] === 'ls-files' && args[1] === '-c' ? `${output}deep/trailing.\0` : output))) })
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('This tool request is invalid.')
+    expect(await capture.heldVerdict(f.repo)).toMatch('This tool request is invalid.')
+    // Removing a file below the top level moves neither Git's state nor the top-level listing, only its directory's.
+    await rm(join(f.repo, 'deep', 'inner.txt'))
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
   it('holds a verdict only while the paths that decided it are as they were', async () => {
     const big = Buffer.alloc(8 * 1024 * 1024 + 1)
     const f = await fixture({ files: { 'a.txt': 'small\n', 'assets/big.bin': big, '.gitignore': 'ignored/\n' } })
