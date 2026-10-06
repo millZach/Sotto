@@ -12,6 +12,7 @@ import { LAUNCH_REASONS, SshFailure, classifySshExit, failureFix, type SshFailur
 import { tailscaleHold, type TailscaleHold } from './tailscaleApproval'
 import { TAILSCALE_APPROVAL_MS, type HostSetupStep } from '../../shared/hosts'
 import { HOST_ARCHIVE_PATTERN, type HostUpdateStep } from '../../shared/hostUpdates'
+import { bootStatusSchema, type BootStatus } from '../../shared/bootStart'
 import { version as desktopVersion } from '../../../package.json'
 export { SshFailure, type SshFailureCode }
 export type { SshHostConfiguration, SshRoute }
@@ -48,6 +49,8 @@ export interface SshHostUpdateOptions {
   /** The step the host moved on to while the operation runs: the checksum after a download, unpacking, the restart. */
   readonly onStep?: (step: HostUpdateStep) => void
 }
+/** A change to start at boot on this host (ADR-0054), or a look at it. `boot-remove`'s `restart` is true only for a host that is switched on. */
+export type SshBootOperation = { readonly op: 'boot-status' } | { readonly op: 'boot-install' } | { readonly op: 'boot-remove'; readonly restart: boolean }
 export interface SshHostConnection {
   readonly url: string
   readonly hostId: string
@@ -59,6 +62,8 @@ export interface SshHostConnection {
    * cannot (ADR-0053). A path, never a secret; kept in memory only. Absent from a host whose launch script did not say.
    */
   readonly node?: string
+  /** Start at boot on the host, as this connection's launch found it (ADR-0054). Absent when the launch did not say. */
+  readonly bootStart?: BootStatus
   showHostPairingCode(): Promise<SshPairingCode>
   /** Establish this SSH desktop's default policy once; prior policy decisions are never changed. */
   ensureDesktopAnswers(clientId: string): Promise<void>
@@ -71,6 +76,12 @@ export interface SshHostConnection {
   stopHost(): Promise<boolean>
   /** One operation of a host update on this host. A failure the host reports comes back as its `error` result; a lost connection throws. */
   updateHost(operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
+  /**
+   * Reads or changes start at boot on this host. Installing hands a host Sotto started over to the unit, and removing it
+   * stops the unit's host, so either may stop the host this connection reaches: `stopped` says whether it did. A failure
+   * the host reports comes back as its `error` result; a lost connection throws.
+   */
+  boot(operation: SshBootOperation): Promise<SshBootResult>
   close(): Promise<void>
 }
 /** How a connect treats a host that is not running. */
@@ -80,6 +91,11 @@ export interface SshConnectOptions {
    * host fails with `host-not-running` rather than starting one.
    */
   readonly start?: boolean
+  /**
+   * Forget's admin connection (ADR-0054): when no host runs, the launch script takes this installation's boot unit away
+   * before the connect fails with `host-not-running`, so the forgotten host does not start again at the next boot.
+   */
+  readonly removeBoot?: boolean
 }
 export interface SshLauncherDependencies {
   readonly spawn?: SpawnSsh
@@ -99,7 +115,9 @@ const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boo
   /** Only a launch's result carries it (ADR-0050). It stays on this connection's attempt and goes nowhere else. */
   adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional(),
   /** The launch's Node, from `process.execPath` on the host. Only a launch's result carries it; one Sotto cannot read is left out. */
-  node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined) })
+  node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined),
+  /** Start at boot on the host, which every launch reports (ADR-0054). One this build cannot read is left out. */
+  bootStart: bootStatusSchema.optional().catch(undefined) })
 const pairingSchema = z.object({ type: z.literal('pairing-code'), code: z.string().min(1).max(256), expiresAt: z.string().datetime(), hostId: z.uuid() })
 const desktopAnswersSchema = z.object({ type: z.literal('desktop-answers'), hostId: z.uuid() })
 const revokedSchema = z.object({ type: z.literal('revoked'), revoked: z.boolean(), hostId: z.uuid() })
@@ -115,6 +133,15 @@ const updateResultSchema = z.discriminatedUnion('type', [
     range: z.string().max(64).optional(), node: z.string().max(32).optional(), cause: z.string().max(64).optional() }),
 ])
 export type SshHostUpdateResult = z.infer<typeof updateResultSchema>
+/** What a start at boot operation answers (ADR-0054). Its `error` reasons are the launch script's own codes. */
+const bootResultSchema = z.discriminatedUnion('type', [
+  bootStatusSchema.extend({ type: z.literal('boot-status') }),
+  z.object({ type: z.literal('boot-installed'), installed: z.boolean(), stopped: z.boolean(), pid: z.number().int().positive().optional(), bootStart: bootStatusSchema }),
+  z.object({ type: z.literal('boot-removed'), stopped: z.boolean(), pid: z.number().int().positive().optional(), bootStart: bootStatusSchema }),
+  z.object({ type: z.literal('error'), reason: z.string().max(64), restarted: z.boolean().optional(), cause: z.string().max(64).optional() }),
+])
+/** What a start at boot operation answers, with `boot-status`'s status under `bootStart` like every other answer's. */
+export type SshBootResult = Exclude<z.infer<typeof bootResultSchema>, { type: 'boot-status' }> | { type: 'boot-status'; bootStart: BootStatus }
 const updateStepSchema = z.enum(['check', 'install', 'restart'])
 /** Admin requests run after SSH is signed in; this bounds the work itself, on top of any prompt. */
 const REQUEST_BUDGET_MS = 15_000
@@ -269,7 +296,7 @@ export class SshHostLauncher {
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       timeout = setTimeout(expire, authentication)
       const route = attempt.route = await this.resolve(attempt)
-      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
+      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const, ...(options.removeBoot ? { removeBoot: true as const } : {}) } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
       if (!parsed.success) throw new SshFailure('host-start-failed')
@@ -304,11 +331,11 @@ export class SshHostLauncher {
       this.signedIn(attempt, forward)
       attempt.connected = true
       this.status(attempt, 'ready')
-      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}),
+      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
         hostAdminToken: () => this.adminToken(attempt),
         stopHost: async () => { try { return await this.stopHost(attempt) } finally { await this.closeAttempt(attempt) } },
-        updateHost: (operation, options) => this.updateHost(attempt, operation, options) }
+        updateHost: (operation, options) => this.updateHost(attempt, operation, options), boot: operation => this.boot(attempt, operation) }
     } catch (error) {
       await this.closeAttempt(attempt)
       const failure = attempt.failure ?? (error instanceof Error ? error : new SshFailure('ssh-failed'))
@@ -655,6 +682,23 @@ export class SshHostLauncher {
       const parsed = updateResultSchema.safeParse(value)
       return parsed.success ? parsed.data : undefined
     }, { ...(stdin ? { stdin } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(options.onStep ? { onUpdateStep: options.onStep } : {}) })
+  }
+  /**
+   * Start at boot on the host this connection reached (ADR-0054). Installing and removing may each stop the host and start
+   * it again, the way an update's restart does, and so get that budget; installing may also wait on linger.
+   */
+  private boot(attempt: Attempt, operation: SshBootOperation): Promise<SshBootResult> {
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before changing whether it starts at boot.'))
+    const hostId = attempt.ready.hostId
+    const launch: LaunchOperation = operation.op === 'boot-install' ? { op: 'boot-install', hostId } : operation
+    const budget = operation.op === 'boot-status' ? REQUEST_BUDGET_MS : HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 60_000
+    return this.request(attempt, launch, 'boot-failed', budget, (value): SshBootResult | undefined => {
+      const parsed = bootResultSchema.safeParse(value)
+      if (!parsed.success) return undefined
+      if (parsed.data.type !== 'boot-status') return parsed.data
+      const { type, ...bootStart } = parsed.data
+      return { type, bootStart }
+    })
   }
   private status(attempt: Attempt, status: SshConnectionStatus): void { attempt.callbacks.onStatus?.(status) }
   private fail(attempt: Attempt, error: Error): void {

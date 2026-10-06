@@ -16,7 +16,7 @@ import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
-import { acquireHostLock, HostLockError, readBootId, releaseHostLock, type HostLease } from './lock'
+import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
 import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import { DesktopClients } from './desktopClients'
@@ -32,11 +32,11 @@ export interface HeadlessHostOptions {
   reasoner?: AgentRuntimeOptions['reasoner']
   log?: (event: string) => void
   /**
-   * Set when the desktop's launch script started this host over SSH (SOTTO_HOST_STARTED_BY). The host
-   * writes it into its listener descriptor, which only the lock holder writes, so the desktop can tell
-   * a host Sotto started, and may stop, from one the user started, however many launches raced.
+   * Set when the desktop's launch script started this host over SSH, or its start at boot unit did (SOTTO_HOST_STARTED_BY,
+   * ADR-0054). The host writes it into its listener descriptor, which only the lock holder writes, so the desktop can
+   * tell a host Sotto started, and may stop, from one the user started, however many launches raced.
    */
-  startedBy?: 'launch-script'
+  startedBy?: HostStartedBy
   /** Tests stand fake clients in for the providers' own sign-ins; the host finds the real ones as its adapters do. */
   signInCommand?: ProviderSignInOptions['command']
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
@@ -48,7 +48,10 @@ export interface HeadlessHostOptions {
   tailscale?: PhoneAccessTailscale
 }
 
-export { HostLockError } from './lock'
+export { HostLockError, HostLockHeldError } from './lock'
+/** Who started a host, as SOTTO_HOST_STARTED_BY says: the desktop's launch script, or the host's start at boot unit (ADR-0054). */
+export type HostStartedBy = 'launch-script' | 'boot'
+const STARTED_BY: ReadonlySet<string> = new Set<HostStartedBy>(['launch-script', 'boot'])
 /** The command line itself was wrong. The message names the fix and is safe to print; the key-file hint would only mislead. */
 export class HostArgumentError extends Error {}
 
@@ -222,7 +225,15 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   }
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
-    ...(env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' as const } : {}) }
+    ...(env.SOTTO_HOST_STARTED_BY && STARTED_BY.has(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY as HostStartedBy } : {}) }
+}
+
+/**
+ * The code a host that did not start exits with. Another live host holding the data folder gets its own, which a start
+ * at boot unit does not retry (ADR-0054); every other refusal is 1, which it does.
+ */
+export function hostStartExitCode(error: unknown): number {
+  return error instanceof HostLockHeldError ? HOST_LOCK_HELD_EXIT_CODE : 1
 }
 
 /** The process stays available without a provider connection; SIGTERM and SIGINT stop it cleanly. */
@@ -279,7 +290,7 @@ export async function runHeadlessCommandLine(): Promise<void> {
     console.error('[Sotto] host-start-failed')
     if (error instanceof HostLockError || error instanceof HostArgumentError || error instanceof HostKeyMigrationError) console.error(error.message)
     else console.error('Check the data folder and its original key file, then retry with the same --data and --key-file: host/index.js from an extracted archive, out/host/index.js from a checkout.')
-    process.exitCode = 1
+    process.exitCode = hostStartExitCode(error)
   }
 }
 

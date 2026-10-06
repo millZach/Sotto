@@ -8,6 +8,7 @@ import type { HostService } from '../../../src/main/agents/hostService'
 import { PhoneAccess, type PhoneAccessOptions, type PhoneAccessTailscale } from '../../../src/main/phones/phoneAccess'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { serveTarget, type ServeConfig, type ServeResult, type TailscaleStatus } from '../../../src/main/phones/tailscale'
+import { HOST_START_RETRY_WINDOW_MS } from '../../../src/host/phones'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-phone-access-')) })
@@ -132,6 +133,62 @@ it('says Tailscale is not running, changes nothing, and looks again later', asyn
     expect(fake.tailscale.serveStatus).not.toHaveBeenCalled()
     expect(server.started).toEqual([])
     fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+// A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+it('looks again at a Tailscale that is missing during a host\'s start window, until it is there', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('stops looking at a missing Tailscale once the start window has passed, and leaves it to Try again', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    await vi.advanceTimersByTimeAsync(HOST_START_RETRY_WINDOW_MS + 60_000)
+    const looks = vi.mocked(fake.tailscale.status).mock.calls.length
+    expect(looks).toBeGreaterThan(1)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(vi.mocked(fake.tailscale.status).mock.calls.length).toBe(looks)
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await access.close()
+    // Without a window, as on the desktop, a missing Tailscale waits for Try again from the start.
+    const later = fakeTailscale({ status: { state: 'missing' } })
+    const { access: desktop } = create({ tailscale: later.tailscale, startServer: fakeServer().startServer })
+    await desktop.start()
+    later.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(desktop.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await desktop.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('looks again at a Serve setting that failed during a start window, every retry, until it works', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(vi.mocked(fake.tailscale.serve).mock.calls.length).toBe(2))
+    await vi.waitFor(() => expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } }))
+    vi.mocked(fake.tailscale.serve).mockImplementation(async () => ({ ok: true }))
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(access.get().phase).toBe('on'))
     await access.close()

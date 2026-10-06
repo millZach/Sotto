@@ -78,6 +78,11 @@ export interface PhoneAccessOptions {
   readonly pairing?: PairedClients
   /** How long to wait before looking for Tailscale again after it was not running. */
   readonly retryMs?: number
+  /**
+   * For this long after start, a Tailscale that is missing and a Serve setting that failed are looked at again too, on
+   * the same `retryMs`. A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+   */
+  readonly startRetryWindowMs?: number
   /** The longest quitting waits for the Serve setting to be removed. */
   readonly quitTimeoutMs?: number
   /**
@@ -122,6 +127,7 @@ export class PhoneAccess {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private queue: Promise<void> = Promise.resolve()
   private closed = false
+  private startedAt = 0
   private readonly listeners = new Set<(state: PhonesState) => void>()
   private readonly watchers = new Set<(brief: PhoneAccessBrief) => void>()
   /**
@@ -141,6 +147,7 @@ export class PhoneAccess {
 
   /** Reads the saved pairings and record, then brings phone access in line with the setting. */
   async start(): Promise<void> {
+    this.startedAt = Date.now()
     // Keep an invalid primary until an atomic replacement preserves pending cleanup.
     try { if (await this.store.exists()) this.record = await this.store.peek() } catch { this.recordUncertain = true }
     if (this.record.mapped && this.record.port === null) this.recordUncertain = true
@@ -359,7 +366,7 @@ export class PhoneAccess {
       this.tailscaleCheck = { status: 'failed', reason: status.state }
       await this.fail()
       // Tailscale often starts after Sotto at sign-in, so look again in a while rather than wait for Try again.
-      if (status.state === 'not-running') this.scheduleRetry()
+      if (status.state === 'not-running' || this.starting()) this.scheduleRetry()
       return
     }
     this.tailscaleCheck = { status: 'ok', hostName: status.hostName, dnsName: status.dnsName }
@@ -406,6 +413,13 @@ export class PhoneAccess {
   private async failServe(reason: 'port-taken' | 'not-enabled' | 'denied' | 'listener' | 'failed' | 'record'): Promise<void> {
     this.serveCheck = { status: 'failed', reason, ...(this.enableUrl ? { canOpenSetup: true } : {}) }
     await this.fail()
+    // Serve fails while tailscaled is still coming up, so a start's first minutes look again rather than wait for Try again.
+    if (reason === 'failed' && this.phase === 'failed' && this.starting()) this.scheduleRetry()
+  }
+
+  /** Whether phone access started a moment ago, within the window in which every failure of Tailscale's is looked at again. */
+  private starting(): boolean {
+    return this.options.startRetryWindowMs !== undefined && Date.now() - this.startedAt < this.options.startRetryWindowMs
   }
 
   /**
@@ -544,7 +558,10 @@ export class PhoneAccess {
     this.clearRetry()
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined
-      this.enqueue(async () => { if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile(); else if (this.listenerWanted() && this.phase === 'failed' && this.tailscaleCheck.status === 'failed') await this.turnOn() })
+      this.enqueue(async () => {
+        if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile()
+        else if (this.listenerWanted() && this.phase === 'failed' && (this.tailscaleCheck.status === 'failed' || (this.serveCheck.status === 'failed' && this.serveCheck.reason === 'failed'))) await this.turnOn()
+      })
     }, this.options.retryMs ?? 30_000)
     this.retryTimer.unref?.()
   }

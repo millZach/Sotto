@@ -1,5 +1,5 @@
 // Stands in for an installed host/index.js: it takes the data folder's lock, listens on loopback, writes
-// its listener descriptor (recording a launch script start the way the real host does) and answers the
+// its listener descriptor (recording a launch script's or a boot unit's start the way the real host does) and answers the
 // administration flags the launch script uses.
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -42,7 +42,8 @@ async function main() {
   }
   if (args.includes('--revoke-client')) { console.log(JSON.stringify({ v: 1, hostId, revoked: true })); return }
   await fs.mkdir(data, { recursive: true })
-  if (!(await lock())) { process.exitCode = 1; return }
+  // Another live host holds the folder: the host's own exit code for it, which a boot unit does not retry (ADR-0054).
+  if (!(await lock())) { process.exitCode = 75; return }
   // Holding the lock before listening leaves a window in which a second launch finds the folder taken.
   await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_HOST_START_DELAY_MS ?? 0)))
   const port = Number(args[args.indexOf('--port') + 1])
@@ -50,7 +51,8 @@ async function main() {
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],
-    ...(process.env.SOTTO_HOST_STARTED_BY === 'launch-script' ? { startedBy: 'launch-script' } : {}),
+    // FAKE_HOST_BEFORE_BOOT_MARK stands in for a host release from before the 'boot' mark, which records only a launch script's start.
+    ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}),
     // The address Tailscale Serve carries the host's tailnet listener at, which the real host records once Serve is on.
     ...(process.env.FAKE_HOST_TAILNET_ADDRESS ? { tailnetAddress: process.env.FAKE_HOST_TAILNET_ADDRESS } : {}) }
   await publishDescriptor(descriptor)
