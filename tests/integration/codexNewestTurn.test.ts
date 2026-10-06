@@ -251,6 +251,26 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     expect(await historyRequests(f, from)).toEqual(['read'])
   })
 
+  it('checks the newest turn itself when the read in flight that it waited for failed (#765)', async () => {
+    const { f, id } = await answeredThread()
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'own-2' })
+    // The read in flight when the send arrives is one Codex refuses, held until the send is waiting on it.
+    await f.script({ holdReply: 'thread/read', reject: 'thread/read' })
+    const from = (await f.driver.requests()).length
+    const reading = f.host.refreshThread!(id).then(() => 'read', () => 'failed')
+    await expect.poll(async () => (await f.driver.requests()).slice(from).some(request => request.method === 'thread/read')).toBe(true)
+    const waiting = readAwaited(f, id)
+    const sending = send(f, id, 'own-2', 'own-1')
+    expect(await Promise.race([waiting, sending.then(() => 'sent')])).toBe('waiting')
+    const released = await f.action(id, { type: 'release-reply', method: 'thread/read' })
+    await expect.poll(() => f.acted(released)).toBe(true)
+    expect(await reading).toBe('failed')
+    // The coordinator's read no longer stands for the send's, so it checks the newest turn before turn/start.
+    await expect(sending).resolves.toEqual({ accepted: true })
+    const requests = (await f.driver.requests()).slice(from)
+    expect(historyReads(aroundTurnStart(requests).before)).toEqual(['read', 'turns'])
+  })
+
   it('checks the newest turn again for a send the read before it was not made for (#765)', async () => {
     const { f, id } = await answeredThread()
     // A read for a send that was then refused leaves its mark; the next send is another message, such as a queued

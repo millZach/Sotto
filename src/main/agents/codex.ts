@@ -1343,9 +1343,10 @@ export class CodexAppServerHost implements AgentHost {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
           // would have queued behind, so no read applies the thread across turn/start. It reads after all when the
-          // thread moved since it was handed the send, by that read or the resume above.
-          if (readForSend) await this.threadReads.get(id)?.catch(() => undefined)
-          try { if (!readForSend || this.readState(id) !== readState) await this.sync(id, { beforeSend: true }) }
+          // thread moved since it was handed the send, by that read or the resume above, or when that read failed,
+          // so a thread Codex cannot read is refused as it was before #765.
+          const readInFlightFailed = readForSend && await this.threadReads.get(id)?.then(() => false, () => true) === true
+          try { if (!readForSend || readInFlightFailed || this.readState(id) !== readState) await this.sync(id, { beforeSend: true }) }
           catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
