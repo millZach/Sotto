@@ -54,6 +54,11 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
    * Tailscale's own approval page, while it waits. Shown, and opened only on the user's press; never logged.
    */
   tailscale?: { waiting: boolean; url?: string | undefined } | undefined
+  /**
+   * True while the host's admin connection signs in for a press (ADR-0053): `prompt` and `tailscale` are then that sign-in's,
+   * not a connect's, and Stop signing in ends it with nothing changed.
+   */
+  adminSignIn?: boolean | undefined
   /** A command that fixes the failure, for the user to run, and the sentence that introduces it. Sotto never runs it. */
   fix?: { text: string; command: string } | undefined
   /** Why the connect failed, as a stable code (`SshFailureCode`) the setup brief and the host setup tools name. Never shown. */
@@ -119,18 +124,23 @@ export interface HostsState {
   updates?: HostUpdateState[]
   /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
   phones?: HostPhonesView[]
-  /** The host Forget last removed without revoking this computer there, until the user dismisses it (ADR-0053). */
-  forgotten?: HostForgotten
+  /**
+   * Each not-revoked notice (ADR-0053): a host Forget removed without revoking this computer there, oldest first, until the
+   * user dismisses it. A second Forget adds its own and leaves the others alone.
+   */
+  forgotten?: HostForgotten[]
 }
+/** Why Forget could not revoke this computer on a host: SSH could not reach it, its host was not running, or the host refused. */
+export type HostForgottenCause = 'unreachable' | 'not-running' | 'refused'
 /**
- * A host Forget removed from this computer whose pairing it  * A host Forget removed from this computer whose pairing it could not revoke there: SSH could not reach the host, its
- * host was not running, or it refused. The host still trusts this computer until the command, run on the host while its host runs,
- * removes it. Kept in memory only.
+ * A host Forget removed from this computer without revoking this computer's pairing there. The host still trusts this
+ * computer until the command, run on the host while its host is running, removes it. Kept in memory only.
  */
 export interface HostForgotten {
   /** The forgotten saved host's ID, which Dismiss names. */
   readonly id: string
   readonly name: string
+  readonly cause: HostForgottenCause
   /** The one line to run on the host. Sotto never runs it. */
   readonly command: string
 }
@@ -164,6 +174,8 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),
   /** Opens the Tailscale approval page a connect is waiting on, in the default browser. Main holds the URL. */
   z.object({ type: z.literal('open-approval'), id: z.uuid() }).strict(),
+  /** Stops an admin connection's sign-in while it waits for an answer or an approval. The press it was for changes nothing. */
+  z.object({ type: z.literal('stop-admin-sign-in'), id: z.uuid() }).strict(),
   /**
    * Have my agent set this up (ADR-0035): a host setup thread on `modelId` for this one device. `after` names the
    * failed Add it attempt that Have my agent fix this was pressed on, whose step and reason the brief names.

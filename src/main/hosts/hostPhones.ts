@@ -2,20 +2,21 @@ import { z } from 'zod'
 
 import { phonesStateSchema, type HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesView } from '../../shared/hosts'
-import type { AdminConnection } from './adminConnection'
+import type { PressConnection } from './adminConnection'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 
 /**
  * Phones on a remote host (ADR-0050). Each connected host runs its own phone access, the desktop's own over its host
  * service, and this reads and changes it for the Hosts page's Phones dialog: through the host's administrative routes
  * on the port an SSH connection forwards, with the host's administrative token, which that connection's launch handed
- * back and which stays in memory here. The connection is the one the host is on, or an admin connection opened for the
- * press (ADR-0053). Every SSH command is a full sign-in, so nothing here runs one.
+ * back. The token stays with the connection: each request asks the connection for it, and nothing here keeps it. The
+ * connection is the SSH connection the host is on, or its admin connection (ADR-0053). Every SSH command is a full
+ * sign-in, so nothing here runs one, and only the dialog's reads and presses may open an admin connection.
  *
  * A host is read once when it connects, so its row can say whether phones reach it, and again every couple of seconds
- * while it is still setting up, or while the dialog is open, so a phone pairing or connecting shows up there. Nothing
- * else is read for a host nobody is looking at. What a host last said stays when it disconnects; the dialog says it
- * cannot change anything then.
+ * while it is still setting up, or while the dialog is open, so a phone pairing or connecting shows up there. A read
+ * nobody asked for goes only over a connection already open, so it never signs in. Nothing else is read for a host
+ * nobody is looking at. What a host last said stays when it disconnects; the dialog says it cannot change anything then.
  */
 
 /** A saved host, while it is connected. */
@@ -24,10 +25,15 @@ export interface HostPhonesLink {
   readonly name: string
   /** The host's own ID, which every answer must carry. */
   readonly hostId: string
-  /** The connection the host is on now. Only its identity is read: a new one is read afresh. */
-  readonly connection: object
-  /** What the request goes over: the SSH connection the host is on, or an admin connection opened for it (ADR-0053). */
-  admin(): Promise<AdminConnection>
+  /** Which connect the host is on now: a new one is read afresh. */
+  readonly generation: number
+  /**
+   * Runs one request over what a press goes over: the SSH connection the host is on, or its admin connection, opened for
+   * the request when it is not open (ADR-0053). The connection stays open until the request ends.
+   */
+  press<T>(request: (connection: PressConnection) => Promise<T>): Promise<T>
+  /** The same, over a connection already open, opening none: undefined when there is none. */
+  pressIfOpen<T>(request: (connection: PressConnection) => Promise<T>): Promise<T | undefined>
 }
 export interface HostPhonesHosts {
   /** Every saved host connected now. */
@@ -63,11 +69,8 @@ class HostRefused extends Error {}
 
 interface Entry {
   view: HostPhonesView
-  /** The connection the view came from; a new one is read afresh. */
-  connection?: object | undefined
-  /** The SSH connection the token came from, which is the only one it is good for. */
-  admin?: AdminConnection | undefined
-  token?: Promise<string> | undefined
+  /** The connect the view came from; a new one is read afresh. */
+  generation?: number | undefined
   reading?: Promise<void> | undefined
   /** Until when an open dialog wants this host read again and again. */
   watchUntil: number
@@ -98,11 +101,11 @@ export class HostPhones {
     const entry = this.entry(id)
     entry.watchUntil = watching ? Date.now() + HOST_PHONES_WATCH_MS : 0
     if (!watching) { this.stopWatching(entry); return }
-    if (entry.connection) void this.read(id)
+    if (entry.generation !== undefined) void this.read(id, true)
     if (entry.timer) return
     entry.timer = setInterval(() => {
       if (Date.now() > entry.watchUntil) this.stopWatching(entry)
-      else if (entry.connection) void this.read(id)
+      else if (entry.generation !== undefined) void this.read(id, true)
     }, this.options.pollMs ?? POLL_MS)
     entry.timer.unref?.()
   }
@@ -116,7 +119,7 @@ export class HostPhones {
     const run = entry.commands.then(async () => {
       this.set(id, { busy: true })
       let answer: Answer
-      try { answer = await this.post(entry, link, 'phones-command', { command }, COMMAND_TIMEOUT_MS) }
+      try { answer = await link.press(connection => this.post(connection, link, 'phones-command', { command }, COMMAND_TIMEOUT_MS)) }
       catch (error) {
         this.options.log?.('host-phones-command-failed')
         this.set(id, { busy: false })
@@ -145,54 +148,48 @@ export class HostPhones {
     const links = this.options.hosts.links()
     for (const link of links) {
       const entry = this.entry(link.id)
-      if (entry.connection === link.connection) continue
-      entry.connection = link.connection; entry.admin = undefined; entry.token = undefined
-      void this.read(link.id)
+      if (entry.generation === link.generation) continue
+      entry.generation = link.generation
+      void this.read(link.id, false)
     }
     for (const [id, entry] of this.entries) {
       if (links.some(link => link.id === id)) continue
       // Disconnected: keep what it last said, and the open dialog's watch, for when it connects again.
-      entry.connection = undefined; entry.admin = undefined; entry.token = undefined
+      entry.generation = undefined
     }
   }
 
-  private async read(id: string): Promise<void> {
+  /** Reads a host's phone access. Only a read the dialog asked for (`open`) may open an admin connection for it. */
+  private async read(id: string, open: boolean): Promise<void> {
     const entry = this.entries.get(id), link = this.link(id)
     if (!entry || !link || entry.reading) return entry?.reading
     entry.reading = (async () => {
       await entry.commands
       try {
-        const answer = await this.post(entry, link, 'phones', {}, READ_TIMEOUT_MS)
-        if (entry.connection !== link.connection) return
+        const request = (connection: PressConnection): Promise<Answer> => this.post(connection, link, 'phones', {}, READ_TIMEOUT_MS)
+        const answer = open ? await link.press(request) : await link.pressIfOpen(request)
+        if (!answer || entry.generation !== link.generation) return
         this.set(id, { state: answer.state, error: undefined, readAt: new Date().toISOString() })
         // A host that has just started is still checking Tailscale: read it again until it says how that went, so the
         // row does not keep saying it is starting.
-        if (answer.state.phase === 'starting' && !entry.timer) setTimeout(() => { if (!this.closed && entry.connection === link.connection) void this.read(id) }, this.options.pollMs ?? POLL_MS).unref?.()
+        if (answer.state.phase === 'starting' && !entry.timer) setTimeout(() => { if (!this.closed && entry.generation === link.generation) void this.read(id, false) }, this.options.pollMs ?? POLL_MS).unref?.()
       } catch (error) {
         this.options.log?.('host-phones-read-failed')
-        if (entry.connection === link.connection) this.set(id, { error: this.failure(link.name, error) })
+        if (entry.generation === link.generation) this.set(id, { error: this.failure(link.name, error) })
       }
     })().finally(() => { entry.reading = undefined })
     return entry.reading
   }
 
-  /** One administrative request, with the token read again once if the host no longer takes the one held. */
-  private async post(entry: Entry, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number, again = true): Promise<Answer> {
-    const admin = await link.admin()
-    // Another SSH connection, after an admin connection closed while idle: its launch read the token afresh.
-    if (entry.admin !== admin) { entry.admin = admin; entry.token = undefined }
-    entry.token ??= admin.hostAdminToken()
-    const token = entry.token
-    let response: Response
-    try {
-      response = await (this.options.fetch ?? fetch)(`${admin.url}/v1/admin/${route}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${await token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
-      })
-    } catch (error) { if (entry.token === token) entry.token = undefined; throw error }
+  /** One administrative request over a connection, asking it for its token again once if the host does not take it. */
+  private async post(connection: PressConnection, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number, again = true): Promise<Answer> {
+    const token = await connection.hostAdminToken()
+    const response = await (this.options.fetch ?? fetch)(`${connection.url}/v1/admin/${route}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+    })
     if (response.status === 401) {
-      if (entry.token === token) entry.token = undefined
-      if (again) return this.post(entry, link, route, body, timeoutMs, false)
+      if (again) return this.post(connection, link, route, body, timeoutMs, false)
       throw new Error('The host refused the administrative token.')
     }
     if (!response.ok) throw new HostRefused('The host refused the request.')

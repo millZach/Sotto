@@ -178,7 +178,7 @@ it('shows Tailscale’s approval inside Forget while its sign-in waits for it, a
   await user.click(screen.getByRole('menuitem', { name: 'Forget Build box…' }))
   const dialog = screen.getByRole('dialog', { name: 'Forget Build box?' })
   await user.click(within(dialog).getByRole('button', { name: 'Forget host' }))
-  push({ hosts: [host({ phase: 'disconnected', enabled: false, tailscale: { waiting: true, url } })] })
+  push({ hosts: [host({ phase: 'disconnected', enabled: false, adminSignIn: true, tailscale: { waiting: true, url } })] })
   expect(within(dialog).getByRole('status').textContent).toContain('Waiting for your approval in Tailscale.')
   await user.click(within(dialog).getByRole('button', { name: 'Open the Tailscale approval page for Build box' }))
   expect(command).toHaveBeenCalledWith({ type: 'open-approval', id: REMOTE })
@@ -188,22 +188,89 @@ it('shows Tailscale’s approval inside Forget while its sign-in waits for it, a
 
 it('says a forgotten host still trusts this computer, offers the command that removes it there, and puts it away on Dismiss', async () => {
   const command = 'I="$HOME/.local/share/sotto-host"; E="$I/host/index.js"; node "$E" --data "$HOME/.sotto" --revoke-client "client"'
-  const { bridge, command: sent, push } = fixture([], (input, current) => { if (input.type !== 'dismiss-forgotten') return current; const { forgotten: _forgotten, ...rest } = current; void _forgotten; return rest })
+  const { bridge, command: sent, push } = fixture([], (input, current) => input.type === 'dismiss-forgotten' ? { ...current, forgotten: (current.forgotten ?? []).filter(item => item.id !== input.id) } : current)
   const user = userEvent.setup()
   // After setup, which puts its own clipboard in place.
   const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
-  push({ forgotten: { id: REMOTE, name: 'forge', command } })
+  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command }] })
   const notice = await screen.findByRole('status', { name: 'forge still trusts this computer' })
-  expect(notice.textContent).toContain('Sotto removed forge from this computer, but could not revoke this computer’s access there: SSH could not reach forge, its host was not running, or it refused. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
-  expect(within(notice).getByText(command)).toBeTruthy()
+  expect(notice.textContent).toContain('SSH could not reach forge, so Sotto removed it from this computer without revoking this computer’s access there. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
+  expect(within(notice).getByRole('region', { name: 'Command to run on forge' }).textContent).toBe(command)
   await user.click(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }))
   expect(clipboard).toHaveBeenCalledWith(command)
   expect(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }).textContent).toBe('Copied')
+  // The label goes back, as every other copy button's does.
+  await waitFor(() => expect(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }).textContent).toBe('Copy command'), { timeout: 5_000 })
   await user.click(within(notice).getByRole('button', { name: 'Dismiss what Sotto said about forge' }))
   expect(sent).toHaveBeenCalledWith({ type: 'dismiss-forgotten', id: REMOTE })
   await waitFor(() => expect(screen.queryByRole('status', { name: 'forge still trusts this computer' })).toBeNull())
+  // Its button went with it, so focus goes to the control above the list rather than to the page.
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add host' }))
+})
+
+it('says why each forgotten host was not revoked, one notice for each', async () => {
+  const { bridge, push } = fixture([])
+  settings(bridge)
+  await screen.findByText('No remote hosts yet.')
+  push({ forgotten: [
+    { id: REMOTE, name: 'forge', cause: 'refused', command: 'revoke forge' },
+    { id: LOCAL, name: 'spark', cause: 'not-running', command: 'revoke spark' },
+  ] })
+  expect(screen.getByRole('status', { name: 'forge still trusts this computer' }).textContent).toContain('The host on forge did not revoke this computer’s access, so Sotto removed forge from this computer and left its host running. forge still trusts this computer until it is removed there. To remove it, run this on forge:')
+  expect(screen.getByRole('status', { name: 'spark still trusts this computer' }).textContent).toContain('The host on spark was not running, so Sotto removed spark from this computer without revoking this computer’s access there. spark still trusts this computer until it is removed there. To remove it, start the host on spark, then run this there:')
+})
+
+it('selects the command from the keyboard when it cannot be copied, so the copy shortcut takes it', async () => {
+  const { bridge, push } = fixture([])
+  const user = userEvent.setup()
+  vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+  settings(bridge)
+  await screen.findByText('No remote hosts yet.')
+  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command: 'revoke forge' }] })
+  const notice = screen.getByRole('status', { name: 'forge still trusts this computer' })
+  await user.click(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }))
+  expect(within(notice).getByRole('alert').textContent).toBe('The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.')
+  const code = within(notice).getByRole('region', { name: 'Command to run on forge' })
+  expect(document.activeElement).toBe(code)
+  expect(window.getSelection()?.toString()).toBe('revoke forge')
+})
+
+it('lets Keep host stop Forget’s sign-in while it waits, and says SSH’s question is waiting with Answer', async () => {
+  const prompt = { id: 'prompt-9', kind: 'password' as const, text: 'Password:' }
+  let release!: () => void
+  const { bridge, command, push } = fixture([host({ phase: 'disconnected', enabled: false })], async (input, current) => {
+    if (input.type === 'forget') await new Promise<void>(resolve => { release = resolve })
+    if (input.type === 'stop-admin-sign-in') release()
+    return current
+  })
+  const user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for Build box' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Forget Build box…' }))
+  const dialog = screen.getByRole('dialog', { name: 'Forget Build box?' })
+  await user.click(within(dialog).getByRole('button', { name: 'Forget host' }))
+  // Before the sign-in says it is under way, Keep host waits.
+  expect(within(dialog).getByRole('button', { name: 'Keep host' })).toBeDisabled()
+  push({ hosts: [host({ phase: 'disconnected', enabled: false, adminSignIn: true, prompt })] })
+  expect(within(dialog).getByRole('status').textContent).toContain('SSH is waiting for your answer.')
+  expect(within(dialog).getByRole('button', { name: "Answer SSH's question for Build box" })).toBeTruthy()
+  await user.click(within(dialog).getByRole('button', { name: 'Keep host' }))
+  expect(command).toHaveBeenCalledWith({ type: 'stop-admin-sign-in', id: REMOTE })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByRole('region', { name: 'Build box' })).toBeTruthy()
+})
+
+it('asks an admin connection’s SSH question for a change the user asked for, and Stop signing in leaves the switch alone', async () => {
+  const forgetting = host({ name: 'forge', phase: 'disconnected', enabled: false, adminSignIn: true, prompt: { id: 'prompt-4', kind: 'password', text: 'Password:' } })
+  const { bridge, command } = fixture([forgetting]), user = userEvent.setup()
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+  expect(dialog.textContent).toContain('Sotto is signing in to forge for a change you asked for there, and SSH needs your password to sign in.')
+  await user.click(within(dialog).getByRole('button', { name: 'Stop signing in' }))
+  expect(command).toHaveBeenCalledWith({ type: 'stop-admin-sign-in', id: REMOTE })
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'set-enabled' }))
 })
 
 it('renames a host from its menu', async () => {

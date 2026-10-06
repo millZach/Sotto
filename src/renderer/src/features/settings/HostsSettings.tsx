@@ -12,7 +12,7 @@ import { HostProviders, connectedProvidersLabel } from './HostProviders'
 import { HostPhonesDialog, hostPhonesLabel } from './HostPhonesDialog'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
-import { writeClipboard } from '../../agents/richActions'
+import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
 import './hosts.css'
 
@@ -157,23 +157,38 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
   </HostsModal>
 }
 
+/** What a not-revoked notice says happened, by its cause, and what the owner runs on the host to finish the job. */
+function forgottenSentence({ name, cause }: HostForgotten): string {
+  const trusts = `${name} still trusts this computer until it is removed there.`
+  if (cause === 'refused') return `The host on ${name} did not revoke this computer’s access, so Sotto removed ${name} from this computer and left its host running. ${trusts} To remove it, run this on ${name}:`
+  if (cause === 'not-running') return `The host on ${name} was not running, so Sotto removed ${name} from this computer without revoking this computer’s access there. ${trusts} To remove it, start the host on ${name}, then run this there:`
+  return `SSH could not reach ${name}, so Sotto removed it from this computer without revoking this computer’s access there. ${trusts} To remove it, run this on ${name} while its host is running:`
+}
+
 /**
- * What Forget says when it removed a host here without revoking this computer there (ADR-0053): the host still trusts
- * this computer, and the one line that removes it there, which Sotto never runs. It stays until dismissed.
+ * A not-revoked notice (ADR-0053): Forget removed a host here without revoking this computer there, so the host still
+ * trusts this computer, and the one line that removes it there, which Sotto never runs. It stays until dismissed.
  */
 function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostForgotten; readonly onDismiss: () => void }): ReactNode {
-  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
+  const [copied, showCopied] = useTransientFlag()
+  const [failed, setFailed] = useState(false)
+  const commandRef = useRef<HTMLElement>(null)
   const { name, command } = forgotten
-  const copy = async (): Promise<void> => { try { await writeClipboard(command); setCopied('copied') } catch { setCopied('failed') } }
+  /** Selects the whole command, so the keyboard's copy shortcut takes exactly that line. */
+  const select = (): void => { const element = commandRef.current; if (element) window.getSelection()?.selectAllChildren(element) }
+  const copy = async (): Promise<void> => {
+    try { await writeClipboard(command); setFailed(false); showCopied('copied') }
+    catch { setFailed(true); commandRef.current?.focus(); select() }
+  }
   return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={`${name} still trusts this computer`}>
     <AlertTriangle size={16} aria-hidden="true" />
     <div className="hosts-forgotten__copy">
-      <p>Sotto removed {name} from this computer, but could not revoke this computer’s access there: SSH could not reach {name}, its host was not running, or it refused. {name} still trusts this computer until it is removed there. To remove it, run this on {name} while its host is running:</p>
-      <code className="hosts-forgotten__command">{command}</code>
+      <p>{forgottenSentence(forgotten)}</p>
+      <code ref={commandRef} className="hosts-forgotten__command tt-focusable" role="region" aria-label={`Command to run on ${name}`} tabIndex={0} onFocus={select}>{command}</code>
       <span className="hosts-forgotten__actions">
-        <Button variant="secondary" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy()}>{copied === 'copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy command'}</Button>
+        <Button variant="secondary" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy()}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? 'Copied' : 'Copy command'}</Button>
         <Button variant="ghost" aria-label={`Dismiss what Sotto said about ${name}`} onClick={onDismiss}>Dismiss</Button>
-        {copied === 'failed' ? <span className="hosts-forgotten__failed" role="alert">The command could not be copied. Select it and copy it instead.</span> : null}
+        {failed ? <span className="hosts-forgotten__failed" role="alert">The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.</span> : null}
       </span>
     </div>
   </section>
@@ -227,6 +242,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
   const renaming = state?.hosts.find(host => host.id === renameId)
   const phonesHost = state?.hosts.find(host => host.id === phonesId)
   const closePhones = useRef(() => setPhonesId(null)).current
+  const { resumeQuestion } = useHostQuestionDismissals(bridge)
   const forgetDescription = (host: HostStatus): string => {
     if (!reachable(host)) {
       return `Sotto signs in to ${host.name} over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. `
@@ -235,11 +251,19 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     const stop = host.owned ? ' It also stops the host Sotto started there.' : ''
     return `This revokes this computer's access on the host and removes the saved connection.${stop} Threads stay on the host.`
   }
-  /** Forget's own sign-in, while Tailscale SSH holds it for approval: the dialog that asked shows it (ADR-0053). */
-  const forgetWaiting = (host: HostStatus): ReactNode => host.tailscale?.waiting
-    ? <span className="hosts-forget-wait">Waiting for your approval in Tailscale.{host.tailscale.url
+  /**
+   * Forget's own sign-in, while it waits for the user (ADR-0053): Tailscale SSH holding it for approval, or SSH's question,
+   * which is asked over this dialog and comes back with Answer if it was put away. Keep host stops the sign-in.
+   */
+  const forgetWaiting = (host: HostStatus): ReactNode => {
+    if (!host.adminSignIn) return undefined
+    const questionKey = hostQuestionKey(host)
+    if (host.prompt && questionKey) return <span className="hosts-forget-wait">SSH is waiting for your answer.
+      <Button variant="secondary" aria-label={`Answer SSH's question for ${host.name}`} onClick={() => resumeQuestion(questionKey)}>Answer</Button></span>
+    if (!host.tailscale?.waiting) return undefined
+    return <span className="hosts-forget-wait">Waiting for your approval in Tailscale.{host.tailscale.url
       ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${host.name}`} onClick={() => void run({ type: 'open-approval', id: host.id })}>Open approval page</Button> : null}</span>
-    : undefined
+  }
   const act = (host: HostStatus, action: MenuAction): void => {
     if (action === 'stop') setStopId(host.id)
     else if (action === 'rename') setRenameId(host.id)
@@ -263,7 +287,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     <p>Connect to machines you reach over SSH. Sotto signs in with your SSH setup, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, and a host Sotto started keeps running until you stop it.</p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
-    {state?.forgotten ? <ForgottenNotice key={state.forgotten.id} forgotten={state.forgotten} onDismiss={() => void run({ type: 'dismiss-forgotten', id: state.forgotten!.id })} /> : null}
+    {state?.forgotten?.map(forgotten => <ForgottenNotice key={forgotten.id} forgotten={forgotten}
+      // The notice and its focused button go away, so focus goes to the control above the list.
+      onDismiss={() => { addButton.current?.focus(); void run({ type: 'dismiss-forgotten', id: forgotten.id }) }} />)}
     <div className="hosts-list">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
         phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)}
@@ -280,7 +306,9 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
       catch (failure) { return failure instanceof Error ? failure.message : 'The name could not be saved. Try again.' }
     }} /> : null}
     {forget && <ConfirmationDialog title={`Forget ${forget.name}?`} confirmLabel="Forget host" cancelLabel="Keep host" onCancel={() => setForgetId(null)} onConfirm={() => run({ type: 'forget', id: forget.id })}
-      fallbackFocusRef={addButton} failureMessage={error} description={forgetDescription(forget)} pendingStatus={forgetWaiting(forget)} />}
+      fallbackFocusRef={addButton} failureMessage={error} description={forgetDescription(forget)} pendingStatus={forgetWaiting(forget)}
+      // While Forget signs in, nothing has been sent: Keep host stops the sign-in, and Forget changes nothing.
+      onCancelPending={forget.adminSignIn ? () => void run({ type: 'stop-admin-sign-in', id: forget.id }) : undefined} />}
     {stopping && <ConfirmationDialog title={`Stop the host on ${stopping.name}?`} confirmLabel="Stop host" cancelLabel="Keep it running" onCancel={() => setStopId(null)}
       failureMessage={error} onConfirm={() => run({ type: 'stop-host', id: stopping.id })}
       description={`This stops the host Sotto started on ${stopping.name} and switches it off. Turns running there are interrupted; threads and history stay in its data folder. Switch it on to start it again.`} />}

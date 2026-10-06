@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
-import { remoteHostSchema, type HostForgotten, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
+import { remoteHostSchema, type HostForgotten, type HostForgottenCause, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
 import type { HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -10,7 +10,8 @@ import { HostConnectionError, SocketHostService } from '../agents/socketHostServ
 import { validateSshHost } from './sshConfiguration'
 import { SshFailure, SshHostLauncher, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
 import { failureStep } from './sshFailure'
-import { AdminLink, type AdminConnection } from './adminConnection'
+import { SignInStopped, type PressConnection } from './adminConnection'
+import { AdminConnections, type AdminSignInReport } from './adminConnections'
 import { revokeByHandCommand } from './revokeCommand'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 import type { DesktopHostConnection, DesktopHostRouter } from './desktopHostRouter'
@@ -54,20 +55,16 @@ const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsComm
  * One connect to a saved host and what it opened. `ssh` is the SSH connection, while it is open. The socket rides its
  * forward today, but opens at an address of its own, so a socket on another connection needs no SSH connection beside it
  * (ADR-0053). A press that needs the launch script goes over `ssh` when it is there, and over an admin connection
- * otherwise (see `admin()`).
+ * otherwise (see `press()`).
  *
  * `closing` is set while Stop host or Forget runs. Both drop the socket on purpose before the SSH reply
  * arrives (the host closes its listener to stop, and a revoke closes the revoked peer), and a drop then
  * must not be read as a lost connection: reconnecting would restart the host being stopped, or pair again
  * with the host just told to forget this computer.
  */
-interface LiveHost { launcher: SshHostLauncher; ssh?: SshHostConnection; sshClosed?: boolean; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean
-  /** Whether Sotto started the host this connect reached, as its launch said. */
-  owned?: boolean }
+interface LiveHost { launcher: SshHostLauncher; ssh?: SshHostConnection; sshClosed?: boolean; socket?: SocketHostService; registeredHostId?: string; generation: number; closing?: boolean }
 /** Where a socket opens: the address, and the host that must answer there. */
 interface SocketTarget { readonly url: string; readonly expectedHostId: string }
-/** A saved host's admin connection (ADR-0053), and the launcher it signs in with, where SSH's questions are answered. */
-interface AdminEntry { readonly link: AdminLink; readonly launcher: SshHostLauncher; asking?: string | undefined }
 /** A pending reconnect. `timer` is absent while the first attempt of a launch or a switch-on runs. */
 interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined
   /** Set for the first attempt after a switch-on or an edit, which reads Connecting… rather than Reconnecting…. */
@@ -145,11 +142,11 @@ export class DesktopHosts {
    */
   private readonly held = new Map<string, string>()
   /** Each saved host's admin connection, while one is open or opening (ADR-0053). */
-  private readonly admins = new Map<string, AdminEntry>()
+  private readonly admins: AdminConnections
   /** The Node each host's launch script last ran under, for the command that revokes this computer there by hand. Memory only. */
   private readonly nodePaths = new Map<string, string>()
-  /** What Forget last said about a host it removed here without revoking this computer there, until dismissed. */
-  private forgotten: HostForgotten | undefined
+  /** Each not-revoked notice Forget left, oldest first, until dismissed. */
+  private forgotten: HostForgotten[] = []
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
   private writing: Promise<void> = Promise.resolve()
@@ -162,6 +159,8 @@ export class DesktopHosts {
     openExternal?: (url: string) => Promise<void>;
   }) {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
+    this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
+      node: (id, node) => this.nodePaths.set(id, node), identityChanged: () => new FinalHostError('The host identity changed. Check its data folder before connecting again.') })
   }
   /**
    * Reads the saved hosts and starts connecting every host that is switched on, in the background, the way a
@@ -184,7 +183,7 @@ export class DesktopHosts {
       ...(this.updates ? { updates: this.updates.state() } : {}),
       // A forgotten host's last answer is left out with its row.
       ...(this.phones ? { phones: this.phones.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
-      ...(this.forgotten ? { forgotten: this.forgotten } : {}),
+      ...(this.forgotten.length ? { forgotten: [...this.forgotten] } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
   /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */
@@ -219,7 +218,8 @@ export class DesktopHosts {
   phonesLinks(): HostPhonesLink[] {
     return this.saved.flatMap(host => {
       const active = this.live.get(host.id), status = this.status.get(host.id)
-      return active && status?.phase === 'connected' && status.hostId ? [{ id: host.id, name: host.name, hostId: status.hostId, connection: active, admin: () => this.admin(host) }] : []
+      return active && status?.phase === 'connected' && status.hostId ? [{ id: host.id, name: host.name, hostId: status.hostId, generation: active.generation,
+        press: request => this.press(host, request), pressIfOpen: request => this.pressIfOpen(host, request) }] : []
     })
   }
   /** Saved hosts an update can reach now, with the Sotto version each said it runs (ADR-0040). */
@@ -234,7 +234,7 @@ export class DesktopHosts {
   async runUpdate(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
     const host = this.saved.find(item => item.id === id)
     if (!host || !this.live.has(id) || !this.reachable(id)) throw new Error(`${host?.name ?? 'This host'} is not connected. Nothing was changed.`)
-    return (await this.admin(host)).updateHost(operation, options)
+    return this.press(host, connection => connection.updateHost(operation, options))
   }
   /**
    * An update's restart: the launch script starts `version` in place of the running host, or the old one again, and this
@@ -246,8 +246,16 @@ export class DesktopHosts {
     const host = this.saved.find(item => item.id === id)
     if (!host) throw new Error('This host is no longer saved. Nothing was changed.')
     this.requireOwnedConnection(host)
-    // An admin connection that cannot open sends nothing, so the update says the restart never went.
-    const admin = await this.admin(host).catch((error: unknown) => { throw new SshFailure('not-connected', error instanceof Error ? error.message : undefined) })
+    let signedIn = false
+    try { return await this.press(host, connection => { signedIn = true; return this.restartOver(host, connection, version, options) }) }
+    catch (error) {
+      // An admin connection that cannot open sends nothing, so the update says the restart never went.
+      if (!signedIn) throw new SshFailure('not-connected', error instanceof Error ? error.message : undefined)
+      throw error
+    }
+  }
+  private async restartOver(host: SavedHost, connection: PressConnection, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
+    const id = host.id
     const active = this.live.get(id)
     if (!active) throw new SshFailure('not-connected', `${host.name} is not connected. Nothing was changed.`)
     active.closing = true
@@ -255,7 +263,7 @@ export class DesktopHosts {
     const registered = active.registeredHostId
     this.hold(id, active)
     let result: SshHostUpdateResult | undefined, unsent = false
-    try { result = await admin.updateHost({ op: 'update-restart', version }, options); return result }
+    try { result = await connection.updateHost({ op: 'update-restart', version }, options); return result }
     catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
     finally {
       // Nothing was stopped: the restart was never sent, or the host refused it before stopping anything. The same
@@ -357,7 +365,12 @@ export class DesktopHosts {
     if (command.type === 'add') return this.add(command.host)
     if (command.type === 'cancel-add') { await this.cancelAdd(command.id); return this.get() }
     if (command.type === 'open-approval') { await this.openApproval(command.id); return this.get() }
-    if (command.type === 'dismiss-forgotten') { if (this.forgotten?.id === command.id) { this.forgotten = undefined; this.emit() } return this.get() }
+    if (command.type === 'dismiss-forgotten') {
+      const left = this.forgotten.filter(item => item.id !== command.id)
+      if (left.length !== this.forgotten.length) { this.forgotten = left; this.emit() }
+      return this.get()
+    }
+    if (command.type === 'stop-admin-sign-in') { await this.admins.stopSigningIn(command.id); return this.get() }
     if (command.type === 'start-setup' || command.type === 'stop-setup' || command.type === 'dismiss-setup') {
       if (!this.setup) throw new Error('An agent cannot set up a host from this window. Nothing was started.')
       await this.setup.command(command)
@@ -422,7 +435,7 @@ export class DesktopHosts {
       this.requireOwnedConnection(host)
       const active = this.live.get(host.id)
       if (active) active.closing = true
-      const stopped = await this.admin(host).then(admin => this.stopOwnedHost(admin), () => false)
+      const stopped = await this.press(host, connection => this.stopOwnedHost(connection)).catch(() => false)
       await this.disconnect(host.id)
       if (!stopped) throw new Error(this.notStopped(host))
       // A stopped host is switched off, so the next launch does not start it again; switching it on does.
@@ -440,8 +453,10 @@ export class DesktopHosts {
    * Forget (ADR-0053): revoke this computer's pairing on the host, stop a host Sotto started there, then remove the host
    * here. The revoke goes over the SSH connection the socket is on, or over an admin connection when it is on none, and
    * comes first, since it goes through the running host's administrative route and so cannot follow a stop. A host the
-   * admin connection cannot reach, or finds stopped, is still removed here, and what Forget says names the command that
-   * revokes this computer on the host by hand. Only a stop that may have failed keeps the host saved.
+   * admin connection cannot reach or finds stopped, or one that refuses the revoke, is still removed here, and a
+   * not-revoked notice names the command that revokes this computer on the host by hand. A host that refused is left
+   * running, so that command can run there now. Only a stop that may have failed keeps the host saved, and so does a
+   * sign-in the user stopped, which changes nothing.
    */
   private async forget(host: SavedHost): Promise<HostsState> {
     this.clearRetry(host.id)
@@ -450,22 +465,35 @@ export class DesktopHosts {
     if (active) active.closing = true
     // A connect still under way, or one already lost, ends first: the revoke goes over a connection of its own.
     if (!this.onSsh(host.id)) await this.disconnect(host.id)
-    const admin = await this.admin(host).catch(() => undefined)
-    let revoked = false
-    if (admin) {
-      // Any answer is a revoke: `revoked: false` says the host no longer knew this computer.
-      if (host.clientId) revoked = await admin.revokeClient(host.clientId).then(() => true, () => false)
-      if (admin.owned && !(await this.stopOwnedHost(admin))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
+    let cause: HostForgottenCause | undefined, stopFailed = false
+    try {
+      await this.press(host, async connection => {
+        // Any answer is a revoke: `revoked: false` says the host no longer knew this computer.
+        if (host.clientId && !(await connection.revokeClient(host.clientId).then(() => true, () => false))) { cause = 'refused'; return }
+        if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
+      })
+    } catch (error) {
+      if (error instanceof SignInStopped) return this.keepAfterForget(host, active)
+      cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
     }
+    if (stopFailed) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
     await this.disconnect(host.id)
     await this.options.credentials.set(`remote-host:${host.id}`, '')
     this.saved = this.saved.filter(item => item.id !== host.id)
     await this.save()
     this.status.delete(host.id)
-    this.forgotten = !revoked && host.clientId ? { id: host.id, name: host.name,
-      command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
+    if (cause && host.clientId) {
+      const command = revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) })
+      this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, cause, command }]
+    }
     this.nodePaths.delete(host.id)
     this.emit()
+    return this.get()
+  }
+  /** The user stopped Forget's sign-in: nothing was sent, so the host stays saved and connects again if it is on. */
+  private keepAfterForget(host: SavedHost, active: LiveHost | undefined): HostsState {
+    if (active && this.live.get(host.id) === active) active.closing = false
+    else if (host.enabled !== false && !this.closed && this.saved.includes(host)) this.keepConnected(host)
     return this.get()
   }
   /**
@@ -513,9 +541,10 @@ export class DesktopHosts {
     // Pairing already finished, so the host holds a record of this computer that nothing will use. Revoke it
     // while the connection is still open; `closing` keeps the drop the revoke causes from being read as a failure.
     const active = this.live.get(id)
-    if (host.clientId && active && this.onSsh(id)) { active.closing = true; await this.admin(host).then(admin => admin.revokeClient(host.clientId!)).catch(() => false) }
+    if (host.clientId && active && this.onSsh(id)) { active.closing = true; await this.press(host, connection => connection.revokeClient(host.clientId!)).catch(() => false) }
     await this.disconnect(id)
     this.status.delete(id)
+    this.nodePaths.delete(id)
     await this.forgetCredential(id)
     this.emit()
   }
@@ -643,7 +672,6 @@ export class DesktopHosts {
         onDisconnected: () => { active.sshClosed = true; if (this.live.get(host.id) === active && !active.closing) this.dropped(host, active) },
       })
       if (this.live.get(host.id) !== active) { await ssh.close(); return }
-      active.owned = ssh.owned
       if (ssh.node) this.nodePaths.set(host.id, ssh.node)
       this.update(host.id, { step: 'pair' })
       if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError('The host identity changed. Check its data folder before connecting again.')
@@ -707,6 +735,7 @@ export class DesktopHosts {
       if (current) this.live.delete(host.id)
       if (unsaved) {
         delete host.hostId; delete host.clientId
+        this.nodePaths.delete(host.id)
         await this.forgetCredential(host.id)
         // A cancelled add has no dialog left to tell.
         if (this.isAttempt(host)) this.update(host.id, { phase: 'error', reconnecting: false, error: unsavedMessage(failure.message), step, fix, reason, tailscale: waited })
@@ -851,7 +880,7 @@ export class DesktopHosts {
       return picked?.hostId === target.expectedHostId ? picked.id : null
     }, onConnectionChange: value => { connected = value; if (!value && this.live.get(host.id) === active) this.dropped(host, active) },
       onPushError: message => { if (this.live.get(host.id) === active) { pushError = message; this.update(host.id, { error: message }) } },
-      onPushErrorCleared: () => { if (this.live.get(host.id) === active && pushError !== undefined && this.status.get(host.id)?.error === pushError) this.update(host.id, { error: undefined }); pushError = undefined }, url: target.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: target.expectedHostId, owned: active.owned === true,
+      onPushErrorCleared: () => { if (this.live.get(host.id) === active && pushError !== undefined && this.status.get(host.id)?.error === pushError) this.update(host.id, { error: undefined }); pushError = undefined }, url: target.url, token: this.options.credentials.get(`remote-host:${host.id}`), expectedHostId: target.expectedHostId, owned: active.ssh?.owned === true,
       // Nothing on the desktop reads a host's event log, so a connect asks for none of it.
       catchUpEvents: false })
     active.socket = socket
@@ -881,7 +910,7 @@ export class DesktopHosts {
     else { if (held) this.options.router.remove(held); this.options.router.add(connection) }
     active.registeredHostId = hello.hostId
     this.clearRetry(host.id)
-    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.owned === true })
+    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.ssh?.owned === true })
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost): void {
@@ -895,59 +924,37 @@ export class DesktopHosts {
     return active?.ssh && !active.sshClosed ? active.ssh : undefined
   }
   /**
-   * What a press that needs the launch script or the host's administrative routes goes over (ADR-0053): the SSH connection
-   * when the host is on it, which opens nothing new, and otherwise the host's admin connection, opened by the first press
-   * and shared until a minute after the last. An admin connection starts no host: one that is not running fails the press.
+   * Runs one press that needs the launch script or the host's administrative routes over what it goes over (ADR-0053):
+   * the SSH connection when the host is on it, which opens nothing new, and otherwise the host's admin connection, opened
+   * by the first press and shared until a minute after the last. An admin connection starts no host: one that is not
+   * running fails the press.
    */
-  private admin(host: SavedHost): Promise<AdminConnection> {
+  private press<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T> {
     const ssh = this.onSsh(host.id)
-    if (ssh) return Promise.resolve(ssh)
+    if (ssh) return press(ssh)
     if (this.closed || !this.saved.includes(host)) return Promise.reject(new Error(`${host.name} is no longer saved. Nothing was changed.`))
-    return this.adminEntry(host).link.connection()
+    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId }, press)
   }
-  private adminEntry(host: SavedHost): AdminEntry {
-    const existing = this.admins.get(host.id)
-    if (existing) return existing
-    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
-    const entry: AdminEntry = { launcher, link: new AdminLink({
-      open: async () => {
-        const connection = await launcher.connect(this.route(host), { ...this.adminProgress(host, () => entry), onDisconnected: () => entry.link.dropped() }, { start: false })
-        if (host.hostId && connection.hostId !== host.hostId) { await connection.close(); throw new FinalHostError('The host identity changed. Check its data folder before connecting again.') }
-        if (connection.node) this.nodePaths.set(host.id, connection.node)
-        return connection
-      },
-      close: () => launcher.disconnect(),
-    }) }
-    this.admins.set(host.id, entry)
-    return entry
+  /** The same press, over a connection already open, opening none: undefined when the host has none. */
+  private pressIfOpen<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T | undefined> {
+    const ssh = this.onSsh(host.id)
+    return ssh ? press(ssh) : this.admins.runIfOpen(host.id, press)
   }
   /**
    * What an admin connection reports while it signs in: SSH's questions, which the window asks wherever the user is, and
    * Tailscale's approval, which the surface that asked for the press shows. The row's checklist step stays the socket's.
    */
-  private adminProgress(host: SavedHost, entry: () => AdminEntry): Pick<SshCallbacks, 'onPrompt' | 'onApproval'> {
-    const current = (): boolean => this.admins.get(host.id) === entry()
-    return {
-      onPrompt: prompt => {
-        if (!current()) return
-        entry().asking = prompt?.id
-        const state = this.status.get(host.id)
-        if (state) { if (prompt) state.prompt = prompt; else delete state.prompt; this.emit() }
-      },
-      onApproval: approval => { if (current()) this.update(host.id, { tailscale: approval ? { waiting: true, ...(approval.url ? { url: approval.url } : {}) } : undefined }) },
-    }
+  private adminSignIn(id: string, report: AdminSignInReport): void {
+    const state = this.status.get(id)
+    if (!state) return
+    if (report.prompt !== undefined) { if (report.prompt) state.prompt = report.prompt; else delete state.prompt }
+    if (report.approval !== undefined) { if (report.approval) state.tailscale = { waiting: true, ...(report.approval.url ? { url: report.approval.url } : {}) }; else delete state.tailscale }
+    if (report.signingIn) state.adminSignIn = true; else if (report.signingIn === false) delete state.adminSignIn
+    this.emit()
   }
   /** An answer to SSH's question goes to the connection that asked it: the admin connection's sign-in, or the connect's. */
   private answerPrompt(id: string, promptId: string, answer: string): void {
-    const admin = this.admins.get(id)
-    if (admin?.asking === promptId) admin.launcher.answerPrompt(promptId, answer)
-    else this.live.get(id)?.launcher.answerPrompt(promptId, answer)
-  }
-  private async closeAdmin(id: string): Promise<void> {
-    const entry = this.admins.get(id)
-    if (!entry) return
-    this.admins.delete(id)
-    await entry.link.close()
+    if (!this.admins.answer(id, promptId, answer)) this.live.get(id)?.launcher.answerPrompt(promptId, answer)
   }
   /** Whether the host's SSH session can reach it: connected, or kept open in the error phase for a host of another version. */
   private reachable(id: string): boolean {
@@ -955,19 +962,19 @@ export class DesktopHosts {
     return status?.phase === 'connected' || status?.phase === 'error' && status.owned === true
   }
   /** Asks the launch script to stop the host. False means it may still run. */
-  private async stopOwnedHost(admin: AdminConnection): Promise<boolean> {
-    try { return await admin.stopHost() } catch { return false }
+  private async stopOwnedHost(connection: PressConnection): Promise<boolean> {
+    try { return await connection.stopHost() } catch { return false }
   }
   private notStopped(host: SavedHost): string { return `The host on ${host.name} could not be stopped and may still be running. Check it on that machine, then connect and try again.` }
   private async disconnect(id: string, keepRetry = false): Promise<void> {
-    if (!keepRetry) { this.clearRetry(id); this.releaseHeld(id); await this.closeAdmin(id) }
+    if (!keepRetry) { this.clearRetry(id); this.releaseHeld(id); await this.admins.close(id) }
     const active = this.live.get(id)
     this.live.delete(id)
     if (active?.registeredHostId) { this.options.router.remove(active.registeredHostId); delete active.registeredHostId }
     await active?.socket?.close()
     await active?.launcher.disconnect()
     const status = this.status.get(id)
-    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version; status.phase = 'disconnected'; this.emit() }
+    if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer
@@ -983,6 +990,6 @@ export class DesktopHosts {
     if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
     await Promise.all([this.pendingAdd, this.pendingSetup])
     await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
-    await Promise.allSettled([...this.admins.keys()].map(id => this.closeAdmin(id))); await this.writing
+    await this.admins.closeAll(); await this.writing
   }
 }

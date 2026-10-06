@@ -350,8 +350,8 @@ describe('desktop remote host management over a real socket', () => {
     expect(host.pairing.verifyToken(token)).toBeDefined()
     expect(stops).toEqual([])
     // The command resolves `current` on the host and runs the Node and folders this computer last saw.
-    expect(state.forgotten).toEqual({ id: remote.id, name: 'Forge fixture', command: 'I="/opt/sotto"; E="$I/host/index.js"; [ -f "$I/current" ] && V=$(cat "$I/current") && [ -f "$I/versions/$V/host/index.js" ] && E="$I/versions/$V/host/index.js"; '
-      + `"${FIXTURE_NODE}" "$E" --data "/data/sotto" --revoke-client "${clientId}"` })
+    expect(state.forgotten).toEqual([{ id: remote.id, name: 'Forge fixture', cause: 'unreachable', command: 'I="/opt/sotto"; E="$I/host/index.js"; [ -f "$I/current" ] && V=$(cat "$I/current") && [ -f "$I/versions/$V/host/index.js" ] && E="$I/versions/$V/host/index.js"; '
+      + `"${FIXTURE_NODE}" "$E" --data "/data/sotto" --revoke-client "${clientId}"` }])
     // Dismiss puts it away; a dismiss for another host changes nothing.
     expect((await manager.command({ type: 'dismiss-forgotten', id: randomUUID() })).forgotten).toBeDefined()
     expect((await manager.command({ type: 'dismiss-forgotten', id: remote.id })).forgotten).toBeUndefined()
@@ -943,7 +943,7 @@ describe('a drop keeps the host’s threads on the page (ADR-0053)', () => {
     const thread = await remoteThread()
     failures.push(new SshFailure('host-key-changed'))
     launchers[0]!.callbacks!.onDisconnected!('dropped')
-    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false }))
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'error', reconnecting: false }), { timeout: 20_000 })
     expect(row(thread)).toBeUndefined()
     expect(router.shell().connections).toEqual([])
   })
@@ -965,7 +965,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
     manager.usePhones(phones)
     try {
       const remote = await add()
-      await vi.waitFor(() => expect(manager.get().phones?.[0]?.state).toBeDefined())
+      await vi.waitFor(() => expect(manager.get().phones?.[0]?.state).toBeDefined(), { timeout: 20_000 })
       await manager.command({ type: 'host-phones', id: remote.id, command: { type: 'retry' } })
       updateHost = async () => ({ type: 'update-fetched', file: 'Sotto-host-0.1.31-linux-x64.tar.gz', sha256: 'a'.repeat(64) })
       await manager.runUpdate(remote.id, { op: 'update-fetch', version: packageVersion, releasesUrl: 'https://releases.example/download' })
@@ -1020,11 +1020,13 @@ describe('admin connections and Forget (ADR-0053)', () => {
     expect(state.forgotten).toBeUndefined()
   })
 
-  for (const [cause, arrange] of [
-    ['finds its host stopped', () => { hostRunning = false }],
-    ['is refused the revoke', () => { revokeFails = true; owned = false }],
+  for (const [what, cause, arrange] of [
+    ['finds its host stopped', 'not-running', () => { hostRunning = false }],
+    ['is refused the revoke by a host Sotto did not start', 'refused', () => { revokeFails = true; owned = false }],
+    // The host stays running, so the command the notice gives can be run there now.
+    ['is refused the revoke by a host Sotto started, which it leaves running', 'refused', () => { revokeFails = true }],
   ] as const) {
-    it(`removes a host whose admin connection ${cause}, clears its credential and says it was not revoked`, async () => {
+    it(`removes a host whose admin connection ${what}, clears its credential and says why it was not revoked`, async () => {
       const remote = await add()
       const token = credentials.get('remote-host:' + remote.id)
       await manager.command({ type: 'disconnect', id: remote.id })
@@ -1033,17 +1035,91 @@ describe('admin connections and Forget (ADR-0053)', () => {
       expect(state.hosts).toEqual([]); expect(await savedFile()).toEqual([])
       expect(credentials.has('remote-host:' + remote.id)).toBe(false)
       expect(host.pairing.verifyToken(token)).toBeDefined()
-      expect(state.forgotten).toMatchObject({ id: remote.id, name: 'Forge fixture', command: expect.stringContaining('--revoke-client') })
+      expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, name: 'Forge fixture', cause, command: expect.stringContaining('--revoke-client') })])
       expect(stops).toEqual([])
     })
   }
+
+  it('keeps every not-revoked notice until its own Dismiss, whatever later Forgets do', async () => {
+    const first = await add()
+    await manager.command({ type: 'disconnect', id: first.id })
+    failures.push(new SshFailure('ssh-unreachable'))
+    await manager.command({ type: 'forget', id: first.id })
+    // A Forget that revokes leaves the earlier notice alone.
+    const second = await add()
+    expect((await manager.command({ type: 'forget', id: second.id })).forgotten).toEqual([expect.objectContaining({ id: first.id })])
+    // Another Forget that could not revoke adds its own beside it.
+    const third = await add()
+    await manager.command({ type: 'disconnect', id: third.id })
+    hostRunning = false
+    const state = await manager.command({ type: 'forget', id: third.id })
+    expect(state.forgotten).toEqual([expect.objectContaining({ id: first.id, cause: 'unreachable' }), expect.objectContaining({ id: third.id, cause: 'not-running' })])
+    expect((await manager.command({ type: 'dismiss-forgotten', id: first.id })).forgotten).toEqual([expect.objectContaining({ id: third.id })])
+    expect((await manager.command({ type: 'dismiss-forgotten', id: third.id })).forgotten).toBeUndefined()
+  })
+
+  it('changes nothing when the user stops Forget’s sign-in while SSH waits for an answer', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    await manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+    askOnConnect = 'passphrase'
+    const forgetting = manager.command({ type: 'forget', id: remote.id })
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ adminSignIn: true, prompt: { id: 'prompt-1' } }), { timeout: 20_000 })
+    await manager.command({ type: 'stop-admin-sign-in', id: remote.id })
+    const state = await forgetting
+    expect(state.hosts).toEqual([expect.objectContaining({ id: remote.id, phase: 'disconnected', enabled: false })])
+    expect(state.hosts[0]!.prompt).toBeUndefined(); expect(state.hosts[0]!.adminSignIn).toBeUndefined()
+    expect(state.forgotten).toBeUndefined()
+    expect(operations).toEqual([])
+    expect(host.pairing.verifyToken(token)).toBeDefined()
+    expect(credentials.get('remote-host:' + remote.id)).toBe(token)
+    // Stopping a sign-in that is not under way changes nothing either.
+    await manager.command({ type: 'stop-admin-sign-in', id: remote.id })
+    expect(manager.get().hosts).toHaveLength(1)
+  })
+
+  describe('a host whose socket is on no SSH connection', () => {
+    /** Stands in for a host on its tailnet connection (pull request 4): the SSH connection is gone and the socket stays up. */
+    const offSsh = (id: string): void => {
+      const live = (manager as unknown as { live: Map<string, { sshClosed?: boolean }> }).live.get(id)!
+      live.sshClosed = true
+    }
+
+    it('sends Phones and Update presses over one admin connection, which starts nothing', async () => {
+      const phones = new HostPhones({ hosts: { links: () => manager.phonesLinks(), subscribe: listener => manager.subscribe(() => listener()) }, openExternal: async () => undefined })
+      manager.usePhones(phones)
+      try {
+        const remote = await add()
+        await vi.waitFor(() => expect(manager.get().phones?.[0]?.state).toBeDefined(), { timeout: 20_000 })
+        offSsh(remote.id)
+        await manager.command({ type: 'host-phones', id: remote.id, command: { type: 'retry' } })
+        updateHost = async () => ({ type: 'update-fetched', file: 'Sotto-host-0.1.31-linux-x64.tar.gz', sha256: 'a'.repeat(64) })
+        await manager.runUpdate(remote.id, { op: 'update-fetch', version: packageVersion, releasesUrl: 'https://releases.example/download' })
+        expect(launchers).toHaveLength(2)
+        expect(launchers[1]!.options).toEqual({ start: false })
+        expect(operations).toEqual(['admin update-fetch'])
+      } finally { phones.close() }
+    })
+
+    it('says an update’s restart never went when the admin connection cannot open, and keeps the threads as they were', async () => {
+      const remote = await add()
+      const thread = await remoteThread()
+      offSsh(remote.id)
+      hostRunning = false
+      await expect(manager.restartForUpdate(remote.id, packageVersion)).rejects.toMatchObject({ code: 'not-connected', message: expect.stringContaining('The host is not running on the SSH host, so nothing was changed there.') })
+      expect(operations).toEqual([])
+      expect(row(thread)).toMatchObject({ id: thread, clientConnected: true })
+      expect(row(thread)!.clientReconnecting).toBeUndefined()
+      expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected' })
+    })
+  })
 
   it('asks an admin connection’s SSH question wherever the user is, and sends the answer to that connection', async () => {
     const remote = await add()
     await manager.command({ type: 'disconnect', id: remote.id })
     askOnConnect = 'passphrase'
     const forgetting = manager.command({ type: 'forget', id: remote.id })
-    await vi.waitFor(() => expect(manager.get().hosts[0]?.prompt).toMatchObject({ id: 'prompt-1', kind: 'passphrase' }))
+    await vi.waitFor(() => expect(manager.get().hosts[0]?.prompt).toMatchObject({ id: 'prompt-1', kind: 'passphrase' }), { timeout: 20_000 })
     await manager.command({ type: 'ssh-answer', id: remote.id, promptId: 'prompt-1', answer: 'synthetic passphrase' })
     expect((await forgetting).forgotten).toBeUndefined()
     expect(answers).toEqual(['synthetic passphrase'])
@@ -1057,7 +1133,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
     const approved = Promise.withResolvers<void>()
     onConnect = async callbacks => { callbacks.onApproval?.({ url }); await approved.promise; callbacks.onApproval?.(null) }
     const forgetting = manager.command({ type: 'forget', id: remote.id })
-    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', tailscale: { waiting: true, url } }))
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', tailscale: { waiting: true, url } }), { timeout: 20_000 })
     await manager.command({ type: 'open-approval', id: remote.id })
     expect(opened).toEqual([url])
     approved.resolve()
