@@ -159,17 +159,32 @@ async function gitDirectories(root: string): Promise<{ gitDir: string; commonDir
   return common === undefined ? { gitDir, commonDir: gitDir, linked: false } : { gitDir, commonDir: resolve(gitDir, common), linked: true }
 }
 
-/** The branch a Git directory's HEAD names, none for a detached HEAD, and undefined for a HEAD only Git can read. */
-async function headBranch(gitDir: string): Promise<{ branch: string | undefined } | undefined> {
+/**
+ * What a checkout's own files settle: that it is the checkout a record names, with the branch its HEAD names (none
+ * for a detached HEAD, or for a folder in no repository), or that only Git can say.
+ */
+type CheckoutFiles = { readonly kind: 'checked-out'; readonly branch: string | undefined } | { readonly kind: 'ask-git' }
+const ASK_GIT = { kind: 'ask-git' } as const
+
+/** The branch a Git directory's HEAD names, none for a detached HEAD, or a HEAD only Git can read. */
+async function headBranch(gitDir: string): Promise<CheckoutFiles> {
   const head = (await readFile(join(gitDir, 'HEAD'), 'utf8')).trim()
   const symbolic = /^ref: (\S+)$/u.exec(head)
   if (symbolic) {
     const ref = symbolic[1]!
     // A reftable repository keeps this stand-in in HEAD and its real HEAD elsewhere.
-    if (ref === 'refs/heads/.invalid') return
-    return { branch: ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined }
+    if (ref === 'refs/heads/.invalid') return ASK_GIT
+    return { kind: 'checked-out', branch: ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined }
   }
-  return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(head) ? { branch: undefined } : undefined
+  return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(head) ? { kind: 'checked-out', branch: undefined } : ASK_GIT
+}
+
+/**
+ * A ready record following the branch its folder has checked out (ADR-0014): none for a detached HEAD, and a
+ * temporary branch the folder has moved off is no longer the thread's to rename.
+ */
+export function withCheckedOutBranch(metadata: AgentWorktree, branch: string | undefined): AgentWorktree {
+  return { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}) }
 }
 
 function registeredWorktrees(output: string): Array<{ path: string; branch: string | undefined; locked: boolean; lockReason: string | undefined; prunable: boolean }> {
@@ -769,49 +784,53 @@ export class ThreadWorktrees {
   }
 
   /**
-   * What `inspect` would say of a ready record, read from the checkout's own files instead of Git, so a send
+   * What `inspect` would record of a ready record, read from the checkout's own files instead of Git, so a send
    * starts no Git process before its prompt goes out (issue #766): the folder is there, it is the checkout the
    * record names (for a worktree, not reached through a link, and one the original repository's registry lists,
-   * points back at and has not locked), and its HEAD names `branch`, or nothing for a detached HEAD. Null whenever the
-   * files do not settle all of that, and then the caller asks Git with `inspect`. It reads no uncommitted
-   * changes; the inspection after the send does.
+   * points back at and has not locked), and the record follows the branch its HEAD names. `ask-git` whenever the
+   * files do not settle all of that, and then the caller asks Git with `inspect`. It reads no uncommitted changes;
+   * the inspection after the send does. Each refusal here is one `inspectWithin` makes with Git, and
+   * `threadWorktrees.test.ts` runs both over the same folders.
    */
-  async readyOnDisk(metadata: AgentWorktree): Promise<{ branch: string | undefined } | null> {
-    try { return await this.readOnDisk(metadata) ?? null } catch { return null }
+  async readyOnDisk(metadata: AgentWorktree): Promise<{ readonly kind: 'ready'; readonly worktree: AgentWorktree } | typeof ASK_GIT> {
+    let files: CheckoutFiles
+    try { files = await this.checkoutFiles(metadata) } catch { return ASK_GIT }
+    return files.kind === 'ask-git' ? files : { kind: 'ready', worktree: withCheckedOutBranch(metadata, files.branch) }
   }
 
-  private async readOnDisk(metadata: AgentWorktree): Promise<{ branch: string | undefined } | undefined> {
-    if (!metadata.path || metadata.status !== 'ready' || metadata.reclaimedAt) return
+  private async checkoutFiles(metadata: AgentWorktree): Promise<CheckoutFiles> {
+    if (!metadata.path || metadata.status !== 'ready' || metadata.reclaimedAt) return ASK_GIT
     const path = await realpath(metadata.path)
-    if (!(await stat(path)).isDirectory()) return
+    if (!(await stat(path)).isDirectory()) return ASK_GIT
     if (metadata.mode === 'shared') {
       const found = await checkoutOnDisk(path)
-      if (!found) return
+      if (!found) return ASK_GIT
       // A folder outside any repository, as it was when it was last inspected.
-      if (found.root === null) return metadata.repositoryRoot === undefined ? { branch: undefined } : undefined
-      if (!metadata.repositoryRoot || pathKey(found.root) !== pathKey(metadata.repositoryRoot)) return
+      if (found.root === null) return metadata.repositoryRoot === undefined ? { kind: 'checked-out', branch: undefined } : ASK_GIT
+      if (!metadata.repositoryRoot || pathKey(found.root) !== pathKey(metadata.repositoryRoot)) return ASK_GIT
       const directories = await gitDirectories(found.root)
-      return directories && headBranch(directories.gitDir)
+      return directories ? headBranch(directories.gitDir) : ASK_GIT
     }
     // A worktree reached through a link is not the checkout Sotto made.
-    if (!metadata.repositoryRoot || pathKey(path) !== pathKey(metadata.path)) return
+    if (!metadata.repositoryRoot || pathKey(path) !== pathKey(metadata.path)) return ASK_GIT
     const directories = await gitDirectories(path)
-    if (!directories) return
+    if (!directories) return ASK_GIT
     let gitDir = directories.gitDir
     if (directories.linked) {
       // Git's registry entry for this checkout: under the original repository's worktrees, naming this folder.
+      // An entry whose `gitdir` is missing or names another folder is one Git reports as prunable.
       const expected = await gitDirectories(await realpath(metadata.repositoryRoot))
-      if (!expected) return
+      if (!expected) return ASK_GIT
       const [common, expectedCommon] = await Promise.all([realpath(directories.commonDir), realpath(expected.commonDir)])
       gitDir = await realpath(gitDir)
-      if (pathKey(common) !== pathKey(expectedCommon) || pathKey(dirname(gitDir)) !== pathKey(join(common, 'worktrees'))) return
-      if (pathKey(resolve(gitDir, (await readFile(join(gitDir, 'gitdir'), 'utf8')).trim())) !== pathKey(join(path, '.git'))) return
-      if (await stat(join(gitDir, 'locked')).then(() => true, error => { if (missing(error)) return false; throw error })) return
-    } else if (pathKey(path) !== pathKey(await realpath(metadata.repositoryRoot))) return
+      if (pathKey(common) !== pathKey(expectedCommon) || pathKey(dirname(gitDir)) !== pathKey(join(common, 'worktrees'))) return ASK_GIT
+      if (pathKey(resolve(gitDir, (await readFile(join(gitDir, 'gitdir'), 'utf8')).trim())) !== pathKey(join(path, '.git'))) return ASK_GIT
+      if (await stat(join(gitDir, 'locked')).then(() => true, error => { if (missing(error)) return false; throw error })) return ASK_GIT
+    } else if (pathKey(path) !== pathKey(await realpath(metadata.repositoryRoot))) return ASK_GIT
     if (metadata.projectRelativePath) {
       const directory = await realpath(resolve(path, metadata.projectRelativePath))
       const local = relative(path, directory)
-      if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`) || !(await stat(directory)).isDirectory()) return
+      if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`) || !(await stat(directory)).isDirectory()) return ASK_GIT
     }
     return headBranch(gitDir)
   }
@@ -853,6 +872,6 @@ export class ThreadWorktrees {
     if (pathKey(root.trim()) !== pathKey(path) || pathKey(common.trim()) !== pathKey(identity.common)) throw new Error('The working folder no longer belongs to the original repository.')
     await this.workingDirectory(metadata)
     // A folder that is there was not reclaimed, whatever the record last said.
-    return { identity, worktree: { ...metadata, branch, ...(metadata.temporaryBranch && branch !== metadata.branch ? { temporaryBranch: false } : {}), status: 'ready', error: undefined, reclaimedAt: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal', ...(reclaiming ? ['--ignore-submodules=none'] : [])])).length > 0 } }
+    return { identity, worktree: { ...withCheckedOutBranch(metadata, branch), status: 'ready', error: undefined, reclaimedAt: undefined, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal', ...(reclaiming ? ['--ignore-submodules=none'] : [])])).length > 0 } }
   }
 }

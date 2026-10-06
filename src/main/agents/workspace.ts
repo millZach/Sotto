@@ -88,6 +88,11 @@ function sameWorktreeRecord(read: AgentWorktree | undefined, current: AgentWorkt
 function withCurrentGit(next: AgentWorktree, current: AgentWorktree): AgentWorktree {
   return current.git === undefined ? next : { ...next, git: current.git }
 }
+/** Whether two working-copy records say the same, a field set to undefined counting as one left out, as it is once saved. */
+function sameRecordValues(a: AgentWorktree, b: AgentWorktree): boolean {
+  const defined = (record: AgentWorktree) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined))
+  return isDeepStrictEqual(defined(a), defined(b))
+}
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
@@ -179,14 +184,13 @@ export class WorkspaceHost implements AgentHost {
   private readonly organizationLanes = new Map<string, Promise<unknown>>()
   private readonly interruptLanes = new Map<string, Promise<unknown>>()
   /**
-   * Reads of a thread's folder that change nothing in it (Git status, with its fetch and GitHub lookup, and the
-   * inspections after a send or a turn) run in the thread's status lane, beside its own lane, so a send never
-   * waits behind one (issue #766). A status-lane task may wait for the thread's lane, for an automatic pull; work
-   * in the thread's lane never waits for its status lane.
+   * Reads of a thread's folder that change nothing in the folder run in the thread's status lane, beside its own
+   * lane, so a send never waits behind one (issue #766): every Git status read, with its fetch and GitHub lookup,
+   * the inspections after a send or a turn, and a refresh of a folder that is there. A Git action reads the status
+   * once it has left the thread's lane. A status-lane task may wait for the thread's lane, for an automatic pull;
+   * work in the thread's lane never waits for its status lane.
    */
   private readonly statusLanes = new Map<string, Promise<unknown>>()
-  /** Per thread, the last Git status read begun and the newest one on the record, so an older answer never replaces a newer one. */
-  private readonly gitStatusTickets = new Map<string, { issued: number; written: number }>()
   /** Threads whose folder an inspection after a send or a turn could not confirm: their next send asks Git before the prompt. */
   private readonly fullCheckDue = new Set<string>()
   /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
@@ -402,7 +406,7 @@ export class WorkspaceHost implements AgentHost {
    * result stay on the thread record, and the folder's status is read again with the remote afterward.
    */
   runGitAction(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot> {
-    return this.onLane(command.threadId, async () => {
+    return this.thenReadStatus(command.threadId, this.onLane(command.threadId, async () => {
       await this.initialize()
       this.thread(command.threadId)
       const release = await this.acquireCheckoutMutation(command.threadId)
@@ -435,13 +439,27 @@ export class WorkspaceHost implements AgentHost {
           update({ status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'The Git action failed.' })
         }
         try { await this.flush() } catch { this.saveError = GIT_ACTION_SAVE_ERROR }
-        await this.refreshAfterGitAction(command.threadId)
-        return this.workspaceSnapshot()
+        await this.followGitChange(command.threadId)
       } finally { release() }
-    })
+    }), () => this.workspaceSnapshot())
   }
-  /** A commit, push, switch or pull moved the folder: the worktree record and the status follow at once. */
-  private async refreshAfterGitAction(threadId: string, options: { readonly followSentBranch?: boolean } = {}): Promise<void> {
+  /**
+   * A change made in the thread's lane, then the folder's status read again from the thread's status lane once
+   * the change has left the thread's lane. A send queued behind the change waits for the change and not for the
+   * read after it, which with the remote is a fetch and a GitHub lookup (issue #766). The caller's answer is built
+   * after the read, so it carries the new status.
+   */
+  private async thenReadStatus<R, T>(threadId: string, change: Promise<R>, answer: (result: R) => T, options: { readonly remote?: boolean } = {}): Promise<T> {
+    const result = await change
+    await this.queueStatusRead(threadId, options.remote ?? true).catch(() => undefined)
+    this.publish()
+    return answer(result)
+  }
+  /**
+   * A commit, push, switch or pull moved the folder: the worktree record follows at once, in the lane that moved
+   * it, and the caches are dropped so the status read after it sees the change.
+   */
+  private async followGitChange(threadId: string, options: { readonly followSentBranch?: boolean } = {}): Promise<void> {
     this.gitStatus?.invalidate()
     const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
     if (worktree?.status === 'ready' && worktree.path) {
@@ -459,26 +477,23 @@ export class WorkspaceHost implements AgentHost {
         }
       } catch { /* The next send reports a folder that stopped being the thread's. */ }
     }
-    await this.readGitStatus(threadId, true)
-    this.publish()
   }
   pullThreadBranch(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }> {
-    return this.onGitLane(threadId, async () => {
+    return this.thenReadStatus(threadId, this.onGitLane(threadId, async () => {
       const result = await this.gitActionsOrRefuse().pull(await this.gitActionFolder(threadId))
-      await this.refreshAfterGitAction(threadId)
-      return { snapshot: this.workspaceSnapshot(), result }
-    })
+      await this.followGitChange(threadId)
+      return result
+    }), result => ({ snapshot: this.workspaceSnapshot(), result }))
   }
   /** T3's switch: Git refuses when work would be lost, and the thread follows whatever branch the folder ends up on (ADR-0014). */
   switchThreadBranch(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot> {
-    return this.onGitLane(threadId, async () => {
+    return this.thenReadStatus(threadId, this.onGitLane(threadId, async () => {
       await this.gitActionsOrRefuse().switchBranch(await this.gitActionFolder(threadId), ref, { create })
-      await this.refreshAfterGitAction(threadId, { followSentBranch: true })
-      return this.workspaceSnapshot()
-    })
+      await this.followGitChange(threadId, { followSentBranch: true })
+    }), () => this.workspaceSnapshot())
   }
   initThreadRepository(threadId: string): Promise<AgentHostSnapshot> {
-    return this.onGitLane(threadId, async () => {
+    return this.thenReadStatus(threadId, this.onGitLane(threadId, async () => {
       await this.gitActionsOrRefuse().init(await this.gitActionFolder(threadId))
       // A folder that just became a repository is discovered again so its record says so; the record itself stays,
       // with what the thread already chose on it, since a draft is not discovered afresh.
@@ -488,16 +503,15 @@ export class WorkspaceHost implements AgentHost {
       if (thread.worktree?.mode === 'shared' && directory) {
         try { thread.worktree = { ...thread.worktree, ...await this.worktrees.discover(directory, project?.path ?? directory) }; this.dirty = true } catch { /* The refresh below reads what it can. */ }
       } else if (!thread.worktree) await this.discoverWorkingCopy(threadId).catch(() => undefined)
-      await this.refreshAfterGitAction(threadId)
-      return this.workspaceSnapshot()
-    })
+      await this.followGitChange(threadId)
+    }), () => this.workspaceSnapshot())
   }
   publishThreadRepository(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }> {
-    return this.onGitLane(threadId, async () => {
+    return this.thenReadStatus(threadId, this.onGitLane(threadId, async () => {
       const { url } = await this.gitActionsOrRefuse().publish(await this.gitActionFolder(threadId), options)
-      await this.refreshAfterGitAction(threadId)
-      return { snapshot: this.workspaceSnapshot(), url }
-    })
+      await this.followGitChange(threadId)
+      return url
+    }), url => ({ snapshot: this.workspaceSnapshot(), url }))
   }
   private pullRequestsOrRefuse(): GitPullRequests {
     if (!this.gitPullRequests) throw new Error('Pull requests are unavailable on this host.')
@@ -567,7 +581,7 @@ export class WorkspaceHost implements AgentHost {
   }
   /** A press on the Pull request surface, for a pull request the thread knows. GitHub moved, so the badge and the Git action read it again. */
   runPullRequestAction(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
-    return this.onLane(command.threadId, async () => {
+    return this.thenReadStatus(command.threadId, this.onLane(command.threadId, async () => {
       await this.initialize()
       const service = this.pullRequestsOrRefuse()
       if (!this.knowsPullRequest(this.thread(command.threadId), command.url)) throw new GitPullRequestRefusal('Link this pull request to the thread before acting on it.')
@@ -575,10 +589,7 @@ export class WorkspaceHost implements AgentHost {
       const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
       this.gitStatus?.invalidate()
-      await this.readGitStatus(command.threadId, true)
-      this.publish()
-      return { snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }
-    })
+    }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))
   }
   /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
   linkThreadPullRequest(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }> {
@@ -616,8 +627,8 @@ export class WorkspaceHost implements AgentHost {
    * branch out on first send, or the draft points at the worktree that already has it. Either way the pull
    * request is linked to the thread.
    */
-  checkoutThreadPullRequest(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
-    return this.onLane(threadId, async () => {
+  async checkoutThreadPullRequest(threadId: string, reference: string, mode: 'local' | 'worktree'): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
+    const outcome = await this.onLane(threadId, async (): Promise<{ readonly notice: string } | { readonly checkedOut: number }> => {
       await this.initialize()
       const service = this.pullRequestsOrRefuse()
       if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
@@ -647,11 +658,9 @@ export class WorkspaceHost implements AgentHost {
           }
           await service.checkoutLocal(cwd, view.url)
           this.linkPullRequestRecord(threadId, view, 'checkout')
-          await this.refreshAfterGitAction(threadId, { followSentBranch: true })
+          await this.followGitChange(threadId, { followSentBranch: true })
           await this.saveLinks()
-          const after = this.thread(threadId).worktree
-          const branch = after?.git?.branch ?? after?.branch
-          return { snapshot: this.workspaceSnapshot(), notice: `Checked out PR #${view.number}${branch ? ` on ${branch}` : ''}.` }
+          return { checkedOut: view.number }
         } finally { release() }
       }
       const prepared = await service.prepareWorktreeBranch(this.threadRepositoryFolder(threadId, 'pull requests'), view)
@@ -664,17 +673,28 @@ export class WorkspaceHost implements AgentHost {
       this.dirty = true
       await this.flush()
       this.publish()
-      return { snapshot: this.workspaceSnapshot(), notice: prepared.worktreePath
+      return { notice: prepared.worktreePath
         ? `PR #${view.number} is checked out in another worktree already. This thread will work there.`
         : `PR #${view.number} will be checked out on ${prepared.branch} in a new worktree when you send.` }
+    })
+    if ('notice' in outcome) return { snapshot: this.workspaceSnapshot(), notice: outcome.notice }
+    // As after any Git action, the status is read once the thread's lane is free; the notice names the branch it found.
+    return this.thenReadStatus(threadId, Promise.resolve(outcome.checkedOut), number => {
+      const after = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
+      const branch = after?.git?.branch ?? after?.branch
+      return { snapshot: this.workspaceSnapshot(), notice: `Checked out PR #${number}${branch ? ` on ${branch}` : ''}.` }
     })
   }
   /** A Git action changed this thread's folder: read it again, remote and all, without waiting for the timer. */
   gitActionFinished(threadId: string): Promise<void> {
     this.gitStatus?.invalidate()
-    return this.onStatusLane(threadId, () => this.readGitStatus(threadId, true, 'status'))
+    return this.queueStatusRead(threadId, true)
   }
   private onStatusLane<T>(threadId: string, work: () => Promise<T>): Promise<T> { return this.onLane(threadId, work, this.statusLanes) }
+  /** A Git status read of the thread's folder, in its status lane behind any read already there. */
+  private queueStatusRead(threadId: string, remote: boolean): Promise<void> {
+    return this.onStatusLane(threadId, () => this.readGitStatus(threadId, remote))
+  }
   private async pollGitStatus(): Promise<void> {
     if (this.gitStatusPolling || this.stopping || !this.gitStatus || !this.declared) return
     const interval = this.gitStatusOptions.pollIntervalMs()
@@ -684,35 +704,32 @@ export class WorkspaceHost implements AgentHost {
     try {
       for (const threadId of [...this.watched.keys()]) {
         if (this.stopping) break
-        await this.onStatusLane(threadId, () => this.readGitStatus(threadId, true, 'status')).catch(() => undefined)
+        await this.queueStatusRead(threadId, true).catch(() => undefined)
       }
     } finally { this.gitStatusPolling = false }
   }
   /**
-   * Reads the thread's folder and publishes only a status that changed. Callers hold the lane they name: the
-   * thread's own, or its status lane, from which an automatic pull waits for the thread's lane. The answer lands
-   * only on the folder it was read from, and never over the answer of a read begun after it.
+   * Reads the thread's folder and publishes only a status that changed. Callers hold the thread's status lane,
+   * and nothing in the thread's own lane reads status, so a send never waits for a read; an automatic pull, which
+   * changes the folder, waits for the thread's lane from here. The answer lands only on the folder it was read
+   * from. A thread's reads run one at a time in its status lane, so an older answer never lands over a newer one.
    */
-  private async readGitStatus(threadId: string, remote: boolean, lane: 'thread' | 'status' = 'thread'): Promise<void> {
+  private async readGitStatus(threadId: string, remote: boolean): Promise<void> {
     if (!this.gitStatus || this.stopping) return
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     const worktree = thread?.worktree
     if (!thread || !worktree || worktree.status !== 'ready' || worktree.reclaimedAt) return
     let folder: string
-    try { folder = resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId)) } catch { return }
-    let ticket = this.gitStatusTicket(threadId)
+    try { folder = this.threadFolder(thread) } catch { return }
     let status: GitStatus
     try { status = await this.gitStatus.read(folder, { remote }) } catch { return }
     if (remote && this.mayAutoPull(status)) {
-      const pulled = lane === 'status' ? await this.onLane(threadId, () => this.autoPull(threadId, folder)).catch(() => null) : await this.autoPull(threadId, folder)
-      if (pulled) ({ status, ticket } = pulled)
+      const pulled = await this.onLane(threadId, () => this.autoPull(threadId, folder)).catch(() => null)
+      if (pulled) status = pulled
     }
     if (!this.stillThreadFolder(threadId, folder)) return
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!current?.worktree) return
-    const tickets = this.gitStatusTickets.get(threadId)!
-    if (ticket <= tickets.written) return
-    tickets.written = ticket
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
     current.worktree = { ...current.worktree, git: status }
     this.dirty = true
@@ -723,12 +740,11 @@ export class WorkspaceHost implements AgentHost {
   private stillThreadFolder(threadId: string, folder: string): boolean {
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || current.worktree.reclaimedAt || this.stopping) return false
-    try { return sameFolder(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)), folder) } catch { return false }
+    try { return sameFolder(this.threadFolder(current), folder) } catch { return false }
   }
-  private gitStatusTicket(threadId: string): number {
-    const tickets = this.gitStatusTickets.get(threadId) ?? { issued: 0, written: 0 }
-    this.gitStatusTickets.set(threadId, tickets)
-    return ++tickets.issued
+  /** The folder a thread works in, from its record and its project: `resolveThreadWorkingDirectory`, which throws for one it has not got. */
+  private threadFolder(thread: AgentThread): string {
+    return resolveThreadWorkingDirectory(thread, this.state.snapshot.projects.find(project => project.id === thread.projectId))
   }
   /** Automatically pull's condition, T3's: on, the default branch, clean, tracking an upstream, and only behind it. */
   private mayAutoPull(status: GitStatus): boolean {
@@ -738,12 +754,12 @@ export class WorkspaceHost implements AgentHost {
   /**
    * Fast-forwards the folder with the Pull action's own `git pull --ff-only`, while the caller holds the thread's
    * lane. A folder any thread is working in, waiting on, setting up or running a Git action in is left for the next
-   * read, and a pull that fails changes nothing. The status read after the pull with its ticket, or null when
-   * nothing was pulled. The read that asked for the pull may have run in the status lane while the thread's lane
+   * read, and a pull that fails changes nothing. The status read after the pull, or null when nothing was
+   * pulled. The read that asked for the pull ran in the status lane while the thread's lane may have
    * switched the branch or changed the tree, so the folder is checked again under the checkout guard first: still
    * the thread's, and still a clean default branch only behind its upstream.
    */
-  private async autoPull(threadId: string, folder: string): Promise<{ status: GitStatus; ticket: number } | null> {
+  private async autoPull(threadId: string, folder: string): Promise<GitStatus | null> {
     const projects = this.state.snapshot.projects
     const busy = this.state.snapshot.threads.some(thread => {
       if (thread.status !== 'running' && !thread.requests.length && !this.preparations.has(thread.id) && thread.gitAction?.status !== 'running') return false
@@ -755,12 +771,11 @@ export class WorkspaceHost implements AgentHost {
       const release = await this.acquireCheckoutMutation(threadId, { kind: 'automatic-pull' })
       try {
         if (this.mutationGuard && !await this.mutationGuard(threadId)) return null
-        if (!this.stillThreadFolder(threadId, folder) || !this.mayAutoPull(await this.gitStatus.read(folder, { remote: false }))) return null
-        if (!this.stillThreadFolder(threadId, folder)) return null
+        // Still the thread's folder before the read and once it is back, and still only behind.
+        if (!this.stillThreadFolder(threadId, folder) || !this.mayAutoPull(await this.gitStatus.read(folder, { remote: false })) || !this.stillThreadFolder(threadId, folder)) return null
         const result = await this.gitActions.pull(folder, { automatic: true })
         if (result.status !== 'pulled') return null
-        const ticket = this.gitStatusTicket(threadId)
-        return { status: await this.gitStatus.read(folder, { remote: false }), ticket }
+        return await this.gitStatus.read(folder, { remote: false })
       } finally { release() }
     } catch { return null }
   }
@@ -821,7 +836,8 @@ export class WorkspaceHost implements AgentHost {
       startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}) }
   }
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
-    return this.onLane(threadId, async () => {
+    // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
+    return this.thenReadStatus(threadId, this.onLane(threadId, async () => {
       await this.initialize()
       const thread = this.thread(threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
@@ -835,11 +851,7 @@ export class WorkspaceHost implements AgentHost {
       current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
       this.dirty = true
       try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
-      // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
-      await this.readGitStatus(threadId, false)
-      this.publish()
-      return this.workspaceSnapshot()
-    })
+    }), () => this.workspaceSnapshot(), { remote: false })
   }
   /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
   private async exclusivelyOwnsCheckout(threadId: string): Promise<boolean> {
@@ -1715,7 +1727,7 @@ export class WorkspaceHost implements AgentHost {
       try { await this.discoverWorkingCopy(threadId) } catch { return }
       if (!await this.reinspect(threadId)) return
       // Finished work may have committed, so the counts are read again; the remote waits for the timer or a refresh.
-      await this.readGitStatus(threadId, false, 'status')
+      await this.readGitStatus(threadId, false)
     })
   }
   /** A send that checked its folder from the files on disk owes the folder Git's own inspection, made once the prompt is out. */
@@ -1723,10 +1735,9 @@ export class WorkspaceHost implements AgentHost {
     void this.onStatusLane(threadId, () => this.reinspect(threadId)).catch(() => undefined)
   }
   /**
-   * Inspects a ready folder with Git, from the thread's status lane, and takes a changed branch or uncommitted-changes
-   * flag onto the record, keeping its sent branch and Git status. A record anything else wrote while Git ran is newer and
-   * stays. A folder Git will not confirm is left as it is, and its next send asks Git first. False when there was
-   * nothing to read or Git refused it.
+   * Inspects a ready folder with Git, from the thread's status lane, and takes what changed (its branch, its
+   * uncommitted-changes flag) onto the record. A folder Git will not confirm is left as it is, and the next send to
+   * the thread asks Git before its prompt. False when there was nothing to read or Git refused it.
    */
   private async reinspect(threadId: string): Promise<boolean> {
     const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
@@ -1734,15 +1745,7 @@ export class WorkspaceHost implements AgentHost {
     let inspected: AgentWorktree
     try { inspected = await this.worktrees.inspect(worktree) }
     catch { this.fullCheckDue.add(threadId); return false }
-    this.fullCheckDue.delete(threadId)
-    const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (this.stopping || !current?.worktree || !sameWorktreeRecord(worktree, current.worktree)) return true
-    if (inspected.branch !== worktree.branch || inspected.dirty !== worktree.dirty) {
-      current.worktree = { ...withCurrentGit(inspected, current.worktree), ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
-      this.dirty = true
-      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
-      this.publish()
-    }
+    if (await this.adoptWorktreeRecord(threadId, worktree, inspected)) this.fullCheckDue.delete(threadId)
     return true
   }
   /** Serializes work for one thread or project without holding up unrelated provider work. */
@@ -2040,14 +2043,11 @@ export class WorkspaceHost implements AgentHost {
     // wait for it (issue #766). Putting a missing folder back and retrying setup change the folder, and stay in the thread's lane.
     if (recorded.worktree?.path && !(retry && recorded.nativeSessionStarted === false && recorded.worktree.status === 'error')
       && await lstat(recorded.worktree.path).then(() => true, () => false)) {
-      await this.onStatusLane(threadId, async () => {
-        await this.refreshFolderRecord(threadId)
-        // A refresh is the user's or the window's ask, so the remote is read too, fetching when the interval allows.
-        await this.readGitStatus(threadId, true, 'status')
-      })
+      await this.onStatusLane(threadId, () => this.refreshFolderRecord(threadId))
+      this.readRemoteAfterRefresh(threadId)
       return this.workspaceSnapshot()
     }
-    const read = await this.onLane(threadId, async () => {
+    const recordRead = await this.onLane(threadId, async () => {
       await this.discoverWorkingCopy(threadId)
       const thread = this.thread(threadId)
       if (retry && thread.nativeSessionStarted === false && thread.worktree?.status === 'error') { await this.prepareWorkingCopy(thread); return false }
@@ -2068,13 +2068,22 @@ export class WorkspaceHost implements AgentHost {
       }
       return false
     })
-    if (read) await this.onStatusLane(threadId, () => this.readGitStatus(threadId, true, 'status'))
+    if (recordRead) this.readRemoteAfterRefresh(threadId)
     return this.workspaceSnapshot()
+  }
+  /**
+   * A refresh is the user's or the window's ask, so the remote is read too, fetching when the interval allows. The
+   * refresh answers once the record is read and leaves this read in the status lane, so neither the refresh nor a
+   * send queued behind it in the coordinator waits for the fetch or the GitHub lookup (issue #766); the status
+   * publishes when it lands.
+   */
+  private readRemoteAfterRefresh(threadId: string): void {
+    void this.queueStatusRead(threadId, true).catch(() => undefined)
   }
   /**
    * A refresh of a folder that is there, from the thread's status lane: Git's inspection of it onto the record, or
    * the reason it is not the thread's folder any more as an error the next send tries to repair. A reclaimed
-   * folder's record stays when it is still gone. A record anything else wrote while Git ran is newer and stays.
+   * folder's record stays when it is still gone.
    */
   private async refreshFolderRecord(threadId: string): Promise<void> {
     const worktree = this.thread(threadId).worktree
@@ -2082,14 +2091,25 @@ export class WorkspaceHost implements AgentHost {
     let next: AgentWorktree
     try { next = await this.worktrees.inspect(worktree) }
     catch (error) { next = worktree.reclaimedAt ? worktree : { ...worktree, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
+    if (await this.adoptWorktreeRecord(threadId, worktree, next) && next.status === 'ready') this.fullCheckDue.delete(threadId)
+  }
+  /**
+   * Puts `next`, what Git said of the folder `read` named, on the thread's record. A task took `read` from the record
+   * before it awaited Git; a record anything but a status read wrote meanwhile is newer and stays, and then this is
+   * false. The record keeps the sent branch `read` had, since a send may have recorded one on that same record, and
+   * the newest Git status. Saved and published only when the record changes; the folder was read, so a save that
+   * fails keeps the record and says so.
+   */
+  private async adoptWorktreeRecord(threadId: string, read: AgentWorktree, next: AgentWorktree): Promise<boolean> {
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (this.stopping || !current?.worktree || !sameWorktreeRecord(worktree, current.worktree)) return
-    if (next.status === 'ready') this.fullCheckDue.delete(threadId)
-    // A send may have recorded its branch on this same record while Git ran.
-    next = { ...withCurrentGit(next, current.worktree), ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
-    if (isDeepStrictEqual(next, current.worktree)) return
-    current.worktree = next
-    this.dirty = true; await this.flush(); this.publish()
+    if (this.stopping || !current?.worktree || !sameWorktreeRecord(read, current.worktree)) return false
+    const adopted = { ...withCurrentGit(next, current.worktree), ...(read.sentBranch !== undefined ? { sentBranch: read.sentBranch } : {}) }
+    if (sameRecordValues(adopted, current.worktree)) return true
+    current.worktree = adopted
+    this.dirty = true
+    try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+    this.publish()
+    return true
   }
   /**
    * Switches this thread's worktree back to the branch of its last send, because the user pressed Restore
@@ -2097,7 +2117,7 @@ export class WorkspaceHost implements AgentHost {
    * uncommitted work is left exactly as it is.
    */
   async restoreThreadBranch(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot> {
-    return this.onGitLane(threadId, async () => {
+    return this.thenReadStatus(threadId, this.onGitLane(threadId, async () => {
       await this.gitActionFolder(threadId)
       const worktree = this.thread(threadId).worktree
       if (worktree?.mode !== 'shared' || worktree.status !== 'ready') throw new Error('This thread has no project checkout to switch.')
@@ -2113,9 +2133,7 @@ export class WorkspaceHost implements AgentHost {
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
-      await this.readGitStatus(threadId, false)
-      return this.workspaceSnapshot()
-    })
+    }), () => this.workspaceSnapshot(), { remote: false })
   }
   /** The branch this thread's work went to, so the pane can say what changed under it afterwards. */
   private async recordSentBranch(threadId: string): Promise<void> {
@@ -2155,20 +2173,19 @@ export class WorkspaceHost implements AgentHost {
         }
       }
     }
-    const current = this.thread(threadId)
-    const folder = await existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
+    const folder = await existingWorkingDirectory(this.threadFolder(this.thread(threadId)))
     this.fullCheckDue.delete(threadId)
     return folder
   }
   /**
    * The folder a send's prompt goes to, with `threadWorkingDirectory`'s guarantee: never a deleted or failed working
    * copy, and a branch switched inside it is adopted (ADR-0014). For a ready folder that is there, the common case,
-   * the check reads the checkout's own files rather than starting Git (issue #766), and `inspect` says Git's own
-   * inspection is still owed once the prompt is out. Anything the files do not settle (a missing, reclaimed or
+   * the check reads the checkout's own files rather than starting Git (issue #766), and `inspectAfter` says Git's
+   * own inspection is still owed once the prompt is out. Anything the files do not settle (a missing, reclaimed or
    * failed folder, one never verified, one an earlier inspection could not confirm, or files only Git can read)
    * takes `threadWorkingDirectory`'s path, which puts a missing folder back and inspects with Git.
    */
-  private async sendWorkingDirectory(threadId: string): Promise<{ folder: string; inspect: boolean }> {
+  private async sendWorkingDirectory(threadId: string): Promise<{ folder: string; inspectAfter: boolean }> {
     await this.initialize()
     await this.preparations.get(threadId)
     await this.discoverWorkingCopy(threadId)
@@ -2176,23 +2193,18 @@ export class WorkspaceHost implements AgentHost {
     const worktree = thread.worktree
     if (worktree?.path && worktree.status === 'ready' && !worktree.reclaimedAt && thread.workingDirectory !== undefined && !this.fullCheckDue.has(threadId)) {
       const seen = await this.worktrees.readyOnDisk(worktree)
-      const latest = this.thread(threadId).worktree
-      if (seen && latest && sameWorktreeRecord(worktree, latest)) {
-        if (seen.branch !== worktree.branch) {
-          // The folder's own branch is the one this send goes to, as `inspect` would have recorded it.
-          this.thread(threadId).worktree = { ...latest, branch: seen.branch, ...(worktree.temporaryBranch ? { temporaryBranch: false } : {}) }
-          this.dirty = true
-          // The folder was just verified; a cache write that fails must not refuse the send.
-          try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
-          this.publish()
-        }
-        const current = this.thread(threadId)
-        const folder = await existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
+      // The folder's own branch is the one this send goes to, recorded as `inspect` would record it. A record
+      // anything else wrote while the files were read is newer, and the send takes the path that asks Git.
+      const settled = seen.kind === 'ready' && (seen.worktree.branch === worktree.branch
+        ? sameWorktreeRecord(worktree, this.thread(threadId).worktree)
+        : await this.adoptWorktreeRecord(threadId, worktree, seen.worktree))
+      if (settled) {
+        const folder = await existingWorkingDirectory(this.threadFolder(this.thread(threadId)))
         // A project folder outside any repository has nothing for Git to add.
-        return { folder, inspect: worktree.mode !== 'shared' || worktree.repositoryRoot !== undefined }
+        return { folder, inspectAfter: worktree.mode !== 'shared' || worktree.repositoryRoot !== undefined }
       }
     }
-    return { folder: await this.threadWorkingDirectory(threadId), inspect: false }
+    return { folder: await this.threadWorkingDirectory(threadId), inspectAfter: false }
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     // Cancellation passes a held prompt, but remains tracked so shutdown drains its final publication.
@@ -2384,7 +2396,7 @@ export class WorkspaceHost implements AgentHost {
     let dispatchFolder: string | undefined
     let inspectAfter = false
     if (command.type === 'send' || command.type === 'steer') {
-      ({ folder: dispatchFolder, inspect: inspectAfter } = await this.sendWorkingDirectory(thread.id))
+      ({ folder: dispatchFolder, inspectAfter } = await this.sendWorkingDirectory(thread.id))
       // The folder was just read, so this is the branch the prompt goes to; the pane compares against it afterwards.
       await this.recordSentBranch(thread.id)
     }
@@ -2456,7 +2468,7 @@ export class WorkspaceHost implements AgentHost {
       this.loadWindow(id)
       // A thread just come into view reads its folder at once, locally, so its toolbar has a branch to show
       // before the timer's next remote round; the timer keeps it fresh from there.
-      if (this.gitStatus && !this.state.snapshot.threads.find(thread => thread.id === id)?.worktree?.git) void this.onStatusLane(id, () => this.readGitStatus(id, false, 'status')).catch(() => undefined)
+      if (this.gitStatus && !this.state.snapshot.threads.find(thread => thread.id === id)?.worktree?.git) void this.queueStatusRead(id, false).catch(() => undefined)
       changed = true
     }
     if (changed) this.publish()

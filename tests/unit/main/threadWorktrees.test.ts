@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../../src/main/agents/threadWorktrees'
 import { resolveThreadWorkingDirectory } from '../../../src/shared/threadWorkingDirectory'
+import type { AgentWorktree } from '../../../src/shared/agents'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -896,7 +897,9 @@ describe('a working folder that is gone', () => {
   })
 })
 
-it('groups subdirectories when checkout discovery is refused by Git ownership checks', async () => {
+// Git's ownership checks can refuse discovery; the checkout is found from its files, so they never decide it.
+// `checkoutIdentityFallback.test.ts` covers the files not answering, when Git and then the marker do.
+it('groups subdirectories with their repository even where Git ownership checks would refuse discovery', async () => {
   const f = await fixture()
   const nested = join(f.project, 'nested'); await mkdir(nested)
   const refused: RunGit = async () => { throw new Error('fatal: detected dubious ownership in repository') }
@@ -943,48 +946,99 @@ describe('reading a checkout from its files (issue #766)', () => {
     expect(calls).toEqual([])
   })
 
-  it('reads a ready worktree\'s branch from its files and leaves anything Git must settle to Git', async () => {
+  /**
+   * `readyOnDisk` stands in for `inspect` on a send's path, so the two are run over the same folders: where the files
+   * say ready, Git confirms the folder and records the same branch; where Git refuses the folder, the files leave it
+   * to Git. The files may also leave to Git a folder Git would confirm; that only costs the send its Git processes.
+   */
+  async function agrees(service: ThreadWorktrees, files: ThreadWorktrees, record: AgentWorktree): Promise<'ready' | 'ask-git'> {
+    const fromFiles = await files.readyOnDisk(record)
+    const fromGit = await service.inspect(record).then(worktree => ({ worktree }), (error: unknown) => ({ error }))
+    if (fromFiles.kind === 'ready') {
+      expect(fromGit).toHaveProperty('worktree')
+      // Everything but what only Git reads: uncommitted changes, and the error and reclaim marks a ready folder clears.
+      const comparable = (worktree: AgentWorktree) => ({ ...worktree, dirty: undefined, error: undefined, reclaimedAt: undefined })
+      expect(comparable(fromFiles.worktree)).toEqual(comparable((fromGit as { worktree: AgentWorktree }).worktree))
+    } else if ('error' in fromGit) expect(fromFiles).toEqual({ kind: 'ask-git' })
+    return fromFiles.kind
+  }
+
+  it('reads a ready worktree\'s branch from its files where Git would, and leaves to Git every folder Git refuses', async () => {
     const f = await fixture()
     const { calls, run } = counting()
-    const service = new ThreadWorktrees(f.root, run)
+    const files = new ThreadWorktrees(f.root, run)
     const ready = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
-    expect(await service.readyOnDisk(ready)).toEqual({ branch: ready.branch })
+    const check = (record: AgentWorktree) => agrees(f.service, files, record)
+    expect(await check(ready)).toBe('ready')
+    expect(await files.readyOnDisk(ready)).toEqual({ kind: 'ready', worktree: ready })
     await git(ready.path!, ['switch', '-c', 'feat/elsewhere'])
-    expect(await service.readyOnDisk(ready)).toEqual({ branch: 'feat/elsewhere' })
+    expect(await check(ready)).toBe('ready')
+    expect(await files.readyOnDisk(ready)).toMatchObject({ worktree: { branch: 'feat/elsewhere' } })
+    // A temporary branch the folder moved off is the thread's no longer, as `inspect` records it.
+    expect(await files.readyOnDisk({ ...ready, temporaryBranch: true })).toMatchObject({ worktree: { branch: 'feat/elsewhere', temporaryBranch: false } })
     await git(ready.path!, ['switch', '--detach'])
-    expect(await service.readyOnDisk(ready)).toEqual({ branch: undefined })
-    expect(calls).toEqual([])
-    // Locked in Git's registry, recorded as anything but ready, or reclaimed: inspect decides.
+    expect(await check(ready)).toBe('ready')
+    expect(await files.readyOnDisk(ready)).toMatchObject({ worktree: { branch: undefined } })
+    // A project subfolder inside the worktree, one that is not there, and one that leads outside it.
+    await mkdir(join(ready.path!, 'packages', 'app'), { recursive: true })
+    expect(await check({ ...ready, projectRelativePath: join('packages', 'app') })).toBe('ready')
+    expect(await check({ ...ready, projectRelativePath: join('packages', 'gone') })).toBe('ask-git')
+    expect(await check({ ...ready, projectRelativePath: '..' })).toBe('ask-git')
+    const outside = join(f.root, 'outside'); await mkdir(outside)
+    await symlink(outside, join(ready.path!, 'packages', 'redirected'), 'junction')
+    expect(await check({ ...ready, projectRelativePath: join('packages', 'redirected') })).toBe('ask-git')
+    // The worktree reached through a link is not the checkout Sotto made.
+    const link = join(f.root, 'linked-worktree')
+    await symlink(ready.path!, link, 'junction')
+    expect(await check({ ...ready, path: link })).toBe('ask-git')
+    // Locked in Git's registry.
     await git(f.project, ['worktree', 'lock', '--', ready.path!])
-    expect(await service.readyOnDisk(ready)).toBeNull()
+    await expect(f.service.inspect(ready)).rejects.toThrow('Git has locked this worktree')
+    expect(await check(ready)).toBe('ask-git')
     await git(f.project, ['worktree', 'unlock', '--', ready.path!])
-    expect(await service.readyOnDisk({ ...ready, status: 'error' })).toBeNull()
-    expect(await service.readyOnDisk({ ...ready, reclaimedAt: '2026-10-05T00:00:00.000Z' })).toBeNull()
     // A worktree of another repository is not this record's checkout.
     const other = await fixture()
-    expect(await service.readyOnDisk({ ...ready, repositoryRoot: other.project })).toBeNull()
+    expect(await check({ ...ready, repositoryRoot: other.project })).toBe('ask-git')
+    expect(calls).toEqual([])
+    // Recorded as anything but ready, or reclaimed: inspect decides.
+    expect(await files.readyOnDisk({ ...ready, status: 'error' })).toEqual({ kind: 'ask-git' })
+    expect(await files.readyOnDisk({ ...ready, reclaimedAt: '2026-10-05T00:00:00.000Z' })).toEqual({ kind: 'ask-git' })
+    // Git's registry entry has lost its gitdir file, so Git no longer counts the folder as this worktree.
+    const entry = (await git(ready.path!, ['rev-parse', '--path-format=absolute', '--git-dir'])).trim()
+    const gitdir = await readFile(join(entry, 'gitdir'), 'utf8')
+    await unlink(join(entry, 'gitdir'))
+    await expect(f.service.inspect(ready)).rejects.toThrow()
+    expect(await check(ready)).toBe('ask-git')
+    await writeFile(join(entry, 'gitdir'), gitdir)
+    expect(await check(ready)).toBe('ready')
     // A .git file that no longer points at Git's registry entry for this folder.
     // Windows will not open a hidden file for writing, so the .git file is replaced rather than rewritten.
     await unlink(join(ready.path!, '.git'))
     await writeFile(join(ready.path!, '.git'), `gitdir: ${join(f.root, 'elsewhere')}\n`)
-    expect(await service.readyOnDisk(ready)).toBeNull()
+    expect(await check(ready)).toBe('ask-git')
     // A folder that is gone.
     await removeTestCheckout(f.root, ready.path!)
-    expect(await service.readyOnDisk(ready)).toBeNull()
+    expect(await check(ready)).toBe('ask-git')
     expect(calls).toEqual([])
   })
 
-  it('reads a shared project folder\'s branch from its files, and a plain folder as no repository', async () => {
+  it('reads a shared project folder\'s branch from its files where Git would, and a plain folder as no repository', async () => {
     const f = await fixture()
-    const service = new ThreadWorktrees(f.root, async () => { throw new Error('Git was asked') })
+    const files = new ThreadWorktrees(f.root, async () => { throw new Error('Git was asked') })
+    const check = (record: AgentWorktree) => agrees(f.service, files, record)
     const shared = await f.service.inspect(await f.service.allocate(f.project, 'shared'))
-    expect(await service.readyOnDisk(shared)).toEqual({ branch: shared.branch })
+    expect(await check(shared)).toBe('ready')
+    expect(await files.readyOnDisk(shared)).toMatchObject({ worktree: { branch: shared.branch } })
     const plainFolder = join(f.root, 'plain'); await mkdir(plainFolder)
     const plain = await f.service.inspect(await f.service.allocate(plainFolder, 'shared'))
     expect(plain.repositoryRoot).toBeUndefined()
-    expect(await service.readyOnDisk(plain)).toEqual({ branch: undefined })
+    expect(await check(plain)).toBe('ready')
+    expect(await files.readyOnDisk(plain)).toMatchObject({ worktree: { branch: undefined } })
     // A plain folder that became a repository since it was inspected is Git's to read.
     await git(plainFolder, ['init'])
-    expect(await service.readyOnDisk(plain)).toBeNull()
+    expect(await files.readyOnDisk(plain)).toEqual({ kind: 'ask-git' })
+    // A project folder that is now inside another repository than the one recorded.
+    const other = await fixture()
+    expect(await check({ ...shared, repositoryRoot: other.project })).toBe('ask-git')
   })
 })
